@@ -1,5 +1,13 @@
 # NimBus
 
+```text
+ _   _ _           ____             
+| \ | (_)_ __ ___ | __ ) _   _ ___  
+|  \| | | '_ ` _ \|  _ \| | | / __| 
+| |\  | | | | | | | |_) | |_| \__ \ 
+|_| \_|_|_| |_| |_|____/ \__,_|___/ 
+```
+
 NimBus is an Azure Service Bus based integration platform with a shared SDK, endpoint metadata model, management web app, Aspire host, and Azure Functions resolver.
 
 ## Repository Layout

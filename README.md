@@ -20,6 +20,7 @@ Key projects:
 
 - `src/NimBus.Core`: shared endpoint, event, message, and logging abstractions.
 - `src/NimBus`: platform configuration and built-in endpoint definitions.
+- `src/NimBus.CommandLine`: `nb` CLI for Azure infrastructure, topology provisioning, and deployment.
 - `src/NimBus.SDK`: publisher/subscriber SDK surface.
 - `src/NimBus.ServiceBus`: Service Bus integration layer.
 - `src/NimBus.MessageStore`: Cosmos DB backed message and state storage.
@@ -39,6 +40,7 @@ Key projects:
 From the repository root:
 
 ```powershell
+dotnet build .\src\NimBus.CommandLine\NimBus.CommandLine.csproj
 dotnet build .\src\NimBus.SDK.slnx
 dotnet build .\src\NimBus.WebApp.sln
 dotnet build .\src\NimBus.sln
@@ -48,6 +50,26 @@ Notes:
 
 - `src/NimBus.WebApp` runs `npm install` and `npm run build` as part of the .NET build.
 - `NSwag.MSBuild` is used directly from NuGet; no local `dotnet-tools.json` manifest is required.
+
+## CLI
+
+The repository includes a `dotnet` tool project named `nb` in `src/NimBus.CommandLine`.
+
+Typical usage from the repository root:
+
+```powershell
+dotnet run --project .\src\NimBus.CommandLine -- topology export
+dotnet run --project .\src\NimBus.CommandLine -- infra apply --solution-id nimbus --environment dev --resource-group <rg>
+dotnet run --project .\src\NimBus.CommandLine -- topology apply --solution-id nimbus --environment dev --resource-group <rg>
+dotnet run --project .\src\NimBus.CommandLine -- deploy apps --solution-id nimbus --environment dev --resource-group <rg>
+dotnet run --project .\src\NimBus.CommandLine -- setup --solution-id nimbus --environment dev --resource-group <rg>
+```
+
+Prerequisites for `nb`:
+
+- Azure CLI installed and available as `az`
+- `az login` already completed for the target subscription
+- rights to deploy resources and applications in the target resource group
 
 ## License
 

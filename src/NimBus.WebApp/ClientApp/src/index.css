@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #ffffff;
+    --foreground: #111827;
+    --card: #ffffff;
+    --card-foreground: #111827;
+    --muted: #f3f4f6;
+    --muted-foreground: #6b7280;
+    --accent: #f3f4f6;
+    --accent-foreground: #111827;
+    --popover: #ffffff;
+    --popover-foreground: #111827;
+    --border: #e5e7eb;
+    --input: #d1d5db;
+    --ring: #ee721a;
+  }
+
+  .dark {
+    --background: #0a0a0a;
+    --foreground: #f9fafb;
+    --card: #171717;
+    --card-foreground: #f9fafb;
+    --muted: #262626;
+    --muted-foreground: #a3a3a3;
+    --accent: #262626;
+    --accent-foreground: #f9fafb;
+    --popover: #171717;
+    --popover-foreground: #f9fafb;
+    --border: #262626;
+    --input: #404040;
+    --ring: #ee721a;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply m-0 p-0 font-sans antialiased bg-background text-foreground;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--muted);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--input);
+    @apply rounded;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+  }
+}
+
+@layer components {
+  /* Status badges */
+  .badge-failed {
+    @apply bg-status-failed text-white;
+  }
+
+  .badge-pending {
+    @apply bg-status-pending text-gray-900;
+  }
+
+  .badge-completed {
+    @apply bg-status-completed text-white;
+  }
+
+  .badge-deferred {
+    @apply bg-status-deferred text-white;
+  }
+
+  .badge-deadlettered {
+    @apply bg-status-deadlettered text-white;
+  }
+
+  .badge-skipped {
+    @apply bg-status-skipped text-white;
+  }
+
+  .badge-unsupported {
+    @apply bg-status-unsupported text-white;
+  }
+}

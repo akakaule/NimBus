@@ -1,0 +1,29 @@
+.loading {
+  display: inline-block;
+  position: relative;
+}
+.loading div {
+  position: absolute;
+  opacity: 1;
+  border-radius: 50%;
+  animation: loading 1s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+}
+.loading div:nth-child(2) {
+  animation-delay: -0.5s;
+}
+@keyframes loading {
+  0% {
+    top: 45%;
+    left: 45%;
+    width: 0;
+    height: 0;
+    opacity: 1;
+  }
+  100% {
+    top: 0px;
+    left: 0px;
+    width: 90%;
+    height: 90%;
+    opacity: 0;
+  }
+}

@@ -1,0 +1,59 @@
+@using NimBus
+@using NimBus.WebApp
+@using NimBus.WebApp.Models
+@using NimBus.WebApp.Services;
+@using NimBus.Core.Endpoints;
+@using NimBus.Core.Events;
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@using Microsoft.Extensions.Configuration;
+@model ResubmitMessageViewModel
+@using Newtonsoft.Json
+@{
+    ViewData["Title"] = Model.EndpointId;
+    Layout = "_Layout";
+}
+
+<h1>Resubmit event</h1>
+@* ReSharper disable once Mvc.ActionNotResolved *@
+<form asp-action="EditForResubmit">
+    <input type="hidden" asp-for="@Model.EndpointId" />
+    <input type="hidden" asp-for="@Model.ErrorMessageId" />
+    <div class="form-group">
+        <label>Original Event</label>
+        @Html.TextAreaFor(
+            m => m.OriginalMessage,
+            new { @class = "form-control", rows = "15", style = "font-family: 'Monospace'", disabled = "true" })
+        <label for="eventType">EventType</label>
+        @Html.DropDownListFor(m => m.SelectedEventType, new SelectList(Model.EventTypes), new { @class = "form-control", name = "eventType", id = ComposeNewMessageViewModel.DropDownElementId })
+        <label>Modified Event</label>
+        @Html.TextAreaFor(
+            m => m.ModifiedMessage,
+            new { @class = "form-control", id = ComposeNewMessageViewModel.MessageElementId, rows = "15", name = "payload", style = "font-family: 'Monospace'" })
+    </div>
+    <button type="submit" class="btn btn-dark btn-sm">Submit</button>
+</form>
+
+<input id="@(ComposeNewMessageViewModel.TemplateDumpElementId)" type="hidden" value="@(JsonConvert.SerializeObject(Model.EventTemplates))" /> 
+@* ReSharper disable once Mvc.ActionNotResolved *@
+@Html.ActionLink("Back", "Details", "Endpoints", new { id = @Model.EndpointId })
+
+@section scripts {
+    <script>
+            function initialize() {
+            const eventTypeDropDown = document.getElementById(ComposeNewMessageViewModel.dropDownElementId);
+            const templatesJson = document.getElementById(ComposeNewMessageViewModel.templateDumpElementId).value;
+            const templates = JSON.parse(templatesJson);
+            console.log(templates);
+            eventTypeDropDown.onchange = () => {
+                const v = document.getElementById(ComposeNewMessageViewModel.dropDownElementId).value;
+                const messageTextArea = document.getElementById(ComposeNewMessageViewModel.messageElementId);
+                console.log(templates[v]);
+                messageTextArea.value = JSON.stringify(templates[v], undefined, 4);
+            };
+        }
+
+        document.addEventListener("DOMContentLoaded", function() {
+            initialize();
+        });
+    </script>
+}

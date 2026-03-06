@@ -1,0 +1,102 @@
+@using NimBus
+@using NimBus.WebApp
+@using NimBus.WebApp.Models
+@using NimBus.WebApp.Services;
+@using NimBus.Core.Endpoints;
+@using NimBus.Core.Events;
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@using Microsoft.Extensions.Configuration;
+
+@{
+    ViewData["Title"] = "Event Grid Debug View";
+    Layout = "_Layout";
+}
+
+<div>
+    <p style="float: left; font-size: 24px;" class="lead">
+        <strong>Event Grid Debug View</strong>
+    </p>
+    <p style="float: right;">
+        <button class="btn btn-primary btn-xs" id="clear-events">
+            Clear
+        </button>
+    </p>
+</div>
+<div style="clear: both;"></div>
+<hr /><br /><br />
+
+<table id="grid-events" class="table table-striped">
+    <thead>
+    <th>&nbsp;</th>
+    <th>Event Type</th>
+    <th>Subject</th>
+    </thead>
+    <tbody id="grid-event-details"></tbody>
+</table>
+
+<link rel="stylesheet"
+      href="//cdn.jsdelivr.net/gh/highlightjs/cdn-release@10.1.2/build/styles/default.min.css">
+<script src="//cdn.jsdelivr.net/gh/highlightjs/cdn-release@10.1.2/build/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/handlebars.js/4.7.6/handlebars.min.js" integrity="sha512-zT3zHcFYbQwjHdKjCu6OMmETx8fJA9S7E6W7kBeFxultf75OPTYUJigEKX58qgyQMi1m1EgenfjMXlRZG8BXaw==" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/3.1.7/signalr.min.js" integrity="sha512-00SWfjArdfIymRqWxQQJQhJLoQQUudL6cV/pJ25Ef6YQhjr+9WeBGrt0Zh0XZaiqF+SEQaoPdUnMW9X+IfZLHA==" crossorigin="anonymous"></script>
+
+<script id="event-template" type="text/x-handlebars-template">
+    <tr data-toggle="collapse" data-target="#event-{{gridEventId}}" class="accordian-toggle">
+        <td>
+            <button class="btn btn-primary btn-xs">
+                Show/Hide
+            </button>
+        </td>
+        <td>{{gridEventType}}</td>
+        <td>{{gridEventSubject}}</td>
+    </tr>
+    <tr class="hiddenRow collapse" id="event-{{gridEventId}}">
+        <td colspan="12">
+            <div class="accordian-body">
+                <pre><code class="nohighlight">{{gridEvent}}</code></pre>
+            </div>
+        </td>
+    </tr>
+</script>
+
+<script>
+    hljs.initHighlightingOnLoad();
+
+    var hubConnection;
+    var clear = function () {
+        $("#grid-events").find("tr:gt(0)").remove();
+        $("#grid-events").hide();
+    }
+    var addEvent = function (id, eventType, subject, eventTime, data) {
+        var context = {
+            gridEventType: eventType,
+            gridEventSubject: subject,
+            gridEventId: id,
+            gridEvent: data
+        };
+        var source = document.getElementById('event-template').innerHTML;
+        var template = Handlebars.compile(source);
+        var html = template(context);
+        $("#grid-events").show();
+        $('#grid-event-details').prepend(html);
+    }
+    var initialize = function () {
+        $("#grid-events").hide();
+        var clearEvents = document.getElementById('clear-events');
+        clearEvents.addEventListener('click', function () {
+            clear();
+        });
+        hubConnection = new signalR.HubConnectionBuilder()
+            .withUrl("/hubs/gridevents")
+            .configureLogging(signalR.LogLevel.Information)
+            .build();
+        hubConnection.start().catch((err) => console.error(err.toString()));
+        hubConnection.on("gridupdate", function (id, eventType, subject, eventTime, data) {
+            addEvent(id, eventType, subject, eventTime, data);
+        });
+    };
+
+    $(document).ready(function () {
+        initialize();
+    });
+</script>

@@ -1,0 +1,131 @@
+﻿@using NimBus
+@using NimBus.WebApp
+@using NimBus.WebApp.Models
+@using NimBus.WebApp.Services;
+@using NimBus.Core.Endpoints;
+@using NimBus.Core.Events;
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@using Microsoft.Extensions.Configuration
+@model MessageViewModel
+@{
+    ViewData["Title"] = "Message Overview";
+    Layout = "_Layout";
+}
+    <ul class="nav nav-tabs" id="myTab" role="tablist">
+        <li class="nav-item">
+            <a class="nav-link active" id="properties-tab" data-toggle="tab" href="#properties" role="tab" aria-controls="properties" aria-selected="true">Properties</a>
+        </li>
+        <li class="nav-item">
+            @if (Model.Actions != null)
+            {
+                <a class="nav-link" id="history-tab" data-toggle="tab" href="#history" role="tab" aria-controls="history" aria-selected="false">History <span class="badge badge-primary">@Model.Actions.Count()</span></a>
+            }
+            else
+            {
+                <a class="nav-link disabled">History (unavailable)</a>
+            }
+        </li>
+        <li class="nav-item">
+            @if (Model.LogEntries != null)
+            {
+                <a class="nav-link" id="log-tab" data-toggle="tab" href="#log" role="tab" aria-controls="log" aria-selected="false">Log <span class="badge badge-primary">@Model.LogEntries.Count()</span></a>
+            }
+            else
+            {
+                <a class="nav-link disabled">Log (unavailable)</a>
+            }
+        </li>
+    </ul>
+
+    <div class="tab-content">
+        <div class="tab-pane active" id="properties" role="tabpanel" aria-labelledby="properties-tab">
+            <h1>Failed Message</h1>
+            @Html.Partial("MessageSummary", Model)
+
+            @{
+
+            <dl class="row">
+                <dt class="col-sm-2">
+                    @Html.DisplayNameFor(model => model.OriginatingMessage.MessageContent.EventContent.EventJson)
+                </dt>
+            </dl>
+            <dl class="row">
+                <dd class="col-sm-2">
+                    @Html.DisplayFor(model => model.OriginatingMessage.MessageContent.EventContent.EventJson)
+                </dd>
+            </dl>
+                }
+            <hr />
+
+            @{
+                var lastException = Model.FailedMessage.MessageContent.ErrorContent.ExceptionStackTrace;
+
+                if (lastException != null)
+                {
+                    <h3>Error Content</h3>
+                    <dl class="row">
+                        <dt class="col-sm-2">
+                            Error Text
+                        </dt>
+                        <dd class="col-sm-10">
+                            @Model.FailedMessage.MessageContent.ErrorContent.ErrorText
+                        </dd>
+                        <dt class="col-sm-2">
+                            Error Type
+                        </dt>
+                        <dd class="col-sm-10">
+                            @Model.FailedMessage.MessageContent.ErrorContent.ErrorType
+                        </dd>
+                        <dt class="col-sm-2">
+                            Exception
+                        </dt>
+                        <dd class="col-sm-10">
+                            @lastException
+                        </dd>
+                        <dt class="col-sm-2">
+                            Exception Source
+                        </dt>
+                        <dd class="col-sm-10">
+                            @Model.FailedMessage.MessageContent.ErrorContent.ExceptionSource
+                        </dd>
+                    </dl>
+                }
+            }
+            <hr />
+            <div>
+                <td>
+                    @* ReSharper disable once Mvc.ActionNotResolved *@
+                    @Html.ActionLink("Resubmit", "Resubmit", "Endpoints",
+                        new {id = Model.FailedMessage.EventId, errorResponseId = Model.FailedMessage.MessageId},
+                        new {@class = "btn btn-primary"})
+                </td>
+                <td>
+                    @* ReSharper disable once Mvc.ActionNotResolved *@
+                    @Html.ActionLink("Resubmit with changes", "EditForResubmit", "Endpoints",
+                        new {id = Model.FailedMessage.EventId, errorResponseId = Model.FailedMessage.MessageId},
+                        new {@class = "btn btn-primary"})
+                </td>
+                <td>
+                    @* ReSharper disable once Mvc.ActionNotResolved *@
+                    @Html.ActionLink("Skip", "Skip", "Endpoints", new {id = Model.FailedMessage.EventId, errorResponseId = Model.FailedMessage.MessageId}, new {@class = "btn btn-primary"})
+                </td>
+                @*<a asp-controller="Status" asp-action="Index" class="btn btn-outline-secondary btn-sm">Back to list</a>*@
+            </div>
+        </div>
+
+            @if (Model.Actions != null)
+            {
+                <div class="tab-pane" id="history" role="tabpanel" aria-labelledby="history-tab">
+                    <h1>History</h1>
+                    @Html.Partial("MessageHistory", Model.Actions)
+                </div>
+            }
+
+            @if (Model.LogEntries != null)
+            {
+                <div class="tab-pane" id="log" role="tabpanel" aria-labelledby="log-tab">
+                    <h1>Log entries</h1>
+                    @Html.Partial("~/Views/Logs/LogEntries.cshtml", Model.LogEntries)
+                </div>
+            }
+    </div>

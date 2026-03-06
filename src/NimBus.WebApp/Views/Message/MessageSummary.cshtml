@@ -1,0 +1,134 @@
+﻿@using NimBus
+@using NimBus.WebApp
+@using NimBus.WebApp.Models
+@using NimBus.WebApp.Services;
+@using NimBus.Core.Endpoints;
+@using NimBus.Core.Events;
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@using Microsoft.Extensions.Configuration
+@model MessageViewModel
+@using NimBus.Core.Messages 
+@{
+    ViewData["Title"] = "Message Summary";
+    Layout = "_Layout";
+}
+<dl class="row">
+    <dt class="col-sm-2">
+        @Html.DisplayNameFor(model => model.FailedMessage.EventId)
+    </dt>
+    <dt class="col-sm-3">
+        @Html.DisplayNameFor(model => model.FailedMessage.MessageId)
+    </dt>
+    <dt class="col-sm-3">
+        @Html.DisplayNameFor(model => model.FailedMessage.OriginatingMessageId)
+    </dt>
+    <dt class="col-sm-3">
+        @Html.DisplayNameFor(model => model.FailedMessage.ParentMessageId)
+    </dt>
+</dl>
+<dl class="row">
+    <dd class="col-sm-2">
+        @Html.DisplayFor(model => model.FailedMessage.EventId)
+    </dd>
+    <dd class="col-sm-3">
+        @Html.DisplayFor(model => model.FailedMessage.MessageId)
+    </dd>
+    <dd class="col-sm-3">
+        @Html.DisplayFor(model => model.FailedMessage.OriginatingMessageId)
+    </dd>
+    <dd class="col-sm-3">
+        @Html.DisplayFor(model => model.FailedMessage.ParentMessageId)
+    </dd>
+</dl>
+<hr />
+<dl class="row">
+    <dt class="col-sm-2">
+        @Html.DisplayNameFor(model => model.FailedMessage.MessageType)
+    </dt>
+    <dt class="col-sm-3">
+        @Html.DisplayNameFor(model => model.FailedMessage.SessionId)
+    </dt>
+    <dt class="col-sm-3">
+        @Html.DisplayNameFor(model => model.FailedMessage.EnqueuedTimeUtc)
+    </dt>
+    <dt class="col-sm-3">
+        @Html.DisplayNameFor(model => model.FailedMessage.CorrelationId)
+    </dt>
+</dl>
+<dl class="row">
+    <dd class="col-sm-2">
+        @switch (Model.FailedMessage.MessageType)
+        {
+            case MessageType.Unknown:
+                <span class="badge badge-dark">@Html.DisplayFor(model => model.FailedMessage.MessageType)</span>
+                break;
+            case MessageType.EventRequest:
+                <span class="badge badge-success">@Html.DisplayFor(model => model.FailedMessage.MessageType)</span>
+                break;
+            case MessageType.ErrorResponse:
+            case MessageType.ResolutionResponse:
+            case MessageType.DeferralResponse:
+                <span class="badge badge-danger">@Html.DisplayFor(model => model.FailedMessage.MessageType)</span>
+                break;
+            case MessageType.ResubmissionRequest:
+            case MessageType.SkipRequest:
+                <span class="badge badge-secondary">@Html.DisplayFor(model => model.FailedMessage.MessageType)</span>
+                break;
+            case MessageType.ContinuationRequest:
+                <span class="badge badge-warning">@Html.DisplayFor(model => model.FailedMessage.MessageType)</span>
+                break;
+            default:
+                break;
+        }
+    </dd>
+    <dd class="col-sm-3">
+        @Html.DisplayFor(model => model.FailedMessage.SessionId)
+    </dd>
+    <dd class="col-sm-3">
+        @Html.DisplayFor(model => model.FailedMessage.EnqueuedTimeUtc)
+    </dd>
+    <dd class="col-sm-3">
+        @Html.DisplayFor(model => model.FailedMessage.CorrelationId)
+    </dd>
+</dl>
+<hr />
+<dl class="row">
+    <dt class="col-sm-2">
+        @Html.DisplayNameFor(model => model.FailedMessage.From)
+    </dt>
+    <dt class="col-sm-3">
+        @Html.DisplayNameFor(model => model.FailedMessage.To)
+    </dt>
+    <dt class="col-sm-3">
+        @Html.DisplayNameFor(model => model.FailedMessage.EndpointRole)
+    </dt>
+    <dt class="col-sm-2">
+        @Html.DisplayNameFor(model => model.FailedMessage.EndpointId)
+    </dt>
+</dl>
+<dl class="row">
+    <dd class="col-sm-2">
+        @Html.DisplayFor(model => model.FailedMessage.From)
+    </dd>
+    <dd class="col-sm-3">
+        @Html.DisplayFor(model => model.FailedMessage.To)
+    </dd>
+    <dd class="col-sm-3">
+        @Html.DisplayFor(model => model.FailedMessage.EndpointRole)
+    </dd>
+    <dd class="col-sm-2">
+        @Html.DisplayFor(model => model.FailedMessage.EndpointId)
+    </dd>
+</dl>
+<hr />
+<dl class="row">
+    <dt class="col-sm-2">
+        @Html.DisplayNameFor(model => model.OriginatingMessage.MessageContent.EventContent.EventTypeId)
+    </dt>
+</dl>
+<dl class="row">
+    <dd class="col-sm-2">
+        @Html.DisplayFor(model => model.OriginatingMessage.MessageContent.EventContent.EventTypeId)
+    </dd>
+</dl>
+<hr />

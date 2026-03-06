@@ -1,0 +1,57 @@
+﻿@using NimBus
+@using NimBus.WebApp
+@using NimBus.WebApp.Models
+@using NimBus.WebApp.Services;
+@using NimBus.Core.Endpoints;
+@using NimBus.Core.Events;
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@using Microsoft.Extensions.Configuration
+@model IEnumerable<NimBus.MessageStore.MessageEntity>
+@using System.Globalization
+@{
+    ViewData["Title"] = "Message History";
+    Layout = "_Layout";
+}
+<ul class="list-group">
+    @foreach (var item in Model)
+    {
+        <li class="list-group-item">
+            <h4>@Html.DisplayFor(model => item.MessageType)</h4>
+            <small>
+                <span>@item.EnqueuedTimeUtc.ToString("dd/MM/yyyy h:mm:ss tt", new CultureInfo("da-DK"))</span>
+            </small>
+            <dl class="row">
+                <dt class="col-sm-3">
+                    @*@Html.DisplayNameFor(model => item.Description)*@
+                </dt>
+                <dd class="col-sm-9">
+                    @*@Html.DisplayFor(model => item.Description)*@
+                </dd>
+                <dt class="col-sm-3">
+                    @*@Html.DisplayNameFor(model => item.Comment)*@
+                </dt>
+                <dd class="col-sm-9">
+                    @*@Html.DisplayFor(model => item.Comment)*@
+                </dd>
+                <dt class="col-sm-3">
+                    Exception
+                </dt>
+                <dd class="col-sm-9">
+                    @Html.DisplayFor(model => item.MessageContent.ErrorContent.ExceptionStackTrace)
+                </dd>
+                <dt class="col-sm-3">
+                    @Html.DisplayNameFor(model => item.From)
+                </dt>
+                <dd class="col-sm-9">
+                    @Html.DisplayFor(model => item.From)
+                </dd>
+                <dt class="col-sm-3">
+                    @Html.DisplayNameFor(model => item.To)
+                </dt>
+                <dd class="col-sm-9">
+                    @Html.DisplayFor(model => item.To)
+                </dd>
+            </dl>
+        </li>
+    }
+</ul>

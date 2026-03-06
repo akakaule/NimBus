@@ -1,0 +1,59 @@
+{
+  "UserConfig": {
+    "Namespaces": [
+      {
+        "Name": "dis-servicebus",
+        "Topics": [
+          {
+            "Name": "resolver",
+            "Properties": {
+              "RequiresDuplicateDetection": false,
+              "DefaultMessageTimeToLive": "P14D",
+              "MaxSizeInMegabytes": 1024
+            },
+            "Subscriptions": [
+              {
+                "Name": "resolver",
+                "Properties": {
+                  "RequiresSession": true,
+                  "DefaultMessageTimeToLive": "P14D",
+                  "LockDuration": "PT5M",
+                  "MaxDeliveryCount": 10
+                }
+              }
+            ]
+          },
+          {
+            "Name": "manager",
+            "Properties": {
+              "RequiresDuplicateDetection": false,
+              "DefaultMessageTimeToLive": "P14D",
+              "MaxSizeInMegabytes": 1024
+            },
+            "Subscriptions": [
+              {
+                "Name": "manager",
+                "Properties": {
+                  "RequiresSession": false,
+                  "DefaultMessageTimeToLive": "P14D",
+                  "LockDuration": "PT1M",
+                  "MaxDeliveryCount": 10
+                }
+              }
+            ]
+          }
+        ],
+        "Queues": [
+          {
+            "Name": "eg-notify-queue",
+            "Properties": {
+              "DefaultMessageTimeToLive": "P14D",
+              "LockDuration": "PT1M",
+              "MaxDeliveryCount": 10
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

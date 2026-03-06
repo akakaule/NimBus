@@ -1,0 +1,89 @@
+﻿@using NimBus
+@using NimBus.WebApp
+@using NimBus.WebApp.Models
+@using NimBus.WebApp.Services;
+@using NimBus.Core.Endpoints;
+@using NimBus.Core.Events;
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@using Microsoft.Extensions.Configuration
+@model IEnumerable<NimBus.WebApp.Services.ApplicationInsights.LogEntry>
+@using System.Globalization
+
+@{
+    ViewData["Title"] = "Log Entries";
+    Layout = "_Layout";
+}
+
+<ul class="list-group">
+    @{
+        var i = 0;
+    }
+
+    @foreach (var item in Model)
+    {
+        i++;
+
+        <li class="list-group-item">
+            <div>
+                <small>
+                    @switch (item.SeverityLevel)
+                    {
+                        case Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Verbose:
+                            <span class="badge badge-secondary">@item.SeverityLevel</span>
+                            break;
+                        case Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Information:
+                            <span class="badge badge-info">@item.SeverityLevel</span>
+                            break;
+                        case Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Warning:
+                            <span class="badge badge-warning">@item.SeverityLevel</span>
+                            break;
+                        case Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Error:
+                            <span class="badge badge-danger">@item.SeverityLevel</span>
+                            break;
+                        case Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Critical:
+                            <span class="badge badge-danger">@item.SeverityLevel</span>
+                            break;
+                        default:
+                            break;
+                    }
+                <span>
+                    @item.Timestamp.ToString("dd/MM/yyyy h:mm:ss tt", new CultureInfo("da-DK"))
+                            </span>
+                    by <strong>@Html.DisplayFor(model => item.To)</strong>
+                </small>
+                <p>
+                    @Html.DisplayFor(model => item.Text)
+                </p>
+                <div class="collapse" id="expand-@i">
+                    <dl>
+                        <dt>EventType</dt>
+                        <dd>@(item.EventType ?? "-")</dd>
+                        <dt>EventId</dt>
+                        <dd>@(item.EventId ?? "-")</dd>
+                        <dt>CorrelationId</dt>
+                        <dd>@(item.CorrelationId ?? "-")</dd>
+                        <dt>Published By</dt>
+                        <dd>@(item.From)</dd>
+                        <dt>Payload</dt>
+                        <dd>@(item.Payload ?? "-")</dd>
+                        <dt>Message Type</dt>
+                        <dd>@(item.MessageType ?? "-")</dd>
+                        <dt>Session Id</dt>
+                        <dd>@(item.SessionId ?? "-")</dd>
+                        <dt>Message Id</dt>
+                        <dd>@(item.MessageId ?? "-")</dd>
+                        <dt>Is Deferred</dt>
+                        <dd>@(item.IsDeferred)</dd>
+                    </dl>
+                </div>
+                <div class="d-flex flex-row justify-content-center">
+                    <div class="p-2" style="padding:0 !important;">
+                        <a class="btn btn-link" data-toggle="collapse" href="#expand-@i" role="button" aria-expanded="false" aria-controls="expand-@i">
+                            <small>Show/hide details</small>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </li>
+    }
+</ul>

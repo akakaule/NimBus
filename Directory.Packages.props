@@ -1,0 +1,101 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+    <NoWarn>$(NoWarn);NU1507</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="8.1.1" />
+    <PackageVersion Include="AspNetCore.HealthChecks.System" Version="9.0.0" />
+    <PackageVersion Include="DocumentFormat.OpenXml" Version="3.4.1" />
+    <PackageVersion Include="ErikEJ.DacFX.SqlServer.Rules" Version="3.1.0" />
+    <PackageVersion Include="ErikEJ.DacFX.TSQLSmellSCA" Version="3.0.0" />
+    <PackageVersion Include="FluentResults" Version="3.16.0" />
+    <PackageVersion Include="FluentValidation" Version="12.1.1" />
+    <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
+    <!-- Pin to 1.8.18 due to service hang https://github.com/HangfireIO/Hangfire/issues/2517 -->
+    <PackageVersion Include="Hangfire.AspNetCore" Version="[1.8.18, 1.8.19)" />
+    <PackageVersion Include="Hangfire.SqlServer" Version="[1.8.18, 1.8.19)" />
+    <PackageVersion Include="IP.HTTP.Bong" Version="3.2.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.Negotiate" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.4" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.2" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.Abstractions" Version="10.0.2" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.2" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.3" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="10.0.2" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.2" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.3" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" Version="10.0.2" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.3" />
+    <PackageVersion Include="Microsoft.FluentUI.AspNetCore.Components" Version="4.12.0" />
+    <PackageVersion Include="Microsoft.FluentUI.AspNetCore.Components.Emoji" Version="4.13.2" />
+    <PackageVersion Include="Microsoft.FluentUI.AspNetCore.Components.Icons" Version="4.13.2" />
+    <PackageVersion Include="NBomber" Version="6.2.0" />
+    <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.0" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.SqlClient" Version="1.14.0-beta.1" />
+    <PackageVersion Include="Serilog" Version="4.3.1" />
+    <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.9.0" />
+    <PackageVersion Include="Serilog.Enrichers.Thread" Version="4.0.0" />
+    <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageVersion Include="Serilog.Sinks.Map" Version="2.0.0" />
+    <PackageVersion Include="Spire.Doc" Version="13.12.6" />
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.0" />
+    <PackageVersion Include="Swashbuckle.AspNetCore.Annotations" Version="10.1.0" />
+    <PackageVersion Include="System.DirectoryServices" Version="10.0.2" />
+    <PackageVersion Include="System.ServiceModel.Federation" Version="10.0.652802" />
+    <PackageVersion Include="System.ServiceModel.NetTcp" Version="10.0.652802" />
+    <!-- Test project specific references -->
+    <PackageVersion Include="AutoFixture.Xunit3" Version="4.19.0" />
+    <PackageVersion Include="Atc.Test" Version="1.1.18" />
+    <PackageVersion Include="Bogus" Version="35.6.5" />
+    <!-- Pin to 7.x due to licensing issues -->
+    <PackageVersion Include="FluentAssertions" Version="[7.2.0, 8.0.0)" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.2" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.Testing" Version="10.1.0" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.3.2" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageVersion Include="NSubstitute" Version="5.3.0" />
+    <PackageVersion Include="NSubstitute.Analyzers.CSharp" Version="1.0.17" />
+    <PackageVersion Include="Respawn" Version="6.2.1" />
+    <PackageVersion Include="xunit.v3.mtp-v2" Version="3.2.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <!-- Proxy specific references -->
+    <PackageVersion Include="Microsoft.AspNetCore.HeaderPropagation" Version="8.0.22" />
+    <PackageVersion Include="Moq" Version="4.20.72" />
+    <PackageVersion Include="Serilog.Sinks.EventLog" Version="4.0.0" />
+    <PackageVersion Include="SoapCore" Version="1.2.1.12" />
+    <PackageVersion Include="System.Data.DataSetExtensions" Version="4.5.0" />
+    <!-- WF.SOAPClients specific references -->
+    <PackageVersion Include="McMaster.Extensions.CommandLineUtils" Version="4.1.1" />
+    <PackageVersion Include="MSTest.TestAdapter" Version="2.2.10" />
+    <PackageVersion Include="MSTest.TestFramework" Version="2.2.10" />
+    <PackageVersion Include="System.Text.Json" Version="10.0.2" />
+    <!-- .NET Aspire specific references -->
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.1.0" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.1.0" />
+    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.SqlDatabaseProjects" Version="13.1.0" />
+    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.SqlServer.Extensions" Version="13.1.0" />
+    <!-- Playwright E2E test references -->
+    <PackageVersion Include="Microsoft.Playwright" Version="1.52.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Shared code analyzers used for all projects in the solution -->
+    <GlobalPackageReference Include="AsyncFixer" Version="1.6.0" />
+    <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.302" />
+    <GlobalPackageReference Include="SecurityCodeScan.VS2019" Version="5.6.7" />
+    <GlobalPackageReference Include="SonarAnalyzer.CSharp" Version="10.19.0.132793" />
+    <GlobalPackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556" />
+  </ItemGroup>
+</Project>

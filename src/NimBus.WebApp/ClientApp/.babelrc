@@ -1,0 +1,14 @@
+{
+    "presets": [
+        "@emotion/babel-preset-css-prop",
+        "razzle"
+    ],
+    "plugins": [
+        "emotion",
+        "@babel/proposal-class-properties",
+        "@babel/proposal-object-rest-spread",
+        "@babel/plugin-syntax-dynamic-import",
+        "@babel/plugin-transform-modules-commonjs",
+        "@babel/plugin-proposal-nullish-coalescing-operator"
+    ]
+}

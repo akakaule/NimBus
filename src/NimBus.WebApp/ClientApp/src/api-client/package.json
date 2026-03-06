@@ -1,0 +1,19 @@
+{
+  "name": "eet-dis-management-sdk",
+  "version": "0.0.0",
+  "description": "Webclient for integrating with the ESB Management API",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean",
+    "refreshVSToken": "vsts-npm-auth -config .npmrc"
+  },
+  "devDependencies": {
+    "@types/node": "^8.0.14",
+    "typescript": "^3.2.2"
+  },
+  "dependencies": {
+    "fetch": "^1.1.0",
+    "moment": "^2.24.0"
+  }
+}

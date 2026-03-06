@@ -1,0 +1,263 @@
+﻿@using NimBus
+@using NimBus.WebApp
+@using NimBus.WebApp.Models
+@using NimBus.WebApp.Services;
+@using NimBus.Core.Endpoints;
+@using NimBus.Core.Events;
+@using NimBus.MessageStore
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@using Microsoft.Extensions.Configuration
+@model EndpointViewModel;
+@{
+    ViewData["Title"] = Model.Endpoint.Name;
+    Layout = "_Layout";
+}
+
+<h1>
+    <span class="text-info">
+        Endpoint:
+    </span>
+    @Model.Endpoint.Name
+</h1>
+<p>
+    Namespace: <strong>@Model.Endpoint.Namespace</strong>
+</p>
+<p>
+    SystemId:
+    <strong>
+        @if (Model.Endpoint.System == null)
+        {
+            <span>N/A</span>
+        }
+        else
+        {
+            <span>@Model.Endpoint.System.SystemId</span>
+        }
+    </strong>
+</p>
+<p class="lead">
+    @Model.Endpoint.Description
+</p>
+
+<h3>
+    Current state
+</h3>
+@if (Model.EndpointState == null)
+{
+    <p>
+        Not available.
+    </p>
+}
+else
+{
+    if (!Model.EndpointState.GetAllUnresolvedEvents.Any())
+    {
+        <p style="color:green;">
+            <i class="fas fa-check"></i>
+            @Model.Endpoint.Name has no unresolved events.
+        </p>
+    }
+    else
+    {
+        var failedEvents = Model.EndpointState.EnrichedUnresolvedEvents.Where(e => e.ResolutionStatus == NimBus.MessageStore.ResolutionStatus.Failed);
+        if (failedEvents.Any())
+        {
+            <p style="color:red;">
+                <i class="fas fa-times"></i>
+                @Model.Endpoint.Name has unresolved errors:
+            </p>
+            <table class="table table-borderless">
+                <thead>
+                    <tr>
+                        <th style="color:red;">
+                            <i class="fas fa-times"></i>
+                            Event Id
+                        </th>
+                        <th>Session Id</th>
+                        <th>Pending events</th>
+                        <th>Deferred events</th>
+                        <th>
+                            Endpoint role
+                        </th>
+                        <th>Event type</th>
+                        <th>Enqueued Time Utc</th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var unresolvedEvent in failedEvents)
+                    {
+                        var eventType = Model.OriginatingMessageContents[unresolvedEvent.OriginatingMessageId].EventContent.EventTypeId;
+                        var enqueuedTime = unresolvedEvent.UpdatedAt;
+                        <tr>
+                            @* ReSharper disable once Mvc.ControllerNotResolved *@
+                            <td><a asp-controller="Message" asp-action="Index" asp-route-id="@unresolvedEvent.EventId" asp-route-endpoint="@Model.Endpoint.Name">@unresolvedEvent.EventId</a></td>
+                            <td>@unresolvedEvent.SessionId</td>
+                            <td>@Model.EndpointState.EnrichedUnresolvedEvents.Count(e => e.SessionId == unresolvedEvent.SessionId && e.ResolutionStatus == ResolutionStatus.Pending)</td>
+                            <td>@Model.EndpointState.EnrichedUnresolvedEvents.Count(e => e.SessionId == unresolvedEvent.SessionId && e.ResolutionStatus == ResolutionStatus.Deferred)</td>
+                            <td>@unresolvedEvent.EndpointRole</td>
+                            <td>@eventType</td>
+                            <td>@enqueuedTime</td>
+                            <td>
+                                @* ReSharper disable once Mvc.ActionNotResolved *@
+                            @Html.ActionLink("Resubmit", "Resubmit", "Endpoints",
+                                new { id = unresolvedEvent.EventId, errorResponseId = unresolvedEvent.LastMessageId },
+                                new { @class = "btn btn-primary" })
+                            </td>
+                            <td>
+                                @* ReSharper disable once Mvc.ActionNotResolved *@
+                                @Html.ActionLink("Resubmit with changes", "EditForResubmit", "Endpoints",
+                                    new {id = unresolvedEvent.EventId, errorResponseId = unresolvedEvent.LastMessageId},
+                                    new {@class = "btn btn-primary btn-sm"})
+                            </td>
+                            <td>
+                                @* ReSharper disable once Mvc.ActionNotResolved *@
+                                @Html.ActionLink("Skip", "Skip", "Endpoints", new {id = unresolvedEvent.EventId, errorResponseId = unresolvedEvent.LastMessageId}, new {@class = "btn btn-primary"})
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+
+        var sessionGrouping = Model.EndpointState.EnrichedUnresolvedEvents.GroupBy(e => e.SessionId);
+        if (sessionGrouping.Count() > 0)
+        {
+            var pendingEventCount = Model.EndpointState.EnrichedUnresolvedEvents.Count(e => e.ResolutionStatus == ResolutionStatus.Pending);
+            var deferredEventCount = Model.EndpointState.EnrichedUnresolvedEvents.Count(e => e.ResolutionStatus == ResolutionStatus.Deferred);
+            var failedEventCount = Model.EndpointState.EnrichedUnresolvedEvents.Count(e => e.ResolutionStatus == ResolutionStatus.Failed);
+            <p class="text-info">
+                <i class="fas fa-times"></i>
+                @Model.Endpoint.Name has @sessionGrouping.Count() active sessions, with a total of @failedEventCount failed events, @pendingEventCount pending events and @deferredEventCount deferred events.
+            </p>
+
+            <table class="table table-bordered">
+                <thead>
+                <th>SessionId</th>
+                <th>Total unresolved</th>
+                <th>Failed events</th>
+                <th>Pending events</th>
+                <th>Deferred events</th>
+                </thead>
+                <tbody>
+                    @foreach (var grouping in sessionGrouping)
+                    {
+                        var failed = grouping.Count(e => e.ResolutionStatus == ResolutionStatus.Failed);
+                        var pending = grouping.Count(e => e.ResolutionStatus == ResolutionStatus.Pending);
+                        var deferred = grouping.Count(e => e.ResolutionStatus == ResolutionStatus.Deferred);
+                        <tr>
+                            <td>@grouping.Key</td>
+                            <td>@(failed + pending + deferred)</td>
+                            <td>@failed</td>
+                            <td>@pending</td>
+                            <td>@deferred</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p style="color:green;">
+                <i class="fas fa-check"></i>
+                @Model.Endpoint.Name has no active sessions.
+            </p>
+        }
+
+    }
+}
+@* ReSharper disable once Mvc.ActionNotResolved *@
+@Html.ActionLink("Compose new event", "ComposeNew", "Endpoints", new { id = @Model.Endpoint.Name }, new { @class = "btn btn-primary" })
+
+@{
+    <br />
+    <h3>
+        Previously failed events
+    </h3>
+    <table class="table table-bordered">
+        <thead>
+        <th>EventId</th>
+        <th>Enqueued TimeUtc</th>
+        <th>SessionId</th>
+        </thead>
+        <tbody>
+            @foreach (var failedEvent in Model.FailedEvents)
+            {
+                <tr>
+                    @* ReSharper disable once Mvc.ControllerNotResolved *@
+                    <td><a asp-controller="Message" asp-action="Index" asp-route-id="@failedEvent.EventId" asp-route-endpoint="@Model.Endpoint.Name">@failedEvent.EventId</a></td>
+                    <td>@failedEvent.EnqueuedTimeUtc</td>
+                    <td>@failedEvent.SessionId</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+}
+
+<h3>Produces</h3>
+@{
+    var producesNamespaceNames = Model.Endpoint.EventTypesProduced.OrderBy(ep => ep.Namespace).Select(ep => ep.Namespace).Distinct();
+    if (!producesNamespaceNames.Any())
+    {
+        <p>@Model.Endpoint.Name does not produce any events.</p>
+    }
+
+    foreach (var namespaceName in producesNamespaceNames)
+    {
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>
+                        @namespaceName
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var eventType in Model.Endpoint.EventTypesProduced.Where(ep => ep.Namespace.Equals(namespaceName, StringComparison.OrdinalIgnoreCase)).OrderBy(ep => ep.Name))
+                {
+                    <tr>
+                        <td>
+                            @Html.ActionLink(eventType.Name, "Details", "EventTypes", new { id = eventType.Id })
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+<h3>Consumes</h3>
+@{
+    var consumesNamespaceNames = Model.Endpoint.EventTypesConsumed.OrderBy(ep => ep.Namespace).Select(ep => ep.Namespace).Distinct();
+    if (!consumesNamespaceNames.Any())
+    {
+        <p>@Model.Endpoint.Name does not consume any events.</p>
+    }
+
+    foreach (var namespaceName in consumesNamespaceNames)
+    {
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>
+                        @namespaceName
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var eventType in Model.Endpoint.EventTypesConsumed.Where(ep => ep.Namespace.Equals(namespaceName, StringComparison.OrdinalIgnoreCase)).OrderBy(ep => ep.Name))
+                {
+                    <tr>
+                        <td>
+                            @Html.ActionLink(eventType.Name, "Details", "EventTypes", new { id = eventType.Id })
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}

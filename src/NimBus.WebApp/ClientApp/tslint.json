@@ -1,0 +1,16 @@
+{
+  "extends": [
+    "tslint:latest",
+    "tslint-react",
+    "tslint-config-prettier"
+  ],
+  "defaultSeverity": "warning",
+  "rules": {
+    "max-classes-per-file": null,
+    "no-var-requires": false,
+    "no-submodule-imports": false,
+    "no-implicit-dependencies": false,
+    "no-console": false,
+    "jsx-no-lambda": false
+  }
+}

@@ -1,0 +1,95 @@
+.Header {
+  font-family: var(--chakra-fonts-heading);
+  font-weight: var(--chakra-fontWeights-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--chakra-letterSpacings-wider);
+  text-align: start;
+  -webkit-padding-start: var(--chakra-space-6);
+  padding-inline-start: var(--chakra-space-6);
+  -webkit-padding-end: var(--chakra-space-6);
+  padding-inline-end: var(--chakra-space-6);
+  padding-top: var(--chakra-space-3);
+  padding-bottom: var(--chakra-space-3);
+  line-height: var(--chakra-lineHeights-4);
+  font-size: var(--chakra-fontSizes-xs);
+  color: var(--muted-foreground);
+  border-bottom: 1px solid var(--border);
+  border-color: var(--border);
+}
+
+.Cell {
+  text-align: start;
+  -webkit-padding-start: var(--chakra-space-6);
+  padding-inline-start: var(--chakra-space-6);
+  -webkit-padding-end: var(--chakra-space-6);
+  padding-inline-end: var(--chakra-space-6);
+  padding-top: var(--chakra-space-4);
+  padding-bottom: var(--chakra-space-4);
+  line-height: var(--chakra-lineHeights-5);
+  border-bottom: 1px solid var(--border);
+  border-color: var(--border);
+}
+
+.heart-rate {
+  max-width: 90px;
+  height: 71.5px;
+  position: relative;
+  margin: 0px auto;
+  top: 5px;
+  overflow: hidden;
+}
+
+.fade-in {
+  position: absolute;
+  width: 100%;
+  height: 71.5px;
+  background-color: var(--background);
+  top: 0;
+  right: 0;
+  animation: heartRateIn 4.5s linear infinite;
+  animation-delay: 1500ms;
+  /* Gia na katalavw ti ginetai des auto
+        border:1px solid red;
+        */
+}
+
+.fade-out {
+  position: absolute;
+  width: 120%;
+  height: 71.5px;
+  top: 0;
+  left: -120%;
+  animation: heartRateOut 4.5s linear infinite;
+  animation-delay: 1500ms;
+  background: var(--background);
+  background: linear-gradient(
+    to right,
+    var(--background) 0%,
+    var(--background) 80%,
+    transparent 100%
+  );
+}
+
+@keyframes heartRateIn {
+  0% {
+    width: 100%;
+  }
+  50% {
+    width: 0%;
+  }
+  100% {
+    width: 0;
+  }
+}
+
+@keyframes heartRateOut {
+  0% {
+    left: -120%;
+  }
+  30% {
+    left: -120%;
+  }
+  100% {
+    left: 0;
+  }
+}

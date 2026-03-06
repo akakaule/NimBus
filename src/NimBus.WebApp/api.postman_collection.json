@@ -1,0 +1,383 @@
+{
+    "item": [
+        {
+            "id": "f7a739e5-1568-4403-a6dc-1560d15289e3",
+            "name": "api",
+            "item": [
+                {
+                    "id": "1557c321-2cf7-4993-9b9b-53b83846a6d4",
+                    "name": "endpointstatus",
+                    "item": [
+                        {
+                            "id": "a0b28460-11ed-42da-980d-7ee69b9caf50",
+                            "name": "Get current status of all endpoints",
+                            "request": {
+                                "name": "Get current status of all endpoints",
+                                "description": {
+                                    "content": "Return an array of endpoint statuses.",
+                                    "type": "text/plain"
+                                },
+                                "url": {
+                                    "path": [
+                                        "api",
+                                        "endpointstatus"
+                                    ],
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "query": [],
+                                    "variable": []
+                                },
+                                "method": "GET",
+                                "auth": null
+                            },
+                            "response": [
+                                {
+                                    "id": "4dc75658-e0b8-4afa-af33-f06a63eb16e0",
+                                    "name": "Successfully returned endpoint statuses",
+                                    "originalRequest": {
+                                        "url": {
+                                            "path": [
+                                                "api",
+                                                "endpointstatus"
+                                            ],
+                                            "host": [
+                                                "{{baseUrl}}"
+                                            ],
+                                            "query": [],
+                                            "variable": []
+                                        },
+                                        "method": "GET",
+                                        "body": {}
+                                    },
+                                    "status": "OK",
+                                    "code": 200,
+                                    "header": [
+                                        {
+                                            "key": "Content-Type",
+                                            "value": "application/json"
+                                        }
+                                    ],
+                                    "body": "[\n {\n  \"endpointId\": \"laboris\",\n  \"unresolvedEvents\": \"sunt ut\"\n },\n {\n  \"endpointId\": \"labore mollit id reprehenderit\",\n  \"unresolvedEvents\": \"dolore pariatur ipsum ut\"\n }\n]",
+                                    "cookie": [],
+                                    "_postman_previewlanguage": "json"
+                                }
+                            ],
+                            "event": []
+                        },
+                        {
+                            "id": "c9dc7d6f-78ee-4c81-802f-708a89016aa7",
+                            "name": "Get endpoint status",
+                            "request": {
+                                "name": "Get endpoint status",
+                                "description": {
+                                    "content": "Return the endpoint status for given endpointName (dictionary).",
+                                    "type": "text/plain"
+                                },
+                                "url": {
+                                    "path": [
+                                        "api",
+                                        "endpointstatus",
+                                        ":endpointName"
+                                    ],
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "query": [],
+                                    "variable": [
+                                        {
+                                            "description": "(Required) Name of the endpoint",
+                                            "type": "any",
+                                            "value": "<string>",
+                                            "key": "endpointName"
+                                        }
+                                    ]
+                                },
+                                "method": "GET",
+                                "auth": null
+                            },
+                            "response": [
+                                {
+                                    "id": "4b667e60-c4f8-4632-9faa-3f63d82bdeab",
+                                    "name": "Dictionary of all the Unresolved Events for the endpoint, or an empty object if no Unresolved Events.",
+                                    "originalRequest": {
+                                        "url": {
+                                            "path": [
+                                                "api",
+                                                "endpointstatus",
+                                                ":endpointName"
+                                            ],
+                                            "host": [
+                                                "{{baseUrl}}"
+                                            ],
+                                            "query": [],
+                                            "variable": [
+                                                {
+                                                    "type": "any",
+                                                    "key": "endpointName"
+                                                }
+                                            ]
+                                        },
+                                        "method": "GET",
+                                        "body": {}
+                                    },
+                                    "status": "OK",
+                                    "code": 200,
+                                    "header": [
+                                        {
+                                            "key": "Content-Type",
+                                            "value": "application/json"
+                                        }
+                                    ],
+                                    "body": "\"aliqua Duis commodo ex\"",
+                                    "cookie": [],
+                                    "_postman_previewlanguage": "json"
+                                },
+                                {
+                                    "id": "17f0e84f-3e0b-406a-aefd-65659b347d71",
+                                    "name": "Endpoint not found",
+                                    "originalRequest": {
+                                        "url": {
+                                            "path": [
+                                                "api",
+                                                "endpointstatus",
+                                                ":endpointName"
+                                            ],
+                                            "host": [
+                                                "{{baseUrl}}"
+                                            ],
+                                            "query": [],
+                                            "variable": [
+                                                {
+                                                    "type": "any",
+                                                    "key": "endpointName"
+                                                }
+                                            ]
+                                        },
+                                        "method": "GET",
+                                        "body": {}
+                                    },
+                                    "status": "Not Found",
+                                    "code": 404,
+                                    "header": [
+                                        {
+                                            "key": "Content-Type",
+                                            "value": "text/string"
+                                        }
+                                    ],
+                                    "body": "cupidatat dolor sunt",
+                                    "cookie": [],
+                                    "_postman_previewlanguage": "text"
+                                }
+                            ],
+                            "event": []
+                        }
+                    ],
+                    "event": []
+                },
+                {
+                    "id": "0572e05d-cd27-48b2-acf3-1938d4a4e7d9",
+                    "name": "storagehook",
+                    "item": [
+                        {
+                            "id": "2194524e-061e-4ba7-8576-4affc95d48c5",
+                            "name": "Storage webhook configuration options",
+                            "request": {
+                                "name": "Storage webhook configuration options",
+                                "description": {},
+                                "url": {
+                                    "path": [
+                                        "api",
+                                        "storagehook"
+                                    ],
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "query": [],
+                                    "variable": []
+                                },
+                                "header": [
+                                    {
+                                        "description": "",
+                                        "key": "WebHook-Request-Origin",
+                                        "value": "<string>"
+                                    },
+                                    {
+                                        "description": "",
+                                        "key": "WebHook-Request-Callback",
+                                        "value": "<string>"
+                                    },
+                                    {
+                                        "description": "",
+                                        "key": "WebHook-Request-Rate",
+                                        "value": "<string>"
+                                    }
+                                ],
+                                "method": "OPTIONS",
+                                "auth": null
+                            },
+                            "response": [
+                                {
+                                    "id": "9881ae8a-8358-4db2-8a0e-eb6d46b43832",
+                                    "name": "OK",
+                                    "originalRequest": {
+                                        "url": {
+                                            "path": [
+                                                "api",
+                                                "storagehook"
+                                            ],
+                                            "host": [
+                                                "{{baseUrl}}"
+                                            ],
+                                            "query": [],
+                                            "variable": []
+                                        },
+                                        "header": [
+                                            {
+                                                "description": "",
+                                                "key": "WebHook-Request-Origin",
+                                                "value": "<string>"
+                                            },
+                                            {
+                                                "description": "",
+                                                "key": "WebHook-Request-Callback",
+                                                "value": "<string>"
+                                            },
+                                            {
+                                                "description": "",
+                                                "key": "WebHook-Request-Rate",
+                                                "value": "<string>"
+                                            }
+                                        ],
+                                        "method": "OPTIONS",
+                                        "body": {}
+                                    },
+                                    "status": "OK",
+                                    "code": 200,
+                                    "header": [
+                                        {
+                                            "description": "",
+                                            "key": "Webhook-Allowed-Rate",
+                                            "value": "cupidatat dolor sunt"
+                                        },
+                                        {
+                                            "description": "",
+                                            "key": "Webhook-Allowed-Origin",
+                                            "value": "cupidatat dolor sunt"
+                                        },
+                                        {
+                                            "key": "Content-Type",
+                                            "value": "text/plain"
+                                        }
+                                    ],
+                                    "body": "",
+                                    "cookie": [],
+                                    "_postman_previewlanguage": "text"
+                                }
+                            ],
+                            "event": []
+                        },
+                        {
+                            "id": "ffdefac7-8740-4a03-9b3c-38969b5d6276",
+                            "name": "Post EventGrid event",
+                            "request": {
+                                "name": "Post EventGrid event",
+                                "description": {},
+                                "url": {
+                                    "path": [
+                                        "api",
+                                        "storagehook"
+                                    ],
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "query": [],
+                                    "variable": []
+                                },
+                                "header": [
+                                    {
+                                        "description": "",
+                                        "key": "aeg-event-type",
+                                        "value": "<string>"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "method": "POST",
+                                "auth": null,
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "[\n    \"<object>\",\n    \"<object>\"\n]"
+                                }
+                            },
+                            "response": [
+                                {
+                                    "id": "88252455-ac0c-4d55-86d8-cb79f4e58c8a",
+                                    "name": "OK",
+                                    "originalRequest": {
+                                        "url": {
+                                            "path": [
+                                                "api",
+                                                "storagehook"
+                                            ],
+                                            "host": [
+                                                "{{baseUrl}}"
+                                            ],
+                                            "query": [],
+                                            "variable": []
+                                        },
+                                        "header": [
+                                            {
+                                                "description": "",
+                                                "key": "aeg-event-type",
+                                                "value": "<string>"
+                                            }
+                                        ],
+                                        "method": "POST",
+                                        "body": {
+                                            "mode": "raw",
+                                            "raw": "[\n    \"<object>\",\n    \"<object>\"\n]"
+                                        }
+                                    },
+                                    "status": "OK",
+                                    "code": 200,
+                                    "header": [
+                                        {
+                                            "key": "Content-Type",
+                                            "value": "text/plain"
+                                        }
+                                    ],
+                                    "body": "",
+                                    "cookie": [],
+                                    "_postman_previewlanguage": "text"
+                                }
+                            ],
+                            "event": []
+                        }
+                    ],
+                    "event": []
+                }
+            ],
+            "event": []
+        }
+    ],
+    "event": [],
+    "variable": [
+        {
+            "id": "baseUrl",
+            "type": "string",
+            "value": "https://localhost:5001"
+        }
+    ],
+    "info": {
+        "_postman_id": "11e454fc-34c3-4194-87bb-e934c03a68ad",
+        "name": "DIS Management Web API",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "description": {
+            "content": "HTTP API for inspecting and interacting with DIS endpoints and events",
+            "type": "text/plain"
+        }
+    }
+}

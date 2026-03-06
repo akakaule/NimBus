@@ -1,0 +1,2323 @@
+openapi: 3.0.0
+info:
+  title: EIP Management Web API
+  description: HTTP API for inspecting and interacting with EIP endpoints and events
+  version: 0.0.1
+servers:
+  - url: 'https://localhost:5001'
+    description: Local
+paths:
+  /api/endpoint/status/count:
+    get:
+      summary: Get current status of all endpoints
+      description: Return an array of endpoint statuses.
+      responses:
+        '200':
+          description: Successfully returned endpoint statuses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EndpointStatusCount'
+      operationId: get-endpoint-status-count-all
+      tags:
+        - Endpoint
+    post:
+      summary: Get current status of specific endpoints
+      operationId: post-api-endpoint-status-count
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EndpointStatusCount'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+        description: ''
+      tags:
+        - Endpoint
+  '/api/endpoint/{endpointName}/status/':
+    get:
+      parameters:
+        - in: path
+          name: endpointName
+          schema:
+            type: string
+          required: true
+          description: Name of the endpoint
+      summary: Get endpoint status
+      description: Return the endpoint status for given endpointName.
+      tags:
+        - Endpoint
+      responses:
+        '200':
+          description: 'Dictionary of all the Unresolved Events for the endpoint, or an empty object if no Unresolved Events.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnresolvedEvents'
+        '404':
+          description: Endpoint not found
+          content:
+            text/string:
+              schema:
+                type: string
+      operationId: get-endpoint-status-id
+  '/api/event/{eventId}/{messageId}':
+    parameters:
+      - schema:
+          type: string
+        name: eventId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: messageId
+        in: path
+        required: true
+    get:
+      summary: Get event message by ID
+      tags:
+        - Event
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+      operationId: get-event-ids
+  '/api/event/unresolved/{endpointId}/{eventId}/{sessionId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: eventId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: sessionId
+        in: path
+        required: true
+    get:
+      summary: Get unresolved failed event
+      tags:
+        - Event
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+      operationId: get-unresolved-failed-event-id
+  /api/event-types:
+    get:
+      summary: GetEventTypes
+      tags:
+        - EventType
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EventType'
+      operationId: get-event-types
+  '/api/event-types/{eventtypeid}':
+    parameters:
+      - schema:
+          type: string
+        name: eventtypeid
+        in: path
+        required: true
+    get:
+      summary: Get event type details by ID
+      tags:
+        - EventType
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventTypeDetails'
+      operationId: get-eventtypes-eventtypeid
+  '/api/event/resubmit/{eventId}/{messageId}':
+    parameters:
+      - schema:
+          type: string
+        name: eventId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: messageId
+        in: path
+        required: true
+    post:
+      summary: ''
+      operationId: post-resubmit-event-ids
+      responses:
+        '200':
+          description: OK
+        '404':
+          description: Event not found
+      tags:
+        - Event
+  '/api/event/skip/{eventId}/{messageId}':
+    parameters:
+      - schema:
+          type: string
+        name: eventId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: messageId
+        in: path
+        required: true
+    post:
+      summary: ''
+      operationId: post-skip-event-ids
+      responses:
+        '200':
+          description: OK
+      tags:
+        - Event
+  '/api/endpoint/status/{endpointName}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointName
+        in: path
+        required: true
+    get:
+      summary: Get paginated endpoint status with events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EndpointStatus'
+      operationId: get-api-endpointstatus-status-endpointName
+      tags:
+        - Endpoint
+      description: Returns detailed endpoint status including enriched unresolved events with pagination support.
+  '/api/event/details/{endpoint}/{id}':
+    parameters:
+      - schema:
+          type: string
+        name: id
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: endpoint
+        in: path
+        required: true
+    get:
+      summary: Your GET endpoint
+      tags:
+        - Event
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventDetails'
+      operationId: get-event-details-id
+  '/api/event/cosmos-details/{endpoint}/{id}':
+    parameters:
+      - schema:
+          type: string
+        name: id
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: endpoint
+        in: path
+        required: true
+    get:
+      summary: Your GET endpoint
+      tags:
+        - Event
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+      operationId: get-event-id
+  '/api/event-types/endpoint/{endpointId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    get:
+      summary: Your GET endpoint
+      tags:
+        - EventType
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  produces:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EventTypeGrouping'
+                  consumes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EventTypeGrouping'
+                  eventTypeDetails:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EventTypeDetails'
+              examples: {}
+      operationId: get-eventtypes-by-endpoint-id
+  '/api/event/change/{eventId}/{messageId}':
+    parameters:
+      - schema:
+          type: string
+        name: eventId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: messageId
+        in: path
+        required: true
+    post:
+      summary: ''
+      operationId: post-resubmit-with-changes-event-ids
+      responses:
+        '200':
+          description: OK
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResubmitWithChanges'
+      description: ''
+      tags:
+        - Event
+  /api/app/stats:
+    get:
+      summary: Get application status and version
+      tags:
+        - Application
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplicationStatus'
+      operationId: get-api-app-stats
+  /api/endpoint/endpoints:
+    get:
+      summary: Get all endpoint IDs
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+      operationId: get-endpoints-all
+      tags:
+        - Endpoint
+  '/api/endpoint/{endpointName}/status/count':
+    parameters:
+      - schema:
+          type: string
+        name: endpointName
+        in: path
+        required: true
+    get:
+      summary: Get EndpointStatus Count
+      tags:
+        - Endpoint
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EndpointStatusCount'
+      operationId: get-endpoint-status-count-id
+  '/api/endpoint/{endpointName}/status/continuationToken':
+    parameters:
+      - schema:
+          type: string
+        name: endpointName
+        in: path
+        required: true
+    post:
+      summary: Your POST endpoint
+      tags:
+        - Endpoint
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EndpointStatus'
+      operationId: post-endpoint-status-id-token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContinuationToken'
+  '/api/event/details/{endpointId}/{id}/logs':
+    parameters:
+      - schema:
+          type: string
+        name: id
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    get:
+      summary: Your GET endpoint
+      tags:
+        - Event
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EventLogEntry'
+      operationId: get-event-details-logs-id
+  '/api/event/details/{endpointId}/{id}/history':
+    parameters:
+      - schema:
+          type: string
+        name: id
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    get:
+      summary: Your GET endpoint
+      tags:
+        - Event
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Message'
+      operationId: get-event-details-history-id
+  '/api/endpoint/{endpointId}/session/{sessionId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: sessionId
+        in: path
+        required: true
+    get:
+      summary: Your GET endpoint
+      tags:
+        - Endpoint
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStatus'
+      operationId: get-endpoint-session-id
+  '/api/endpoint/{endpointId}/sessions/batch':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: Get session status for multiple sessions in batch
+      operationId: post-endpoint-sessions-batch
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SessionStatus'
+        '404':
+          description: Endpoint not found
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+        description: Array of session IDs to query
+      tags:
+        - Endpoint
+  '/api/storagehook/cosmos/{endpointId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: ''
+      operationId: storagehook-receive-cosmos
+      responses:
+        '200':
+          description: OK
+      tags:
+        - StorageHook
+  '/api/event/audit/{eventId}':
+    parameters:
+      - schema:
+          type: string
+        name: eventId
+        in: path
+        required: true
+    get:
+      summary: Your GET endpoint
+      tags:
+        - Event
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MessageAudit'
+        '404':
+          description: Event not found
+      operationId: get-message-audits-event-id
+    post:
+      summary: ''
+      operationId: post-message-audit
+      responses:
+        '200':
+          description: OK
+      tags:
+        - Event
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageAudit'
+  /api/event/compose-new:
+    post:
+      summary: Your POST endpoint
+      operationId: post-compose-new-event
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Bad Request
+      tags:
+        - Event
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResubmitWithChanges'
+  '/api/event/blocked/{endpointId}/{sessionId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: sessionId
+        in: path
+        required: true
+    get:
+      summary: Your GET endpoint
+      tags:
+        - Event
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BlockedEvent'
+        '404':
+          description: Not Found
+      operationId: get-event-blocked-id
+  '/api/event/pending/{endpointId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    get:
+      summary: Your GET endpoint
+      tags:
+        - Event
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Event'
+              examples:
+                UnresolveEvent:
+                  value:
+                    - originatingId: string
+                      eventId: string
+                      status: string
+        '404':
+          description: Not Found
+      operationId: get-event-pending-id
+  '/api/endpoint/{endpointId}/subscribe':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: ''
+      operationId: post-endpoint-subscribe
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Bad Request
+      tags:
+        - Endpoint
+      description: ''
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EndpointSubscription'
+    get:
+      summary: ''
+      operationId: get-endpoint-subscribe
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EndpointSubscription'
+        '404':
+          description: Not Found
+      tags:
+        - Endpoint
+      description: Get all subscribers to given endpoint
+    delete:
+      summary: ''
+      operationId: delete-endpoint-subscribe
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Bad Request
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionAuthor'
+            examples: {}
+      tags:
+        - Endpoint
+  '/api/endpoint/{endpointName}/purge':
+    parameters:
+      - schema:
+          type: string
+        name: endpointName
+        in: path
+        required: true
+    post:
+      summary: ''
+      operationId: post-endpoint-purge
+      responses:
+        '200':
+          description: OK
+        '404':
+          description: Not Found
+      description: Remove all messages on endpoint
+      tags:
+        - Endpoint
+  '/api/endpoint/{endpointId}/subscriptionstatus':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: ''
+      operationId: post-endpoint-subscriptionstatus
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Bad Request
+      tags:
+        - Endpoint
+      description: ''
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+            examples:
+              example-12:
+                value: string
+    get:
+      summary: ''
+      operationId: get-endpoint-subscriptionstatus
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: string
+        '404':
+          description: Not Found
+      tags:
+        - Endpoint
+      description: Get status for given subscription on endpoint
+  '/api/endpoint/{endpointId}/enableheartbeat':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: ''
+      operationId: endpoint-enable-heartbeat
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Bad Request
+      tags:
+        - Endpoint
+      description: ''
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: boolean
+            examples:
+              example-12:
+                value: string
+  '/api/event/invalid/{endpointId}/{eventId}/{sessionId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: eventId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: sessionId
+        in: path
+        required: true
+    delete:
+      summary: ''
+      operationId: delete-event-invalid-id
+      responses:
+        '200':
+          description: OK
+      description: ''
+      tags:
+        - Event
+  '/api/endpoint/{endpointId}/roleAssignmentScript':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    get:
+      summary: Your GET endpoint
+      tags:
+        - Endpoint
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                description: ''
+                type: string
+              examples: {}
+        '404':
+          description: Not Found
+      operationId: get-endpoint-roleAssignmentScript
+      description: Get role assignment script for a given endpoint
+  '/api/event/unsupported/{endpointId}/{eventId}/{sessionId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: eventId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: sessionId
+        in: path
+        required: true
+    get:
+      summary: Your GET endpoint
+      tags:
+        - Event
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+      operationId: get-event-unsupported-endpointId-eventId
+      description: ''
+  '/api/event/deadletter/{endpointId}/{eventId}/{sessionId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: eventId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: sessionId
+        in: path
+        required: true
+    get:
+      summary: Your GET endpoint
+      tags:
+        - Event
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+      operationId: get-event-deadletter-endpointId-eventId
+      description: ''
+  '/api/event/{endpointId}/getByFilter':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: ''
+      operationId: post-api-event-endpointId-getByFilter
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+      tags:
+        - Event
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+        description: getByFilterBody
+  '/api/metadata/{endpointId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    get:
+      summary: Your GET endpoint
+      tags:
+        - Endpoint
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Metadata'
+        '404':
+          description: Not Found
+      operationId: getMetadataEndpoint
+      description: ''
+    post:
+      summary: Your POST endpoint
+      operationId: postMetadataEndpoint
+      responses:
+        '200':
+          description: OK
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Metadata'
+        description: ''
+      tags:
+        - Endpoint
+      description: ''
+  /api/metadatashort:
+    parameters: []
+    post:
+      summary: Metadata short
+      operationId: post-api-metadatashort
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MetadataShort'
+              examples:
+                example-1:
+                  value:
+                    - endpointId: string
+                      heartbeatStatus: string
+        '404':
+          description: Not Found
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+      tags:
+        - Endpoint
+  /api/admin/platform-config:
+    get:
+      summary: Get platform configuration
+      operationId: get-admin-platform-config
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformConfig'
+        '403':
+          description: Forbidden
+  '/api/admin/topology/{endpointName}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointName
+        in: path
+        required: true
+    get:
+      summary: Audit Service Bus topology for endpoint
+      operationId: get-admin-topology
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopologyAuditResult'
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+  '/api/admin/topology/{endpointName}/remove-deprecated':
+    parameters:
+      - schema:
+          type: string
+        name: endpointName
+        in: path
+        required: true
+    post:
+      summary: Remove deprecated topology items
+      operationId: post-admin-topology-remove-deprecated
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopologyCleanupResult'
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+  '/api/admin/endpoint/{endpointId}/failed-preview':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    get:
+      summary: Preview failed messages eligible for bulk resubmit
+      operationId: get-admin-failed-preview
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkResubmitPreview'
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+  '/api/admin/endpoint/{endpointId}/bulk-resubmit':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: Bulk resubmit all eligible failed messages
+      operationId: post-admin-bulk-resubmit
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkOperationResult'
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+  '/api/admin/endpoint/{endpointId}/deadlettered-preview':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    get:
+      summary: Preview dead-lettered message count
+      operationId: get-admin-deadlettered-preview
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+  '/api/admin/endpoint/{endpointId}/delete-deadlettered':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: Delete all dead-lettered messages for endpoint
+      operationId: post-admin-delete-deadlettered
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkOperationResult'
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+  '/api/admin/endpoint/{endpointId}/session/{sessionId}/preview':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: sessionId
+        in: path
+        required: true
+    get:
+      summary: Preview session for purge
+      operationId: get-admin-session-preview
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionPurgePreview'
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint or session not found
+  '/api/admin/endpoint/{endpointId}/session/{sessionId}/purge':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: sessionId
+        in: path
+        required: true
+    post:
+      summary: Purge specific Service Bus session
+      operationId: post-admin-session-purge
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionPurgeResult'
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint or session not found
+  '/api/admin/endpoint/{endpointId}/event/{eventId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: eventId
+        in: path
+        required: true
+    delete:
+      summary: Delete a specific event from Cosmos DB
+      operationId: delete-admin-event
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+        '403':
+          description: Forbidden
+        '404':
+          description: Event not found
+  /api/messages/search:
+    post:
+      summary: Search messages across all endpoints
+      operationId: post-messages-search
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageSearchResponse'
+      tags:
+        - Message
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageSearchRequest'
+  /api/dev/seed:
+    post:
+      summary: Seed sample data across all containers
+      operationId: post-dev-seed
+      tags:
+        - Dev
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeedResult'
+        '404':
+          description: Not available (non-development environment)
+    delete:
+      summary: Clear all seeded sample data
+      operationId: delete-dev-seed
+      tags:
+        - Dev
+      responses:
+        '200':
+          description: OK
+        '404':
+          description: Not available (non-development environment)
+  '/api/dev/endpoint/{endpointId}/events':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: Create a single event record in an endpoint container
+      operationId: post-dev-create-event
+      tags:
+        - Dev
+      responses:
+        '200':
+          description: OK
+        '404':
+          description: Not available (non-development environment)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEventRequest'
+  /api/dev/messages:
+    post:
+      summary: Store a message record in the messages container
+      operationId: post-dev-send-message
+      tags:
+        - Dev
+      responses:
+        '200':
+          description: OK
+        '404':
+          description: Not available (non-development environment)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+  '/api/storagehook/heartbeat/{endpointId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: Heartbeat storagehook
+      operationId: post-api-storagehook-heartbeat-endpointId
+      responses:
+        '200':
+          description: OK
+      tags:
+        - StorageHook
+  /api/metrics/overview:
+    get:
+      summary: Get metrics overview for all endpoints
+      operationId: get-metrics-overview
+      parameters:
+        - name: period
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/Period'
+      responses:
+        '200':
+          description: Successfully returned metrics overview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsOverview'
+      tags:
+        - Metrics
+  /api/metrics/latency:
+    get:
+      summary: Get latency percentiles for all endpoints
+      operationId: get-metrics-latency
+      parameters:
+        - name: period
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/Period'
+      responses:
+        '200':
+          description: Latency percentiles per endpoint and event type
+          content:
+            application\json:
+              schema:
+                $ref: '#/components/schemas/LatencyOverview'
+      tags:
+        - Metrics
+components:
+  schemas:
+    OldEvent:
+      type: object
+      properties:
+        updatedAt:
+          type: string
+          format: date-time
+        eventId:
+          type: string
+        sessionId:
+          type: string
+        correlationId:
+          type: string
+        resolutionStatus:
+          type: string
+        endpointRole:
+          type: string
+        endpointId:
+          type: string
+        retryCount:
+          type: string
+        messageType:
+          type: string
+        deadLetterReason:
+          type: string
+        originatingMessageId:
+          type: string
+        retryLimit:
+          type: string
+        originatingMessage:
+          $ref: '#/components/schemas/Message'
+        reason:
+          type: string
+    EventDetails:
+      title: EventDetails
+      type: object
+      properties:
+        failedMessage:
+          $ref: '#/components/schemas/Message'
+        originatingMessage:
+          $ref: '#/components/schemas/Message'
+        eventHistory:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        logEntries:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventLogEntry'
+    EventLogEntry:
+      title: LogEntry
+      type: object
+      properties:
+        text:
+          type: string
+        eventType:
+          type: string
+        to:
+          type: string
+        from:
+          type: string
+        eventId:
+          type: string
+        correlationId:
+          type: string
+        payload:
+          type: string
+        sessionId:
+          type: string
+        timeStamp:
+          type: string
+          format: date-time
+        messageType:
+          type: string
+        isDeferred:
+          type: boolean
+        messageId:
+          type: string
+        severityLevel:
+          type: string
+          enum:
+            - verbose
+            - information
+            - warning
+            - critical
+      description: ''
+    Message:
+      type: object
+      title: Message
+      properties:
+        eventId:
+          type: string
+        messageId:
+          type: string
+        originatingMessageId:
+          type: string
+        parentMessageId:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+        sessionId:
+          type: string
+        correlationId:
+          type: string
+        enqueuedTimeUtc:
+          type: string
+          format: date-time
+        messageType:
+          type: string
+          enum:
+            - unknown
+            - eventRequest
+            - errorResponse
+            - resolutionResponse
+            - skipResponse
+            - deferralResponse
+            - resubmissionRequest
+            - retryRequest
+            - skipRequest
+            - continuationRequest
+            - unsupportedRequest
+        endpointRole:
+          type: string
+          enum:
+            - publisher
+            - subscriber
+        endpointId:
+          type: string
+        eventTypeId:
+          type: string
+        eventContent:
+          type: string
+        errorContent:
+          $ref: '#/components/schemas/MessageErrorContent'
+        originatingFrom:
+          type: string
+    UnresolvedEvents:
+      type: array
+      items:
+        $ref: '#/components/schemas/Event'
+    EndpointStatus:
+      type: object
+      properties:
+        endpointId:
+          type: string
+        eventTime:
+          type: string
+          format: date-time
+        failedEvents:
+          type: array
+          items:
+            type: string
+        pendingEvents:
+          type: array
+          items:
+            type: string
+        deferredEvents:
+          type: array
+          items:
+            type: string
+        enrichedUnresolvedEvents:
+          $ref: '#/components/schemas/UnresolvedEvents'
+        continuationToken:
+          type: string
+        unsupportedEvents:
+          type: array
+          items:
+            type: string
+        deadletteredEvents:
+          type: array
+          items:
+            type: string
+    MessageErrorContent:
+      title: ErrorContent
+      type: object
+      properties:
+        errorText:
+          type: string
+        errorType:
+          type: string
+        exceptionStackTrace:
+          type: string
+        exceptionSource:
+          type: string
+    EventType:
+      title: EventType
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        namespace:
+          type: string
+        properties:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventTypeProperty'
+        producerCount:
+          type: integer
+        consumerCount:
+          type: integer
+    EventTypeProperty:
+      title: EventTypeProperty
+      type: object
+      properties:
+        name:
+          type: string
+        typeName:
+          type: string
+        typeFullName:
+          type: string
+        description:
+          type: string
+        isRequired:
+          type: boolean
+    EventTypeDetails:
+      title: EventTypeDetails
+      type: object
+      properties:
+        eventType:
+          $ref: '#/components/schemas/EventType'
+        codeRepoLink:
+          type: string
+        producers:
+          type: array
+          items:
+            type: string
+        consumers:
+          type: array
+          items:
+            type: string
+    EventTypeGrouping:
+      title: EventTypeGrouping
+      type: object
+      properties:
+        namespace:
+          type: string
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventType'
+    ApplicationStatus:
+      title: ApplicationStatus
+      type: object
+      properties:
+        env:
+          type: string
+        platformVersion:
+          type: string
+    EndpointStatusCount:
+      title: EndpointStatusCount
+      type: object
+      properties:
+        endpointId:
+          type: string
+        subscriptionStatus:
+          type: string
+        eventTime:
+          type: string
+          format: date-time
+        failedCount:
+          type: number
+        deferredCount:
+          type: number
+        pendingCount:
+          type: number
+        unsupportedCount:
+          type: number
+        deadletterCount:
+          type: number
+    SessionStatus:
+      title: SessionStatus
+      type: object
+      properties:
+        sessionId:
+          type: string
+        pendingEvents:
+          type: array
+          items:
+            type: string
+        deferredEvents:
+          type: array
+          items:
+            type: string
+    ContinuationToken:
+      title: ContinuationToken
+      type: object
+      properties:
+        token:
+          type: string
+    MessageAudit:
+      title: MessageAudit
+      type: object
+      properties:
+        auditorName:
+          type: string
+        auditTimestamp:
+          type: string
+          format: date-time
+        auditType:
+          type: string
+          enum:
+            - resubmit
+            - resubmitWithChanges
+            - skip
+            - retry
+    BlockedEvent:
+      title: BlockedEvent
+      type: object
+      properties:
+        originatingId:
+          type: string
+        eventId:
+          type: string
+        status:
+          type: string
+    PendingEvent:
+      title: PendingEvent
+      type: object
+      properties:
+        originatingId:
+          type: string
+        eventId:
+          type: string
+        status:
+          type: string
+    EndpointSubscription:
+      title: EndpointSubscription
+      type: object
+      description: ''
+      properties:
+        type:
+          type: string
+        notificationSeverity:
+          type: string
+        mail:
+          type: string
+        authorId:
+          type: string
+        url:
+          type: string
+        eventTypes:
+          type: array
+          items:
+            type: string
+        payload:
+          type: string
+        frequency:
+          type: integer
+        id:
+          type: string
+    Subscription:
+      title: Subscription
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        mail:
+          type: string
+        severity:
+          type: string
+        authorId:
+          type: string
+        url:
+          type: string
+    SubscriptionAuthor:
+      title: SubscriptionAuthor
+      type: object
+      properties:
+        id:
+          type: string
+        author:
+          type: string
+    ResubmitWithChanges:
+      title: ResubmitWithChanges
+      type: object
+      properties:
+        eventTypeId:
+          type: string
+        eventContent:
+          type: string
+    Event:
+      title: Event
+      x-stoplight:
+        id: 06gu95wwzgz3s
+      type: object
+      properties:
+        updatedAt:
+          type: string
+          format: date-time
+        enqueuedTimeUtc:
+          type: string
+          format: date-time
+        eventId:
+          type: string
+        sessionId:
+          type: string
+        correlationId:
+          type: string
+        resolutionStatus:
+          type: string
+        endpointRole:
+          type: string
+        endpointId:
+          type: string
+        retryCount:
+          type: integer
+          nullable: true
+        retryLimit:
+          type: integer
+          nullable: true
+        messageType:
+          type: string
+        deadLetterReason:
+          type: string
+        deadLetterErrorDescription:
+          type: string
+        lastMessageId:
+          type: string
+        originatingMessageId:
+          type: string
+        parentMessageId:
+          type: string
+        reason:
+          type: string
+        originatingFrom:
+          type: string
+        eventTypeId:
+          type: string
+        to:
+          type: string
+        from:
+          type: string
+        messageContent:
+          type: object
+          properties:
+            eventContent:
+              type: object
+              properties:
+                eventTypeId:
+                  type: string
+                eventJson:
+                  type: string
+            errorContent:
+              type: object
+              properties:
+                errorText:
+                  type: string
+                errorType:
+                  type: string
+                exceptionStackTrace:
+                  type: string
+                exceptionSource:
+                  type: string
+    EventFilter:
+      title: EventFilter
+      x-stoplight:
+        id: ep2hb6fyd5j5v
+      type: object
+      properties:
+        endpointId:
+          type: string
+        updateAtFrom:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAtTo:
+          type: string
+          format: date-time
+          nullable: true
+        enqueuedAtFrom:
+          type: string
+          format: date-time
+          nullable: true
+        enqueuedAtTo:
+          type: string
+          format: date-time
+          nullable: true
+        eventId:
+          type: string
+          nullable: true
+        eventTypeId:
+          type: array
+          nullable: true
+          items:
+            type: string
+        sessionId:
+          type: string
+          nullable: true
+        to:
+          type: string
+          nullable: true
+        from:
+          type: string
+          nullable: true
+        resolutionStatus:
+          type: array
+          nullable: true
+          items:
+            type: string
+            enum:
+              - Pending
+              - Deferred
+              - Failed
+              - Resolved
+              - DeadLettered
+              - Unsupported
+              - Completed
+              - Skipped
+        payload:
+          type: string
+          nullable: true
+      required:
+        - enqueuedAtTo
+    SearchResponse:
+      title: SearchResponse
+      x-stoplight:
+        id: oqq267svm67vx
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/Event'
+        continuationToken:
+          type: string
+          nullable: true
+    SearchRequest:
+      title: SearchRequest
+      x-stoplight:
+        id: 7l13l3pd5ud16
+      type: object
+      properties:
+        continuationToken:
+          type: string
+        eventFilter:
+          $ref: '#/components/schemas/EventFilter'
+        maxSearchItemsCount:
+          type: integer
+    Metadata:
+      title: Metadata
+      x-stoplight:
+        id: mry6njwo1ytcc
+      type: object
+      properties:
+        id:
+          type: string
+        endpointOwner:
+          type: string
+        endpointOwnerTeam:
+          type: string
+        endpointOwnerEmail:
+          type: string
+        endpointHeartbeatStatus:
+          type: string
+        technicalContacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/TechnicalContact'
+        heartBeats:
+          type: array
+          items:
+            $ref: '#/components/schemas/Heartbeat'
+        isHeartbeatEnabled:
+          type: boolean
+          nullable: true
+        subscriptionStatus:
+          type: string
+    TechnicalContact:
+      title: TechnicalContact
+      x-stoplight:
+        id: 3yf0l04048y8c
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+    Heartbeat:
+      title: heartbeat
+      x-stoplight:
+        id: b4fostd4dmvwn
+      type: object
+      properties:
+        id:
+          type: string
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        receivedTime:
+          type: string
+          format: date-time
+        endpointHeartbeatStatus:
+          type: string
+        endpointSubscriptionStatus:
+          type: string
+    MetadataShort:
+      title: MetadataShort
+      x-stoplight:
+        id: inxdufaumyuwa
+      type: object
+      description: ''
+      properties:
+        endpointId:
+          type: string
+        heartbeatStatus:
+          type: string
+        isHeartbeatEnabled:
+          type: boolean
+          nullable: true
+        subscriptionStatus:
+          type: string
+    SeedResult:
+      title: SeedResult
+      type: object
+      properties:
+        message:
+          type: string
+        endpointsCreated:
+          type: integer
+        eventsCreated:
+          type: integer
+        messagesCreated:
+          type: integer
+        auditsCreated:
+          type: integer
+    CreateEventRequest:
+      title: CreateEventRequest
+      type: object
+      properties:
+        eventTypeId:
+          type: string
+        sessionId:
+          type: string
+        status:
+          type: string
+          enum:
+            - Pending
+            - Failed
+            - Deferred
+            - DeadLettered
+            - Unsupported
+        messageContent:
+          type: string
+    SendMessageRequest:
+      title: SendMessageRequest
+      type: object
+      properties:
+        endpointId:
+          type: string
+        eventTypeId:
+          type: string
+        sessionId:
+          type: string
+        messageContent:
+          type: string
+    MessageSearchRequest:
+      title: MessageSearchRequest
+      type: object
+      properties:
+        filter:
+          $ref: '#/components/schemas/MessageSearchFilter'
+        continuationToken:
+          type: string
+          nullable: true
+        maxItemCount:
+          type: integer
+    MessageSearchFilter:
+      title: MessageSearchFilter
+      type: object
+      properties:
+        endpointId:
+          type: string
+          nullable: true
+        eventId:
+          type: string
+          nullable: true
+        messageId:
+          type: string
+          nullable: true
+        sessionId:
+          type: string
+          nullable: true
+        eventTypeId:
+          type: array
+          nullable: true
+          items:
+            type: string
+        from:
+          type: string
+          nullable: true
+        to:
+          type: string
+          nullable: true
+        messageType:
+          type: string
+          nullable: true
+          enum:
+            - unknown
+            - eventRequest
+            - errorResponse
+            - resolutionResponse
+            - skipResponse
+            - deferralResponse
+            - resubmissionRequest
+            - retryRequest
+            - skipRequest
+            - continuationRequest
+            - unsupportedRequest
+        enqueuedAtFrom:
+          type: string
+          format: date-time
+          nullable: true
+        enqueuedAtTo:
+          type: string
+          format: date-time
+          nullable: true
+    MessageSearchResponse:
+      title: MessageSearchResponse
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        continuationToken:
+          type: string
+          nullable: true
+    PlatformConfig:
+      title: PlatformConfig
+      type: object
+      properties:
+        resolverId:
+          type: string
+        managerId:
+          type: string
+        continuationId:
+          type: string
+        eventId:
+          type: string
+        retryId:
+          type: string
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformEndpoint'
+    PlatformEndpoint:
+      title: PlatformEndpoint
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        eventTypesProduced:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformEventType'
+        eventTypesConsumed:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformEventType'
+    PlatformEventType:
+      title: PlatformEventType
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+    TopologyAuditResult:
+      title: TopologyAuditResult
+      type: object
+      properties:
+        topicName:
+          type: string
+        subscriptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubscriptionTopology'
+        hasDeprecated:
+          type: boolean
+    SubscriptionTopology:
+      title: SubscriptionTopology
+      type: object
+      properties:
+        name:
+          type: string
+        isDeprecated:
+          type: boolean
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleTopology'
+    RuleTopology:
+      title: RuleTopology
+      type: object
+      properties:
+        name:
+          type: string
+        subscriptionName:
+          type: string
+        isDeprecated:
+          type: boolean
+    TopologyCleanupResult:
+      title: TopologyCleanupResult
+      type: object
+      properties:
+        deletedSubscriptions:
+          type: array
+          items:
+            type: string
+        deletedRules:
+          type: array
+          items:
+            type: string
+        errors:
+          type: array
+          items:
+            type: string
+    BulkResubmitPreview:
+      title: BulkResubmitPreview
+      type: object
+      properties:
+        eligibleCount:
+          type: integer
+        totalFailedCount:
+          type: integer
+        ageThresholdMinutes:
+          type: integer
+    BulkOperationResult:
+      title: BulkOperationResult
+      type: object
+      properties:
+        processed:
+          type: integer
+        succeeded:
+          type: integer
+        failed:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: string
+    SessionPurgePreview:
+      title: SessionPurgePreview
+      type: object
+      properties:
+        sessionId:
+          type: string
+        pendingCount:
+          type: integer
+        deferredCount:
+          type: integer
+        deferredSubscriptionCount:
+          type: integer
+        cosmosEventCount:
+          type: integer
+    SessionPurgeResult:
+      title: SessionPurgeResult
+      type: object
+      properties:
+        sessionId:
+          type: string
+        activeMessagesRemoved:
+          type: integer
+        deferredMessagesRemoved:
+          type: integer
+        deferredSubscriptionMessagesRemoved:
+          type: integer
+        cosmosEventsRemoved:
+          type: integer
+        sessionStateCleared:
+          type: boolean
+        errors:
+          type: array
+          items:
+            type: string
+    MetricsOverview:
+      title: MetricsOverview
+      type: object
+      properties:
+        published:
+          type: array
+          items:
+            $ref: '#/components/schemas/EndpointMessageCount'
+        handled:
+          type: array
+          items:
+            $ref: '#/components/schemas/EndpointEventTypeMessageCount'
+        failed:
+          type: array
+          items:
+            $ref: '#/components/schemas/EndpointMessageCount'
+    EndpointMessageCount:
+      title: EndpointMessageCount
+      type: object
+      properties:
+        endpointId:
+          type: string
+        count:
+          type: integer
+    EndpointEventTypeMessageCount:
+      title: EndpointEventTypeMessageCount
+      type: object
+      properties:
+        endpointId:
+          type: string
+        eventTypeId:
+          type: string
+        count:
+          type: integer
+    Period:
+      title: Period
+      type: string
+      enum:
+        - 1h
+        - 12h
+        - 1d
+        - 3d
+        - 7d
+        - 30d
+    LatencyOverview:
+      title: LatencyOverview
+      type: object
+      properties:
+        latencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/EndpointLatency'
+    EndpointLatency:
+      title: EndpointLatency
+      type: object
+      properties:
+        endpointId:
+          type: string
+        eventTypeId:
+          type: string
+        count:
+          type: integer
+        avgLatencyMs:
+          type: number
+          format: double
+        p50LatencyMs:
+          type: number
+          format: double
+        p95LatencyMs:
+          type: number
+          format: double
+        p99LatencyMs:
+          type: number
+          format: double
+        maxLatencyMs:
+          type: number
+          format: double
+tags:
+  - name: Event
+  - name: EventType
+  - name: Application
+  - name: StorageHook
+  - name: Endpoint
+  - name: Message
+  - name: Admin
+  - name: Dev
+  - name: Metrics

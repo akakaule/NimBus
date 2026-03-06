@@ -1,0 +1,69 @@
+﻿@using NimBus
+@using NimBus.WebApp
+@using NimBus.WebApp.Models
+@using NimBus.WebApp.Services;
+@using NimBus.Core.Endpoints;
+@using NimBus.Core.Events;
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@using Microsoft.Extensions.Configuration;
+@model IEnumerable<EndpointViewModel>;
+@{
+    ViewData["Title"] = "Endpoints";
+    Layout = "_Layout";
+}
+<h1>Endpoints</h1>
+@{
+     var namespaceNames = Model.OrderBy(epModel => epModel.Endpoint.Namespace).Select(epModel => epModel.Endpoint.Namespace).Distinct();
+}
+@foreach (var namespaceName in namespaceNames)
+{
+    <table class="table table-hover">
+        <thead>
+            <tr>
+                <th>
+                    @namespaceName
+                </th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var epm in Model.Where(epModel => epModel.Endpoint.Namespace.Equals(namespaceName, StringComparison.OrdinalIgnoreCase)).OrderBy(epModel => epModel.Endpoint.Name))
+            {
+                var failedEvents = epm.EndpointState.FailedEvents;
+                var pendingEvents = epm.EndpointState.PendingEvents;
+                var deferredEvents = epm.EndpointState.DeferredEvents;
+
+                var rowColor = "list-group-item list-group-item-action list-group-item-success";
+                var unresolved = false;
+                if (failedEvents.Count() > 0)
+                {
+                    rowColor = "list-group-item list-group-item-action list-group-item-danger";
+                    unresolved = true;
+                }
+                else if (deferredEvents.Count() > 0)
+                {
+                    rowColor = "list-group-item list-group-item-action list-group-item-warning";
+                    unresolved = true;
+                }
+                else if (pendingEvents.Count() > 0)
+                {
+                    rowColor = "list-group-item list-group-item-action list-group-item-info";
+                    unresolved = true;
+                }
+
+
+            <tr class="@rowColor">
+                <td colspan="5">
+                    @* ReSharper disable once Mvc.ActionNotResolved *@
+                    @Html.ActionLink(epm.Endpoint.Name, "Details", "Endpoints", new {id = epm.Endpoint.Id})
+                </td>
+                @if (unresolved)
+                {
+                    <td>@failedEvents.Count() failed events</td>
+                    <td>@deferredEvents.Count() deferred events</td>
+                    <td>@pendingEvents.Count() pending events</td>
+                }
+            </tr>
+            }
+        </tbody>
+    </table>
+}

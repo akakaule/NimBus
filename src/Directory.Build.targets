@@ -1,0 +1,6 @@
+<Project>
+  <!-- .NET 10 support: Worker SDK 2.0.0 doesn't recognize net10.0 yet, so we need to set _ToolingSuffix manually -->
+  <PropertyGroup Condition="'$(TargetFrameworkVersion)' == 'v10.0' AND '$(AzureFunctionsVersion)' != ''">
+    <_ToolingSuffix>net10-isolated</_ToolingSuffix>
+  </PropertyGroup>
+</Project>

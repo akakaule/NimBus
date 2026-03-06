@@ -130,7 +130,7 @@ internal sealed class ServiceBusTopologyProvisioner
             existing = await client.GetSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
             Console.WriteLine($"Created session subscription '{subscriptionName}' on topic '{topicName}'.");
         }
-        else if (!existing.Value.RequiresSession || !string.Equals(existing.Value.ForwardTo, forwardTo, StringComparison.Ordinal))
+        else if (!existing.RequiresSession || !string.Equals(existing.ForwardTo, forwardTo, StringComparison.Ordinal))
         {
             await client.DeleteSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
             await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: true, forwardTo), cancellationToken).ConfigureAwait(false);
@@ -156,7 +156,7 @@ internal sealed class ServiceBusTopologyProvisioner
             await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: false, forwardTo), cancellationToken).ConfigureAwait(false);
             Console.WriteLine($"Created forward subscription '{subscriptionName}' on topic '{topicName}' to '{forwardTo}'.");
         }
-        else if (existing.Value.RequiresSession || !string.Equals(existing.Value.ForwardTo, forwardTo, StringComparison.Ordinal))
+        else if (existing.RequiresSession || !string.Equals(existing.ForwardTo, forwardTo, StringComparison.Ordinal))
         {
             await client.DeleteSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
             await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: false, forwardTo), cancellationToken).ConfigureAwait(false);
@@ -170,7 +170,7 @@ internal sealed class ServiceBusTopologyProvisioner
     {
         const string subscriptionName = "Deferred";
         var existing = await TryGetSubscriptionAsync(client, topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
-        var mustRecreate = existing is null || existing.Value.RequiresSession;
+        var mustRecreate = existing is null || existing.RequiresSession;
 
         if (mustRecreate)
         {
@@ -193,7 +193,7 @@ internal sealed class ServiceBusTopologyProvisioner
     {
         const string subscriptionName = "DeferredProcessor";
         var existing = await TryGetSubscriptionAsync(client, topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
-        var mustRecreate = existing is null || existing.Value.RequiresSession;
+        var mustRecreate = existing is null || existing.RequiresSession;
 
         if (mustRecreate)
         {
@@ -220,7 +220,7 @@ internal sealed class ServiceBusTopologyProvisioner
         CancellationToken cancellationToken)
     {
         var existing = await TryGetRuleAsync(client, topicName, subscriptionName, ruleName, cancellationToken).ConfigureAwait(false);
-        if (existing is not null && RuleMatches(existing.Value, filter, action))
+        if (existing is not null && RuleMatches(existing, filter, action))
         {
             return;
         }
@@ -248,7 +248,7 @@ internal sealed class ServiceBusTopologyProvisioner
     private static bool RuleMatches(RuleProperties rule, string filter, string? action)
     {
         var existingFilter = (rule.Filter as SqlRuleFilter)?.SqlExpression ?? rule.Filter?.ToString() ?? string.Empty;
-        var existingAction = rule.Action?.SqlExpression ?? string.Empty;
+        var existingAction = (rule.Action as SqlRuleAction)?.SqlExpression ?? string.Empty;
         return string.Equals(existingFilter, filter, StringComparison.Ordinal) &&
                string.Equals(existingAction, action ?? string.Empty, StringComparison.Ordinal);
     }

@@ -172,26 +172,50 @@ export default function MessageListing(props: IMessageListingProps) {
         )}
       </h4>
       <br />
-      <div className="flex flex-col">
-        <table className="w-full flex-1 text-sm mr-4">
+      <div className="flex flex-col gap-6">
+        <div>
+          <h5 className="text-base font-semibold mb-3">Identifiers</h5>
+          <table className="w-full flex-1 text-sm mr-4">
+            <tbody>
+              <tr className="hover:bg-accent">
+                <td className="py-2 pr-4">
+                  <b>EventId</b>
+                </td>
+                <td className="py-2">{props.eventDetails?.eventId}</td>
+              </tr>
+              <tr className="hover:bg-accent">
+                <td className="py-2 pr-4">
+                  <b>SessionId</b>
+                </td>
+                <td className="py-2">{props.eventDetails?.sessionId}</td>
+              </tr>
+              <tr className="hover:bg-accent">
+                <td className="py-2 pr-4">
+                  <b>MessageId</b>
+                </td>
+                <td className="py-2">{props.eventDetails?.lastMessageId}</td>
+              </tr>
+              <tr className="hover:bg-accent">
+                <td className="py-2 pr-4">
+                  <b>OriginatingMessageId</b>
+                </td>
+                <td className="py-2">
+                  {props.eventDetails?.originatingMessageId}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <h5 className="text-base font-semibold mb-3">Details</h5>
+          <table className="w-full flex-1 text-sm mr-4">
           <tbody>
-            <tr className="hover:bg-accent">
-              <td className="py-2 pr-4">
-                <b>EventId</b>
-              </td>
-              <td className="py-2">{props.eventDetails?.eventId}</td>
-            </tr>
             <tr className="hover:bg-accent">
               <td className="py-2 pr-4">
                 <b>EventTypeId</b>
               </td>
               <td className="py-2">{props.eventDetails?.eventTypeId}</td>
-            </tr>
-            <tr className="hover:bg-accent">
-              <td className="py-2 pr-4">
-                <b>SessionId</b>
-              </td>
-              <td className="py-2">{props.eventDetails?.sessionId}</td>
             </tr>
             <tr className="hover:bg-accent">
               <td className="py-2 pr-4">
@@ -216,40 +240,15 @@ export default function MessageListing(props: IMessageListingProps) {
             </tr>
             <tr className="hover:bg-accent">
               <td className="py-2 pr-4">
-                <b>MessageId</b>
-              </td>
-              <td className="py-2">{props.eventDetails?.lastMessageId}</td>
-            </tr>
-            <tr className="hover:bg-accent">
-              <td className="py-2 pr-4">
                 <b>Enqueued Time (UTC)</b>
               </td>
               <td className="py-2">
                 {formatMoment(props.eventDetails?.enqueuedTimeUtc)}
               </td>
             </tr>
-            <tr className="hover:bg-accent">
-              <td className="py-2 pr-4">
-                <b>From</b>
-              </td>
-              <td className="py-2">{props.eventDetails?.from}</td>
-            </tr>
-            <tr className="hover:bg-accent">
-              <td className="py-2 pr-4">
-                <b>To</b>
-              </td>
-              <td className="py-2">{props.eventDetails?.to}</td>
-            </tr>
-            <tr className="hover:bg-accent">
-              <td className="py-2 pr-4">
-                <b>OriginatingMessageId</b>
-              </td>
-              <td className="py-2">
-                {props.eventDetails?.originatingMessageId}
-              </td>
-            </tr>
           </tbody>
         </table>
+        </div>
       </div>
       <br />
       {isFailedMessage(props.eventDetails?.resolutionStatus) && (
@@ -257,55 +256,29 @@ export default function MessageListing(props: IMessageListingProps) {
           <h4 className="text-lg font-semibold mt-4">Error</h4>
           <br />
           {props.eventDetails?.messageContent?.errorContent && (
-            <table className="text-sm">
-              {!isDeadletteredMessage(props.eventDetails?.resolutionStatus) ? (
-                <tbody>
-                  <tr className="hover:bg-accent">
-                    <td className="py-2 pr-4">
-                      <b>Error Text</b>
-                    </td>
-                    <td className="py-2">
-                      {
-                        props.eventDetails?.messageContent?.errorContent
-                          ?.errorText
-                      }
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-accent">
-                    <td className="py-2 pr-4">
-                      <b>Error Type</b>
-                    </td>
-                    <td className="py-2">
-                      {
-                        props.eventDetails?.messageContent?.errorContent
-                          ?.errorType
-                      }
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-accent">
-                    <td className="py-2 pr-4">
-                      <b>Exception Source</b>
-                    </td>
-                    <td className="py-2">
-                      {
-                        props.eventDetails?.messageContent?.errorContent
-                          ?.exceptionSource
-                      }
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-accent">
-                    <td className="py-2 pr-4">
-                      <b>Exception</b>
-                    </td>
-                    <td className="py-2">
-                      {
-                        props.eventDetails?.messageContent?.errorContent
-                          ?.exceptionStackTrace
-                      }
-                    </td>
-                  </tr>
-                </tbody>
-              ) : (
+            !isDeadletteredMessage(props.eventDetails?.resolutionStatus) ? (
+              <>
+                <div className="bg-red-100 border border-red-400 text-red-800 dark:bg-red-950 dark:border-red-800 dark:text-red-300 p-4 rounded text-sm">
+                  {props.eventDetails?.messageContent?.errorContent?.errorText}
+                </div>
+                <table className="text-sm">
+                  <tbody>
+                    <tr className="hover:bg-accent">
+                      <td className="py-2 pr-4">
+                        <b>Exception</b>
+                      </td>
+                      <td className="py-2">
+                        {
+                          props.eventDetails?.messageContent?.errorContent
+                            ?.exceptionStackTrace
+                        }
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </>
+            ) : (
+              <table className="text-sm">
                 <tbody>
                   <tr className="hover:bg-accent">
                     <td className="py-2 pr-4">
@@ -324,8 +297,8 @@ export default function MessageListing(props: IMessageListingProps) {
                     </td>
                   </tr>
                 </tbody>
-              )}
-            </table>
+              </table>
+            )
           )}
           <br />
         </>

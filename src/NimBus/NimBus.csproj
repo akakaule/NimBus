@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+	  <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
+	  <SignAssembly>true</SignAssembly>
+	  <AssemblyOriginatorKeyFile>delegate.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
+
+	<ItemGroup>		
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+	</ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NimBus.Abstractions\NimBus.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

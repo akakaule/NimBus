@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+	  <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.81.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NimBus.MessageStore\NimBus.MessageStore.csproj" />
+    <ProjectReference Include="..\NimBus.ServiceBus\NimBus.ServiceBus.csproj" />
+  </ItemGroup>
+
+</Project>

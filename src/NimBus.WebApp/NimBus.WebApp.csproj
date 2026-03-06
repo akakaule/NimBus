@@ -1,0 +1,130 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <SpaRoot>ClientApp\</SpaRoot>
+    <IsPackable>false</IsPackable>
+    <TypeScriptCompileBlocked>true</TypeScriptCompileBlocked>
+    <TypeScriptToolsVersion>Latest</TypeScriptToolsVersion>
+    <DefaultItemExcludes>$(DefaultItemExcludes);$(SpaRoot)node_modules\**</DefaultItemExcludes>
+    <UserSecretsId>kl-esb-mgmt-app</UserSecretsId>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.22.0" />
+    <PackageReference Include="Microsoft.Identity.Web" Version="3.3.0" />
+    <PackageReference Include="Microsoft.Identity.Web.UI" Version="3.3.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation" Version="10.0.0-preview.1.25120.3" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.0-preview.1.25080.5" />
+    <PackageReference Include="Jering.Javascript.NodeJS" Version="7.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.SpaServices.Extensions" Version="10.0.0-preview.1.25120.3" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="NSwag.AspNetCore" Version="14.6.3" />
+    <PackageReference Include="NSwag.MSBuild" Version="14.6.3">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Serilog" Version="4.3.0" />
+    <PackageReference Include="Serilog.Sinks.ApplicationInsights" Version="4.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Don't publish the SPA source files, but do show them in the project files list -->
+    <Content Remove="$(SpaRoot)**" />
+    <None Remove="$(SpaRoot)**" />
+    <None Include="$(SpaRoot)**" Exclude="$(SpaRoot)node_modules\**" />
+    <Content Include="$(SpaRoot)build\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Any Open Api Specifications -->
+    <OAS3 Include="$(ProjectDir)./*-spec.yaml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="ClientApp\public\eet_logo.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="ClientApp\public\eet_logo.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NimBus.Core\NimBus.Core.csproj" />
+    <ProjectReference Include="..\NimBus.Manager\NimBus.Manager.csproj" />
+    <ProjectReference Include="..\NimBus.Management.ServiceBus\NimBus.Management.ServiceBus.csproj" />
+    <ProjectReference Include="..\NimBus.MessageStore\NimBus.MessageStore.csproj" />
+    <ProjectReference Include="..\NimBus\NimBus.csproj" />
+    <ProjectReference Include="..\NimBus.SDK\NimBus.SDK.csproj" />
+    <ProjectReference Include="..\NimBus.ServiceBus\NimBus.ServiceBus.csproj" />
+    <ProjectReference Include="..\NimBus.ServiceDefaults\NimBus.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Update="wwwroot\eet_logo.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- Place the api specs in the static folder so that we can display them via swagger ui -->
+  <Target Name="CopyApiSpecs" AfterTargets="BeforeBuild">
+    <Copy SourceFiles="@(OAS3)" DestinationFolder="$(ProjectDir)/wwwroot" />
+  </Target>
+
+  <Target Name="NSwag" BeforeTargets="PreBuildEvent">
+	  <Exec WorkingDirectory="$(ProjectDir)" EnvironmentVariables="ASPNETCORE_ENVIRONMENT=Development" Command="$(NSwagExe_Net100) run api-gen.nswag" />
+  </Target>
+
+  <Target Name="CopySpaFiles" AfterTargets="Build">
+    <ItemGroup>
+      <SpaFilesToCopy Include="$(ProjectDir)ClientApp/build/public/**/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SpaFilesToCopy)" DestinationFiles="@(SpaFilesToCopy->'$(ProjectDir)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
+
+  <Target Name="NpmInstall" BeforeTargets="Build">
+    <!-- Ensure Node.js is installed -->
+    <Exec Command="node --version" ContinueOnError="true">
+      <Output TaskParameter="ExitCode" PropertyName="ErrorCode" />
+    </Exec>
+    <Error Condition="'$(ErrorCode)' != '0'" Text="Node.js is required to build and run this project. To continue, please install Node.js from https://nodejs.org/, and then restart your command prompt or IDE." />
+    <Message Importance="high" Text="Restoring dependencies using 'npm'. This may take several minutes..." />
+    <Exec WorkingDirectory="$(SpaRoot)" Command="npm install" />
+  </Target>
+
+  <Target Name="GenPostmanCollection" AfterTargets="NpmRunBuild" DependsOnTargets="NpmInstall">
+    <Exec WorkingDirectory="$(SpaRoot)" Command="npm run gen-postman" />
+  </Target>
+
+  <Target Name="RebuildClientAssets" BeforeTargets="build">
+    <Exec WorkingDirectory="$(SpaRoot)" Command="npm run build" />
+  </Target>
+
+  <Target Name="PublishRunWebpack" AfterTargets="ComputeFilesToPublish">
+    <!-- As part of publishing, ensure the JS resources are freshly built in production mode -->
+    <Exec WorkingDirectory="$(SpaRoot)" Command="npm install" />
+    <Exec WorkingDirectory="$(SpaRoot)" Command="npm run build" />
+    <Exec WorkingDirectory="$(SpaRoot)" Command="npm run clean" />
+    <Exec WorkingDirectory="$(SpaRoot)" Command="npm run buildpro" />
+
+
+    <!-- Include the newly-built files in the publish output -->
+    <ItemGroup>
+      <DistFiles Include="$(SpaRoot)build\**" />
+      <DistFiles Include="$(SpaRoot)node_modules\**" />
+      <ResolvedFileToPublish Include="@(DistFiles->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">
+        <RelativePath>%(DistFiles.Identity)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
+</Project>

@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="NimBus.Abstractions/NimBus.Abstractions.csproj" />
+  <Project Path="NimBus.Core/NimBus.Core.csproj" />
+  <Project Path="NimBus.SDK/NimBus.SDK.csproj" />
+  <Project Path="NimBus.ServiceBus/NimBus.ServiceBus.csproj" />
+</Solution>

@@ -57,6 +57,14 @@ public class EndpointManagement
         return await _serviceBusManagement.IsSubscriptionActive(topicName, subscriptionName);
     }
 
+    public async Task<SubscriptionState> GetEndpointSubscriptionState(string endpointName)
+    {
+        string topicName = endpointName;
+        string subscriptionName = endpointName;
+
+        return await _serviceBusManagement.GetSubscriptionState(topicName, subscriptionName);
+    }
+
     public async Task EnableHeartbeatOnEndpoint(string endpointName, bool enable)
     {
         string topicName = "heartbeat";

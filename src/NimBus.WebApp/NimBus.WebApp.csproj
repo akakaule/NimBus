@@ -46,10 +46,22 @@
 
   <ItemGroup>
     <None Remove="ClientApp\public\eet_logo.png" />
+    <None Remove="ClientApp\public\nimbus_ascii_logo.png" />
+    <None Remove="ClientApp\public\nimbus_ascii_logo.svg" />
   </ItemGroup>
 
   <ItemGroup>
     <Content Include="ClientApp\public\eet_logo.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="ClientApp\public\nimbus_ascii_logo.svg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="ClientApp\public\nimbus_ascii_logo.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
@@ -69,6 +81,12 @@
 
   <ItemGroup>
     <Content Update="wwwroot\eet_logo.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Update="wwwroot\nimbus_ascii_logo.svg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Update="wwwroot\nimbus_ascii_logo.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

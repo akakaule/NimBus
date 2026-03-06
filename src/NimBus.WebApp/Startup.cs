@@ -35,6 +35,7 @@ using NimBus.SDK.Logging;
 using NimBus.Management.ServiceBus;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
+using NimBusLoggerProvider = NimBus.Core.Logging.ILoggerProvider;
 
 namespace NimBus.WebApp
 {
@@ -125,7 +126,7 @@ namespace NimBus.WebApp
             services.AddSingleton<ISender>(sp => new SenderManager(sp.GetRequiredService<ServiceBusClient>().CreateSender(NimBus.Core.Messages.Constants.ManagerId)));
 
             string globalTraceLogInstrKey = Configuration.GetValue<string>("APPINSIGHTS_INSTRUMENTATIONKEY");
-            services.AddSingleton<ILoggerProvider>(sp => {
+            services.AddSingleton<NimBusLoggerProvider>(sp => {
                 Serilog.ILogger baseLogger = new LoggerConfiguration()
                 .MinimumLevel.Verbose()
                 .WriteTo.Console()

@@ -4,6 +4,13 @@ using System;
 using System.Threading.Tasks;
 
 namespace NimBus.Management.ServiceBus;
+
+public enum SubscriptionState
+{
+    Active,
+    Disabled,
+    NotFound,
+}
 public interface IServiceBusManagement
 {
     Task CreateRule(string topicName, string subscriptionName, string ruleName);
@@ -17,6 +24,7 @@ public interface IServiceBusManagement
     Task DisableSubscription(string topicName, string subscriptionName);
     Task EnableSubscription(string topicName, string subscriptionName);
     Task<bool> IsSubscriptionActive(string topicName, string subscriptionName);
+    Task<SubscriptionState> GetSubscriptionState(string topicName, string subscriptionName);
     Task UpdateForwardTo(string topicName, string subscriptionName, string forwardTo);
     Task CreateDeferredSubscription(string topicName);
     Task CreateDeferredProcessorSubscription(string topicName);
@@ -281,8 +289,29 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task<bool> IsSubscriptionActive(string topicName, string subscriptionName)
     {
-        var subscription = await client.GetSubscriptionAsync(topicName, subscriptionName);
-        return subscription?.Value?.Status == EntityStatus.Active;
+        return await GetSubscriptionState(topicName, subscriptionName) == SubscriptionState.Active;
+    }
+
+    public async Task<SubscriptionState> GetSubscriptionState(string topicName, string subscriptionName)
+    {
+        try
+        {
+            var subscription = await client.GetSubscriptionAsync(topicName, subscriptionName);
+            return subscription?.Value?.Status == EntityStatus.Active
+                ? SubscriptionState.Active
+                : SubscriptionState.Disabled;
+        }
+        catch (Azure.Messaging.ServiceBus.ServiceBusException ex)
+            when (ex.Reason == Azure.Messaging.ServiceBus.ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger?.Information("Subscription '{SubscriptionName}' on topic '{TopicName}' was not found.", subscriptionName, topicName);
+            return SubscriptionState.NotFound;
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 404)
+        {
+            _logger?.Information("Subscription '{SubscriptionName}' on topic '{TopicName}' was not found.", subscriptionName, topicName);
+            return SubscriptionState.NotFound;
+        }
     }
 
     /// <summary>

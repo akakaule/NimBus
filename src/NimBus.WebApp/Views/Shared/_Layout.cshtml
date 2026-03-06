@@ -5,7 +5,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@ViewData["Title"] - NimBus Management</title>
+    <title>NimBus</title>
     @RenderSection("Header", required: false)
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" integrity="sha384-JcKb8q3iqJ61gNV9KGb8thSsNjpSL0n8PARn9HuZOnIxN0hoP+VmmDGMN5t9UJ0Z" crossorigin="anonymous">
     <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js" integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj" crossorigin="anonymous"></script>
@@ -18,7 +18,10 @@
             <div class="container">
                 <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index">
                     <span>
-                        <h4><img style="height:1em; padding-right:0.3em; padding-bottom:0.1em; font-size:xx-large;" src="~/eet_logo.png" />DIS<span class="badge badge-secondary">@Configuration.GetSection("Environment").Value.ToUpper()</span></h4>
+                        <h4 style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0;">
+                            <img style="height:3rem; width:auto;" src="~/nimbus_ascii_logo.png" alt="NimBus" />
+                            <span class="badge badge-secondary">@Configuration.GetSection("Environment").Value.ToUpper()</span>
+                        </h4>
                     </span>
                 </a>
 

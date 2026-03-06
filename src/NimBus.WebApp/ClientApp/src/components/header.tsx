@@ -29,19 +29,16 @@ const Header = (props: HeaderProps) => {
     >
       <div className="flex flex-nowrap items-center self-center justify-between w-full">
         <div className="flex items-center mr-5">
-          <img
-            src="/eet_logo.png"
-            className="max-h-[1em] pr-0.5 mb-1 text-3xl"
-            alt="EET Logo"
-          />
           <a href="/Endpoints" className="text-xl hover:no-underline">
-            <h3 className="hidden md:block text-lg font-medium px-4 pb-0.5 tracking-tight">
-              DIS
-            </h3>
+            <img
+              src="/nimbus_ascii_logo.png"
+              className="h-12 w-auto max-w-none"
+              alt="NimBus"
+            />
           </a>
           <Badge
             variant="secondary"
-            className="bg-transparent text-muted-foreground"
+            className="ml-3 bg-transparent text-muted-foreground"
           >
             {env !== undefined ? env : getEnv()}
           </Badge>

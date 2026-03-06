@@ -434,6 +434,9 @@ export default class EndpointsList extends React.Component<
     } else if (status === EndpointStatus.Disabled) {
       IconComponent = WarningIcon;
       colorTailwind = "text-gray-500";
+    } else if (status === EndpointStatus.MissingSubscription) {
+      IconComponent = WarningIcon;
+      colorTailwind = "text-slate-500";
     }
 
     return (

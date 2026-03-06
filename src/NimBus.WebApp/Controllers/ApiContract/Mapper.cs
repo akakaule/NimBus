@@ -385,7 +385,7 @@ public static class Mapper
         {
             EndpointId = metadata.EndpointId,
             HeartbeatStatus = metadata.EndpointHeartbeatStatus.ToString(),
-            SubscriptionStatus = metadata.SubscriptionStatus != null && metadata.SubscriptionStatus.Value ? "active" : "disabled",
+            SubscriptionStatus = SubscriptionStatusFromMetadata(metadata),
             IsHeartbeatEnabled = metadata.IsHeartbeatEnabled,
         });
     }
@@ -396,8 +396,18 @@ public static class Mapper
         {
             EndpointId = metadata.EndpointId,
             HeartbeatStatus = metadata.EndpointHeartbeatStatus.ToString(),
-            SubscriptionStatus = metadata.SubscriptionStatus != null && metadata.SubscriptionStatus.Value ? "active" : "disabled",
+            SubscriptionStatus = SubscriptionStatusFromMetadata(metadata),
             IsHeartbeatEnabled = metadata.IsHeartbeatEnabled,
         };
+    }
+
+    private static string SubscriptionStatusFromMetadata(EndpointMetadata metadata)
+    {
+        if (!metadata.SubscriptionStatus.HasValue)
+        {
+            return "not-found";
+        }
+
+        return metadata.SubscriptionStatus.Value ? "active" : "disabled";
     }
 }

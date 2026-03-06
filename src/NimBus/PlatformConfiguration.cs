@@ -1,8 +1,10 @@
-﻿using NimBus.Core;
-using NimBus.Endpoints.CRM;
-using NimBus.Endpoints.Website;
-using NimBus.Endpoints.NAV09;
-using NimBus.Endpoints.SurveyMonkey;
+using NimBus.Core;
+using NimBus.Endpoints.Analytics;
+using NimBus.Endpoints.Billing;
+using NimBus.Endpoints.Identity;
+using NimBus.Endpoints.Notifications;
+using NimBus.Endpoints.Storefront;
+using NimBus.Endpoints.Warehouse;
 
 namespace NimBus
 {
@@ -10,11 +12,12 @@ namespace NimBus
     {
         public PlatformConfiguration()
         {
-            AddEndpoint(new Nav09Endpoint());
-            AddEndpoint(new CrmEndpoint());
-            AddEndpoint(new CrmBulkEndpoint());
-            AddEndpoint(new WebEndpoint());
-            AddEndpoint(new SurveyMonkeyEndpoint());
+            AddEndpoint(new IdentityGatewayEndpoint());
+            AddEndpoint(new StorefrontEndpoint());
+            AddEndpoint(new BillingEndpoint());
+            AddEndpoint(new WarehouseEndpoint());
+            AddEndpoint(new NotificationEndpoint());
+            AddEndpoint(new AnalyticsEndpoint());
         }
     }
 }

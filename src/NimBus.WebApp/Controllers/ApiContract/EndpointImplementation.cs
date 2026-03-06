@@ -532,12 +532,18 @@ public class EndpointImplementation : IEndpointApiController
         }
 
         var endpointManagement = new EndpointManagement(serviceBusManagement);
-        if (await endpointManagement.IsEndpointActive(endpointId))
+        var subscriptionState = await endpointManagement.GetEndpointSubscriptionState(endpointId);
+        if (subscriptionState == SubscriptionState.Active)
         {
             return new OkObjectResult($"active");
         }
 
-        return new OkObjectResult($"disabled");
+        if (subscriptionState == SubscriptionState.NotFound)
+        {
+            return new OkObjectResult("not-found");
+        }
+
+        return new OkObjectResult("disabled");
     }
 
     public async Task<IActionResult> EndpointEnableHeartbeatAsync(bool? body, string endpointId)
@@ -635,14 +641,13 @@ public class EndpointImplementation : IEndpointApiController
     private async Task SetSubscriptionStatusMetadata(EndpointMetadata metadata)
     {
         var endpointManagement = new EndpointManagement(serviceBusManagement);
-        if (await endpointManagement.IsEndpointActive(metadata.EndpointId))
+        var subscriptionState = await endpointManagement.GetEndpointSubscriptionState(metadata.EndpointId);
+        metadata.SubscriptionStatus = subscriptionState switch
         {
-            metadata.SubscriptionStatus = true;
-        }
-        else
-        {
-            metadata.SubscriptionStatus = false;
-        }
+            SubscriptionState.Active => true,
+            SubscriptionState.Disabled => false,
+            _ => null,
+        };
 
         await cosmosClient.SetEndpointMetadata(metadata);
     }

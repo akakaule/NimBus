@@ -10,12 +10,15 @@ export enum EndpointStatus {
   Failed = "Failed",
   Pending = "Pending",
   Disabled = "Disabled",
+  MissingSubscription = "Subscription Missing",
 }
 
 export const getEndpointStatus = (
   props: IEndpointStatusCount,
 ): EndpointStatus => {
-  if (props.subscriptionStatus! === "disabled") {
+  if (props.subscriptionStatus! === "not-found") {
+    return EndpointStatus.MissingSubscription;
+  } else if (props.subscriptionStatus! === "disabled") {
     return EndpointStatus.Disabled;
   } else if (props.failedCount! > 0) {
     return EndpointStatus.Failed;
@@ -38,6 +41,8 @@ export const mapStatusToColor = (status: EndpointStatus): string => {
       return "teal";
     case EndpointStatus.Disabled:
       return "purple";
+    case EndpointStatus.MissingSubscription:
+      return "gray";
   }
 };
 

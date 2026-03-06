@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 116" role="img" aria-labelledby="title desc">
+  <title id="title">NimBus</title>
+  <desc id="desc">ASCII art logo for NimBus.</desc>
+  <rect width="520" height="116" rx="16" fill="#f8fafc" stroke="#cbd5e1" />
+  <text font-family="'Courier New', Courier, monospace" font-size="15" fill="#0f172a" xml:space="preserve">
+    <tspan x="18" y="30"> _   _ _           ____             </tspan>
+    <tspan x="18" dy="20">| \ | (_)_ __ ___ | __ ) _   _ ___  </tspan>
+    <tspan x="18" dy="20">|  \| | | '_ ` _ \|  _ \| | | / __| </tspan>
+    <tspan x="18" dy="20">| |\  | | | | | | | |_) | |_| \__ \ </tspan>
+    <tspan x="18" dy="20">|_| \_|_|_| |_| |_|____/ \__,_|___/ </tspan>
+  </text>
+</svg>

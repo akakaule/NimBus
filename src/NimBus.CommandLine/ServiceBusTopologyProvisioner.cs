@@ -35,7 +35,6 @@ internal sealed class ServiceBusTopologyProvisioner
         var platform = new PlatformConfiguration();
         var client = new ServiceBusAdministrationClient(connectionString);
 
-        await EnsureTopicAsync(client, Constants.ManagerId, cancellationToken).ConfigureAwait(false);
         await EnsureTopicAsync(client, Constants.ResolverId, cancellationToken).ConfigureAwait(false);
 
         foreach (var endpoint in platform.Endpoints.OrderBy(endpoint => endpoint.Id, StringComparer.Ordinal))
@@ -63,9 +62,6 @@ internal sealed class ServiceBusTopologyProvisioner
         await EnsureForwardSubscriptionAsync(client, endpoint.Id, Constants.ResolverId, Constants.ResolverId, cancellationToken).ConfigureAwait(false);
         await EnsureRuleAsync(client, endpoint.Id, Constants.ResolverId, $"from-{endpoint.Id}", $"user.To = '{Constants.ResolverId}'", $"SET user.From = '{endpoint.Id}'", cancellationToken).ConfigureAwait(false);
         await EnsureRuleAsync(client, endpoint.Id, Constants.ResolverId, $"to-{endpoint.Id}", $"user.To = '{endpoint.Id}'", action: null, cancellationToken).ConfigureAwait(false);
-
-        await EnsureForwardSubscriptionAsync(client, endpoint.Id, Constants.ManagerId, Constants.ManagerId, cancellationToken).ConfigureAwait(false);
-        await EnsureRuleAsync(client, endpoint.Id, Constants.ManagerId, $"from-{endpoint.Id}", $"user.To = '{Constants.ManagerId}'", $"SET user.From = '{endpoint.Id}'; SET user.EventId = newid()", cancellationToken).ConfigureAwait(false);
 
         await EnsureRuleAsync(client, endpoint.Id, endpoint.Id, "continuation", $"user.To = '{Constants.ContinuationId}'", $"SET user.To = '{endpoint.Id}'; SET user.From = '{Constants.ContinuationId}'", cancellationToken).ConfigureAwait(false);
         await EnsureRuleAsync(client, endpoint.Id, endpoint.Id, "retry", $"user.To = '{Constants.RetryId}'", $"SET user.To = '{endpoint.Id}'; SET user.From = '{Constants.RetryId}'", cancellationToken).ConfigureAwait(false);

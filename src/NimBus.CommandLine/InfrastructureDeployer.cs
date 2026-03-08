@@ -21,13 +21,13 @@ internal sealed class InfrastructureDeployer
 
         if (!string.IsNullOrWhiteSpace(options.ResourceNamePostFix))
         {
-            Console.WriteLine($"Ignoring --resource-name-postfix '{options.ResourceNamePostFix}' because the current bicep templates do not consume it.");
+            CliOutput.WriteLine($"Ignoring --resource-name-postfix '{options.ResourceNamePostFix}' because the current bicep templates do not consume it.");
         }
 
-        Console.WriteLine("Deploying core infrastructure...");
+        CliOutput.WriteLine("Deploying core infrastructure...");
         await DeployCoreInfrastructureAsync(options, names, cancellationToken).ConfigureAwait(false);
 
-        Console.WriteLine("Preparing web app infrastructure inputs...");
+        CliOutput.WriteLine("Preparing web app infrastructure inputs...");
         await _az.EnsureExtensionAsync("application-insights", cancellationToken).ConfigureAwait(false);
 
         var appInsightsApiKey = await EnsureAppInsightsApiKeyAsync(options.ResourceGroupName, names.AppInsightsName, cancellationToken).ConfigureAwait(false);
@@ -57,7 +57,7 @@ internal sealed class InfrastructureDeployer
             cancellationToken,
             $"Failed to read Application Insights instrumentation key for '{names.AppInsightsName}'.").ConfigureAwait(false);
 
-        Console.WriteLine("Deploying web app infrastructure...");
+        CliOutput.WriteLine("Deploying web app infrastructure...");
         await DeployWebAppInfrastructureAsync(
             options,
             names,
@@ -145,7 +145,7 @@ internal sealed class InfrastructureDeployer
             },
             cancellationToken).ConfigureAwait(false);
 
-        if (existingKey.Succeeded)
+        if (existingKey.Succeeded && !string.IsNullOrWhiteSpace(existingKey.StandardOutput) && !existingKey.StandardOutput.TrimStart().StartsWith("[]", StringComparison.Ordinal))
         {
             await _az.EnsureSuccessAsync(
                 new[]

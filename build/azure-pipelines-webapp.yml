@@ -1,0 +1,95 @@
+parameters:
+  - name: deployDev
+    displayName: 'Deploy to Dev'
+    type: boolean
+    default: true
+  - name: deployTest
+    displayName: 'Deploy to Test'
+    type: boolean
+    default: false
+  - name: deployProd
+    displayName: 'Deploy to Prod'
+    type: boolean
+    default: false
+
+trigger:
+  batch: true
+  branches:
+    include:
+    - main
+  paths:
+    include: [ 'src/EET.DIS.WebApp/*' ]
+
+pool:
+  vmImage: 'ubuntu-24.04'
+
+variables:
+- name: BuildConfiguration
+  value: 'release'
+- name: vstsFeed
+  value: 'c7db3f6c-752a-4e27-b4cb-a0bab3e47bdf/10890a77-d6d5-40b0-bc45-2d291668d6ee'
+
+stages:
+  - stage: Build_Application
+    displayName: Build & Test
+    jobs:
+    - template: build-webapp-template.yml
+      parameters:
+        vstsFeed: $(vstsFeed)
+
+  - stage: Deploy_Dev
+    displayName: Deploy to Dev
+    dependsOn: Build_Application
+    condition: |
+      and(
+        succeeded(),
+        or(
+          eq(variables['Build.Reason'], 'IndividualCI'),
+          eq(variables['Build.Reason'], 'BatchedCI'),
+          and(
+            eq(variables['Build.Reason'], 'Manual'),
+            eq('${{ parameters.deployDev }}', 'true')
+          )
+        )
+      )
+    variables:
+      - group: DIS-Dev
+    jobs:
+    - template: deploy-webapp-template.yml
+      parameters:
+        environment: dev
+        serviceConnectionName: 'Dataplatform-Dev'
+
+  - stage: Deploy_Test
+    displayName: Deploy to Test
+    dependsOn: Deploy_Dev
+    condition: |
+      and(
+        succeeded(),
+        eq(variables['Build.Reason'], 'Manual'),
+        eq('${{ parameters.deployTest }}', 'true')
+      )
+    variables:
+      - group: DIS-Test
+    jobs:
+    - template: deploy-webapp-template.yml
+      parameters:
+        environment: test
+        serviceConnectionName: 'Dataplatform-Test'
+
+  - stage: Deploy_Prod
+    displayName: Deploy to Prod
+    dependsOn: Deploy_Test
+    condition: |
+      and(
+        succeeded(),
+        eq(variables['Build.Reason'], 'Manual'),
+        eq('${{ parameters.deployProd }}', 'true')
+      )
+    variables:
+      - group: DIS-Prod
+    jobs:
+    - template: deploy-webapp-template.yml
+      parameters:
+        environment: prod
+        serviceConnectionName: 'Dataplatform-Prod'

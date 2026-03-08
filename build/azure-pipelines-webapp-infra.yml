@@ -1,0 +1,87 @@
+trigger: none
+
+parameters:
+  - name: deployToDev
+    displayName: 'Deploy to Dev'
+    type: boolean
+    default: true
+  - name: deployToTest
+    displayName: 'Deploy to Test'
+    type: boolean
+    default: false
+  - name: deployToProd
+    displayName: 'Deploy to Prod'
+    type: boolean
+    default: false
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  BuildConfiguration: 'release'
+
+stages:
+  - stage: Publish_files
+    displayName: Publish files
+    jobs:
+      - job: 
+        steps:
+           - task: CopyFiles@2
+             displayName: 'Copy deployment files'
+             inputs:
+               SourceFolder: 'deploy'
+               contents: |
+                 **/*
+               TargetFolder: '$(Build.ArtifactStagingDirectory)/deploy'
+
+           - task: PublishBuildArtifacts@1
+             displayName: 'Publish Artifact'
+             inputs:
+               PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+               ArtifactName: 'drop'
+
+  - stage: Provision_Dev
+    displayName: Provision Dev
+    dependsOn: Publish_files
+    condition: and(succeeded(), eq('${{ parameters.deployToDev }}', 'true'))
+    variables:
+      - group: DIS-Dev
+    jobs:
+      - template: infra-webapp-template.yml
+        parameters:
+          environment: dev
+          serviceConnectionName: 'Dataplatform-Dev'
+
+  - stage: Provision_Test
+    displayName: Provision Test
+    dependsOn: Publish_files
+    condition: |
+      and(
+        succeeded(),
+        eq('${{ parameters.deployToTest }}', 'true'),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main')
+      )
+    variables:
+      - group: DIS-Test
+    jobs:
+      - template: infra-webapp-template.yml
+        parameters:
+          environment: test
+          serviceConnectionName: 'Dataplatform-Test'
+
+  - stage: Provision_Production
+    displayName: Provision Prod
+    dependsOn: Publish_files
+    condition: |
+      and(
+        succeeded(),
+        eq('${{ parameters.deployToProd }}', 'true'),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main')
+      )
+    variables:
+      - group: DIS-Prod
+    jobs:
+      - template: infra-webapp-template.yml
+        parameters:
+          environment: prod
+          serviceConnectionName: 'Dataplatform-Prod'

@@ -6,7 +6,7 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
-        var app = new CommandLineApplication
+        using var app = new CommandLineApplication
         {
             Name = "nb",
             Description = "Provision NimBus infrastructure, Service Bus topology, and app deployments.",
@@ -31,12 +31,12 @@ internal static class Program
         }
         catch (CommandException exception)
         {
-            Console.Error.WriteLine(exception.Message);
+            CliOutput.WriteError(exception.Message);
             return 1;
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"Command failed with exception ({exception.GetType().Name}): {exception.Message}");
+            CliOutput.WriteError($"Command failed with exception ({exception.GetType().Name}): {exception.Message}");
             return 1;
         }
     }

@@ -1,0 +1,36 @@
+parameters:
+  environment:
+  serviceConnectionName:
+  deployWorkloadTest:
+
+jobs:
+- deployment: Deploy_EventPubliser
+  environment: DIS-${{parameters.environment}}
+  displayName: Deploy Event publisher
+  strategy:
+    runOnce:
+      deploy:
+        steps:
+        - task: AzureFunctionApp@1
+          displayName: 'Deploy'
+          inputs:
+            azureSubscription: ${{parameters.serviceConnectionName}}
+            appType: functionApp
+            appName: 'func-$(SolutionResourceId)-$(EnvironmentName)-event'
+            package: '$(Pipeline.Workspace)/drop/publish/EET.DIS.EventPublisher.zip'
+            appSettings: '-NugetVersion "$(Build.BuildNumber)"'
+
+- deployment: Deploy_Resolver
+  environment: DIS-${{parameters.environment}}
+  displayName: Deploy Resolver
+  strategy:
+    runOnce:
+      deploy:
+        steps:
+        - task: AzureFunctionApp@1
+          displayName: 'Deploy'
+          inputs:
+            azureSubscription: ${{parameters.serviceConnectionName}}
+            appType: functionApp
+            appName: 'func-$(SolutionResourceId)-$(EnvironmentName)-resolver'
+            package: '$(Pipeline.Workspace)/drop/publish/EET.DIS.Resolver.zip'

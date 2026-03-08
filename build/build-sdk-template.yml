@@ -1,0 +1,118 @@
+parameters:
+  vstsFeed:
+
+jobs:
+- job: Build
+  displayName: Build Application
+  steps:
+
+  - task: UseDotNet@2
+    displayName: 'Use .Net Core sdk 10.0.x'
+    inputs:
+      version: 10.x
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet restore'
+    inputs:
+      command: restore
+      projects: |
+        src/**/EET.DIS.Abstractions.csproj
+        src/**/EET.DIS.Core.csproj        
+        src/**/EET.DIS.SDK.csproj
+        src/**/EET.DIS.ServiceBus.csproj
+      feedsToUse: 'select'
+      vstsFeed: ${{parameters.vstsFeed}}
+      includeNuGetOrg: true
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet build'
+    inputs:
+      command: build
+      projects: |
+        src/**/EET.DIS.Abstractions.csproj
+        src/**/EET.DIS.Core.csproj
+        src/**/EET.DIS.SDK.csproj
+        src/**/EET.DIS.ServiceBus.csproj
+      feedsToUse: 'select'
+      vstsFeed:  ${{parameters.vstsFeed}}
+      includeNuGetOrg: true
+      arguments: '--no-restore --configuration $(BuildConfiguration)'
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet test (all in /tests)'
+    inputs:
+      command: test
+      projects: 'tests/**/*.csproj'
+      arguments: '--no-build --configuration $(BuildConfiguration)'
+
+- job: Publish
+  displayName: Publish to nuget and artifacts
+  dependsOn: Build
+  steps:
+  - task: gitversion/setup@0
+    displayName: GitVersion 
+    inputs:
+      versionSpec: '5.x'
+
+  - task: gitversion/execute@0
+    displayName: Execute GitVersion
+    inputs:
+      useConfigFile: true
+      configFilePath: 'build/gitversion.yml'
+
+  - task: UseDotNet@2
+    displayName: 'Use .Net Core sdk 10.x'
+    inputs:
+      version: 10.x
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet restore'
+    inputs:
+      command: restore
+      projects: |
+        src/**/EET.DIS.Abstractions.csproj
+        src/**/EET.DIS.Core.csproj
+        src/**/EET.DIS.SDK.csproj
+        src/**/EET.DIS.ServiceBus.csproj
+      feedsToUse: 'select'
+      vstsFeed:  ${{parameters.vstsFeed}}
+      includeNuGetOrg: true
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet build'
+    inputs:
+      command: build
+      projects: |
+        src/**/EET.DIS.Abstractions.csproj
+        src/**/EET.DIS.Core.csproj
+        src/**/EET.DIS.SDK.csproj
+        src/**/EET.DIS.ServiceBus.csproj
+      feedsToUse: 'select'
+      vstsFeed:  ${{parameters.vstsFeed}}
+      includeNuGetOrg: true
+      arguments: '--no-restore --configuration $(BuildConfiguration)'
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet pack'
+    inputs:
+      command: pack
+      nobuild: true
+      packagesToPack: '*/**/EET.DIS.SDK.csproj; */**/EET.DIS.Core.csproj; */**/EET.DIS.ServiceBus.csproj; */**/EET.DIS.Abstractions.csproj'
+      versioningScheme: byEnvVar
+      versionEnvVar: FullSemVer
+      arguments: '--no-restore --configuration $(BuildConfiguration) /p:InformationalVersion=$(FullSemVer) /p:AssemblyVersion=$(FullSemVer) /p:FileVersion=$(FullSemVer) /p:Version=$(FullSemVer)'
+      outputDir: '$(Build.ArtifactStagingDirectory)/nuget'
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Artifact'
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+      ArtifactName: 'drop'
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet nuget push'
+    inputs:
+      command: 'push'
+      packagesToPush: '$(Build.ArtifactStagingDirectory)/nuget/*.nupkg'
+      nuGetFeedType: 'internal'
+      publishVstsFeed: ${{parameters.vstsFeed}}

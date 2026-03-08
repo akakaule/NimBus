@@ -59,7 +59,7 @@ internal sealed class PlatformConfigExporter
 
         var json = JsonSerializer.Serialize(config, options);
         await File.WriteAllTextAsync(fullPath, json, cancellationToken).ConfigureAwait(false);
-        Console.WriteLine($"Platform configuration exported to '{fullPath}'.");
+        CliOutput.WriteLine($"Platform configuration exported to '{fullPath}'.");
     }
 }
 

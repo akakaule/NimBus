@@ -1,0 +1,108 @@
+parameters:
+  vstsFeed:
+
+jobs:
+- job: Build
+  displayName: Build Application
+  steps:
+  - task: UseDotNet@2
+    displayName: 'Use .NET SDK 10.x'
+    inputs:
+      version: 10.x
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet restore'
+    inputs:
+      command: restore
+      projects: |
+        src/**/EET.DIS.Abstractions.csproj
+        src/**/EET.DIS.Core.csproj
+        src/**/EET.DIS.EventPublisher.csproj
+        src/**/EET.DIS.Manager.csproj
+        src/**/EET.DIS.MessageStore.csproj
+        src/**/EET.DIS.Resolver.csproj
+        src/**/EET.DIS.SDK.csproj
+        src/**/EET.DIS.ServiceBus.csproj
+        src/**/EET.DIS.Management.ServiceBus.csproj
+      feedsToUse: 'select'
+      vstsFeed: ${{parameters.vstsFeed}}
+      includeNuGetOrg: true
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet build'
+    inputs:
+      command: build
+      projects: |
+        src/**/EET.DIS.Abstractions.csproj
+        src/**/EET.DIS.Core.csproj
+        src/**/EET.DIS.EventPublisher.csproj
+        src/**/EET.DIS.Manager.csproj
+        src/**/EET.DIS.MessageStore.csproj
+        src/**/EET.DIS.Resolver.csproj
+        src/**/EET.DIS.SDK.csproj
+        src/**/EET.DIS.ServiceBus.csproj
+        src/**/EET.DIS.Management.ServiceBus.csproj
+      arguments: '--no-restore --configuration $(BuildConfiguration)'
+      feedsToUse: 'select'
+      vstsFeed: ${{parameters.vstsFeed}}
+      includeNuGetOrg: true
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet test (all in /tests)'
+    inputs:
+      command: test
+      projects: 'tests/**/*.csproj'
+      arguments: '--no-build --configuration $(BuildConfiguration)'
+
+- job: Publish
+  displayName: Publish artifacts
+  dependsOn: Build
+  steps:
+  - task: UseDotNet@2
+    displayName: 'Use .NET SDK 10.x'
+    inputs:
+      version: 10.x
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet restore (Core services)'
+    inputs:
+      command: restore
+      projects: |
+        src/**/EET.DIS.Resolver.csproj
+        src/**/EET.DIS.EventPublisher.csproj
+      feedsToUse: 'select'
+      vstsFeed: ${{parameters.vstsFeed}}
+      includeNuGetOrg: true
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet build (Core services)'
+    inputs:
+      command: build
+      projects: |        
+        src/**/EET.DIS.Resolver.csproj
+        src/**/EET.DIS.EventPublisher.csproj
+      arguments: '--no-restore --configuration $(BuildConfiguration)'
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet publish (resolver/eventpublisher)'
+    inputs:
+      command: publish
+      nobuild: true
+      publishWebProjects: false
+      projects: |        
+        src/**/EET.DIS.Resolver.csproj
+        src/**/EET.DIS.EventPublisher.csproj
+      arguments: '--no-restore --configuration $(BuildConfiguration) --output $(Build.ArtifactStagingDirectory)/publish /p:InformationalVersion=$(FullSemVer)'
+
+  - task: CopyFiles@2
+    displayName: 'Copy deployment files'
+    inputs:
+      SourceFolder: 'deploy'
+      contents: |
+        **/*
+      TargetFolder: '$(Build.ArtifactStagingDirectory)/deploy'
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Artifact'
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+      ArtifactName: 'drop'

@@ -1,0 +1,77 @@
+parameters:
+  vstsFeed:
+
+jobs:
+- job: Build_Publish
+  displayName: Build and publish
+  steps:
+  - task: UseDotNet@2
+    displayName: 'Use .NET SDK 10.x'
+    inputs:
+      version: 10.x
+
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '20.x' 
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet restore'
+    inputs:
+      command: restore
+      projects: |
+        src/**/EET.DIS.WebApp.csproj
+      feedsToUse: 'select'
+      vstsFeed: ${{parameters.vstsFeed}}
+      includeNuGetOrg: true
+      arguments: '--configuration $(BuildConfiguration)'
+
+  - task: Npm@1
+    displayName: "Npm install"
+    inputs:
+      command: 'install'
+      workingDir: 'src/EET.DIS.WebApp/ClientApp'
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet build'
+    inputs:
+      command: build
+      projects: |
+        src/**/EET.DIS.WebApp.csproj
+      arguments: '--no-restore --configuration $(BuildConfiguration)'
+
+  - task: Npm@1
+    displayName: "Npm test"
+    inputs:
+      command: 'custom'
+      customCommand: 'run test:ci'
+      workingDir: 'src/EET.DIS.WebApp/ClientApp'
+
+  - task: PublishTestResults@2
+    condition: succeededOrFailed()
+    inputs:
+      testRunner: JUnit
+      testResultsFiles: 'src/EET.DIS.WebApp/ClientApp/junit.xml'
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet publish'
+    inputs:
+      command: publish
+      nobuild: true
+      publishWebProjects: false
+      projects: |
+        src/**/EET.DIS.WebApp.csproj
+      arguments: '--configuration $(BuildConfiguration) --output $(Build.ArtifactStagingDirectory)/publish /p:InformationalVersion=$(PackageVersion) --no-restore'
+
+  - task: CopyFiles@2
+    displayName: 'Copy deployment files'
+    inputs:
+      SourceFolder: 'deploy'
+      contents: |
+        **/*
+      TargetFolder: '$(Build.ArtifactStagingDirectory)/deploy'
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Artifact'
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+      ArtifactName: 'drop'

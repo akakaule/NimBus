@@ -1,0 +1,20 @@
+parameters:
+  environment:
+  serviceConnectionName:
+
+jobs:
+- deployment: Deploy_WebApp
+  environment: DIS-${{parameters.environment}}
+  displayName: Deploy webapp
+  strategy:
+    runOnce:
+      deploy:
+        steps:
+        - task: AzureWebApp@1
+          displayName: 'Deploy'
+          inputs:
+            azureSubscription: ${{parameters.serviceConnectionName}}
+            appType: webApp
+            appName: 'webapp-$(SolutionResourceId)-$(EnvironmentName)-management'
+            package: '$(Pipeline.Workspace)/drop/publish/EET.DIS.WebApp.zip'
+            appSettings: '-AzureAd:CallbackPath $(CallbackPath) -AzureAd:Domain $(Domain) -AzureAd:Instance $(Instance) -AzureAd:ClientId $(ClientId) -AzureAd:TenantId $(TenantId) -ServiceBusManagement:TenantId $(TenantId) -ServiceBusManagement:SubscriptionId $(SubscriptionId) -ServiceBusManagement:ResourceGroupName $(ResourceGroupName) -ServiceBusManagement:NamespaceName $(ServiceBusNamespaceName) -ServiceBusManagement:ClientId $(ClientId) -ServiceBusManagement:ClientSecret $(ClientSecret)'

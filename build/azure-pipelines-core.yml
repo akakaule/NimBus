@@ -1,0 +1,88 @@
+trigger:
+  batch: true
+  branches:
+    include:
+    - main
+  paths:
+    exclude: [ 'src/EET.DIS.WebApp/*' ] # file paths which must match to trigger a build
+
+parameters:
+  - name: deployToDev
+    displayName: 'Deploy to Dev'
+    type: boolean
+    default: true
+  - name: deployToTest
+    displayName: 'Deploy to Test'
+    type: boolean
+    default: false
+  - name: deployToProd
+    displayName: 'Deploy to Prod'
+    type: boolean
+    default: false
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+- name: BuildConfiguration
+  value: 'release'
+
+stages:
+  - stage: Build_Application
+    displayName: Build & Test
+    jobs:
+    - template: build-core-template.yml
+      parameters:
+        vstsFeed: 'c7db3f6c-752a-4e27-b4cb-a0bab3e47bdf/10890a77-d6d5-40b0-bc45-2d291668d6ee'
+
+  - stage: Deploy_Dev
+    displayName: Deploy to Dev
+    dependsOn: Build_Application
+    condition: and(succeeded(), eq('${{ parameters.deployToDev }}', 'true'))
+    variables:
+      - group: 'DIS-Dev'
+    jobs:
+      - template: deploy-core-template.yml
+        parameters:
+          environment: dev
+          serviceConnectionName: 'Dataplatform-Dev'
+          deployWorkloadTest: false
+          deployCleanUp: false
+
+  - stage: Deploy_Test
+    displayName: Deploy to Test
+    dependsOn: Build_Application
+    condition: |
+      and(
+        succeeded(),
+        eq('${{ parameters.deployToTest }}', 'true'),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main')
+      )
+    variables:
+      - group: 'DIS-Test'
+    jobs:
+      - template: deploy-core-template.yml
+        parameters:
+          environment: test
+          serviceConnectionName: 'Dataplatform-Test'
+          deployWorkloadTest: false
+          deployCleanUp: false
+
+  - stage: Deploy_Production
+    displayName: Deploy to Production
+    dependsOn: Build_Application
+    condition: |
+      and(
+        succeeded(),
+        eq('${{ parameters.deployToProd }}', 'true'),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main')
+      )
+    variables:
+      - group: 'DIS-Prod'
+    jobs:
+      - template: deploy-core-template.yml
+        parameters:
+          environment: prod
+          serviceConnectionName: 'Dataplatform-Prod'
+          deployWorkloadTest: false
+          deployCleanUp: false

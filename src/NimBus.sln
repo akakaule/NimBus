@@ -29,6 +29,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.CommandLine", "NimBu
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.CommandLine.Tests", "..\tests\NimBus.CommandLine.Tests\NimBus.CommandLine.Tests.csproj", "{341A85EF-864F-4FD8-BEC7-107C596C7334}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.Resolver.Tests", "..\tests\NimBus.Resolver.Tests\NimBus.Resolver.Tests.csproj", "{E56A6B68-2401-409C-BE60-0F5C1CBFABF4}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -195,6 +197,18 @@ Global
 		{341A85EF-864F-4FD8-BEC7-107C596C7334}.Release|x64.Build.0 = Release|Any CPU
 		{341A85EF-864F-4FD8-BEC7-107C596C7334}.Release|x86.ActiveCfg = Release|Any CPU
 		{341A85EF-864F-4FD8-BEC7-107C596C7334}.Release|x86.Build.0 = Release|Any CPU
+		{E56A6B68-2401-409C-BE60-0F5C1CBFABF4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E56A6B68-2401-409C-BE60-0F5C1CBFABF4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E56A6B68-2401-409C-BE60-0F5C1CBFABF4}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{E56A6B68-2401-409C-BE60-0F5C1CBFABF4}.Debug|x64.Build.0 = Debug|Any CPU
+		{E56A6B68-2401-409C-BE60-0F5C1CBFABF4}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{E56A6B68-2401-409C-BE60-0F5C1CBFABF4}.Debug|x86.Build.0 = Debug|Any CPU
+		{E56A6B68-2401-409C-BE60-0F5C1CBFABF4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E56A6B68-2401-409C-BE60-0F5C1CBFABF4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E56A6B68-2401-409C-BE60-0F5C1CBFABF4}.Release|x64.ActiveCfg = Release|Any CPU
+		{E56A6B68-2401-409C-BE60-0F5C1CBFABF4}.Release|x64.Build.0 = Release|Any CPU
+		{E56A6B68-2401-409C-BE60-0F5C1CBFABF4}.Release|x86.ActiveCfg = Release|Any CPU
+		{E56A6B68-2401-409C-BE60-0F5C1CBFABF4}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

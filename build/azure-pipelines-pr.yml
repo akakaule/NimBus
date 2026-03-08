@@ -1,0 +1,64 @@
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  BuildConfiguration: 'release'
+  
+name: $(Date:yyyyMMdd)$(Rev:.r)
+
+stages:
+- stage: Build
+  displayName: 'Build'
+  condition: eq(variables['Build.Reason'], 'PullRequest')
+
+  jobs:
+
+  - job: Build
+    displayName: 'Build'
+
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Use .NET SDK 10.x'
+      inputs:
+        version: 10.x
+
+    - task: DotNetCoreCLI@2
+      displayName: 'dotnet restore'
+      inputs:
+        command: restore
+        projects: |
+          src/**/EET.DIS.csproj      
+          src/**/EET.DIS.Core.csproj
+          src/**/EET.DIS.EventPublisher.csproj
+          src/**/EET.DIS.Manager.csproj
+          src/**/EET.DIS.MessageStore.csproj
+          src/**/EET.DIS.Resolver.csproj
+          src/**/EET.DIS.SDK.csproj
+          src/**/EET.DIS.ServiceBus.csproj
+          src/**/EET.DIS.Management.ServiceBus.csproj
+        feedsToUse: 'select'
+        vstsFeed: 'c7db3f6c-752a-4e27-b4cb-a0bab3e47bdf/10890a77-d6d5-40b0-bc45-2d291668d6ee'
+        includeNuGetOrg: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'dotnet build'
+      inputs:
+        command: build
+        projects: |
+          src/**/EET.DIS.csproj      
+          src/**/EET.DIS.Core.csproj
+          src/**/EET.DIS.EventPublisher.csproj
+          src/**/EET.DIS.Manager.csproj
+          src/**/EET.DIS.MessageStore.csproj
+          src/**/EET.DIS.Resolver.csproj
+          src/**/EET.DIS.SDK.csproj
+          src/**/EET.DIS.ServiceBus.csproj
+          src/**/EET.DIS.Management.ServiceBus.csproj
+        arguments: '--no-restore --configuration $(BuildConfiguration)'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'dotnet test (all in /tests)'
+      inputs:
+        command: test
+        projects: 'tests/**/*.csproj'
+        arguments: '--no-build --configuration $(BuildConfiguration)'

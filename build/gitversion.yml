@@ -1,0 +1,20 @@
+mode: ContinuousDeployment
+next-version: 10.0.1
+assembly-versioning-scheme: MajorMinorPatch
+assembly-file-versioning-scheme: MajorMinorPatchTag
+assembly-file-versioning-format: '{Major}.{Minor}.{Patch}.{WeightedPreReleaseNumber}'
+branches:
+ feature:
+  regex: ^development$|^feature?[/-]
+  tag: useBranchName
+  increment: Patch
+  is-release-branch: false
+  prevent-increment-of-merged-branch-version: false
+ master:
+  regex: ^master$|^main$
+  tag: 'rc'
+  increment: Patch
+  is-release-branch: false
+  prevent-increment-of-merged-branch-version: false
+ignore:
+ sha: []

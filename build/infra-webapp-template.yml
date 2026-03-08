@@ -1,0 +1,23 @@
+parameters:
+  environment:
+  serviceConnectionName:
+
+jobs:
+- deployment: Deploy_Infrastructure
+  environment: DIS-${{parameters.environment}}
+  displayName: Deploy infrastructure
+  strategy:
+    runOnce:
+      deploy:
+        steps:
+        - download: current
+          artifact: drop
+          displayName: Download artifacts
+        - task: AzureCLI@2
+          displayName: 'Azure CLI: deploy.webapp.ps1'
+          inputs:
+            azureSubscription: ${{parameters.serviceConnectionName}}
+            scriptType: pscore
+            scriptPath: '$(Pipeline.Workspace)/drop/deploy/deploy.webapp.ps1'
+            arguments: '-solutionId "$(SolutionResourceId)" -environment "$(EnvironmentName)" -resourceGroupName "$(ResourceGroupName)" -webAppVersion "$(Build.BuildNumber)" -resourceNamePostFix "$(ResourceNamePostfix)"'
+            workingDirectory: '$(Pipeline.Workspace)/drop/deploy'

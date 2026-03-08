@@ -1,0 +1,24 @@
+trigger:
+  batch: true
+  branches: 
+    include:
+    - main
+  paths:
+    include: [ 'src/EET.DIS.SDK/*' ] # file paths which must match to trigger a build
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+- name: BuildConfiguration
+  value: 'release'
+
+stages:
+  - stage: Build_Application
+    displayName: Build & Test
+    jobs:
+    - template: build-sdk-template.yml
+      parameters:
+        vstsFeed: 'c7db3f6c-752a-4e27-b4cb-a0bab3e47bdf/10890a77-d6d5-40b0-bc45-2d291668d6ee'
+
+

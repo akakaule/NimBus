@@ -58,7 +58,7 @@ internal sealed class AppDeploymentService
 
     private async Task PublishAsync(string projectPath, string outputPath, string configuration, CancellationToken cancellationToken)
     {
-        Console.WriteLine($"Publishing '{projectPath}'...");
+        CliOutput.WriteLine($"Publishing '{projectPath}'...");
         var result = await _processRunner.RunAsync(
             "dotnet",
             new[]
@@ -87,7 +87,7 @@ internal sealed class AppDeploymentService
         }
 
         ZipFile.CreateFromDirectory(publishDirectory, zipPath, CompressionLevel.Optimal, includeBaseDirectory: false);
-        Console.WriteLine($"Created deployment package '{zipPath}'.");
+        CliOutput.WriteLine($"Created deployment package '{zipPath}'.");
         return zipPath;
     }
 }

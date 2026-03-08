@@ -53,23 +53,137 @@ Notes:
 
 ## CLI
 
-The repository includes a `dotnet` tool project named `nb` in `src/NimBus.CommandLine`.
+The repository includes a `dotnet` tool named `nb` in `src/NimBus.CommandLine`.
+It handles Azure infrastructure provisioning, Service Bus topology setup, and application deployment.
 
-Typical usage from the repository root:
+### Prerequisites
+
+- Azure CLI (`az`) installed and on `PATH`
+- `az login` completed for the target subscription
+- Permissions to create and deploy resources in the target resource group
+
+### Running the tool
+
+Run via `dotnet run` from the repository root:
+
+```powershell
+dotnet run --project .\src\NimBus.CommandLine -- <command> [options]
+```
+
+Alternatively, install it as a local dotnet tool:
+
+```powershell
+dotnet pack .\src\NimBus.CommandLine
+dotnet tool install --global --add-source .\src\NimBus.CommandLine\nupkg NimBus.CommandLine
+nb <command> [options]
+```
+
+Use `--help` on any command to see all available options:
+
+```powershell
+dotnet run --project .\src\NimBus.CommandLine -- --help
+dotnet run --project .\src\NimBus.CommandLine -- infra apply --help
+```
+
+### Quick start: full deployment
+
+To provision infrastructure, set up the Service Bus topology, and deploy the applications in one step:
+
+```powershell
+dotnet run --project .\src\NimBus.CommandLine -- setup `
+  --solution-id nimbus `
+  --environment dev `
+  --resource-group rg-nimbus-dev
+```
+
+This runs `infra apply`, `topology apply`, and `deploy apps` in sequence.
+
+### Commands
+
+#### `infra apply`
+
+Deploys Azure infrastructure (Service Bus namespace, Cosmos DB, Application Insights, Function App, Web App) using the bicep templates in `deploy/bicep/`.
+
+```powershell
+dotnet run --project .\src\NimBus.CommandLine -- infra apply `
+  --solution-id nimbus `
+  --environment dev `
+  --resource-group rg-nimbus-dev
+```
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `--solution-id <ID>` | Yes | Identifier used in Azure resource names |
+| `--environment <NAME>` | Yes | Environment name (e.g. `dev`, `test`, `prod`) |
+| `--resource-group <NAME>` | Yes | Azure resource group to deploy into |
+| `--repo-root <PATH>` | No | Repository root; auto-detected if omitted |
+| `--location <AZURE-REGION>` | No | Azure region override for the bicep templates |
+| `--webapp-version <VALUE>` | No | Version string stored in the web app settings |
+
+#### `topology export`
+
+Exports the current `PlatformConfiguration` (endpoints, event types, routing) to a JSON file for inspection.
 
 ```powershell
 dotnet run --project .\src\NimBus.CommandLine -- topology export
-dotnet run --project .\src\NimBus.CommandLine -- infra apply --solution-id nimbus --environment dev --resource-group <rg>
-dotnet run --project .\src\NimBus.CommandLine -- topology apply --solution-id nimbus --environment dev --resource-group <rg>
-dotnet run --project .\src\NimBus.CommandLine -- deploy apps --solution-id nimbus --environment dev --resource-group <rg>
-dotnet run --project .\src\NimBus.CommandLine -- setup --solution-id nimbus --environment dev --resource-group <rg>
+dotnet run --project .\src\NimBus.CommandLine -- topology export -o .\my-config.json
 ```
 
-Prerequisites for `nb`:
+| Option | Required | Description |
+|--------|----------|-------------|
+| `-o`, `--output <PATH>` | No | Output path; defaults to `platform-config.json` in the current directory |
 
-- Azure CLI installed and available as `az`
-- `az login` already completed for the target subscription
-- rights to deploy resources and applications in the target resource group
+#### `topology apply`
+
+Provisions Service Bus topics, subscriptions, and routing rules based on `PlatformConfiguration`. This creates the messaging topology that the platform endpoints use to communicate.
+
+```powershell
+dotnet run --project .\src\NimBus.CommandLine -- topology apply `
+  --solution-id nimbus `
+  --environment dev `
+  --resource-group rg-nimbus-dev
+```
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `--solution-id <ID>` | Yes | Solution identifier |
+| `--environment <NAME>` | Yes | Environment name |
+| `--resource-group <NAME>` | Yes | Resource group containing the Service Bus namespace |
+
+#### `deploy apps`
+
+Builds, packages, and deploys the Resolver (Azure Function App) and Web App to Azure.
+
+```powershell
+dotnet run --project .\src\NimBus.CommandLine -- deploy apps `
+  --solution-id nimbus `
+  --environment dev `
+  --resource-group rg-nimbus-dev
+```
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `--solution-id <ID>` | Yes | Solution identifier |
+| `--environment <NAME>` | Yes | Environment name |
+| `--resource-group <NAME>` | Yes | Resource group containing the target apps |
+| `--repo-root <PATH>` | No | Repository root; auto-detected if omitted |
+| `--configuration <NAME>` | No | Build configuration passed to `dotnet publish`; defaults to `Release` |
+
+#### `setup`
+
+Runs the full provisioning and deployment pipeline in sequence: `infra apply` → `topology apply` → `deploy apps`. Accepts all options from those individual commands.
+
+### Resource naming
+
+The `--solution-id` and `--environment` values are normalized (lowercased, non-alphanumeric characters removed) and combined to produce Azure resource names:
+
+| Resource | Naming pattern | Example |
+|----------|---------------|---------|
+| Service Bus namespace | `sb-{solutionId}-{environment}` | `sb-nimbus-dev` |
+| Application Insights | `ai-{solutionId}-{environment}-global-tracelog` | `ai-nimbus-dev-global-tracelog` |
+| Cosmos DB account | `cosmos-{solutionId}-{environment}` | `cosmos-nimbus-dev` |
+| Resolver Function App | `func-{solutionId}-{environment}-resolver` | `func-nimbus-dev-resolver` |
+| Management Web App | `webapp-{solutionId}-{environment}-management` | `webapp-nimbus-dev-management` |
 
 ## License
 

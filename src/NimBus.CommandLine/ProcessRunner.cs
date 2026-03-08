@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
 
@@ -25,9 +26,18 @@ internal sealed class ProcessRunner
             startInfo.WorkingDirectory = workingDirectory;
         }
 
-        foreach (var argument in arguments)
+        if (fileName.Equals("cmd.exe", StringComparison.OrdinalIgnoreCase) && arguments.Count >= 2)
         {
-            startInfo.ArgumentList.Add(argument);
+            // cmd.exe requires a raw Arguments string — ArgumentList auto-quoting
+            // breaks cmd.exe /c parsing of the command string.
+            startInfo.Arguments = string.Join(" ", arguments);
+        }
+        else
+        {
+            foreach (var argument in arguments)
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
         }
 
         var output = new StringBuilder();
@@ -38,7 +48,7 @@ internal sealed class ProcessRunner
         {
             if (args.Data is not null)
             {
-                Console.WriteLine(args.Data);
+                CliOutput.WriteLine(args.Data);
                 output.AppendLine(args.Data);
             }
         };
@@ -46,12 +56,23 @@ internal sealed class ProcessRunner
         {
             if (args.Data is not null)
             {
-                Console.Error.WriteLine(args.Data);
+                CliOutput.WriteError(args.Data);
                 error.AppendLine(args.Data);
             }
         };
 
-        if (!process.Start())
+        bool started;
+
+        try
+        {
+            started = process.Start();
+        }
+        catch (Win32Exception exception) when (exception.NativeErrorCode == 2)
+        {
+            throw new CommandException($"Could not start '{fileName}'. Ensure it is installed and available on PATH.");
+        }
+
+        if (!started)
         {
             throw new CommandException($"Failed to start '{fileName}'.");
         }

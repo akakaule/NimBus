@@ -64,13 +64,13 @@ internal sealed class AzureCliRunner
 
     private async Task<ProcessResult> RunAzAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string? workingDirectory = null, bool throwOnFailure = true)
     {
-        var allArguments = new List<string>(arguments.Count + 1)
-        {
-            "--only-show-errors",
-        };
+        var allArguments = new List<string>(arguments.Count + 1);
         allArguments.AddRange(arguments);
+        allArguments.Add("--only-show-errors");
 
-        var result = await _processRunner.RunAsync("az", allArguments, workingDirectory, cancellationToken).ConfigureAwait(false);
+        var (fileName, processArguments) = ResolveProcessCommand(allArguments);
+
+        var result = await _processRunner.RunAsync(fileName, processArguments, workingDirectory, cancellationToken).ConfigureAwait(false);
         if (throwOnFailure && !result.Succeeded)
         {
             throw new CommandException(result.StandardError);
@@ -78,4 +78,35 @@ internal sealed class AzureCliRunner
 
         return result;
     }
+
+    internal static (string FileName, IReadOnlyList<string> Arguments) ResolveProcessCommand(IReadOnlyList<string> allArguments)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return ("cmd.exe", new[] { "/d", "/c", BuildWindowsCommand(allArguments) });
+        }
+
+        return ("az", allArguments);
+    }
+
+    private static string BuildWindowsCommand(IReadOnlyList<string> arguments) =>
+        $"az.cmd {string.Join(" ", arguments.Select(QuoteWindowsCommandArgument))}";
+
+    private static string QuoteWindowsCommandArgument(string argument)
+    {
+        if (argument.Length == 0)
+        {
+            return "\"\"";
+        }
+
+        if (!RequiresWindowsCommandQuoting(argument))
+        {
+            return argument;
+        }
+
+        return $"\"{argument.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
+    }
+
+    private static bool RequiresWindowsCommandQuoting(string argument) =>
+        argument.Any(static ch => char.IsWhiteSpace(ch) || "\"&|<>^()%!".Contains(ch));
 }

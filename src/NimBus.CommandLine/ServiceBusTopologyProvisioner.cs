@@ -1,5 +1,4 @@
 using Azure.Messaging.ServiceBus.Administration;
-using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Messages;
 
@@ -7,7 +6,6 @@ namespace NimBus.CommandLine;
 
 internal sealed class ServiceBusTopologyProvisioner
 {
-    private const string HeartbeatTopicName = "heartbeat";
     private readonly AzureCliRunner _az;
 
     public ServiceBusTopologyProvisioner(AzureCliRunner az)
@@ -39,7 +37,12 @@ internal sealed class ServiceBusTopologyProvisioner
 
         await EnsureTopicAsync(client, Constants.ManagerId, cancellationToken).ConfigureAwait(false);
         await EnsureTopicAsync(client, Constants.ResolverId, cancellationToken).ConfigureAwait(false);
-        await EnsureTopicAsync(client, HeartbeatTopicName, cancellationToken).ConfigureAwait(false);
+
+        foreach (var endpoint in platform.Endpoints.OrderBy(endpoint => endpoint.Id, StringComparer.Ordinal))
+        {
+            await EnsureTopicAsync(client, endpoint.Id, cancellationToken).ConfigureAwait(false);
+        }
+
         await EnsureSessionSubscriptionAsync(client, Constants.ResolverId, Constants.ResolverId, forwardTo: null, keepDefaultRule: true, cancellationToken).ConfigureAwait(false);
 
         foreach (var endpoint in platform.Endpoints.OrderBy(endpoint => endpoint.Id, StringComparer.Ordinal))
@@ -50,12 +53,10 @@ internal sealed class ServiceBusTopologyProvisioner
 
     private static async Task EnsureEndpointTopologyAsync(
         ServiceBusAdministrationClient client,
-        IPlatform platform,
+        PlatformConfiguration platform,
         IEndpoint endpoint,
         CancellationToken cancellationToken)
     {
-        await EnsureTopicAsync(client, endpoint.Id, cancellationToken).ConfigureAwait(false);
-
         await EnsureSessionSubscriptionAsync(client, endpoint.Id, endpoint.Id, forwardTo: null, keepDefaultRule: false, cancellationToken).ConfigureAwait(false);
         await EnsureRuleAsync(client, endpoint.Id, endpoint.Id, $"to-{endpoint.Id}", $"user.To = '{endpoint.Id}'", action: null, cancellationToken).ConfigureAwait(false);
 
@@ -66,11 +67,8 @@ internal sealed class ServiceBusTopologyProvisioner
         await EnsureForwardSubscriptionAsync(client, endpoint.Id, Constants.ManagerId, Constants.ManagerId, cancellationToken).ConfigureAwait(false);
         await EnsureRuleAsync(client, endpoint.Id, Constants.ManagerId, $"from-{endpoint.Id}", $"user.To = '{Constants.ManagerId}'", $"SET user.From = '{endpoint.Id}'; SET user.EventId = newid()", cancellationToken).ConfigureAwait(false);
 
-        await EnsureForwardSubscriptionAsync(client, endpoint.Id, Constants.ContinuationId, endpoint.Id, cancellationToken).ConfigureAwait(false);
-        await EnsureRuleAsync(client, endpoint.Id, Constants.ContinuationId, "continuation", $"user.To = '{Constants.ContinuationId}'", $"SET user.To = '{endpoint.Id}'; SET user.From = '{Constants.ContinuationId}'", cancellationToken).ConfigureAwait(false);
-
-        await EnsureForwardSubscriptionAsync(client, endpoint.Id, Constants.RetryId, endpoint.Id, cancellationToken).ConfigureAwait(false);
-        await EnsureRuleAsync(client, endpoint.Id, Constants.RetryId, "retry", $"user.To = '{Constants.RetryId}'", $"SET user.To = '{endpoint.Id}'; SET user.From = '{Constants.RetryId}'", cancellationToken).ConfigureAwait(false);
+        await EnsureRuleAsync(client, endpoint.Id, endpoint.Id, "continuation", $"user.To = '{Constants.ContinuationId}'", $"SET user.To = '{endpoint.Id}'; SET user.From = '{Constants.ContinuationId}'", cancellationToken).ConfigureAwait(false);
+        await EnsureRuleAsync(client, endpoint.Id, endpoint.Id, "retry", $"user.To = '{Constants.RetryId}'", $"SET user.To = '{endpoint.Id}'; SET user.From = '{Constants.RetryId}'", cancellationToken).ConfigureAwait(false);
 
         await EnsureDeferredSubscriptionAsync(client, endpoint.Id, cancellationToken).ConfigureAwait(false);
         await EnsureDeferredProcessorSubscriptionAsync(client, endpoint.Id, cancellationToken).ConfigureAwait(false);
@@ -112,7 +110,7 @@ internal sealed class ServiceBusTopologyProvisioner
         };
 
         await client.CreateTopicAsync(options, cancellationToken).ConfigureAwait(false);
-        Console.WriteLine($"Created topic '{topicName}'.");
+        CliOutput.WriteLine($"Created topic '{topicName}'.");
     }
 
     private static async Task EnsureSessionSubscriptionAsync(
@@ -128,13 +126,13 @@ internal sealed class ServiceBusTopologyProvisioner
         {
             await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: true, forwardTo), cancellationToken).ConfigureAwait(false);
             existing = await client.GetSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
-            Console.WriteLine($"Created session subscription '{subscriptionName}' on topic '{topicName}'.");
+            CliOutput.WriteLine($"Created session subscription '{subscriptionName}' on topic '{topicName}'.");
         }
         else if (!existing.RequiresSession || !string.Equals(existing.ForwardTo, forwardTo, StringComparison.Ordinal))
         {
             await client.DeleteSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
             await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: true, forwardTo), cancellationToken).ConfigureAwait(false);
-            Console.WriteLine($"Recreated session subscription '{subscriptionName}' on topic '{topicName}'.");
+            CliOutput.WriteLine($"Recreated session subscription '{subscriptionName}' on topic '{topicName}'.");
         }
 
         if (!keepDefaultRule)
@@ -154,13 +152,13 @@ internal sealed class ServiceBusTopologyProvisioner
         if (existing is null)
         {
             await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: false, forwardTo), cancellationToken).ConfigureAwait(false);
-            Console.WriteLine($"Created forward subscription '{subscriptionName}' on topic '{topicName}' to '{forwardTo}'.");
+            CliOutput.WriteLine($"Created forward subscription '{subscriptionName}' on topic '{topicName}' to '{forwardTo}'.");
         }
         else if (existing.RequiresSession || !string.Equals(existing.ForwardTo, forwardTo, StringComparison.Ordinal))
         {
             await client.DeleteSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
             await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: false, forwardTo), cancellationToken).ConfigureAwait(false);
-            Console.WriteLine($"Recreated forward subscription '{subscriptionName}' on topic '{topicName}' to '{forwardTo}'.");
+            CliOutput.WriteLine($"Recreated forward subscription '{subscriptionName}' on topic '{topicName}' to '{forwardTo}'.");
         }
 
         await DeleteRuleIfExistsAsync(client, topicName, subscriptionName, "$Default", cancellationToken).ConfigureAwait(false);
@@ -182,7 +180,7 @@ internal sealed class ServiceBusTopologyProvisioner
             var options = CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: false, forwardTo: null);
             options.DefaultMessageTimeToLive = TimeSpan.FromDays(14);
             await client.CreateSubscriptionAsync(options, cancellationToken).ConfigureAwait(false);
-            Console.WriteLine($"Ensured deferred subscription '{subscriptionName}' on topic '{topicName}'.");
+            CliOutput.WriteLine($"Ensured deferred subscription '{subscriptionName}' on topic '{topicName}'.");
         }
 
         await DeleteRuleIfExistsAsync(client, topicName, subscriptionName, "$Default", cancellationToken).ConfigureAwait(false);
@@ -203,7 +201,7 @@ internal sealed class ServiceBusTopologyProvisioner
             }
 
             await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: false, forwardTo: null), cancellationToken).ConfigureAwait(false);
-            Console.WriteLine($"Ensured deferred processor subscription '{subscriptionName}' on topic '{topicName}'.");
+            CliOutput.WriteLine($"Ensured deferred processor subscription '{subscriptionName}' on topic '{topicName}'.");
         }
 
         await DeleteRuleIfExistsAsync(client, topicName, subscriptionName, "$Default", cancellationToken).ConfigureAwait(false);
@@ -242,7 +240,7 @@ internal sealed class ServiceBusTopologyProvisioner
         }
 
         await client.CreateRuleAsync(topicName, subscriptionName, createRule, cancellationToken).ConfigureAwait(false);
-        Console.WriteLine($"Ensured rule '{ruleName}' on '{topicName}/{subscriptionName}'.");
+        CliOutput.WriteLine($"Ensured rule '{ruleName}' on '{topicName}/{subscriptionName}'.");
     }
 
     private static bool RuleMatches(RuleProperties rule, string filter, string? action)

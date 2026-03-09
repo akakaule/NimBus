@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="NimBus.ServiceBus.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
 	<PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
 	<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.ServiceBus" Version="5.24.0" />
     <PackageReference Include="Microsoft.Identity.Client" Version="4.81.0" />

@@ -53,9 +53,9 @@ namespace NimBus.ServiceBus
             get { try { return GetUserProperty(UserPropertyName.DeadLetterErrorDescription); } catch (InvalidMessageException) { return null; } }
         }
 
-        public string OriginatingMessageId => GetUserProperty(UserPropertyName.OriginatingMessageId) ?? Constants.Self;
+        public string OriginatingMessageId => _sbMessage.GetUserProperty(UserPropertyName.OriginatingMessageId) ?? Constants.Self;
 
-        public string ParentMessageId => GetUserProperty(UserPropertyName.ParentMessageId) ?? Constants.Self;
+        public string ParentMessageId => _sbMessage.GetUserProperty(UserPropertyName.ParentMessageId) ?? Constants.Self;
 
         public MessageType MessageType => GetMessageType();
 

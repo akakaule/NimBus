@@ -191,12 +191,10 @@ public class MessageContextTests
     }
 
     [TestMethod]
-    public void OriginatingMessageId_WhenMissing_ThrowsInvalidMessage()
+    public void OriginatingMessageId_WhenMissing_ReturnsSelf()
     {
-        // GetUserProperty throws before the ?? Constants.Self fallback can fire,
-        // making the fallback unreachable in the current implementation.
         var ctx = CreateMessageContext();
-        Assert.ThrowsException<InvalidMessageException>(() => ctx.OriginatingMessageId);
+        Assert.AreEqual(Constants.Self, ctx.OriginatingMessageId);
     }
 
     [TestMethod]
@@ -208,10 +206,10 @@ public class MessageContextTests
     }
 
     [TestMethod]
-    public void ParentMessageId_WhenMissing_ThrowsInvalidMessage()
+    public void ParentMessageId_WhenMissing_ReturnsSelf()
     {
         var ctx = CreateMessageContext();
-        Assert.ThrowsException<InvalidMessageException>(() => ctx.ParentMessageId);
+        Assert.AreEqual(Constants.Self, ctx.ParentMessageId);
     }
 
     [TestMethod]

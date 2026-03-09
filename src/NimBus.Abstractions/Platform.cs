@@ -1,3 +1,4 @@
+using System;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using System.Collections.Generic;
@@ -23,13 +24,18 @@ namespace NimBus.Core
     {
         private Dictionary<string, IEndpoint> _endpoints;
 
-        public Platform()
+        protected Platform()
         {
             _endpoints = new Dictionary<string, IEndpoint>();
         }
 
         protected void AddEndpoint(IEndpoint endpoint)
         {
+#if NET6_0_OR_GREATER
+            ArgumentNullException.ThrowIfNull(endpoint);
+#else
+            if (endpoint is null) throw new ArgumentNullException(nameof(endpoint));
+#endif
             _endpoints.Add(endpoint.Id, endpoint);
         }
 

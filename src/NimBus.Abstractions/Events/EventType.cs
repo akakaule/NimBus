@@ -6,10 +6,10 @@ using System.Reflection;
 
 namespace NimBus.Core.Events
 {
-    public class EventType<T_Event> : EventType, IEventType
-        where T_Event : IEvent
+    public class EventType<TEvent> : EventType, IEventType
+        where TEvent : IEvent
     {
-        public EventType() : base(typeof(T_Event)) { }
+        public EventType() : base(typeof(TEvent)) { }
     }
 
     public class EventType : IEventType

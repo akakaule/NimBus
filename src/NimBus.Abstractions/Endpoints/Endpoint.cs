@@ -10,7 +10,7 @@ namespace NimBus.Core.Endpoints
         private Dictionary<string, IEventType> _eventTypesConsumed;
         private List<IRoleAssignment> roleAssignments;
 
-        public Endpoint()
+        protected Endpoint()
         {
             _eventTypesProduced = new Dictionary<string, IEventType>();
             _eventTypesConsumed = new Dictionary<string, IEventType>();
@@ -30,22 +30,22 @@ namespace NimBus.Core.Endpoints
         public IEnumerable<IRoleAssignment> RoleAssignments => roleAssignments;
 
         /// <summary>
-        /// Register endpoint as producer of <typeparamref name="T_Event"/>.
+        /// Register endpoint as producer of <typeparamref name="TEvent"/>.
         /// </summary>
-        protected void Produces<T_Event>()
-            where T_Event : IEvent
+        protected void Produces<TEvent>()
+            where TEvent : IEvent
         {
-            var eventType = new EventType<T_Event>();
+            var eventType = new EventType<TEvent>();
             _eventTypesProduced.Add(eventType.Id, eventType);
         }
 
         /// <summary>
-        /// Register endpoint as consumer of <typeparamref name="T_Event"/>.
+        /// Register endpoint as consumer of <typeparamref name="TEvent"/>.
         /// </summary>
-        protected void Consumes<T_Event>()
-            where T_Event : IEvent
+        protected void Consumes<TEvent>()
+            where TEvent : IEvent
         {
-            var eventType = new EventType<T_Event>();
+            var eventType = new EventType<TEvent>();
             _eventTypesConsumed.Add(eventType.Id, eventType);
         }
 

@@ -9,9 +9,9 @@ namespace NimBus.Core.Messages
     {
         DateTime EnqueuedTimeUtc { get; }
         string From { get; }
-        string MessageId { get; }
+        new string MessageId { get; }
 
-        string EventTypeId { get; }
+        new string EventTypeId { get; }
         string DeadLetterReason { get; }
         string DeadLetterErrorDescription { get; }
     }

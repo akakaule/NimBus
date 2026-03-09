@@ -3,6 +3,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <AzureFunctionsVersion>v4</AzureFunctionsVersion>
     <OutputType>Exe</OutputType>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
     <UserSecretsId>7d455fc0-e5d1-493a-9091-7801b690a9f1</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>

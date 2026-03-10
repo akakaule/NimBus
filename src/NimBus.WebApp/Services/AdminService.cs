@@ -778,20 +778,20 @@ public class AdminService : IAdminService
 
     // ─────────── Internal DTOs for topology comparison ───────────
 
-    private class TopologySnapshot
+    private sealed class TopologySnapshot
     {
         public string Name { get; set; } = string.Empty;
         public List<SubscriptionSnapshot> Subscriptions { get; set; } = new List<SubscriptionSnapshot>();
     }
 
-    private class SubscriptionSnapshot
+    private sealed class SubscriptionSnapshot
     {
         public string Name { get; set; } = string.Empty;
         public List<RuleSnapshot> Rules { get; set; } = new List<RuleSnapshot>();
         public bool IsDeprecated { get; set; }
     }
 
-    private class RuleSnapshot
+    private sealed class RuleSnapshot
     {
         public string Name { get; set; } = string.Empty;
         public string SubscriptionName { get; set; } = string.Empty;

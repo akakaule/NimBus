@@ -8,7 +8,7 @@ namespace NimBus.WebApp.Services
         string CodeRepoUrl { get; }
     }
 
-    internal class CodeRepoService : ICodeRepoService
+    internal sealed class CodeRepoService : ICodeRepoService
     {
         public CodeRepoService(string codeRepoUrl)
         {

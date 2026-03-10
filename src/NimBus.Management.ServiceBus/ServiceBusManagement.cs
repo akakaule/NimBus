@@ -135,13 +135,13 @@ public class ServiceBusManagement : IServiceBusManagement
         }
     }
 
-    public async Task CreateEventTypeRule(string topicName, string subscriptionName, string ruleName, string eventType)
+    public async Task CreateEventTypeRule(string topicName, string subscriptionName, string ruleName, string eventtype)
     {
         try
         {
             var ruleOptions = new CreateRuleOptions
             {
-                Filter = new SqlRuleFilter($"user.EventTypeId='{eventType}'"),
+                Filter = new SqlRuleFilter($"user.EventTypeId='{eventtype}'"),
                 Action = new SqlRuleAction($"SET user.From ='{topicName}'; SET user.EventId = newid(); SET user.To = '{subscriptionName}';")
             };
 

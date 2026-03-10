@@ -402,7 +402,7 @@ public class EndpointImplementation : IEndpointApiController
         return new NotFoundObjectResult("Endpoint not found");
     }
 
-    public async Task<IActionResult> DeleteEndpointSubscribeAsync(SubscriptionAuthor obj, string endpointId)
+    public async Task<IActionResult> DeleteEndpointSubscribeAsync(SubscriptionAuthor body, string endpointId)
     {
         // Validate endpoint
         var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);
@@ -411,7 +411,7 @@ public class EndpointImplementation : IEndpointApiController
             return new NotFoundObjectResult("Endpoint not found");
         }
 
-        var success = await cosmosClient.DeleteSubscription(obj.Id);
+        var success = await cosmosClient.DeleteSubscription(body.Id);
 
         if (success)
             return new OkResult();
@@ -465,7 +465,7 @@ public class EndpointImplementation : IEndpointApiController
         var principals = endpoint.RoleAssignments
             .Where(x => x.Environment.Equals(environment, StringComparison.OrdinalIgnoreCase))
             .Select(x => x.PrincipalId).ToList();
-        if (principals.Any())
+        if (principals.Count > 0)
         {
             await using Stream stream = Assembly.GetExecutingAssembly()
                 .GetManifestResourceStream("EET.EIP.WebApp.Resources.EndpointRoleAssignment.ps1");

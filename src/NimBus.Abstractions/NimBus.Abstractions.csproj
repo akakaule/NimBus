@@ -1,9 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
-    <SignAssembly>true</SignAssembly>
-    <AssemblyOriginatorKeyFile>delegate.snk</AssemblyOriginatorKeyFile>
+    <TargetFrameworks>net10.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <EnableNETAnalyzers>false</EnableNETAnalyzers>
     <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>

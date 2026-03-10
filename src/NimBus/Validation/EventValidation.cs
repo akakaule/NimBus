@@ -6,7 +6,7 @@ using NimBus.Core.Events;
 
 namespace NimBus.Validation
 {
-    class EventValidation
+    sealed class EventValidation
     {
         internal static void Validate(Event eventObject)
         {

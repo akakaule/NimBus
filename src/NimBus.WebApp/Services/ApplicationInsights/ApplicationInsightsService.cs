@@ -11,7 +11,7 @@ using System.Web;
 
 namespace NimBus.WebApp.Services.ApplicationInsights
 {
-    public class ApplicationInsightsService : IApplicationInsightsService
+    public class ApplicationInsightsService : IApplicationInsightsService, IDisposable
     {
 
         private HttpClient client;
@@ -20,6 +20,12 @@ namespace NimBus.WebApp.Services.ApplicationInsights
         {
             this.client = new HttpClient() { BaseAddress = new Uri($"https://api.applicationinsights.io/v1/apps/{applicationId}/") };
             this.client.DefaultRequestHeaders.Add("x-api-key", apiKey);
+        }
+
+        public void Dispose()
+        {
+            client?.Dispose();
+            GC.SuppressFinalize(this);
         }
 
         public async Task<IEnumerable<LogEntry>> GetLogs(string messageId, SeverityLevel minimumLevel)
@@ -98,14 +104,14 @@ namespace NimBus.WebApp.Services.ApplicationInsights
             {
                 metrics.Add(new LatencyMetric
                 {
-                    Destination = colMap.ContainsKey("destination") ? row[colMap["destination"]] : "",
-                    EventType = colMap.ContainsKey("eventType") ? row[colMap["eventType"]] : "",
-                    Count = colMap.ContainsKey("count_") ? int.TryParse(row[colMap["count_"]], out var c) ? c : 0 : 0,
-                    AvgMs = colMap.ContainsKey("avg_") ? double.TryParse(row[colMap["avg_"]], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var a) ? a : 0 : 0,
-                    P50Ms = colMap.ContainsKey("p50") ? double.TryParse(row[colMap["p50"]], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var p50) ? p50 : 0 : 0,
-                    P95Ms = colMap.ContainsKey("p95") ? double.TryParse(row[colMap["p95"]], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var p95) ? p95 : 0 : 0,
-                    P99Ms = colMap.ContainsKey("p99") ? double.TryParse(row[colMap["p99"]], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var p99) ? p99 : 0 : 0,
-                    MaxMs = colMap.ContainsKey("max_") ? double.TryParse(row[colMap["max_"]], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var m) ? m : 0 : 0,
+                    Destination = colMap.TryGetValue("destination", out var destinationIdx) ? row[destinationIdx] : "",
+                    EventType = colMap.TryGetValue("eventType", out var eventTypeIdx) ? row[eventTypeIdx] : "",
+                    Count = colMap.TryGetValue("count_", out var countIdx) ? int.TryParse(row[countIdx], out var c) ? c : 0 : 0,
+                    AvgMs = colMap.TryGetValue("avg_", out var avgIdx) ? double.TryParse(row[avgIdx], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var a) ? a : 0 : 0,
+                    P50Ms = colMap.TryGetValue("p50", out var p50Idx) ? double.TryParse(row[p50Idx], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var p50) ? p50 : 0 : 0,
+                    P95Ms = colMap.TryGetValue("p95", out var p95Idx) ? double.TryParse(row[p95Idx], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var p95) ? p95 : 0 : 0,
+                    P99Ms = colMap.TryGetValue("p99", out var p99Idx) ? double.TryParse(row[p99Idx], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var p99) ? p99 : 0 : 0,
+                    MaxMs = colMap.TryGetValue("max_", out var maxIdx) ? double.TryParse(row[maxIdx], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var m) ? m : 0 : 0,
                 });
             }
 

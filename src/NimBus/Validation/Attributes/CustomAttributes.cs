@@ -33,7 +33,7 @@ namespace NimBus.Validation.Attributes
             }
             if (!string.IsNullOrWhiteSpace(s))
             {
-                return s.StartsWith("+");
+                return s.StartsWith('+');
             }
 
             return true;
@@ -111,9 +111,9 @@ namespace NimBus.Validation.Attributes
             }
         }
 
-        protected override ValidationResult IsValid(object value, ValidationContext ctx)
+        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
         {
-            object instance = ctx.ObjectInstance;
+            object instance = validationContext.ObjectInstance;
             Type type = instance.GetType();
 
             bool isRequired = false;
@@ -133,7 +133,7 @@ namespace NimBus.Validation.Attributes
 
             if (isRequired && value == null)
             {
-                return new ValidationResult($"The field '{ctx.DisplayName}' is required due to dependency: '{depMsg}'");
+                return new ValidationResult($"The field '{validationContext.DisplayName}' is required due to dependency: '{depMsg}'");
             }
             return ValidationResult.Success;
         }

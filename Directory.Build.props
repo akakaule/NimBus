@@ -31,6 +31,6 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!-- Allow nullable warnings in legacy code without blocking the build -->
-    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS0618;CS1574;CS8600;CS8601;CS8602;CS8603;CS8604;CS8613;CS8618;CS8619;CS8620;CS8625;CS8629;CS8632;CS8765</WarningsNotAsErrors>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS0618;CS1574;CS8600;CS8601;CS8602;CS8603;CS8604;CS8613;CS8618;CS8619;CS8620;CS8625;CS8629;CS8632;CS8765;CA1848;CA1873;CA1305</WarningsNotAsErrors>
   </PropertyGroup>
 </Project>

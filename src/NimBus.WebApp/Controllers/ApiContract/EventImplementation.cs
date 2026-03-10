@@ -114,14 +114,14 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
         public async Task<IActionResult> PostResubmitEventIdsAsync(string eventId, string messageId)
         {
-            logger.LogInformation($"Resubmit message. EventId:{eventId}, MessageId:{messageId}");
+            logger.LogInformation("Resubmit message. EventId:{EventId}, MessageId:{MessageId}", eventId, messageId);
 
             string eventTypeId;
             string endpoint;
             MessageEntity errorResponse = await GetMessageWithFallback(eventId, messageId);
             if (errorResponse == null)
             {
-                logger.LogWarning($"Could not resubmit message. Message not found. EventId: {eventId}, MessageId: {messageId}");
+                logger.LogWarning("Could not resubmit message. Message not found. EventId: {EventId}, MessageId: {MessageId}", eventId, messageId);
                 return new BadRequestResult();
             }
 
@@ -132,7 +132,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 eventTypeId = origMessage.EventTypeId;
             }
 
-            if (errorResponse.OriginatingMessageId.Equals("self"))
+            if (errorResponse.OriginatingMessageId.Equals("self", StringComparison.Ordinal))
             {
                 endpoint = errorResponse.To;
             }
@@ -155,14 +155,14 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
         public async Task<IActionResult> PostSkipEventIdsAsync(string eventId, string messageId)
         {
-            logger.LogInformation($"Skip message. EventId:{eventId}, MessageId:{messageId}");
+            logger.LogInformation("Skip message. EventId:{EventId}, MessageId:{MessageId}", eventId, messageId);
 
             string eventTypeId;
             string endpoint;
             MessageEntity errorResponse = await GetMessageWithFallback(eventId, messageId);
             if (errorResponse == null)
             {
-                logger.LogWarning($"Could not skip message. Message not found. EventId: {eventId}, MessageId: {messageId}");
+                logger.LogWarning("Could not skip message. Message not found. EventId: {EventId}, MessageId: {MessageId}", eventId, messageId);
                 return new BadRequestResult();
             }
 
@@ -173,7 +173,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 eventTypeId = origMessage.EventTypeId;
             }
 
-            if (errorResponse.OriginatingMessageId.Equals("self"))
+            if (errorResponse.OriginatingMessageId.Equals("self", StringComparison.Ordinal))
             {
                 endpoint = errorResponse.To;
             }
@@ -193,9 +193,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             return new OkResult();
         }
-        public async Task<ActionResult<Event>> GetEventIdAsync(string eventId, string endpointId)
+        public async Task<ActionResult<Event>> GetEventIdAsync(string id, string endpoint)
         {
-            var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);
+            var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpoint);
             if (!endpointIdValid)
             {
                 return new NotFoundObjectResult("Endpoint not found");
@@ -203,7 +203,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             try
             {
-                var unresolvedEvent = await cosmosClient.GetEvent(endpointId, eventId);
+                var unresolvedEvent = await cosmosClient.GetEvent(endpoint, id);
                 if (unresolvedEvent == null) return new BadRequestResult();
                 var result = Mapper.EventFromMessageStoreEvent(unresolvedEvent);
 
@@ -212,7 +212,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 if (unresolvedEvent.ResolutionStatus == MessageStore.ResolutionStatus.Completed
                     && string.IsNullOrEmpty(unresolvedEvent.MessageContent?.EventContent?.EventJson))
                 {
-                    var history = await cosmosClient.GetEventHistory(eventId);
+                    var history = await cosmosClient.GetEventHistory(id);
                     var messageWithContent = history.FirstOrDefault(m =>
                         !string.IsNullOrEmpty(m.MessageContent?.EventContent?.EventJson));
                     if (messageWithContent != null)
@@ -228,7 +228,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             }
             catch (Exception e)
             {
-                logger.LogWarning($"Event not found. EndpointId: {endpointId}, EventId: {eventId}, Ex: {e.Message}");
+                logger.LogWarning("Event not found. EndpointId: {EndpointId}, EventId: {EventId}, Ex: {Exception}", endpoint, id, e.Message);
                 return new NotFoundObjectResult("Event not found");
             }
         }
@@ -248,7 +248,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 var failedMessage = await cosmosClient.GetFailedMessage(id, endpoint);
                 if (failedMessage != null)
                 {
-                    logger.LogInformation($"Failed message found. EventId: {failedMessage.EventId}, MessageId: {failedMessage.MessageId}, Endpoint: {endpoint}, MessageType: {failedMessage.MessageType}");
+                    logger.LogInformation("Failed message found. EventId: {EventId}, MessageId: {MessageId}, Endpoint: {Endpoint}, MessageType: {MessageType}", failedMessage.EventId, failedMessage.MessageId, endpoint, failedMessage.MessageType);
                     eventDetails.FailedMessage = Mapper.MessageFromMessageEntity(failedMessage);
 
                     var downloadedMsg = await cosmosClient.GetMessage(eventDetails.FailedMessage.EventId,
@@ -266,7 +266,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
                 if (deadletteredMessage != null)
                 {
-                    logger.LogInformation($"Message found in deadletter. EventId: {deadletteredMessage.EventId}, MessageId: {deadletteredMessage.MessageId}, Endpoint: {endpoint}, MessageType: {deadletteredMessage.MessageType}");
+                    logger.LogInformation("Message found in deadletter. EventId: {EventId}, MessageId: {MessageId}, Endpoint: {Endpoint}, MessageType: {MessageType}", deadletteredMessage.EventId, deadletteredMessage.MessageId, endpoint, deadletteredMessage.MessageType);
                     if (deadletteredMessage.MessageType == Core.Messages.MessageType.ResolutionResponse)
                     {
                         var completedMsg = await cosmosClient.GetMessage(deadletteredMessage.EventId, deadletteredMessage.OriginatingMessageId);
@@ -290,9 +290,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
             return eventDetails;
         }
 
-        public async Task<ActionResult<IEnumerable<EventLogEntry>>> GetEventDetailsLogsIdAsync(string id, string endpoint)
+        public async Task<ActionResult<IEnumerable<EventLogEntry>>> GetEventDetailsLogsIdAsync(string id, string endpointId)
         {
-            var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpoint);
+            var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);
             if (!endpointIdValid)
             {
                 return new NotFoundObjectResult("Endpoint not found");
@@ -302,7 +302,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             try
             {
                 logs = (await applicationInsightsService.GetLogs(id))
-                    .Where(l => l.To.Equals(endpoint, StringComparison.OrdinalIgnoreCase) || l.From.Equals(endpoint, StringComparison.OrdinalIgnoreCase))
+                    .Where(l => l.To.Equals(endpointId, StringComparison.OrdinalIgnoreCase) || l.From.Equals(endpointId, StringComparison.OrdinalIgnoreCase))
                     .Select(Mapper.EventLogEntryFromLogEntry)
                     .ToList();
             }
@@ -313,9 +313,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
             return logs;
         }
 
-        public async Task<ActionResult<IEnumerable<Message>>> GetEventDetailsHistoryIdAsync(string id, string endpoint)
+        public async Task<ActionResult<IEnumerable<Message>>> GetEventDetailsHistoryIdAsync(string id, string endpointId)
         {
-            var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpoint);
+            var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);
             if (!endpointIdValid)
             {
                 return new NotFoundObjectResult("Endpoint not found");
@@ -325,7 +325,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             try
             {
                 histories = (await cosmosClient.GetEventHistory(id))
-                    .Where(x => x.EndpointId.Equals(endpoint, StringComparison.OrdinalIgnoreCase))
+                    .Where(x => x.EndpointId.Equals(endpointId, StringComparison.OrdinalIgnoreCase))
                     .OrderByDescending(a => a.EnqueuedTimeUtc)
                     .Select(Mapper.MessageFromMessageEntity)
                     .ToList();
@@ -339,7 +339,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
         public async Task<IActionResult> PostComposeNewEventAsync(ResubmitWithChanges body)
         {
-            logger.LogInformation($"Compose new event. Body:{JsonConvert.SerializeObject(body)}");
+            logger.LogInformation("Compose new event. Body:{Body}", JsonConvert.SerializeObject(body));
 
             var eventType = platform.EventTypes.FirstOrDefault(x => x.Id.Equals(body.EventTypeId, StringComparison.OrdinalIgnoreCase));
             var producingEndpoint = platform.GetProducers(eventType).FirstOrDefault();
@@ -403,18 +403,18 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
         public async Task<IActionResult> PostResubmitWithChangesEventIdsAsync(ResubmitWithChanges body, string eventId, string messageId)
         {
-            logger.LogInformation($"Resubmit message with changes. EventId:{eventId}, MessageId:{messageId}, Body:{JsonConvert.SerializeObject(body)}");
+            logger.LogInformation("Resubmit message with changes. EventId:{EventId}, MessageId:{MessageId}, Body:{Body}", eventId, messageId, JsonConvert.SerializeObject(body));
             string endpoint;
 
             MessageEntity errorResponse = await GetMessageWithFallback(eventId, messageId);
             if (errorResponse == null)
             {
-                logger.LogWarning($"Could not resubmit message. Message not found. EventId: {eventId}, MessageId: {messageId}");
+                logger.LogWarning("Could not resubmit message with changes. Message not found. EventId: {EventId}, MessageId: {MessageId}", eventId, messageId);
                 return new BadRequestResult();
             }
 
             // If error response message is a result of forwarding a deadlettered message.
-            if (errorResponse.OriginatingMessageId.Equals("self"))
+            if (errorResponse.OriginatingMessageId.Equals("self", StringComparison.Ordinal))
             {
                 endpoint = errorResponse.To;
             }
@@ -447,7 +447,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             return new OkResult();
         }
 
-        public async Task<ActionResult<IEnumerable<BlockedEvent>>> GetEventBlockedIdAsync(string sessionId, string endpointId)
+        public async Task<ActionResult<IEnumerable<BlockedEvent>>> GetEventBlockedIdAsync(string endpointId, string sessionId)
         {
             var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);
             if (!endpointIdValid)

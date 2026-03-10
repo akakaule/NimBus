@@ -90,31 +90,17 @@ catch {
 }
 
 ##############################################
-# Cosmos DB: Get ConnectionString
+# Cosmos DB: Get Account Endpoint
 ##############################################
 
-$cosmosDbConnectionString="Placeholder"
-
-$dbResult = az cosmosdb sql database exists --account-name $cosmosAccountName --name $cosmosDbName
-if($dbResult -eq 'true')
-{
-    $cosmosDbConnectionString=$(az cosmosdb keys list `
-    -n $cosmosAccountName `
-    --type connection-strings `
-    --query connectionStrings[0].connectionString `
-    --output tsv)
-
-    Write-Output $cosmosDbConnectionString
-}
+$cosmosAccountEndpoint = "https://${cosmosAccountName}.documents.azure.com:443/"
 
 
 ##############################################
 # Create Web App: Conflict Resolution Web App
 ##############################################
 
-# Use Shared Access Policy instead for now
-$managerServiceBusConnection = Get-ServiceBusPrimaryConnectionString -serviceBusNamespace $sbNamespace -resourceGroup $resourceGroupName
-#az functionapp config appsettings set --name $managementWebAppName --settings "AzureWebJobsServiceBus=$managerServiceBusConnection"
+$serviceBusFullyQualifiedNamespace = "${sbNamespace}.servicebus.windows.net"
 
 #Getting appid from appinsights
 $appInsightsAppId = ( `
@@ -141,8 +127,8 @@ $output = az deployment group create `
     apiKey=$apiKey `
     appInsightsAppId=$appInsightsAppId `
     instrumentationKey=$instrumentationKey `
-    cosmosDbConnectionString=$cosmosDbConnectionString `
-    managerServiceBusConnection=$managerServiceBusConnection `
+    cosmosAccountEndpoint=$cosmosAccountEndpoint `
+    serviceBusFullyQualifiedNamespace=$serviceBusFullyQualifiedNamespace `
     
     
 

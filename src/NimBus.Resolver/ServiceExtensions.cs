@@ -1,4 +1,5 @@
 using System;
+using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 using NimBus.Broker.Services;
 using NimBus.Core.Logging;
@@ -20,7 +21,12 @@ namespace NimBus.Resolver
             services.AddSingleton(sp =>
             {
                 var config = sp.GetRequiredService<IConfiguration>();
-                var connectionString = config.GetConnectionString("cosmos")
+                var endpoint = config.GetValue<string>("CosmosAccountEndpoint");
+                if (!string.IsNullOrEmpty(endpoint) && !endpoint.Contains("AccountKey="))
+                    return new CosmosClient(endpoint, new DefaultAzureCredential());
+
+                var connectionString = endpoint
+                    ?? config.GetConnectionString("cosmos")
                     ?? config.GetValue<string>("CosmosConnection")
                     ?? throw new InvalidOperationException("CosmosConnection configuration is required");
                 return new CosmosClient(connectionString);
@@ -39,7 +45,12 @@ namespace NimBus.Resolver
             services.AddSingleton(sp =>
             {
                 var config = sp.GetRequiredService<IConfiguration>();
-                var connectionString = config.GetConnectionString("servicebus")
+                var fqns = config.GetValue<string>("AzureWebJobsServiceBus__fullyQualifiedNamespace");
+                if (!string.IsNullOrEmpty(fqns) && !fqns.Contains("SharedAccessKey="))
+                    return new ServiceBusClient(fqns, new DefaultAzureCredential());
+
+                var connectionString = fqns
+                    ?? config.GetConnectionString("servicebus")
                     ?? config.GetValue<string>("AzureWebJobsServiceBus")
                     ?? throw new InvalidOperationException("AzureWebJobsServiceBus configuration is required");
                 return new ServiceBusClient(connectionString);

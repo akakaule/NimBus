@@ -5,8 +5,8 @@ param webAppVersion string
 param apiKey string
 param appInsightsAppId string
 param instrumentationKey string
-param cosmosDbConnectionString string
-param managerServiceBusConnection string
+param cosmosAccountEndpoint string
+param serviceBusFullyQualifiedNamespace string
 param locationParam string = 'westeurope'
 
 //##############################################
@@ -20,14 +20,16 @@ var appServicePlanName = 'asp-${toLower(solutionId)}-${toLower(environment)}-man
 
 var managementWebAppName = 'webapp-${toLower(solutionId)}-${toLower(environment)}-management'
 
+var cosmosAccountName = 'cosmos-${toLower(solutionId)}-${toLower(environment)}'
+
 //##############################################
 // Create Web App: Conflict Resolution Web App
 //##############################################
 
 var webappsettings = [
   {
-    name: 'AzureWebJobsServiceBus'
-    value: managerServiceBusConnection
+    name: 'AzureWebJobsServiceBus__fullyQualifiedNamespace'
+    value: serviceBusFullyQualifiedNamespace
   }
   {
     name: 'ServiceBusNamespace'
@@ -58,8 +60,8 @@ var webappsettings = [
     value: instrumentationKey
   }
   {
-    name: 'CosmosConnection'
-    value: cosmosDbConnectionString
+    name: 'CosmosAccountEndpoint'
+    value: cosmosAccountEndpoint
   }
 ]
 
@@ -71,5 +73,18 @@ module webAppModule 'templates/webApp.bicep' = {
     location:location
     alwaysOn: true
     settings:webappsettings
+  }
+}
+
+//##############################################
+// WebApp: RBAC role assignments
+//##############################################
+
+module webAppRoleAssignments 'templates/roleAssignments.bicep' = {
+  name: 'webAppRoleAssignmentsDeploy'
+  params: {
+    serviceBusNamespaceName: sbNamespace
+    cosmosAccountName: cosmosAccountName
+    principalId: webAppModule.outputs.identity
   }
 }

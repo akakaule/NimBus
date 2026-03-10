@@ -21,8 +21,6 @@ var cosmosDbName = 'MessageDatabase'
 
 var resolverFunctionAppName = 'func-${toLower(solutionId)}-${toLower(environment)}-resolver'
 
-var eventPublisherFunctionAppName = 'func-${toLower(solutionId)}-${toLower(environment)}-event'
-
 var funcStorageAccountName = 'st${toLower(solutionId)}${toLower(environment)}func'
 
 var appInsightsName = 'ai-${toLower(solutionId)}-${toLower(environment)}-global-tracelog'
@@ -123,8 +121,8 @@ var resolverappsettings = [
     value: resolverId
   }
   {
-    name: 'CosmosConnection'
-    value: cosmosAccount.outputs.connectionString
+    name: 'CosmosAccountEndpoint'
+    value: cosmosAccount.outputs.accountEndpoint
   }
   {
     name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
@@ -135,8 +133,8 @@ var resolverappsettings = [
     value: '${toLower(resolverFunctionAppName)}${uniqueString(uniqueDeploy)}'
   }
   {
-    name: 'AzureWebJobsServiceBus'
-    value: serviceBusNamespace.outputs.SharedAccessKey
+    name: 'AzureWebJobsServiceBus__fullyQualifiedNamespace'
+    value: serviceBusNamespace.outputs.fullyQualifiedNamespace
   }
 ]
 
@@ -155,37 +153,14 @@ module resolverFunction 'templates/functionApp.bicep' = {
 }
 
 //##############################################
-//# EventPublisher: Create Function app 
+//# Resolver: RBAC role assignments
 //##############################################
 
-var eventpublisherappsettings = [
-  {
-    name: 'GlobalTraceLogInstrKey'
-    value: applicationinsights.outputs.instrumentationKey
-  }
-  {
-    name: 'ServiceBusConnection'
-    value: serviceBusNamespace.outputs.SharedAccessKey
-  }
-  {
-    name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
-    value: funcstorageaccount.outputs.connectionString
-  }
-  {
-    name: 'WEBSITE_CONTENTSHARE'
-    value: '${toLower(eventPublisherFunctionAppName)}${uniqueString(uniqueDeploy)}'
-  }
-]
-
-module eventpublisher 'templates/functionApp.bicep' = {
-  name: 'eventpublisherDeploy'
+module resolverRoleAssignments 'templates/roleAssignments.bicep' = {
+  name: 'resolverRoleAssignmentsDeploy'
   params: {
-    appName: eventPublisherFunctionAppName
-    appInsightsInstrumentationKey: applicationinsights.outputs.instrumentationKey
-    appServicePlanId: functionappplan.outputs.id
-    functionAppVersion: '4'
-    storageConnectionString: funcstorageaccount.outputs.connectionString
-    location: location
-    settings: eventpublisherappsettings
+    serviceBusNamespaceName: sbNamespace
+    cosmosAccountName: cosmosAccountName
+    principalId: resolverFunction.outputs.principalId
   }
 }

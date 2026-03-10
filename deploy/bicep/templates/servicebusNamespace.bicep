@@ -7,3 +7,4 @@ resource serviceBus 'Microsoft.ServiceBus/namespaces@2022-01-01-preview' = {
 }
 var listKeysEndpoint = '${serviceBus.id}/AuthorizationRules/RootManageSharedAccessKey'
 output SharedAccessKey string = 'Endpoint=sb://${serviceBus.name}.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=${listKeys(listKeysEndpoint, serviceBus.apiVersion).primaryKey}'
+output fullyQualifiedNamespace string = '${serviceBus.name}.servicebus.windows.net'

@@ -33,6 +33,7 @@ using Microsoft.Azure.Cosmos;
 using Serilog;
 using NimBus.SDK.Logging;
 using NimBus.Management.ServiceBus;
+using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using NimBusLoggerProvider = NimBus.Core.Logging.ILoggerProvider;
@@ -73,7 +74,7 @@ namespace NimBus.WebApp
                     options.ForwardDefaultSelector = context =>
                     {
                         var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
-                        if (authHeader?.StartsWith("Bearer") == true)
+                        if (authHeader?.StartsWith("Bearer", StringComparison.Ordinal) == true)
                         {
                             return JwtBearerDefaults.AuthenticationScheme;
                         }
@@ -119,10 +120,20 @@ namespace NimBus.WebApp
 
             services.AddSingleton<IPlatform, PlatformConfiguration>();
 
+            string serviceBusFqns = Configuration.GetValue<string>("AzureWebJobsServiceBus__fullyQualifiedNamespace");
             string serviceBusConnection = Configuration.GetConnectionString("servicebus")
                 ?? Configuration.GetValue<string>("AzureWebJobsServiceBus");
-            services.AddSingleton(new ServiceBusAdministrationClient(serviceBusConnection));
-            services.AddSingleton(new ServiceBusClient(serviceBusConnection));
+            if (!string.IsNullOrEmpty(serviceBusFqns) && !serviceBusFqns.Contains("SharedAccessKey="))
+            {
+                var credential = new DefaultAzureCredential();
+                services.AddSingleton(new ServiceBusAdministrationClient(serviceBusFqns, credential));
+                services.AddSingleton(new ServiceBusClient(serviceBusFqns, credential));
+            }
+            else
+            {
+                services.AddSingleton(new ServiceBusAdministrationClient(serviceBusConnection));
+                services.AddSingleton(new ServiceBusClient(serviceBusConnection));
+            }
             services.AddSingleton<ISender>(sp => new SenderManager(sp.GetRequiredService<ServiceBusClient>().CreateSender(NimBus.Core.Messages.Constants.ManagerId)));
 
             string globalTraceLogInstrKey = Configuration.GetValue<string>("APPINSIGHTS_INSTRUMENTATIONKEY");
@@ -136,9 +147,18 @@ namespace NimBus.WebApp
                 return new LoggerProvider(baseLogger);
             });
 
+            string cosmosEndpoint = Configuration.GetValue<string>("CosmosAccountEndpoint");
             string cosmosConnection = Configuration.GetConnectionString("cosmos")
                 ?? Configuration.GetValue<string>("CosmosConnection");
-            services.AddSingleton<ICosmosDbClient>(sp => new CosmosDbClient(new CosmosClient(cosmosConnection)));
+            services.AddSingleton<ICosmosDbClient>(sp =>
+            {
+                CosmosClient cosmosClient;
+                if (!string.IsNullOrEmpty(cosmosEndpoint) && !cosmosEndpoint.Contains("AccountKey="))
+                    cosmosClient = new CosmosClient(cosmosEndpoint, new DefaultAzureCredential());
+                else
+                    cosmosClient = new CosmosClient(cosmosConnection);
+                return new CosmosDbClient(cosmosClient);
+            });
 
             services.AddSingleton<IManagerClient, ManagerClient>();
 

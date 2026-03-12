@@ -29,6 +29,14 @@ Key projects:
 - `src/NimBus.Resolver`: tracks message outcomes and updates resolver state.
 - `src/NimBus.AppHost`: Aspire host for local orchestration.
 
+### Extensions
+
+NimBus uses an extension framework to separate core messaging from optional features. Extensions are registered through the `AddNimBus()` builder and can hook into the message pipeline and lifecycle events.
+
+- `src/NimBus.Extensions.Notifications`: sends notifications on message failures and dead-letters.
+
+See [docs/extensions.md](docs/extensions.md) for the full guide on using and creating extensions.
+
 ## Prerequisites
 
 - .NET 10 SDK preview, matching the project target frameworks.

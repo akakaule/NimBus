@@ -42,6 +42,11 @@ flowchart LR
         DEF[NimBus.ServiceDefaults]
     end
 
+    subgraph Extensions
+        EXT_NOTIF[NimBus.Extensions.Notifications]
+        EXT_OTHER[NimBus.Extensions.*]
+    end
+
     subgraph Azure
         ASB[Azure Service Bus]
         COSMOS[Azure Cosmos DB]
@@ -77,6 +82,8 @@ flowchart LR
     DOMAIN --> CLI
     CORE --> SDK
     CORE --> SB
+    CORE --> EXT_NOTIF
+    CORE --> EXT_OTHER
     DEF --> WEB
     DEF --> RES
 ```
@@ -117,7 +124,34 @@ The solution in `src/NimBus.sln` is organized into three broad groups.
 - `src/NimBus.ServiceDefaults`
   Shared telemetry, health, resilience, and service-discovery defaults.
 
-### 3. Validation and deployment assets
+### 3. Extension packages
+
+NimBus features are split between core platform libraries and optional extensions. Extensions are distributed as separate NuGet packages and plug into the message pipeline through hooks defined in `NimBus.Core.Extensions`.
+
+The extension framework provides two hook points:
+
+- **Pipeline behaviors** (`IMessagePipelineBehavior`): middleware that wraps message handling, executing before and after the handler in registration order.
+- **Lifecycle observers** (`IMessageLifecycleObserver`): passive observers notified on message received, completed, failed, and dead-lettered events.
+
+Extensions are composed through the `AddNimBus()` builder:
+
+```csharp
+services.AddNimBus(builder =>
+{
+    builder.AddMessageStore();       // optional platform service
+    builder.AddNotifications();      // extension package
+    builder.AddPipelineBehavior<CustomBehavior>();
+});
+```
+
+Shipped extensions:
+
+- `src/NimBus.Extensions.Notifications`
+  Sends notifications on message failures and dead-letters through configurable channels.
+
+Extension packages follow the naming convention `NimBus.Extensions.{Name}`. See [extensions.md](extensions.md) for the full guide on using and creating extensions.
+
+### 4. Validation and deployment assets
 
 - `tests/NimBus.Core.Tests`
   Validates workflow engine behavior.

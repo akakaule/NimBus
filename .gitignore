@@ -115,7 +115,7 @@ src/Workflow/IP.Workflow.Web/.idea/.idea.IP.Workflow.dir/.idea/
 /GitReset.bat
 /nul
 /AGENTS.md
-/bash.exe.stackdump
+*stackdump
 /src/.dotnet_home/
 /src/.dotnet-cli/
 /src/.nuget_packages/
@@ -125,5 +125,6 @@ src/NimBus.WebApp/ClientApp/devcert.crt
 src/NimBus.WebApp/ClientApp/devcert.pfx
 src/NimBus.WebApp/ClientApp/.env
 src/NimBus.WebApp/wwwroot/
-/.dotnet/.dotnet
+*.dotnet/*
+*.dotnet
 /.claude/plans

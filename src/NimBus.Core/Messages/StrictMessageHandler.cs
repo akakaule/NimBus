@@ -11,6 +11,7 @@ namespace NimBus.Core.Messages
         private readonly IEventContextHandler _eventContextHandler;
         private readonly IResponseService _responseService;
         private readonly IDeferredMessageProcessor _deferredMessageProcessor;
+        private readonly IRetryPolicyProvider _retryPolicyProvider;
         private readonly string _topicName;
 
         public StrictMessageHandler(IEventContextHandler eventContextHandler, IResponseService responseService, ILoggerProvider loggerProvider) : base(loggerProvider)
@@ -28,6 +29,21 @@ namespace NimBus.Core.Messages
         {
             _eventContextHandler = eventContextHandler;
             _responseService = responseService;
+            _deferredMessageProcessor = deferredMessageProcessor;
+            _topicName = topicName;
+        }
+
+        public StrictMessageHandler(
+            IEventContextHandler eventContextHandler,
+            IResponseService responseService,
+            ILoggerProvider loggerProvider,
+            IRetryPolicyProvider retryPolicyProvider,
+            IDeferredMessageProcessor deferredMessageProcessor = null,
+            string topicName = null) : base(loggerProvider)
+        {
+            _eventContextHandler = eventContextHandler;
+            _responseService = responseService;
+            _retryPolicyProvider = retryPolicyProvider;
             _deferredMessageProcessor = deferredMessageProcessor;
             _topicName = topicName;
         }
@@ -351,12 +367,29 @@ namespace NimBus.Core.Messages
 
         private async Task CheckForRetry(IMessageContext messageContext, EventContextHandlerException exception, CancellationToken cancellationToken = default)
         {
-            var retryDefinition = RetryDefinitions.GetRetryDefinition(messageContext.MessageContent.EventContent.EventTypeId,
-                $"{exception?.InnerException} {exception}", messageContext.To);
+            var eventTypeId = messageContext.MessageContent.EventContent.EventTypeId;
+            var exceptionText = $"{exception?.InnerException} {exception}";
+            var retryCount = messageContext.RetryCount ?? 0;
+
+            if (_retryPolicyProvider != null)
+            {
+                var policy = _retryPolicyProvider.GetRetryPolicy(eventTypeId, exceptionText, messageContext.To);
+                if (policy != null && retryCount < policy.MaxRetries)
+                {
+                    var delayMinutes = policy.GetDelayMinutes(retryCount);
+                    await SendRetryResponse(messageContext, delayMinutes, cancellationToken);
+                }
+                return;
+            }
+
+            // Legacy fallback when no IRetryPolicyProvider is configured
+#pragma warning disable CS0618 // Type or member is obsolete
+            var retryDefinition = RetryDefinitions.GetRetryDefinition(eventTypeId, exceptionText, messageContext.To);
             if (retryDefinition != null && messageContext.RetryCount != null && messageContext.RetryCount < retryDefinition.RetryCount)
             {
                 await SendRetryResponse(messageContext, retryDefinition.RetryDelay, cancellationToken);
             }
+#pragma warning restore CS0618
         }
 
         private void LogInfoWithMessageMetaData(ILogger logger, IMessageContext messageContext, string prefixMessage)

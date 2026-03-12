@@ -18,9 +18,12 @@ public class PublisherClient : IPublisherClient
     private readonly ILoggerProvider _loggerProvider;
 
     /// <summary>
-    /// Private constructor - use CreateAsync instead for async initialization.
+    /// Creates a new PublisherClient with the specified sender.
+    /// Preferred for DI registration via <see cref="Extensions.ServiceCollectionExtensions.AddNimBusPublisher"/>.
     /// </summary>
-    private PublisherClient(ISender sender, ILoggerProvider loggerProvider)
+    /// <param name="sender">The sender to use for publishing messages.</param>
+    /// <param name="loggerProvider">Optional logger provider.</param>
+    public PublisherClient(ISender sender, ILoggerProvider loggerProvider)
     {
         _sender = sender ?? throw new ArgumentNullException(nameof(sender));
         _loggerProvider = loggerProvider;

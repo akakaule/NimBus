@@ -17,9 +17,11 @@ namespace NimBus.SDK
         private readonly EventHandlerProvider _eventHandlerProvider;
 
         /// <summary>
-        /// Private constructor - use CreateAsync instead for async initialization.
+        /// Creates a new SubscriberClient with the specified adapter and handler provider.
+        /// Used internally by DI registration via <see cref="Extensions.ServiceCollectionExtensions.AddNimBusSubscriber"/>.
+        /// For manual creation, use <see cref="CreateAsync"/> instead.
         /// </summary>
-        private SubscriberClient(IServiceBusAdapter serviceBusAdapter, EventHandlerProvider eventHandlerProvider)
+        internal SubscriberClient(IServiceBusAdapter serviceBusAdapter, EventHandlerProvider eventHandlerProvider)
         {
             _serviceBusAdapter = serviceBusAdapter ?? throw new ArgumentNullException(nameof(serviceBusAdapter));
             _eventHandlerProvider = eventHandlerProvider ?? throw new ArgumentNullException(nameof(eventHandlerProvider));

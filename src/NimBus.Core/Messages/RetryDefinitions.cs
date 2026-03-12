@@ -1,13 +1,15 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Text;
 
 namespace NimBus.Core.Messages
 {
-    public class RetryDefinitions
+    /// <summary>
+    /// Legacy hardcoded retry definitions. Use <see cref="IRetryPolicyProvider"/> and
+    /// <see cref="DefaultRetryPolicyProvider"/> for configurable retry policies.
+    /// </summary>
+    [Obsolete("Use IRetryPolicyProvider and DefaultRetryPolicyProvider for configurable retry policies.")]
+    public class RetryDefinitions : IRetryPolicyProvider
     {
-
-
         private static RetryDefinitions Instance;
         public Dictionary<string, RetryDefinition> definitionDict { get; set; }
 
@@ -45,7 +47,7 @@ namespace NimBus.Core.Messages
                eventTypeId.Equals("BankStatementFileReady") ||
                eventTypeId.Equals("BIFileReady") ||
                eventTypeId.Equals("GeneralLedgerFileReady") ||
-               eventTypeId.Equals("GRMFileReady") ||               
+               eventTypeId.Equals("GRMFileReady") ||
                eventTypeId.Equals("RefinitivSpotRatesReady"))
                && message.Contains("The operation was canceled"))
             {
@@ -53,8 +55,6 @@ namespace NimBus.Core.Messages
             }
 
             return null;
-            //if (message.Contains("Microsoft.PowerPlatform.Cds.Client.Utils.CdsConnectionException: Failed to connect to Common Data Service"))
-                //return new RetryDefinition() { RetryCount = 1, RetryDelay = 2 };      
         }
 
         private static RetryDefinition GetDefinitionByEventTypeId(string eventTypeId)
@@ -65,7 +65,26 @@ namespace NimBus.Core.Messages
             GetInstance().definitionDict.TryGetValue(eventTypeId, out var definition);
             return definition;
         }
+
+        /// <summary>
+        /// IRetryPolicyProvider implementation that bridges legacy RetryDefinition to RetryPolicy.
+        /// </summary>
+        RetryPolicy IRetryPolicyProvider.GetRetryPolicy(string eventTypeId, string exceptionMessage, string endpoint)
+        {
+            var definition = GetRetryDefinition(eventTypeId, exceptionMessage, endpoint);
+            if (definition == null)
+                return null;
+
+            return new RetryPolicy
+            {
+                MaxRetries = definition.RetryCount,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.FromMinutes(definition.RetryDelay)
+            };
+        }
     }
+
+    [Obsolete("Use RetryPolicy instead.")]
     public class RetryDefinition
     {
         public int RetryCount { get; set; }

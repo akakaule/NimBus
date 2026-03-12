@@ -93,4 +93,208 @@ public class EventRoutingTests
         Assert.AreEqual(10m, handler.ReceivedEvents[0].Amount);
         Assert.AreEqual(20m, handler.ReceivedEvents[1].Amount);
     }
+
+    [TestMethod]
+    public async Task Publish_SingleEvent_MultipleSubscribers_EachReceivesEvent()
+    {
+        // Arrange
+        var publisherAndSubscriberA = new EndToEndFixture();
+        var subscriberB = new EndToEndFixture();
+
+        var handlerA = new RecordingOrderPlacedHandler();
+        var handlerB = new RecordingOrderPlacedHandler();
+        publisherAndSubscriberA.RegisterHandler(() => handlerA);
+        subscriberB.RegisterHandler(() => handlerB);
+
+        // Act
+        await publisherAndSubscriberA.Publisher.Publish(new OrderPlaced("s-fanout") { OrderId = "ORD-FANOUT" });
+        await publisherAndSubscriberA.PublishBus.DeliverAllToSubscribers([
+            publisherAndSubscriberA.MessageHandler,
+            subscriberB.MessageHandler
+        ]);
+
+        // Assert
+        Assert.AreEqual(1, handlerA.ReceivedEvents.Count, "Subscriber A should receive the event once");
+        Assert.AreEqual(1, handlerB.ReceivedEvents.Count, "Subscriber B should receive the event once");
+        Assert.AreEqual("ORD-FANOUT", handlerA.ReceivedEvents[0].OrderId);
+        Assert.AreEqual("ORD-FANOUT", handlerB.ReceivedEvents[0].OrderId);
+
+        Assert.AreEqual(1, publisherAndSubscriberA.ResponseBus.SentMessages.Count);
+        Assert.AreEqual(1, subscriberB.ResponseBus.SentMessages.Count);
+        Assert.AreEqual(MessageType.ResolutionResponse, publisherAndSubscriberA.ResponseBus.SentMessages[0].MessageType);
+        Assert.AreEqual(MessageType.ResolutionResponse, subscriberB.ResponseBus.SentMessages[0].MessageType);
+    }
+
+    [TestMethod]
+    public async Task Publish_SameSession_FirstFails_SecondDeferred_SkipFirst_SecondEventuallyProcesses()
+    {
+        // Arrange
+        const string sessionId = "session-shared";
+        var fixture = new EndToEndFixture();
+        var handler = new RecordingOrderPlacedHandler
+        {
+            ExceptionFactory = order => order.OrderId == "ORD-FAIL"
+                ? new InvalidOperationException("First message fails")
+                : null
+        };
+        fixture.RegisterHandler(() => handler);
+
+        // Act 1: publish two messages on the same session; first fails, second is deferred.
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-FAIL" });
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-SECOND" });
+        await fixture.DeliverAll();
+
+        // Assert intermediate state: no successful handler execution yet.
+        Assert.AreEqual(0, handler.ReceivedEvents.Count);
+
+        var responsesAfterFailure = fixture.ResponseBus.SentMessages;
+        var failedEventId = responsesAfterFailure
+            .Single(response => response.MessageType == MessageType.ErrorResponse)
+            .EventId;
+
+        var deferredSecondMessage = responsesAfterFailure.Single(response =>
+            response.MessageType == MessageType.EventRequest &&
+            response.To == Constants.DeferredSubscriptionName &&
+            response.MessageContent.EventContent.EventJson.Contains("ORD-SECOND", StringComparison.Ordinal));
+
+        // Act 2: skip the failed message.
+        await fixture.PublishBus.Send(CreateSkipRequest(sessionId, failedEventId, "OrderPlaced"));
+        await fixture.DeliverAll();
+
+        // Act 3: simulate deferred processing by republishing the deferred second message.
+        await fixture.PublishBus.Send(CreateRepublishedDeferredEventRequest(deferredSecondMessage));
+        await fixture.DeliverAll();
+
+        // Assert: second message is eventually processed successfully.
+        Assert.AreEqual(1, handler.ReceivedEvents.Count);
+        Assert.AreEqual("ORD-SECOND", handler.ReceivedEvents[0].OrderId);
+        Assert.IsTrue(fixture.ResponseBus.SentMessages.Any(response => response.MessageType == MessageType.SkipResponse));
+        Assert.IsTrue(fixture.ResponseBus.SentMessages.Any(response => response.MessageType == MessageType.ProcessDeferredRequest));
+        Assert.IsTrue(fixture.ResponseBus.SentMessages.Any(response =>
+            response.MessageType == MessageType.ResolutionResponse &&
+            response.MessageContent.EventContent.EventJson.Contains("ORD-SECOND", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task Publish_ResubmissionFromManager_HandlerReinvokedAndResolutionSent()
+    {
+        // Arrange
+        const string sessionId = "session-resub";
+        var fixture = new EndToEndFixture();
+        var handler = new RecordingOrderPlacedHandler
+        {
+            ExceptionToThrow = new InvalidOperationException("First attempt fails")
+        };
+        fixture.RegisterHandler(() => handler);
+
+        // Act 1: publish event that fails → session blocked
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-RESUB" });
+        var results = await fixture.DeliverAllWithResults();
+
+        var errorResponse = fixture.ResponseBus.SentMessages
+            .Single(r => r.MessageType == MessageType.ErrorResponse);
+        var failedEventId = errorResponse.EventId;
+
+        // Clear the failure so resubmission succeeds
+        handler.ExceptionToThrow = null;
+
+        // Act 2: send ResubmissionRequest from Manager
+        await fixture.PublishBus.Send(CreateResubmissionRequest(
+            sessionId, failedEventId, "OrderPlaced", errorResponse.MessageContent));
+        await fixture.DeliverAll();
+
+        // Assert — handler was re-invoked and succeeded
+        Assert.AreEqual(1, handler.ReceivedEvents.Count, "Handler should be invoked on resubmission");
+        Assert.AreEqual("ORD-RESUB", handler.ReceivedEvents[0].OrderId);
+
+        var resolutionResponses = fixture.ResponseBus.SentMessages
+            .Where(r => r.MessageType == MessageType.ResolutionResponse).ToList();
+        Assert.IsTrue(resolutionResponses.Count >= 1, "Should have ResolutionResponse after successful resubmission");
+    }
+
+    [TestMethod]
+    public async Task Publish_SameSession_EventsProcessedInFIFOOrder()
+    {
+        // Arrange
+        const string sessionId = "session-fifo";
+        var fixture = new EndToEndFixture();
+        var handler = new RecordingOrderPlacedHandler();
+        fixture.RegisterHandler(() => handler);
+
+        // Act — publish 3 events on the same session
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "FIFO-1", Amount = 10m });
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "FIFO-2", Amount = 20m });
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "FIFO-3", Amount = 30m });
+        await fixture.DeliverAll();
+
+        // Assert — events received in publish order (FIFO)
+        Assert.AreEqual(3, handler.ReceivedEvents.Count);
+        Assert.AreEqual("FIFO-1", handler.ReceivedEvents[0].OrderId);
+        Assert.AreEqual("FIFO-2", handler.ReceivedEvents[1].OrderId);
+        Assert.AreEqual("FIFO-3", handler.ReceivedEvents[2].OrderId);
+    }
+
+    private static Message CreateSkipRequest(string sessionId, string blockedByEventId, string eventTypeId)
+    {
+        return new Message
+        {
+            To = eventTypeId,
+            SessionId = sessionId,
+            CorrelationId = Guid.NewGuid().ToString(),
+            MessageId = Guid.NewGuid().ToString(),
+            EventId = blockedByEventId,
+            EventTypeId = eventTypeId,
+            MessageType = MessageType.SkipRequest,
+            From = Constants.ManagerId,
+            OriginatingMessageId = Constants.Self,
+            ParentMessageId = Constants.Self,
+            MessageContent = new MessageContent
+            {
+                EventContent = new EventContent
+                {
+                    EventTypeId = eventTypeId,
+                    EventJson = "{}"
+                }
+            }
+        };
+    }
+
+    private static Message CreateResubmissionRequest(string sessionId, string eventId, string eventTypeId, MessageContent messageContent)
+    {
+        return new Message
+        {
+            To = eventTypeId,
+            SessionId = sessionId,
+            CorrelationId = Guid.NewGuid().ToString(),
+            MessageId = Guid.NewGuid().ToString(),
+            EventId = eventId,
+            EventTypeId = eventTypeId,
+            MessageType = MessageType.ResubmissionRequest,
+            From = Constants.ManagerId,
+            OriginatingMessageId = Constants.Self,
+            ParentMessageId = Constants.Self,
+            MessageContent = messageContent
+        };
+    }
+
+    private static Message CreateRepublishedDeferredEventRequest(IMessage deferredMessage)
+    {
+        return new Message
+        {
+            To = deferredMessage.EventTypeId,
+            SessionId = deferredMessage.SessionId,
+            CorrelationId = deferredMessage.CorrelationId,
+            MessageId = Guid.NewGuid().ToString(),
+            EventId = deferredMessage.EventId,
+            EventTypeId = deferredMessage.EventTypeId,
+            MessageType = MessageType.EventRequest,
+            From = deferredMessage.From,
+            OriginatingFrom = deferredMessage.OriginatingFrom,
+            OriginatingMessageId = deferredMessage.OriginatingMessageId,
+            ParentMessageId = deferredMessage.ParentMessageId,
+            RetryCount = deferredMessage.RetryCount,
+            MessageContent = deferredMessage.MessageContent,
+            DiagnosticId = deferredMessage.DiagnosticId
+        };
+    }
 }

@@ -180,6 +180,112 @@ public class PipelineAndLifecycleTests
         Assert.AreEqual(1, observer.CompletedEvents.Count);
     }
 
+    [TestMethod]
+    public async Task Lifecycle_OnMessageDeadLettered_FiresForUnexpectedException()
+    {
+        // Arrange — send an unhandled message type; PipelineMessageHandler falls through
+        // to HandleDefault which throws UnsupportedMessageTypeException → dead-lettered
+        var observer = new RecordingLifecycleObserver();
+        var notifier = new MessageLifecycleNotifier([observer]);
+
+        var fixture = new EndToEndFixture(null, notifier);
+        var handler = new RecordingOrderPlacedHandler();
+        fixture.RegisterHandler(() => handler);
+
+        var unhandledMessage = new Message
+        {
+            To = "test",
+            SessionId = "s-deadletter",
+            CorrelationId = Guid.NewGuid().ToString(),
+            MessageId = Guid.NewGuid().ToString(),
+            EventTypeId = "test",
+            MessageType = MessageType.HeartbeatResponse,
+            OriginatingMessageId = Constants.Self,
+            ParentMessageId = Constants.Self,
+            MessageContent = new MessageContent
+            {
+                EventContent = new EventContent { EventTypeId = "test", EventJson = "{}" }
+            }
+        };
+
+        // Act
+        await fixture.PublishBus.Send(unhandledMessage);
+        var results = await fixture.DeliverAllWithResults();
+
+        // Assert — OnReceived fires, then OnFailed + OnDeadLettered
+        Assert.AreEqual(1, observer.ReceivedEvents.Count, "OnReceived should fire");
+        Assert.AreEqual(0, observer.CompletedEvents.Count, "OnCompleted should not fire");
+        Assert.AreEqual(1, observer.FailedEvents.Count, "OnFailed should fire for unexpected exception");
+        Assert.AreEqual(1, observer.DeadLetteredEvents.Count, "OnDeadLettered should fire");
+        Assert.IsTrue(results[0].Session.WasDeadLettered, "Message should be dead-lettered");
+    }
+
+    [TestMethod]
+    public async Task Pipeline_BehaviorSwallowsHandlerException_CompletedNotFailed()
+    {
+        // Arrange — behavior catches and swallows handler exception
+        var observer = new RecordingLifecycleObserver();
+        var services = new ServiceCollection();
+        services.AddSingleton<IMessageLifecycleObserver>(observer);
+        services.AddNimBus(builder =>
+        {
+            builder.AddPipelineBehavior<ExceptionSwallowingBehavior>();
+        });
+        var sp = services.BuildServiceProvider();
+        var pipeline = sp.GetRequiredService<MessagePipeline>();
+        var notifier = sp.GetRequiredService<MessageLifecycleNotifier>();
+
+        var fixture = new EndToEndFixture(pipeline, notifier);
+        var handler = new RecordingOrderPlacedHandler
+        {
+            ExceptionToThrow = new InvalidOperationException("swallowed by behavior")
+        };
+        fixture.RegisterHandler(() => handler);
+
+        // Act
+        await fixture.Publisher.Publish(new OrderPlaced("s-swallow") { OrderId = "ORD-SW" });
+        await fixture.DeliverAll();
+
+        // Assert — behavior swallowed the exception, so pipeline returns normally → OnCompleted
+        Assert.AreEqual(0, handler.ReceivedEvents.Count, "Handler threw before adding to ReceivedEvents");
+        Assert.AreEqual(1, observer.ReceivedEvents.Count, "OnReceived should fire");
+        Assert.AreEqual(1, observer.CompletedEvents.Count, "OnCompleted should fire (exception swallowed)");
+        Assert.AreEqual(0, observer.FailedEvents.Count, "OnFailed should not fire (exception swallowed)");
+        Assert.AreEqual(0, observer.DeadLetteredEvents.Count, "OnDeadLettered should not fire");
+    }
+
+    [TestMethod]
+    public async Task Pipeline_BehaviorThrowsBeforeNext_DeadLettered()
+    {
+        // Arrange — behavior throws its own exception before calling next()
+        var observer = new RecordingLifecycleObserver();
+        var services = new ServiceCollection();
+        services.AddSingleton<IMessageLifecycleObserver>(observer);
+        services.AddNimBus(builder =>
+        {
+            builder.AddPipelineBehavior<ThrowingBehavior>();
+        });
+        var sp = services.BuildServiceProvider();
+        var pipeline = sp.GetRequiredService<MessagePipeline>();
+        var notifier = sp.GetRequiredService<MessageLifecycleNotifier>();
+
+        var fixture = new EndToEndFixture(pipeline, notifier);
+        var handler = new RecordingOrderPlacedHandler();
+        fixture.RegisterHandler(() => handler);
+
+        // Act
+        await fixture.Publisher.Publish(new OrderPlaced("s-throw") { OrderId = "ORD-TH" });
+        var results = await fixture.DeliverAllWithResults();
+
+        // Assert — behavior threw → not caught as known exception type → dead-lettered
+        Assert.AreEqual(0, handler.ReceivedEvents.Count, "Handler should not be invoked");
+        Assert.AreEqual(1, observer.ReceivedEvents.Count, "OnReceived should fire");
+        Assert.AreEqual(0, observer.CompletedEvents.Count, "OnCompleted should not fire");
+        Assert.AreEqual(1, observer.FailedEvents.Count, "OnFailed should fire");
+        Assert.AreEqual(1, observer.DeadLetteredEvents.Count, "OnDeadLettered should fire");
+        Assert.IsTrue(results[0].Session.WasDeadLettered, "Message should be dead-lettered");
+    }
+
     // ── Behaviors ────────────────────────────────────────────────────────
 
     private sealed class LoggingBehavior : IMessagePipelineBehavior
@@ -226,6 +332,29 @@ public class PipelineAndLifecycleTests
         public Task Handle(IMessageContext context, MessagePipelineDelegate next, CancellationToken ct = default)
         {
             return Task.CompletedTask; // Intentionally not calling next
+        }
+    }
+
+    private sealed class ExceptionSwallowingBehavior : IMessagePipelineBehavior
+    {
+        public async Task Handle(IMessageContext context, MessagePipelineDelegate next, CancellationToken ct = default)
+        {
+            try
+            {
+                await next(context, ct);
+            }
+            catch
+            {
+                // Intentionally swallowed — transforms the error path
+            }
+        }
+    }
+
+    private sealed class ThrowingBehavior : IMessagePipelineBehavior
+    {
+        public Task Handle(IMessageContext context, MessagePipelineDelegate next, CancellationToken ct = default)
+        {
+            throw new ApplicationException("Behavior error before next()");
         }
     }
 

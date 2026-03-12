@@ -13,6 +13,8 @@ internal sealed class InMemoryBus : ISender
 {
     private readonly ConcurrentQueue<IMessage> _messages = new();
     private readonly List<IMessage> _allSentMessages = new();
+    private readonly List<(IMessage Message, int EnqueueDelay)> _sentMessagesWithDelay = new();
+    private readonly ConcurrentDictionary<string, FakeServiceBusSession> _sessionsBySessionId = new();
     private readonly object _lock = new();
 
     public IReadOnlyList<IMessage> SentMessages
@@ -20,11 +22,21 @@ internal sealed class InMemoryBus : ISender
         get { lock (_lock) { return _allSentMessages.ToList(); } }
     }
 
+    /// <summary>Messages with their enqueue delay (in minutes), for verifying retry backoff delays.</summary>
+    public IReadOnlyList<(IMessage Message, int EnqueueDelay)> SentMessagesWithDelay
+    {
+        get { lock (_lock) { return _sentMessagesWithDelay.ToList(); } }
+    }
+
     public int MessageCount => _messages.Count;
 
     public Task Send(IMessage message, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default)
     {
-        lock (_lock) { _allSentMessages.Add(message); }
+        lock (_lock)
+        {
+            _allSentMessages.Add(message);
+            _sentMessagesWithDelay.Add((message, messageEnqueueDelay));
+        }
         _messages.Enqueue(message);
         return Task.CompletedTask;
     }
@@ -33,7 +45,11 @@ internal sealed class InMemoryBus : ISender
     {
         foreach (var message in messages)
         {
-            lock (_lock) { _allSentMessages.Add(message); }
+            lock (_lock)
+            {
+                _allSentMessages.Add(message);
+                _sentMessagesWithDelay.Add((message, messageEnqueueDelay));
+            }
             _messages.Enqueue(message);
         }
         return Task.CompletedTask;
@@ -49,10 +65,41 @@ internal sealed class InMemoryBus : ISender
         {
             var receivedMessage = ToReceivedMessage(message);
             var sbMessage = new NimBus.ServiceBus.ServiceBusMessage(receivedMessage);
-            var session = new FakeServiceBusSession();
+            var session = GetOrCreateSession(message.SessionId);
             var context = new MessageContext(sbMessage, session);
 
             await messageHandler.Handle(context, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Delivers all pending messages to multiple subscribers, simulating topic fan-out.
+    /// </summary>
+    public async Task DeliverAllToSubscribers(IEnumerable<IMessageHandler> messageHandlers, CancellationToken cancellationToken = default)
+    {
+        var handlers = messageHandlers?.ToList() ?? throw new ArgumentNullException(nameof(messageHandlers));
+        if (handlers.Count == 0)
+            throw new ArgumentException("At least one message handler must be provided.", nameof(messageHandlers));
+        var sessionsBySubscriberAndSession = new Dictionary<(int subscriberIndex, string sessionId), FakeServiceBusSession>();
+
+        while (_messages.TryDequeue(out var message))
+        {
+            for (int subscriberIndex = 0; subscriberIndex < handlers.Count; subscriberIndex++)
+            {
+                var messageHandler = handlers[subscriberIndex];
+                var receivedMessage = ToReceivedMessage(message);
+                var sbMessage = new NimBus.ServiceBus.ServiceBusMessage(receivedMessage);
+                var sessionKey = (subscriberIndex, NormalizeSessionId(message.SessionId));
+                if (!sessionsBySubscriberAndSession.TryGetValue(sessionKey, out var session))
+                {
+                    session = new FakeServiceBusSession();
+                    sessionsBySubscriberAndSession[sessionKey] = session;
+                }
+
+                var context = new MessageContext(sbMessage, session);
+
+                await messageHandler.Handle(context, cancellationToken);
+            }
         }
     }
 
@@ -67,7 +114,7 @@ internal sealed class InMemoryBus : ISender
         {
             var receivedMessage = ToReceivedMessage(message);
             var sbMessage = new NimBus.ServiceBus.ServiceBusMessage(receivedMessage);
-            var session = new FakeServiceBusSession();
+            var session = GetOrCreateSession(message.SessionId);
             var context = new MessageContext(sbMessage, session);
             Exception? caughtException = null;
 
@@ -85,6 +132,14 @@ internal sealed class InMemoryBus : ISender
 
         return results;
     }
+
+    private FakeServiceBusSession GetOrCreateSession(string? sessionId)
+    {
+        var normalizedSessionId = NormalizeSessionId(sessionId);
+        return _sessionsBySessionId.GetOrAdd(normalizedSessionId, _ => new FakeServiceBusSession());
+    }
+
+    private static string NormalizeSessionId(string? sessionId) => sessionId ?? string.Empty;
 
     /// <summary>
     /// Converts an IMessage to a ServiceBusReceivedMessage using MessageHelper and ServiceBusModelFactory.

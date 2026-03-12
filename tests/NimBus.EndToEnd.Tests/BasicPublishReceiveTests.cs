@@ -1,6 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Messages;
 using NimBus.EndToEnd.Tests.Infrastructure;
+using NimBus.Core.Events;
 
 namespace NimBus.EndToEnd.Tests;
 
@@ -164,5 +165,47 @@ public class BasicPublishReceiveTests
         {
             Assert.AreEqual($"ORD-{i:D3}", handler.ReceivedEvents[i].OrderId);
         }
+    }
+
+    [TestMethod]
+    public async Task Publish_HeartbeatEvent_ResolutionResponseSentWithoutHandler()
+    {
+        // Arrange — heartbeat events get an immediate ResolutionResponse without invoking any handler
+        var fixture = new EndToEndFixture();
+        var handler = new RecordingOrderPlacedHandler();
+        fixture.RegisterHandler(() => handler);
+
+        var heartbeat = new Message
+        {
+            To = "Heartbeat",
+            SessionId = "s-heartbeat",
+            CorrelationId = Guid.NewGuid().ToString(),
+            MessageId = Guid.NewGuid().ToString(),
+            EventTypeId = "Heartbeat",
+            MessageType = MessageType.EventRequest,
+            OriginatingMessageId = Constants.Self,
+            ParentMessageId = Constants.Self,
+            MessageContent = new MessageContent
+            {
+                EventContent = new EventContent
+                {
+                    EventTypeId = "Heartbeat",
+                    EventJson = "{}"
+                }
+            }
+        };
+
+        // Act
+        await fixture.PublishBus.Send(heartbeat);
+        var results = await fixture.DeliverAllWithResults();
+
+        // Assert — ResolutionResponse sent, no handler invoked, message completed
+        Assert.AreEqual(0, handler.ReceivedEvents.Count, "Heartbeat should not invoke event handler");
+        Assert.AreEqual(1, results.Count);
+        Assert.IsTrue(results[0].Session.WasCompleted, "Heartbeat message should be completed");
+
+        var responses = fixture.ResponseBus.SentMessages;
+        Assert.AreEqual(1, responses.Count);
+        Assert.AreEqual(MessageType.ResolutionResponse, responses[0].MessageType, "Heartbeat should produce ResolutionResponse");
     }
 }

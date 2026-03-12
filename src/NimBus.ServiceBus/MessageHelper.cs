@@ -2,6 +2,7 @@
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 
 namespace NimBus.ServiceBus
@@ -32,6 +33,10 @@ namespace NimBus.ServiceBus
                 result.ApplicationProperties[UserPropertyName.DeferralSequence.ToString()] = message.DeferralSequence.Value;
             }
 
+            var diagnosticId = message.DiagnosticId ?? Activity.Current?.Id;
+            if (!string.IsNullOrEmpty(diagnosticId))
+                result.ApplicationProperties[NimBusDiagnostics.DiagnosticIdProperty] = diagnosticId;
+
             result.ScheduledEnqueueTime = DateTime.UtcNow.AddMinutes(messageEnqueueDelay);
             var messageContentSerialized = JsonConvert.SerializeObject(message.MessageContent);
             result.Body = new BinaryData(Encoding.UTF8.GetBytes(messageContentSerialized));
@@ -61,6 +66,10 @@ namespace NimBus.ServiceBus
             result.ApplicationProperties[UserPropertyName.EventTypeId.ToString()] = message.EventTypeId ?? message.MessageContent?.EventContent?.EventTypeId;
             result.ApplicationProperties[UserPropertyName.OriginalSessionId.ToString()] = originalSessionId;
             result.ApplicationProperties[UserPropertyName.DeferralSequence.ToString()] = deferralSequence;
+
+            var diagnosticId = message.DiagnosticId ?? Activity.Current?.Id;
+            if (!string.IsNullOrEmpty(diagnosticId))
+                result.ApplicationProperties[NimBusDiagnostics.DiagnosticIdProperty] = diagnosticId;
 
             var messageContentSerialized = JsonConvert.SerializeObject(message.MessageContent);
             result.Body = new BinaryData(Encoding.UTF8.GetBytes(messageContentSerialized));

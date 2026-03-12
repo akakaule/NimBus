@@ -3,6 +3,7 @@ using NimBus.Core.Messages;
 using Microsoft.Azure.Functions.Worker;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -72,6 +73,26 @@ namespace NimBus.ServiceBus
             var eventType = message.ApplicationProperties.TryGetValue("EventTypeId", out var et) ? et?.ToString() ?? "unknown" : "unknown";
             var destination = message.ApplicationProperties.TryGetValue("To", out var to) ? to?.ToString() ?? "unknown" : "unknown";
 
+            // Extract W3C trace context from incoming message
+            ActivityContext parentContext = default;
+            if (message.ApplicationProperties.TryGetValue(NimBusDiagnostics.DiagnosticIdProperty, out var diagnosticId)
+                && diagnosticId is string traceParent)
+            {
+                ActivityContext.TryParse(traceParent, null, out parentContext);
+            }
+
+            using var activity = NimBusDiagnostics.Source.StartActivity(
+                "NimBus.Process",
+                ActivityKind.Consumer,
+                parentContext);
+
+            activity?.SetTag("messaging.system", "servicebus");
+            activity?.SetTag("messaging.destination", destination);
+            activity?.SetTag("messaging.event_type", eventType);
+            activity?.SetTag("messaging.operation", "process");
+            activity?.SetTag("messaging.message_id", message.MessageId);
+            activity?.SetTag("messaging.session_id", message.SessionId);
+
             var queueWaitMs = Math.Max(0, (DateTime.UtcNow - message.EnqueuedTime.UtcDateTime).TotalMilliseconds);
             s_queueWait.Record(queueWaitMs,
                 new KeyValuePair<string, object>("messaging.event_type", eventType),
@@ -80,6 +101,11 @@ namespace NimBus.ServiceBus
             try
             {
                 await _messageHandler.Handle(messageContext, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                throw;
             }
             finally
             {

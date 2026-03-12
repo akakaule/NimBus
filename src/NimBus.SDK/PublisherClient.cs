@@ -6,6 +6,7 @@ using NimBus.ServiceBus;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -90,17 +91,26 @@ public class PublisherClient : IPublisherClient
 
     public async Task Publish(IEvent @event, string sessionId, string correlationId, string messageId)
     {
+        var eventType = @event.GetEventType().Id;
+        using var activity = NimBusDiagnostics.Source.StartActivity("NimBus.Publish", ActivityKind.Producer);
+        activity?.SetTag("messaging.system", "servicebus");
+        activity?.SetTag("messaging.destination", eventType);
+        activity?.SetTag("messaging.event_type", eventType);
+
         var message = GetMessage(@event, correlationId, messageId, sessionId);
+        activity?.SetTag("messaging.message_id", message.MessageId);
+        activity?.SetTag("messaging.session_id", message.SessionId);
         var logger = _loggerProvider?.GetContextualLogger(message);
 
         try
         {
             await _sender.Send(message);
-            logger?.Information("Publisher Successfully published {EventType} event on ServiceBus. MessageId: {MessageId}, CorrelationId: {CorrelationId}", @event.GetEventType().Id, message.MessageId, correlationId);
+            logger?.Information("Publisher Successfully published {EventType} event on ServiceBus. MessageId: {MessageId}, CorrelationId: {CorrelationId}", eventType, message.MessageId, correlationId);
         }
         catch (Exception ex)
         {
-            logger?.Error(ex, "Failed to publish {EventType} event on ServiceBus", @event.GetEventType().Id);
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            logger?.Error(ex, "Failed to publish {EventType} event on ServiceBus", eventType);
             throw;
         }
     }
@@ -114,12 +124,16 @@ public class PublisherClient : IPublisherClient
     /// <returns></returns>
     public async Task PublishBatch(IEnumerable<IEvent> events, string correlationId = null)
     {
+        using var activity = NimBusDiagnostics.Source.StartActivity("NimBus.PublishBatch", ActivityKind.Producer);
+        activity?.SetTag("messaging.system", "servicebus");
+
         if (correlationId == null)
         {
             correlationId = Guid.NewGuid().ToString();
         }
 
         var messages = events.Select(@event => GetMessage(@event, correlationId)).ToList();
+        activity?.SetTag("messaging.batch.message_count", messages.Count);
 
         var logger = _loggerProvider?.GetContextualLogger(correlationId);
 
@@ -130,6 +144,7 @@ public class PublisherClient : IPublisherClient
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             logger?.Error(ex, $"Failed to publish batch of events on ServiceBus");
             throw;
         }
@@ -215,6 +230,7 @@ public class PublisherClient : IPublisherClient
                 }
             }
         };
+        message.DiagnosticId = Activity.Current?.Id;
         return message;
     }
 

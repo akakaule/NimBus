@@ -46,14 +46,16 @@ public static class ServiceDefaultsExtensions
             {
                 metrics.AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddRuntimeInstrumentation();
+                    .AddRuntimeInstrumentation()
+                    .AddMeter("NimBus.ServiceBus");
             })
             .WithTracing(tracing =>
             {
                 tracing.AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
                     .AddSource("Azure.Cosmos.Operation")
-                    .AddSource("Azure.Messaging.ServiceBus");
+                    .AddSource("Azure.Messaging.ServiceBus")
+                    .AddSource("NimBus");
             });
 
         AddOpenTelemetryExporters(builder);
@@ -95,6 +97,11 @@ public static class ServiceDefaultsExtensions
         app.MapHealthChecks("/alive", new HealthCheckOptions
         {
             Predicate = r => r.Tags.Contains("live")
+        });
+
+        app.MapHealthChecks("/ready", new HealthCheckOptions
+        {
+            Predicate = r => r.Tags.Contains("ready")
         });
 
         return app;

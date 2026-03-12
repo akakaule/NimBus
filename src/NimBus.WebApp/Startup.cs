@@ -36,6 +36,12 @@ using NimBus.Management.ServiceBus;
 using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
+using NimBus.ServiceBus.HealthChecks;
+using NimBus.MessageStore.HealthChecks;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using OpenTelemetry;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 using NimBusLoggerProvider = NimBus.Core.Logging.ILoggerProvider;
 
 namespace NimBus.WebApp
@@ -148,13 +154,15 @@ namespace NimBus.WebApp
             string cosmosEndpoint = Configuration.GetValue<string>("CosmosAccountEndpoint");
             string cosmosConnection = Configuration.GetConnectionString("cosmos")
                 ?? Configuration.GetValue<string>("CosmosConnection");
+            services.AddSingleton<CosmosClient>(sp =>
+            {
+                if (!string.IsNullOrEmpty(cosmosEndpoint) && !cosmosEndpoint.Contains("AccountKey="))
+                    return new CosmosClient(cosmosEndpoint, new DefaultAzureCredential());
+                return new CosmosClient(cosmosConnection);
+            });
             services.AddSingleton<ICosmosDbClient>(sp =>
             {
-                CosmosClient cosmosClient;
-                if (!string.IsNullOrEmpty(cosmosEndpoint) && !cosmosEndpoint.Contains("AccountKey="))
-                    cosmosClient = new CosmosClient(cosmosEndpoint, new DefaultAzureCredential());
-                else
-                    cosmosClient = new CosmosClient(cosmosConnection);
+                var cosmosClient = sp.GetRequiredService<CosmosClient>();
                 return new CosmosDbClient(cosmosClient);
             });
 
@@ -169,7 +177,34 @@ namespace NimBus.WebApp
             );
 
             services.AddApplicationInsightsTelemetry();
-            services.AddHealthChecks();
+
+            services.AddOpenTelemetry()
+                .WithMetrics(metrics =>
+                {
+                    metrics.AddAspNetCoreInstrumentation()
+                        .AddHttpClientInstrumentation()
+                        .AddRuntimeInstrumentation()
+                        .AddMeter("NimBus.ServiceBus");
+                })
+                .WithTracing(tracing =>
+                {
+                    tracing.AddAspNetCoreInstrumentation()
+                        .AddHttpClientInstrumentation()
+                        .AddSource("Azure.Cosmos.Operation")
+                        .AddSource("Azure.Messaging.ServiceBus")
+                        .AddSource("NimBus");
+                });
+
+            var useOtlpExporter = !string.IsNullOrWhiteSpace(Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
+            if (useOtlpExporter)
+            {
+                services.AddOpenTelemetry().UseOtlpExporter();
+            }
+
+            services.AddHealthChecks()
+                .AddServiceBusHealthCheck()
+                .AddCosmosDbHealthCheck()
+                .AddResolverLagCheck();
             services.AddScoped<IEndpointAuthorizationService, EndpointAuthorizationService>();
             services.AddTransient<IEndpointApiController, EndpointImplementation>();
             services.AddTransient<IStorageHookApiController, StorageHookImplementation>();
@@ -220,7 +255,14 @@ namespace NimBus.WebApp
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapHealthChecks("/health");
-                endpoints.MapHealthChecks("/alive");
+                endpoints.MapHealthChecks("/alive", new HealthCheckOptions
+                {
+                    Predicate = r => r.Tags.Contains("live")
+                });
+                endpoints.MapHealthChecks("/ready", new HealthCheckOptions
+                {
+                    Predicate = r => r.Tags.Contains("ready")
+                });
                 endpoints.MapHub<GridEventsHub>(Constants.AppEndpoints.GridEventHub);
                 endpoints.MapControllers();
                 endpoints.MapFallbackToFile("index.html", new StaticFileOptions

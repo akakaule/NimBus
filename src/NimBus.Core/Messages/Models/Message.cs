@@ -40,6 +40,11 @@
         /// The sequence number for ordering deferred messages within a session.
         /// </summary>
         int? DeferralSequence { get; }
+
+        /// <summary>
+        /// W3C trace context diagnostic ID for distributed tracing.
+        /// </summary>
+        string DiagnosticId => null;
     }
 
     public class Message : IMessage
@@ -67,5 +72,6 @@
         public string EventTypeId { get; set; }
         public string OriginalSessionId { get; set; }
         public int? DeferralSequence { get; set; }
+        public string DiagnosticId { get; set; }
     }
 }

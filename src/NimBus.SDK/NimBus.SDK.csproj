@@ -18,4 +18,8 @@
     <ProjectReference Include="..\NimBus.ServiceBus\NimBus.ServiceBus.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="NimBus.Testing" />
+  </ItemGroup>
+
 </Project>

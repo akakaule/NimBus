@@ -21,9 +21,9 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 | Item | Phase | Status | Description |
 |---|---|---|---|
 | [Configurable Retry Policies](#configurable-retry-policies) | 1 | Completed | Per-event-type and exception-based retry with backoff strategies |
-| [OpenTelemetry Tracing](#opentelemetry-tracing) | 2 | Not Started | `Activity`-based distributed tracing across publish/subscribe/Resolver |
-| [In-Memory Transport](#in-memory-transport) | 2 | Not Started | Test transport for running the full pipeline without Azure Service Bus |
-| [Health Checks](#health-checks) | 2 | Not Started | `IHealthCheck` implementations for Service Bus, Cosmos, Resolver lag |
+| [OpenTelemetry Tracing](#opentelemetry-tracing) | 2 | Completed | `Activity`-based distributed tracing across publish/subscribe/Resolver |
+| [In-Memory Transport](#in-memory-transport) | 2 | Completed | Test transport for running the full pipeline without Azure Service Bus |
+| [Health Checks](#health-checks) | 2 | Completed | `IHealthCheck` implementations for Service Bus, Cosmos, Resolver lag |
 
 ## P2 -- Medium
 
@@ -99,26 +99,46 @@ Code paths:
 
 ### OpenTelemetry Tracing
 
-**Priority:** P1 | **Phase:** 2 | **Status:** Not Started
+**Priority:** P1 | **Phase:** 2 | **Status:** Completed
 
-Add `ActivitySource` and W3C TraceContext propagation. Traces should flow from `PublisherClient.Publish` through Service Bus to `ServiceBusAdapter.Handle` and into the Resolver. Enrich with NimBus-specific tags: EventTypeId, EndpointId, SessionId, MessageType.
+`ActivitySource("NimBus")` with W3C TraceContext propagation via `Diagnostic-Id` in Service Bus `ApplicationProperties`. `NimBus.Publish` activity (Producer) on publish, `NimBus.Process` activity (Consumer) on receive with parent-child linking. `DiagnosticId` property on `IMessage` preserves trace context through outbox serialization. Tags: `messaging.system`, `messaging.destination`, `messaging.event_type`, `messaging.message_id`, `messaging.session_id`, `messaging.operation`.
 
-Target files:
-- `src/NimBus.ServiceBus/ServiceBusAdapter.cs`
-- `src/NimBus.SDK/PublisherClient.cs`
-- `src/NimBus.ServiceDefaults/Extensions.cs`
+Code paths:
+- `src/NimBus.ServiceBus/NimBusDiagnostics.cs`
+- `src/NimBus.Core/Messages/Models/Message.cs` (DiagnosticId property)
+- `src/NimBus.SDK/PublisherClient.cs` (publish activity)
+- `src/NimBus.ServiceBus/MessageHelper.cs` (Diagnostic-Id injection)
+- `src/NimBus.ServiceBus/ServiceBusAdapter.cs` (process activity with parent extraction)
+- `src/NimBus.ServiceDefaults/Extensions.cs` (AddSource + AddMeter registration)
 
 ### In-Memory Transport
 
-**Priority:** P1 | **Phase:** 2 | **Status:** Not Started
+**Priority:** P1 | **Phase:** 2 | **Status:** Completed
 
-`InMemoryServiceBusClient` that mimics topic/subscription routing with session support. Enables unit tests without Azure credentials and fast CI/CD. Likely a new `src/NimBus.Testing/` project.
+`NimBus.Testing` project providing `InMemoryMessageBus` (ISender), `InMemoryMessageContext` (IMessageContext), and `NimBusTestFixture` for running the full pipeline without Azure Service Bus. No dependency on `NimBus.ServiceBus` or Azure SDK. DI support via `AddNimBusTestTransport()`.
+
+Code paths:
+- `src/NimBus.Testing/InMemoryMessageBus.cs`
+- `src/NimBus.Testing/InMemoryMessageContext.cs`
+- `src/NimBus.Testing/InMemorySessionState.cs`
+- `src/NimBus.Testing/InMemoryDeliveryResult.cs`
+- `src/NimBus.Testing/NimBusTestFixture.cs`
+- `src/NimBus.Testing/Extensions/ServiceCollectionExtensions.cs`
 
 ### Health Checks
 
-**Priority:** P1 | **Phase:** 2 | **Status:** Not Started
+**Priority:** P1 | **Phase:** 2 | **Status:** Completed
 
-Standard `IHealthCheck` implementations: Service Bus connectivity, Cosmos DB connectivity, Resolver lag (time since last processed message). Register via `services.AddNimBusHealthChecks()`.
+`IHealthCheck` implementations for Service Bus (`ServiceBusClient.IsClosed`), Cosmos DB (`ReadAccountAsync`), and Resolver lag (heartbeat age with configurable thresholds: Healthy < 5min, Degraded 5-15min, Unhealthy > 15min). All tagged `"ready"` and exposed via `/ready` endpoint. Registration via `AddServiceBusHealthCheck()`, `AddCosmosDbHealthCheck()`, `AddResolverLagCheck()`.
+
+Code paths:
+- `src/NimBus.ServiceBus/HealthChecks/ServiceBusHealthCheck.cs`
+- `src/NimBus.ServiceBus/HealthChecks/ServiceBusHealthCheckExtensions.cs`
+- `src/NimBus.MessageStore/HealthChecks/CosmosDbHealthCheck.cs`
+- `src/NimBus.MessageStore/HealthChecks/ResolverLagHealthCheck.cs`
+- `src/NimBus.MessageStore/HealthChecks/HealthCheckExtensions.cs`
+- `src/NimBus.ServiceDefaults/Extensions.cs` (/ready endpoint)
+- `src/NimBus.WebApp/Startup.cs` (health check registration)
 
 ### Middleware Pipeline
 

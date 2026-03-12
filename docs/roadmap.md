@@ -77,7 +77,7 @@ Key paths:
 
 ---
 
-### Phase 2: Observability & Testing (Q3 2026)
+### Phase 2: Observability & Testing (Q3 2026) -- Implemented
 
 Goal: Production-grade observability and fast inner-loop testing.
 

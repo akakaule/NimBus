@@ -1,4 +1,5 @@
-﻿using NimBus.Core.Logging;
+﻿using NimBus.Core.Extensions;
+using NimBus.Core.Logging;
 using NimBus.Core.Messages.Exceptions;
 using System;
 using System.Threading;
@@ -9,23 +10,57 @@ namespace NimBus.Core.Messages
     public class MessageHandler : IMessageHandler
     {
         private readonly ILoggerProvider _loggerProvider;
+        private readonly MessagePipeline _pipeline;
+        private readonly MessageLifecycleNotifier _lifecycleNotifier;
 
         public MessageHandler(ILoggerProvider loggerProvider)
+            : this(loggerProvider, null, null)
+        {
+        }
+
+        public MessageHandler(ILoggerProvider loggerProvider, MessagePipeline pipeline, MessageLifecycleNotifier lifecycleNotifier)
         {
             _loggerProvider = loggerProvider;
+            _pipeline = pipeline;
+            _lifecycleNotifier = lifecycleNotifier;
         }
 
         public async Task Handle(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
             ILogger logger = _loggerProvider.GetContextualLogger(messageContext);
 
+            if (_lifecycleNotifier?.HasObservers == true)
+            {
+                await _lifecycleNotifier.NotifyReceived(messageContext, cancellationToken);
+            }
+
             try
             {
-                await HandleByMessageType(messageContext, logger, cancellationToken);
+                if (_pipeline?.HasBehaviors == true)
+                {
+                    await _pipeline.Execute(
+                        messageContext,
+                        (ctx, ct) => HandleByMessageType(ctx, logger, ct),
+                        cancellationToken);
+                }
+                else
+                {
+                    await HandleByMessageType(messageContext, logger, cancellationToken);
+                }
+
+                if (_lifecycleNotifier?.HasObservers == true)
+                {
+                    await _lifecycleNotifier.NotifyCompleted(messageContext, cancellationToken);
+                }
             }
             catch (TransientException transientException)
             {
                 logger.Error(transientException?.InnerException, $"Transient Error. Failed to handle message. EventId:{messageContext?.EventId}, MessageId:{messageContext.MessageId}, SessionId:{messageContext.SessionId}");
+
+                if (_lifecycleNotifier?.HasObservers == true)
+                {
+                    await _lifecycleNotifier.NotifyFailed(messageContext, transientException, cancellationToken);
+                }
 
                 try
                 {
@@ -44,10 +79,20 @@ namespace NimBus.Core.Messages
             }
             catch (Exception unexpectedException)
             {
+                if (_lifecycleNotifier?.HasObservers == true)
+                {
+                    await _lifecycleNotifier.NotifyFailed(messageContext, unexpectedException, cancellationToken);
+                }
+
                 try
                 {
                     logger.Error(unexpectedException, $"Unexpected Error. Failed to handle message. EventId:{messageContext?.EventId}, MessageId:{messageContext.MessageId}, SessionId:{messageContext.SessionId}");
                     await messageContext.DeadLetter("Failed to handle message.", unexpectedException, cancellationToken);
+
+                    if (_lifecycleNotifier?.HasObservers == true)
+                    {
+                        await _lifecycleNotifier.NotifyDeadLettered(messageContext, "Failed to handle message.", unexpectedException, cancellationToken);
+                    }
                 }
                 catch (Exception ex)
                 {

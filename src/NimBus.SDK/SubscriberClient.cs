@@ -104,12 +104,8 @@ namespace NimBus.SDK
             _serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, entityPath);
         }
 
-        /// <summary>
-        /// Handles a Service Bus message using the isolated worker model with ServiceBusSessionMessageActions.
-        /// Use this for session-enabled triggers.
-        /// </summary>
-        public Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionMessageActions, CancellationToken cancellationToken = default) =>
-            _serviceBusAdapter.Handle(message, sessionMessageActions, cancellationToken);
+        public Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default) =>
+            _serviceBusAdapter.Handle(message, sessionActions, cancellationToken);
 
         public Task Handle(ServiceBusReceivedMessage message, ServiceBusMessageActions messageActions, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default) =>
             _serviceBusAdapter.Handle(message, messageActions, sessionActions, cancellationToken);

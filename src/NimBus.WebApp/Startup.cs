@@ -134,8 +134,6 @@ namespace NimBus.WebApp
                 services.AddSingleton(new ServiceBusAdministrationClient(serviceBusConnection));
                 services.AddSingleton(new ServiceBusClient(serviceBusConnection));
             }
-            services.AddSingleton<ISender>(sp => new SenderManager(sp.GetRequiredService<ServiceBusClient>().CreateSender(NimBus.Core.Messages.Constants.ManagerId)));
-
             string globalTraceLogInstrKey = Configuration.GetValue<string>("APPINSIGHTS_INSTRUMENTATIONKEY");
             services.AddSingleton<NimBusLoggerProvider>(sp => {
                 Serilog.ILogger baseLogger = new LoggerConfiguration()

@@ -80,7 +80,7 @@ public class PublisherClient : IPublisherClient
     {
         var eventType = @event.GetEventType();
         var messagePayload = JsonConvert.SerializeObject(@event);
-        var messageId = $"{eventType.Id}-{messagePayload.GetHashCode()}";
+        var messageId = $"{eventType.Id}-{DeterministicHash(messagePayload)}";
 
         await Publish(@event, sessionId, correlationId, messageId);
     }
@@ -169,6 +169,12 @@ public class PublisherClient : IPublisherClient
                 return true;
             }).ToList();
 
+            if (page.Count == 0 && events.Count > 0)
+            {
+                // Oversized event — yield as single-item batch, let Service Bus reject at send time
+                page = new List<IEvent> { events[0] };
+            }
+
             events.RemoveRange(0, page.Count);
             yield return page;
         } while (events.Any());
@@ -185,7 +191,7 @@ public class PublisherClient : IPublisherClient
 
         var eventType = @event.GetEventType().Id;
         var messagePayload = JsonConvert.SerializeObject(@event);
-        messageId ??= $"{eventType}-{messagePayload.GetHashCode()}";
+        messageId ??= $"{eventType}-{DeterministicHash(messagePayload)}";
         sessionId ??= @event.GetSessionId();
         correlationId ??= Guid.NewGuid().ToString();
         var message = new Message()
@@ -207,5 +213,12 @@ public class PublisherClient : IPublisherClient
             }
         };
         return message;
+    }
+
+    private static string DeterministicHash(string input)
+    {
+        var hash = System.IO.Hashing.XxHash64.HashToUInt64(
+            System.Text.Encoding.UTF8.GetBytes(input));
+        return hash.ToString("x16", System.Globalization.CultureInfo.InvariantCulture);
     }
 }

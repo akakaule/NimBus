@@ -11,14 +11,8 @@ namespace NimBus.ServiceBus
 {
     public interface IServiceBusAdapter
     {
-        /// <summary>
-        /// Handles a Service Bus message using the isolated worker model with ServiceBusSessionMessageActions.
-        /// Use this for session-enabled triggers.
-        /// </summary>
-        Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionMessageActions, CancellationToken cancellationToken = default);
-
+        Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default);
         Task Handle(ServiceBusReceivedMessage message, ServiceBusMessageActions messageActions, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default);
-
         Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionReceiver sessionReceiver, CancellationToken cancellationToken = default);
     }
 
@@ -46,14 +40,10 @@ namespace NimBus.ServiceBus
             _entityPath = entityPath;
         }
 
-        /// <summary>
-        /// Handles a Service Bus message using the isolated worker model with ServiceBusSessionMessageActions.
-        /// Use this for session-enabled triggers.
-        /// </summary>
-        public async Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionMessageActions, CancellationToken cancellationToken = default)
+        public async Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default)
         {
             var messageWrapper = new ServiceBusMessage(message);
-            var sessionWrapper = new ServiceBusSession(sessionMessageActions, _serviceBusClient, _entityPath, message.SessionId);
+            var sessionWrapper = new ServiceBusSession(sessionActions, _serviceBusClient, _entityPath, message.SessionId);
             var messageContext = new MessageContext(messageWrapper, sessionWrapper);
 
             await HandleWithLatencyTracking(message, messageContext, cancellationToken);

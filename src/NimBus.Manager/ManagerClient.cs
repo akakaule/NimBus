@@ -1,7 +1,9 @@
-﻿using NimBus.Core.Events;
+using Azure.Messaging.ServiceBus;
+using NimBus.Core.Events;
 using NimBus.Core.Logging;
 using NimBus.Core.Messages;
 using NimBus.MessageStore;
+using NimBus.ServiceBus;
 using Newtonsoft.Json;
 using System;
 using System.Threading.Tasks;
@@ -27,24 +29,25 @@ public interface IManagerClient
 
 public class ManagerClient : IManagerClient
 {
-    private readonly ISender _sender;
+    private readonly ServiceBusClient _serviceBusClient;
     private readonly ILogger _logger;
 
-    public ManagerClient(ISender sender, ILogger logger = null)
+    public ManagerClient(ServiceBusClient serviceBusClient, ILogger logger = null)
     {
-        _sender = sender;
+        _serviceBusClient = serviceBusClient;
         _logger = logger;
     }
 
-    public Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson)
+    public async Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson)
     {
         _logger?.Verbose($"MANAGER RESUBMIT EVENT: EventId: {errorResponse.EventId} EventtypeId: {eventTypeId} EventJson: {eventJson} errorResponse: {errorResponse} ");
-        return _sender.Send(new Message
+        var message = new Message
         {
             CorrelationId = errorResponse.CorrelationId,
             EventId = errorResponse.EventId,
             SessionId = errorResponse.SessionId,
             To = endpoint,
+            From = Constants.ManagerId,
             OriginatingMessageId = errorResponse.OriginatingMessageId ?? errorResponse.MessageId,
             ParentMessageId = errorResponse.MessageId,
             MessageType = MessageType.ResubmissionRequest,
@@ -57,23 +60,30 @@ public class ManagerClient : IManagerClient
                     EventJson = eventJson
                 }
             },
-        });
+        };
+
+        await using var sender = _serviceBusClient.CreateSender(endpoint);
+        await sender.SendMessageAsync(MessageHelper.ToServiceBusMessage(message));
     }
 
-    public Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId)
+    public async Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId)
     {
         _logger?.Verbose($"MANAGER SKIP EVENT: SessionId: {errorResponse.SessionId} EventId: {errorResponse.EventId} From: {errorResponse.To} ");
-        return _sender.Send(new Message()
+        var message = new Message()
         {
             CorrelationId = errorResponse.MessageId,
             EventId = errorResponse.EventId,
             SessionId = errorResponse.SessionId,
             To = endpoint,
+            From = Constants.ManagerId,
             MessageType = MessageType.SkipRequest,
             MessageContent = new MessageContent(),
             ParentMessageId = errorResponse.MessageId,
             EventTypeId = eventTypeId,
             OriginatingMessageId = errorResponse.OriginatingMessageId ?? errorResponse.MessageId
-        });
+        };
+
+        await using var sender = _serviceBusClient.CreateSender(endpoint);
+        await sender.SendMessageAsync(MessageHelper.ToServiceBusMessage(message));
     }
 }

@@ -77,6 +77,8 @@ function Create-ServiceBusSubscription {
   Write-Host "  Subscription: $subscription"
   Write-Host "  Enable session: true"
   Write-Host ""
+
+  Remove-DefaultRule -serviceBusNamespace $serviceBusNamespace -topic $topic -subscription $subscription
 }
 
 function Create-ServiceBusForwardSubscription {
@@ -98,6 +100,31 @@ function Create-ServiceBusForwardSubscription {
   Write-Host "  Topic: $topic"
   Write-Host "  Subscription: $subscription"
   Write-Host "  Forward-To: $forwardTo"
+  Write-Host ""
+
+  Remove-DefaultRule -serviceBusNamespace $serviceBusNamespace -topic $topic -subscription $subscription
+}
+
+##############################################
+# Remove $Default rule from subscription
+##############################################
+function Remove-DefaultRule {
+
+  param (
+    [string] $serviceBusNamespace,
+    [string] $topic,
+    [string] $subscription)
+
+  az servicebus topic subscription rule delete `
+  --namespace-name $serviceBusNamespace `
+  --topic-name $topic `
+  --subscription-name $subscription `
+  --name '$Default' `
+  2> $null
+
+  Write-Host "Removed `$Default rule (if existed)."
+  Write-Host "  Topic: $topic"
+  Write-Host "  Subscription: $subscription"
   Write-Host ""
 }
 
@@ -250,22 +277,24 @@ function Create-ServiceBusSubscriptionsInParallel {
     $csbsDef = ${function:Create-ServiceBusSubscription}.ToString()
     $csbsrDef = ${function:Create-ServiceBusSubscriptionRule}.ToString()
     $csbfsDef = ${function:Create-ServiceBusForwardSubscription}.ToString()
+    $rdrDef = ${function:Remove-DefaultRule}.ToString()
 
     $endpoints | ForEach-Object -ThrottleLimit 10 -Parallel {
         $sbNamespace = $using:sbNamespace
         $nameOfTo = $using:nameOfTo
         $nameOfFrom = $using:nameOfFrom
         $nameOfEventId = $using:nameOfEventId
-        $resolverId = $using:resolverId        
+        $resolverId = $using:resolverId
         $brokerId = $using:brokerId
         $continuationId = $using:continuationId
         $retryId = $using:retryId
         $endpointId = $_.id
-    
+
         # Ref the functions from outside the loop
         ${function:Create-ServiceBusSubscription} = $using:csbsDef
         ${function:Create-ServiceBusSubscriptionRule} = $using:csbsrDef
         ${function:Create-ServiceBusForwardSubscription} = $using:csbfsDef
+        ${function:Remove-DefaultRule} = $using:rdrDef
     
         # Main subscription
         Create-ServiceBusSubscription     -serviceBusNamespace $sbNamespace -topic $endpointId -subscription $endpointId

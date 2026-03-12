@@ -109,9 +109,9 @@ namespace NimBus.Broker.Services
             }
             catch (TransientException ex)
             {
-                logger.Error(ex, "Resolver: Failed to schedule redelivery. DeadLettering. EventId:{EventId}, SessionId:{SessionId}",
+                logger.Information(ex, "Resolver: Failed to schedule redelivery. Abandoning for retry. EventId:{EventId}, SessionId:{SessionId}",
                     messageContext.EventId, messageContext.SessionId);
-                await messageContext.DeadLetter("Failed to schedule throttle redelivery", ex, cancellationToken);
+                await messageContext.Abandon(ex);
             }
         }
 

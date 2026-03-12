@@ -31,13 +31,9 @@ namespace NimBus.ServiceBus
         private ServiceBusSessionReceiver _lazySessionReceiver;
         private readonly SemaphoreSlim _receiverLock = new SemaphoreSlim(1, 1);
 
-        /// <summary>
-        /// Creates a ServiceBusSession for the isolated worker model using ServiceBusSessionMessageActions.
-        /// Use this constructor for session-enabled triggers in isolated worker model.
-        /// </summary>
-        public ServiceBusSession(ServiceBusSessionMessageActions sessionMessageActions, ServiceBusClient serviceBusClient = null, string entityPath = null, string sessionId = null)
+        public ServiceBusSession(ServiceBusSessionMessageActions sessionActions, ServiceBusClient serviceBusClient = null, string entityPath = null, string sessionId = null)
         {
-            _sessionActions = sessionMessageActions ?? throw new ArgumentNullException(nameof(sessionMessageActions));
+            _sessionActions = sessionActions ?? throw new ArgumentNullException(nameof(sessionActions));
             _serviceBusClient = serviceBusClient;
             _entityPath = entityPath;
             _sessionId = sessionId;
@@ -188,7 +184,8 @@ namespace NimBus.ServiceBus
                     "Inject ServiceBusClient via dependency injection and pass it to the ServiceBusAdapter.");
             }
 
-            await using var sender = _serviceBusClient.CreateSender(_entityPath);
+            var (topicName, _) = ParseEntityPath();
+            await using var sender = _serviceBusClient.CreateSender(topicName);
             await sender.ScheduleMessageAsync(message, scheduledEnqueueTime, cancellationToken);
         }
 
@@ -209,7 +206,10 @@ namespace NimBus.ServiceBus
             {
                 if (_lazySessionReceiver == null)
                 {
-                    _lazySessionReceiver = await _serviceBusClient.AcceptSessionAsync(_entityPath, _sessionId, cancellationToken: cancellationToken);
+                    var (topicName, subscriptionName) = ParseEntityPath();
+                    _lazySessionReceiver = subscriptionName != null
+                        ? await _serviceBusClient.AcceptSessionAsync(topicName, subscriptionName, _sessionId, cancellationToken: cancellationToken)
+                        : await _serviceBusClient.AcceptSessionAsync(topicName, _sessionId, cancellationToken: cancellationToken);
                 }
                 return _lazySessionReceiver;
             }
@@ -217,6 +217,16 @@ namespace NimBus.ServiceBus
             {
                 _receiverLock.Release();
             }
+        }
+
+        private (string topicName, string subscriptionName) ParseEntityPath()
+        {
+            var separatorIndex = _entityPath.IndexOf('/');
+            if (separatorIndex >= 0)
+            {
+                return (_entityPath.Substring(0, separatorIndex), _entityPath.Substring(separatorIndex + 1));
+            }
+            return (_entityPath, null);
         }
     }
 }

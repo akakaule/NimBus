@@ -18,6 +18,8 @@ namespace NimBus.ServiceBus
             result.ApplicationProperties[UserPropertyName.ParentMessageId.ToString()] = message.ParentMessageId ?? Constants.Self;
             result.ApplicationProperties[UserPropertyName.RetryCount.ToString()] = message.RetryCount ?? 0;
             result.ApplicationProperties[UserPropertyName.OriginatingFrom.ToString()] = message.OriginatingFrom ?? Constants.Self;
+            if (!string.IsNullOrEmpty(message.From))
+                result.ApplicationProperties[UserPropertyName.From.ToString()] = message.From;
             result.ApplicationProperties[UserPropertyName.EventTypeId.ToString()] =  message.EventTypeId ?? message.MessageContent?.EventContent?.EventTypeId;
 
             // Add OriginalSessionId and DeferralSequence if present (for deferred messages)

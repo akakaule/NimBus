@@ -26,6 +26,7 @@
         /// <value></value>
         string OriginatingMessageId { get; }
         int? RetryCount { get; }
+        string From { get; }
         string OriginatingFrom { get; }
 
         public string EventTypeId { get; }
@@ -60,6 +61,7 @@
         public string ParentMessageId { get; set; }
 
         public string OriginatingMessageId { get; set; }
+        public string From { get; set; }
         public string OriginatingFrom { get; set; }
         public int? RetryCount { get; set; }
         public string EventTypeId { get; set; }

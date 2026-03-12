@@ -1,4 +1,5 @@
 using Azure.Messaging.ServiceBus.Administration;
+using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Messages;
 
@@ -7,33 +8,37 @@ namespace NimBus.CommandLine;
 internal sealed class ServiceBusTopologyProvisioner
 {
     private readonly AzureCliRunner _az;
+    private readonly Func<TopologyOptions, CancellationToken, Task<string>> _connectionStringProvider;
+    private readonly Func<string, ServiceBusAdministrationClient> _clientFactory;
+    private readonly Func<IPlatform> _platformFactory;
 
     public ServiceBusTopologyProvisioner(AzureCliRunner az)
+        : this(
+            az,
+            static (options, cancellationToken, runner) => ReadConnectionStringAsync(runner, options, cancellationToken),
+            static connectionString => new ServiceBusAdministrationClient(connectionString),
+            static () => new PlatformConfiguration())
+    {
+    }
+
+    internal ServiceBusTopologyProvisioner(
+        AzureCliRunner az,
+        Func<TopologyOptions, CancellationToken, AzureCliRunner, Task<string>> connectionStringProvider,
+        Func<string, ServiceBusAdministrationClient> clientFactory,
+        Func<IPlatform> platformFactory)
     {
         _az = az;
+        _connectionStringProvider = (options, cancellationToken) => connectionStringProvider(options, cancellationToken, _az);
+        _clientFactory = clientFactory;
+        _platformFactory = platformFactory;
     }
 
     public async Task ApplyAsync(TopologyOptions options, CancellationToken cancellationToken)
     {
-        var names = NamingConventions.Build(options.SolutionId, options.Environment);
+        var connectionString = await _connectionStringProvider(options, cancellationToken).ConfigureAwait(false);
 
-        await _az.EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false);
-
-        var connectionString = await _az.CaptureValueAsync(
-            new[]
-            {
-                "servicebus", "namespace", "authorization-rule", "keys", "list",
-                "--resource-group", options.ResourceGroupName,
-                "--namespace-name", names.ServiceBusNamespace,
-                "--name", "RootManageSharedAccessKey",
-                "--query", "primaryConnectionString",
-                "--output", "tsv",
-            },
-            cancellationToken,
-            $"Failed to read the Service Bus connection string for '{names.ServiceBusNamespace}'.").ConfigureAwait(false);
-
-        var platform = new PlatformConfiguration();
-        var client = new ServiceBusAdministrationClient(connectionString);
+        var platform = _platformFactory();
+        var client = _clientFactory(connectionString);
 
         await EnsureTopicAsync(client, Constants.ResolverId, cancellationToken).ConfigureAwait(false);
 
@@ -52,7 +57,7 @@ internal sealed class ServiceBusTopologyProvisioner
 
     private static async Task EnsureEndpointTopologyAsync(
         ServiceBusAdministrationClient client,
-        PlatformConfiguration platform,
+        IPlatform platform,
         IEndpoint endpoint,
         CancellationToken cancellationToken)
     {
@@ -88,6 +93,26 @@ internal sealed class ServiceBusTopologyProvisioner
                     cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    private static async Task<string> ReadConnectionStringAsync(AzureCliRunner az, TopologyOptions options, CancellationToken cancellationToken)
+    {
+        var names = NamingConventions.Build(options.SolutionId, options.Environment);
+
+        await az.EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false);
+
+        return await az.CaptureValueAsync(
+            new[]
+            {
+                "servicebus", "namespace", "authorization-rule", "keys", "list",
+                "--resource-group", options.ResourceGroupName,
+                "--namespace-name", names.ServiceBusNamespace,
+                "--name", "RootManageSharedAccessKey",
+                "--query", "primaryConnectionString",
+                "--output", "tsv",
+            },
+            cancellationToken,
+            $"Failed to read the Service Bus connection string for '{names.ServiceBusNamespace}'.").ConfigureAwait(false);
     }
 
     private static async Task EnsureTopicAsync(ServiceBusAdministrationClient client, string topicName, CancellationToken cancellationToken)
@@ -164,7 +189,7 @@ internal sealed class ServiceBusTopologyProvisioner
     {
         const string subscriptionName = "Deferred";
         var existing = await TryGetSubscriptionAsync(client, topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
-        var mustRecreate = existing is null || existing.RequiresSession;
+        var mustRecreate = existing is null || !existing.RequiresSession;
 
         if (mustRecreate)
         {
@@ -173,7 +198,7 @@ internal sealed class ServiceBusTopologyProvisioner
                 await client.DeleteSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
             }
 
-            var options = CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: false, forwardTo: null);
+            var options = CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: true, forwardTo: null);
             options.DefaultMessageTimeToLive = TimeSpan.FromDays(14);
             await client.CreateSubscriptionAsync(options, cancellationToken).ConfigureAwait(false);
             CliOutput.WriteLine($"Ensured deferred subscription '{subscriptionName}' on topic '{topicName}'.");
@@ -187,7 +212,7 @@ internal sealed class ServiceBusTopologyProvisioner
     {
         const string subscriptionName = "DeferredProcessor";
         var existing = await TryGetSubscriptionAsync(client, topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
-        var mustRecreate = existing is null || existing.RequiresSession;
+        var mustRecreate = existing is null || !existing.RequiresSession;
 
         if (mustRecreate)
         {
@@ -196,7 +221,7 @@ internal sealed class ServiceBusTopologyProvisioner
                 await client.DeleteSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
             }
 
-            await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: false, forwardTo: null), cancellationToken).ConfigureAwait(false);
+            await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: true, forwardTo: null), cancellationToken).ConfigureAwait(false);
             CliOutput.WriteLine($"Ensured deferred processor subscription '{subscriptionName}' on topic '{topicName}'.");
         }
 
@@ -323,3 +348,4 @@ internal sealed class ServiceBusTopologyProvisioner
         }
     }
 }
+

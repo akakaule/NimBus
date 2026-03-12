@@ -125,3 +125,5 @@ src/NimBus.WebApp/ClientApp/devcert.crt
 src/NimBus.WebApp/ClientApp/devcert.pfx
 src/NimBus.WebApp/ClientApp/.env
 src/NimBus.WebApp/wwwroot/
+/.dotnet/.dotnet
+/.claude/plans

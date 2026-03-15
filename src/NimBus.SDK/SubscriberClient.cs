@@ -115,6 +115,9 @@ namespace NimBus.SDK
         public Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionReceiver sessionReceiver, CancellationToken cancellationToken = default) =>
             _serviceBusAdapter.Handle(message, sessionReceiver, cancellationToken);
 
+        public Task Handle(ProcessSessionMessageEventArgs args, CancellationToken cancellationToken = default) =>
+            _serviceBusAdapter.Handle(args, cancellationToken);
+
         public void RegisterHandler<T_Event>(Func<IEventHandler<T_Event>> eventHandlerFactory)
             where T_Event : IEvent
         {

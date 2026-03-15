@@ -25,6 +25,7 @@ namespace NimBus.ServiceBus
         private readonly ServiceBusMessageActions _messageActions;
         private readonly ServiceBusSessionMessageActions _sessionActions;
         private readonly ServiceBusSessionReceiver _sessionReceiver;
+        private readonly ProcessSessionMessageEventArgs _processSessionArgs;
         private readonly ServiceBusClient _serviceBusClient;
         private readonly string _entityPath;
         private readonly string _sessionId;
@@ -53,6 +54,14 @@ namespace NimBus.ServiceBus
             _sessionReceiver = sessionReceiver ?? throw new ArgumentNullException(nameof(sessionReceiver));
         }
 
+        public ServiceBusSession(ProcessSessionMessageEventArgs processSessionArgs, ServiceBusClient serviceBusClient = null, string entityPath = null)
+        {
+            _processSessionArgs = processSessionArgs ?? throw new ArgumentNullException(nameof(processSessionArgs));
+            _serviceBusClient = serviceBusClient;
+            _entityPath = entityPath;
+            _sessionId = processSessionArgs.SessionId;
+        }
+
         public Task CompleteAsync(IServiceBusMessage message, CancellationToken cancellationToken = default)
         {
             if (_messageActions != null)
@@ -63,10 +72,13 @@ namespace NimBus.ServiceBus
             {
                 return _sessionReceiver.CompleteMessageAsync(message.Message, cancellationToken);
             }
+            if (_processSessionArgs != null)
+            {
+                return _processSessionArgs.CompleteMessageAsync(message.Message, cancellationToken);
+            }
 
             throw new InvalidOperationException(
-                "Cannot complete message: no ServiceBusMessageActions or ServiceBusSessionReceiver available. " +
-                "When using ServiceBusSessionMessageActions, you must also inject ServiceBusMessageActions for message operations.");
+                "Cannot complete message: no ServiceBusMessageActions, ServiceBusSessionReceiver, or ProcessSessionMessageEventArgs available.");
         }
 
         public Task DeadLetterAsync(IServiceBusMessage message, string deadLetterReason, string deadLetterErrorDescription, CancellationToken cancellationToken = default)
@@ -79,10 +91,13 @@ namespace NimBus.ServiceBus
             {
                 return _sessionReceiver.DeadLetterMessageAsync(message.Message, deadLetterReason, deadLetterErrorDescription, cancellationToken);
             }
+            if (_processSessionArgs != null)
+            {
+                return _processSessionArgs.DeadLetterMessageAsync(message.Message, null, deadLetterReason, deadLetterErrorDescription, cancellationToken);
+            }
 
             throw new InvalidOperationException(
-                "Cannot dead-letter message: no ServiceBusMessageActions or ServiceBusSessionReceiver available. " +
-                "When using ServiceBusSessionMessageActions, you must also inject ServiceBusMessageActions for message operations.");
+                "Cannot dead-letter message: no ServiceBusMessageActions, ServiceBusSessionReceiver, or ProcessSessionMessageEventArgs available.");
         }
 
         public Task DeferAsync(IServiceBusMessage message, CancellationToken cancellationToken = default)
@@ -95,10 +110,13 @@ namespace NimBus.ServiceBus
             {
                 return _sessionReceiver.DeferMessageAsync(message.Message, cancellationToken: cancellationToken);
             }
+            if (_processSessionArgs != null)
+            {
+                return _processSessionArgs.DeferMessageAsync(message.Message, null, cancellationToken);
+            }
 
             throw new InvalidOperationException(
-                "Cannot defer message: no ServiceBusMessageActions or ServiceBusSessionReceiver available. " +
-                "When using ServiceBusSessionMessageActions, you must also inject ServiceBusMessageActions for message operations.");
+                "Cannot defer message: no ServiceBusMessageActions, ServiceBusSessionReceiver, or ProcessSessionMessageEventArgs available.");
         }
 
         public async Task<SessionState> GetStateAsync(CancellationToken cancellationToken = default)
@@ -107,6 +125,10 @@ namespace NimBus.ServiceBus
             if (_sessionActions != null)
             {
                 sessionData = await _sessionActions.GetSessionStateAsync(cancellationToken);
+            }
+            else if (_processSessionArgs != null)
+            {
+                sessionData = await _processSessionArgs.GetSessionStateAsync(cancellationToken);
             }
             else
             {
@@ -139,6 +161,10 @@ namespace NimBus.ServiceBus
             if (_sessionActions != null)
             {
                 await _sessionActions.SetSessionStateAsync(sessionData, cancellationToken);
+            }
+            else if (_processSessionArgs != null)
+            {
+                await _processSessionArgs.SetSessionStateAsync(sessionData, cancellationToken);
             }
             else
             {

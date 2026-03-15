@@ -234,7 +234,101 @@ public class EventRoutingTests
         Assert.AreEqual("FIFO-3", handler.ReceivedEvents[2].OrderId);
     }
 
-    private static Message CreateSkipRequest(string sessionId, string blockedByEventId, string eventTypeId)
+    [TestMethod]
+    public async Task Publish_FanOut_OneSubscriberFails_OtherStillProcesses()
+    {
+        // Arrange
+        var subscriberA = new EndToEndFixture();
+        var subscriberB = new EndToEndFixture();
+
+        var failingHandler = new RecordingOrderPlacedHandler
+        {
+            ExceptionToThrow = new InvalidOperationException("Subscriber A fails")
+        };
+        var successfulHandler = new RecordingOrderPlacedHandler();
+
+        subscriberA.RegisterHandler(() => failingHandler);
+        subscriberB.RegisterHandler(() => successfulHandler);
+
+        // Act
+        await subscriberA.Publisher.Publish(new OrderPlaced("s-fanout-isolated") { OrderId = "ORD-ISO-001" });
+        await subscriberA.PublishBus.DeliverAllToSubscribers([
+            subscriberA.MessageHandler,
+            subscriberB.MessageHandler
+        ]);
+
+        // Assert
+        Assert.AreEqual(0, failingHandler.ReceivedEvents.Count, "Failing subscriber should not record successful events");
+        Assert.AreEqual(1, successfulHandler.ReceivedEvents.Count, "Healthy subscriber should still process the event");
+        Assert.AreEqual("ORD-ISO-001", successfulHandler.ReceivedEvents[0].OrderId);
+
+        Assert.IsTrue(subscriberA.ResponseBus.SentMessages.Any(m => m.MessageType == MessageType.ErrorResponse));
+        Assert.IsFalse(subscriberA.ResponseBus.SentMessages.Any(m => m.MessageType == MessageType.ResolutionResponse));
+        Assert.IsTrue(subscriberB.ResponseBus.SentMessages.Any(m => m.MessageType == MessageType.ResolutionResponse));
+    }
+
+    [TestMethod]
+    public async Task Publish_UnauthorizedSkipRequest_IsDeadLetteredAndNotApplied()
+    {
+        // Arrange
+        const string sessionId = "session-unauth-skip";
+        var fixture = new EndToEndFixture();
+        var handler = new RecordingOrderPlacedHandler
+        {
+            ExceptionFactory = order => order.OrderId == "ORD-BLOCK"
+                ? new InvalidOperationException("Block this event")
+                : null
+        };
+        fixture.RegisterHandler(() => handler);
+
+        // Act 1: block the session with a failing message.
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-BLOCK" });
+        await fixture.DeliverAll();
+        var failedEventId = fixture.ResponseBus.SentMessages
+            .Single(response => response.MessageType == MessageType.ErrorResponse)
+            .EventId;
+
+        // Act 2: attempt unauthorized skip.
+        await fixture.PublishBus.Send(CreateSkipRequest(sessionId, failedEventId, "OrderPlaced", "UnauthorizedSender"));
+        var unauthorizedSkipResults = await fixture.DeliverAllWithResults();
+
+        // Assert
+        Assert.AreEqual(1, unauthorizedSkipResults.Count, "Should deliver the unauthorized skip request");
+        Assert.IsTrue(unauthorizedSkipResults[0].Session.WasDeadLettered, "Unauthorized skip should be dead-lettered");
+        Assert.IsFalse(fixture.ResponseBus.SentMessages.Any(response => response.MessageType == MessageType.SkipResponse),
+            "Unauthorized sender must not produce SkipResponse");
+    }
+
+    [TestMethod]
+    public async Task Publish_BlockedSession_DoesNotBlockDifferentSession()
+    {
+        // Arrange
+        var fixture = new EndToEndFixture();
+        var handler = new RecordingOrderPlacedHandler
+        {
+            ExceptionFactory = order => order.OrderId == "ORD-BLOCK-SESSION-A"
+                ? new InvalidOperationException("Session A fails")
+                : null
+        };
+        fixture.RegisterHandler(() => handler);
+
+        // Act: first message blocks session A; second message in session B should still process.
+        await fixture.Publisher.Publish(new OrderPlaced("session-A") { OrderId = "ORD-BLOCK-SESSION-A" });
+        await fixture.Publisher.Publish(new OrderPlaced("session-B") { OrderId = "ORD-PROCESS-SESSION-B" });
+        await fixture.DeliverAll();
+
+        // Assert
+        Assert.AreEqual(1, handler.ReceivedEvents.Count, "Only session-B event should be processed successfully");
+        Assert.AreEqual("ORD-PROCESS-SESSION-B", handler.ReceivedEvents[0].OrderId);
+        Assert.IsTrue(fixture.ResponseBus.SentMessages.Any(response => response.MessageType == MessageType.ErrorResponse),
+            "Session-A failure should emit error response");
+        Assert.IsTrue(fixture.ResponseBus.SentMessages.Any(response =>
+            response.MessageType == MessageType.ResolutionResponse &&
+            response.MessageContent.EventContent.EventJson.Contains("ORD-PROCESS-SESSION-B", StringComparison.Ordinal)),
+            "Session-B should complete with resolution response");
+    }
+
+    private static Message CreateSkipRequest(string sessionId, string blockedByEventId, string eventTypeId, string from = Constants.ManagerId)
     {
         return new Message
         {
@@ -245,7 +339,7 @@ public class EventRoutingTests
             EventId = blockedByEventId,
             EventTypeId = eventTypeId,
             MessageType = MessageType.SkipRequest,
-            From = Constants.ManagerId,
+            From = from,
             OriginatingMessageId = Constants.Self,
             ParentMessageId = Constants.Self,
             MessageContent = new MessageContent

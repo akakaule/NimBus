@@ -25,6 +25,8 @@ internal sealed class EndToEndFixture
     /// <summary>Response messages sent by StrictMessageHandler (resolution, error, etc.).</summary>
     public InMemoryBus ResponseBus => _responseBus;
 
+    internal IMessageHandler MessageHandler => _messageHandler;
+
     public EndToEndFixture()
     {
         var loggerProvider = new TestLoggerProvider();

@@ -151,6 +151,36 @@ namespace NimBus.SDK.Extensions
         }
 
         /// <summary>
+        /// Registers a NimBus receiver as a hosted service that listens to a Service Bus topic/subscription
+        /// using a <see cref="Azure.Messaging.ServiceBus.ServiceBusSessionProcessor"/>.
+        /// Requires <see cref="AddNimBusSubscriber"/> to be called first to register the message handler pipeline.
+        /// </summary>
+        /// <param name="services">The service collection.</param>
+        /// <param name="configure">Action to configure the receiver options.</param>
+        /// <returns>The service collection for chaining.</returns>
+        public static IServiceCollection AddNimBusReceiver(this IServiceCollection services, Action<NimBusReceiverOptions> configure)
+        {
+            var options = new NimBusReceiverOptions();
+            configure(options);
+
+            if (string.IsNullOrEmpty(options.TopicName))
+                throw new ArgumentException("TopicName must be specified.", nameof(configure));
+            if (string.IsNullOrEmpty(options.SubscriptionName))
+                throw new ArgumentException("SubscriptionName must be specified.", nameof(configure));
+
+            services.AddHostedService(sp =>
+            {
+                var client = sp.GetRequiredService<ServiceBusClient>();
+                var subscriber = sp.GetRequiredService<ISubscriberClient>();
+                var logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<NimBusReceiverHostedService>>();
+
+                return new NimBusReceiverHostedService(client, subscriber, options, logger);
+            });
+
+            return services;
+        }
+
+        /// <summary>
         /// Registers the outbox background dispatcher as a hosted service.
         /// Call this after registering an IOutbox implementation.
         /// </summary>

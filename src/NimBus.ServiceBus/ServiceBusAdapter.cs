@@ -15,6 +15,7 @@ namespace NimBus.ServiceBus
         Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default);
         Task Handle(ServiceBusReceivedMessage message, ServiceBusMessageActions messageActions, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default);
         Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionReceiver sessionReceiver, CancellationToken cancellationToken = default);
+        Task Handle(ProcessSessionMessageEventArgs args, CancellationToken cancellationToken = default);
     }
 
     public class ServiceBusAdapter : IServiceBusAdapter
@@ -66,6 +67,15 @@ namespace NimBus.ServiceBus
             var messageContext = new MessageContext(messageWrapper, sessionWrapper);
 
             await HandleWithLatencyTracking(message, messageContext, cancellationToken);
+        }
+
+        public async Task Handle(ProcessSessionMessageEventArgs args, CancellationToken cancellationToken = default)
+        {
+            var messageWrapper = new ServiceBusMessage(args.Message);
+            var sessionWrapper = new ServiceBusSession(args, _serviceBusClient, _entityPath);
+            var messageContext = new MessageContext(messageWrapper, sessionWrapper);
+
+            await HandleWithLatencyTracking(args.Message, messageContext, cancellationToken);
         }
 
         private async Task HandleWithLatencyTracking(ServiceBusReceivedMessage message, MessageContext messageContext, CancellationToken cancellationToken)

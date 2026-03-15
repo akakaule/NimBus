@@ -13,7 +13,7 @@
   <ItemGroup>
 	<PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
 	<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.ServiceBus" Version="5.24.0" />
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.0-preview.1.25080.5" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.0-preview.1.25120.3" />
     <PackageReference Include="Microsoft.Identity.Client" Version="4.81.0" />
   </ItemGroup>
 

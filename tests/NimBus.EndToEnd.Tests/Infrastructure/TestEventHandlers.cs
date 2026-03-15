@@ -13,11 +13,13 @@ internal sealed class RecordingOrderPlacedHandler : IEventHandler<OrderPlaced>
     public List<OrderPlaced> ReceivedEvents { get; } = new();
     public List<IEventHandlerContext> ReceivedContexts { get; } = new();
     public Exception? ExceptionToThrow { get; set; }
+    public Func<OrderPlaced, Exception?>? ExceptionFactory { get; set; }
 
     public Task Handle(OrderPlaced message, ILogger logger, IEventHandlerContext context, CancellationToken cancellationToken = default)
     {
-        if (ExceptionToThrow != null)
-            throw ExceptionToThrow;
+        var exception = ExceptionFactory?.Invoke(message) ?? ExceptionToThrow;
+        if (exception != null)
+            throw exception;
 
         ReceivedEvents.Add(message);
         ReceivedContexts.Add(context);

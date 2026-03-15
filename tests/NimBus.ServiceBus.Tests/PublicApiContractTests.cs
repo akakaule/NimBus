@@ -44,6 +44,7 @@ public class PublicApiContractTests
                 $"{nameof(ServiceBusReceivedMessage)}, {nameof(ServiceBusSessionMessageActions)}, {nameof(CancellationToken)}",
                 $"{nameof(ServiceBusReceivedMessage)}, {nameof(ServiceBusMessageActions)}, {nameof(ServiceBusSessionMessageActions)}, {nameof(CancellationToken)}",
                 $"{nameof(ServiceBusReceivedMessage)}, {nameof(ServiceBusSessionReceiver)}, {nameof(CancellationToken)}",
+                $"{nameof(ProcessSessionMessageEventArgs)}, {nameof(CancellationToken)}",
             },
             signatures);
     }

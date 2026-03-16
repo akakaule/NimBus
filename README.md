@@ -193,6 +193,52 @@ The `--solution-id` and `--environment` values are normalized (lowercased, non-a
 | Resolver Function App | `func-{solutionId}-{environment}-resolver` | `func-nimbus-dev-resolver` |
 | Management Web App | `webapp-{solutionId}-{environment}-management` | `webapp-nimbus-dev-management` |
 
+## Local Development (Aspire)
+
+The Aspire AppHost orchestrates the full platform locally. A built-in **Provisioner** creates the Service Bus topics/subscriptions before starting the Resolver and WebApp.
+
+### 1. Set connection strings
+
+```powershell
+dotnet user-secrets set "ConnectionStrings:servicebus" "<your-servicebus-connection-string>" `
+  --project .\src\NimBus.AppHost
+
+dotnet user-secrets set "ConnectionStrings:cosmos" "<your-cosmos-connection-string>" `
+  --project .\src\NimBus.AppHost
+```
+
+### 2. Run
+
+```powershell
+dotnet run --project .\src\NimBus.AppHost
+```
+
+The Aspire dashboard opens automatically. You'll see:
+
+- **provisioner** — provisions Service Bus topology, then exits
+- **resolver** — starts after provisioner completes
+- **webapp** — starts after provisioner completes (external HTTP endpoint)
+
+## CI/CD
+
+### GitHub Actions
+
+The repository includes a [`deploy.yml`](.github/workflows/deploy.yml) workflow triggered manually via `workflow_dispatch`.
+
+1. **Configure OIDC** — set up [workload identity federation](https://learn.microsoft.com/entra/workload-id/workload-identity-federation) for your GitHub repo
+2. **Set repository variables**: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
+3. **Trigger** the `Deploy NimBus` workflow from the Actions tab with your solution ID, environment, and resource group
+
+### Azure DevOps
+
+The repository includes an [`azure-pipelines-deploy.yml`](pipelines/azure-pipelines-deploy.yml) pipeline triggered manually.
+
+1. **Create a service connection** for Azure in your Azure DevOps project
+2. **Import the pipeline** from `pipelines/azure-pipelines-deploy.yml`
+3. **Run the pipeline** with your solution ID, environment, resource group, and service connection name
+
+The pipeline uses `nb setup` to run all deployment steps (`infra apply` → `topology apply` → `deploy apps`) in a single `AzureCLI` task.
+
 ## License
 
 This project and its solutions are licensed under the MIT License.

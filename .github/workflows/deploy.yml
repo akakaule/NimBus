@@ -1,0 +1,85 @@
+name: Deploy NimBus
+
+on:
+  workflow_dispatch:
+    inputs:
+      solution-id:
+        description: "Solution identifier used in Azure resource names"
+        required: true
+        type: string
+      environment:
+        description: "Environment name (e.g. dev, staging, prod)"
+        required: true
+        type: string
+      resource-group:
+        description: "Azure resource group name"
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build nb CLI
+        run: dotnet build src/NimBus.CommandLine/NimBus.CommandLine.csproj -c Release
+
+      - name: Deploy infrastructure
+        env:
+          NB_SOLUTION_ID: ${{ inputs.solution-id }}
+          NB_ENVIRONMENT: ${{ inputs.environment }}
+          NB_RESOURCE_GROUP: ${{ inputs.resource-group }}
+        run: >
+          dotnet run --project src/NimBus.CommandLine --no-build -c Release --
+          infra apply
+          --solution-id "$NB_SOLUTION_ID"
+          --environment "$NB_ENVIRONMENT"
+          --resource-group "$NB_RESOURCE_GROUP"
+
+      - name: Provision Service Bus topology
+        env:
+          NB_SOLUTION_ID: ${{ inputs.solution-id }}
+          NB_ENVIRONMENT: ${{ inputs.environment }}
+          NB_RESOURCE_GROUP: ${{ inputs.resource-group }}
+        run: >
+          dotnet run --project src/NimBus.CommandLine --no-build -c Release --
+          topology apply
+          --solution-id "$NB_SOLUTION_ID"
+          --environment "$NB_ENVIRONMENT"
+          --resource-group "$NB_RESOURCE_GROUP"
+
+      - name: Deploy applications
+        env:
+          NB_SOLUTION_ID: ${{ inputs.solution-id }}
+          NB_ENVIRONMENT: ${{ inputs.environment }}
+          NB_RESOURCE_GROUP: ${{ inputs.resource-group }}
+        run: >
+          dotnet run --project src/NimBus.CommandLine --no-build -c Release --
+          deploy apps
+          --solution-id "$NB_SOLUTION_ID"
+          --environment "$NB_ENVIRONMENT"
+          --resource-group "$NB_RESOURCE_GROUP"

@@ -1,0 +1,46 @@
+trigger: none
+
+parameters:
+  - name: solutionId
+    displayName: "Solution identifier used in Azure resource names"
+    type: string
+  - name: environment
+    displayName: "Environment name (e.g. dev, staging, prod)"
+    type: string
+  - name: resourceGroup
+    displayName: "Azure resource group name"
+    type: string
+  - name: azureServiceConnection
+    displayName: "Azure service connection name"
+    type: string
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - task: UseDotNet@2
+    displayName: Setup .NET 10
+    inputs:
+      packageType: sdk
+      version: 10.0.x
+
+  - task: NodeTool@0
+    displayName: Setup Node.js 22
+    inputs:
+      versionSpec: 22.x
+
+  - script: dotnet build src/NimBus.CommandLine/NimBus.CommandLine.csproj -c Release
+    displayName: Build nb CLI
+
+  - task: AzureCLI@2
+    displayName: "Deploy: infra → topology → apps"
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnection }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        dotnet run --project src/NimBus.CommandLine --no-build -c Release -- \
+          setup \
+          --solution-id "${{ parameters.solutionId }}" \
+          --environment "${{ parameters.environment }}" \
+          --resource-group "${{ parameters.resourceGroup }}"

@@ -9,7 +9,13 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>nb</ToolCommandName>
     <PackageId>NimBus.CommandLine</PackageId>
+    <IsPackable>true</IsPackable>
+    <Description>CLI tool for Azure infrastructure provisioning, Service Bus topology setup, and deployment for the NimBus platform.</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="NimBus.CommandLine.Tests" />

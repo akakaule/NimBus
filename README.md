@@ -37,6 +37,34 @@ NimBus uses an extension framework to separate core messaging from optional feat
 
 See [docs/extensions.md](docs/extensions.md) for the full guide on using and creating extensions.
 
+## NuGet Packages
+
+| Package | Description |
+|---------|-------------|
+| `NimBus.Abstractions` | Core abstractions and interfaces |
+| `NimBus.Core` | Endpoint management, retry policies, logging |
+| `NimBus.ServiceBus` | Azure Service Bus integration |
+| `NimBus.SDK` | Publisher/subscriber SDK |
+| `NimBus.CommandLine` | `nb` CLI tool |
+
+### Install
+
+```shell
+dotnet add package NimBus.SDK
+dotnet tool install -g NimBus.CommandLine
+```
+
+### Publishing
+
+Push a version tag to trigger the [NuGet publish workflow](.github/workflows/nuget-publish.yml):
+
+```shell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Pre-release versions are supported (e.g. `v1.0.0-preview.1`).
+
 ## Prerequisites
 
 - .NET 10 SDK preview, matching the project target frameworks.

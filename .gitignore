@@ -89,6 +89,7 @@ _[Ss]cripts
 *.exe
 *.dll
 *.nupkg
+*.snupkg
 *.ncrunchsolution
 *.dot[Cc]over
 /src/Proxy/IP.Proxy.API/**/*.txt

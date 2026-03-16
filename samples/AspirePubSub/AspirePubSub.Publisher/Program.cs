@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Azure;
 using NimBus.Events.Orders;
 using NimBus.SDK;
 using NimBus.SDK.Extensions;
@@ -7,12 +6,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
-builder.Services.AddAzureClients(clients =>
-{
-    clients.AddServiceBusClient(builder.Configuration.GetConnectionString("servicebus"));
-});
+builder.AddAzureServiceBusClient("servicebus");
 
-builder.Services.AddNimBusPublisher("nimbus");
+builder.Services.AddNimBusPublisher("StorefrontEndpoint");
 
 var app = builder.Build();
 

@@ -5,14 +5,22 @@ using NimBus.Core.Messages;
 
 namespace NimBus.CommandLine;
 
-internal sealed class ServiceBusTopologyProvisioner
+public sealed class ServiceBusTopologyProvisioner
 {
-    private readonly AzureCliRunner _az;
-    private readonly Func<TopologyOptions, CancellationToken, Task<string>> _connectionStringProvider;
+    private readonly AzureCliRunner? _az;
+    private readonly Func<TopologyOptions, CancellationToken, Task<string>>? _connectionStringProvider;
+    private readonly string? _connectionString;
     private readonly Func<string, ServiceBusAdministrationClient> _clientFactory;
     private readonly Func<IPlatform> _platformFactory;
 
-    public ServiceBusTopologyProvisioner(AzureCliRunner az)
+    public ServiceBusTopologyProvisioner(string connectionString, Func<IPlatform> platformFactory)
+    {
+        _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+        _clientFactory = static cs => new ServiceBusAdministrationClient(cs);
+        _platformFactory = platformFactory ?? throw new ArgumentNullException(nameof(platformFactory));
+    }
+
+    internal ServiceBusTopologyProvisioner(AzureCliRunner az)
         : this(
             az,
             static (options, cancellationToken, runner) => ReadConnectionStringAsync(runner, options, cancellationToken),
@@ -33,13 +41,32 @@ internal sealed class ServiceBusTopologyProvisioner
         _platformFactory = platformFactory;
     }
 
-    public async Task ApplyAsync(TopologyOptions options, CancellationToken cancellationToken)
+    public async Task ApplyAsync(CancellationToken cancellationToken)
     {
+        if (_connectionString is null)
+            throw new InvalidOperationException("This overload requires the connection-string constructor.");
+
+        var platform = _platformFactory();
+        var client = _clientFactory(_connectionString);
+
+        await ApplyCoreAsync(client, platform, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task ApplyAsync(TopologyOptions options, CancellationToken cancellationToken)
+    {
+        if (_connectionStringProvider is null)
+            throw new InvalidOperationException("This overload requires the AzureCliRunner constructor.");
+
         var connectionString = await _connectionStringProvider(options, cancellationToken).ConfigureAwait(false);
 
         var platform = _platformFactory();
         var client = _clientFactory(connectionString);
 
+        await ApplyCoreAsync(client, platform, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task ApplyCoreAsync(ServiceBusAdministrationClient client, IPlatform platform, CancellationToken cancellationToken)
+    {
         await EnsureTopicAsync(client, Constants.ResolverId, cancellationToken).ConfigureAwait(false);
 
         foreach (var endpoint in platform.Endpoints.OrderBy(endpoint => endpoint.Id, StringComparer.Ordinal))

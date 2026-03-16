@@ -10,11 +10,15 @@
 
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.AppHost" Version="13.1.2" />
+
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\AspirePubSub.Provisioner\AspirePubSub.Provisioner.csproj" />
+    <ProjectReference Include="..\AspirePubSub.ResolverWorker\AspirePubSub.ResolverWorker.csproj" />
     <ProjectReference Include="..\AspirePubSub.Publisher\AspirePubSub.Publisher.csproj" />
     <ProjectReference Include="..\AspirePubSub.Subscriber\AspirePubSub.Subscriber.csproj" />
+    <ProjectReference Include="..\..\..\src\NimBus.WebApp\NimBus.WebApp.csproj" />
   </ItemGroup>
 
 </Project>

@@ -3,6 +3,7 @@ using NimBus.Endpoints.Analytics;
 using NimBus.Endpoints.Billing;
 using NimBus.Endpoints.Identity;
 using NimBus.Endpoints.Notifications;
+using NimBus.Endpoints.Sample;
 using NimBus.Endpoints.Storefront;
 using NimBus.Endpoints.Warehouse;
 
@@ -18,6 +19,7 @@ namespace NimBus
             AddEndpoint(new WarehouseEndpoint());
             AddEndpoint(new NotificationEndpoint());
             AddEndpoint(new AnalyticsEndpoint());
+            AddEndpoint(new AspireSampleEndpoint());
         }
     }
 }

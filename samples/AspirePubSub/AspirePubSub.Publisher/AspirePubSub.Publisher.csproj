@@ -7,8 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
-    <PackageReference Include="Microsoft.Extensions.Azure" Version="1.13.0" />
+    <PackageReference Include="Aspire.Azure.Messaging.ServiceBus" Version="13.1.2" />
   </ItemGroup>
 
   <ItemGroup>

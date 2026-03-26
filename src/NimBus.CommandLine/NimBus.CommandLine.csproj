@@ -24,11 +24,14 @@
   <ItemGroup>
     <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
     <PackageReference Include="McMaster.Extensions.CommandLineUtils" Version="4.1.1" />
+    <PackageReference Include="Spectre.Console" Version="0.49.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\NimBus\NimBus.csproj" />
     <ProjectReference Include="..\NimBus.Core\NimBus.Core.csproj" />
+    <ProjectReference Include="..\NimBus.MessageStore\NimBus.MessageStore.csproj" />
+    <ProjectReference Include="..\NimBus.ServiceBus\NimBus.ServiceBus.csproj" />
   </ItemGroup>
 
 </Project>

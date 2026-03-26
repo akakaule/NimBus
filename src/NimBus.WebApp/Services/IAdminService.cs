@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using NimBus.Core;
 using NimBus.WebApp.ManagementApi;
@@ -16,4 +17,15 @@ public interface IAdminService
     Task<SessionPurgePreview> PreviewSessionPurgeAsync(string endpointId, string sessionId);
     Task<SessionPurgeResult> PurgeSessionAsync(string endpointId, string sessionId);
     Task<bool> DeleteEventAsync(string endpointId, string eventId);
+
+    // Advanced operations
+    Task<PurgePreview> PurgeSubscriptionPreviewAsync(string endpointId, string subscription, List<string> states, System.DateTime? before);
+    Task<BulkOperationResult> PurgeSubscriptionAsync(string endpointId, string subscription, List<string> states, System.DateTime? before);
+    Task<int> DeleteMessagesByToPreviewAsync(string toField);
+    Task<BulkOperationResult> DeleteMessagesByToAsync(string toField);
+    Task<int> DeleteByStatusPreviewAsync(string endpointId, List<string> statuses);
+    Task<BulkOperationResult> DeleteByStatusAsync(string endpointId, List<string> statuses);
+    Task<int> SkipMessagesPreviewAsync(string endpointId, List<string> statuses, System.DateTime? before);
+    Task<BulkOperationResult> SkipMessagesAsync(string endpointId, List<string> statuses, System.DateTime? before);
+    Task<CopyResult> CopyEndpointDataAsync(string endpointId, string targetConnectionString, System.DateTime? from, System.DateTime? to, List<string> statuses, int? batchSize);
 }

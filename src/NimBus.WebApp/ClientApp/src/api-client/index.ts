@@ -2634,6 +2634,432 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Preview subscription purge
+     * @param body (optional) 
+     * @return OK
+     */
+    postAdminPurgePreview(endpointId: string, body?: PurgeRequest | undefined): Promise<PurgePreview> {
+        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/purge-preview";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminPurgePreview(_response);
+        });
+    }
+
+    protected processPostAdminPurgePreview(response: Response): Promise<PurgePreview> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = PurgePreview.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<PurgePreview>(null as any);
+    }
+
+    /**
+     * Execute subscription purge
+     * @param body (optional) 
+     * @return OK
+     */
+    postAdminPurge(endpointId: string, body?: PurgeRequest | undefined): Promise<BulkOperationResult> {
+        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/purge";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminPurge(_response);
+        });
+    }
+
+    protected processPostAdminPurge(response: Response): Promise<BulkOperationResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = BulkOperationResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<BulkOperationResult>(null as any);
+    }
+
+    /**
+     * Preview delete messages by To field
+     * @param body (optional) 
+     * @return OK
+     */
+    postAdminDeleteByToPreview(body?: DeleteByToRequest | undefined): Promise<CountResponse> {
+        let url_ = this.baseUrl + "/api/admin/messages/delete-by-to-preview";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminDeleteByToPreview(_response);
+        });
+    }
+
+    protected processPostAdminDeleteByToPreview(response: Response): Promise<CountResponse> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = CountResponse.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<CountResponse>(null as any);
+    }
+
+    /**
+     * Delete messages by To field
+     * @param body (optional) 
+     * @return OK
+     */
+    postAdminDeleteByTo(body?: DeleteByToRequest | undefined): Promise<BulkOperationResult> {
+        let url_ = this.baseUrl + "/api/admin/messages/delete-by-to";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminDeleteByTo(_response);
+        });
+    }
+
+    protected processPostAdminDeleteByTo(response: Response): Promise<BulkOperationResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = BulkOperationResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<BulkOperationResult>(null as any);
+    }
+
+    /**
+     * Preview delete events by status
+     * @param body (optional) 
+     * @return OK
+     */
+    postAdminDeleteByStatusPreview(endpointId: string, body?: DeleteByStatusRequest | undefined): Promise<CountResponse> {
+        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/delete-by-status-preview";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminDeleteByStatusPreview(_response);
+        });
+    }
+
+    protected processPostAdminDeleteByStatusPreview(response: Response): Promise<CountResponse> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = CountResponse.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<CountResponse>(null as any);
+    }
+
+    /**
+     * Delete events by status
+     * @param body (optional) 
+     * @return OK
+     */
+    postAdminDeleteByStatus(endpointId: string, body?: DeleteByStatusRequest | undefined): Promise<BulkOperationResult> {
+        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/delete-by-status";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminDeleteByStatus(_response);
+        });
+    }
+
+    protected processPostAdminDeleteByStatus(response: Response): Promise<BulkOperationResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = BulkOperationResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<BulkOperationResult>(null as any);
+    }
+
+    /**
+     * Preview skip messages
+     * @param body (optional) 
+     * @return OK
+     */
+    postAdminSkipPreview(endpointId: string, body?: SkipRequest | undefined): Promise<CountResponse> {
+        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/skip-preview";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminSkipPreview(_response);
+        });
+    }
+
+    protected processPostAdminSkipPreview(response: Response): Promise<CountResponse> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = CountResponse.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<CountResponse>(null as any);
+    }
+
+    /**
+     * Skip messages by status
+     * @param body (optional) 
+     * @return OK
+     */
+    postAdminSkip(endpointId: string, body?: SkipRequest | undefined): Promise<BulkOperationResult> {
+        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/skip";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminSkip(_response);
+        });
+    }
+
+    protected processPostAdminSkip(response: Response): Promise<BulkOperationResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = BulkOperationResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<BulkOperationResult>(null as any);
+    }
+
+    /**
+     * Copy endpoint data to another Cosmos DB
+     * @param body (optional) 
+     * @return OK
+     */
+    postAdminCopy(endpointId: string, body?: CopyRequest | undefined): Promise<CopyResult> {
+        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/copy";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminCopy(_response);
+        });
+    }
+
+    protected processPostAdminCopy(response: Response): Promise<CopyResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = CopyResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<CopyResult>(null as any);
+    }
+
+    /**
      * Search messages across all endpoints
      * @param body (optional) 
      * @return OK
@@ -7627,6 +8053,518 @@ export class AuditSearchResponse implements IAuditSearchResponse {
 export interface IAuditSearchResponse {
     audits?: AuditEntry[];
     continuationToken?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class PurgeRequest implements IPurgeRequest {
+    subscription?: string | undefined;
+    states?: string[];
+    before?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IPurgeRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.subscription = _data["subscription"];
+            if (Array.isArray(_data["states"])) {
+                this.states = [] as any;
+                for (let item of _data["states"])
+                    this.states!.push(item);
+            }
+            this.before = _data["before"] ? moment(_data["before"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): PurgeRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new PurgeRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["subscription"] = this.subscription;
+        if (Array.isArray(this.states)) {
+            data["states"] = [];
+            for (let item of this.states)
+                data["states"].push(item);
+        }
+        data["before"] = this.before ? this.before.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): PurgeRequest {
+        const json = this.toJSON();
+        let result = new PurgeRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IPurgeRequest {
+    subscription?: string | undefined;
+    states?: string[];
+    before?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class PurgePreview implements IPurgePreview {
+    totalScanned?: number;
+    totalMatching?: number;
+    sessionCount?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IPurgePreview) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.totalScanned = _data["totalScanned"];
+            this.totalMatching = _data["totalMatching"];
+            this.sessionCount = _data["sessionCount"];
+        }
+    }
+
+    static fromJS(data: any): PurgePreview {
+        data = typeof data === 'object' ? data : {};
+        let result = new PurgePreview();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["totalScanned"] = this.totalScanned;
+        data["totalMatching"] = this.totalMatching;
+        data["sessionCount"] = this.sessionCount;
+        return data;
+    }
+
+    clone(): PurgePreview {
+        const json = this.toJSON();
+        let result = new PurgePreview();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IPurgePreview {
+    totalScanned?: number;
+    totalMatching?: number;
+    sessionCount?: number;
+
+    [key: string]: any;
+}
+
+export class DeleteByToRequest implements IDeleteByToRequest {
+    toField?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IDeleteByToRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.toField = _data["toField"];
+        }
+    }
+
+    static fromJS(data: any): DeleteByToRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new DeleteByToRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["toField"] = this.toField;
+        return data;
+    }
+
+    clone(): DeleteByToRequest {
+        const json = this.toJSON();
+        let result = new DeleteByToRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDeleteByToRequest {
+    toField?: string;
+
+    [key: string]: any;
+}
+
+export class DeleteByStatusRequest implements IDeleteByStatusRequest {
+    statuses?: string[];
+
+    [key: string]: any;
+
+    constructor(data?: IDeleteByStatusRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["statuses"])) {
+                this.statuses = [] as any;
+                for (let item of _data["statuses"])
+                    this.statuses!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): DeleteByStatusRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new DeleteByStatusRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.statuses)) {
+            data["statuses"] = [];
+            for (let item of this.statuses)
+                data["statuses"].push(item);
+        }
+        return data;
+    }
+
+    clone(): DeleteByStatusRequest {
+        const json = this.toJSON();
+        let result = new DeleteByStatusRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDeleteByStatusRequest {
+    statuses?: string[];
+
+    [key: string]: any;
+}
+
+export class SkipRequest implements ISkipRequest {
+    statuses?: string[];
+    before?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: ISkipRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["statuses"])) {
+                this.statuses = [] as any;
+                for (let item of _data["statuses"])
+                    this.statuses!.push(item);
+            }
+            this.before = _data["before"] ? moment(_data["before"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): SkipRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new SkipRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.statuses)) {
+            data["statuses"] = [];
+            for (let item of this.statuses)
+                data["statuses"].push(item);
+        }
+        data["before"] = this.before ? this.before.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): SkipRequest {
+        const json = this.toJSON();
+        let result = new SkipRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISkipRequest {
+    statuses?: string[];
+    before?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class CopyRequest implements ICopyRequest {
+    targetConnectionString?: string;
+    from?: moment.Moment | undefined;
+    to?: moment.Moment | undefined;
+    statuses?: string[] | undefined;
+    batchSize?: number | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: ICopyRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.targetConnectionString = _data["targetConnectionString"];
+            this.from = _data["from"] ? moment(_data["from"].toString()) : undefined as any;
+            this.to = _data["to"] ? moment(_data["to"].toString()) : undefined as any;
+            if (Array.isArray(_data["statuses"])) {
+                this.statuses = [] as any;
+                for (let item of _data["statuses"])
+                    this.statuses!.push(item);
+            }
+            this.batchSize = _data["batchSize"];
+        }
+    }
+
+    static fromJS(data: any): CopyRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new CopyRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["targetConnectionString"] = this.targetConnectionString;
+        data["from"] = this.from ? this.from.toISOString() : undefined as any;
+        data["to"] = this.to ? this.to.toISOString() : undefined as any;
+        if (Array.isArray(this.statuses)) {
+            data["statuses"] = [];
+            for (let item of this.statuses)
+                data["statuses"].push(item);
+        }
+        data["batchSize"] = this.batchSize;
+        return data;
+    }
+
+    clone(): CopyRequest {
+        const json = this.toJSON();
+        let result = new CopyRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ICopyRequest {
+    targetConnectionString?: string;
+    from?: moment.Moment | undefined;
+    to?: moment.Moment | undefined;
+    statuses?: string[] | undefined;
+    batchSize?: number | undefined;
+
+    [key: string]: any;
+}
+
+export class CopyResult implements ICopyResult {
+    eventsCopied?: number;
+    messagesCopied?: number;
+
+    [key: string]: any;
+
+    constructor(data?: ICopyResult) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.eventsCopied = _data["eventsCopied"];
+            this.messagesCopied = _data["messagesCopied"];
+        }
+    }
+
+    static fromJS(data: any): CopyResult {
+        data = typeof data === 'object' ? data : {};
+        let result = new CopyResult();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["eventsCopied"] = this.eventsCopied;
+        data["messagesCopied"] = this.messagesCopied;
+        return data;
+    }
+
+    clone(): CopyResult {
+        const json = this.toJSON();
+        let result = new CopyResult();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ICopyResult {
+    eventsCopied?: number;
+    messagesCopied?: number;
+
+    [key: string]: any;
+}
+
+export class CountResponse implements ICountResponse {
+    count?: number;
+
+    [key: string]: any;
+
+    constructor(data?: ICountResponse) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.count = _data["count"];
+        }
+    }
+
+    static fromJS(data: any): CountResponse {
+        data = typeof data === 'object' ? data : {};
+        let result = new CountResponse();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["count"] = this.count;
+        return data;
+    }
+
+    clone(): CountResponse {
+        const json = this.toJSON();
+        let result = new CountResponse();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ICountResponse {
+    count?: number;
 
     [key: string]: any;
 }

@@ -1209,6 +1209,210 @@ paths:
           description: Forbidden
         '404':
           description: Event not found
+  '/api/admin/endpoint/{endpointId}/purge-preview':
+    post:
+      summary: Preview subscription purge
+      operationId: post-admin-purge-preview
+      tags:
+        - Admin
+      parameters:
+        - schema:
+            type: string
+          name: endpointId
+          in: path
+          required: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurgeRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurgePreview'
+  '/api/admin/endpoint/{endpointId}/purge':
+    post:
+      summary: Execute subscription purge
+      operationId: post-admin-purge
+      tags:
+        - Admin
+      parameters:
+        - schema:
+            type: string
+          name: endpointId
+          in: path
+          required: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurgeRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkOperationResult'
+  /api/admin/messages/delete-by-to-preview:
+    post:
+      summary: Preview delete messages by To field
+      operationId: post-admin-delete-by-to-preview
+      tags:
+        - Admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteByToRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CountResponse'
+  /api/admin/messages/delete-by-to:
+    post:
+      summary: Delete messages by To field
+      operationId: post-admin-delete-by-to
+      tags:
+        - Admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteByToRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkOperationResult'
+  '/api/admin/endpoint/{endpointId}/delete-by-status-preview':
+    post:
+      summary: Preview delete events by status
+      operationId: post-admin-delete-by-status-preview
+      tags:
+        - Admin
+      parameters:
+        - schema:
+            type: string
+          name: endpointId
+          in: path
+          required: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteByStatusRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CountResponse'
+  '/api/admin/endpoint/{endpointId}/delete-by-status':
+    post:
+      summary: Delete events by status
+      operationId: post-admin-delete-by-status
+      tags:
+        - Admin
+      parameters:
+        - schema:
+            type: string
+          name: endpointId
+          in: path
+          required: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteByStatusRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkOperationResult'
+  '/api/admin/endpoint/{endpointId}/skip-preview':
+    post:
+      summary: Preview skip messages
+      operationId: post-admin-skip-preview
+      tags:
+        - Admin
+      parameters:
+        - schema:
+            type: string
+          name: endpointId
+          in: path
+          required: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkipRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CountResponse'
+  '/api/admin/endpoint/{endpointId}/skip':
+    post:
+      summary: Skip messages by status
+      operationId: post-admin-skip
+      tags:
+        - Admin
+      parameters:
+        - schema:
+            type: string
+          name: endpointId
+          in: path
+          required: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkipRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkOperationResult'
+  '/api/admin/endpoint/{endpointId}/copy':
+    post:
+      summary: Copy endpoint data to another Cosmos DB
+      operationId: post-admin-copy
+      tags:
+        - Admin
+      parameters:
+        - schema:
+            type: string
+          name: endpointId
+          in: path
+          required: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopyRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopyResult'
   /api/messages/search:
     post:
       summary: Search messages across all endpoints
@@ -2492,6 +2696,93 @@ components:
         continuationToken:
           type: string
           nullable: true
+    PurgeRequest:
+      title: PurgeRequest
+      type: object
+      properties:
+        subscription:
+          type: string
+          nullable: true
+        states:
+          type: array
+          items:
+            type: string
+        before:
+          type: string
+          format: date-time
+          nullable: true
+    PurgePreview:
+      title: PurgePreview
+      type: object
+      properties:
+        totalScanned:
+          type: integer
+        totalMatching:
+          type: integer
+        sessionCount:
+          type: integer
+    DeleteByToRequest:
+      title: DeleteByToRequest
+      type: object
+      properties:
+        toField:
+          type: string
+    DeleteByStatusRequest:
+      title: DeleteByStatusRequest
+      type: object
+      properties:
+        statuses:
+          type: array
+          items:
+            type: string
+    SkipRequest:
+      title: SkipRequest
+      type: object
+      properties:
+        statuses:
+          type: array
+          items:
+            type: string
+        before:
+          type: string
+          format: date-time
+          nullable: true
+    CopyRequest:
+      title: CopyRequest
+      type: object
+      properties:
+        targetConnectionString:
+          type: string
+        from:
+          type: string
+          format: date-time
+          nullable: true
+        to:
+          type: string
+          format: date-time
+          nullable: true
+        statuses:
+          type: array
+          nullable: true
+          items:
+            type: string
+        batchSize:
+          type: integer
+          nullable: true
+    CopyResult:
+      title: CopyResult
+      type: object
+      properties:
+        eventsCopied:
+          type: integer
+        messagesCopied:
+          type: integer
+    CountResponse:
+      title: CountResponse
+      type: object
+      properties:
+        count:
+          type: integer
     AuditEntry:
       title: AuditEntry
       type: object

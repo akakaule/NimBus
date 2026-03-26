@@ -1056,6 +1056,87 @@ namespace NimBus.WebApp.ManagementApi
 
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> DeleteAdminEventAsync(string endpointId, string eventId);
 
+        /// <summary>
+        /// Preview subscription purge
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<PurgePreview>> PostAdminPurgePreviewAsync(string endpointId, PurgeRequest body);
+
+        /// <summary>
+        /// Execute subscription purge
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminPurgeAsync(string endpointId, PurgeRequest body);
+
+        /// <summary>
+        /// Preview delete messages by To field
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<CountResponse>> PostAdminDeleteByToPreviewAsync(DeleteByToRequest body);
+
+        /// <summary>
+        /// Delete messages by To field
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminDeleteByToAsync(DeleteByToRequest body);
+
+        /// <summary>
+        /// Preview delete events by status
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<CountResponse>> PostAdminDeleteByStatusPreviewAsync(string endpointId, DeleteByStatusRequest body);
+
+        /// <summary>
+        /// Delete events by status
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminDeleteByStatusAsync(string endpointId, DeleteByStatusRequest body);
+
+        /// <summary>
+        /// Preview skip messages
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<CountResponse>> PostAdminSkipPreviewAsync(string endpointId, SkipRequest body);
+
+        /// <summary>
+        /// Skip messages by status
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminSkipAsync(string endpointId, SkipRequest body);
+
+        /// <summary>
+        /// Copy endpoint data to another Cosmos DB
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<CopyResult>> PostAdminCopyAsync(string endpointId, CopyRequest body);
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -1177,6 +1258,105 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.DeleteAdminEventAsync(endpointId, eventId);
+        }
+
+        /// <summary>
+        /// Preview subscription purge
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/purge-preview")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<PurgePreview>> PostAdminPurgePreview(string endpointId, [Microsoft.AspNetCore.Mvc.FromBody] PurgeRequest body)
+        {
+
+            return _implementation.PostAdminPurgePreviewAsync(endpointId, body);
+        }
+
+        /// <summary>
+        /// Execute subscription purge
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/purge")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminPurge(string endpointId, [Microsoft.AspNetCore.Mvc.FromBody] PurgeRequest body)
+        {
+
+            return _implementation.PostAdminPurgeAsync(endpointId, body);
+        }
+
+        /// <summary>
+        /// Preview delete messages by To field
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/messages/delete-by-to-preview")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<CountResponse>> PostAdminDeleteByToPreview([Microsoft.AspNetCore.Mvc.FromBody] DeleteByToRequest body)
+        {
+
+            return _implementation.PostAdminDeleteByToPreviewAsync(body);
+        }
+
+        /// <summary>
+        /// Delete messages by To field
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/messages/delete-by-to")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminDeleteByTo([Microsoft.AspNetCore.Mvc.FromBody] DeleteByToRequest body)
+        {
+
+            return _implementation.PostAdminDeleteByToAsync(body);
+        }
+
+        /// <summary>
+        /// Preview delete events by status
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/delete-by-status-preview")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<CountResponse>> PostAdminDeleteByStatusPreview(string endpointId, [Microsoft.AspNetCore.Mvc.FromBody] DeleteByStatusRequest body)
+        {
+
+            return _implementation.PostAdminDeleteByStatusPreviewAsync(endpointId, body);
+        }
+
+        /// <summary>
+        /// Delete events by status
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/delete-by-status")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminDeleteByStatus(string endpointId, [Microsoft.AspNetCore.Mvc.FromBody] DeleteByStatusRequest body)
+        {
+
+            return _implementation.PostAdminDeleteByStatusAsync(endpointId, body);
+        }
+
+        /// <summary>
+        /// Preview skip messages
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/skip-preview")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<CountResponse>> PostAdminSkipPreview(string endpointId, [Microsoft.AspNetCore.Mvc.FromBody] SkipRequest body)
+        {
+
+            return _implementation.PostAdminSkipPreviewAsync(endpointId, body);
+        }
+
+        /// <summary>
+        /// Skip messages by status
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/skip")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminSkip(string endpointId, [Microsoft.AspNetCore.Mvc.FromBody] SkipRequest body)
+        {
+
+            return _implementation.PostAdminSkipAsync(endpointId, body);
+        }
+
+        /// <summary>
+        /// Copy endpoint data to another Cosmos DB
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/copy")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<CopyResult>> PostAdminCopy(string endpointId, [Microsoft.AspNetCore.Mvc.FromBody] CopyRequest body)
+        {
+
+            return _implementation.PostAdminCopyAsync(endpointId, body);
         }
 
     }
@@ -7709,6 +7889,538 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return Newtonsoft.Json.JsonConvert.DeserializeObject<AuditSearchResponse>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class PurgeRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _subscription;
+        private System.Collections.Generic.List<string> _states;
+        private System.DateTime? _before;
+
+        [Newtonsoft.Json.JsonProperty("subscription", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Subscription    {
+            get { return _subscription; }
+            set
+            {
+                if (_subscription != value)
+                {
+                    _subscription = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("states", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> States    {
+            get { return _states; }
+            set
+            {
+                if (_states != value)
+                {
+                    _states = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("before", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? Before    {
+            get { return _before; }
+            set
+            {
+                if (_before != value)
+                {
+                    _before = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static PurgeRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<PurgeRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class PurgePreview : System.ComponentModel.INotifyPropertyChanged
+    {
+        private int _totalScanned;
+        private int _totalMatching;
+        private int _sessionCount;
+
+        [Newtonsoft.Json.JsonProperty("totalScanned", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int TotalScanned    {
+            get { return _totalScanned; }
+            set
+            {
+                if (_totalScanned != value)
+                {
+                    _totalScanned = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("totalMatching", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int TotalMatching    {
+            get { return _totalMatching; }
+            set
+            {
+                if (_totalMatching != value)
+                {
+                    _totalMatching = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("sessionCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int SessionCount    {
+            get { return _sessionCount; }
+            set
+            {
+                if (_sessionCount != value)
+                {
+                    _sessionCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static PurgePreview FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<PurgePreview>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DeleteByToRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _toField;
+
+        [Newtonsoft.Json.JsonProperty("toField", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ToField    {
+            get { return _toField; }
+            set
+            {
+                if (_toField != value)
+                {
+                    _toField = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static DeleteByToRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<DeleteByToRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DeleteByStatusRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.Collections.Generic.List<string> _statuses;
+
+        [Newtonsoft.Json.JsonProperty("statuses", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Statuses    {
+            get { return _statuses; }
+            set
+            {
+                if (_statuses != value)
+                {
+                    _statuses = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static DeleteByStatusRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<DeleteByStatusRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class SkipRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.Collections.Generic.List<string> _statuses;
+        private System.DateTime? _before;
+
+        [Newtonsoft.Json.JsonProperty("statuses", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Statuses    {
+            get { return _statuses; }
+            set
+            {
+                if (_statuses != value)
+                {
+                    _statuses = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("before", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? Before    {
+            get { return _before; }
+            set
+            {
+                if (_before != value)
+                {
+                    _before = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static SkipRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<SkipRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class CopyRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _targetConnectionString;
+        private System.DateTime? _from;
+        private System.DateTime? _to;
+        private System.Collections.Generic.List<string> _statuses;
+        private int? _batchSize;
+
+        [Newtonsoft.Json.JsonProperty("targetConnectionString", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string TargetConnectionString    {
+            get { return _targetConnectionString; }
+            set
+            {
+                if (_targetConnectionString != value)
+                {
+                    _targetConnectionString = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("from", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? From    {
+            get { return _from; }
+            set
+            {
+                if (_from != value)
+                {
+                    _from = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("to", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? To    {
+            get { return _to; }
+            set
+            {
+                if (_to != value)
+                {
+                    _to = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("statuses", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Statuses    {
+            get { return _statuses; }
+            set
+            {
+                if (_statuses != value)
+                {
+                    _statuses = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("batchSize", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? BatchSize    {
+            get { return _batchSize; }
+            set
+            {
+                if (_batchSize != value)
+                {
+                    _batchSize = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static CopyRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<CopyRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class CopyResult : System.ComponentModel.INotifyPropertyChanged
+    {
+        private int _eventsCopied;
+        private int _messagesCopied;
+
+        [Newtonsoft.Json.JsonProperty("eventsCopied", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int EventsCopied    {
+            get { return _eventsCopied; }
+            set
+            {
+                if (_eventsCopied != value)
+                {
+                    _eventsCopied = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("messagesCopied", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int MessagesCopied    {
+            get { return _messagesCopied; }
+            set
+            {
+                if (_messagesCopied != value)
+                {
+                    _messagesCopied = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static CopyResult FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<CopyResult>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class CountResponse : System.ComponentModel.INotifyPropertyChanged
+    {
+        private int _count;
+
+        [Newtonsoft.Json.JsonProperty("count", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Count    {
+            get { return _count; }
+            set
+            {
+                if (_count != value)
+                {
+                    _count = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static CountResponse FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<CountResponse>(data, new Newtonsoft.Json.JsonSerializerSettings());
 
         }
         public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;

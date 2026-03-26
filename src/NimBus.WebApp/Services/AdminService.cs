@@ -4,6 +4,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
+using Microsoft.Azure.Cosmos;
+using Newtonsoft.Json.Linq;
 using NimBus.Core;
 using NimBus.Manager;
 using NimBus.MessageStore;
@@ -17,6 +19,7 @@ public class AdminService : IAdminService
 {
     private readonly IPlatform _platform;
     private readonly ICosmosDbClient _cosmosClient;
+    private readonly CosmosClient _rawCosmosClient;
     private readonly ServiceBusAdministrationClient _sbAdmin;
     private readonly ServiceBusClient _sbClient;
     private readonly IManagerClient _managerClient;
@@ -24,10 +27,13 @@ public class AdminService : IAdminService
 
     private const int PageSize = 20;
     private const int AgeThresholdMinutes = 10;
+    private const string DatabaseId = "MessageDatabase";
+    private const string MessagesContainer = "messages";
 
     public AdminService(
         IPlatform platform,
         ICosmosDbClient cosmosClient,
+        CosmosClient rawCosmosClient,
         ServiceBusAdministrationClient sbAdmin,
         ServiceBusClient sbClient,
         IManagerClient managerClient,
@@ -35,6 +41,7 @@ public class AdminService : IAdminService
     {
         _platform = platform;
         _cosmosClient = cosmosClient;
+        _rawCosmosClient = rawCosmosClient;
         _sbAdmin = sbAdmin;
         _sbClient = sbClient;
         _managerClient = managerClient;
@@ -583,6 +590,419 @@ public class AdminService : IAdminService
             return false;
 
         return await _cosmosClient.RemoveMessage(ev.EventId, ev.SessionId, endpointId);
+    }
+
+    // ───────────────────────── Subscription Purge ─────────────────────────
+
+    public async Task<PurgePreview> PurgeSubscriptionPreviewAsync(string endpointId, string subscription, List<string> states, DateTime? before)
+    {
+        bool purgeActive = states.Count == 0 || states.Contains("active");
+        bool purgeDeferred = states.Count == 0 || states.Contains("deferred");
+
+        await using var peekReceiver = _sbClient.CreateReceiver(endpointId, subscription);
+        int totalScanned = 0;
+        int totalMatching = 0;
+        var sessionIds = new HashSet<string>();
+        long fromSequenceNumber = 0;
+
+        while (true)
+        {
+            var peeked = await peekReceiver.PeekMessagesAsync(100, fromSequenceNumber);
+            if (peeked.Count == 0) break;
+
+            foreach (var msg in peeked)
+            {
+                totalScanned++;
+                bool stateMatch = (purgeActive && msg.State == ServiceBusMessageState.Active)
+                               || (purgeDeferred && msg.State == ServiceBusMessageState.Deferred);
+
+                if (stateMatch && (!before.HasValue || msg.EnqueuedTime.UtcDateTime < before.Value))
+                {
+                    totalMatching++;
+                    sessionIds.Add(msg.SessionId ?? "");
+                }
+            }
+
+            fromSequenceNumber = peeked[peeked.Count - 1].SequenceNumber + 1;
+        }
+
+        return new PurgePreview { TotalScanned = totalScanned, TotalMatching = totalMatching, SessionCount = sessionIds.Count };
+    }
+
+    public async Task<BulkOperationResult> PurgeSubscriptionAsync(string endpointId, string subscription, List<string> states, DateTime? before)
+    {
+        bool purgeActive = states.Count == 0 || states.Contains("active");
+        bool purgeDeferred = states.Count == 0 || states.Contains("deferred");
+
+        // Peek to discover sessions and matching messages
+        await using var peekReceiver = _sbClient.CreateReceiver(endpointId, subscription);
+        var sessionMessages = new Dictionary<string, List<(long SequenceNumber, ServiceBusMessageState State)>>();
+        long fromSequenceNumber = 0;
+
+        while (true)
+        {
+            var peeked = await peekReceiver.PeekMessagesAsync(100, fromSequenceNumber);
+            if (peeked.Count == 0) break;
+
+            foreach (var msg in peeked)
+            {
+                bool stateMatch = (purgeActive && msg.State == ServiceBusMessageState.Active)
+                               || (purgeDeferred && msg.State == ServiceBusMessageState.Deferred);
+
+                if (stateMatch && (!before.HasValue || msg.EnqueuedTime.UtcDateTime < before.Value))
+                {
+                    var sid = msg.SessionId ?? "";
+                    if (!sessionMessages.ContainsKey(sid))
+                        sessionMessages[sid] = new();
+                    sessionMessages[sid].Add((msg.SequenceNumber, msg.State));
+                }
+            }
+
+            fromSequenceNumber = peeked[peeked.Count - 1].SequenceNumber + 1;
+        }
+
+        int succeeded = 0;
+        int failed = 0;
+        var errors = new List<string>();
+
+        foreach (var (sid, messages) in sessionMessages)
+        {
+            ServiceBusSessionReceiver sessionReceiver;
+            try
+            {
+                sessionReceiver = await _sbClient.AcceptSessionAsync(endpointId, subscription, sid);
+            }
+            catch (ServiceBusException ex)
+            {
+                failed += messages.Count;
+                errors.Add($"Session '{sid}': {ex.Message}");
+                continue;
+            }
+
+            try
+            {
+                // Complete deferred messages
+                foreach (var seqNum in messages.Where(m => m.State == ServiceBusMessageState.Deferred).Select(m => m.SequenceNumber))
+                {
+                    try
+                    {
+                        var msg = await sessionReceiver.ReceiveDeferredMessageAsync(seqNum);
+                        if (msg != null)
+                        {
+                            await sessionReceiver.CompleteMessageAsync(msg);
+                            succeeded++;
+                        }
+                    }
+                    catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessageNotFound) { }
+                    catch (Exception ex) { failed++; errors.Add($"Deferred seq {seqNum}: {ex.Message}"); }
+                }
+
+                // Complete active messages
+                if (messages.Any(m => m.State == ServiceBusMessageState.Active))
+                {
+                    while (true)
+                    {
+                        var received = await sessionReceiver.ReceiveMessagesAsync(100, TimeSpan.FromSeconds(5));
+                        if (received.Count == 0) break;
+
+                        bool anyCompleted = false;
+                        foreach (var msg in received)
+                        {
+                            if (!before.HasValue || msg.EnqueuedTime.UtcDateTime < before.Value)
+                            {
+                                await sessionReceiver.CompleteMessageAsync(msg);
+                                succeeded++;
+                                anyCompleted = true;
+                            }
+                            else
+                            {
+                                await sessionReceiver.AbandonMessageAsync(msg);
+                            }
+                        }
+                        if (!anyCompleted) break;
+                    }
+                }
+            }
+            finally
+            {
+                await sessionReceiver.DisposeAsync();
+            }
+        }
+
+        return new BulkOperationResult { Processed = succeeded + failed, Succeeded = succeeded, Failed = failed, Errors = errors };
+    }
+
+    // ───────────────────────── Delete Messages by To ─────────────────────────
+
+    public async Task<int> DeleteMessagesByToPreviewAsync(string toField)
+    {
+        var container = _rawCosmosClient.GetDatabase(DatabaseId).GetContainer(MessagesContainer);
+        var query = new QueryDefinition("SELECT VALUE COUNT(1) FROM c WHERE c.message.To = @to")
+            .WithParameter("@to", toField);
+
+        using var iterator = container.GetItemQueryIterator<int>(query);
+        int count = 0;
+        while (iterator.HasMoreResults)
+        {
+            var response = await iterator.ReadNextAsync();
+            count += response.Sum();
+        }
+        return count;
+    }
+
+    public async Task<BulkOperationResult> DeleteMessagesByToAsync(string toField)
+    {
+        var container = _rawCosmosClient.GetDatabase(DatabaseId).GetContainer(MessagesContainer);
+        var query = new QueryDefinition("SELECT * FROM c WHERE c.message.To = @to")
+            .WithParameter("@to", toField);
+
+        int succeeded = 0;
+        int failed = 0;
+        var errors = new List<string>();
+
+        using var iterator = container.GetItemQueryIterator<JObject>(query);
+        while (iterator.HasMoreResults)
+        {
+            var batch = await iterator.ReadNextAsync();
+            foreach (var doc in batch)
+            {
+                var id = doc["id"]?.ToString();
+                var eventId = doc["eventId"]?.ToString();
+                if (id == null || eventId == null) continue;
+
+                try
+                {
+                    await container.DeleteItemAsync<JObject>(id, new PartitionKey(eventId));
+                    succeeded++;
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    errors.Add($"{id}: {ex.Message}");
+                }
+            }
+        }
+
+        return new BulkOperationResult { Processed = succeeded + failed, Succeeded = succeeded, Failed = failed, Errors = errors };
+    }
+
+    // ───────────────────────── Delete by Status ─────────────────────────
+
+    public async Task<int> DeleteByStatusPreviewAsync(string endpointId, List<string> statuses)
+    {
+        int count = 0;
+        string continuationToken = string.Empty;
+
+        do
+        {
+            var response = await _cosmosClient.GetEventsByFilter(
+                new MessageStore.EventFilter { EndPointId = endpointId, ResolutionStatus = statuses },
+                continuationToken, PageSize);
+
+            count += response.Events.Count();
+            continuationToken = response.ContinuationToken;
+        }
+        while (continuationToken != null);
+
+        return count;
+    }
+
+    public async Task<BulkOperationResult> DeleteByStatusAsync(string endpointId, List<string> statuses)
+    {
+        int succeeded = 0;
+        int failed = 0;
+        var errors = new List<string>();
+        string continuationToken = string.Empty;
+
+        do
+        {
+            var response = await _cosmosClient.GetEventsByFilter(
+                new MessageStore.EventFilter { EndPointId = endpointId, ResolutionStatus = statuses },
+                continuationToken, PageSize);
+
+            foreach (var ev in response.Events)
+            {
+                try
+                {
+                    bool removed = await _cosmosClient.RemoveMessage(ev.EventId, ev.SessionId, endpointId);
+                    if (removed) succeeded++;
+                    else { failed++; errors.Add($"{ev.EventId}: remove returned false"); }
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    errors.Add($"{ev.EventId}: {ex.Message}");
+                }
+            }
+
+            continuationToken = response.ContinuationToken;
+        }
+        while (continuationToken != null);
+
+        return new BulkOperationResult { Processed = succeeded + failed, Succeeded = succeeded, Failed = failed, Errors = errors };
+    }
+
+    // ───────────────────────── Skip Messages ─────────────────────────
+
+    public async Task<int> SkipMessagesPreviewAsync(string endpointId, List<string> statuses, DateTime? before)
+    {
+        int count = 0;
+        string continuationToken = string.Empty;
+
+        do
+        {
+            var response = await _cosmosClient.GetEventsByFilter(
+                new MessageStore.EventFilter { EndPointId = endpointId, ResolutionStatus = statuses },
+                continuationToken, PageSize);
+
+            foreach (var ev in response.Events)
+            {
+                if (!before.HasValue || ev.UpdatedAt < before.Value)
+                    count++;
+            }
+
+            continuationToken = response.ContinuationToken;
+        }
+        while (continuationToken != null);
+
+        return count;
+    }
+
+    public async Task<BulkOperationResult> SkipMessagesAsync(string endpointId, List<string> statuses, DateTime? before)
+    {
+        int succeeded = 0;
+        int failed = 0;
+        var errors = new List<string>();
+        string continuationToken = string.Empty;
+
+        do
+        {
+            var response = await _cosmosClient.GetEventsByFilter(
+                new MessageStore.EventFilter { EndPointId = endpointId, ResolutionStatus = statuses },
+                continuationToken, PageSize);
+
+            foreach (var ev in response.Events)
+            {
+                if (before.HasValue && ev.UpdatedAt >= before.Value)
+                    continue;
+
+                try
+                {
+                    bool updated = await _cosmosClient.UploadSkippedMessage(ev.EventId, ev.SessionId, endpointId, ev);
+                    if (updated) succeeded++;
+                    else { failed++; errors.Add($"{ev.EventId}: update returned false"); }
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    errors.Add($"{ev.EventId}: {ex.Message}");
+                }
+            }
+
+            continuationToken = response.ContinuationToken;
+        }
+        while (continuationToken != null);
+
+        return new BulkOperationResult { Processed = succeeded + failed, Succeeded = succeeded, Failed = failed, Errors = errors };
+    }
+
+    // ───────────────────────── Copy Endpoint Data ─────────────────────────
+
+    public async Task<CopyResult> CopyEndpointDataAsync(string endpointId, string targetConnectionString, DateTime? from, DateTime? to, List<string> statuses, int? batchSize)
+    {
+        using var targetClient = new CosmosClient(targetConnectionString);
+        var sourceDb = _rawCosmosClient.GetDatabase(DatabaseId);
+        var targetDb = targetClient.GetDatabase(DatabaseId);
+
+        // Copy events
+        var sourceEndpointContainer = sourceDb.GetContainer(endpointId);
+        var targetEndpointContainer = (await targetDb.CreateContainerIfNotExistsAsync(endpointId, "/id")).Container;
+
+        var copiedEventIds = new HashSet<string>();
+        int eventCount = await CopyDocuments(sourceEndpointContainer, targetEndpointContainer,
+            BuildEventQuery(from, to, statuses), doc =>
+            {
+                var eid = doc["event"]?["EventId"]?.ToString();
+                if (eid != null) copiedEventIds.Add(eid);
+                return doc["id"]?.ToString() ?? "unknown";
+            }, batchSize);
+
+        // Copy messages
+        var sourceMessagesContainer = sourceDb.GetContainer(MessagesContainer);
+        var targetMessagesContainer = (await targetDb.CreateContainerIfNotExistsAsync(MessagesContainer, "/eventId")).Container;
+
+        int messageCount = await CopyDocuments(sourceMessagesContainer, targetMessagesContainer,
+            BuildMessageQuery(endpointId, from, to), doc => doc["id"]?.ToString() ?? "unknown",
+            batchSize, copiedEventIds);
+
+        return new CopyResult { EventsCopied = eventCount, MessagesCopied = messageCount };
+    }
+
+    private static QueryDefinition BuildEventQuery(DateTime? from, DateTime? to, List<string> statuses)
+    {
+        var conditions = new List<string> { "(NOT IS_DEFINED(c.deleted) OR c.deleted != true)" };
+        if (from.HasValue) conditions.Add("c.event.EnqueuedTimeUtc >= @from");
+        if (to.HasValue) conditions.Add("c.event.EnqueuedTimeUtc <= @to");
+        if (statuses.Count > 0) conditions.Add("ARRAY_CONTAINS(@statuses, c.status)");
+
+        var query = new QueryDefinition("SELECT * FROM c WHERE " + string.Join(" AND ", conditions));
+        if (from.HasValue) query = query.WithParameter("@from", from.Value.ToString("O"));
+        if (to.HasValue) query = query.WithParameter("@to", to.Value.ToString("O"));
+        if (statuses.Count > 0) query = query.WithParameter("@statuses", statuses);
+
+        return query;
+    }
+
+    private static QueryDefinition BuildMessageQuery(string endpointId, DateTime? from, DateTime? to)
+    {
+        var conditions = new List<string> { "c.endpointId = @endpointId" };
+        if (from.HasValue) conditions.Add("c.message.EnqueuedTimeUtc >= @from");
+        if (to.HasValue) conditions.Add("c.message.EnqueuedTimeUtc <= @to");
+
+        var query = new QueryDefinition("SELECT * FROM c WHERE " + string.Join(" AND ", conditions))
+            .WithParameter("@endpointId", endpointId);
+        if (from.HasValue) query = query.WithParameter("@from", from.Value.ToString("O"));
+        if (to.HasValue) query = query.WithParameter("@to", to.Value.ToString("O"));
+
+        return query;
+    }
+
+    private static async Task<int> CopyDocuments(
+        Microsoft.Azure.Cosmos.Container source,
+        Microsoft.Azure.Cosmos.Container target,
+        QueryDefinition query,
+        Func<JObject, string> getDocId,
+        int? batchSize = null,
+        HashSet<string> eventIdFilter = null)
+    {
+        int count = 0;
+        using var iterator = source.GetItemQueryIterator<JObject>(query);
+
+        while (iterator.HasMoreResults)
+        {
+            var batch = await iterator.ReadNextAsync();
+            foreach (var doc in batch)
+            {
+                if (eventIdFilter != null)
+                {
+                    var evId = doc["eventId"]?.ToString();
+                    if (evId == null || !eventIdFilter.Contains(evId))
+                        continue;
+                }
+
+                doc.Remove("ttl");
+                await target.UpsertItemAsync(doc);
+                count++;
+
+                if (batchSize.HasValue && count >= batchSize.Value)
+                    return count;
+            }
+
+            if (batchSize.HasValue && count >= batchSize.Value)
+                break;
+        }
+
+        return count;
     }
 
     // ═══════════════════════════ Private helpers ═══════════════════════════

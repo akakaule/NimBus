@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
@@ -146,6 +147,90 @@ public class AdminImplementation : IAdminApiController
             return new OkResult();
 
         return new NotFoundResult();
+    }
+
+    // ───────────── Advanced Operations ─────────────
+
+    public async Task<ActionResult<PurgePreview>> PostAdminPurgePreviewAsync(string endpointId, PurgeRequest body)
+    {
+        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
+
+        var subscription = string.IsNullOrEmpty(body.Subscription) ? endpointId : body.Subscription;
+        var result = await _adminService.PurgeSubscriptionPreviewAsync(endpointId, subscription, body.States?.ToList() ?? new(), body.Before);
+        return new OkObjectResult(result);
+    }
+
+    public async Task<ActionResult<BulkOperationResult>> PostAdminPurgeAsync(string endpointId, PurgeRequest body)
+    {
+        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
+
+        var subscription = string.IsNullOrEmpty(body.Subscription) ? endpointId : body.Subscription;
+        var result = await _adminService.PurgeSubscriptionAsync(endpointId, subscription, body.States?.ToList() ?? new(), body.Before);
+        return new OkObjectResult(result);
+    }
+
+    public async Task<ActionResult<CountResponse>> PostAdminDeleteByToPreviewAsync(DeleteByToRequest body)
+    {
+        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        var count = await _adminService.DeleteMessagesByToPreviewAsync(body.ToField);
+        return new OkObjectResult(new CountResponse { Count = count });
+    }
+
+    public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteByToAsync(DeleteByToRequest body)
+    {
+        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        var result = await _adminService.DeleteMessagesByToAsync(body.ToField);
+        return new OkObjectResult(result);
+    }
+
+    public async Task<ActionResult<CountResponse>> PostAdminDeleteByStatusPreviewAsync(string endpointId, DeleteByStatusRequest body)
+    {
+        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
+
+        var count = await _adminService.DeleteByStatusPreviewAsync(endpointId, body.Statuses?.ToList() ?? new());
+        return new OkObjectResult(new CountResponse { Count = count });
+    }
+
+    public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteByStatusAsync(string endpointId, DeleteByStatusRequest body)
+    {
+        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
+
+        var result = await _adminService.DeleteByStatusAsync(endpointId, body.Statuses?.ToList() ?? new());
+        return new OkObjectResult(result);
+    }
+
+    public async Task<ActionResult<CountResponse>> PostAdminSkipPreviewAsync(string endpointId, SkipRequest body)
+    {
+        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
+
+        var count = await _adminService.SkipMessagesPreviewAsync(endpointId, body.Statuses?.ToList() ?? new(), body.Before);
+        return new OkObjectResult(new CountResponse { Count = count });
+    }
+
+    public async Task<ActionResult<BulkOperationResult>> PostAdminSkipAsync(string endpointId, SkipRequest body)
+    {
+        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
+
+        var result = await _adminService.SkipMessagesAsync(endpointId, body.Statuses?.ToList() ?? new(), body.Before);
+        return new OkObjectResult(result);
+    }
+
+    public async Task<ActionResult<CopyResult>> PostAdminCopyAsync(string endpointId, CopyRequest body)
+    {
+        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
+
+        var result = await _adminService.CopyEndpointDataAsync(
+            endpointId, body.TargetConnectionString,
+            body.From, body.To,
+            body.Statuses?.ToList() ?? new(), body.BatchSize);
+        return new OkObjectResult(result);
     }
 
     private bool IsUserInSecurityGroup(string securityGrp)

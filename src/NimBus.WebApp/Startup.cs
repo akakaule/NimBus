@@ -215,6 +215,7 @@ namespace NimBus.WebApp
             services.AddScoped<IAdminService, AdminService>();
             services.AddTransient<IAdminApiController, AdminImplementation>();
             services.AddTransient<IMetricsApiController, MetricsImplementation>();
+            services.AddTransient<IAuditApiController, AuditImplementation>();
             services.AddTransient<IDevApiController, DevImplementation>();
             services.AddScoped<SeedDataService>();
         }

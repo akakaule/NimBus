@@ -45,8 +45,8 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 MessageId = apiFilter.MessageId,
                 SessionId = apiFilter.SessionId,
                 EventTypeId = apiFilter.EventTypeId?.ToList(),
-                From = apiFilter.From,
-                To = apiFilter.To,
+                From = apiFilter.SenderEndpoint,
+                To = apiFilter.ReceiverEndpoint,
                 MessageType = apiFilter.MessageType != null
                     ? Enum.TryParse<Core.Messages.MessageType>(apiFilter.MessageType.ToString(), out var mt) ? mt : null
                     : null,

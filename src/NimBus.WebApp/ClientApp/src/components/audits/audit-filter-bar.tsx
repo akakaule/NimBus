@@ -2,41 +2,34 @@ import { useEffect, useState } from "react";
 import { Input } from "components/ui/input";
 import { Button } from "components/ui/button";
 import { Select } from "components/ui/select";
-import { Combobox, type ComboboxOption } from "components/ui/combobox";
 import {
   Client,
   CookieAuth,
-  MessageSearchFilter,
-  MessageSearchFilterMessageType,
+  AuditSearchFilter,
+  AuditSearchFilterAuditType,
 } from "api-client";
 
-interface MessageFilterBarProps {
-  onSearch: (filter: MessageSearchFilter) => void;
+interface AuditFilterBarProps {
+  onSearch: (filter: AuditSearchFilter) => void;
   isLoading: boolean;
 }
 
-const messageTypeOptions = Object.entries(MessageSearchFilterMessageType).map(
+const auditTypeOptions = Object.entries(AuditSearchFilterAuditType).map(
   ([key, value]) => ({ label: key, value }),
 );
 
-export default function MessageFilterBar({
+export default function AuditFilterBar({
   onSearch,
   isLoading,
-}: MessageFilterBarProps) {
+}: AuditFilterBarProps) {
   const [endpointId, setEndpointId] = useState("");
   const [eventId, setEventId] = useState("");
-  const [messageId, setMessageId] = useState("");
-  const [sessionId, setSessionId] = useState("");
+  const [auditorName, setAuditorName] = useState("");
   const [eventTypeId, setEventTypeId] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [messageType, setMessageType] = useState<string>("");
-  const [enqueuedFrom, setEnqueuedFrom] = useState("");
-  const [enqueuedTo, setEnqueuedTo] = useState("");
+  const [auditType, setAuditType] = useState<string>("");
+  const [createdFrom, setCreatedFrom] = useState("");
+  const [createdTo, setCreatedTo] = useState("");
   const [endpoints, setEndpoints] = useState<string[]>([]);
-  const [eventTypeOptions, setEventTypeOptions] = useState<ComboboxOption[]>(
-    [],
-  );
 
   useEffect(() => {
     const client = new Client(CookieAuth());
@@ -44,17 +37,6 @@ export default function MessageFilterBar({
       .getEndpointsAll()
       .then(setEndpoints)
       .catch(() => setEndpoints([]));
-    client
-      .getEventTypes()
-      .then((types) =>
-        setEventTypeOptions(
-          types
-            .map((t) => t.name)
-            .filter((name): name is string => Boolean(name))
-            .map((name) => ({ value: name, label: name })),
-        ),
-      )
-      .catch(() => setEventTypeOptions([]));
   }, []);
 
   const endpointOptions = [
@@ -63,33 +45,27 @@ export default function MessageFilterBar({
   ];
 
   const handleSearch = () => {
-    const filter = new MessageSearchFilter();
+    const filter = new AuditSearchFilter();
     if (endpointId) filter.endpointId = endpointId;
     if (eventId) filter.eventId = eventId;
-    if (messageId) filter.messageId = messageId;
-    if (sessionId) filter.sessionId = sessionId;
-    if (eventTypeId) filter.eventTypeId = [eventTypeId];
-    if (from) filter.senderEndpoint = from;
-    if (to) filter.receiverEndpoint = to;
-    if (messageType)
-      filter.messageType = messageType as MessageSearchFilterMessageType;
-    if (enqueuedFrom) filter.enqueuedAtFrom = new Date(enqueuedFrom) as any;
-    if (enqueuedTo) filter.enqueuedAtTo = new Date(enqueuedTo) as any;
+    if (auditorName) filter.auditorName = auditorName;
+    if (eventTypeId) filter.eventTypeId = eventTypeId;
+    if (auditType)
+      filter.auditType = auditType as AuditSearchFilterAuditType;
+    if (createdFrom) filter.createdAtFrom = new Date(createdFrom) as any;
+    if (createdTo) filter.createdAtTo = new Date(createdTo) as any;
     onSearch(filter);
   };
 
   const handleReset = () => {
     setEndpointId("");
     setEventId("");
-    setMessageId("");
-    setSessionId("");
+    setAuditorName("");
     setEventTypeId("");
-    setFrom("");
-    setTo("");
-    setMessageType("");
-    setEnqueuedFrom("");
-    setEnqueuedTo("");
-    onSearch(new MessageSearchFilter());
+    setAuditType("");
+    setCreatedFrom("");
+    setCreatedTo("");
+    onSearch(new AuditSearchFilter());
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -122,69 +98,37 @@ export default function MessageFilterBar({
         </div>
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Message ID
+            Auditor
           </label>
           <Input
-            value={messageId}
-            onChange={(e) => setMessageId(e.target.value)}
+            value={auditorName}
+            onChange={(e) => setAuditorName(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Filter by message ID..."
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Session ID
-          </label>
-          <Input
-            value={sessionId}
-            onChange={(e) => setSessionId(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Filter by session ID..."
+            placeholder="Filter by auditor..."
           />
         </div>
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1">
             Event Type
           </label>
-          <Combobox
-            options={eventTypeOptions}
-            value={eventTypeId ? [eventTypeId] : []}
-            onChange={(val) => setEventTypeId(val[0] ?? "")}
+          <Input
+            value={eventTypeId}
+            onChange={(e) => setEventTypeId(e.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder="Filter by event type..."
-            multiple={false}
           />
         </div>
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1">
-            From (Publisher)
-          </label>
-          <Select
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            options={endpointOptions}
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            To (Subscriber)
-          </label>
-          <Select
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            options={endpointOptions}
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Message Type
+            Action Type
           </label>
           <select
-            value={messageType}
-            onChange={(e) => setMessageType(e.target.value)}
+            value={auditType}
+            onChange={(e) => setAuditType(e.target.value)}
             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-0 focus:border-primary focus:ring-primary-200"
           >
             <option value="">All types</option>
-            {messageTypeOptions.map((opt) => (
+            {auditTypeOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
@@ -193,23 +137,23 @@ export default function MessageFilterBar({
         </div>
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Enqueued From
+            Created From
           </label>
           <Input
             type="datetime-local"
-            value={enqueuedFrom}
-            onChange={(e) => setEnqueuedFrom(e.target.value)}
+            value={createdFrom}
+            onChange={(e) => setCreatedFrom(e.target.value)}
             onKeyDown={handleKeyDown}
           />
         </div>
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Enqueued To
+            Created To
           </label>
           <Input
             type="datetime-local"
-            value={enqueuedTo}
-            onChange={(e) => setEnqueuedTo(e.target.value)}
+            value={createdTo}
+            onChange={(e) => setCreatedTo(e.target.value)}
             onKeyDown={handleKeyDown}
           />
         </div>

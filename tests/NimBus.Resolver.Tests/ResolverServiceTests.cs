@@ -371,11 +371,13 @@ public class ResolverServiceTests
             return Task.CompletedTask;
         }
 
-        public Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity)
+        public Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity, string? endpointId = null, string? eventTypeId = null)
         {
             StoredAudits.Add((eventId, auditEntity));
             return Task.CompletedTask;
         }
+
+        public Task<AuditSearchResult> SearchAudits(AuditFilter filter, string? continuationToken, int maxItemCount) => throw new NotSupportedException();
     }
 
     private sealed record UploadCall(string EventId, string SessionId, string EndpointId, UnresolvedEvent Content);

@@ -33,6 +33,32 @@ public class MessageSearchResult
     public string? ContinuationToken { get; set; }
 }
 
+public class AuditFilter
+{
+    public string? EventId { get; set; }
+    public string? EndpointId { get; set; }
+    public string? AuditorName { get; set; }
+    public string? EventTypeId { get; set; }
+    public MessageAuditType? AuditType { get; set; }
+    public DateTime? CreatedAtFrom { get; set; }
+    public DateTime? CreatedAtTo { get; set; }
+}
+
+public class AuditSearchResult
+{
+    public IEnumerable<AuditSearchItem> Audits { get; set; } = Enumerable.Empty<AuditSearchItem>();
+    public string? ContinuationToken { get; set; }
+}
+
+public class AuditSearchItem
+{
+    public string EventId { get; set; }
+    public string? EndpointId { get; set; }
+    public string? EventTypeId { get; set; }
+    public MessageAuditEntity Audit { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
 public class EventFilter
 {
     public string? EndPointId { get; set; }
@@ -130,8 +156,9 @@ public interface ICosmosDbClient
     Task RemoveStoredMessage(string eventId, string messageId);
 
     // Audit trail
-    Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity);
+    Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity, string? endpointId = null, string? eventTypeId = null);
     Task<IEnumerable<MessageAuditEntity>> GetMessageAudits(string eventId);
+    Task<AuditSearchResult> SearchAudits(AuditFilter filter, string? continuationToken, int maxItemCount);
 
     // Failed event archive
     Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId);
@@ -1100,15 +1127,16 @@ public class CosmosDbClient : ICosmosDbClient
         if (!string.IsNullOrEmpty(filter.From))
         {
             var p = NextParam();
-            conditions.Add($"CONTAINS(LOWER(c.message.From), {p})");
-            parameters[p] = filter.From.ToLowerInvariant();
+            // "From" is a reserved keyword in Cosmos DB SQL — must use bracket notation
+            conditions.Add($"CONTAINS(c.message[\"From\"], {p}, true)");
+            parameters[p] = filter.From;
         }
 
         if (!string.IsNullOrEmpty(filter.To))
         {
             var p = NextParam();
-            conditions.Add($"CONTAINS(LOWER(c.message.To), {p})");
-            parameters[p] = filter.To.ToLowerInvariant();
+            conditions.Add($"CONTAINS(c.message[\"To\"], {p}, true)");
+            parameters[p] = filter.To;
         }
 
         if (filter.MessageType != null)
@@ -1280,13 +1308,15 @@ public class CosmosDbClient : ICosmosDbClient
         return messages;
     }
 
-    public async Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity)
+    public async Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity, string? endpointId = null, string? eventTypeId = null)
     {
         var container = await GetAuditsContainer();
         var doc = new AuditDocument
         {
             Id = Guid.NewGuid().ToString(),
             EventId = eventId,
+            EndpointId = endpointId,
+            EventTypeId = eventTypeId,
             Audit = auditEntity,
             CreatedAt = DateTime.UtcNow,
             TimeToLive = 60 * 60 * 24 * 365 // 1-year TTL
@@ -1327,6 +1357,102 @@ public class CosmosDbClient : ICosmosDbClient
         }
 
         return audits;
+    }
+
+    public async Task<AuditSearchResult> SearchAudits(AuditFilter filter, string? continuationToken, int maxItemCount)
+    {
+        var container = await GetAuditsContainer();
+        var conditions = new List<string>();
+        var parameters = new Dictionary<string, object>();
+        var paramIndex = 0;
+
+        string NextParam() => $"@p{paramIndex++}";
+
+        if (!string.IsNullOrEmpty(filter.EventId))
+        {
+            var p = NextParam();
+            conditions.Add($"CONTAINS(c.eventId, {p})");
+            parameters[p] = filter.EventId;
+        }
+
+        if (!string.IsNullOrEmpty(filter.EndpointId))
+        {
+            var p = NextParam();
+            conditions.Add($"CONTAINS(LOWER(c.endpointId), {p})");
+            parameters[p] = filter.EndpointId.ToLowerInvariant();
+        }
+
+        if (!string.IsNullOrEmpty(filter.AuditorName))
+        {
+            var p = NextParam();
+            conditions.Add($"CONTAINS(LOWER(c.audit.auditorName), {p})");
+            parameters[p] = filter.AuditorName.ToLowerInvariant();
+        }
+
+        if (!string.IsNullOrEmpty(filter.EventTypeId))
+        {
+            var p = NextParam();
+            conditions.Add($"CONTAINS(LOWER(c.eventTypeId), {p})");
+            parameters[p] = filter.EventTypeId.ToLowerInvariant();
+        }
+
+        if (filter.AuditType != null)
+        {
+            var p = NextParam();
+            conditions.Add($"c.audit.auditType = {p}");
+            parameters[p] = filter.AuditType.Value.ToString();
+        }
+
+        if (filter.CreatedAtFrom != null)
+        {
+            var p = NextParam();
+            conditions.Add($"c.createdAt >= {p}");
+            parameters[p] = filter.CreatedAtFrom.Value;
+        }
+
+        if (filter.CreatedAtTo != null)
+        {
+            var p = NextParam();
+            conditions.Add($"c.createdAt <= {p}");
+            parameters[p] = filter.CreatedAtTo.Value;
+        }
+
+        var sql = "SELECT * FROM c";
+        if (conditions.Any())
+            sql += " WHERE " + string.Join(" AND ", conditions);
+        sql += " ORDER BY c.createdAt DESC";
+
+        var queryDef = new QueryDefinition(sql);
+        foreach (var kvp in parameters)
+            queryDef = queryDef.WithParameter(kvp.Key, kvp.Value);
+
+        var requestOptions = new QueryRequestOptions { MaxItemCount = maxItemCount > 0 ? maxItemCount : 50 };
+        var result = container.GetItemQueryIterator<AuditDocument>(
+            queryDef,
+            string.IsNullOrEmpty(continuationToken) ? null : continuationToken,
+            requestOptions);
+
+        var audits = new List<AuditSearchItem>();
+        string? token = null;
+
+        if (result.HasMoreResults)
+        {
+            var feed = await result.ReadNextAsync();
+            token = feed.ContinuationToken;
+            foreach (var doc in feed)
+            {
+                audits.Add(new AuditSearchItem
+                {
+                    EventId = doc.EventId,
+                    EndpointId = doc.EndpointId,
+                    EventTypeId = doc.EventTypeId,
+                    Audit = doc.Audit,
+                    CreatedAt = doc.CreatedAt
+                });
+            }
+        }
+
+        return new AuditSearchResult { Audits = audits, ContinuationToken = token };
     }
 
     public async Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId)

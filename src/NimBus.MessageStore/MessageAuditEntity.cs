@@ -9,6 +9,7 @@ namespace NimBus.MessageStore
         public string AuditorName { get; set; }
         public DateTime AuditTimestamp { get; set; }
         public MessageAuditType AuditType { get; set; }
+        public string? Comment { get; set; }
     }
 
     public enum MessageAuditType
@@ -16,6 +17,7 @@ namespace NimBus.MessageStore
         Resubmit,
         ResubmitWithChanges,
         Skip,
-        Retry
+        Retry,
+        Comment
     }
 }

@@ -96,9 +96,7 @@ function mapMessageToRow(msg: api.Message): ITableRow {
 }
 
 function createDefaultFilter(): api.MessageSearchFilter {
-  const filter = new api.MessageSearchFilter();
-  filter.messageType = api.MessageSearchFilterMessageType.EventRequest;
-  return filter;
+  return new api.MessageSearchFilter();
 }
 
 export default function MessagesList() {
@@ -150,7 +148,7 @@ export default function MessagesList() {
   };
 
   const handlePageChange = () => {
-    if (continuationToken) {
+    if (continuationToken && !loading) {
       fetchMessages(currentFilter, continuationToken, true);
     }
   };

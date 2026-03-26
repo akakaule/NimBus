@@ -2679,6 +2679,51 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Search audit log entries across all events
+     * @param body (optional) 
+     * @return OK
+     */
+    postAuditsSearch(body?: AuditSearchRequest | undefined): Promise<AuditSearchResponse> {
+        let url_ = this.baseUrl + "/api/audits/search";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAuditsSearch(_response);
+        });
+    }
+
+    protected processPostAuditsSearch(response: Response): Promise<AuditSearchResponse> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AuditSearchResponse.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AuditSearchResponse>(null as any);
+    }
+
+    /**
      * Seed sample data across all containers
      * @return OK
      */
@@ -5704,8 +5749,8 @@ export class MessageSearchFilter implements IMessageSearchFilter {
     messageId?: string | undefined;
     sessionId?: string | undefined;
     eventTypeId?: string[] | undefined;
-    from?: string | undefined;
-    to?: string | undefined;
+    senderEndpoint?: string | undefined;
+    receiverEndpoint?: string | undefined;
     messageType?: MessageSearchFilterMessageType | undefined;
     enqueuedAtFrom?: moment.Moment | undefined;
     enqueuedAtTo?: moment.Moment | undefined;
@@ -5736,8 +5781,8 @@ export class MessageSearchFilter implements IMessageSearchFilter {
                 for (let item of _data["eventTypeId"])
                     this.eventTypeId!.push(item);
             }
-            this.from = _data["from"];
-            this.to = _data["to"];
+            this.senderEndpoint = _data["senderEndpoint"];
+            this.receiverEndpoint = _data["receiverEndpoint"];
             this.messageType = _data["messageType"];
             this.enqueuedAtFrom = _data["enqueuedAtFrom"] ? moment(_data["enqueuedAtFrom"].toString()) : undefined as any;
             this.enqueuedAtTo = _data["enqueuedAtTo"] ? moment(_data["enqueuedAtTo"].toString()) : undefined as any;
@@ -5766,8 +5811,8 @@ export class MessageSearchFilter implements IMessageSearchFilter {
             for (let item of this.eventTypeId)
                 data["eventTypeId"].push(item);
         }
-        data["from"] = this.from;
-        data["to"] = this.to;
+        data["senderEndpoint"] = this.senderEndpoint;
+        data["receiverEndpoint"] = this.receiverEndpoint;
         data["messageType"] = this.messageType;
         data["enqueuedAtFrom"] = this.enqueuedAtFrom ? this.enqueuedAtFrom.toISOString() : undefined as any;
         data["enqueuedAtTo"] = this.enqueuedAtTo ? this.enqueuedAtTo.toISOString() : undefined as any;
@@ -5788,8 +5833,8 @@ export interface IMessageSearchFilter {
     messageId?: string | undefined;
     sessionId?: string | undefined;
     eventTypeId?: string[] | undefined;
-    from?: string | undefined;
-    to?: string | undefined;
+    senderEndpoint?: string | undefined;
+    receiverEndpoint?: string | undefined;
     messageType?: MessageSearchFilterMessageType | undefined;
     enqueuedAtFrom?: moment.Moment | undefined;
     enqueuedAtTo?: moment.Moment | undefined;
@@ -7377,6 +7422,298 @@ export interface ITimeSeriesDataPoint {
     [key: string]: any;
 }
 
+export class AuditSearchRequest implements IAuditSearchRequest {
+    filter?: AuditSearchFilter;
+    continuationToken?: string | undefined;
+    maxItemCount?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IAuditSearchRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.filter = _data["filter"] ? AuditSearchFilter.fromJS(_data["filter"]) : undefined as any;
+            this.continuationToken = _data["continuationToken"];
+            this.maxItemCount = _data["maxItemCount"];
+        }
+    }
+
+    static fromJS(data: any): AuditSearchRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new AuditSearchRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["filter"] = this.filter ? this.filter.toJSON() : undefined as any;
+        data["continuationToken"] = this.continuationToken;
+        data["maxItemCount"] = this.maxItemCount;
+        return data;
+    }
+
+    clone(): AuditSearchRequest {
+        const json = this.toJSON();
+        let result = new AuditSearchRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAuditSearchRequest {
+    filter?: AuditSearchFilter;
+    continuationToken?: string | undefined;
+    maxItemCount?: number;
+
+    [key: string]: any;
+}
+
+export class AuditSearchFilter implements IAuditSearchFilter {
+    eventId?: string | undefined;
+    endpointId?: string | undefined;
+    auditorName?: string | undefined;
+    eventTypeId?: string | undefined;
+    auditType?: AuditSearchFilterAuditType | undefined;
+    createdAtFrom?: moment.Moment | undefined;
+    createdAtTo?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IAuditSearchFilter) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.eventId = _data["eventId"];
+            this.endpointId = _data["endpointId"];
+            this.auditorName = _data["auditorName"];
+            this.eventTypeId = _data["eventTypeId"];
+            this.auditType = _data["auditType"];
+            this.createdAtFrom = _data["createdAtFrom"] ? moment(_data["createdAtFrom"].toString()) : undefined as any;
+            this.createdAtTo = _data["createdAtTo"] ? moment(_data["createdAtTo"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): AuditSearchFilter {
+        data = typeof data === 'object' ? data : {};
+        let result = new AuditSearchFilter();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["eventId"] = this.eventId;
+        data["endpointId"] = this.endpointId;
+        data["auditorName"] = this.auditorName;
+        data["eventTypeId"] = this.eventTypeId;
+        data["auditType"] = this.auditType;
+        data["createdAtFrom"] = this.createdAtFrom ? this.createdAtFrom.toISOString() : undefined as any;
+        data["createdAtTo"] = this.createdAtTo ? this.createdAtTo.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): AuditSearchFilter {
+        const json = this.toJSON();
+        let result = new AuditSearchFilter();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAuditSearchFilter {
+    eventId?: string | undefined;
+    endpointId?: string | undefined;
+    auditorName?: string | undefined;
+    eventTypeId?: string | undefined;
+    auditType?: AuditSearchFilterAuditType | undefined;
+    createdAtFrom?: moment.Moment | undefined;
+    createdAtTo?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class AuditSearchResponse implements IAuditSearchResponse {
+    audits?: AuditEntry[];
+    continuationToken?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IAuditSearchResponse) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["audits"])) {
+                this.audits = [] as any;
+                for (let item of _data["audits"])
+                    this.audits!.push(AuditEntry.fromJS(item));
+            }
+            this.continuationToken = _data["continuationToken"];
+        }
+    }
+
+    static fromJS(data: any): AuditSearchResponse {
+        data = typeof data === 'object' ? data : {};
+        let result = new AuditSearchResponse();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.audits)) {
+            data["audits"] = [];
+            for (let item of this.audits)
+                data["audits"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["continuationToken"] = this.continuationToken;
+        return data;
+    }
+
+    clone(): AuditSearchResponse {
+        const json = this.toJSON();
+        let result = new AuditSearchResponse();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAuditSearchResponse {
+    audits?: AuditEntry[];
+    continuationToken?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class AuditEntry implements IAuditEntry {
+    eventId?: string;
+    endpointId?: string | undefined;
+    eventTypeId?: string | undefined;
+    auditorName?: string;
+    auditTimestamp?: moment.Moment;
+    auditType?: AuditEntryAuditType;
+    comment?: string | undefined;
+    createdAt?: moment.Moment;
+
+    [key: string]: any;
+
+    constructor(data?: IAuditEntry) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.eventId = _data["eventId"];
+            this.endpointId = _data["endpointId"];
+            this.eventTypeId = _data["eventTypeId"];
+            this.auditorName = _data["auditorName"];
+            this.auditTimestamp = _data["auditTimestamp"] ? moment(_data["auditTimestamp"].toString()) : undefined as any;
+            this.auditType = _data["auditType"];
+            this.comment = _data["comment"];
+            this.createdAt = _data["createdAt"] ? moment(_data["createdAt"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): AuditEntry {
+        data = typeof data === 'object' ? data : {};
+        let result = new AuditEntry();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["eventId"] = this.eventId;
+        data["endpointId"] = this.endpointId;
+        data["eventTypeId"] = this.eventTypeId;
+        data["auditorName"] = this.auditorName;
+        data["auditTimestamp"] = this.auditTimestamp ? this.auditTimestamp.toISOString() : undefined as any;
+        data["auditType"] = this.auditType;
+        data["comment"] = this.comment;
+        data["createdAt"] = this.createdAt ? this.createdAt.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): AuditEntry {
+        const json = this.toJSON();
+        let result = new AuditEntry();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAuditEntry {
+    eventId?: string;
+    endpointId?: string | undefined;
+    eventTypeId?: string | undefined;
+    auditorName?: string;
+    auditTimestamp?: moment.Moment;
+    auditType?: AuditEntryAuditType;
+    comment?: string | undefined;
+    createdAt?: moment.Moment;
+
+    [key: string]: any;
+}
+
 export class Anonymous implements IAnonymous {
     produces?: EventTypeGrouping[];
     consumes?: EventTypeGrouping[];
@@ -7642,6 +7979,22 @@ export enum MessageSearchFilterMessageType {
     SkipRequest = "skipRequest",
     ContinuationRequest = "continuationRequest",
     UnsupportedRequest = "unsupportedRequest",
+}
+
+export enum AuditSearchFilterAuditType {
+    Resubmit = "resubmit",
+    ResubmitWithChanges = "resubmitWithChanges",
+    Skip = "skip",
+    Retry = "retry",
+    Comment = "comment",
+}
+
+export enum AuditEntryAuditType {
+    Resubmit = "resubmit",
+    ResubmitWithChanges = "resubmitWithChanges",
+    Skip = "skip",
+    Retry = "retry",
+    Comment = "comment",
 }
 
 export class EventContent implements IEventContent {

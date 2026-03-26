@@ -9,6 +9,7 @@ import MessagesList from "pages/messages-list";
 import Admin from "pages/admin";
 import Metrics from "pages/metrics";
 import Insights from "pages/insights";
+import AuditsList from "pages/audits-list";
 import Footer from "components/footer";
 import { Navigation } from "models/navigation";
 import { ToastProvider } from "components/ui/toast";
@@ -70,6 +71,12 @@ const navigation: Navigation = [
     path: "/Insights",
     header: true,
     render: () => <Insights />,
+  },
+  {
+    name: "Audit Log",
+    path: "/Audits",
+    header: true,
+    render: () => <AuditsList />,
   },
   {
     name: "Admin",

@@ -29,6 +29,12 @@ public class AuditDocument
     [JsonProperty("eventId")]
     public string EventId { get; set; }
 
+    [JsonProperty("endpointId", NullValueHandling = NullValueHandling.Ignore)]
+    public string? EndpointId { get; set; }
+
+    [JsonProperty("eventTypeId", NullValueHandling = NullValueHandling.Ignore)]
+    public string? EventTypeId { get; set; }
+
     [JsonProperty("audit")]
     public MessageAuditEntity Audit { get; set; }
 

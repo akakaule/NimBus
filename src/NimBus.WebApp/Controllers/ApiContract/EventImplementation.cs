@@ -149,7 +149,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             await managerClient.Resubmit(errorResponse, endpoint, eventTypeId, eventJson);
             await cosmosClient.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
-            await cosmosClient.StoreMessageAudit(eventId, messageAuditEntity);
+            await cosmosClient.StoreMessageAudit(eventId, messageAuditEntity, endpoint, eventTypeId);
             return new OkResult();
         }
 
@@ -188,7 +188,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpoint}'.");
 
             await managerClient.Skip(errorResponse, endpoint, eventTypeId);
-            await cosmosClient.StoreMessageAudit(eventId, messageAuditEntity);
+            await cosmosClient.StoreMessageAudit(eventId, messageAuditEntity, endpoint, eventTypeId);
             await cosmosClient.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
 
             return new OkResult();
@@ -442,7 +442,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             await managerClient.Resubmit(errorResponse, endpoint, eventTypeId, body.EventContent);
             await cosmosClient.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
-            await cosmosClient.StoreMessageAudit(eventId, messageAuditEntity);
+            await cosmosClient.StoreMessageAudit(eventId, messageAuditEntity, endpoint, eventTypeId);
 
             return new OkResult();
         }

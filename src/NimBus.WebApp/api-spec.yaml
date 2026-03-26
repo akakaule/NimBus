@@ -1227,6 +1227,24 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/MessageSearchRequest'
+  /api/audits/search:
+    post:
+      summary: Search audit log entries across all events
+      operationId: post-audits-search
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditSearchResponse'
+      tags:
+        - Audit
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuditSearchRequest'
   /api/dev/seed:
     post:
       summary: Seed sample data across all containers
@@ -2082,10 +2100,10 @@ components:
           nullable: true
           items:
             type: string
-        from:
+        senderEndpoint:
           type: string
           nullable: true
-        to:
+        receiverEndpoint:
           type: string
           nullable: true
         messageType:
@@ -2419,6 +2437,92 @@ components:
           type: integer
         failed:
           type: integer
+    AuditSearchRequest:
+      title: AuditSearchRequest
+      type: object
+      properties:
+        filter:
+          $ref: '#/components/schemas/AuditSearchFilter'
+        continuationToken:
+          type: string
+          nullable: true
+        maxItemCount:
+          type: integer
+    AuditSearchFilter:
+      title: AuditSearchFilter
+      type: object
+      properties:
+        eventId:
+          type: string
+          nullable: true
+        endpointId:
+          type: string
+          nullable: true
+        auditorName:
+          type: string
+          nullable: true
+        eventTypeId:
+          type: string
+          nullable: true
+        auditType:
+          type: string
+          nullable: true
+          enum:
+            - resubmit
+            - resubmitWithChanges
+            - skip
+            - retry
+            - comment
+        createdAtFrom:
+          type: string
+          format: date-time
+          nullable: true
+        createdAtTo:
+          type: string
+          format: date-time
+          nullable: true
+    AuditSearchResponse:
+      title: AuditSearchResponse
+      type: object
+      properties:
+        audits:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEntry'
+        continuationToken:
+          type: string
+          nullable: true
+    AuditEntry:
+      title: AuditEntry
+      type: object
+      properties:
+        eventId:
+          type: string
+        endpointId:
+          type: string
+          nullable: true
+        eventTypeId:
+          type: string
+          nullable: true
+        auditorName:
+          type: string
+        auditTimestamp:
+          type: string
+          format: date-time
+        auditType:
+          type: string
+          enum:
+            - resubmit
+            - resubmitWithChanges
+            - skip
+            - retry
+            - comment
+        comment:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
 tags:
   - name: Event
   - name: EventType
@@ -2428,5 +2532,6 @@ tags:
   - name: Message
   - name: Admin
   - name: Metrics
+  - name: Audit
   - name: Dev
   - name: Metrics

@@ -357,6 +357,8 @@ public class ResolverServiceTests
         public Task<IEnumerable<MessageAuditEntity>> GetMessageAudits(string eventId) => throw new NotSupportedException();
         public Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId) => throw new NotSupportedException();
         public Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from) => throw new NotSupportedException();
+        public Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from) => throw new NotSupportedException();
+        public Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel) => throw new NotSupportedException();
 
         public Task StoreMessage(MessageEntity message)
         {

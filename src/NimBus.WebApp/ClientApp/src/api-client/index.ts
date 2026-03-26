@@ -2981,6 +2981,94 @@ export class Client extends ApiClientBase {
         }
         return Promise.resolve<LatencyOverview>(null as any);
     }
+
+    /**
+     * Get failed message insights grouped by error pattern
+     * @return Failed message insights grouped by error pattern
+     */
+    getMetricsFailedInsights(period: Period): Promise<FailedInsightsOverview> {
+        let url_ = this.baseUrl + "/api/metrics/failed-insights?";
+        if (period === undefined || period === null)
+            throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
+        else
+            url_ += "period=" + encodeURIComponent("" + period) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetMetricsFailedInsights(_response);
+        });
+    }
+
+    protected processGetMetricsFailedInsights(response: Response): Promise<FailedInsightsOverview> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = FailedInsightsOverview.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<FailedInsightsOverview>(null as any);
+    }
+
+    /**
+     * Get time-bucketed message counts
+     * @return Time-bucketed message counts
+     */
+    getMetricsTimeseries(period: Period): Promise<TimeSeriesOverview> {
+        let url_ = this.baseUrl + "/api/metrics/timeseries?";
+        if (period === undefined || period === null)
+            throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
+        else
+            url_ += "period=" + encodeURIComponent("" + period) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetMetricsTimeseries(_response);
+        });
+    }
+
+    protected processGetMetricsTimeseries(response: Response): Promise<TimeSeriesOverview> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = TimeSeriesOverview.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<TimeSeriesOverview>(null as any);
+    }
 }
 
 export class OldEvent implements IOldEvent {
@@ -6590,9 +6678,9 @@ export interface ISessionPurgeResult {
 }
 
 export class MetricsOverview implements IMetricsOverview {
-    published?: EndpointMessageCount[];
+    published?: EndpointEventTypeMessageCount[];
     handled?: EndpointEventTypeMessageCount[];
-    failed?: EndpointMessageCount[];
+    failed?: EndpointEventTypeMessageCount[];
 
     [key: string]: any;
 
@@ -6614,7 +6702,7 @@ export class MetricsOverview implements IMetricsOverview {
             if (Array.isArray(_data["published"])) {
                 this.published = [] as any;
                 for (let item of _data["published"])
-                    this.published!.push(EndpointMessageCount.fromJS(item));
+                    this.published!.push(EndpointEventTypeMessageCount.fromJS(item));
             }
             if (Array.isArray(_data["handled"])) {
                 this.handled = [] as any;
@@ -6624,7 +6712,7 @@ export class MetricsOverview implements IMetricsOverview {
             if (Array.isArray(_data["failed"])) {
                 this.failed = [] as any;
                 for (let item of _data["failed"])
-                    this.failed!.push(EndpointMessageCount.fromJS(item));
+                    this.failed!.push(EndpointEventTypeMessageCount.fromJS(item));
             }
         }
     }
@@ -6669,68 +6757,9 @@ export class MetricsOverview implements IMetricsOverview {
 }
 
 export interface IMetricsOverview {
-    published?: EndpointMessageCount[];
+    published?: EndpointEventTypeMessageCount[];
     handled?: EndpointEventTypeMessageCount[];
-    failed?: EndpointMessageCount[];
-
-    [key: string]: any;
-}
-
-export class EndpointMessageCount implements IEndpointMessageCount {
-    endpointId?: string;
-    count?: number;
-
-    [key: string]: any;
-
-    constructor(data?: IEndpointMessageCount) {
-        if (data) {
-            for (var property in data) {
-                if (data.hasOwnProperty(property))
-                    (this as any)[property] = (data as any)[property];
-            }
-        }
-    }
-
-    init(_data?: any) {
-        if (_data) {
-            for (var property in _data) {
-                if (_data.hasOwnProperty(property))
-                    this[property] = _data[property];
-            }
-            this.endpointId = _data["endpointId"];
-            this.count = _data["count"];
-        }
-    }
-
-    static fromJS(data: any): EndpointMessageCount {
-        data = typeof data === 'object' ? data : {};
-        let result = new EndpointMessageCount();
-        result.init(data);
-        return result;
-    }
-
-    toJSON(data?: any) {
-        data = typeof data === 'object' ? data : {};
-        for (var property in this) {
-            if (this.hasOwnProperty(property))
-                data[property] = this[property];
-        }
-        data["endpointId"] = this.endpointId;
-        data["count"] = this.count;
-        return data;
-    }
-
-    clone(): EndpointMessageCount {
-        const json = this.toJSON();
-        let result = new EndpointMessageCount();
-        result.init(json);
-        return result;
-    }
-}
-
-export interface IEndpointMessageCount {
-    endpointId?: string;
-    count?: number;
+    failed?: EndpointEventTypeMessageCount[];
 
     [key: string]: any;
 }
@@ -6949,6 +6978,401 @@ export interface IEndpointLatency {
     p95LatencyMs?: number;
     p99LatencyMs?: number;
     maxLatencyMs?: number;
+
+    [key: string]: any;
+}
+
+export class FailedInsightsOverview implements IFailedInsightsOverview {
+    groups?: ErrorPatternGroup[];
+    totalFailed?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IFailedInsightsOverview) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["groups"])) {
+                this.groups = [] as any;
+                for (let item of _data["groups"])
+                    this.groups!.push(ErrorPatternGroup.fromJS(item));
+            }
+            this.totalFailed = _data["totalFailed"];
+        }
+    }
+
+    static fromJS(data: any): FailedInsightsOverview {
+        data = typeof data === 'object' ? data : {};
+        let result = new FailedInsightsOverview();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.groups)) {
+            data["groups"] = [];
+            for (let item of this.groups)
+                data["groups"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["totalFailed"] = this.totalFailed;
+        return data;
+    }
+
+    clone(): FailedInsightsOverview {
+        const json = this.toJSON();
+        let result = new FailedInsightsOverview();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IFailedInsightsOverview {
+    groups?: ErrorPatternGroup[];
+    totalFailed?: number;
+
+    [key: string]: any;
+}
+
+export class ErrorPatternGroup implements IErrorPatternGroup {
+    errorCategory?: string;
+    count?: number;
+    endpoints?: string[];
+    eventTypes?: string[];
+    latestOccurrence?: moment.Moment;
+    exampleErrorText?: string;
+    subGroups?: ErrorSubGroup[];
+
+    [key: string]: any;
+
+    constructor(data?: IErrorPatternGroup) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.errorCategory = _data["errorCategory"];
+            this.count = _data["count"];
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(item);
+            }
+            if (Array.isArray(_data["eventTypes"])) {
+                this.eventTypes = [] as any;
+                for (let item of _data["eventTypes"])
+                    this.eventTypes!.push(item);
+            }
+            this.latestOccurrence = _data["latestOccurrence"] ? moment(_data["latestOccurrence"].toString()) : undefined as any;
+            this.exampleErrorText = _data["exampleErrorText"];
+            if (Array.isArray(_data["subGroups"])) {
+                this.subGroups = [] as any;
+                for (let item of _data["subGroups"])
+                    this.subGroups!.push(ErrorSubGroup.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): ErrorPatternGroup {
+        data = typeof data === 'object' ? data : {};
+        let result = new ErrorPatternGroup();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["errorCategory"] = this.errorCategory;
+        data["count"] = this.count;
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item);
+        }
+        if (Array.isArray(this.eventTypes)) {
+            data["eventTypes"] = [];
+            for (let item of this.eventTypes)
+                data["eventTypes"].push(item);
+        }
+        data["latestOccurrence"] = this.latestOccurrence ? this.latestOccurrence.toISOString() : undefined as any;
+        data["exampleErrorText"] = this.exampleErrorText;
+        if (Array.isArray(this.subGroups)) {
+            data["subGroups"] = [];
+            for (let item of this.subGroups)
+                data["subGroups"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): ErrorPatternGroup {
+        const json = this.toJSON();
+        let result = new ErrorPatternGroup();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IErrorPatternGroup {
+    errorCategory?: string;
+    count?: number;
+    endpoints?: string[];
+    eventTypes?: string[];
+    latestOccurrence?: moment.Moment;
+    exampleErrorText?: string;
+    subGroups?: ErrorSubGroup[];
+
+    [key: string]: any;
+}
+
+export class ErrorSubGroup implements IErrorSubGroup {
+    normalizedPattern?: string;
+    count?: number;
+    endpoints?: string[];
+    eventTypes?: string[];
+    latestOccurrence?: moment.Moment;
+    exampleErrorText?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IErrorSubGroup) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.normalizedPattern = _data["normalizedPattern"];
+            this.count = _data["count"];
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(item);
+            }
+            if (Array.isArray(_data["eventTypes"])) {
+                this.eventTypes = [] as any;
+                for (let item of _data["eventTypes"])
+                    this.eventTypes!.push(item);
+            }
+            this.latestOccurrence = _data["latestOccurrence"] ? moment(_data["latestOccurrence"].toString()) : undefined as any;
+            this.exampleErrorText = _data["exampleErrorText"];
+        }
+    }
+
+    static fromJS(data: any): ErrorSubGroup {
+        data = typeof data === 'object' ? data : {};
+        let result = new ErrorSubGroup();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["normalizedPattern"] = this.normalizedPattern;
+        data["count"] = this.count;
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item);
+        }
+        if (Array.isArray(this.eventTypes)) {
+            data["eventTypes"] = [];
+            for (let item of this.eventTypes)
+                data["eventTypes"].push(item);
+        }
+        data["latestOccurrence"] = this.latestOccurrence ? this.latestOccurrence.toISOString() : undefined as any;
+        data["exampleErrorText"] = this.exampleErrorText;
+        return data;
+    }
+
+    clone(): ErrorSubGroup {
+        const json = this.toJSON();
+        let result = new ErrorSubGroup();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IErrorSubGroup {
+    normalizedPattern?: string;
+    count?: number;
+    endpoints?: string[];
+    eventTypes?: string[];
+    latestOccurrence?: moment.Moment;
+    exampleErrorText?: string;
+
+    [key: string]: any;
+}
+
+export class TimeSeriesOverview implements ITimeSeriesOverview {
+    bucketSize?: string;
+    dataPoints?: TimeSeriesDataPoint[];
+
+    [key: string]: any;
+
+    constructor(data?: ITimeSeriesOverview) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.bucketSize = _data["bucketSize"];
+            if (Array.isArray(_data["dataPoints"])) {
+                this.dataPoints = [] as any;
+                for (let item of _data["dataPoints"])
+                    this.dataPoints!.push(TimeSeriesDataPoint.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): TimeSeriesOverview {
+        data = typeof data === 'object' ? data : {};
+        let result = new TimeSeriesOverview();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["bucketSize"] = this.bucketSize;
+        if (Array.isArray(this.dataPoints)) {
+            data["dataPoints"] = [];
+            for (let item of this.dataPoints)
+                data["dataPoints"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): TimeSeriesOverview {
+        const json = this.toJSON();
+        let result = new TimeSeriesOverview();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ITimeSeriesOverview {
+    bucketSize?: string;
+    dataPoints?: TimeSeriesDataPoint[];
+
+    [key: string]: any;
+}
+
+export class TimeSeriesDataPoint implements ITimeSeriesDataPoint {
+    timestamp?: string;
+    published?: number;
+    handled?: number;
+    failed?: number;
+
+    [key: string]: any;
+
+    constructor(data?: ITimeSeriesDataPoint) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.timestamp = _data["timestamp"];
+            this.published = _data["published"];
+            this.handled = _data["handled"];
+            this.failed = _data["failed"];
+        }
+    }
+
+    static fromJS(data: any): TimeSeriesDataPoint {
+        data = typeof data === 'object' ? data : {};
+        let result = new TimeSeriesDataPoint();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["timestamp"] = this.timestamp;
+        data["published"] = this.published;
+        data["handled"] = this.handled;
+        data["failed"] = this.failed;
+        return data;
+    }
+
+    clone(): TimeSeriesDataPoint {
+        const json = this.toJSON();
+        let result = new TimeSeriesDataPoint();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ITimeSeriesDataPoint {
+    timestamp?: string;
+    published?: number;
+    handled?: number;
+    failed?: number;
 
     [key: string]: any;
 }

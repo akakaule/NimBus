@@ -138,6 +138,8 @@ public interface ICosmosDbClient
 
     // Metrics aggregation
     Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from);
+    Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from);
+    Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel);
 }
 
 public class CosmosDbClient : ICosmosDbClient
@@ -1556,19 +1558,18 @@ public class CosmosDbClient : ICosmosDbClient
         var container = await GetMessagesContainer();
         var fromIso = from.ToString("o");
 
-        var published = await RunCountQuery(container,
-            "SELECT COUNT(1) AS count, c.endpointId FROM c " +
+        var published = await RunEventTypeCountQuery(container,
+            "SELECT COUNT(1) AS count, c.message[\"From\"] AS endpointId, c.message.EventTypeId FROM c " +
             "WHERE c.message.MessageType = 'EventRequest' " +
-            "AND c.message.EndpointRole = 'Publisher' " +
             "AND c.message.EnqueuedTimeUtc >= @from " +
-            "GROUP BY c.endpointId",
+            "GROUP BY c.message[\"From\"], c.message.EventTypeId",
             fromIso);
 
-        var failed = await RunCountQuery(container,
-            "SELECT COUNT(1) AS count, c.endpointId FROM c " +
+        var failed = await RunEventTypeCountQuery(container,
+            "SELECT COUNT(1) AS count, c.endpointId, c.message.EventTypeId FROM c " +
             "WHERE c.message.MessageType = 'ErrorResponse' " +
             "AND c.message.EnqueuedTimeUtc >= @from " +
-            "GROUP BY c.endpointId",
+            "GROUP BY c.endpointId, c.message.EventTypeId",
             fromIso);
 
         var handled = await RunEventTypeCountQuery(container,
@@ -1586,26 +1587,130 @@ public class CosmosDbClient : ICosmosDbClient
         };
     }
 
-    private async Task<List<EndpointCount>> RunCountQuery(ICosmosContainerAdapter container, string sql, string fromIso)
+    public async Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from)
     {
+        var container = await GetMessagesContainer();
+        var fromIso = from.ToString("o");
+
+        var sql = "SELECT c.endpointId, c.message.EventTypeId, " +
+                  "c.message.MessageContent.ErrorContent.ErrorText, " +
+                  "c.message.EnqueuedTimeUtc, c.message.EventId " +
+                  "FROM c " +
+                  "WHERE c.message.MessageType = 'ErrorResponse' " +
+                  "AND c.message.EnqueuedTimeUtc >= @from";
+
         var query = new QueryDefinition(sql).WithParameter("@from", fromIso);
-        var iterator = container.GetItemQueryIterator<MetricsCountResult>(query);
-        var results = new List<EndpointCount>();
+        var iterator = container.GetItemQueryIterator<FailedMessageQueryResult>(query);
+        var results = new List<FailedMessageInfo>();
 
         while (iterator.HasMoreResults)
         {
             var response = await iterator.ReadNextAsync();
             foreach (var item in response)
             {
-                results.Add(new EndpointCount
+                results.Add(new FailedMessageInfo
                 {
                     EndpointId = item.EndpointId,
-                    Count = item.Count
+                    EventTypeId = item.EventTypeId,
+                    ErrorText = item.ErrorText,
+                    EnqueuedTimeUtc = item.EnqueuedTimeUtc,
+                    EventId = item.EventId
                 });
             }
         }
 
         return results;
+    }
+
+    public async Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+    {
+        var container = await GetMessagesContainer();
+        var fromIso = from.ToString("o");
+
+        var publishedBuckets = await RunBucketCountQuery(container,
+            $"SELECT COUNT(1) AS count, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
+            "FROM c WHERE c.message.MessageType = 'EventRequest' " +
+            "AND c.message.EnqueuedTimeUtc >= @from " +
+            $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
+            fromIso);
+
+        var handledBuckets = await RunBucketCountQuery(container,
+            $"SELECT COUNT(1) AS count, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
+            "FROM c WHERE c.message.MessageType = 'ResolutionResponse' " +
+            "AND c.message.EnqueuedTimeUtc >= @from " +
+            $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
+            fromIso);
+
+        var failedBuckets = await RunBucketCountQuery(container,
+            $"SELECT COUNT(1) AS count, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
+            "FROM c WHERE c.message.MessageType = 'ErrorResponse' " +
+            "AND c.message.EnqueuedTimeUtc >= @from " +
+            $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
+            fromIso);
+
+        var allBucketKeys = GenerateBucketKeys(from, DateTime.UtcNow, substringLength);
+        var dataPoints = new List<TimeSeriesBucket>();
+
+        foreach (var key in allBucketKeys)
+        {
+            dataPoints.Add(new TimeSeriesBucket
+            {
+                Timestamp = key,
+                Published = publishedBuckets.GetValueOrDefault(key),
+                Handled = handledBuckets.GetValueOrDefault(key),
+                Failed = failedBuckets.GetValueOrDefault(key)
+            });
+        }
+
+        return new TimeSeriesResult { BucketSize = bucketLabel, DataPoints = dataPoints };
+    }
+
+    private async Task<Dictionary<string, int>> RunBucketCountQuery(ICosmosContainerAdapter container, string sql, string fromIso)
+    {
+        var query = new QueryDefinition(sql).WithParameter("@from", fromIso);
+        var iterator = container.GetItemQueryIterator<BucketCountResult>(query);
+        var results = new Dictionary<string, int>();
+
+        while (iterator.HasMoreResults)
+        {
+            var response = await iterator.ReadNextAsync();
+            foreach (var item in response)
+            {
+                if (item.Bucket != null)
+                    results[item.Bucket] = item.Count;
+            }
+        }
+
+        return results;
+    }
+
+    private static List<string> GenerateBucketKeys(DateTime from, DateTime to, int substringLength)
+    {
+        var keys = new List<string>();
+        var current = substringLength switch
+        {
+            16 => new DateTime(from.Year, from.Month, from.Day, from.Hour, from.Minute, 0, DateTimeKind.Utc),
+            13 => new DateTime(from.Year, from.Month, from.Day, from.Hour, 0, 0, DateTimeKind.Utc),
+            10 => new DateTime(from.Year, from.Month, from.Day, 0, 0, 0, DateTimeKind.Utc),
+            _ => new DateTime(from.Year, from.Month, from.Day, from.Hour, 0, 0, DateTimeKind.Utc)
+        };
+
+        var step = substringLength switch
+        {
+            16 => TimeSpan.FromMinutes(1),
+            13 => TimeSpan.FromHours(1),
+            10 => TimeSpan.FromDays(1),
+            _ => TimeSpan.FromHours(1)
+        };
+
+        while (current <= to)
+        {
+            var key = current.ToString("o")[..substringLength];
+            keys.Add(key);
+            current += step;
+        }
+
+        return keys;
     }
 
     private async Task<List<EndpointEventTypeCount>> RunEventTypeCountQuery(ICosmosContainerAdapter container, string sql, string fromIso)
@@ -1631,13 +1736,31 @@ public class CosmosDbClient : ICosmosDbClient
         return results;
     }
 
-    class MetricsCountResult
+    class FailedMessageQueryResult
+    {
+        [JsonProperty("endpointId")]
+        public string EndpointId { get; set; }
+
+        [JsonProperty("EventTypeId")]
+        public string EventTypeId { get; set; }
+
+        [JsonProperty("ErrorText")]
+        public string ErrorText { get; set; }
+
+        [JsonProperty("EnqueuedTimeUtc")]
+        public DateTime EnqueuedTimeUtc { get; set; }
+
+        [JsonProperty("EventId")]
+        public string EventId { get; set; }
+    }
+
+    class BucketCountResult
     {
         [JsonProperty("count")]
         public int Count { get; set; }
 
-        [JsonProperty("endpointId")]
-        public string EndpointId { get; set; }
+        [JsonProperty("bucket")]
+        public string Bucket { get; set; }
     }
 
     class MetricsEventTypeCountResult
@@ -1648,7 +1771,7 @@ public class CosmosDbClient : ICosmosDbClient
         [JsonProperty("endpointId")]
         public string EndpointId { get; set; }
 
-        [JsonProperty("eventTypeId")]
+        [JsonProperty("EventTypeId")]
         public string EventTypeId { get; set; }
     }
 

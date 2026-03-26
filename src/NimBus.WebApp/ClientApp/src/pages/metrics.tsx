@@ -7,6 +7,8 @@ import { Badge } from "components/ui/badge";
 import {
   BarChart,
   Bar,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   Tooltip,
@@ -41,11 +43,35 @@ function formatMs(ms: number | undefined): string {
   return `${Math.round(ms)}ms`;
 }
 
+const metricsAxisDateTime = new Intl.DateTimeFormat("da-DK", {
+  timeZone: "Europe/Copenhagen",
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  hour12: false,
+});
+
+function formatTimestamp(ts: string | undefined, bucketSize: string | undefined): string {
+  if (!ts) return "";
+  const date = new Date(ts);
+  if (Number.isNaN(date.getTime())) return ts;
+
+  const parts = metricsAxisDateTime.formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+
+  if (bucketSize === "minute") {
+    return `${values.day}-${values.month} ${values.hour}`;
+  }
+
+  return `${values.day}-${values.month} ${values.hour}`;
+}
+
 export default function Metrics() {
   const [data, setData] = useState<api.MetricsOverview | null>(null);
   const [latencyData, setLatencyData] = useState<api.LatencyOverview | null>(
     null,
   );
+  const [timeseriesData, setTimeseriesData] = useState<api.TimeSeriesOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<api.Period>(api.Period._1d);
 
@@ -53,12 +79,14 @@ export default function Metrics() {
     setLoading(true);
     try {
       const client = new api.Client(api.CookieAuth());
-      const [result, latency] = await Promise.all([
+      const [result, latency, timeseries] = await Promise.all([
         client.getMetricsOverview(p),
         client.getMetricsLatency(p).catch(() => null),
+        client.getMetricsTimeseries(p).catch(() => null),
       ]);
       setData(result);
       setLatencyData(latency);
+      setTimeseriesData(timeseries);
     } catch (err) {
       console.error("Failed to fetch metrics", err);
     } finally {
@@ -70,48 +98,46 @@ export default function Metrics() {
     fetchMetrics(period);
   }, [period, fetchMetrics]);
 
-  const publishedChartData = (data?.published ?? [])
-    .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
-    .map((p) => ({
-      endpoint: p.endpointId ?? "",
-      count: p.count ?? 0,
-    }));
+  function buildStackedData(items: api.EndpointEventTypeMessageCount[]) {
+    const byEndpoint = new Map<string, Map<string, number>>();
+    const eventTypeSet = new Set<string>();
 
-  const failedChartData = (data?.failed ?? [])
-    .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
-    .map((f) => ({
-      endpoint: f.endpointId ?? "",
-      count: f.count ?? 0,
-    }));
-
-  // Group handled by endpoint with stacked event types
-  const handledByEndpoint = new Map<string, Map<string, number>>();
-  const allEventTypes = new Set<string>();
-
-  for (const h of data?.handled ?? []) {
-    const ep = h.endpointId ?? "";
-    const et = h.eventTypeId ?? "unknown";
-    allEventTypes.add(et);
-    if (!handledByEndpoint.has(ep)) {
-      handledByEndpoint.set(ep, new Map());
+    for (const item of items) {
+      const ep = item.endpointId ?? "";
+      const et = item.eventTypeId ?? "unknown";
+      eventTypeSet.add(et);
+      if (!byEndpoint.has(ep)) {
+        byEndpoint.set(ep, new Map());
+      }
+      byEndpoint.get(ep)!.set(et, (byEndpoint.get(ep)!.get(et) ?? 0) + (item.count ?? 0));
     }
-    handledByEndpoint.get(ep)!.set(et, h.count ?? 0);
+
+    const types = Array.from(eventTypeSet).sort();
+    const rows = Array.from(byEndpoint.entries())
+      .map(([endpoint, typesMap]) => {
+        const row: Record<string, string | number> = { endpoint };
+        let total = 0;
+        for (const et of types) {
+          const count = typesMap.get(et) ?? 0;
+          row[et] = count;
+          total += count;
+        }
+        row._total = total;
+        return row;
+      })
+      .sort((a, b) => (b._total as number) - (a._total as number));
+
+    return { rows, eventTypes: types };
   }
 
-  const eventTypes = Array.from(allEventTypes).sort();
-  const handledChartData = Array.from(handledByEndpoint.entries())
-    .map(([endpoint, types]) => {
-      const row: Record<string, string | number> = { endpoint };
-      let total = 0;
-      for (const et of eventTypes) {
-        const count = types.get(et) ?? 0;
-        row[et] = count;
-        total += count;
-      }
-      row._total = total;
-      return row;
-    })
-    .sort((a, b) => (b._total as number) - (a._total as number));
+  const published = buildStackedData(data?.published ?? []);
+  const handled = buildStackedData(data?.handled ?? []);
+  const failed = buildStackedData(data?.failed ?? []);
+
+  const totalHandled = (data?.handled ?? []).reduce((sum, h) => sum + (h.count ?? 0), 0);
+  const totalFailed = (data?.failed ?? []).reduce((sum, f) => sum + (f.count ?? 0), 0);
+  const totalMessages = totalHandled + totalFailed;
+  const failureRate = totalMessages > 0 ? (totalFailed / totalMessages) * 100 : 0;
 
   // Latency chart data: group by event type, show P50/P95/P99
   const latencyChartData = (latencyData?.latencies ?? []).map((l) => ({
@@ -141,19 +167,109 @@ export default function Metrics() {
           ))}
         </div>
 
+        {/* KPI Summary Cards */}
+        <div className="grid grid-cols-3 gap-4">
+          <Card>
+            <CardContent className="pt-6 text-center">
+              <p className="text-sm text-muted-foreground">Total Messages</p>
+              <p className="text-3xl font-bold mt-1">
+                {loading ? "-" : totalMessages.toLocaleString()}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6 text-center">
+              <p className="text-sm text-muted-foreground">Total Failed</p>
+              <p className={`text-3xl font-bold mt-1 ${totalFailed > 0 && !loading ? "text-red-600" : ""}`}>
+                {loading ? "-" : totalFailed.toLocaleString()}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6 text-center">
+              <p className="text-sm text-muted-foreground">Failure Rate</p>
+              <p className={`text-3xl font-bold mt-1 ${
+                loading ? "" :
+                failureRate > 5 ? "text-red-600" :
+                failureRate >= 1 ? "text-yellow-600" :
+                "text-green-600"
+              }`}>
+                {loading ? "-" : `${failureRate.toFixed(2)}%`}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <Spinner size="lg" />
           </div>
         ) : (
           <>
+            {/* Message Activity Over Time */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Message Activity Over Time</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {(timeseriesData?.dataPoints ?? []).length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    No activity data in this period.
+                  </p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <AreaChart
+                      data={(timeseriesData?.dataPoints ?? []).map((dp) => ({
+                        timestamp: formatTimestamp(dp.timestamp, timeseriesData?.bucketSize),
+                        Published: dp.published ?? 0,
+                        Handled: dp.handled ?? 0,
+                        Failed: dp.failed ?? 0,
+                      }))}
+                      margin={{ left: 10, right: 20, top: 5, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="timestamp"
+                        tick={{ fontSize: 11 }}
+                        interval="preserveStartEnd"
+                      />
+                      <YAxis />
+                      <Tooltip />
+                      <Legend />
+                      <Area
+                        type="monotone"
+                        dataKey="Published"
+                        stroke="#3b82f6"
+                        fill="#3b82f6"
+                        fillOpacity={0.3}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="Handled"
+                        stroke="#10b981"
+                        fill="#10b981"
+                        fillOpacity={0.3}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="Failed"
+                        stroke="#ef4444"
+                        fill="#ef4444"
+                        fillOpacity={0.3}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Published Messages */}
             <Card>
               <CardHeader>
                 <CardTitle>Published Messages</CardTitle>
               </CardHeader>
               <CardContent>
-                {publishedChartData.length === 0 ? (
+                {published.rows.length === 0 ? (
                   <p className="text-muted-foreground text-sm">
                     No published messages in this period.
                   </p>
@@ -161,69 +277,10 @@ export default function Metrics() {
                   <>
                     <ResponsiveContainer
                       width="100%"
-                      height={Math.max(200, publishedChartData.length * 40)}
+                      height={Math.max(200, published.rows.length * 40)}
                     >
                       <BarChart
-                        data={publishedChartData}
-                        layout="vertical"
-                        margin={{ left: 120, right: 20, top: 5, bottom: 5 }}
-                      >
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          horizontal={false}
-                        />
-                        <XAxis type="number" />
-                        <YAxis
-                          type="category"
-                          dataKey="endpoint"
-                          width={110}
-                          tick={{ fontSize: 12 }}
-                        />
-                        <Tooltip />
-                        <Bar dataKey="count" fill="#3b82f6" name="Published" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                    <table className="w-full mt-4 text-sm">
-                      <thead>
-                        <tr className="border-b">
-                          <th className="text-left py-2 px-3">Endpoint</th>
-                          <th className="text-right py-2 px-3">Count</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {publishedChartData.map((row) => (
-                          <tr key={row.endpoint} className="border-b">
-                            <td className="py-2 px-3">{row.endpoint}</td>
-                            <td className="text-right py-2 px-3">
-                              <Badge variant="info">{row.count}</Badge>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Handled Messages */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Handled Messages</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {handledChartData.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">
-                    No handled messages in this period.
-                  </p>
-                ) : (
-                  <>
-                    <ResponsiveContainer
-                      width="100%"
-                      height={Math.max(200, handledChartData.length * 40)}
-                    >
-                      <BarChart
-                        data={handledChartData}
+                        data={published.rows}
                         layout="vertical"
                         margin={{ left: 120, right: 20, top: 5, bottom: 5 }}
                       >
@@ -240,7 +297,87 @@ export default function Metrics() {
                         />
                         <Tooltip />
                         <Legend />
-                        {eventTypes.map((et, i) => (
+                        {published.eventTypes.map((et, i) => (
+                          <Bar
+                            key={et}
+                            dataKey={et}
+                            stackId="published"
+                            fill={COLORS[i % COLORS.length]}
+                            name={et}
+                          />
+                        ))}
+                      </BarChart>
+                    </ResponsiveContainer>
+                    <table className="w-full mt-4 text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2 px-3">Endpoint</th>
+                          <th className="text-left py-2 px-3">Event Type</th>
+                          <th className="text-right py-2 px-3">Count</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(data?.published ?? [])
+                          .sort(
+                            (a, b) =>
+                              (a.endpointId ?? "").localeCompare(
+                                b.endpointId ?? "",
+                              ) ||
+                              (a.eventTypeId ?? "").localeCompare(
+                                b.eventTypeId ?? "",
+                              ),
+                          )
+                          .map((p, i) => (
+                            <tr key={i} className="border-b">
+                              <td className="py-2 px-3">{p.endpointId}</td>
+                              <td className="py-2 px-3">{p.eventTypeId}</td>
+                              <td className="text-right py-2 px-3">
+                                <Badge variant="info">{p.count}</Badge>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Handled Messages */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Handled Messages</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {handled.rows.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    No handled messages in this period.
+                  </p>
+                ) : (
+                  <>
+                    <ResponsiveContainer
+                      width="100%"
+                      height={Math.max(200, handled.rows.length * 40)}
+                    >
+                      <BarChart
+                        data={handled.rows}
+                        layout="vertical"
+                        margin={{ left: 120, right: 20, top: 5, bottom: 5 }}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          horizontal={false}
+                        />
+                        <XAxis type="number" />
+                        <YAxis
+                          type="category"
+                          dataKey="endpoint"
+                          width={110}
+                          tick={{ fontSize: 12 }}
+                        />
+                        <Tooltip />
+                        <Legend />
+                        {handled.eventTypes.map((et, i) => (
                           <Bar
                             key={et}
                             dataKey={et}
@@ -292,7 +429,7 @@ export default function Metrics() {
                 <CardTitle>Failed Messages</CardTitle>
               </CardHeader>
               <CardContent>
-                {failedChartData.length === 0 ? (
+                {failed.rows.length === 0 ? (
                   <p className="text-muted-foreground text-sm">
                     No failed messages in this period.
                   </p>
@@ -300,10 +437,10 @@ export default function Metrics() {
                   <>
                     <ResponsiveContainer
                       width="100%"
-                      height={Math.max(200, failedChartData.length * 40)}
+                      height={Math.max(200, failed.rows.length * 40)}
                     >
                       <BarChart
-                        data={failedChartData}
+                        data={failed.rows}
                         layout="vertical"
                         margin={{ left: 120, right: 20, top: 5, bottom: 5 }}
                       >
@@ -319,32 +456,55 @@ export default function Metrics() {
                           tick={{ fontSize: 12 }}
                         />
                         <Tooltip />
-                        <Bar dataKey="count" fill="#ef4444" name="Failed" />
+                        <Legend />
+                        {failed.eventTypes.map((et, i) => (
+                          <Bar
+                            key={et}
+                            dataKey={et}
+                            stackId="failed"
+                            fill={COLORS[i % COLORS.length]}
+                            name={et}
+                          />
+                        ))}
                       </BarChart>
                     </ResponsiveContainer>
                     <table className="w-full mt-4 text-sm">
                       <thead>
                         <tr className="border-b">
                           <th className="text-left py-2 px-3">Endpoint</th>
+                          <th className="text-left py-2 px-3">Event Type</th>
                           <th className="text-right py-2 px-3">Count</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {failedChartData.map((row) => (
-                          <tr
-                            key={row.endpoint}
-                            className={`border-b ${row.count > 0 ? "bg-red-50" : ""}`}
-                          >
-                            <td className="py-2 px-3">{row.endpoint}</td>
-                            <td className="text-right py-2 px-3">
-                              <Badge
-                                variant={row.count > 0 ? "error" : "default"}
-                              >
-                                {row.count}
-                              </Badge>
-                            </td>
-                          </tr>
-                        ))}
+                        {(data?.failed ?? [])
+                          .sort(
+                            (a, b) =>
+                              (a.endpointId ?? "").localeCompare(
+                                b.endpointId ?? "",
+                              ) ||
+                              (a.eventTypeId ?? "").localeCompare(
+                                b.eventTypeId ?? "",
+                              ),
+                          )
+                          .map((f, i) => (
+                            <tr
+                              key={i}
+                              className={`border-b ${(f.count ?? 0) > 0 ? "bg-red-50" : ""}`}
+                            >
+                              <td className="py-2 px-3">{f.endpointId}</td>
+                              <td className="py-2 px-3">{f.eventTypeId}</td>
+                              <td className="text-right py-2 px-3">
+                                <Badge
+                                  variant={
+                                    (f.count ?? 0) > 0 ? "error" : "default"
+                                  }
+                                >
+                                  {f.count}
+                                </Badge>
+                              </td>
+                            </tr>
+                          ))}
                       </tbody>
                     </table>
                   </>

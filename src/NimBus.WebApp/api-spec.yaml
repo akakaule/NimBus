@@ -1343,6 +1343,44 @@ paths:
                 $ref: '#/components/schemas/LatencyOverview'
       tags:
         - Metrics
+  /api/metrics/failed-insights:
+    get:
+      summary: Get failed message insights grouped by error pattern
+      operationId: get-metrics-failed-insights
+      parameters:
+        - name: period
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/Period'
+      responses:
+        '200':
+          description: Failed message insights grouped by error pattern
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FailedInsightsOverview'
+      tags:
+        - Metrics
+  /api/metrics/timeseries:
+    get:
+      summary: Get time-bucketed message counts
+      operationId: get-metrics-timeseries
+      parameters:
+        - name: period
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/Period'
+      responses:
+        '200':
+          description: Time-bucketed message counts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeSeriesOverview'
+      tags:
+        - Metrics
 components:
   schemas:
     OldEvent:
@@ -2241,7 +2279,7 @@ components:
         published:
           type: array
           items:
-            $ref: '#/components/schemas/EndpointMessageCount'
+            $ref: '#/components/schemas/EndpointEventTypeMessageCount'
         handled:
           type: array
           items:
@@ -2249,15 +2287,7 @@ components:
         failed:
           type: array
           items:
-            $ref: '#/components/schemas/EndpointMessageCount'
-    EndpointMessageCount:
-      title: EndpointMessageCount
-      type: object
-      properties:
-        endpointId:
-          type: string
-        count:
-          type: integer
+            $ref: '#/components/schemas/EndpointEventTypeMessageCount'
     EndpointEventTypeMessageCount:
       title: EndpointEventTypeMessageCount
       type: object
@@ -2311,6 +2341,84 @@ components:
         maxLatencyMs:
           type: number
           format: double
+    FailedInsightsOverview:
+      title: FailedInsightsOverview
+      type: object
+      properties:
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorPatternGroup'
+        totalFailed:
+          type: integer
+    ErrorPatternGroup:
+      title: ErrorPatternGroup
+      type: object
+      properties:
+        errorCategory:
+          type: string
+        count:
+          type: integer
+        endpoints:
+          type: array
+          items:
+            type: string
+        eventTypes:
+          type: array
+          items:
+            type: string
+        latestOccurrence:
+          type: string
+          format: date-time
+        exampleErrorText:
+          type: string
+        subGroups:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorSubGroup'
+    ErrorSubGroup:
+      title: ErrorSubGroup
+      type: object
+      properties:
+        normalizedPattern:
+          type: string
+        count:
+          type: integer
+        endpoints:
+          type: array
+          items:
+            type: string
+        eventTypes:
+          type: array
+          items:
+            type: string
+        latestOccurrence:
+          type: string
+          format: date-time
+        exampleErrorText:
+          type: string
+    TimeSeriesOverview:
+      title: TimeSeriesOverview
+      type: object
+      properties:
+        bucketSize:
+          type: string
+        dataPoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeSeriesDataPoint'
+    TimeSeriesDataPoint:
+      title: TimeSeriesDataPoint
+      type: object
+      properties:
+        timestamp:
+          type: string
+        published:
+          type: integer
+        handled:
+          type: integer
+        failed:
+          type: integer
 tags:
   - name: Event
   - name: EventType
@@ -2319,5 +2427,6 @@ tags:
   - name: Endpoint
   - name: Message
   - name: Admin
+  - name: Metrics
   - name: Dev
   - name: Metrics

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using NimBus.MessageStore;
@@ -26,9 +28,10 @@ public class MetricsImplementation : IMetricsApiController
 
         return new MetricsOverview
         {
-            Published = result.Published.Select(p => new EndpointMessageCount
+            Published = result.Published.Select(p => new EndpointEventTypeMessageCount
             {
                 EndpointId = p.EndpointId,
+                EventTypeId = p.EventTypeId,
                 Count = p.Count
             }).ToList(),
             Handled = result.Handled.Select(h => new EndpointEventTypeMessageCount
@@ -37,9 +40,10 @@ public class MetricsImplementation : IMetricsApiController
                 EventTypeId = h.EventTypeId,
                 Count = h.Count
             }).ToList(),
-            Failed = result.Failed.Select(f => new EndpointMessageCount
+            Failed = result.Failed.Select(f => new EndpointEventTypeMessageCount
             {
                 EndpointId = f.EndpointId,
+                EventTypeId = f.EventTypeId,
                 Count = f.Count
             }).ToList()
         };
@@ -64,6 +68,109 @@ public class MetricsImplementation : IMetricsApiController
                 MaxLatencyMs = Math.Round(m.MaxMs, 1),
             }).ToList()
         };
+    }
+
+    public async Task<ActionResult<FailedInsightsOverview>> GetMetricsFailedInsightsAsync(Period period)
+    {
+        var from = DateTime.UtcNow - PeriodToTimeSpan(period);
+        var messages = await _cosmosClient.GetFailedMessageInsights(from);
+
+        var groups = messages
+            .GroupBy(m => ExtractErrorCategory(m.ErrorText))
+            .Select(g =>
+            {
+                var subGroups = g
+                    .GroupBy(m => NormalizeErrorPattern(m.ErrorText))
+                    .Select(sg => new ErrorSubGroup
+                    {
+                        NormalizedPattern = sg.Key,
+                        Count = sg.Count(),
+                        Endpoints = sg.Select(m => m.EndpointId).Where(e => e != null).Distinct().ToList(),
+                        EventTypes = sg.Select(m => m.EventTypeId).Where(e => e != null).Distinct().ToList(),
+                        LatestOccurrence = sg.Max(m => m.EnqueuedTimeUtc),
+                        ExampleErrorText = sg.First().ErrorText
+                    })
+                    .OrderByDescending(sg => sg.Count)
+                    .ToList();
+
+                return new ErrorPatternGroup
+                {
+                    ErrorCategory = g.Key,
+                    Count = g.Count(),
+                    Endpoints = g.Select(m => m.EndpointId).Where(e => e != null).Distinct().ToList(),
+                    EventTypes = g.Select(m => m.EventTypeId).Where(e => e != null).Distinct().ToList(),
+                    LatestOccurrence = g.Max(m => m.EnqueuedTimeUtc),
+                    ExampleErrorText = g.First().ErrorText,
+                    SubGroups = subGroups
+                };
+            })
+            .OrderByDescending(g => g.Count)
+            .ToList();
+
+        return new FailedInsightsOverview
+        {
+            Groups = groups,
+            TotalFailed = messages.Count
+        };
+    }
+
+    public async Task<ActionResult<TimeSeriesOverview>> GetMetricsTimeseriesAsync(Period period)
+    {
+        var from = DateTime.UtcNow - PeriodToTimeSpan(period);
+        var (substringLength, bucketLabel) = PeriodToBucketConfig(period);
+        var result = await _cosmosClient.GetTimeSeriesMetrics(from, substringLength, bucketLabel);
+
+        return new TimeSeriesOverview
+        {
+            BucketSize = result.BucketSize,
+            DataPoints = result.DataPoints.Select(dp => new TimeSeriesDataPoint
+            {
+                Timestamp = dp.Timestamp,
+                Published = dp.Published,
+                Handled = dp.Handled,
+                Failed = dp.Failed
+            }).ToList()
+        };
+    }
+
+    private static (int substringLength, string label) PeriodToBucketConfig(Period period) => period switch
+    {
+        Period._1h => (16, "minute"),
+        Period._12h => (13, "hour"),
+        Period._1d => (13, "hour"),
+        Period._3d => (13, "hour"),
+        Period._7d => (13, "hour"),
+        Period._30d => (10, "day"),
+        _ => (13, "hour")
+    };
+
+    internal static string ExtractErrorCategory(string errorText)
+    {
+        if (string.IsNullOrEmpty(errorText)) return "Unknown";
+        if (errorText.StartsWith("["))
+        {
+            var end = errorText.IndexOf(']');
+            if (end > 0) return errorText[..(end + 1)];
+        }
+        var colon = errorText.IndexOf(':');
+        if (colon > 0 && colon < 100) return errorText[..colon];
+        return errorText.Length > 100 ? errorText[..100] : errorText;
+    }
+
+    private static readonly Regex GuidPattern = new(
+        @"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+        RegexOptions.Compiled);
+
+    private static readonly Regex ActionSuffix = new(
+        @"\.?\s*Action:.*$",
+        RegexOptions.Compiled);
+
+    internal static string NormalizeErrorPattern(string errorText)
+    {
+        if (string.IsNullOrEmpty(errorText)) return "Unknown";
+        var normalized = GuidPattern.Replace(errorText, "<id>");
+        normalized = ActionSuffix.Replace(normalized, "");
+        return normalized.TrimEnd(' ', '.');
     }
 
     private static TimeSpan PeriodToTimeSpan(Period period) => period switch

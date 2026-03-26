@@ -8,6 +8,7 @@ import EventTypeDetails from "pages/event-type-details";
 import MessagesList from "pages/messages-list";
 import Admin from "pages/admin";
 import Metrics from "pages/metrics";
+import Insights from "pages/insights";
 import Footer from "components/footer";
 import { Navigation } from "models/navigation";
 import { ToastProvider } from "components/ui/toast";
@@ -63,6 +64,12 @@ const navigation: Navigation = [
     path: "/Metrics",
     header: true,
     render: () => <Metrics />,
+  },
+  {
+    name: "Insights",
+    path: "/Insights",
+    header: true,
+    render: () => <Insights />,
   },
   {
     name: "Admin",

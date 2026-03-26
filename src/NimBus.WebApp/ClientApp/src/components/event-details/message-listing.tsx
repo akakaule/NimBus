@@ -23,6 +23,7 @@ interface IMessageListingProps {
     messageId: string,
     body: api.ResubmitWithChanges,
   ) => Promise<void>;
+  deleteEvent?: () => Promise<void>;
 }
 
 interface IButtonState {
@@ -36,6 +37,9 @@ export default function MessageListing(props: IMessageListingProps) {
   const [isOpen, setIsOpen] = useState(false);
   const onOpen = () => setIsOpen(true);
   const onClose = () => setIsOpen(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const deleteBtn: IButtonState = { isDisabled: false, text: "Delete" };
+  const [deleteButton, setDeleteButton] = useState(deleteBtn);
   const [textAreaValue, setTextAreaValue] = useState(
     props.eventDetails?.messageContent?.eventContent?.eventJson,
   );
@@ -115,6 +119,17 @@ export default function MessageListing(props: IMessageListingProps) {
     }
   };
 
+  const deleteEventClick = async () => {
+    setShowDeleteConfirm(false);
+    setDeleteButton({ text: "Deleting...", isDisabled: true });
+    try {
+      await props.deleteEvent?.();
+      setDeleteButton({ text: "Deleted", isDisabled: true });
+    } catch {
+      setDeleteButton({ text: "Delete failed", isDisabled: false });
+    }
+  };
+
   const resubmitEventWithChangesClick = async () => {
     onClose();
     setResubmitWithChangesButton({ text: "Resubmitting...", isDisabled: true });
@@ -168,6 +183,16 @@ export default function MessageListing(props: IMessageListingProps) {
             >
               {skipButton.text}
             </Button>
+            {props.deleteEvent && (
+              <Button
+                size="xs"
+                colorScheme="red"
+                disabled={deleteButton.isDisabled}
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                {deleteButton.text}
+              </Button>
+            )}
           </div>
         )}
       </h4>
@@ -371,6 +396,24 @@ export default function MessageListing(props: IMessageListingProps) {
             Close
           </Button>
           <Button onClick={resubmitEventWithChangesClick}>Resubmit</Button>
+        </ModalFooter>
+      </Modal>
+
+      <Modal isOpen={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)}>
+        <ModalHeader>Delete Event</ModalHeader>
+        <ModalBody>
+          <p className="text-sm">
+            This will permanently delete the event from Cosmos DB.{" "}
+            <span className="font-semibold text-red-600">This action cannot be undone.</span>
+          </p>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
+            Cancel
+          </Button>
+          <Button colorScheme="red" onClick={deleteEventClick}>
+            Delete
+          </Button>
         </ModalFooter>
       </Modal>
     </div>

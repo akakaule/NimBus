@@ -43,27 +43,27 @@ function formatMs(ms: number | undefined): string {
   return `${Math.round(ms)}ms`;
 }
 
-const metricsAxisDateTime = new Intl.DateTimeFormat("da-DK", {
-  timeZone: "Europe/Copenhagen",
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  hour12: false,
-});
-
 function formatTimestamp(ts: string | undefined, bucketSize: string | undefined): string {
   if (!ts) return "";
-  const date = new Date(ts);
+  // Timestamps are ISO substrings: "2026-03-26" (day), "2026-03-26T13" (hour), "2026-03-26T13:05" (minute)
+  // Pad to parseable ISO if needed
+  let isoStr = ts;
+  if (ts.length === 10) isoStr = ts + "T00:00:00Z";         // day
+  else if (ts.length === 13) isoStr = ts + ":00:00Z";       // hour
+  else if (ts.length === 16) isoStr = ts + ":00Z";          // minute
+  else if (!ts.endsWith("Z")) isoStr = ts + "Z";
+
+  const date = new Date(isoStr);
   if (Number.isNaN(date.getTime())) return ts;
 
-  const parts = metricsAxisDateTime.formatToParts(date);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const hour = String(date.getUTCHours()).padStart(2, "0");
+  const minute = String(date.getUTCMinutes()).padStart(2, "0");
 
-  if (bucketSize === "minute") {
-    return `${values.day}-${values.month} ${values.hour}`;
-  }
-
-  return `${values.day}-${values.month} ${values.hour}`;
+  if (bucketSize === "day") return `${day}-${month}`;
+  if (bucketSize === "minute") return `${day}-${month} ${hour}:${minute}`;
+  return `${day}-${month} ${hour}:00`;
 }
 
 export default function Metrics() {

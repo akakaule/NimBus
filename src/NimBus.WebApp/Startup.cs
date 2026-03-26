@@ -102,7 +102,10 @@ namespace NimBus.WebApp
                 }).AddMicrosoftIdentityUI();
             }
 
-            services.AddControllers().AddJsonOptions(opts =>
+            services.AddControllers(options =>
+            {
+                options.ModelBinderProviders.Insert(0, new EnumMemberModelBinderProvider());
+            }).AddJsonOptions(opts =>
             {
                 opts.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
             });

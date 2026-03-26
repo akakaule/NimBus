@@ -11,6 +11,7 @@ import { formatMoment } from "functions/endpoint.functions";
 import EventFiltering from "./filter/event-filtering";
 import FilterContext, { IFilterContext } from "./filter/filtering-context";
 import TruncatedGuid from "components/common/truncated-guid";
+import ErrorGroupedView from "./error-grouped-view";
 
 interface EventsPanelProps {
   endpointId: string;
@@ -50,6 +51,7 @@ const EventsPanel = (props: EventsPanelProps) => {
   >();
   const [maxResults, setMaxResults] = React.useState<number>(100);
   const hasFetchedRef = React.useRef(false);
+  const [viewMode, setViewMode] = React.useState<"list" | "grouped">("list");
   const [initialStatuses, setInitialStatuses] = React.useState<
     api.ResolutionStatus[]
   >([...DEFAULT_FAILED_STATUSES]);
@@ -437,19 +439,44 @@ const EventsPanel = (props: EventsPanelProps) => {
           maxResults={maxResults}
           onMaxResultsChange={setMaxResults}
         />
-        <DataTable
-          headCells={headCells}
-          headActions={headActions}
-          rows={rows}
-          withCheckboxes={true}
-          noDataMessage="No events available"
-          isLoading={isLoading}
-          count={rows.length}
-          hideDense={true}
-          dataRowsPerPage={20}
-          onPageChange={nextPage}
-          fixedWidth={"-webkit-fill-available"}
-        />
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">View:</span>
+          <button
+            className={`px-3 py-1 rounded-md border text-xs font-medium ${viewMode === "list" ? "bg-primary text-white border-primary" : "bg-card text-foreground border-border"}`}
+            onClick={() => setViewMode("list")}
+          >
+            List
+          </button>
+          <button
+            className={`px-3 py-1 rounded-md border text-xs font-medium ${viewMode === "grouped" ? "bg-primary text-white border-primary" : "bg-card text-foreground border-border"}`}
+            onClick={() => setViewMode("grouped")}
+          >
+            Grouped by Error
+          </button>
+        </div>
+
+        {viewMode === "grouped" ? (
+          <ErrorGroupedView
+            events={events}
+            onResubmitEvent={resubmitSingleEvent}
+            onSkipEvent={skipSingleEvent}
+            isActionableStatus={isActionableStatus}
+          />
+        ) : (
+          <DataTable
+            headCells={headCells}
+            headActions={headActions}
+            rows={rows}
+            withCheckboxes={true}
+            noDataMessage="No events available"
+            isLoading={isLoading}
+            count={rows.length}
+            hideDense={true}
+            dataRowsPerPage={20}
+            onPageChange={nextPage}
+            fixedWidth={"-webkit-fill-available"}
+          />
+        )}
       </div>
     </FilterContext.Provider>
   );

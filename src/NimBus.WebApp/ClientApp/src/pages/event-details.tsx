@@ -4,7 +4,7 @@ import Page from "components/page";
 import HistoryListing from "components/event-details/history-listing";
 import LogListing from "components/event-details/log-listing";
 import MessageListing from "components/event-details/message-listing";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import TabSelection from "components/tab-selection";
 import Loading from "components/loading/loading";
 import AuditListing from "components/event-details/audit-listing";
@@ -29,6 +29,7 @@ type EventDetailsProps = {
 const EventDetails = (props: EventDetailsProps) => {
   const client = new api.Client(api.CookieAuth());
   const params = useParams();
+  const navigate = useNavigate();
 
   const [cosmosEvent, setCosmosEvent] = useState<api.Event>();
   const [eventTypes, setEventTypes] = useState<api.EventType[]>([]);
@@ -129,6 +130,16 @@ const EventDetails = (props: EventDetailsProps) => {
     await reloadEvent();
   };
 
+  const deleteEvent = async () => {
+    if (!cosmosEvent) return;
+    await client.deleteEventInvalidId(
+      cosmosEvent.endpointId!,
+      cosmosEvent.eventId!,
+      cosmosEvent.sessionId!,
+    );
+    navigate(`/Endpoints/Details/${params.endpointId!}`);
+  };
+
   const resubmitEventWithChanges = async (
     eventId: string,
     messageId: string,
@@ -154,6 +165,7 @@ const EventDetails = (props: EventDetailsProps) => {
             resubmitEventWithChanges={resubmitEventWithChanges}
             resubmitEvent={resubmitEvent}
             skipEvent={skipEvent}
+            deleteEvent={deleteEvent}
             eventTypes={eventTypes}
             eventDetails={cosmosEvent}
             key="Message"

@@ -49,7 +49,7 @@ export default function BulkOperations() {
   );
 }
 
-function BulkResubmitCard({ endpoints }: { endpoints: EndpointOption[] }) {
+export function BulkResubmitCard({ endpoints }: { endpoints: EndpointOption[] }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [preview, setPreview] = useState<api.BulkResubmitPreview | null>(null);
   const [loading, setLoading] = useState(false);
@@ -174,7 +174,7 @@ function BulkResubmitCard({ endpoints }: { endpoints: EndpointOption[] }) {
   );
 }
 
-function DeleteDeadLetteredCard({
+export function DeleteDeadLetteredCard({
   endpoints,
 }: {
   endpoints: EndpointOption[];
@@ -298,7 +298,7 @@ function DeleteDeadLetteredCard({
   );
 }
 
-function DeleteEventCard({ endpoints }: { endpoints: EndpointOption[] }) {
+export function DeleteEventCard({ endpoints }: { endpoints: EndpointOption[] }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [eventId, setEventId] = useState("");
   const [deleting, setDeleting] = useState(false);

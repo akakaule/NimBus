@@ -52,7 +52,7 @@ export default function AdvancedOperations() {
 
 // ──────────────────── Subscription Purge ────────────────────────
 
-function SubscriptionPurgeCard({ endpoints }: { endpoints: EndpointOption[] }) {
+export function SubscriptionPurgeCard({ endpoints }: { endpoints: EndpointOption[] }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [subscription, setSubscription] = useState("");
   const [purgeActive, setPurgeActive] = useState(true);
@@ -160,7 +160,7 @@ function SubscriptionPurgeCard({ endpoints }: { endpoints: EndpointOption[] }) {
 
 const ALL_STATUSES = ["Failed", "Deferred", "DeadLettered", "Unsupported", "Pending"];
 
-function DeleteByStatusCard({ endpoints }: { endpoints: EndpointOption[] }) {
+export function DeleteByStatusCard({ endpoints }: { endpoints: EndpointOption[] }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<Set<string>>(new Set());
   const [previewCount, setPreviewCount] = useState<number | null>(null);
@@ -254,7 +254,7 @@ function DeleteByStatusCard({ endpoints }: { endpoints: EndpointOption[] }) {
 
 const SKIPPABLE_STATUSES = ["Failed", "Deferred", "DeadLettered", "Unsupported", "Pending"];
 
-function SkipMessagesCard({ endpoints }: { endpoints: EndpointOption[] }) {
+export function SkipMessagesCard({ endpoints }: { endpoints: EndpointOption[] }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<Set<string>>(new Set());
   const [before, setBefore] = useState("");
@@ -354,7 +354,7 @@ function SkipMessagesCard({ endpoints }: { endpoints: EndpointOption[] }) {
 
 // ──────────────────── Delete Messages by To ────────────────────────
 
-function DeleteMessagesByToCard() {
+export function DeleteMessagesByToCard() {
   const [toField, setToField] = useState("");
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -430,7 +430,7 @@ function DeleteMessagesByToCard() {
 
 // ──────────────────── Copy Endpoint Data ────────────────────────
 
-function CopyEndpointCard({ endpoints }: { endpoints: EndpointOption[] }) {
+export function CopyEndpointCard({ endpoints }: { endpoints: EndpointOption[] }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [targetConnStr, setTargetConnStr] = useState("");
   const [from, setFrom] = useState("");

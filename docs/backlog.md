@@ -7,6 +7,7 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 | Status | Meaning |
 |---|---|
 | Completed | Implemented and merged |
+| In Progress | Partially implemented |
 | Not Started | Planned, not yet in progress |
 
 ## P0 -- Critical
@@ -24,6 +25,8 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 | [OpenTelemetry Tracing](#opentelemetry-tracing) | 2 | Completed | `Activity`-based distributed tracing across publish/subscribe/Resolver |
 | [In-Memory Transport](#in-memory-transport) | 2 | Completed | Test transport for running the full pipeline without Azure Service Bus |
 | [Health Checks](#health-checks) | 2 | Completed | `IHealthCheck` implementations for Service Bus, Cosmos, Resolver lag |
+| [Aspire Integration](#aspire-integration) | -- | Completed | Aspire AppHost with topology provisioning, hosted receiver, and full platform sample |
+| [E2E Test Suite](#e2e-test-suite) | -- | Completed | 14+ end-to-end tests covering retry, resubmission, metadata, and lifecycle |
 
 ## P2 -- Medium
 
@@ -37,17 +40,18 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 
 | Item | Phase | Status | Description |
 |---|---|---|---|
-| [WebApp Enhancements](#webapp-enhancements) | 4 | Not Started | Flow visualization, dashboard metrics, bulk ops, alerting |
+| [WebApp Enhancements](#webapp-enhancements) | 4 | In Progress | Metrics dashboard, audit log search, and bulk operations done; flow viz and alerting remaining |
+| [CLI Operational Commands](#cli-operational-commands) | -- | In Progress | Endpoint/container management, session purge, resubmit/skip via `nb` CLI |
 | [Source Generators](#source-generators) | 4 | Not Started | Compile-time event type discovery replacing reflection |
 | [Saga Implementation](#saga-implementation) | 4 | Not Started | Full saga persistence, timeouts, compensation, WebApp visualization |
-| [Documentation & Onboarding](#documentation--onboarding) | 4 | Not Started | Getting started guide, API reference, ADRs, samples |
+| [Documentation & Onboarding](#documentation--onboarding) | 4 | In Progress | Aspire samples and CI/CD docs done; getting started guide, API reference, ADRs remaining |
 
 ## P4 -- Future
 
 | Item | Phase | Status | Description |
 |---|---|---|---|
 | [Transport Abstraction](#transport-abstraction) | 4 | Not Started | Evaluate `ITransport` interface for multi-transport support |
-| [NuGet Packages](#nuget-packages) | 5 | Not Started | Publishable NuGet packages with semantic versioning |
+| [NuGet Packages](#nuget-packages) | 5 | Completed | NuGet packaging with SourceLink, GitHub Actions publish workflow, MIT license |
 | [Multi-Tenant Support](#multi-tenant-support) | 5 | Not Started | Tenant-isolated topics, subscriptions, and routing |
 | [Event Sourcing](#event-sourcing) | 5 | Not Started | Optional Marten/custom event store integration |
 
@@ -164,12 +168,14 @@ Design-only phase. Research state machine DSL (inspired by MassTransit Automaton
 
 ### WebApp Enhancements
 
-**Priority:** P3 | **Phase:** 4 | **Status:** Not Started
+**Priority:** P3 | **Phase:** 4 | **Status:** In Progress
 
-- Message flow visualization (trace a message through its full lifecycle)
-- Dashboard metrics (throughput, latency percentiles, error rates per endpoint)
-- Bulk operations (resubmit/skip multiple failed messages)
-- Alerting (webhook/email for failures, dead-letters, session blocks)
+- [x] Dashboard metrics: time-series area chart with gap-filling, KPI summary cards, event-type-level breakdown (`/api/metrics/timeseries`, `/api/metrics/failed-insights`)
+- [x] Failed message insights: error pattern grouping and Insights page
+- [x] Audit log search: filterable audit search API and UI (`AuditImplementation` controller, `audit-filter-bar` component)
+- [ ] Message flow visualization (trace a message through its full lifecycle)
+- [x] Bulk operations: subscription purge (by state/date), delete by status, skip messages, delete by destination, copy endpoint data -- all with preview/confirm UI (`advanced-operations.tsx`, `AdminImplementation`, `AdminService`)
+- [ ] Alerting (webhook/email for failures, dead-letters, session blocks)
 
 ### Source Generators
 
@@ -185,9 +191,15 @@ Based on Phase 3 design: saga persistence in Cosmos DB, timeout scheduling, comp
 
 ### Documentation & Onboarding
 
-**Priority:** P3 | **Phase:** 4 | **Status:** Not Started
+**Priority:** P3 | **Phase:** 4 | **Status:** In Progress
 
-Getting started guide, SDK API reference, architecture decision records (ADRs), sample applications (e-commerce, IoT), migration guide from MassTransit/NServiceBus.
+- [x] Sample applications: Aspire Pub/Sub sample with full NimBus platform topology (Publisher → StorefrontEndpoint → AspireSampleEndpoint)
+- [x] CI/CD documentation: GitHub Actions and Azure DevOps deploy pipelines using `nb` CLI
+- [x] README updates: local development (Aspire) and CI/CD setup instructions
+- [ ] Getting started guide
+- [ ] SDK API reference
+- [ ] Architecture decision records (ADRs)
+- [ ] Migration guide from MassTransit/NServiceBus
 
 ### Transport Abstraction
 
@@ -197,9 +209,14 @@ Evaluate `ITransport` interface for multi-transport support. Recommendation: sta
 
 ### NuGet Packages
 
-**Priority:** P4 | **Phase:** 5 | **Status:** Not Started
+**Priority:** P4 | **Phase:** 5 | **Status:** Completed
 
-Split SDK into publishable NuGet packages with semantic versioning and public API surface review.
+NuGet packaging with SourceLink, GitHub Actions publish workflow (`nuget-publish.yml`), and MIT license. Five consumer-facing projects marked as packable: Abstractions, Core, ServiceBus, SDK, CommandLine. Package metadata configured in `Directory.Build.props`.
+
+Code paths:
+- `Directory.Build.props` (NuGet metadata and SourceLink config)
+- `.github/workflows/nuget-publish.yml` (publish workflow)
+- `LICENSE` (MIT)
 
 ### Multi-Tenant Support
 
@@ -212,3 +229,46 @@ Tenant-isolated topics/subscriptions with per-tenant configuration and routing.
 **Priority:** P4 | **Phase:** 5 | **Status:** Not Started
 
 Optional integration with Marten or a custom event store. Separate `NimBus.EventSourcing` package. Only pursue if there's a concrete use case.
+
+### Aspire Integration
+
+**Priority:** P1 | **Phase:** -- | **Status:** Completed
+
+.NET Aspire AppHost integration with automatic Service Bus topology provisioning, hosted session processor support, and a full platform sample demonstrating the complete message flow.
+
+- `NimBusReceiverHostedService` for hosting session processors in Aspire
+- `ServiceBusTopologyProvisioner` made public with connection-string constructor
+- Provisioner console app for standalone topology provisioning
+- ResolverWorker hosting ResolverService
+- AppHost wiring: Publisher → StorefrontEndpoint → AspireSampleEndpoint
+
+Code paths:
+- `samples/NimBus.Aspire/`
+- `src/NimBus.ServiceBus/Hosting/NimBusReceiverHostedService.cs`
+- `src/NimBus.ServiceBus/Provisioning/ServiceBusTopologyProvisioner.cs`
+
+### E2E Test Suite
+
+**Priority:** P1 | **Phase:** -- | **Status:** Completed
+
+14+ end-to-end tests covering retry backoff strategies (linear, exponential, max delay cap), exception-based retry rules, retry count propagation, resubmission flow, session FIFO ordering, dead-letter lifecycle observer, pipeline behavior error handling, heartbeat messages, response metadata integrity, and batch edge cases.
+
+Code paths:
+- `test/NimBus.Tests.E2E/`
+
+### CLI Operational Commands
+
+**Priority:** P3 | **Phase:** -- | **Status:** In Progress
+
+Expansion of the `nb` CLI with operational management commands using Spectre.Console for rich terminal output.
+
+- Endpoint management: delete sessions, purge subscriptions (with state/date filters), remove deprecated subscriptions/rules, topic/subscription/rule tree visualization
+- Container operations: delete documents, resubmit/skip messages, purge by destination, copy data between Cosmos DB instances
+- Enhanced CLI UX: colored help text generator, progress spinners, global connection string options (`-sbc`, `-dbc`)
+
+Code paths:
+- `src/NimBus.CommandLine/Endpoint.cs`
+- `src/NimBus.CommandLine/Container.cs`
+- `src/NimBus.CommandLine/CommandRunner.cs`
+- `src/NimBus.CommandLine/ColoredHelpTextGenerator.cs`
+- `src/NimBus.CommandLine/Models/`

@@ -10,10 +10,10 @@ NimBus is a mature, Azure-native event-driven integration platform with strong d
 | **Audit trail** | Centralized Resolver + Cosmos projections | Only NServiceBus (ServiceControl) has comparable |
 | **Ops UI** | WebApp with resubmit/skip | Only NServiceBus (ServicePulse) and CAP (dashboard) |
 | **Reliability** | Transactional outbox (Phase 1) | All mature frameworks have transactional outbox |
-| **Observability** | Metrics only, no distributed tracing | All competitors have OpenTelemetry Activity tracing |
-| **DX** | DI integration (Phase 1) | All competitors integrate with MS DI natively |
+| **Observability** | OpenTelemetry tracing + metrics dashboard (Phase 2) | All competitors have OpenTelemetry Activity tracing |
+| **DX** | DI integration + Aspire sample + NuGet packages | All competitors integrate with MS DI natively |
 | **Extensibility** | Extension framework, no middleware pipeline | NServiceBus (behaviors), MassTransit (filters), Brighter (decorators) |
-| **Testing** | Requires real Service Bus | MassTransit, Wolverine, Rebus have in-memory transports |
+| **Testing** | In-memory transport + 14+ E2E tests (Phase 2) | MassTransit, Wolverine, Rebus have in-memory transports |
 | **Workflows** | Continuation pattern (limited) | NServiceBus, MassTransit, Wolverine have full saga/state machines |
 | **Transport** | Azure Service Bus only | Most support RabbitMQ, Kafka, SQL, in-memory |
 
@@ -151,15 +151,17 @@ Design-only in this phase:
 
 ---
 
-### Phase 4: Platform Maturity (H1 2027)
+### Phase 4: Platform Maturity (H1 2027) -- In Progress
 
 Goal: Production hardening, developer experience polish, and ecosystem growth.
 
-**4.1 WebApp Enhancements**
+**4.1 WebApp Enhancements** -- In Progress
 
+- ~~Dashboard metrics: time-series area chart with gap-filling, KPI summary cards, event-type-level breakdown~~
+- ~~Failed message insights: error pattern grouping and Insights page~~
+- ~~Audit log search: filterable audit search API and UI~~
+- ~~Bulk operations: subscription purge, delete by status, skip messages, delete by destination, copy endpoint data -- all with preview/confirm UI and EIP_Management authorization~~
 - Message flow visualization: trace a message through its full lifecycle
-- Dashboard metrics: throughput, latency percentiles, error rates per endpoint
-- Bulk operations: resubmit/skip multiple failed messages at once
 - Alerting: webhook/email notifications for failed messages, dead-letters, or session blocks
 
 **4.2 SDK Developer Experience**
@@ -183,24 +185,29 @@ Evaluate whether transport abstraction is worth the complexity:
 - Minimal abstraction: keep Azure Service Bus as primary, add in-memory for testing only (Phase 2.2)
 - Recommendation: start with in-memory for testing, only abstract further if there's concrete demand
 
-**4.5 Documentation & Onboarding**
+**4.5 Documentation & Onboarding** -- In Progress
 
+- ~~Sample applications: Aspire Pub/Sub sample with full platform topology~~
+- ~~CI/CD documentation: GitHub Actions and Azure DevOps deploy pipelines~~
+- ~~README: local development (Aspire) and CI/CD setup instructions~~
 - Getting started guide
 - SDK API reference
 - Architecture decision records (ADRs)
-- Sample applications (e-commerce, IoT)
 - Migration guide from MassTransit/NServiceBus
 
 ---
 
-### Phase 5: Ecosystem & Scale (H2 2027+)
+### Phase 5: Ecosystem & Scale (H2 2027+) -- In Progress
 
 Goal: If NimBus is to be open-sourced or adopted beyond its current org.
 
-**5.1 NuGet Package Publishing**
+**5.1 NuGet Package Publishing** -- Implemented
 
-- Split SDK into publishable NuGet packages
-- Semantic versioning
+- ~~NuGet package metadata in `Directory.Build.props`~~
+- ~~SourceLink configuration for source debugging~~
+- ~~GitHub Actions publish workflow (`nuget-publish.yml`)~~
+- ~~MIT license~~
+- ~~Five packable projects: Abstractions, Core, ServiceBus, SDK, CommandLine~~
 - Public API surface review and stability guarantees
 
 **5.2 Multi-Tenant Support**
@@ -215,22 +222,27 @@ Goal: If NimBus is to be open-sourced or adopted beyond its current org.
 
 ## Priority Matrix
 
-| Item | Impact | Effort | Priority | Phase |
-|---|---|---|---|---|
-| Transactional outbox | Critical reliability | Large | **P0** | 1 |
-| DI integration | High DX | Medium | **P0** | 1 |
-| Configurable retry policies | Medium DX | Small | **P1** | 1 |
-| OpenTelemetry tracing | High observability | Medium | **P1** | 2 |
-| In-memory transport | High testing DX | Medium | **P1** | 2 |
-| Health checks | Medium ops | Small | **P1** | 2 |
-| Middleware pipeline | High extensibility | Medium | **P2** | 3 |
-| Inbox pattern | Medium reliability | Medium | **P2** | 3 |
-| Saga design | High capability | Large | **P2** | 3 |
-| WebApp enhancements | Medium ops | Large | **P3** | 4 |
-| Source generators | Medium DX | Medium | **P3** | 4 |
-| Saga implementation | High capability | Very large | **P3** | 4 |
-| Transport abstraction | Low-Medium | Very large | **P4** | 4 |
-| Multi-tenant | Low | Large | **P4** | 5 |
+| Item | Impact | Effort | Priority | Phase | Status |
+|---|---|---|---|---|---|
+| Transactional outbox | Critical reliability | Large | **P0** | 1 | Completed |
+| DI integration | High DX | Medium | **P0** | 1 | Completed |
+| Configurable retry policies | Medium DX | Small | **P1** | 1 | Completed |
+| OpenTelemetry tracing | High observability | Medium | **P1** | 2 | Completed |
+| In-memory transport | High testing DX | Medium | **P1** | 2 | Completed |
+| Health checks | Medium ops | Small | **P1** | 2 | Completed |
+| Aspire integration | High DX | Medium | **P1** | -- | Completed |
+| E2E test suite | High quality | Medium | **P1** | -- | Completed |
+| NuGet packages | Medium ecosystem | Small | **P4→P1** | 5 | Completed |
+| Middleware pipeline | High extensibility | Medium | **P2** | 3 | Not Started |
+| Inbox pattern | Medium reliability | Medium | **P2** | 3 | Not Started |
+| Saga design | High capability | Large | **P2** | 3 | Not Started |
+| WebApp enhancements | Medium ops | Large | **P3** | 4 | In Progress |
+| CLI operational commands | Medium ops | Medium | **P3** | -- | In Progress |
+| Documentation & onboarding | Medium DX | Medium | **P3** | 4 | In Progress |
+| Source generators | Medium DX | Medium | **P3** | 4 | Not Started |
+| Saga implementation | High capability | Very large | **P3** | 4 | Not Started |
+| Transport abstraction | Low-Medium | Very large | **P4** | 4 | Not Started |
+| Multi-tenant | Low | Large | **P4** | 5 | Not Started |
 
 ## What NOT to Do
 

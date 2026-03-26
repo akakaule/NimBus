@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
+using NimBus.Core;
+using NimBus.Core.Endpoints;
 using NimBus.Core.Messages;
 using NimBus.MessageStore;
 using NimBus.MessageStore.States;
@@ -19,24 +22,28 @@ public class SeedDataService
 {
     private readonly ICosmosDbClient _cosmosClient;
     private readonly ServiceBusClient _sbClient;
-    private static readonly string[] SeedEndpoints = ["nav-publisher", "crm-subscriber", "sm-adapter"];
+    private readonly IPlatform _platform;
 
-    public SeedDataService(ICosmosDbClient cosmosClient, ServiceBusClient sbClient)
+    public SeedDataService(ICosmosDbClient cosmosClient, ServiceBusClient sbClient, IPlatform platform)
     {
         _cosmosClient = cosmosClient;
         _sbClient = sbClient;
+        _platform = platform;
     }
+
+    private IEnumerable<IEndpoint> PlatformEndpoints =>
+        _platform.Endpoints.Where(ep => ep.Id != "AspireSampleEndpoint");
 
     public async Task<SeedResult> SeedAsync()
     {
         var result = new SeedResult();
 
         // Create endpoint metadata
-        foreach (var endpointId in SeedEndpoints)
+        foreach (var endpoint in PlatformEndpoints)
         {
             await _cosmosClient.SetEndpointMetadata(new EndpointMetadata
             {
-                EndpointId = endpointId,
+                EndpointId = endpoint.Id,
                 EndpointOwner = "EET Integration Team",
                 EndpointOwnerTeam = "Platform",
                 EndpointOwnerEmail = "integration@eet.dk",
@@ -46,10 +53,10 @@ public class SeedDataService
             result.EndpointsCreated++;
         }
 
-        // Seed events for each endpoint
-        foreach (var endpointId in SeedEndpoints)
+        // Seed events + linked messages for each endpoint
+        foreach (var endpoint in PlatformEndpoints)
         {
-            await SeedEndpointEvents(endpointId, result);
+            await SeedEndpointEvents(endpoint, result);
         }
 
         // Seed metrics messages (shared messages container)
@@ -62,69 +69,176 @@ public class SeedDataService
         return result;
     }
 
-    private async Task SeedEndpointEvents(string endpointId, SeedResult result)
+    private const int PendingCount = 4;
+    private const int FailedCount = 5;
+    private const int DeferredCount = 2;
+    private const int DeadLetteredCount = 2;
+    private const double SeedWindowHours = 72.0; // 3 days
+
+    private async Task SeedEndpointEvents(IEndpoint endpoint, SeedResult result)
     {
-        var baseTime = DateTime.UtcNow;
+        var endpointId = endpoint.Id;
+        var now = DateTime.UtcNow;
         var sessionId = $"session-{endpointId}-001";
 
-        // Pending events
-        for (int i = 0; i < 2; i++)
-        {
-            var eventId = $"seed-pending-{endpointId}-{i}";
-            var evt = CreateUnresolvedEvent(eventId, sessionId, endpointId,
-                ResolutionStatus.Pending, "CustomerChanged", baseTime.AddMinutes(-30 + i));
-            await _cosmosClient.UploadPendingMessage(eventId, sessionId, endpointId, evt);
-            result.EventsCreated++;
-        }
+        // Pick event types: prefer consumed (subscriber scenarios), fall back to produced
+        var eventTypes = endpoint.EventTypesConsumed.Any()
+            ? endpoint.EventTypesConsumed.Select(e => e.Id).ToList()
+            : endpoint.EventTypesProduced.Select(e => e.Id).ToList();
 
-        // Failed events
-        for (int i = 0; i < 2; i++)
+        if (eventTypes.Count == 0) return;
+
+        // Pending events - spread across last 3 days
+        for (int i = 0; i < PendingCount; i++)
         {
-            var eventId = $"seed-failed-{endpointId}-{i}";
-            var evt = CreateUnresolvedEvent(eventId, sessionId, endpointId,
-                ResolutionStatus.Failed, "OrderCreated", baseTime.AddMinutes(-60 + i));
-            evt.RetryCount = 3;
-            evt.RetryLimit = 5;
-            evt.MessageContent = new MessageContent
+            var eventTypeId = eventTypes[i % eventTypes.Count];
+            var hoursAgo = SeedWindowHours / PendingCount * i;
+            var timestamp = now.AddHours(-hoursAgo);
+            var eventId = $"seed-pending-{endpointId}-{i}";
+            var messageId = $"seed-msg-pending-{endpointId}-{i}";
+            var content = new MessageContent
             {
-                ErrorContent = new ErrorContent
+                EventContent = new EventContent
                 {
-                    ErrorText = "Connection timeout to downstream system",
-                    ErrorType = "TransientException"
+                    EventTypeId = eventTypeId,
+                    EventJson = GenerateSamplePayload(eventTypeId, eventId)
                 }
             };
+
+            var evt = CreateUnresolvedEvent(eventId, sessionId, endpointId,
+                ResolutionStatus.Pending, eventTypeId, timestamp);
+            evt.MessageContent = content;
+            await _cosmosClient.UploadPendingMessage(eventId, sessionId, endpointId, evt);
+
+            // Store linked message so Messages page can navigate to this event
+            await _cosmosClient.StoreMessage(CreateMessageEntity(
+                eventId, messageId, endpointId, EndpointRole.Subscriber,
+                MessageType.EventRequest, eventTypeId, timestamp, sessionId, content));
+
+            result.EventsCreated++;
+            result.MessagesCreated++;
+        }
+
+        // Failed events - spread across last 3 days
+        for (int i = 0; i < FailedCount; i++)
+        {
+            var eventTypeId = eventTypes[i % eventTypes.Count];
+            var hoursAgo = SeedWindowHours / FailedCount * i + 2; // offset by 2h from pending
+            var timestamp = now.AddHours(-hoursAgo);
+            var eventId = $"seed-failed-{endpointId}-{i}";
+            var messageId = $"seed-msg-failed-{endpointId}-{i}";
+            var (errorText, errorType, stackTrace) = FailureScenarios[i % FailureScenarios.Length];
+            var content = new MessageContent
+            {
+                EventContent = new EventContent
+                {
+                    EventTypeId = eventTypeId,
+                    EventJson = GenerateSamplePayload(eventTypeId, eventId)
+                },
+                ErrorContent = new ErrorContent
+                {
+                    ErrorText = errorText,
+                    ErrorType = errorType,
+                    ExceptionStackTrace = stackTrace
+                }
+            };
+
+            var evt = CreateUnresolvedEvent(eventId, sessionId, endpointId,
+                ResolutionStatus.Failed, eventTypeId, timestamp);
+            evt.RetryCount = 3 + i;
+            evt.RetryLimit = 5 + i;
+            evt.MessageContent = content;
             await _cosmosClient.UploadFailedMessage(eventId, sessionId, endpointId, evt);
+
+            // Store linked ErrorResponse message — feeds Failed Message Insights
+            await _cosmosClient.StoreMessage(CreateMessageEntity(
+                eventId, messageId, endpointId, EndpointRole.Subscriber,
+                MessageType.ErrorResponse, eventTypeId, timestamp, sessionId, content));
+
             result.EventsCreated++;
+            result.MessagesCreated++;
         }
 
-        // Deferred event
+        // Deferred events - spread across last 3 days
+        for (int i = 0; i < DeferredCount; i++)
         {
-            var eventId = $"seed-deferred-{endpointId}-0";
+            var eventTypeId = eventTypes[i % eventTypes.Count];
+            var hoursAgo = SeedWindowHours / DeferredCount * i + 5; // offset by 5h
+            var timestamp = now.AddHours(-hoursAgo);
+            var eventId = $"seed-deferred-{endpointId}-{i}";
+            var messageId = $"seed-msg-deferred-{endpointId}-{i}";
+            var content = new MessageContent
+            {
+                EventContent = new EventContent
+                {
+                    EventTypeId = eventTypeId,
+                    EventJson = GenerateSamplePayload(eventTypeId, eventId)
+                }
+            };
+
             var evt = CreateUnresolvedEvent(eventId, sessionId, endpointId,
-                ResolutionStatus.Deferred, "CustomerChanged", baseTime.AddMinutes(-15));
+                ResolutionStatus.Deferred, eventTypeId, timestamp);
             evt.Reason = $"Blocked by seed-pending-{endpointId}-0";
+            evt.MessageContent = content;
             await _cosmosClient.UploadDeferredMessage(eventId, sessionId, endpointId, evt);
+
+            await _cosmosClient.StoreMessage(CreateMessageEntity(
+                eventId, messageId, endpointId, EndpointRole.Subscriber,
+                MessageType.EventRequest, eventTypeId, timestamp, sessionId, content));
+
             result.EventsCreated++;
+            result.MessagesCreated++;
         }
 
-        // DeadLettered event
+        // DeadLettered events - spread across last 3 days
+        for (int i = 0; i < DeadLetteredCount; i++)
         {
-            var eventId = $"seed-deadletter-{endpointId}-0";
+            var eventTypeId = eventTypes[i % eventTypes.Count];
+            var hoursAgo = SeedWindowHours / DeadLetteredCount * i + 10; // offset by 10h
+            var timestamp = now.AddHours(-hoursAgo);
+            var eventId = $"seed-deadletter-{endpointId}-{i}";
+            var messageId = $"seed-msg-deadletter-{endpointId}-{i}";
+            var (errorText, errorType, stackTrace) = FailureScenarios[i % FailureScenarios.Length];
+            var content = new MessageContent
+            {
+                EventContent = new EventContent
+                {
+                    EventTypeId = eventTypeId,
+                    EventJson = GenerateSamplePayload(eventTypeId, eventId)
+                },
+                ErrorContent = new ErrorContent
+                {
+                    ErrorText = errorText,
+                    ErrorType = errorType,
+                    ExceptionStackTrace = stackTrace
+                }
+            };
+
             var evt = CreateUnresolvedEvent(eventId, sessionId, endpointId,
-                ResolutionStatus.DeadLettered, "OrderCreated", baseTime.AddHours(-2));
+                ResolutionStatus.DeadLettered, eventTypeId, timestamp);
             evt.RetryCount = 10;
             evt.RetryLimit = 10;
             evt.DeadLetterReason = "MaxDeliveryCountExceeded";
             evt.DeadLetterErrorDescription = "Max delivery count of 10 exceeded";
+            evt.MessageContent = content;
             await _cosmosClient.UploadDeadletteredMessage(eventId, sessionId, endpointId, evt);
+
+            await _cosmosClient.StoreMessage(CreateMessageEntity(
+                eventId, messageId, endpointId, EndpointRole.Subscriber,
+                MessageType.ErrorResponse, eventTypeId, timestamp, sessionId, content));
+
             result.EventsCreated++;
+            result.MessagesCreated++;
         }
     }
 
     private async Task SeedSubscriptions()
     {
+        var endpoints = PlatformEndpoints.ToList();
+        if (endpoints.Count == 0) return;
+
         await _cosmosClient.SubscribeToEndpointNotification(
-            endpointId: "nav-publisher",
+            endpointId: endpoints[0].Id,
             mail: "alerts@eet.dk",
             type: "mail",
             author: "seed-user",
@@ -133,92 +247,143 @@ public class SeedDataService
             payload: "",
             frequency: 0);
 
-        await _cosmosClient.SubscribeToEndpointNotification(
-            endpointId: "crm-subscriber",
-            mail: "alerts@eet.dk",
-            type: "teams",
-            author: "seed-user",
-            url: "https://teams.webhook.example.com/dis-alerts",
-            eventTypes: new List<string>(),
-            payload: "",
-            frequency: 0);
+        if (endpoints.Count > 1)
+        {
+            await _cosmosClient.SubscribeToEndpointNotification(
+                endpointId: endpoints[1].Id,
+                mail: "alerts@eet.dk",
+                type: "teams",
+                author: "seed-user",
+                url: "https://teams.webhook.example.com/dis-alerts",
+                eventTypes: new List<string>(),
+                payload: "",
+                frequency: 0);
+        }
     }
 
-    private static readonly (string EndpointId, EndpointRole Role, MessageType MsgType, string EventTypeId, int Count)[] MetricsMessageSpecs =
-    [
-        ("nav-publisher", EndpointRole.Publisher, MessageType.EventRequest, "CustomerChanged", 15),
-        ("nav-publisher", EndpointRole.Publisher, MessageType.EventRequest, "OrderCreated", 10),
-        ("crm-subscriber", EndpointRole.Subscriber, MessageType.ResolutionResponse, "CustomerChanged", 12),
-        ("crm-subscriber", EndpointRole.Subscriber, MessageType.ResolutionResponse, "OrderCreated", 8),
-        ("sm-adapter", EndpointRole.Subscriber, MessageType.ResolutionResponse, "CustomerChanged", 6),
-        ("nav-publisher", EndpointRole.Publisher, MessageType.ErrorResponse, "OrderCreated", 4),
-        ("crm-subscriber", EndpointRole.Subscriber, MessageType.ErrorResponse, "CustomerChanged", 3),
-    ];
+    private List<(string EndpointId, EndpointRole Role, MessageType MsgType, string EventTypeId, int Count)> BuildMetricsSpecs()
+    {
+        var specs = new List<(string EndpointId, EndpointRole Role, MessageType MsgType, string EventTypeId, int Count)>();
+        var random = new Random(42); // fixed seed for deterministic counts (required for cleanup)
 
-    private static int TotalMetricsMessages => 58; // sum of counts above
+        foreach (var endpoint in PlatformEndpoints)
+        {
+            foreach (var eventType in endpoint.EventTypesProduced)
+            {
+                specs.Add((endpoint.Id, EndpointRole.Publisher, MessageType.EventRequest, eventType.Id, random.Next(8, 20)));
+                specs.Add((endpoint.Id, EndpointRole.Publisher, MessageType.ErrorResponse, eventType.Id, random.Next(1, 5)));
+            }
+
+            foreach (var eventType in endpoint.EventTypesConsumed)
+            {
+                specs.Add((endpoint.Id, EndpointRole.Subscriber, MessageType.ResolutionResponse, eventType.Id, random.Next(6, 15)));
+                specs.Add((endpoint.Id, EndpointRole.Subscriber, MessageType.ErrorResponse, eventType.Id, random.Next(1, 4)));
+            }
+        }
+
+        return specs;
+    }
 
     private async Task SeedMetricsMessages(SeedResult result)
     {
         var now = DateTime.UtcNow;
-        var index = 0;
+        var specs = BuildMetricsSpecs();
 
-        foreach (var (endpointId, role, msgType, eventTypeId, count) in MetricsMessageSpecs)
+        // Flatten all messages so we can distribute timestamps evenly across the full window
+        var allMessages = new List<(string EndpointId, EndpointRole Role, MessageType MsgType, string EventTypeId)>();
+        foreach (var (endpointId, role, msgType, eventTypeId, count) in specs)
         {
             for (int i = 0; i < count; i++)
+                allMessages.Add((endpointId, role, msgType, eventTypeId));
+        }
+
+        var total = allMessages.Count;
+        for (int index = 0; index < total; index++)
+        {
+            var (endpointId, role, msgType, eventTypeId) = allMessages[index];
+            var hoursAgo = SeedWindowHours / total * index; // spread evenly across 72 hours
+            var timestamp = now.AddHours(-hoursAgo);
+            var eventId = $"seed-metrics-{index}";
+            var messageId = $"seed-metrics-msg-{index}";
+
+            // Build MessageContent so Event Type displays and Insights can read ErrorContent
+            MessageContent content;
+            if (msgType == MessageType.ErrorResponse)
             {
-                var hoursAgo = (20.0 / count) * i; // spread evenly across 20 hours (within 1d dashboard view)
-                var timestamp = now.AddHours(-hoursAgo);
-                var eventId = $"seed-metrics-{index}";
-                var messageId = $"seed-metrics-msg-{index}";
-
-                await _cosmosClient.StoreMessage(new MessageEntity
+                var (errorText, errorType, stackTrace) = FailureScenarios[index % FailureScenarios.Length];
+                content = new MessageContent
                 {
-                    EventId = eventId,
-                    MessageId = messageId,
-                    EndpointId = endpointId,
-                    EndpointRole = role,
-                    MessageType = msgType,
-                    EventTypeId = eventTypeId,
-                    EnqueuedTimeUtc = timestamp,
-                    From = endpointId,
-                    To = role == EndpointRole.Publisher ? "service-bus" : endpointId,
-                    SessionId = $"session-{endpointId}-metrics",
-                    CorrelationId = Guid.NewGuid().ToString(),
-                    OriginatingMessageId = $"orig-{eventId}",
-                });
-
-                index++;
-                result.MessagesCreated++;
+                    EventContent = new EventContent { EventTypeId = eventTypeId },
+                    ErrorContent = new ErrorContent
+                    {
+                        ErrorText = errorText,
+                        ErrorType = errorType,
+                        ExceptionStackTrace = stackTrace
+                    }
+                };
             }
+            else
+            {
+                content = new MessageContent
+                {
+                    EventContent = new EventContent
+                    {
+                        EventTypeId = eventTypeId,
+                        EventJson = GenerateSamplePayload(eventTypeId, eventId)
+                    }
+                };
+            }
+
+            await _cosmosClient.StoreMessage(new MessageEntity
+            {
+                EventId = eventId,
+                MessageId = messageId,
+                EndpointId = endpointId,
+                EndpointRole = role,
+                MessageType = msgType,
+                EventTypeId = eventTypeId,
+                EnqueuedTimeUtc = timestamp,
+                From = endpointId,
+                To = role == EndpointRole.Publisher ? "service-bus" : endpointId,
+                SessionId = $"session-{endpointId}-metrics",
+                CorrelationId = Guid.NewGuid().ToString(),
+                OriginatingMessageId = $"orig-{eventId}",
+                MessageContent = content,
+            });
+
+            result.MessagesCreated++;
         }
     }
 
     public async Task ClearSeedDataAsync()
     {
-        // Clean up per-endpoint events
-        foreach (var endpointId in SeedEndpoints)
+        // Clean up per-endpoint events + their linked messages
+        var prefixCounts = new (string Prefix, string MsgPrefix, int Count)[]
         {
+            ("seed-pending-", "seed-msg-pending-", PendingCount),
+            ("seed-failed-", "seed-msg-failed-", FailedCount),
+            ("seed-deferred-", "seed-msg-deferred-", DeferredCount),
+            ("seed-deadletter-", "seed-msg-deadletter-", DeadLetteredCount),
+        };
+        foreach (var endpoint in PlatformEndpoints)
+        {
+            var endpointId = endpoint.Id;
             var sessionId = $"session-{endpointId}-001";
-            var prefixes = new[] { "seed-pending-", "seed-failed-", "seed-deferred-", "seed-deadletter-" };
-            foreach (var prefix in prefixes)
+            foreach (var (prefix, msgPrefix, count) in prefixCounts)
             {
-                for (int i = 0; i < 3; i++)
+                for (int i = 0; i < count; i++)
                 {
                     var eventId = $"{prefix}{endpointId}-{i}";
-                    try
-                    {
-                        await _cosmosClient.RemoveMessage(eventId, sessionId, endpointId);
-                    }
-                    catch
-                    {
-                        // Event may not exist, ignore
-                    }
+                    var messageId = $"{msgPrefix}{endpointId}-{i}";
+                    try { await _cosmosClient.RemoveMessage(eventId, sessionId, endpointId); } catch { }
+                    try { await _cosmosClient.RemoveStoredMessage(eventId, messageId); } catch { }
                 }
             }
         }
 
         // Clean up seeded metrics messages from shared messages container
-        for (int i = 0; i < TotalMetricsMessages; i++)
+        var totalMetrics = BuildMetricsSpecs().Sum(s => s.Count);
+        for (int i = 0; i < totalMetrics; i++)
         {
             try
             {
@@ -326,6 +491,70 @@ public class SeedDataService
         {
             await sender.DisposeAsync();
         }
+    }
+
+    private static readonly (string ErrorText, string ErrorType, string StackTrace)[] FailureScenarios =
+    [
+        (
+            "Connection timeout to downstream system",
+            "System.TimeoutException",
+            """
+            System.TimeoutException: The operation has timed out.
+               at System.Net.Http.HttpClient.SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+               at NimBus.Handlers.OrderPlacedHandler.HandleAsync(OrderPlaced evt, IMessageContext ctx) in /src/Handlers/OrderPlacedHandler.cs:line 42
+               at NimBus.Core.Messages.StrictMessageHandler.InvokeAsync(IMessageContext context) in /src/NimBus.Core/Messages/StrictMessageHandler.cs:line 87
+               at NimBus.ServiceBus.ServiceBusAdapter.ProcessMessageAsync(ProcessSessionMessageEventArgs args) in /src/NimBus.ServiceBus/ServiceBusAdapter.cs:line 156
+            """
+        ),
+        (
+            "Cosmos DB request rate too large (429). Retry after 1200ms.",
+            "Microsoft.Azure.Cosmos.CosmosException",
+            """
+            Microsoft.Azure.Cosmos.CosmosException: Response status code does not indicate success: TooManyRequests (429); Request rate is large.
+               at Microsoft.Azure.Cosmos.ResponseMessage.EnsureSuccessStatusCode()
+               at Microsoft.Azure.Cosmos.CosmosClient.ExecuteAsync(RequestMessage request, CancellationToken cancellationToken)
+               at NimBus.MessageStore.CosmosDbClient.UpsertItemAsync[T](Container container, T item, PartitionKey pk) in /src/NimBus.MessageStore/CosmosDbClient.cs:line 314
+               at NimBus.Handlers.PaymentCapturedHandler.HandleAsync(PaymentCaptured evt, IMessageContext ctx) in /src/Handlers/PaymentCapturedHandler.cs:line 58
+               at NimBus.Core.Messages.StrictMessageHandler.InvokeAsync(IMessageContext context) in /src/NimBus.Core/Messages/StrictMessageHandler.cs:line 87
+            """
+        ),
+    ];
+
+    private static string GenerateSamplePayload(string eventTypeId, string eventId)
+    {
+        var id = Guid.NewGuid();
+        return eventTypeId switch
+        {
+            "CustomerRegistered" => $@"{{""customerId"":""{id}"",""email"":""customer-{eventId[^4..]}@example.com"",""fullName"":""Jane Doe"",""segment"":""Enterprise""}}",
+            "OrderPlaced" => $@"{{""orderId"":""{id}"",""customerId"":""{Guid.NewGuid()}"",""currencyCode"":""EUR"",""totalAmount"":249.95,""salesChannel"":""Web""}}",
+            "PaymentCaptured" => $@"{{""orderId"":""{id}"",""paymentId"":""{Guid.NewGuid()}"",""amount"":249.95,""capturedAt"":""{DateTime.UtcNow:O}""}}",
+            "InventoryReserved" => $@"{{""orderId"":""{id}"",""reservationId"":""{Guid.NewGuid()}"",""warehouseCode"":""WH-DK01"",""reservedLines"":3}}",
+            "ShipmentDispatched" => $@"{{""orderId"":""{id}"",""shipmentId"":""{Guid.NewGuid()}"",""carrier"":""PostNord"",""trackingNumber"":""PN{id.ToString()[..8].ToUpper()}"",""dispatchedAt"":""{DateTime.UtcNow:O}""}}",
+            "CustomerNotified" => $@"{{""orderId"":""{id}"",""notificationId"":""{Guid.NewGuid()}"",""template"":""OrderConfirmation"",""channel"":""Email"",""sentAt"":""{DateTime.UtcNow:O}""}}",
+            _ => $@"{{""id"":""{id}"",""eventType"":""{eventTypeId}"",""timestamp"":""{DateTime.UtcNow:O}""}}"
+        };
+    }
+
+    private static MessageEntity CreateMessageEntity(string eventId, string messageId,
+        string endpointId, EndpointRole role, MessageType msgType, string eventTypeId,
+        DateTime timestamp, string sessionId, MessageContent content)
+    {
+        return new MessageEntity
+        {
+            EventId = eventId,
+            MessageId = messageId,
+            EndpointId = endpointId,
+            EndpointRole = role,
+            MessageType = msgType,
+            EventTypeId = eventTypeId,
+            EnqueuedTimeUtc = timestamp,
+            From = endpointId,
+            To = role == EndpointRole.Publisher ? "service-bus" : endpointId,
+            SessionId = sessionId,
+            CorrelationId = Guid.NewGuid().ToString(),
+            OriginatingMessageId = $"orig-{eventId}",
+            MessageContent = content,
+        };
     }
 
     private static UnresolvedEvent CreateUnresolvedEvent(string eventId, string sessionId,

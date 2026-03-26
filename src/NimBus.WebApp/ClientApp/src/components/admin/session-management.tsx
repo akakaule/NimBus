@@ -15,14 +15,6 @@ interface EndpointOption {
 
 export default function SessionManagement() {
   const [endpoints, setEndpoints] = useState<EndpointOption[]>([]);
-  const [selectedEndpoint, setSelectedEndpoint] = useState<string[]>([]);
-  const [sessionId, setSessionId] = useState("");
-  const [preview, setPreview] = useState<api.SessionPurgePreview | null>(null);
-  const [loadingPreview, setLoadingPreview] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [purging, setPurging] = useState(false);
-  const [result, setResult] = useState<api.SessionPurgeResult | null>(null);
 
   useEffect(() => {
     loadEndpoints();
@@ -41,6 +33,19 @@ export default function SessionManagement() {
       // fallback
     }
   }
+
+  return <SessionPurgeCard endpoints={endpoints} />;
+}
+
+export function SessionPurgeCard({ endpoints }: { endpoints: EndpointOption[] }) {
+  const [selectedEndpoint, setSelectedEndpoint] = useState<string[]>([]);
+  const [sessionId, setSessionId] = useState("");
+  const [preview, setPreview] = useState<api.SessionPurgePreview | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const [result, setResult] = useState<api.SessionPurgeResult | null>(null);
 
   async function handlePreview() {
     if (selectedEndpoint.length === 0 || !sessionId.trim()) return;

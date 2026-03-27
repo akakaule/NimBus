@@ -24,6 +24,8 @@ interface IMessageListingProps {
     body: api.ResubmitWithChanges,
   ) => Promise<void>;
   deleteEvent?: () => Promise<void>;
+  reprocessDeferred?: () => Promise<void>;
+  onCommentAdded?: () => void;
 }
 
 interface IButtonState {
@@ -91,6 +93,24 @@ export default function MessageListing(props: IMessageListingProps) {
     if (!status) return false;
     const lowerStatus = status.toLowerCase();
     return lowerStatus === "deadlettered";
+  };
+
+  const isDeferredMessage = (status: string | undefined): boolean => {
+    if (!status) return false;
+    return status.toLowerCase() === "deferred";
+  };
+
+  const reprocessBtn: IButtonState = { isDisabled: false, text: "Reprocess" };
+  const [reprocessButton, setReprocessButton] = useState(reprocessBtn);
+
+  const reprocessDeferredClick = async () => {
+    setReprocessButton({ text: "Triggering...", isDisabled: true });
+    try {
+      await props.reprocessDeferred?.();
+      setReprocessButton({ text: "Triggered", isDisabled: true });
+    } catch {
+      setReprocessButton({ text: "Failed", isDisabled: false });
+    }
   };
 
   const skipEventClick = async () => {
@@ -194,6 +214,16 @@ export default function MessageListing(props: IMessageListingProps) {
               </Button>
             )}
           </div>
+        )}
+        {isDeferredMessage(props.eventDetails?.resolutionStatus) && props.reprocessDeferred && (
+          <Button
+            size="xs"
+            colorScheme="blue"
+            disabled={reprocessButton.isDisabled}
+            onClick={reprocessDeferredClick}
+          >
+            {reprocessButton.text}
+          </Button>
         )}
       </h4>
       <br />
@@ -399,6 +429,9 @@ export default function MessageListing(props: IMessageListingProps) {
         </ModalFooter>
       </Modal>
 
+      {/* Comment Section */}
+      <CommentSection eventId={props.eventDetails?.eventId} onCommentAdded={props.onCommentAdded} />
+
       <Modal isOpen={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)}>
         <ModalHeader>Delete Event</ModalHeader>
         <ModalBody>
@@ -416,6 +449,59 @@ export default function MessageListing(props: IMessageListingProps) {
           </Button>
         </ModalFooter>
       </Modal>
+    </div>
+  );
+}
+
+function CommentSection({ eventId, onCommentAdded }: { eventId?: string; onCommentAdded?: () => void }) {
+  const [comment, setComment] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const submit = async () => {
+    if (!comment.trim() || !eventId) return;
+    setSaving(true);
+    setSaved(false);
+    try {
+      const client = new api.Client(api.CookieAuth());
+      let userName = "Unknown";
+      try {
+        const me = await client.getMe();
+        if (me?.name) userName = me.name;
+      } catch { /* fallback */ }
+
+      const audit = new api.MessageAudit();
+      audit.auditorName = userName;
+      audit.auditTimestamp = new Date() as any;
+      audit.auditType = api.MessageAuditAuditType.Comment;
+      audit.comment = comment.trim();
+
+      await client.postMessageAudit(eventId, audit);
+      setComment("");
+      setSaved(true);
+      onCommentAdded?.();
+    } catch {
+      // error
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-6 border-t pt-4">
+      <h5 className="text-base font-semibold mb-2">Add Comment</h5>
+      <Textarea
+        value={comment}
+        onChange={(e) => { setComment(e.target.value); setSaved(false); }}
+        placeholder="Enter a comment..."
+        rows={3}
+      />
+      <div className="flex items-center gap-2 mt-2">
+        <Button size="sm" colorScheme="primary" onClick={submit} disabled={saving || !comment.trim()}>
+          {saving ? "Saving..." : "Save"}
+        </Button>
+        {saved && <span className="text-sm text-green-600">Saved</span>}
+      </div>
     </div>
   );
 }

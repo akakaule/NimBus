@@ -29,6 +29,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
         private readonly IApplicationInsightsService applicationInsightsService;
         private readonly IConfiguration configuration;
         private readonly IEndpointAuthorizationService authorizationService;
+        private readonly IAdminService adminService;
 
         public EventImplementation(
             IApplicationInsightsService applicationInsightsService,
@@ -37,7 +38,8 @@ namespace NimBus.WebApp.Controllers.ApiContract
             ILogger<EventImplementation> logger,
             ICosmosDbClient cosmosClient,
             IConfiguration config,
-            IEndpointAuthorizationService authorizationService)
+            IEndpointAuthorizationService authorizationService,
+            IAdminService adminService)
         {
             this.platform = platform;
             this.logger = logger;
@@ -46,6 +48,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             this.applicationInsightsService = applicationInsightsService;
             configuration = config;
             this.authorizationService = authorizationService;
+            this.adminService = adminService;
         }
         public async Task<ActionResult<Message>> GetEventIdsAsync(string eventId, string messageId)
         {
@@ -193,6 +196,18 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             return new OkResult();
         }
+        public async Task<ActionResult<DeferredReprocessResult>> PostReprocessDeferredAsync(string endpointId, string sessionId)
+        {
+            if (!EndpointVerificationService.EndpointExists(platform, endpointId))
+                return new NotFoundObjectResult("Endpoint not found");
+
+            if (!authorizationService.IsManagerOfEndpoint(endpointId))
+                throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpointId}'.");
+
+            var result = await adminService.ReprocessDeferredAsync(endpointId, sessionId);
+            return new OkObjectResult(result);
+        }
+
         public async Task<ActionResult<Event>> GetEventIdAsync(string id, string endpoint)
         {
             var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpoint);

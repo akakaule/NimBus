@@ -130,6 +130,21 @@ const EventDetails = (props: EventDetailsProps) => {
     await reloadEvent();
   };
 
+  const reprocessDeferred = async () => {
+    if (!cosmosEvent?.endpointId || !cosmosEvent?.sessionId) return;
+    await client.postReprocessDeferred(
+      cosmosEvent.endpointId,
+      cosmosEvent.sessionId,
+    );
+    await reloadEvent();
+  };
+
+  const reloadAudits = () => {
+    client.getMessageAuditsEventId(params.id!).then((res) => {
+      setAudits(res);
+    });
+  };
+
   const deleteEvent = async () => {
     if (!cosmosEvent) return;
     await client.deleteEventInvalidId(
@@ -166,6 +181,8 @@ const EventDetails = (props: EventDetailsProps) => {
             resubmitEvent={resubmitEvent}
             skipEvent={skipEvent}
             deleteEvent={deleteEvent}
+            reprocessDeferred={reprocessDeferred}
+            onCommentAdded={reloadAudits}
             eventTypes={eventTypes}
             eventDetails={cosmosEvent}
             key="Message"

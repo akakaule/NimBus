@@ -19,6 +19,9 @@ namespace AspirePubSub.Subscriber.Handlers
 
         public Task Handle(OrderPlaced message, NimBus.Core.Logging.ILogger logger, IEventHandlerContext context, CancellationToken cancellationToken = default)
         {
+            if (message.SimulateFailure)
+                throw new InvalidOperationException($"Simulated failure for order {message.OrderId}");
+
             LogOrderPlaced(_logger, message.OrderId, message.CustomerId, message.TotalAmount, message.CurrencyCode, message.SalesChannel);
             return Task.CompletedTask;
         }

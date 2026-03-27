@@ -21,7 +21,7 @@ public sealed class ServiceBusTopologyProvisionerTests
         await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
 
         Assert.Contains(client.CreatedSubscriptions, x => x.TopicName == "orders" && x.SubscriptionName == "Deferred" && x.RequiresSession);
-        Assert.Contains(client.CreatedSubscriptions, x => x.TopicName == "orders" && x.SubscriptionName == "DeferredProcessor" && x.RequiresSession);
+        Assert.Contains(client.CreatedSubscriptions, x => x.TopicName == "orders" && x.SubscriptionName == "DeferredProcessor" && !x.RequiresSession);
 
         Assert.Contains(client.DeletedRules, x => x.TopicName == "orders" && x.SubscriptionName == "orders" && x.RuleName == "$Default");
         Assert.Contains(client.DeletedRules, x => x.TopicName == "orders" && x.SubscriptionName == Constants.ResolverId && x.RuleName == "$Default");
@@ -35,13 +35,15 @@ public sealed class ServiceBusTopologyProvisionerTests
     }
 
     [Fact]
-    public async Task ApplyAsync_RecreatesDeferredSubscriptionsWhenExistingOnesDoNotRequireSessions()
+    public async Task ApplyAsync_RecreatesDeferredSubscriptionsWhenSessionSupportMismatch()
     {
         var client = new RecordingAdministrationClient();
+        // Deferred subscription seeded WITHOUT sessions — should be recreated WITH sessions
         client.SeedSubscription("orders", MakeSubscriptionProperties("orders", Constants.DeferredSubscriptionName,
             requiresSession: false));
+        // DeferredProcessor seeded WITH sessions — should be recreated WITHOUT sessions
         client.SeedSubscription("orders", MakeSubscriptionProperties("orders", Constants.DeferredProcessorId,
-            requiresSession: false));
+            requiresSession: true));
 
         var sut = CreateProvisioner(client, new TestPlatform(new TestEndpoint("orders")));
 
@@ -56,7 +58,7 @@ public sealed class ServiceBusTopologyProvisionerTests
             x.TopicName == "orders" && x.SubscriptionName == Constants.DeferredProcessorId));
 
         Assert.True(recreatedDeferred.RequiresSession);
-        Assert.True(recreatedProcessor.RequiresSession);
+        Assert.False(recreatedProcessor.RequiresSession);
     }
 
     [Fact]
@@ -75,7 +77,7 @@ public sealed class ServiceBusTopologyProvisionerTests
         client.SeedSubscription("orders", MakeSubscriptionProperties("orders", Constants.DeferredSubscriptionName,
             requiresSession: true));
         client.SeedSubscription("orders", MakeSubscriptionProperties("orders", Constants.DeferredProcessorId,
-            requiresSession: true));
+            requiresSession: false));
 
         client.SeedRule("orders", "orders", ServiceBusModelFactory.RuleProperties("to-orders", new SqlRuleFilter("user.To = 'orders'")));
         client.SeedRule("orders", Constants.ResolverId, ServiceBusModelFactory.RuleProperties("from-orders", new SqlRuleFilter($"user.To = '{Constants.ResolverId}'"),

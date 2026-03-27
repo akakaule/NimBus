@@ -1196,6 +1196,66 @@ public class AdminService : IAdminService
         }
     }
 
+    // ───────────────────────── Reprocess Deferred ─────────────────────────
+
+    public async Task<DeferredReprocessResult> ReprocessDeferredAsync(string endpointId, string sessionId)
+    {
+        var result = new DeferredReprocessResult
+        {
+            SessionId = sessionId,
+            Errors = new List<string>()
+        };
+
+        // Step 1: Clear session state
+        try
+        {
+            var receiver = await _sbClient.AcceptSessionAsync(endpointId, endpointId, sessionId);
+            await using (receiver)
+            {
+                var stateBytes = await receiver.GetSessionStateAsync();
+                if (stateBytes != null)
+                {
+                    // Reset blocking state
+                    await receiver.SetSessionStateAsync(null);
+                }
+                result.SessionStateCleared = true;
+            }
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.SessionCannotBeLocked)
+        {
+            result.SessionStateCleared = true; // No active session is fine
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to clear session state for {SessionId} on {EndpointId}", sessionId, endpointId);
+            result.Errors.Add($"Clear session state: {ex.Message}");
+        }
+
+        // Step 2: Send ProcessDeferredRequest to DeferredProcessor subscription
+        try
+        {
+            var message = NimBus.ServiceBus.MessageHelper.ToServiceBusMessage(new NimBus.Core.Messages.Message
+            {
+                To = CoreConstants.DeferredProcessorId,
+                SessionId = sessionId,
+                MessageType = NimBus.Core.Messages.MessageType.ProcessDeferredRequest,
+                MessageContent = new NimBus.Core.Messages.MessageContent(),
+                CorrelationId = Guid.NewGuid().ToString(),
+            });
+
+            await using var sender = _sbClient.CreateSender(endpointId);
+            await sender.SendMessageAsync(message);
+            result.ProcessRequestSent = true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send ProcessDeferredRequest for {SessionId} on {EndpointId}", sessionId, endpointId);
+            result.Errors.Add($"Send ProcessDeferredRequest: {ex.Message}");
+        }
+
+        return result;
+    }
+
     // ─────────── Internal DTOs for topology comparison ───────────
 
     private sealed class TopologySnapshot

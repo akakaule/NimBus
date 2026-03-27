@@ -557,6 +557,45 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/MessageAudit'
+  '/api/event/reprocess-deferred/{endpointId}/{sessionId}':
+    post:
+      summary: Reprocess deferred messages for a session
+      operationId: post-reprocess-deferred
+      tags:
+        - Event
+      parameters:
+        - schema:
+            type: string
+          name: endpointId
+          in: path
+          required: true
+        - schema:
+            type: string
+          name: sessionId
+          in: path
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeferredReprocessResult'
+        '404':
+          description: Endpoint not found
+  /api/me:
+    get:
+      summary: Get current user info
+      operationId: get-me
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserInfo'
+      tags:
+        - Application
   /api/event/compose-new:
     post:
       summary: Your POST endpoint
@@ -1917,6 +1956,10 @@ components:
             - resubmitWithChanges
             - skip
             - retry
+            - comment
+        comment:
+          type: string
+          nullable: true
     BlockedEvent:
       title: BlockedEvent
       type: object
@@ -2777,6 +2820,27 @@ components:
           type: integer
         messagesCopied:
           type: integer
+    DeferredReprocessResult:
+      title: DeferredReprocessResult
+      type: object
+      properties:
+        sessionId:
+          type: string
+        sessionStateCleared:
+          type: boolean
+        processRequestSent:
+          type: boolean
+        errors:
+          type: array
+          items:
+            type: string
+    UserInfo:
+      title: UserInfo
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
     CountResponse:
       title: CountResponse
       type: object

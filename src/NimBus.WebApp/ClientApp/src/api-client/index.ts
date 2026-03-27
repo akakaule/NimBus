@@ -1256,6 +1256,96 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Reprocess deferred messages for a session
+     * @return OK
+     */
+    postReprocessDeferred(endpointId: string, sessionId: string): Promise<DeferredReprocessResult> {
+        let url_ = this.baseUrl + "/api/event/reprocess-deferred/{endpointId}/{sessionId}";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        if (sessionId === undefined || sessionId === null)
+            throw new globalThis.Error("The parameter 'sessionId' must be defined.");
+        url_ = url_.replace("{sessionId}", encodeURIComponent("" + sessionId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostReprocessDeferred(_response);
+        });
+    }
+
+    protected processPostReprocessDeferred(response: Response): Promise<DeferredReprocessResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = DeferredReprocessResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<DeferredReprocessResult>(null as any);
+    }
+
+    /**
+     * Get current user info
+     * @return OK
+     */
+    getMe(): Promise<UserInfo> {
+        let url_ = this.baseUrl + "/api/me";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetMe(_response);
+        });
+    }
+
+    protected processGetMe(response: Response): Promise<UserInfo> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = UserInfo.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<UserInfo>(null as any);
+    }
+
+    /**
      * Your POST endpoint
      * @param body (optional) 
      * @return OK
@@ -4740,6 +4830,7 @@ export class MessageAudit implements IMessageAudit {
     auditorName?: string;
     auditTimestamp?: moment.Moment;
     auditType?: MessageAuditAuditType;
+    comment?: string | undefined;
 
     [key: string]: any;
 
@@ -4761,6 +4852,7 @@ export class MessageAudit implements IMessageAudit {
             this.auditorName = _data["auditorName"];
             this.auditTimestamp = _data["auditTimestamp"] ? moment(_data["auditTimestamp"].toString()) : undefined as any;
             this.auditType = _data["auditType"];
+            this.comment = _data["comment"];
         }
     }
 
@@ -4780,6 +4872,7 @@ export class MessageAudit implements IMessageAudit {
         data["auditorName"] = this.auditorName;
         data["auditTimestamp"] = this.auditTimestamp ? this.auditTimestamp.toISOString() : undefined as any;
         data["auditType"] = this.auditType;
+        data["comment"] = this.comment;
         return data;
     }
 
@@ -4795,6 +4888,7 @@ export interface IMessageAudit {
     auditorName?: string;
     auditTimestamp?: moment.Moment;
     auditType?: MessageAuditAuditType;
+    comment?: string | undefined;
 
     [key: string]: any;
 }
@@ -8514,6 +8608,136 @@ export interface ICopyResult {
     [key: string]: any;
 }
 
+export class DeferredReprocessResult implements IDeferredReprocessResult {
+    sessionId?: string;
+    sessionStateCleared?: boolean;
+    processRequestSent?: boolean;
+    errors?: string[];
+
+    [key: string]: any;
+
+    constructor(data?: IDeferredReprocessResult) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.sessionId = _data["sessionId"];
+            this.sessionStateCleared = _data["sessionStateCleared"];
+            this.processRequestSent = _data["processRequestSent"];
+            if (Array.isArray(_data["errors"])) {
+                this.errors = [] as any;
+                for (let item of _data["errors"])
+                    this.errors!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): DeferredReprocessResult {
+        data = typeof data === 'object' ? data : {};
+        let result = new DeferredReprocessResult();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["sessionId"] = this.sessionId;
+        data["sessionStateCleared"] = this.sessionStateCleared;
+        data["processRequestSent"] = this.processRequestSent;
+        if (Array.isArray(this.errors)) {
+            data["errors"] = [];
+            for (let item of this.errors)
+                data["errors"].push(item);
+        }
+        return data;
+    }
+
+    clone(): DeferredReprocessResult {
+        const json = this.toJSON();
+        let result = new DeferredReprocessResult();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDeferredReprocessResult {
+    sessionId?: string;
+    sessionStateCleared?: boolean;
+    processRequestSent?: boolean;
+    errors?: string[];
+
+    [key: string]: any;
+}
+
+export class UserInfo implements IUserInfo {
+    name?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IUserInfo) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.name = _data["name"];
+        }
+    }
+
+    static fromJS(data: any): UserInfo {
+        data = typeof data === 'object' ? data : {};
+        let result = new UserInfo();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["name"] = this.name;
+        return data;
+    }
+
+    clone(): UserInfo {
+        const json = this.toJSON();
+        let result = new UserInfo();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IUserInfo {
+    name?: string | undefined;
+
+    [key: string]: any;
+}
+
 export class CountResponse implements ICountResponse {
     count?: number;
 
@@ -8825,6 +9049,7 @@ export enum MessageAuditAuditType {
     ResubmitWithChanges = "resubmitWithChanges",
     Skip = "skip",
     Retry = "retry",
+    Comment = "comment",
 }
 
 export class MessageContent implements IMessageContent {

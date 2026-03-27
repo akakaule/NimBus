@@ -24,8 +24,8 @@ const headCells: ITableHeadCell[] = [
   { id: Column.eventType, label: "Event Type", numeric: false },
   { id: Column.messageType, label: "Type", numeric: false },
   { id: Column.timestamp, label: "Enqueued", numeric: false },
-  { id: Column.to, label: "To", numeric: false },
   { id: Column.from, label: "From", numeric: false },
+  { id: Column.to, label: "To", numeric: false },
 ];
 
 function mapMessageToRow(msg: api.Message): ITableRow {

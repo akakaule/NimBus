@@ -538,6 +538,15 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostMessageAuditAsync(MessageAudit body, string eventId);
 
         /// <summary>
+        /// Reprocess deferred messages for a session
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<DeferredReprocessResult>> PostReprocessDeferredAsync(string endpointId, string sessionId);
+
+        /// <summary>
         /// Your POST endpoint
         /// </summary>
 
@@ -721,6 +730,17 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
+        /// Reprocess deferred messages for a session
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/event/reprocess-deferred/{endpointId}/{sessionId}")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<DeferredReprocessResult>> PostReprocessDeferred(string endpointId, string sessionId)
+        {
+
+            return _implementation.PostReprocessDeferredAsync(endpointId, sessionId);
+        }
+
+        /// <summary>
         /// Your POST endpoint
         /// </summary>
         /// <returns>OK</returns>
@@ -884,6 +904,14 @@ namespace NimBus.WebApp.ManagementApi
 
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<ApplicationStatus>> GetApiAppStatsAsync();
 
+        /// <summary>
+        /// Get current user info
+        /// </summary>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<UserInfo>> GetMeAsync();
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -906,6 +934,17 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.GetApiAppStatsAsync();
+        }
+
+        /// <summary>
+        /// Get current user info
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/me")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<UserInfo>> GetMe()
+        {
+
+            return _implementation.GetMeAsync();
         }
 
     }
@@ -3441,6 +3480,7 @@ namespace NimBus.WebApp.ManagementApi
         private string _auditorName;
         private System.DateTime _auditTimestamp;
         private MessageAuditAuditType _auditType;
+        private string _comment;
 
         [Newtonsoft.Json.JsonProperty("auditorName", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string AuditorName    {
@@ -3477,6 +3517,19 @@ namespace NimBus.WebApp.ManagementApi
                 if (_auditType != value)
                 {
                     _auditType = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("comment", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Comment    {
+            get { return _comment; }
+            set
+            {
+                if (_comment != value)
+                {
+                    _comment = value;
                     RaisePropertyChanged();
                 }
             }
@@ -8385,6 +8438,146 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DeferredReprocessResult : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _sessionId;
+        private bool _sessionStateCleared;
+        private bool _processRequestSent;
+        private System.Collections.Generic.List<string> _errors;
+
+        [Newtonsoft.Json.JsonProperty("sessionId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SessionId    {
+            get { return _sessionId; }
+            set
+            {
+                if (_sessionId != value)
+                {
+                    _sessionId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("sessionStateCleared", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool SessionStateCleared    {
+            get { return _sessionStateCleared; }
+            set
+            {
+                if (_sessionStateCleared != value)
+                {
+                    _sessionStateCleared = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("processRequestSent", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool ProcessRequestSent    {
+            get { return _processRequestSent; }
+            set
+            {
+                if (_processRequestSent != value)
+                {
+                    _processRequestSent = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("errors", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Errors    {
+            get { return _errors; }
+            set
+            {
+                if (_errors != value)
+                {
+                    _errors = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static DeferredReprocessResult FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<DeferredReprocessResult>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class UserInfo : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _name;
+
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static UserInfo FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<UserInfo>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class CountResponse : System.ComponentModel.INotifyPropertyChanged
     {
         private int _count;
@@ -8791,6 +8984,9 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"retry")]
         Retry = 3,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"comment")]
+        Comment = 4,
 
     }
 

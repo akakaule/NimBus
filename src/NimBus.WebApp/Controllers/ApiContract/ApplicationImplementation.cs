@@ -1,4 +1,5 @@
 ﻿using NimBus.WebApp.ManagementApi;
+using NimBus.WebApp.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -23,10 +24,12 @@ namespace NimBus.WebApp.Controllers.ApiContract
     public class ApplicationImplementation : IApplicationApiController
     {
         private readonly IConfiguration _config;
+        private readonly IEndpointAuthorizationService _authService;
 
-        public ApplicationImplementation(IConfiguration config)
+        public ApplicationImplementation(IConfiguration config, IEndpointAuthorizationService authService)
         {
             _config = config;
+            _authService = authService;
         }
 
         public async Task<ActionResult<ApplicationStatus>> GetApiAppStatsAsync()
@@ -48,6 +51,12 @@ namespace NimBus.WebApp.Controllers.ApiContract
             };
 
             return new OkObjectResult(statusResponse);
+        }
+
+        public Task<ActionResult<UserInfo>> GetMeAsync()
+        {
+            var name = _authService.GetCurrentUserName();
+            return Task.FromResult<ActionResult<UserInfo>>(new OkObjectResult(new UserInfo { Name = name }));
         }
     }
 }

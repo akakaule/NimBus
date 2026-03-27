@@ -36,6 +36,9 @@ namespace NimBus.Events.Orders
         [Description("The sales channel where the order was placed.")]
         public string SalesChannel { get; set; }
 
+        [Description("When true, the subscriber handler will simulate a failure for testing error flows.")]
+        public bool SimulateFailure { get; set; }
+
         public override string GetSessionId() => OrderId.ToString();
     }
 }

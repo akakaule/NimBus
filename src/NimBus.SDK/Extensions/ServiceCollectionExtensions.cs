@@ -123,25 +123,10 @@ namespace NimBus.SDK.Extensions
                     retryPolicyProvider = sp.GetService<IRetryPolicyProvider>();
                 }
 
-                // Create StrictMessageHandler with retry policy provider
-                IMessageHandler strictMessageHandler;
-                if (retryPolicyProvider != null)
-                {
-                    strictMessageHandler = new StrictMessageHandler(
-                        eventHandlerProvider, responseService, loggerProvider,
-                        retryPolicyProvider, deferredProcessor, options.Endpoint);
-                }
-                else if (deferredProcessor != null)
-                {
-                    strictMessageHandler = new StrictMessageHandler(
-                        eventHandlerProvider, responseService, loggerProvider,
-                        deferredProcessor, options.Endpoint);
-                }
-                else
-                {
-                    strictMessageHandler = new StrictMessageHandler(
-                        eventHandlerProvider, responseService, loggerProvider);
-                }
+                // Create StrictMessageHandler — deferred processing is handled separately
+                IMessageHandler strictMessageHandler = retryPolicyProvider != null
+                    ? new StrictMessageHandler(eventHandlerProvider, responseService, loggerProvider, retryPolicyProvider)
+                    : new StrictMessageHandler(eventHandlerProvider, responseService, loggerProvider);
 
                 var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, options.EntityPath);
                 return new SubscriberClient(serviceBusAdapter, eventHandlerProvider);

@@ -27,6 +27,7 @@ const ACTIONABLE_STATUSES = [
   api.ResolutionStatus.Failed,
   api.ResolutionStatus.DeadLettered,
   api.ResolutionStatus.Unsupported,
+  api.ResolutionStatus.Deferred,
 ];
 
 const DEFAULT_FAILED_STATUSES: api.ResolutionStatus[] = [
@@ -249,27 +250,57 @@ const EventsPanel = (props: EventsPanelProps) => {
     client.postResubmitEventIds(event.eventId!, event.lastMessageId!);
   };
 
+  const reprocessDeferredBySession = async (event: api.Event): Promise<void> => {
+    const sessionId = event.sessionId;
+    if (!sessionId) return;
+    try {
+      await client.postReprocessDeferred(endpointId, sessionId);
+      setEvents((prev) =>
+        prev.filter(
+          (e) =>
+            !(e.sessionId === sessionId && e.resolutionStatus === api.ResolutionStatus.Deferred),
+        ),
+      );
+    } catch (err) {
+      console.error("Failed to reprocess deferred messages for session", sessionId, err);
+    }
+  };
+
   const getViableBodyActions = (event: api.Event): ITableBodyAction[] => {
     if (!isActionableStatus(event.resolutionStatus)) {
       return [];
     }
 
-    return [
-      {
-        name: "Resubmit",
+    const actions: ITableBodyAction[] = [];
+
+    if (event.resolutionStatus === api.ResolutionStatus.Deferred) {
+      actions.push({
+        name: "Reprocess",
         onClick: () => {
-          resubmitSingleEvent(event);
+          reprocessDeferredBySession(event);
           return false;
         },
-      },
-      {
-        name: "Skip",
-        onClick: () => {
-          skipSingleEvent(event);
-          return false;
+      });
+    } else {
+      actions.push(
+        {
+          name: "Resubmit",
+          onClick: () => {
+            resubmitSingleEvent(event);
+            return false;
+          },
         },
-      },
-    ];
+        {
+          name: "Skip",
+          onClick: () => {
+            skipSingleEvent(event);
+            return false;
+          },
+        },
+      );
+    }
+
+    return actions;
   };
 
   const mapEvents = (): ITableRow[] => {

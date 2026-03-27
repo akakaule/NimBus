@@ -28,4 +28,5 @@ public interface IAdminService
     Task<int> SkipMessagesPreviewAsync(string endpointId, List<string> statuses, System.DateTime? before);
     Task<BulkOperationResult> SkipMessagesAsync(string endpointId, List<string> statuses, System.DateTime? before);
     Task<CopyResult> CopyEndpointDataAsync(string endpointId, string targetConnectionString, System.DateTime? from, System.DateTime? to, List<string> statuses, int? batchSize);
+    Task<DeferredReprocessResult> ReprocessDeferredAsync(string endpointId, string sessionId);
 }

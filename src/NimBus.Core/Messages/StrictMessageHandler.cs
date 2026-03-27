@@ -10,9 +10,7 @@ namespace NimBus.Core.Messages
     {
         private readonly IEventContextHandler _eventContextHandler;
         private readonly IResponseService _responseService;
-        private readonly IDeferredMessageProcessor _deferredMessageProcessor;
         private readonly IRetryPolicyProvider _retryPolicyProvider;
-        private readonly string _topicName;
 
         public StrictMessageHandler(IEventContextHandler eventContextHandler, IResponseService responseService, ILoggerProvider loggerProvider) : base(loggerProvider)
         {
@@ -24,28 +22,11 @@ namespace NimBus.Core.Messages
             IEventContextHandler eventContextHandler,
             IResponseService responseService,
             ILoggerProvider loggerProvider,
-            IDeferredMessageProcessor deferredMessageProcessor,
-            string topicName) : base(loggerProvider)
-        {
-            _eventContextHandler = eventContextHandler;
-            _responseService = responseService;
-            _deferredMessageProcessor = deferredMessageProcessor;
-            _topicName = topicName;
-        }
-
-        public StrictMessageHandler(
-            IEventContextHandler eventContextHandler,
-            IResponseService responseService,
-            ILoggerProvider loggerProvider,
-            IRetryPolicyProvider retryPolicyProvider,
-            IDeferredMessageProcessor deferredMessageProcessor = null,
-            string topicName = null) : base(loggerProvider)
+            IRetryPolicyProvider retryPolicyProvider) : base(loggerProvider)
         {
             _eventContextHandler = eventContextHandler;
             _responseService = responseService;
             _retryPolicyProvider = retryPolicyProvider;
-            _deferredMessageProcessor = deferredMessageProcessor;
-            _topicName = topicName;
         }
 
         public override async Task HandleEventRequest(IMessageContext messageContext, ILogger logger, CancellationToken cancellationToken = default)
@@ -202,34 +183,9 @@ namespace NimBus.Core.Messages
             LogInfoWithMessageMetaData(logger, messageContext, "Successfully processed (Continuation)");
         }
 
-        public override async Task HandleProcessDeferredRequest(IMessageContext messageContext, ILogger logger, CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                LogInfoWithMessageMetaData(logger, messageContext, "Handle (ProcessDeferredRequest)");
-
-                if (_deferredMessageProcessor == null)
-                    throw new InvalidOperationException("DeferredMessageProcessor is not configured. Cannot process deferred messages.");
-
-                if (string.IsNullOrEmpty(_topicName))
-                    throw new InvalidOperationException("Topic name is not configured. Cannot process deferred messages.");
-
-                // Process all deferred messages for this session
-                await _deferredMessageProcessor.ProcessDeferredMessagesAsync(messageContext.SessionId, _topicName, cancellationToken);
-
-                // Reset the deferred count since all messages have been republished
-                await messageContext.ResetDeferredCount(cancellationToken);
-
-                await CompleteMessage(messageContext, cancellationToken);
-
-                LogInfoWithMessageMetaData(logger, messageContext, "Successfully processed (ProcessDeferredRequest)");
-            }
-            catch (Exception exception)
-            {
-                LogErrorWithMessageMetaData(logger, messageContext, "Failed to process deferred messages", exception);
-                throw;
-            }
-        }
+        // HandleProcessDeferredRequest is intentionally NOT overridden here.
+        // Deferred message processing is handled by a separate DeferredProcessorFunction
+        // in each subscriber app, not by the core message handler.
 
         private Task CompleteMessage(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
             messageContext.Complete(cancellationToken);

@@ -50,12 +50,11 @@ public class SubscriberClientTests
     }
 
     [TestMethod]
-    public async Task CreateAsync_WithDeferredProcessor_CreatesClient()
+    public async Task CreateAsync_CreatesClient()
     {
         var client = new RecordingServiceBusClient();
-        var processor = new FakeDeferredMessageProcessor();
 
-        var sut = await SubscriberClient.CreateAsync(client, "orders", new FakeLoggerProvider(), processor);
+        var sut = await SubscriberClient.CreateAsync(client, "orders", new FakeLoggerProvider());
 
         Assert.IsNotNull(sut);
     }
@@ -123,12 +122,11 @@ public class SubscriberClientTests
     }
 
     [TestMethod]
-    public void ObsoleteConstructor_WithProcessor_CreatesClient()
+    public void ObsoleteConstructor_CreatesClient()
     {
         var client = new RecordingServiceBusClient();
-        var processor = new FakeDeferredMessageProcessor();
 
-        var sut = new SubscriberClient(client, "orders", new FakeLoggerProvider(), processor);
+        var sut = new SubscriberClient(client, "orders", new FakeLoggerProvider());
 
         Assert.IsNotNull(sut);
     }
@@ -137,14 +135,14 @@ public class SubscriberClientTests
     public void ObsoleteConstructor_NullClient_ThrowsArgumentNullException()
     {
         Assert.ThrowsException<ArgumentNullException>(() =>
-            new SubscriberClient(null!, "orders", new FakeLoggerProvider(), new FakeDeferredMessageProcessor()));
+            new SubscriberClient(null!, "orders", new FakeLoggerProvider()));
     }
 
     [TestMethod]
     public void ObsoleteConstructor_EmptyEndpoint_ThrowsArgumentException()
     {
         Assert.ThrowsException<ArgumentException>(() =>
-            new SubscriberClient(new RecordingServiceBusClient(), "", new FakeLoggerProvider(), new FakeDeferredMessageProcessor()));
+            new SubscriberClient(new RecordingServiceBusClient(), "", new FakeLoggerProvider()));
     }
 
     // ── Fakes ────────────────────────────────────────────────────────────

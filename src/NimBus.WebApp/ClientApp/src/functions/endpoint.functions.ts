@@ -47,7 +47,7 @@ export const mapStatusToColor = (status: EndpointStatus): string => {
 };
 
 export const formatMoment = (moment?: moment.Moment, slim = false): string => {
-  const formatString = slim ? "DD/MM/YY HH:mm" : "DD/MM/YYYY HH:mm";
+  const formatString = slim ? "DD/MM/YY HH:mm:ss.SSS" : "DD/MM/YYYY HH:mm:ss.SSS";
   if (moment === undefined) return "";
   return typeof moment?.format === "function"
     ? moment.format(formatString)

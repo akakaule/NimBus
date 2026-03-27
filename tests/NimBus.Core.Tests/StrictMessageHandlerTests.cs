@@ -451,55 +451,9 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, ctx.CompletedCalls, "Continuation message completed via EventContextHandlerException catch");
     }
 
-    // ── HandleProcessDeferredRequest ────────────────────────────────────
-
-    [TestMethod]
-    public async Task HandleProcessDeferredRequest_WithProcessor_ProcessesAndCompletes()
-    {
-        var ctx = CreateContext(messageType: MessageType.ProcessDeferredRequest, from: "DeferredProcessor");
-        ctx.SessionId = "session-1";
-        var handler = new FakeEventContextHandler();
-        var response = new FakeResponseService();
-        var processor = new FakeDeferredMessageProcessor();
-        var sut = CreateHandler(handler, response, processor, "my-topic");
-
-        await sut.Handle(ctx);
-
-        Assert.AreEqual(1, processor.ProcessCalls);
-        Assert.AreEqual("session-1", processor.LastSessionId);
-        Assert.AreEqual("my-topic", processor.LastTopicName);
-        Assert.AreEqual(1, ctx.ResetDeferredCountCalls);
-        Assert.AreEqual(1, ctx.CompletedCalls);
-    }
-
-    [TestMethod]
-    public async Task HandleProcessDeferredRequest_NoProcessor_DeadLetters()
-    {
-        var ctx = CreateContext(messageType: MessageType.ProcessDeferredRequest, from: "DeferredProcessor");
-        var handler = new FakeEventContextHandler();
-        var response = new FakeResponseService();
-        // Use 3-arg constructor (no processor)
-        var sut = CreateHandler(handler, response);
-
-        await sut.Handle(ctx);
-
-        // InvalidOperationException is caught by base MessageHandler -> dead-letter
-        Assert.AreEqual(1, ctx.DeadLetterCalls);
-    }
-
-    [TestMethod]
-    public async Task HandleProcessDeferredRequest_NoTopicName_DeadLetters()
-    {
-        var ctx = CreateContext(messageType: MessageType.ProcessDeferredRequest, from: "DeferredProcessor");
-        var handler = new FakeEventContextHandler();
-        var response = new FakeResponseService();
-        var processor = new FakeDeferredMessageProcessor();
-        var sut = CreateHandler(handler, response, processor, topicName: "");
-
-        await sut.Handle(ctx);
-
-        Assert.AreEqual(1, ctx.DeadLetterCalls);
-    }
+    // HandleProcessDeferredRequest tests removed — deferred processing
+    // is now handled by a separate DeferredProcessorFunction in subscriber apps,
+    // not by StrictMessageHandler.
 
     // ── MessageType routing ─────────────────────────────────────────────
 
@@ -541,8 +495,6 @@ public class StrictMessageHandlerTests
         string topicName = null)
     {
         var logger = new FakeLoggerProvider();
-        if (processor != null)
-            return new StrictMessageHandler(handler, response, logger, processor, topicName);
         return new StrictMessageHandler(handler, response, logger);
     }
 

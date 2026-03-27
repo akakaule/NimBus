@@ -25,4 +25,15 @@ var webapp = builder.AddProject<Projects.NimBus_WebApp>("webapp")
     .WithExternalHttpEndpoints()
     .WaitFor(provisioner);
 
+// Sample Publisher (HTTP API for publishing events)
+var publisher = builder.AddProject<Projects.AspirePubSub_Publisher>("publisher")
+    .WithReference(servicebus)
+    .WithExternalHttpEndpoints()
+    .WaitFor(provisioner);
+
+// Sample Subscriber (handles events + separated DeferredProcessor)
+var subscriber = builder.AddProject<Projects.AspirePubSub_Subscriber>("subscriber")
+    .WithReference(servicebus)
+    .WaitFor(provisioner);
+
 builder.Build().Run();

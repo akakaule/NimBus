@@ -1,6 +1,5 @@
 using NimBus.Core.Endpoints;
 using NimBus.Events.Orders;
-using NimBus.Events.Payments;
 
 namespace NimBus.Endpoints.Billing
 {
@@ -9,13 +8,12 @@ namespace NimBus.Endpoints.Billing
         public BillingEndpoint()
         {
             Consumes<OrderPlaced>();
-            Produces<PaymentCaptured>();
         }
 
         public override ISystem System => new BillingSystem();
 
         public override string Description =>
-            "Example mixed-role endpoint that subscribes to order events and publishes payment confirmation events.";
+            "Subscriber endpoint that processes OrderPlaced events for payment handling.";
     }
 
     internal sealed class BillingSystem : ISystem

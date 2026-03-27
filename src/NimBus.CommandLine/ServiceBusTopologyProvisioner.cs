@@ -239,7 +239,7 @@ public sealed class ServiceBusTopologyProvisioner
     {
         const string subscriptionName = "DeferredProcessor";
         var existing = await TryGetSubscriptionAsync(client, topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
-        var mustRecreate = existing is null || !existing.RequiresSession;
+        var mustRecreate = existing is null || existing.RequiresSession;
 
         if (mustRecreate)
         {
@@ -248,7 +248,7 @@ public sealed class ServiceBusTopologyProvisioner
                 await client.DeleteSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
             }
 
-            await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: true, forwardTo: null), cancellationToken).ConfigureAwait(false);
+            await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: false, forwardTo: null), cancellationToken).ConfigureAwait(false);
             CliOutput.WriteLine($"Ensured deferred processor subscription '{subscriptionName}' on topic '{topicName}'.");
         }
 

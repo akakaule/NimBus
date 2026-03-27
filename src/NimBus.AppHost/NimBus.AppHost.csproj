@@ -16,6 +16,8 @@
     <ProjectReference Include="..\NimBus.WebApp\NimBus.WebApp.csproj" />
     <ProjectReference Include="..\NimBus.Resolver\NimBus.Resolver.csproj" />
     <ProjectReference Include="..\..\samples\AspirePubSub\AspirePubSub.Provisioner\AspirePubSub.Provisioner.csproj" />
+    <ProjectReference Include="..\..\samples\AspirePubSub\AspirePubSub.Publisher\AspirePubSub.Publisher.csproj" />
+    <ProjectReference Include="..\..\samples\AspirePubSub\AspirePubSub.Subscriber\AspirePubSub.Subscriber.csproj" />
   </ItemGroup>
 
 </Project>

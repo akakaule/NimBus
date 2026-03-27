@@ -1,8 +1,5 @@
 using NimBus.Core.Endpoints;
-using NimBus.Events.Inventory;
 using NimBus.Events.Orders;
-using NimBus.Events.Payments;
-using NimBus.Events.Shipping;
 
 namespace NimBus.Endpoints.Warehouse
 {
@@ -11,15 +8,12 @@ namespace NimBus.Endpoints.Warehouse
         public WarehouseEndpoint()
         {
             Consumes<OrderPlaced>();
-            Consumes<PaymentCaptured>();
-            Produces<InventoryReserved>();
-            Produces<ShipmentDispatched>();
         }
 
         public override ISystem System => new WarehouseSystem();
 
         public override string Description =>
-            "Example mixed-role endpoint that reserves stock and dispatches shipments after receiving order and payment events.";
+            "Subscriber endpoint that processes OrderPlaced events for inventory and shipping.";
     }
 
     internal sealed class WarehouseSystem : ISystem

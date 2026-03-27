@@ -31,8 +31,7 @@ public class SeedDataService
         _platform = platform;
     }
 
-    private IEnumerable<IEndpoint> PlatformEndpoints =>
-        _platform.Endpoints.Where(ep => ep.Id != "AspireSampleEndpoint");
+    private IEnumerable<IEndpoint> PlatformEndpoints => _platform.Endpoints;
 
     public async Task<SeedResult> SeedAsync()
     {

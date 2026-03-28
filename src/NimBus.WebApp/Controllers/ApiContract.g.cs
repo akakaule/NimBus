@@ -1096,6 +1096,15 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> DeleteAdminEventAsync(string endpointId, string eventId);
 
         /// <summary>
+        /// Delete all events for an endpoint (purges the entire container)
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminDeleteAllAsync(string endpointId);
+
+        /// <summary>
         /// Preview subscription purge
         /// </summary>
 
@@ -1297,6 +1306,17 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.DeleteAdminEventAsync(endpointId, eventId);
+        }
+
+        /// <summary>
+        /// Delete all events for an endpoint (purges the entire container)
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/delete-all")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminDeleteAll(string endpointId)
+        {
+
+            return _implementation.PostAdminDeleteAllAsync(endpointId);
         }
 
         /// <summary>

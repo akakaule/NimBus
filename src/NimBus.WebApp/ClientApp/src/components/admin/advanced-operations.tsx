@@ -522,3 +522,50 @@ export function CopyEndpointCard({ endpoints }: { endpoints: EndpointOption[] })
     </Card>
   );
 }
+
+// ──────────────────── Delete All Events ────────────────────────
+
+export function DeleteAllEventsCard({ endpoints }: { endpoints: EndpointOption[] }) {
+  const [selected, setSelected] = useState<string[]>([]);
+  const [result, setResult] = useState<api.BulkOperationResult | null>(null);
+  const [executing, setExecuting] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  async function handleExecute() {
+    if (selected.length === 0) return;
+    setShowConfirm(false);
+    setExecuting(true);
+    try {
+      const client = new api.Client(api.CookieAuth());
+      const r = await client.postAdminDeleteAll(selected[0]);
+      setResult(r);
+    } catch { /* */ } finally { setExecuting(false); }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Delete All Events</CardTitle>
+        <CardDescription>Delete the entire endpoint container from Cosmos DB. This removes all events regardless of status.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <div className="flex gap-4 items-end">
+            <div className="flex-1 max-w-md">
+              <Combobox options={endpoints} value={selected} onChange={(v) => { setSelected(v); setResult(null); }} placeholder="Select endpoint..." label="Endpoint" multiple={false} />
+            </div>
+            <Button colorScheme="red" onClick={() => setShowConfirm(true)} disabled={selected.length === 0 || executing} isLoading={executing}>
+              Delete All
+            </Button>
+          </div>
+
+          {result && <OperationProgress processed={result.processed ?? 0} succeeded={result.succeeded ?? 0} failed={result.failed ?? 0} errors={result.errors} isComplete={true} />}
+
+          <ConfirmDestructiveAction isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={handleExecute}
+            title="Delete All Events" description={`This will permanently delete ALL events for endpoint "${selected[0] ?? ""}". The entire Cosmos DB container will be removed. This action cannot be undone.`}
+            confirmText={selected[0] ?? ""} isLoading={executing} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

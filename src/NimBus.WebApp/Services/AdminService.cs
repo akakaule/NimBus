@@ -1196,6 +1196,32 @@ public class AdminService : IAdminService
         }
     }
 
+    // ───────────────────────── Delete All Events ─────────────────────────
+
+    public async Task<BulkOperationResult> DeleteAllEventsAsync(string endpointId)
+    {
+        var errors = new List<string>();
+        bool success = false;
+
+        try
+        {
+            success = await _cosmosClient.PurgeMessages(endpointId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete all events for {EndpointId}", endpointId);
+            errors.Add(ex.Message);
+        }
+
+        return new BulkOperationResult
+        {
+            Processed = 1,
+            Succeeded = success ? 1 : 0,
+            Failed = success ? 0 : 1,
+            Errors = errors
+        };
+    }
+
     // ───────────────────────── Reprocess Deferred ─────────────────────────
 
     public async Task<DeferredReprocessResult> ReprocessDeferredAsync(string endpointId, string sessionId)

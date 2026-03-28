@@ -149,6 +149,15 @@ public class AdminImplementation : IAdminApiController
         return new NotFoundResult();
     }
 
+    public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteAllAsync(string endpointId)
+    {
+        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
+
+        var result = await _adminService.DeleteAllEventsAsync(endpointId);
+        return new OkObjectResult(result);
+    }
+
     // ───────────── Advanced Operations ─────────────
 
     public async Task<ActionResult<PurgePreview>> PostAdminPurgePreviewAsync(string endpointId, PurgeRequest body)

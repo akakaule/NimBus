@@ -11,6 +11,7 @@ import {
   SkipMessagesCard,
   DeleteMessagesByToCard,
   CopyEndpointCard,
+  DeleteAllEventsCard,
 } from "./advanced-operations";
 import { SessionPurgeCard } from "./session-management";
 
@@ -53,6 +54,7 @@ export default function Operations() {
           <DeleteDeadLetteredCard endpoints={endpoints} />
           <DeleteMessagesByToCard />
           <DeleteEventCard endpoints={endpoints} />
+          <DeleteAllEventsCard endpoints={endpoints} />
         </div>
       </section>
 

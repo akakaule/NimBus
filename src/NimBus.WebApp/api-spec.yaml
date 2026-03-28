@@ -1248,6 +1248,25 @@ paths:
           description: Forbidden
         '404':
           description: Event not found
+  '/api/admin/endpoint/{endpointId}/delete-all':
+    post:
+      summary: Delete all events for an endpoint (purges the entire container)
+      operationId: post-admin-delete-all
+      tags:
+        - Admin
+      parameters:
+        - schema:
+            type: string
+          name: endpointId
+          in: path
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkOperationResult'
   '/api/admin/endpoint/{endpointId}/purge-preview':
     post:
       summary: Preview subscription purge

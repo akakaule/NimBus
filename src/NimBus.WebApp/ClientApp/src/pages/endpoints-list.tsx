@@ -284,7 +284,6 @@ export default class EndpointsList extends React.Component<
       { id: ITableData.pending, label: "Pending", numeric: true },
       { id: ITableData.lastUpdated, label: "Last updated", numeric: false },
       { id: ITableData.status, label: "Status", numeric: false },
-      { id: ITableData.actions, label: "Actions", numeric: false },
     ];
 
     return (
@@ -364,23 +363,6 @@ export default class EndpointsList extends React.Component<
           {
             value: this.mapStatusToIcon(endpointStatusValue),
             searchValue: endpointStatusValue.toString(),
-          },
-        ],
-        [
-          ITableData.actions,
-          {
-            value: (
-              <div className="flex gap-1">
-                {this.buildPurgeButton(endpointId)}
-                {this.buildDisableButton(
-                  endpointId,
-                  metadata?.subscriptionStatus === "active"
-                    ? "disable"
-                    : "enable",
-                )}
-              </div>
-            ),
-            searchValue: "Actions",
           },
         ],
       ]),

@@ -1,10 +1,10 @@
 using Azure.Messaging.ServiceBus;
 using NimBus.Core.Events;
-using NimBus.Core.Logging;
 using NimBus.Core.Messages;
 using NimBus.MessageStore;
 using NimBus.ServiceBus;
 using Newtonsoft.Json;
+using Serilog;
 using System;
 using System.Threading.Tasks;
 

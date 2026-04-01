@@ -1,10 +1,11 @@
 using Azure.Messaging.ServiceBus;
 using NimBus.Core.Events;
-using NimBus.Core.Logging;
 using NimBus.Core.Messages;
 using NimBus.SDK.EventHandlers;
 using NimBus.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -32,8 +33,6 @@ namespace NimBus.SDK
         /// </summary>
         /// <param name="client">The ServiceBusClient to use for sending responses.</param>
         /// <param name="endpoint">The endpoint (topic name) to send responses to.</param>
-        /// <param name="loggerProvider">The logger provider.</param>
-        /// <param name="deferredMessageProcessor">Optional processor for handling deferred messages from the non-session subscription.</param>
         /// <param name="entityPath">Optional entity path (queue name or topic/subscription) for receiving deferred messages.
         /// Required if using ReceiveDeferredMessageAsync in isolated worker model.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
@@ -41,7 +40,6 @@ namespace NimBus.SDK
         public static Task<SubscriberClient> CreateAsync(
             ServiceBusClient client,
             string endpoint,
-            ILoggerProvider loggerProvider,
             string entityPath = null,
             CancellationToken cancellationToken = default)
         {
@@ -53,7 +51,7 @@ namespace NimBus.SDK
             var responseService = new ResponseService(sender);
             var eventHandlerProvider = new EventHandlerProvider();
 
-            IMessageHandler strictMessageHandler = new StrictMessageHandler(eventHandlerProvider, responseService, loggerProvider);
+            IMessageHandler strictMessageHandler = new StrictMessageHandler(eventHandlerProvider, responseService, NullLogger.Instance);
 
             var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, entityPath);
 
@@ -65,11 +63,10 @@ namespace NimBus.SDK
         /// </summary>
         /// <param name="client">The ServiceBusClient to use for sending responses.</param>
         /// <param name="endpoint">The endpoint to send responses to.</param>
-        /// <param name="loggerProvider">The logger provider.</param>
         /// <param name="entityPath">Optional entity path (queue name or topic/subscription) for receiving deferred messages.
         /// Required if using ReceiveDeferredMessageAsync in isolated worker model.</param>
         [Obsolete("Use CreateAsync instead for async initialization.")]
-        public SubscriberClient(ServiceBusClient client, string endpoint, ILoggerProvider loggerProvider, string entityPath = null)
+        public SubscriberClient(ServiceBusClient client, string endpoint, string entityPath = null)
         {
             if (client == null) throw new ArgumentNullException(nameof(client));
             if (string.IsNullOrEmpty(endpoint)) throw new ArgumentException("Endpoint cannot be null or empty.", nameof(endpoint));
@@ -81,7 +78,7 @@ namespace NimBus.SDK
 
             _eventHandlerProvider = new EventHandlerProvider();
 
-            IMessageHandler strictMessageHandler = new StrictMessageHandler(_eventHandlerProvider, responseService, loggerProvider);
+            IMessageHandler strictMessageHandler = new StrictMessageHandler(_eventHandlerProvider, responseService, NullLogger.Instance);
 
             _serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, entityPath);
         }

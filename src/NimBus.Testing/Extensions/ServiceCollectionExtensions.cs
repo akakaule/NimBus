@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.Core.Messages;
 using NimBus.SDK;
 using NimBus.SDK.EventHandlers;
@@ -20,8 +22,7 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton<IPublisherClient>(sp =>
         {
-            var loggerProvider = sp.GetService<Core.Logging.ILoggerProvider>();
-            return new PublisherClient(bus, loggerProvider);
+            return new PublisherClient(bus);
         });
 
         var builder = new NimBusSubscriberBuilder(services);
@@ -50,17 +51,17 @@ public static class ServiceCollectionExtensions
                 retryPolicyProvider = sp.GetService<IRetryPolicyProvider>();
             }
 
-            var loggerProvider = sp.GetService<Core.Logging.ILoggerProvider>()
-                ?? NullLoggerProvider.Instance;
+            var logger = sp.GetService<ILogger<StrictMessageHandler>>()
+                ?? (Microsoft.Extensions.Logging.ILogger)NullLogger.Instance;
 
             if (retryPolicyProvider != null)
             {
                 return new StrictMessageHandler(
-                    eventHandlerProvider, responseService, loggerProvider, retryPolicyProvider);
+                    eventHandlerProvider, responseService, logger, retryPolicyProvider);
             }
 
             return new StrictMessageHandler(
-                eventHandlerProvider, responseService, loggerProvider);
+                eventHandlerProvider, responseService, logger);
         });
 
         return services;

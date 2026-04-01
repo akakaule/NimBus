@@ -1,6 +1,5 @@
 ﻿using Azure.Messaging.ServiceBus;
 using NimBus.Core.Events;
-using NimBus.Core.Logging;
 using NimBus.Core.Messages;
 using NimBus.ServiceBus;
 using Newtonsoft.Json;
@@ -16,18 +15,15 @@ namespace NimBus.SDK;
 public class PublisherClient : IPublisherClient
 {
     private readonly ISender _sender;
-    private readonly ILoggerProvider _loggerProvider;
 
     /// <summary>
     /// Creates a new PublisherClient with the specified sender.
     /// Preferred for DI registration via <see cref="Extensions.ServiceCollectionExtensions.AddNimBusPublisher"/>.
     /// </summary>
     /// <param name="sender">The sender to use for publishing messages.</param>
-    /// <param name="loggerProvider">Optional logger provider.</param>
-    public PublisherClient(ISender sender, ILoggerProvider loggerProvider)
+    public PublisherClient(ISender sender)
     {
         _sender = sender ?? throw new ArgumentNullException(nameof(sender));
-        _loggerProvider = loggerProvider;
     }
 
     /// <summary>
@@ -35,13 +31,11 @@ public class PublisherClient : IPublisherClient
     /// </summary>
     /// <param name="client">The ServiceBusClient to use for publishing messages.</param>
     /// <param name="endpoint">The endpoint (topic name) to publish messages to.</param>
-    /// <param name="loggerProvider">Optional logger provider.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A new PublisherClient instance.</returns>
     public static Task<PublisherClient> CreateAsync(
         ServiceBusClient client,
         string endpoint,
-        ILoggerProvider loggerProvider = null,
         CancellationToken cancellationToken = default)
     {
         if (client == null) throw new ArgumentNullException(nameof(client));
@@ -50,26 +44,17 @@ public class PublisherClient : IPublisherClient
         var serviceBusSender = client.CreateSender(endpoint);
         var sender = new Sender(serviceBusSender);
 
-        return Task.FromResult(new PublisherClient(sender, loggerProvider));
+        return Task.FromResult(new PublisherClient(sender));
     }
 
     /// <summary>
     /// Creates a new PublisherClient.
     /// </summary>
     [Obsolete("Use CreateAsync instead for async initialization.")]
-    public PublisherClient(ServiceBusClient client, string endpoint) : this(client, endpoint, null)
-    {
-    }
-
-    /// <summary>
-    /// Creates a new PublisherClient.
-    /// </summary>
-    [Obsolete("Use CreateAsync instead for async initialization.")]
-    public PublisherClient(ServiceBusClient client, string endpoint, ILoggerProvider loggerProvider)
+    public PublisherClient(ServiceBusClient client, string endpoint)
     {
         if (client == null) throw new ArgumentNullException(nameof(client));
         if (string.IsNullOrEmpty(endpoint)) throw new ArgumentException("Endpoint cannot be null or empty.", nameof(endpoint));
-        _loggerProvider = loggerProvider;
 
         var serviceBusSender = client.CreateSender(endpoint);
         _sender = new Sender(serviceBusSender);
@@ -100,17 +85,14 @@ public class PublisherClient : IPublisherClient
         var message = GetMessage(@event, correlationId, messageId, sessionId);
         activity?.SetTag("messaging.message_id", message.MessageId);
         activity?.SetTag("messaging.session_id", message.SessionId);
-        var logger = _loggerProvider?.GetContextualLogger(message);
 
         try
         {
             await _sender.Send(message);
-            logger?.Information("Publisher Successfully published {EventType} event on ServiceBus. MessageId: {MessageId}, CorrelationId: {CorrelationId}", eventType, message.MessageId, correlationId);
         }
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            logger?.Error(ex, "Failed to publish {EventType} event on ServiceBus", eventType);
             throw;
         }
     }
@@ -135,17 +117,13 @@ public class PublisherClient : IPublisherClient
         var messages = events.Select(@event => GetMessage(@event, correlationId)).ToList();
         activity?.SetTag("messaging.batch.message_count", messages.Count);
 
-        var logger = _loggerProvider?.GetContextualLogger(correlationId);
-
         try
         {
             await _sender.Send(messages);
-            logger?.Information("Publisher Successfully published batch of {Count} events on ServiceBus. CorrelationId: {CorrelationId}", messages.Count(), correlationId);
         }
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            logger?.Error(ex, $"Failed to publish batch of events on ServiceBus");
             throw;
         }
     }

@@ -1,4 +1,4 @@
-﻿using NimBus.Core.Logging;
+﻿using Serilog;
 using System.Threading.Tasks;
 
 namespace NimBus.Management.ServiceBus;

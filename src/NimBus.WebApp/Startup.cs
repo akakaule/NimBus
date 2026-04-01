@@ -17,7 +17,6 @@ using NimBus.WebApp.Services.ApplicationInsights;
 using Microsoft.AspNetCore.Http;
 using NSwag.AspNetCore;
 using NimBus.Core;
-using NimBus.Core.Logging;
 using NimBus.Core.Messages;
 using NimBus.Manager;
 using NimBus.MessageStore;
@@ -30,8 +29,6 @@ using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.Middleware;
 using System.Text.Json.Serialization;
 using Microsoft.Azure.Cosmos;
-using Serilog;
-using NimBus.SDK.Logging;
 using NimBus.Management.ServiceBus;
 using Azure.Identity;
 using Azure.Messaging.ServiceBus;
@@ -42,7 +39,6 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
-using NimBusLoggerProvider = NimBus.Core.Logging.ILoggerProvider;
 
 namespace NimBus.WebApp
 {
@@ -143,17 +139,6 @@ namespace NimBus.WebApp
                 services.AddSingleton(new ServiceBusAdministrationClient(serviceBusConnection));
                 services.AddSingleton(new ServiceBusClient(serviceBusConnection));
             }
-            string globalTraceLogInstrKey = Configuration.GetValue<string>("APPINSIGHTS_INSTRUMENTATIONKEY");
-            services.AddSingleton<NimBusLoggerProvider>(sp => {
-                Serilog.ILogger baseLogger = new LoggerConfiguration()
-                .MinimumLevel.Verbose()
-                .WriteTo.Console()
-                .WriteTo.ApplicationInsights(globalTraceLogInstrKey, TelemetryConverter.Traces)
-                .CreateLogger();
-
-                return new LoggerProvider(baseLogger);
-            });
-
             string cosmosEndpoint = Configuration.GetValue<string>("CosmosAccountEndpoint");
             string cosmosConnection = Configuration.GetConnectionString("cosmos")
                 ?? Configuration.GetValue<string>("CosmosConnection");

@@ -1,5 +1,5 @@
 ﻿using Azure.Messaging.ServiceBus.Administration;
-using NimBus.Core.Logging;
+using Serilog;
 using System;
 using System.Threading.Tasks;
 

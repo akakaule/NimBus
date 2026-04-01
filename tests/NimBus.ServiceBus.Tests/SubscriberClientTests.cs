@@ -2,7 +2,6 @@
 using Azure.Messaging.ServiceBus;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Events;
-using NimBus.Core.Logging;
 using NimBus.SDK;
 using NimBus.SDK.EventHandlers;
 using System;
@@ -20,21 +19,21 @@ public class SubscriberClientTests
     public void CreateAsync_NullClient_ThrowsArgumentNullException()
     {
         Assert.ThrowsException<ArgumentNullException>(() =>
-            SubscriberClient.CreateAsync(null!, "endpoint", new FakeLoggerProvider()).GetAwaiter().GetResult());
+            SubscriberClient.CreateAsync(null!, "endpoint").GetAwaiter().GetResult());
     }
 
     [TestMethod]
     public void CreateAsync_NullEndpoint_ThrowsArgumentException()
     {
         Assert.ThrowsException<ArgumentException>(() =>
-            SubscriberClient.CreateAsync(new RecordingServiceBusClient(), null!, new FakeLoggerProvider()).GetAwaiter().GetResult());
+            SubscriberClient.CreateAsync(new RecordingServiceBusClient(), null!).GetAwaiter().GetResult());
     }
 
     [TestMethod]
     public void CreateAsync_EmptyEndpoint_ThrowsArgumentException()
     {
         Assert.ThrowsException<ArgumentException>(() =>
-            SubscriberClient.CreateAsync(new RecordingServiceBusClient(), "", new FakeLoggerProvider()).GetAwaiter().GetResult());
+            SubscriberClient.CreateAsync(new RecordingServiceBusClient(), "").GetAwaiter().GetResult());
     }
 
     // ── CreateAsync factory ─────────────────────────────────────────────
@@ -43,7 +42,7 @@ public class SubscriberClientTests
     public async Task CreateAsync_WithoutDeferredProcessor_CreatesClient()
     {
         var client = new RecordingServiceBusClient();
-        var sut = await SubscriberClient.CreateAsync(client, "orders", new FakeLoggerProvider());
+        var sut = await SubscriberClient.CreateAsync(client, "orders");
 
         Assert.IsNotNull(sut);
         Assert.AreEqual("orders", client.LastSenderEntityPath, "Should create sender for the endpoint topic");
@@ -54,7 +53,7 @@ public class SubscriberClientTests
     {
         var client = new RecordingServiceBusClient();
 
-        var sut = await SubscriberClient.CreateAsync(client, "orders", new FakeLoggerProvider());
+        var sut = await SubscriberClient.CreateAsync(client, "orders");
 
         Assert.IsNotNull(sut);
     }
@@ -65,7 +64,7 @@ public class SubscriberClientTests
     public async Task Handle_WithSessionActions_DelegatesToAdapter()
     {
         var client = new RecordingServiceBusClient();
-        var sut = await SubscriberClient.CreateAsync(client, "orders", new FakeLoggerProvider());
+        var sut = await SubscriberClient.CreateAsync(client, "orders");
         var message = CreateValidMessage();
 
         // Should not throw (adapter processes the message through the handler pipeline)
@@ -76,7 +75,7 @@ public class SubscriberClientTests
     public async Task Handle_WithSessionReceiver_DelegatesToAdapter()
     {
         var client = new RecordingServiceBusClient();
-        var sut = await SubscriberClient.CreateAsync(client, "orders", new FakeLoggerProvider());
+        var sut = await SubscriberClient.CreateAsync(client, "orders");
         var message = CreateValidMessage();
 
         await sut.Handle(message, new RecordingServiceBusSessionReceiver());
@@ -86,7 +85,7 @@ public class SubscriberClientTests
     public async Task Handle_WithMessageAndSessionActions_DelegatesToAdapter()
     {
         var client = new RecordingServiceBusClient();
-        var sut = await SubscriberClient.CreateAsync(client, "orders", new FakeLoggerProvider());
+        var sut = await SubscriberClient.CreateAsync(client, "orders");
         var message = CreateValidMessage();
 
         await sut.Handle(message, ServiceBusTestDoubles.CreateMessageActions(), ServiceBusTestDoubles.CreateSessionActions());
@@ -98,7 +97,7 @@ public class SubscriberClientTests
     public async Task RegisterHandler_ThenHandle_InvokesRegisteredHandler()
     {
         var client = new RecordingServiceBusClient();
-        var sut = await SubscriberClient.CreateAsync(client, "orders", new FakeLoggerProvider());
+        var sut = await SubscriberClient.CreateAsync(client, "orders");
 
         var handler = new FakeTestEventHandler();
         sut.RegisterHandler<TestEvent>(() => handler);
@@ -115,7 +114,7 @@ public class SubscriberClientTests
     {
         var client = new RecordingServiceBusClient();
 
-        var sut = new SubscriberClient(client, "orders", new FakeLoggerProvider());
+        var sut = new SubscriberClient(client, "orders");
 
         Assert.IsNotNull(sut);
         Assert.AreEqual("orders", client.LastSenderEntityPath);
@@ -126,7 +125,7 @@ public class SubscriberClientTests
     {
         var client = new RecordingServiceBusClient();
 
-        var sut = new SubscriberClient(client, "orders", new FakeLoggerProvider());
+        var sut = new SubscriberClient(client, "orders");
 
         Assert.IsNotNull(sut);
     }
@@ -135,37 +134,17 @@ public class SubscriberClientTests
     public void ObsoleteConstructor_NullClient_ThrowsArgumentNullException()
     {
         Assert.ThrowsException<ArgumentNullException>(() =>
-            new SubscriberClient(null!, "orders", new FakeLoggerProvider()));
+            new SubscriberClient(null!, "orders"));
     }
 
     [TestMethod]
     public void ObsoleteConstructor_EmptyEndpoint_ThrowsArgumentException()
     {
         Assert.ThrowsException<ArgumentException>(() =>
-            new SubscriberClient(new RecordingServiceBusClient(), "", new FakeLoggerProvider()));
+            new SubscriberClient(new RecordingServiceBusClient(), ""));
     }
 
     // ── Fakes ────────────────────────────────────────────────────────────
-
-    private sealed class FakeLoggerProvider : ILoggerProvider
-    {
-        private readonly ILogger _logger = new FakeLogger();
-        public ILogger GetContextualLogger(NimBus.Core.Messages.IMessageContext messageContext) => _logger;
-        public ILogger GetContextualLogger(NimBus.Core.Messages.IMessage message) => _logger;
-        public ILogger GetContextualLogger(string correlationId) => _logger;
-    }
-
-    private sealed class FakeLogger : ILogger
-    {
-        public void Verbose(string messageTemplate, params object[] propertyValues) { }
-        public void Verbose(Exception exception, string messageTemplate, params object[] propertyValues) { }
-        public void Information(string messageTemplate, params object[] propertyValues) { }
-        public void Information(Exception exception, string messageTemplate, params object[] propertyValues) { }
-        public void Error(string messageTemplate, params object[] propertyValues) { }
-        public void Error(Exception exception, string messageTemplate, params object[] propertyValues) { }
-        public void Fatal(string messageTemplate, params object[] propertyValues) { }
-        public void Fatal(Exception exception, string messageTemplate, params object[] propertyValues) { }
-    }
 
     private sealed class FakeDeferredMessageProcessor : NimBus.Core.Messages.IDeferredMessageProcessor
     {
@@ -177,7 +156,7 @@ public class SubscriberClientTests
     {
         public int HandleCalls { get; private set; }
 
-        public Task Handle(TestEvent message, ILogger logger, IEventHandlerContext context, CancellationToken cancellationToken = default)
+        public Task Handle(TestEvent message, IEventHandlerContext context, CancellationToken cancellationToken = default)
         {
             HandleCalls++;
             return Task.CompletedTask;

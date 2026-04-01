@@ -2,10 +2,8 @@ using System;
 using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 using NimBus.Broker.Services;
-using NimBus.Core.Logging;
 using NimBus.Core.Messages;
 using NimBus.MessageStore;
-using NimBus.SDK.Logging;
 using NimBus.ServiceBus;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Configuration;
@@ -35,10 +33,10 @@ namespace NimBus.Resolver
             services.AddSingleton<ICosmosDbClient>(sp =>
             {
                 var cosmosClient = sp.GetRequiredService<CosmosClient>();
-                return new CosmosDbClient(cosmosClient, new SerilogAdapter(Log.Logger));
+                return new CosmosDbClient(cosmosClient, Log.Logger);
             });
 
-            services.AddSingleton<ILoggerProvider>(sp => new LoggerProvider(Log.Logger));
+            services.AddSingleton<Serilog.ILogger>(Log.Logger);
 
             services.AddSingleton<IMessageHandler, ResolverService>();
 

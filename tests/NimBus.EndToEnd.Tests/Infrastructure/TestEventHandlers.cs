@@ -1,5 +1,4 @@
 using NimBus.Core.Events;
-using NimBus.Core.Logging;
 using NimBus.Core.Messages.Exceptions;
 using NimBus.SDK.EventHandlers;
 
@@ -15,7 +14,7 @@ internal sealed class RecordingOrderPlacedHandler : IEventHandler<OrderPlaced>
     public Exception? ExceptionToThrow { get; set; }
     public Func<OrderPlaced, Exception?>? ExceptionFactory { get; set; }
 
-    public Task Handle(OrderPlaced message, ILogger logger, IEventHandlerContext context, CancellationToken cancellationToken = default)
+    public Task Handle(OrderPlaced message, IEventHandlerContext context, CancellationToken cancellationToken = default)
     {
         var exception = ExceptionFactory?.Invoke(message) ?? ExceptionToThrow;
         if (exception != null)
@@ -35,7 +34,7 @@ internal sealed class RecordingOrderCancelledHandler : IEventHandler<OrderCancel
     public List<OrderCancelled> ReceivedEvents { get; } = new();
     public List<IEventHandlerContext> ReceivedContexts { get; } = new();
 
-    public Task Handle(OrderCancelled message, ILogger logger, IEventHandlerContext context, CancellationToken cancellationToken = default)
+    public Task Handle(OrderCancelled message, IEventHandlerContext context, CancellationToken cancellationToken = default)
     {
         ReceivedEvents.Add(message);
         ReceivedContexts.Add(context);

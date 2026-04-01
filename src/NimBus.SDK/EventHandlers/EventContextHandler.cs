@@ -1,5 +1,4 @@
-﻿using NimBus.Core.Events;
-using NimBus.Core.Logging;
+using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using System;
@@ -22,13 +21,13 @@ namespace NimBus.SDK.EventHandlers
         /// <summary>
         /// Abstract override, handles <see cref="IEventContext"/> regardless of when/how/why the event message was sent.
         /// </summary>
-        public async Task Handle(IMessageContext context, ILogger logger, CancellationToken cancellationToken = default)
+        public async Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
         {
             // Get handler from factory.
             var handler = GetHandler(context.MessageContent.EventContent.EventTypeId);
 
             // Invoke handler.
-            await handler.Handle(context, logger, cancellationToken);
+            await handler.Handle(context, cancellationToken);
         }
 
         public void RegisterHandler<T_Event>(Func<IEventHandler<T_Event>> eventHandlerFactory)

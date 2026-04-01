@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using NimBus.Core.Logging;
 using NimBus.Events.Orders;
 using NimBus.SDK.EventHandlers;
 using System;
@@ -17,7 +16,7 @@ namespace AspirePubSub.Subscriber.Handlers
             _logger = logger;
         }
 
-        public Task Handle(OrderPlaced message, NimBus.Core.Logging.ILogger logger, IEventHandlerContext context, CancellationToken cancellationToken = default)
+        public Task Handle(OrderPlaced message, IEventHandlerContext context, CancellationToken cancellationToken = default)
         {
             if (message.SimulateFailure)
                 throw new InvalidOperationException($"Simulated failure for order {message.OrderId}");

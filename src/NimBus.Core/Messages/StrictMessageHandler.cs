@@ -1,5 +1,7 @@
-﻿using NimBus.Core.Logging;
+using NimBus.Core.Extensions;
 using NimBus.Core.Messages.Exceptions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,29 +13,47 @@ namespace NimBus.Core.Messages
         private readonly IEventContextHandler _eventContextHandler;
         private readonly IResponseService _responseService;
         private readonly IRetryPolicyProvider _retryPolicyProvider;
+        private readonly ILogger _logger;
 
-        public StrictMessageHandler(IEventContextHandler eventContextHandler, IResponseService responseService, ILoggerProvider loggerProvider) : base(loggerProvider)
+        public StrictMessageHandler(IEventContextHandler eventContextHandler, IResponseService responseService, ILogger logger = null)
+            : base(logger ?? NullLogger.Instance)
         {
             _eventContextHandler = eventContextHandler;
             _responseService = responseService;
+            _logger = logger ?? NullLogger.Instance;
         }
 
         public StrictMessageHandler(
             IEventContextHandler eventContextHandler,
             IResponseService responseService,
-            ILoggerProvider loggerProvider,
-            IRetryPolicyProvider retryPolicyProvider) : base(loggerProvider)
+            ILogger logger,
+            IRetryPolicyProvider retryPolicyProvider) : base(logger ?? NullLogger.Instance)
         {
             _eventContextHandler = eventContextHandler;
             _responseService = responseService;
             _retryPolicyProvider = retryPolicyProvider;
+            _logger = logger ?? NullLogger.Instance;
         }
 
-        public override async Task HandleEventRequest(IMessageContext messageContext, ILogger logger, CancellationToken cancellationToken = default)
+        public StrictMessageHandler(
+            IEventContextHandler eventContextHandler,
+            IResponseService responseService,
+            ILogger logger,
+            IRetryPolicyProvider retryPolicyProvider,
+            MessagePipeline pipeline,
+            MessageLifecycleNotifier lifecycleNotifier) : base(logger ?? NullLogger.Instance, pipeline, lifecycleNotifier)
+        {
+            _eventContextHandler = eventContextHandler;
+            _responseService = responseService;
+            _retryPolicyProvider = retryPolicyProvider;
+            _logger = logger ?? NullLogger.Instance;
+        }
+
+        public override async Task HandleEventRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
             try
             {
-                LogInfoWithMessageMetaData(logger, messageContext, "Handle");
+                LogInfo(messageContext, "Handle");
 
                 if (messageContext.EventTypeId == "Heartbeat" && messageContext.MessageType == MessageType.EventRequest)
                 {
@@ -42,30 +62,28 @@ namespace NimBus.Core.Messages
                 else
                 {
                     await VerifySessionIsNotBlocked(messageContext, cancellationToken);
-                    await HandleEventContent(messageContext, logger, cancellationToken);
+                    await HandleEventContent(messageContext, cancellationToken);
                     await SendResolutionResponse(messageContext, cancellationToken);
                 }
                 await CompleteMessage(messageContext, cancellationToken);
-                LogInfoWithMessageMetaData(logger, messageContext, "Successfully processed");
+                LogInfo(messageContext, "Successfully processed");
             }
             catch (EventHandlerNotFoundException exception)
             {
-                LogErrorWithMessageMetaData(logger, messageContext, "Failed to handle event", exception);
+                LogError(messageContext, "Failed to handle event", exception);
                 await SendUnsupportedResponse(messageContext, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
             }
             catch (SessionBlockedException exception)
             {
-                LogErrorWithMessageMetaData(logger, messageContext, "Failed to handle event", exception);
-                // Session is blocked (by failed event request, or by deferred event requests).
+                LogError(messageContext, "Failed to handle event", exception);
                 await SendDeferralResponse(messageContext, exception, cancellationToken);
                 await DeferMessageToSubscription(messageContext, cancellationToken);
                 throw;
             }
             catch (EventContextHandlerException exception)
             {
-                LogErrorWithMessageMetaData(logger, messageContext, "Failed to handle event", exception);
-                // Event handler threw (non-transient) exception.
+                LogError(messageContext, "Failed to handle event", exception);
                 await SendErrorResponse(messageContext, exception, cancellationToken);
                 await BlockSession(messageContext, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
@@ -74,98 +92,93 @@ namespace NimBus.Core.Messages
             }
         }
 
-
-        public override async Task HandleRetryRequest(IMessageContext messageContext, ILogger logger, CancellationToken cancellationToken = default)
+        public override async Task HandleRetryRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
             try
             {
-                LogInfoWithMessageMetaData(logger, messageContext, "Handle (RetryRequest)");
+                LogInfo(messageContext, "Handle (RetryRequest)");
                 await VerifySessionIsBlockedByThis(messageContext, cancellationToken);
-                await HandleEventContent(messageContext, logger, cancellationToken);
+                await HandleEventContent(messageContext, cancellationToken);
                 await UnblockSession(messageContext, cancellationToken);
-                await ContinueWithAnyDeferredMessages(messageContext, logger, cancellationToken);
+                await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
                 await SendResolutionResponse(messageContext, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
-                LogInfoWithMessageMetaData(logger, messageContext, "Successfully processed (RetryRequest)");
+                LogInfo(messageContext, "Successfully processed (RetryRequest)");
             }
             catch (SessionBlockedException exception)
             {
-                LogErrorWithMessageMetaData(logger, messageContext, "Failed to handle event (RetryRequest)", exception);
-                // Session is not blocked by this, so the resubmitted event must have already been resolved.
+                LogError(messageContext, "Failed to handle event (RetryRequest)", exception);
                 await SendResolutionResponse(messageContext, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
             }
             catch (EventContextHandlerException exception)
             {
-                LogErrorWithMessageMetaData(logger, messageContext, "Failed to handle event (RetryRequest)", exception);
-                // Event handler threw (non-transient) exception.
+                LogError(messageContext, "Failed to handle event (RetryRequest)", exception);
                 await SendErrorResponse(messageContext, exception, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
                 await CheckForRetry(messageContext, exception, cancellationToken);
             }
         }
 
-        public override async Task HandleResubmissionRequest(IMessageContext messageContext, ILogger logger, CancellationToken cancellationToken = default)
+        public override async Task HandleResubmissionRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
             try
             {
-                LogInfoWithMessageMetaData(logger, messageContext, "Handle (Resubmission)");
+                LogInfo(messageContext, "Handle (Resubmission)");
                 AuthorizeManagerRequest(messageContext);
-                await HandleEventContent(messageContext, logger, cancellationToken);
+                await HandleEventContent(messageContext, cancellationToken);
                 if (await messageContext.IsSessionBlockedByThis(cancellationToken))
                     await UnblockSession(messageContext, cancellationToken);
-                await ContinueWithAnyDeferredMessages(messageContext, logger, cancellationToken);
+                await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
                 await SendResolutionResponse(messageContext, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
-                LogInfoWithMessageMetaData(logger, messageContext, "Successfully processed (Resubmission)");
+                LogInfo(messageContext, "Successfully processed (Resubmission)");
             }
             catch (EventHandlerNotFoundException exception)
             {
-                LogErrorWithMessageMetaData(logger, messageContext, "Failed to handle event (Resubmission)", exception);
+                LogError(messageContext, "Failed to handle event (Resubmission)", exception);
                 await SendUnsupportedResponse(messageContext, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
             }
             catch (EventContextHandlerException exception)
             {
-                LogErrorWithMessageMetaData(logger, messageContext, "Failed to handle event (Resubmission)", exception);
-                // Event handler threw (non-transient) exception.
+                LogError(messageContext, "Failed to handle event (Resubmission)", exception);
                 await SendErrorResponse(messageContext, exception, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
             }
         }
 
-        public override async Task HandleSkipRequest(IMessageContext messageContext, ILogger logger, CancellationToken cancellationToken = default)
+        public override async Task HandleSkipRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
             try
             {
-                LogInfoWithMessageMetaData(logger, messageContext, "Handle (Skip)");
+                LogInfo(messageContext, "Handle (Skip)");
                 AuthorizeManagerRequest(messageContext);
                 await VerifySessionIsBlockedByThis(messageContext, cancellationToken);
                 await UnblockSession(messageContext, cancellationToken);
-                await ContinueWithAnyDeferredMessages(messageContext, logger, cancellationToken);
+                await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
                 await SendSkipResponse(messageContext, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
             }
             catch (SessionBlockedException)
             {
-                // Session is not blocked by this, so the resubmitted event must have already been resolved.
                 await SendSkipResponse(messageContext, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
             }
 
-            LogInfoWithMessageMetaData(logger, messageContext, "Successfully processed (Skip)");
+            LogInfo(messageContext, "Successfully processed (Skip)");
         }
 
-        public override async Task HandleContinuationRequest(IMessageContext messageContext, ILogger logger, CancellationToken cancellationToken = default)
+        public override async Task HandleContinuationRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
             try
             {
-                LogInfoWithMessageMetaData(logger, messageContext, "Handle (Continuation)");
+                LogInfo(messageContext, "Handle (Continuation)");
 
                 AuthorizeContinuationRequest(messageContext);
                 IMessageContext deferredMessageContext = await ReceiveNextDeferredAndVerifyEventId(messageContext, true, cancellationToken);
-                await HandleEventRequest(deferredMessageContext, logger, cancellationToken);
-                await ContinueWithAnyDeferredMessages(messageContext, logger, cancellationToken);
+                await HandleEventRequest(deferredMessageContext, cancellationToken);
+                await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
             }
             catch (EventContextHandlerException)
@@ -174,13 +187,10 @@ namespace NimBus.Core.Messages
             }
             catch (NextDeferredException)
             {
-                // Either: 1) There is no next deferred event request,
-                // or 2) EventId of continuation request does not match EventId of next deferred event request.
-                // Either way, the requested continuation must have already been resolved.
                 await CompleteMessage(messageContext, cancellationToken);
             }
 
-            LogInfoWithMessageMetaData(logger, messageContext, "Successfully processed (Continuation)");
+            LogInfo(messageContext, "Successfully processed (Continuation)");
         }
 
         // HandleProcessDeferredRequest is intentionally NOT overridden here.
@@ -195,16 +205,9 @@ namespace NimBus.Core.Messages
 
         private async Task DeferMessageToSubscription(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
-            // Get the next deferral sequence number for ordering
             int deferralSequence = await messageContext.GetNextDeferralSequenceAndIncrement(cancellationToken);
-
-            // Send message to deferred subscription
             await _responseService.SendToDeferredSubscription(messageContext, deferralSequence, cancellationToken);
-
-            // Increment deferred count in session state
             await messageContext.IncrementDeferredCount(cancellationToken);
-
-            // Complete the original message (it's now stored in the deferred subscription)
             await messageContext.Complete(cancellationToken);
         }
 
@@ -278,11 +281,11 @@ namespace NimBus.Core.Messages
                 throw new SessionBlockedException($"Session {messageContext.SessionId} is blocked by {blockedBy}");
         }
 
-        private async Task HandleEventContent(IMessageContext context, ILogger logger, CancellationToken cancellationToken = default)
+        private async Task HandleEventContent(IMessageContext context, CancellationToken cancellationToken = default)
         {
             try
             {
-                await _eventContextHandler.Handle(context, logger, cancellationToken);
+                await _eventContextHandler.Handle(context, cancellationToken);
             }
             catch (TransientException)
             {
@@ -301,23 +304,21 @@ namespace NimBus.Core.Messages
             }
         }
 
-        private async Task ContinueWithAnyDeferredMessages(IMessageContext messageContext, ILogger logger, CancellationToken cancellationToken = default)
+        private async Task ContinueWithAnyDeferredMessages(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
-            // First, check for legacy deferred messages in session state
             var next = await messageContext.ReceiveNextDeferred(cancellationToken);
             if (next != null)
             {
                 await _responseService.SendContinuationRequestToSelf(next, cancellationToken);
-                LogInfoWithMessageMetaData(logger, messageContext, "Send ContinuationRequest (legacy)");
+                LogInfo(messageContext, "Send ContinuationRequest (legacy)");
                 return;
             }
 
-            // Then, check for new subscription-based deferred messages
             var deferredCount = await messageContext.GetDeferredCount(cancellationToken);
             if (deferredCount > 0)
             {
                 await _responseService.SendProcessDeferredRequest(messageContext, cancellationToken);
-                LogInfoWithMessageMetaData(logger, messageContext, $"Send ProcessDeferredRequest ({deferredCount} deferred messages)");
+                LogInfo(messageContext, $"Send ProcessDeferredRequest ({deferredCount} deferred messages)");
             }
         }
 
@@ -338,8 +339,7 @@ namespace NimBus.Core.Messages
                 return;
             }
 
-            // Legacy fallback when no IRetryPolicyProvider is configured
-#pragma warning disable CS0618 // Type or member is obsolete
+#pragma warning disable CS0618
             var retryDefinition = RetryDefinitions.GetRetryDefinition(eventTypeId, exceptionText, messageContext.To);
             if (retryDefinition != null && messageContext.RetryCount != null && messageContext.RetryCount < retryDefinition.RetryCount)
             {
@@ -348,20 +348,16 @@ namespace NimBus.Core.Messages
 #pragma warning restore CS0618
         }
 
-        private void LogInfoWithMessageMetaData(ILogger logger, IMessageContext messageContext, string prefixMessage)
+        private void LogInfo(IMessageContext messageContext, string prefixMessage)
         {
-            var logMetaData = "EventTypeId: {EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}";
-
-            logger.Information($"{prefixMessage} {logMetaData}",
-                messageContext.MessageContent?.EventContent?.EventTypeId, messageContext.EventId, messageContext.MessageId, messageContext.SessionId);
+            _logger.LogInformation("{Prefix} EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
+                prefixMessage, messageContext.MessageContent?.EventContent?.EventTypeId, messageContext.EventId, messageContext.MessageId, messageContext.SessionId);
         }
 
-        private void LogErrorWithMessageMetaData(ILogger logger, IMessageContext messageContext, string prefixMessage, Exception exception)
+        private void LogError(IMessageContext messageContext, string prefixMessage, Exception exception)
         {
-            var logMetaData = "EventTypeId: {EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}";
-
-            logger.Error(exception, $"{prefixMessage} {logMetaData}",
-                messageContext.MessageContent?.EventContent?.EventTypeId, messageContext.EventId, messageContext.MessageId, messageContext.SessionId);
+            _logger.LogError(exception, "{Prefix} EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
+                prefixMessage, messageContext.MessageContent?.EventContent?.EventTypeId, messageContext.EventId, messageContext.MessageId, messageContext.SessionId);
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿using NimBus.Core.Logging;
+﻿using Serilog;
 using NimBus.Core.Messages;
 using NimBus.MessageStore.States;
 using Microsoft.Azure.Cosmos;

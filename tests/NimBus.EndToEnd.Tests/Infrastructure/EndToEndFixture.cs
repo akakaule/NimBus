@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.Core.Events;
 using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
@@ -29,12 +31,10 @@ internal sealed class EndToEndFixture
 
     public EndToEndFixture()
     {
-        var loggerProvider = new TestLoggerProvider();
-
         _publishBus = new InMemoryBus();
         _responseBus = new InMemoryBus();
 
-        Publisher = new PublisherClient(_publishBus, loggerProvider);
+        Publisher = new PublisherClient(_publishBus);
 
         _eventHandlerProvider = new EventHandlerProvider();
         var responseService = new ResponseService(_responseBus);
@@ -42,17 +42,15 @@ internal sealed class EndToEndFixture
         _messageHandler = new StrictMessageHandler(
             _eventHandlerProvider,
             responseService,
-            loggerProvider);
+            NullLogger.Instance);
     }
 
     public EndToEndFixture(IRetryPolicyProvider retryPolicyProvider)
     {
-        var loggerProvider = new TestLoggerProvider();
-
         _publishBus = new InMemoryBus();
         _responseBus = new InMemoryBus();
 
-        Publisher = new PublisherClient(_publishBus, loggerProvider);
+        Publisher = new PublisherClient(_publishBus);
 
         _eventHandlerProvider = new EventHandlerProvider();
         var responseService = new ResponseService(_responseBus);
@@ -60,7 +58,7 @@ internal sealed class EndToEndFixture
         _messageHandler = new StrictMessageHandler(
             _eventHandlerProvider,
             responseService,
-            loggerProvider,
+            NullLogger.Instance,
             retryPolicyProvider);
     }
 
@@ -70,17 +68,15 @@ internal sealed class EndToEndFixture
     /// </summary>
     public EndToEndFixture(MessagePipeline? pipeline, MessageLifecycleNotifier? notifier)
     {
-        var loggerProvider = new TestLoggerProvider();
-
         _publishBus = new InMemoryBus();
         _responseBus = new InMemoryBus();
 
-        Publisher = new PublisherClient(_publishBus, loggerProvider);
+        Publisher = new PublisherClient(_publishBus);
 
         _eventHandlerProvider = new EventHandlerProvider();
 
         _messageHandler = new PipelineMessageHandler(
-            loggerProvider,
+            NullLogger.Instance,
             _eventHandlerProvider,
             pipeline,
             notifier);
@@ -121,21 +117,20 @@ internal sealed class PipelineMessageHandler : MessageHandler
     private readonly IEventContextHandler _eventContextHandler;
 
     public PipelineMessageHandler(
-        Core.Logging.ILoggerProvider loggerProvider,
+        Microsoft.Extensions.Logging.ILogger logger,
         IEventContextHandler eventContextHandler,
         MessagePipeline? pipeline,
         MessageLifecycleNotifier? notifier)
-        : base(loggerProvider, pipeline, notifier)
+        : base(logger, pipeline, notifier)
     {
         _eventContextHandler = eventContextHandler;
     }
 
     public override async Task HandleEventRequest(
         IMessageContext messageContext,
-        Core.Logging.ILogger logger,
         CancellationToken cancellationToken = default)
     {
-        await _eventContextHandler.Handle(messageContext, logger, cancellationToken);
+        await _eventContextHandler.Handle(messageContext, cancellationToken);
         await messageContext.Complete(cancellationToken);
     }
 }

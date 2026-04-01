@@ -1,4 +1,4 @@
-﻿using NimBus.Core.Logging;
+﻿using Serilog;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using NimBus.MessageStore;
@@ -12,7 +12,7 @@ namespace NimBus.Broker.Services
     public class ResolverService : IMessageHandler
     {
         private readonly ICosmosDbClient _cosmosClient;
-        private readonly ILoggerProvider _loggerProvider;
+        private readonly ILogger _logger;
 
         private const int MaxThrottleRetries = 10;
         private const int BaseDelaySeconds = 5;
@@ -32,53 +32,52 @@ namespace NimBus.Broker.Services
             [MessageType.UnsupportedResponse] = ResolutionStatus.Unsupported,
         };
 
-        public ResolverService(ILoggerProvider loggerProvider, ICosmosDbClient cosmosClient)
+        public ResolverService(ICosmosDbClient cosmosClient, ILogger logger = null)
         {
-            _loggerProvider = loggerProvider;
             _cosmosClient = cosmosClient;
+            _logger = logger;
         }
 
         public async Task Handle(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
-            ILogger logger = _loggerProvider.GetContextualLogger(messageContext);
-            logger.Verbose("Resolver: Handle {EventTypeId} EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
+            _logger?.Verbose("Resolver: Handle {EventTypeId} EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
                 messageContext.MessageContent.EventContent?.EventTypeId, messageContext.EventId, messageContext.MessageId, messageContext.SessionId);
 
             try
             {
-                MessageEntity messageEntity = await CreateMessageEntity(messageContext, logger);
+                MessageEntity messageEntity = await CreateMessageEntity(messageContext);
 
                 await _cosmosClient.StoreMessage(messageEntity);
 
-                var status = await UpdateState(messageEntity, logger);
+                var status = await UpdateState(messageEntity);
 
-                logger.Information("Resolver: Updated Endpoint EndpointId:{EndpointId}, Status:{Status}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
+                _logger?.Information("Resolver: Updated Endpoint EndpointId:{EndpointId}, Status:{Status}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
                     messageEntity.EndpointId, status, messageEntity.EventId, messageContext.MessageId, messageEntity.SessionId);
                 await messageContext.Complete(cancellationToken);
             }
             catch (RequestLimitException ex)
             {
-                await HandleThrottling(messageContext, ex.RetryAfter, logger, cancellationToken);
+                await HandleThrottling(messageContext, ex.RetryAfter, cancellationToken);
             }
             catch (TransientException transientException)
             {
-                logger.Error(transientException, "Resolver: Transient exception EventId:{EventId}", messageContext.EventId);
+                _logger?.Error(transientException, "Resolver: Transient exception EventId:{EventId}", messageContext.EventId);
                 await messageContext.Abandon(transientException);
             }
             catch (Exception unexpectedException)
             {
-                logger.Error(unexpectedException, "Resolver: Failed to handle message, add to DeadLetter. EventId:{EventId}", messageContext.EventId);
+                _logger?.Error(unexpectedException, "Resolver: Failed to handle message, add to DeadLetter. EventId:{EventId}", messageContext.EventId);
                 await messageContext.DeadLetter("Failed to handle message.", unexpectedException, cancellationToken);
             }
         }
 
-        private async Task HandleThrottling(IMessageContext messageContext, TimeSpan? retryAfter, ILogger logger, CancellationToken cancellationToken)
+        private async Task HandleThrottling(IMessageContext messageContext, TimeSpan? retryAfter, CancellationToken cancellationToken)
         {
             var retryCount = messageContext.ThrottleRetryCount;
 
             if (retryCount >= MaxThrottleRetries)
             {
-                logger.Error("Resolver: Max throttle retries ({MaxRetries}) exceeded. DeadLettering. EventId:{EventId}, SessionId:{SessionId}",
+                _logger?.Error("Resolver: Max throttle retries ({MaxRetries}) exceeded. DeadLettering. EventId:{EventId}, SessionId:{SessionId}",
                     MaxThrottleRetries, messageContext.EventId, messageContext.SessionId);
                 await messageContext.DeadLetter("Max throttle retries exceeded", null, cancellationToken);
                 return;
@@ -92,14 +91,14 @@ namespace NimBus.Broker.Services
             var useCosmosRetryAfter = retryAfter.HasValue && retryAfter.Value > calculatedDelay;
             var delay = useCosmosRetryAfter ? retryAfter.Value : calculatedDelay;
 
-            logger.Verbose(
+            _logger?.Verbose(
                 "Resolver: Throttle delay decision - using {DelaySource}. CosmosRetryAfter:{CosmosRetryAfter}s, CalculatedBackoff:{CalculatedBackoff}s, EventId:{EventId}",
                 useCosmosRetryAfter ? "CosmosRetryAfter" : "CalculatedBackoff",
                 retryAfter?.TotalSeconds,
                 calculatedDelay.TotalSeconds,
                 messageContext.EventId);
 
-            logger.Information(
+            _logger?.Information(
                 "Resolver: Cosmos DB throttled. Scheduling redelivery in {DelaySeconds}s. EventId:{EventId}, SessionId:{SessionId}, RetryCount:{RetryCount}/{MaxRetries}",
                 delay.TotalSeconds, messageContext.EventId, messageContext.SessionId, retryCount + 1, MaxThrottleRetries);
 
@@ -109,13 +108,13 @@ namespace NimBus.Broker.Services
             }
             catch (TransientException ex)
             {
-                logger.Information(ex, "Resolver: Failed to schedule redelivery. Abandoning for retry. EventId:{EventId}, SessionId:{SessionId}",
+                _logger?.Information(ex, "Resolver: Failed to schedule redelivery. Abandoning for retry. EventId:{EventId}, SessionId:{SessionId}",
                     messageContext.EventId, messageContext.SessionId);
                 await messageContext.Abandon(ex);
             }
         }
 
-        private async Task<MessageEntity> CreateMessageEntity(IReceivedMessage message, ILogger logger)
+        private async Task<MessageEntity> CreateMessageEntity(IReceivedMessage message)
         {
             ArgumentNullException.ThrowIfNull(message);
 
@@ -214,7 +213,7 @@ namespace NimBus.Broker.Services
             };
         }
 
-        private async Task<ResolutionStatus> UpdateState(MessageEntity message, ILogger logger)
+        private async Task<ResolutionStatus> UpdateState(MessageEntity message)
         {
             ResolutionStatus status = GetResultingStatus(message);
             UnresolvedEvent unresolvedEvent = CreateUnresolvedEvent(message);

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using NimBus.SDK;
@@ -25,7 +26,7 @@ public class NimBusTestFixture
         _publishBus = new InMemoryMessageBus();
         _responseBus = new InMemoryMessageBus();
 
-        Publisher = new PublisherClient(_publishBus, NullLoggerProvider.Instance);
+        Publisher = new PublisherClient(_publishBus);
 
         _eventHandlerProvider = new EventHandlerProvider();
         var responseService = new ResponseService(_responseBus);
@@ -33,7 +34,7 @@ public class NimBusTestFixture
         _messageHandler = new StrictMessageHandler(
             _eventHandlerProvider,
             responseService,
-            NullLoggerProvider.Instance);
+            NullLogger.Instance);
     }
 
     public NimBusTestFixture(IRetryPolicyProvider retryPolicyProvider)
@@ -41,7 +42,7 @@ public class NimBusTestFixture
         _publishBus = new InMemoryMessageBus();
         _responseBus = new InMemoryMessageBus();
 
-        Publisher = new PublisherClient(_publishBus, NullLoggerProvider.Instance);
+        Publisher = new PublisherClient(_publishBus);
 
         _eventHandlerProvider = new EventHandlerProvider();
         var responseService = new ResponseService(_responseBus);
@@ -49,7 +50,7 @@ public class NimBusTestFixture
         _messageHandler = new StrictMessageHandler(
             _eventHandlerProvider,
             responseService,
-            NullLoggerProvider.Instance,
+            NullLogger.Instance,
             retryPolicyProvider);
     }
 

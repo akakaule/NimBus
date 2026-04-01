@@ -5,10 +5,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NimBus.Broker.Services;
 using NimBus.Core.Extensions;
-using NimBus.Core.Logging;
 using NimBus.Core.Messages;
 using NimBus.MessageStore;
-using NimBus.SDK.Logging;
 using NimBus.ServiceBus;
 using Serilog;
 
@@ -43,10 +41,8 @@ namespace NimBus.Resolver
             services.AddSingleton<ICosmosDbClient>(sp =>
             {
                 var cosmosClient = sp.GetRequiredService<CosmosClient>();
-                return new CosmosDbClient(cosmosClient, new SerilogAdapter(Log.Logger));
+                return new CosmosDbClient(cosmosClient, Log.Logger);
             });
-
-            services.AddSingleton<ILoggerProvider>(sp => new LoggerProvider(Log.Logger));
 
             services.AddSingleton<IMessageHandler, ResolverService>();
 

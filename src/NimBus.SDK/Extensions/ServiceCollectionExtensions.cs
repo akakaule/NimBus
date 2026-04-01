@@ -1,7 +1,9 @@
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using NimBus.Core.Logging;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
 using NimBus.Core.Outbox;
 using NimBus.SDK.EventHandlers;
@@ -43,7 +45,6 @@ namespace NimBus.SDK.Extensions
             services.TryAddSingleton<IPublisherClient>(sp =>
             {
                 var client = sp.GetRequiredService<ServiceBusClient>();
-                var loggerProvider = sp.GetService<ILoggerProvider>();
                 var outbox = sp.GetService<IOutbox>();
 
                 var serviceBusSender = client.CreateSender(options.Endpoint);
@@ -59,7 +60,7 @@ namespace NimBus.SDK.Extensions
                     sender = new Sender(serviceBusSender);
                 }
 
-                return new PublisherClient(sender, loggerProvider);
+                return new PublisherClient(sender);
             });
 
             return services;
@@ -96,7 +97,6 @@ namespace NimBus.SDK.Extensions
             services.TryAddSingleton<ISubscriberClient>(sp =>
             {
                 var client = sp.GetRequiredService<ServiceBusClient>();
-                var loggerProvider = sp.GetService<ILoggerProvider>();
                 var deferredProcessor = sp.GetService<IDeferredMessageProcessor>();
 
                 var serviceBusSender = client.CreateSender(options.Endpoint);
@@ -123,10 +123,31 @@ namespace NimBus.SDK.Extensions
                     retryPolicyProvider = sp.GetService<IRetryPolicyProvider>();
                 }
 
-                // Create StrictMessageHandler — deferred processing is handled separately
-                IMessageHandler strictMessageHandler = retryPolicyProvider != null
-                    ? new StrictMessageHandler(eventHandlerProvider, responseService, loggerProvider, retryPolicyProvider)
-                    : new StrictMessageHandler(eventHandlerProvider, responseService, loggerProvider);
+                // Resolve pipeline and lifecycle notifier (registered via AddNimBus)
+                var pipeline = sp.GetService<MessagePipeline>();
+                var lifecycleNotifier = sp.GetService<MessageLifecycleNotifier>();
+
+                var logger = sp.GetService<ILogger<StrictMessageHandler>>()
+                    ?? (Microsoft.Extensions.Logging.ILogger)NullLogger.Instance;
+
+                // Create StrictMessageHandler with pipeline support
+                IMessageHandler strictMessageHandler;
+                if (pipeline != null || lifecycleNotifier != null)
+                {
+                    strictMessageHandler = new StrictMessageHandler(
+                        eventHandlerProvider, responseService, logger,
+                        retryPolicyProvider, pipeline, lifecycleNotifier);
+                }
+                else if (retryPolicyProvider != null)
+                {
+                    strictMessageHandler = new StrictMessageHandler(
+                        eventHandlerProvider, responseService, logger, retryPolicyProvider);
+                }
+                else
+                {
+                    strictMessageHandler = new StrictMessageHandler(
+                        eventHandlerProvider, responseService, logger);
+                }
 
                 var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, options.EntityPath);
                 return new SubscriberClient(serviceBusAdapter, eventHandlerProvider);

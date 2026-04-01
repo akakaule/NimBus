@@ -1,10 +1,11 @@
 using AspirePubSub.Subscriber;
 using AspirePubSub.Subscriber.Handlers;
+using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
+using NimBus.Core.Pipeline;
 using NimBus.Events.Orders;
 using NimBus.SDK.Extensions;
 using NimBus.SDK.Hosting;
-using NimBus.SDK.Logging;
 using NimBus.ServiceBus;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -13,8 +14,13 @@ builder.AddServiceDefaults();
 
 builder.AddAzureServiceBusClient("servicebus");
 
-builder.Services.AddSingleton<NimBus.Core.Logging.ILoggerProvider>(sp =>
-    new OpenTelemetryLoggerProvider(sp.GetRequiredService<ILoggerFactory>()));
+// Register middleware pipeline — behaviors execute in registration order
+builder.Services.AddNimBus(nimbus =>
+{
+    nimbus.AddPipelineBehavior<LoggingMiddleware>();
+    nimbus.AddPipelineBehavior<MetricsMiddleware>();
+    nimbus.AddPipelineBehavior<ValidationMiddleware>();
+});
 
 // Register the main subscriber (handles EventRequest messages on session-enabled subscription)
 builder.Services.AddNimBusSubscriber("BillingEndpoint", sub =>

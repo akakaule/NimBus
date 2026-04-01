@@ -1,7 +1,6 @@
 #pragma warning disable CA1707, CA1515, CA2007
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Broker.Services;
-using NimBus.Core.Logging;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using NimBus.MessageStore;
@@ -129,7 +128,7 @@ public class ResolverServiceTests
     private static ResolverService CreateService(FakeCosmosDbClient? cosmos = null)
     {
         cosmos ??= new FakeCosmosDbClient();
-        return new ResolverService(new FakeLoggerProvider(), cosmos);
+        return new ResolverService(cosmos);
     }
 
     private static FakeMessageContext CreateMessageContext(
@@ -162,29 +161,6 @@ public class ResolverServiceTests
             EnqueuedTimeUtc = new DateTime(2026, 03, 06, 12, 00, 00, DateTimeKind.Utc),
             ThrottleRetryCount = throttleRetryCount,
         };
-    }
-
-    private sealed class FakeLoggerProvider : ILoggerProvider
-    {
-        private readonly ILogger _logger = new FakeLogger();
-
-        public ILogger GetContextualLogger(IMessageContext messageContext) => _logger;
-
-        public ILogger GetContextualLogger(IMessage message) => _logger;
-
-        public ILogger GetContextualLogger(string correlationId) => _logger;
-    }
-
-    private sealed class FakeLogger : ILogger
-    {
-        public void Verbose(string messageTemplate, params object[] propertyValues) { }
-        public void Verbose(Exception exception, string messageTemplate, params object[] propertyValues) { }
-        public void Information(string messageTemplate, params object[] propertyValues) { }
-        public void Information(Exception exception, string messageTemplate, params object[] propertyValues) { }
-        public void Error(string messageTemplate, params object[] propertyValues) { }
-        public void Error(Exception exception, string messageTemplate, params object[] propertyValues) { }
-        public void Fatal(string messageTemplate, params object[] propertyValues) { }
-        public void Fatal(Exception exception, string messageTemplate, params object[] propertyValues) { }
     }
 
     private sealed class FakeMessageContext : IMessageContext

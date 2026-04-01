@@ -1,6 +1,7 @@
 #pragma warning disable CA1707, CA1515, CA2007
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using NimBus.Core.Logging;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 
@@ -494,8 +495,7 @@ public class StrictMessageHandlerTests
         FakeDeferredMessageProcessor processor = null,
         string topicName = null)
     {
-        var logger = new FakeLoggerProvider();
-        return new StrictMessageHandler(handler, response, logger);
+        return new StrictMessageHandler(handler, response, NullLogger.Instance);
     }
 
     private static FakeMessageContext CreateContext(
@@ -531,32 +531,12 @@ public class StrictMessageHandlerTests
 
     // ── Fakes ────────────────────────────────────────────────────────────
 
-    private sealed class FakeLoggerProvider : ILoggerProvider
-    {
-        private readonly ILogger _logger = new FakeLogger();
-        public ILogger GetContextualLogger(IMessageContext messageContext) => _logger;
-        public ILogger GetContextualLogger(IMessage message) => _logger;
-        public ILogger GetContextualLogger(string correlationId) => _logger;
-    }
-
-    private sealed class FakeLogger : ILogger
-    {
-        public void Verbose(string messageTemplate, params object[] propertyValues) { }
-        public void Verbose(Exception exception, string messageTemplate, params object[] propertyValues) { }
-        public void Information(string messageTemplate, params object[] propertyValues) { }
-        public void Information(Exception exception, string messageTemplate, params object[] propertyValues) { }
-        public void Error(string messageTemplate, params object[] propertyValues) { }
-        public void Error(Exception exception, string messageTemplate, params object[] propertyValues) { }
-        public void Fatal(string messageTemplate, params object[] propertyValues) { }
-        public void Fatal(Exception exception, string messageTemplate, params object[] propertyValues) { }
-    }
-
     private sealed class FakeEventContextHandler : IEventContextHandler
     {
         public int HandleCalls { get; private set; }
         public Exception ThrowOnHandle { get; set; }
 
-        public Task Handle(IMessageContext context, ILogger logger, CancellationToken cancellationToken = default)
+        public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
         {
             HandleCalls++;
             if (ThrowOnHandle != null)

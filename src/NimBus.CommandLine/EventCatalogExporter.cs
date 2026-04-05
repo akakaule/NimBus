@@ -220,7 +220,7 @@ public static class EventCatalogExporter
             sb.AppendLine("producers:");
             foreach (var ep in producers)
             {
-                sb.AppendLine($"  - id: {ep.Id}");
+                sb.AppendLine($"  - {ep.Id}");
             }
         }
 
@@ -229,7 +229,7 @@ public static class EventCatalogExporter
             sb.AppendLine("consumers:");
             foreach (var ep in consumers)
             {
-                sb.AppendLine($"  - id: {ep.Id}");
+                sb.AppendLine($"  - {ep.Id}");
             }
         }
 

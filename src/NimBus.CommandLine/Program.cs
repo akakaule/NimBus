@@ -33,6 +33,7 @@ internal static class Program
         ConfigureSetupCommand(app);
         ConfigureEndpointCommands(app, sbConnectionString, dbConnectionString);
         ConfigureContainerCommands(app, sbConnectionString, dbConnectionString);
+        ConfigureCatalogCommands(app);
 
         app.OnExecute(() =>
         {
@@ -572,6 +573,40 @@ internal static class Program
                     }
 
                     await CommandRunner.Run(dbConnectionString, (dbClient) => Container.SkipMessages(dbClient, endpointName, parsed, before));
+                    return 0;
+                });
+            });
+        });
+    }
+
+    private static void ConfigureCatalogCommands(CommandLineApplication app)
+    {
+        app.Command("catalog", catalogCommand =>
+        {
+            catalogCommand.Description = "Generate architecture catalog from platform configuration.";
+
+            catalogCommand.OnExecute(() =>
+            {
+                AnsiConsole.MarkupLine("[yellow]Specify a subcommand[/]");
+                catalogCommand.ShowHelp();
+                return 1;
+            });
+
+            catalogCommand.Command("export", exportCommand =>
+            {
+                exportCommand.Description = "Export platform topology to EventCatalog-compatible markdown structure";
+
+                var outputOption = exportCommand.Option("-o|--output <PATH>",
+                    "Output directory path (defaults to ./eventcatalog in current directory)",
+                    CommandOptionType.SingleValue);
+
+                exportCommand.OnExecuteAsync(async ct =>
+                {
+                    var outputPath = outputOption.HasValue()
+                        ? outputOption.Value()!
+                        : Path.Combine(Environment.CurrentDirectory, "eventcatalog");
+
+                    await EventCatalogExporter.ExportAsync(outputPath);
                     return 0;
                 });
             });

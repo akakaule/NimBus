@@ -12,7 +12,7 @@ NimBus is a mature, Azure-native event-driven integration platform with strong d
 | **Reliability** | Transactional outbox (Phase 1) | All mature frameworks have transactional outbox |
 | **Observability** | OpenTelemetry tracing + metrics dashboard (Phase 2) | All competitors have OpenTelemetry Activity tracing |
 | **DX** | DI integration + Aspire sample + NuGet packages | All competitors integrate with MS DI natively |
-| **Extensibility** | Extension framework, no middleware pipeline | NServiceBus (behaviors), MassTransit (filters), Brighter (decorators) |
+| **Extensibility** | Middleware pipeline + extension framework with 3 built-in behaviors | NServiceBus (behaviors), MassTransit (filters), Brighter (decorators) |
 | **Testing** | In-memory transport + 14+ E2E tests (Phase 2) | MassTransit, Wolverine, Rebus have in-memory transports |
 | **Workflows** | Continuation pattern (limited) | NServiceBus, MassTransit, Wolverine have full saga/state machines |
 | **Transport** | Azure Service Bus only | Most support RabbitMQ, Kafka, SQL, in-memory |
@@ -115,20 +115,26 @@ Standard `IHealthCheck` implementations for ASP.NET Core.
 
 ---
 
-### Phase 3: Extensibility & Patterns (Q4 2026)
+### Phase 3: Extensibility & Patterns (Q4 2026) -- Partially Implemented
 
 Goal: Enable cross-cutting concerns and more complex workflows.
 
-**3.1 Middleware Pipeline**
+**3.1 Middleware Pipeline** -- Implemented
 
-Allow injecting cross-cutting behavior (logging, auth, validation, metrics, error enrichment) into the message processing pipeline without modifying framework code.
+`IMessagePipelineBehavior` with delegate-based pipeline composition, wired into `StrictMessageHandler` via `MessagePipeline`. Registered via `AddNimBus(builder => builder.AddPipelineBehavior<T>())`.
 
-- Define `IMessageMiddleware` with `Task InvokeAsync(IMessageContext context, MessageDelegate next)`
-- Chain middleware in `StrictMessageHandler` before handler invocation
-- Support attribute-based and registration-based middleware
-- Built-in middleware: `LoggingMiddleware`, `ValidationMiddleware`, `MetricsMiddleware`
+- ~~`IMessagePipelineBehavior` with `Task Handle(IMessageContext context, MessagePipelineDelegate next, CancellationToken ct)`~~
+- ~~Chain behaviors in `MessageHandler` before message type dispatch~~
+- ~~Built-in middleware: `LoggingMiddleware`, `MetricsMiddleware`, `ValidationMiddleware`~~
+- ~~`MessageAlreadyDeadLetteredException` for correct lifecycle event handling when middleware dead-letters~~
+- ~~15 unit tests covering all built-in middleware~~
+- ~~Documentation: `docs/pipeline-middleware.md`~~
 
-Note: The extension framework (`INimBusExtension`, `IMessageLifecycleObserver`, `IMessagePipelineBehavior`) from Phase 1 provides hooks for this. The middleware pipeline builds on that foundation.
+Additional completed work:
+- ~~Removed `NimBus.Core.Logging` abstraction — handlers use standard `Microsoft.Extensions.Logging`~~
+- ~~Clean handler signature: `Handle(T message, IEventHandlerContext context, CancellationToken ct)` (no logger parameter)~~
+- ~~Separated DeferredProcessor — deferred processing handled by dedicated service in subscriber, not StrictMessageHandler~~
+- ~~Metrics renamed from `dis.*` to `nimbus.*`~~
 
 **3.2 Inbox Pattern (Idempotent Consumers)**
 
@@ -155,12 +161,19 @@ Design-only in this phase:
 
 Goal: Production hardening, developer experience polish, and ecosystem growth.
 
-**4.1 WebApp Enhancements** -- In Progress
+**4.1 WebApp Enhancements** -- Mostly Complete
 
 - ~~Dashboard metrics: time-series area chart with gap-filling, KPI summary cards, event-type-level breakdown~~
 - ~~Failed message insights: error pattern grouping and Insights page~~
 - ~~Audit log search: filterable audit search API and UI~~
-- ~~Bulk operations: subscription purge, delete by status, skip messages, delete by destination, copy endpoint data -- all with preview/confirm UI and EIP_Management authorization~~
+- ~~Bulk operations: subscription purge, delete by status, skip messages, delete by destination, copy endpoint data, delete all events -- all with preview/confirm UI and EIP_Management authorization~~
+- ~~Comment/audit section on event details with /api/me user info~~
+- ~~Reprocess deferred button and API for orphaned deferred messages~~
+- ~~Delete button on event details for failed/deadlettered/unsupported events~~
+- ~~Grouped by Error view on endpoint details with bulk Resubmit All / Skip All~~
+- ~~Admin accordion redesign: Recovery, Cleanup, Infrastructure, Danger Zone sections~~
+- ~~EnumMemberModelBinder for correct period/enum query string binding~~
+- ~~Millisecond precision in all datetime displays~~
 - Message flow visualization: trace a message through its full lifecycle
 - Alerting: webhook/email notifications for failed messages, dead-letters, or session blocks
 
@@ -185,11 +198,14 @@ Evaluate whether transport abstraction is worth the complexity:
 - Minimal abstraction: keep Azure Service Bus as primary, add in-memory for testing only (Phase 2.2)
 - Recommendation: start with in-memory for testing, only abstract further if there's concrete demand
 
-**4.5 Documentation & Onboarding** -- In Progress
+**4.5 Documentation & Onboarding** -- Mostly Complete
 
-- ~~Sample applications: Aspire Pub/Sub sample with full platform topology~~
+- ~~Sample applications: Aspire Pub/Sub sample with Publisher, Subscriber (with DeferredProcessorService), and middleware demo~~
 - ~~CI/CD documentation: GitHub Actions and Azure DevOps deploy pipelines~~
 - ~~README: local development (Aspire) and CI/CD setup instructions~~
+- ~~Message flow documentation: `docs/message-flows.md` with 10 flow diagrams~~
+- ~~Deferred message processing guide: `docs/deferred-messages.md` with Mermaid sequence diagrams~~
+- ~~Pipeline middleware documentation: `docs/pipeline-middleware.md` with patterns and API reference~~
 - Getting started guide
 - SDK API reference
 - Architecture decision records (ADRs)
@@ -233,12 +249,12 @@ Goal: If NimBus is to be open-sourced or adopted beyond its current org.
 | Aspire integration | High DX | Medium | **P1** | -- | Completed |
 | E2E test suite | High quality | Medium | **P1** | -- | Completed |
 | NuGet packages | Medium ecosystem | Small | **P4→P1** | 5 | Completed |
-| Middleware pipeline | High extensibility | Medium | **P2** | 3 | Not Started |
+| Middleware pipeline | High extensibility | Medium | **P2** | 3 | Completed |
 | Inbox pattern | Medium reliability | Medium | **P2** | 3 | Not Started |
 | Saga design | High capability | Large | **P2** | 3 | Not Started |
-| WebApp enhancements | Medium ops | Large | **P3** | 4 | In Progress |
-| CLI operational commands | Medium ops | Medium | **P3** | -- | In Progress |
-| Documentation & onboarding | Medium DX | Medium | **P3** | 4 | In Progress |
+| WebApp enhancements | Medium ops | Large | **P3** | 4 | Mostly Complete |
+| CLI operational commands | Medium ops | Medium | **P3** | -- | Completed |
+| Documentation & onboarding | Medium DX | Medium | **P3** | 4 | Mostly Complete |
 | Source generators | Medium DX | Medium | **P3** | 4 | Not Started |
 | Saga implementation | High capability | Very large | **P3** | 4 | Not Started |
 | Transport abstraction | Low-Medium | Very large | **P4** | 4 | Not Started |

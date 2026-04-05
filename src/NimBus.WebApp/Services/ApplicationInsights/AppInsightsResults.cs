@@ -106,29 +106,29 @@ namespace NimBus.WebApp.Services.ApplicationInsights
 
     public class CustomDimensions
     {
-        [JsonProperty("DIS.EventId")]
+        [JsonProperty("NimBus.EventId")]
         public string EventId { get; set; }
-        [JsonProperty("DIS.CorrelationId")]
+        [JsonProperty("NimBus.CorrelationId")]
         public string CorrelationId { get; set; }
         public string PublisherName { get; set; }
         public string PublishedBy { get; set; }
         public string LogSource { get; set; }
-        [JsonProperty("DIS.EventTypeId")]
+        [JsonProperty("NimBus.EventTypeId")]
         public string EventType { get; set; }
         public string Payload { get; set; }
-        [JsonProperty("DIS.From")]
+        [JsonProperty("NimBus.From")]
         public string From { get; set; }
-        [JsonProperty("DIS.To")]
+        [JsonProperty("NimBus.To")]
         public string To { get; set; }
-        [JsonProperty("DIS.SessionId")]
+        [JsonProperty("NimBus.SessionId")]
         public string SessionId { get; set; }
-        [JsonProperty("DIS.MessageType")]
+        [JsonProperty("NimBus.MessageType")]
         public string MessageType { get; set; }
-        [JsonProperty("DIS.IsDeferred")]
+        [JsonProperty("NimBus.IsDeferred")]
         public bool IsDeferred { get; set; }
-        [JsonProperty("DIS.EventJson")]
+        [JsonProperty("NimBus.EventJson")]
         public string EventJson { get; set; }
-        [JsonProperty("DIS.MessageId")]
+        [JsonProperty("NimBus.MessageId")]
         public string MessageId { get; set; }
     }
 

@@ -32,7 +32,7 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 
 | Item | Phase | Status | Description |
 |---|---|---|---|
-| [Middleware Pipeline](#middleware-pipeline) | 3 | Not Started | `IMessageMiddleware` chain for cross-cutting concerns |
+| [Middleware Pipeline](#middleware-pipeline) | 3 | Completed | `IMessagePipelineBehavior` pipeline with 3 built-in middleware (Logging, Metrics, Validation), 15 unit tests |
 | [Inbox Pattern](#inbox-pattern) | 3 | Not Started | Idempotent consumers via MessageId deduplication |
 | [Saga Design](#saga-design) | 3 | Not Started | Research and prototype state machine support |
 
@@ -40,11 +40,11 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 
 | Item | Phase | Status | Description |
 |---|---|---|---|
-| [WebApp Enhancements](#webapp-enhancements) | 4 | In Progress | Metrics dashboard, audit log search, and bulk operations done; flow viz and alerting remaining |
-| [CLI Operational Commands](#cli-operational-commands) | -- | In Progress | Endpoint/container management, session purge, resubmit/skip via `nb` CLI |
+| [WebApp Enhancements](#webapp-enhancements) | 4 | Mostly Complete | All done except: message flow visualization and alerting |
+| [CLI Operational Commands](#cli-operational-commands) | -- | Completed | All endpoint + container commands, colored help, Spectre.Console progress |
 | [Source Generators](#source-generators) | 4 | Not Started | Compile-time event type discovery replacing reflection |
 | [Saga Implementation](#saga-implementation) | 4 | Not Started | Full saga persistence, timeouts, compensation, WebApp visualization |
-| [Documentation & Onboarding](#documentation--onboarding) | 4 | In Progress | Aspire samples and CI/CD docs done; getting started guide, API reference, ADRs remaining |
+| [Documentation & Onboarding](#documentation--onboarding) | 4 | Mostly Complete | Message flows, deferred messages, pipeline middleware docs done; getting started guide, API reference, ADRs remaining |
 
 ## P4 -- Future
 
@@ -146,13 +146,21 @@ Code paths:
 
 ### Middleware Pipeline
 
-**Priority:** P2 | **Phase:** 3 | **Status:** Not Started
+**Priority:** P2 | **Phase:** 3 | **Status:** Completed
 
-`IMessageMiddleware` with `Task InvokeAsync(IMessageContext context, MessageDelegate next)`. Chained in `StrictMessageHandler` before handler invocation. Builds on the extension framework (`IMessagePipelineBehavior`) from Phase 1. Built-in: `LoggingMiddleware`, `ValidationMiddleware`, `MetricsMiddleware`.
+`IMessagePipelineBehavior` with `Task Handle(IMessageContext context, MessagePipelineDelegate next, CancellationToken ct)`. Pipeline wired into `MessageHandler` via `MessagePipeline`, resolved from DI by `AddNimBusSubscriber()`. Three built-in middleware: `LoggingMiddleware` (timing + metadata), `MetricsMiddleware` (OpenTelemetry counters/histograms), `ValidationMiddleware` (dead-letters invalid messages with `MessageAlreadyDeadLetteredException`).
 
-Target files:
-- New: `src/NimBus.Core/Pipeline/IMessageMiddleware.cs`
-- Modified: `src/NimBus.Core/Messages/StrictMessageHandler.cs`
+Also completed: removed `NimBus.Core.Logging` abstraction — all logging uses `Microsoft.Extensions.Logging`. Handler signature simplified to `Handle(T message, IEventHandlerContext context, CancellationToken ct)`. Separated `DeferredProcessor` from `StrictMessageHandler` to dedicated subscriber service. Metrics renamed from `dis.*` to `nimbus.*`.
+
+Code paths:
+- `src/NimBus.Core/Pipeline/LoggingMiddleware.cs`
+- `src/NimBus.Core/Pipeline/MetricsMiddleware.cs`
+- `src/NimBus.Core/Pipeline/ValidationMiddleware.cs`
+- `src/NimBus.Core/Extensions/IMessagePipelineBehavior.cs`
+- `src/NimBus.Core/Extensions/MessagePipeline.cs`
+- `src/NimBus.SDK/Extensions/ServiceCollectionExtensions.cs` (pipeline wiring)
+- `docs/pipeline-middleware.md`
+- `tests/NimBus.Core.Tests/BuiltInMiddlewareTests.cs` (15 tests)
 
 ### Inbox Pattern
 
@@ -168,13 +176,19 @@ Design-only phase. Research state machine DSL (inspired by MassTransit Automaton
 
 ### WebApp Enhancements
 
-**Priority:** P3 | **Phase:** 4 | **Status:** In Progress
+**Priority:** P3 | **Phase:** 4 | **Status:** Mostly Complete
 
-- [x] Dashboard metrics: time-series area chart with gap-filling, KPI summary cards, event-type-level breakdown (`/api/metrics/timeseries`, `/api/metrics/failed-insights`)
+- [x] Dashboard metrics: time-series area chart with gap-filling, KPI summary cards, event-type-level breakdown
 - [x] Failed message insights: error pattern grouping and Insights page
-- [x] Audit log search: filterable audit search API and UI (`AuditImplementation` controller, `audit-filter-bar` component)
+- [x] Audit log search: filterable audit search API and UI
+- [x] Bulk operations: subscription purge, delete by status, skip messages, delete by destination, copy endpoint data, delete all events -- accordion-organized admin with Recovery/Cleanup/Infrastructure/Danger Zone sections
+- [x] Comment/audit section on event details with user info from `/api/me`
+- [x] Reprocess deferred button and API for orphaned deferred messages
+- [x] Delete button on event details for failed/deadlettered/unsupported events
+- [x] Grouped by Error view on endpoint details with bulk Resubmit All / Skip All per error pattern
+- [x] EnumMemberModelBinder for correct enum query string binding (fixed metrics time scale)
+- [x] Millisecond precision in all datetime displays
 - [ ] Message flow visualization (trace a message through its full lifecycle)
-- [x] Bulk operations: subscription purge (by state/date), delete by status, skip messages, delete by destination, copy endpoint data -- all with preview/confirm UI (`advanced-operations.tsx`, `AdminImplementation`, `AdminService`)
 - [ ] Alerting (webhook/email for failures, dead-letters, session blocks)
 
 ### Source Generators
@@ -191,11 +205,14 @@ Based on Phase 3 design: saga persistence in Cosmos DB, timeout scheduling, comp
 
 ### Documentation & Onboarding
 
-**Priority:** P3 | **Phase:** 4 | **Status:** In Progress
+**Priority:** P3 | **Phase:** 4 | **Status:** Mostly Complete
 
-- [x] Sample applications: Aspire Pub/Sub sample with full NimBus platform topology (Publisher → StorefrontEndpoint → AspireSampleEndpoint)
+- [x] Sample applications: Aspire Pub/Sub sample with Publisher, Subscriber (with DeferredProcessorService and middleware), Provisioner, ResolverWorker
 - [x] CI/CD documentation: GitHub Actions and Azure DevOps deploy pipelines using `nb` CLI
 - [x] README updates: local development (Aspire) and CI/CD setup instructions
+- [x] Message flow documentation: `docs/message-flows.md` with 10 flow diagrams covering all message types
+- [x] Deferred message processing guide: `docs/deferred-messages.md` with Mermaid sequence diagrams
+- [x] Pipeline middleware documentation: `docs/pipeline-middleware.md` with patterns, built-in middleware, and API reference
 - [ ] Getting started guide
 - [ ] SDK API reference
 - [ ] Architecture decision records (ADRs)
@@ -258,7 +275,7 @@ Code paths:
 
 ### CLI Operational Commands
 
-**Priority:** P3 | **Phase:** -- | **Status:** In Progress
+**Priority:** P3 | **Phase:** -- | **Status:** Completed
 
 Expansion of the `nb` CLI with operational management commands using Spectre.Console for rich terminal output.
 

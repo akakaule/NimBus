@@ -46,7 +46,7 @@ namespace NimBus.WebApp.Services.ApplicationInsights
                     //(filter.LogSource == null ? "" : $"and tostring(customDimensions['LogSource']) == '{filter.LogSource}' ") +
                     //(filter.EventType == null ? "" : $"and tostring(customDimensions['EventType']) == '{filter.EventType}' ") +
                     //(filter.CorrelationId == null ? "" : $"and tostring(customDimensions['CorrelationId']) == '{filter.CorrelationId}' ") +
-                    (string.IsNullOrEmpty(filter.EventId) ? "" : $"and tostring(customDimensions['DIS.EventId']) == '{filter.EventId}' ") +
+                    (string.IsNullOrEmpty(filter.EventId) ? "" : $"and tostring(customDimensions['NimBus.EventId']) == '{filter.EventId}' ") +
                     //(filter.PublishedBy == null ? "" : $"and tostring(customDimensions['PublishedBy']) == '{filter.PublishedBy.ToString()}' ") +
                     (filter.MinimumLogLevel == null ? "" : $"and severityLevel >= {(int)filter.MinimumLogLevel} ") +
                     " | top 1000 by timestamp desc";
@@ -73,7 +73,7 @@ namespace NimBus.WebApp.Services.ApplicationInsights
             };
 
             var query = "customMetrics" +
-                $" | where name == 'dis.message.e2e_latency'" +
+                $" | where name == 'nimbus.message.e2e_latency'" +
                 $" | where timestamp >= ago({periodKql})" +
                 " | extend eventType = tostring(customDimensions['messaging.event_type'])," +
                 "          destination = tostring(customDimensions['messaging.destination'])" +

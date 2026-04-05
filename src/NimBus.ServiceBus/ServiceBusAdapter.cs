@@ -21,8 +21,8 @@ namespace NimBus.ServiceBus
     public class ServiceBusAdapter : IServiceBusAdapter
     {
         private static readonly Meter s_meter = new("NimBus.ServiceBus");
-        private static readonly Histogram<double> s_e2eLatency = s_meter.CreateHistogram<double>("dis.message.e2e_latency", "ms", "End-to-end message latency");
-        private static readonly Histogram<double> s_queueWait = s_meter.CreateHistogram<double>("dis.message.queue_wait", "ms", "Queue wait time before processing");
+        private static readonly Histogram<double> s_e2eLatency = s_meter.CreateHistogram<double>("nimbus.message.e2e_latency", "ms", "End-to-end message latency");
+        private static readonly Histogram<double> s_queueWait = s_meter.CreateHistogram<double>("nimbus.message.queue_wait", "ms", "Queue wait time before processing");
 
         private readonly IMessageHandler _messageHandler;
         private readonly ServiceBusClient _serviceBusClient;

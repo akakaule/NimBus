@@ -1,13 +1,10 @@
 import * as React from "react";
 import * as api from "api-client";
 import Page from "components/page";
-import HistoryListing from "components/event-details/history-listing";
-import LogListing from "components/event-details/log-listing";
 import MessageListing from "components/event-details/message-listing";
 import { useParams, useNavigate } from "react-router-dom";
 import TabSelection from "components/tab-selection";
 import Loading from "components/loading/loading";
-import AuditListing from "components/event-details/audit-listing";
 import BlockedListing from "components/event-details/blocked-listing";
 import FlowTimeline from "components/event-details/flow-timeline";
 
@@ -34,7 +31,6 @@ const EventDetails = (props: EventDetailsProps) => {
 
   const [cosmosEvent, setCosmosEvent] = useState<api.Event>();
   const [eventTypes, setEventTypes] = useState<api.EventType[]>([]);
-  const [logs, setLogs] = useState<api.EventLogEntry[]>([]);
   const [histories, setHistories] = useState<api.Message[]>([]);
   const [audits, setAudits] = useState<api.MessageAudit[]>([]);
   const [blockedEvents, setBlockedEvents] = useState<BlockedEvent[]>([]);
@@ -77,12 +73,6 @@ const EventDetails = (props: EventDetailsProps) => {
             setBlockedEvents(tempBlockedEvents);
             setBlockedEventIds(res);
           });
-
-      client
-        .getEventDetailsLogsId(params.id!, params.endpointId!)
-        .then((res) => {
-          setLogs(res);
-        });
 
       client
         .getEventDetailsHistoryId(params.id!, params.endpointId!)
@@ -194,21 +184,6 @@ const EventDetails = (props: EventDetailsProps) => {
         name: `Flow`,
         isEnabled: histories.length > 0,
         content: <FlowTimeline messages={histories} audits={audits} key="Flow" />,
-      },
-      {
-        name: `History (${histories.length ?? 0})`,
-        isEnabled: histories.length > 0,
-        content: <HistoryListing histories={histories} key="History" />,
-      },
-      {
-        name: `Logs (${logs?.length ?? 0})`,
-        isEnabled: logs.length > 0,
-        content: <LogListing logs={logs!} key="Logs" />,
-      },
-      {
-        name: `Audit (${audits?.length ?? 0})`,
-        isEnabled: audits.length > 0,
-        content: <AuditListing audits={audits!} key="Audits" />,
       },
       {
         name: `Blocked (${blockedCount})`,

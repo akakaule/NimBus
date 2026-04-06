@@ -9,6 +9,7 @@ import TabSelection from "components/tab-selection";
 import Loading from "components/loading/loading";
 import AuditListing from "components/event-details/audit-listing";
 import BlockedListing from "components/event-details/blocked-listing";
+import FlowTimeline from "components/event-details/flow-timeline";
 
 const { useEffect, useState } = React;
 
@@ -188,6 +189,11 @@ const EventDetails = (props: EventDetailsProps) => {
             key="Message"
           />
         ),
+      },
+      {
+        name: `Flow`,
+        isEnabled: histories.length > 0,
+        content: <FlowTimeline messages={histories} audits={audits} key="Flow" />,
       },
       {
         name: `History (${histories.length ?? 0})`,

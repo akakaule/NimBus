@@ -15,6 +15,8 @@ interface TimelineEntry {
   from?: string;
   to?: string;
   errorText?: string;
+  exceptionStackTrace?: string;
+  eventContent?: string;
   auditorName?: string;
   comment?: string;
   messageId?: string;
@@ -35,6 +37,15 @@ const MESSAGE_COLORS: Record<string, { bg: string; border: string; dot: string; 
 
 const AUDIT_COLOR = { bg: "bg-sky-50", border: "border-sky-200", dot: "bg-sky-400" };
 
+function formatJson(raw: string | undefined): string {
+  if (!raw) return "";
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
 function getMessageColor(messageType: string | undefined) {
   return MESSAGE_COLORS[messageType ?? ""] ?? { bg: "bg-gray-50", border: "border-gray-200", dot: "bg-gray-400", label: messageType ?? "Unknown" };
 }
@@ -53,6 +64,8 @@ export default function FlowTimeline({ messages, audits }: FlowTimelineProps) {
         from: msg.originatingFrom ?? msg.from,
         to: msg.to,
         errorText: msg.errorContent?.errorText,
+        exceptionStackTrace: msg.errorContent?.exceptionStackTrace,
+        eventContent: msg.eventContent,
         messageId: msg.messageId,
       });
     }
@@ -132,6 +145,22 @@ export default function FlowTimeline({ messages, audits }: FlowTimelineProps) {
                 <p className="text-xs mt-2 text-red-700 bg-red-100 rounded px-2 py-1 font-mono break-all">
                   {entry.errorText}
                 </p>
+              )}
+              {entry.exceptionStackTrace && (
+                <details className="mt-2">
+                  <summary className="text-[10px] text-red-600 cursor-pointer hover:underline">Exception details</summary>
+                  <pre className="text-[10px] mt-1 text-red-800 bg-red-50 rounded px-2 py-1 overflow-x-auto max-h-40 whitespace-pre-wrap break-all">
+                    {entry.exceptionStackTrace}
+                  </pre>
+                </details>
+              )}
+              {entry.eventContent && (
+                <details className="mt-2">
+                  <summary className="text-[10px] text-muted-foreground cursor-pointer hover:underline">Payload</summary>
+                  <pre className="text-[10px] mt-1 bg-muted rounded px-2 py-1 overflow-x-auto max-h-48 whitespace-pre-wrap">
+                    {formatJson(entry.eventContent)}
+                  </pre>
+                </details>
               )}
               {entry.messageId && (
                 <p className="text-[10px] mt-1 text-muted-foreground font-mono">

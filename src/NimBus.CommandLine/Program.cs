@@ -610,6 +610,25 @@ internal static class Program
                     return 0;
                 });
             });
+
+            catalogCommand.Command("asyncapi", asyncApiCommand =>
+            {
+                asyncApiCommand.Description = "Export platform topology as an AsyncAPI 3.0 specification (YAML)";
+
+                var outputOption = asyncApiCommand.Option("-o|--output <PATH>",
+                    "Output file path (defaults to ./asyncapi.yaml in current directory)",
+                    CommandOptionType.SingleValue);
+
+                asyncApiCommand.OnExecuteAsync(async ct =>
+                {
+                    var outputPath = outputOption.HasValue()
+                        ? outputOption.Value()!
+                        : Path.Combine(Environment.CurrentDirectory, "asyncapi.yaml");
+
+                    await AsyncApiExporter.ExportAsync(outputPath);
+                    return 0;
+                });
+            });
         });
     }
 }

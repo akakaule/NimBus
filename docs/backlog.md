@@ -271,7 +271,7 @@ Code paths:
 14+ end-to-end tests covering retry backoff strategies (linear, exponential, max delay cap), exception-based retry rules, retry count propagation, resubmission flow, session FIFO ordering, dead-letter lifecycle observer, pipeline behavior error handling, heartbeat messages, response metadata integrity, and batch edge cases.
 
 Code paths:
-- `test/NimBus.Tests.E2E/`
+- `tests/NimBus.EndToEnd.Tests/`
 
 ### CLI Operational Commands
 

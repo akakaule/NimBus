@@ -322,22 +322,22 @@ All strategies respect an optional `MaxDelay` cap.
 
 ### Configuration
 
-Retry policies are configured per-endpoint via `RetryDefinitions` in the endpoint's event handler setup:
+Retry policies are configured via `AddNimBusSubscriber(...).ConfigureRetryPolicies(...)`:
 
 ```csharp
-services.AddNimBus(builder =>
+services.AddNimBusSubscriber("billingendpoint", sub =>
 {
-    builder.AddSubscriber<MyEndpoint>(sub =>
-    {
-        sub.Handle<OrderPlaced>(handler => handler.OnEvent(ctx => { /* ... */ }))
-           .WithRetryPolicy(new RetryPolicy
+    sub.AddHandler<OrderPlaced, OrderPlacedHandler>()
+       .ConfigureRetryPolicies(policies =>
+       {
+           policies.AddEventTypePolicy("OrderPlaced", new RetryPolicy
            {
                MaxRetries = 3,
                Strategy = BackoffStrategy.Exponential,
                BaseDelay = TimeSpan.FromSeconds(5),
                MaxDelay = TimeSpan.FromMinutes(5)
            });
-    });
+       });
 });
 ```
 

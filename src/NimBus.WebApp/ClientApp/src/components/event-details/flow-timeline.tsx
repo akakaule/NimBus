@@ -95,7 +95,7 @@ export default function FlowTimeline({ messages, audits }: FlowTimelineProps) {
   }
 
   return (
-    <div className="relative pl-8 py-4">
+    <div className="relative pl-8 py-4 w-full">
       {/* Vertical line */}
       <div className="absolute left-3.5 top-0 bottom-0 w-0.5 bg-border" />
 

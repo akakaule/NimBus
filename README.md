@@ -18,7 +18,7 @@ NimBus is an Azure Service Bus based integration platform with a shared SDK, man
 
 Key projects:
 
-- `src/NimBus.Core`: shared endpoint, event, message, and logging abstractions.
+- `src/NimBus.Core`: shared endpoint, event, message, and pipeline abstractions.
 - `src/NimBus`: platform configuration and built-in endpoint definitions.
 - `src/NimBus.CommandLine`: `nb` CLI for Azure infrastructure, topology provisioning, and deployment.
 - `src/NimBus.SDK`: publisher/subscriber SDK surface.
@@ -28,6 +28,9 @@ Key projects:
 - `src/NimBus.WebApp`: ASP.NET Core management UI plus the React/Vite client app.
 - `src/NimBus.Resolver`: tracks message outcomes and updates resolver state.
 - `src/NimBus.AppHost`: Aspire host for local orchestration.
+- `src/NimBus.Testing`: in-memory test transport for running the full pipeline without Azure.
+- `src/NimBus.Outbox.SqlServer`: SQL Server transactional outbox implementation.
+- `samples/AspirePubSub/`: sample publisher, subscriber (with middleware + DeferredProcessor), provisioner, and resolver worker.
 
 ### Extensions
 
@@ -246,6 +249,8 @@ The Aspire dashboard opens automatically. You'll see:
 - **provisioner** — provisions Service Bus topology, then exits
 - **resolver** — starts after provisioner completes
 - **webapp** — starts after provisioner completes (external HTTP endpoint)
+- **publisher** — sample HTTP API (`POST /publish/order`, `POST /publish/order-failed`)
+- **subscriber** — sample event handler with middleware pipeline and separated DeferredProcessor
 
 ## CI/CD
 
@@ -266,6 +271,20 @@ The repository includes an [`azure-pipelines-deploy.yml`](pipelines/azure-pipeli
 3. **Run the pipeline** with your solution ID, environment, resource group, and service connection name
 
 The pipeline uses `nb setup` to run all deployment steps (`infra apply` → `topology apply` → `deploy apps`) in a single `AzureCLI` task.
+
+## Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [Getting Started](docs/getting-started.md) | Step-by-step tutorial: create a publisher, subscriber, and run with Aspire |
+| [Message Flows](docs/message-flows.md) | All 10 message flow patterns with ASCII diagrams |
+| [Deferred Messages](docs/deferred-messages.md) | Session blocking and deferral mechanics with Mermaid diagrams |
+| [Pipeline Middleware](docs/pipeline-middleware.md) | Built-in middleware, custom behaviors, and lifecycle observers |
+| [CLI Reference](docs/cli.md) | All `nb` commands: infra, topology, deploy, endpoint, container, catalog |
+| [SDK API Reference](docs/sdk-api-reference.md) | Interfaces: IPublisherClient, IEventHandler, RetryPolicy, IOutbox |
+| [Extensions](docs/extensions.md) | Extension framework guide |
+| [Architecture](docs/architecture.md) | System design and component overview |
+| [Roadmap](docs/roadmap.md) | Feature roadmap through H2 2027 |
 
 ## License
 

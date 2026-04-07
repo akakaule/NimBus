@@ -181,7 +181,7 @@ const EventDetails = (props: EventDetailsProps) => {
         ),
       },
       {
-        name: `Flow`,
+        name: `Flow (${histories.length + audits.length})`,
         isEnabled: histories.length > 0,
         content: <FlowTimeline messages={histories} audits={audits} key="Flow" />,
       },

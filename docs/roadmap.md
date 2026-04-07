@@ -15,6 +15,9 @@ NimBus is a mature, Azure-native event-driven integration platform with strong d
 | **Extensibility** | Middleware pipeline + extension framework with 3 built-in behaviors | NServiceBus (behaviors), MassTransit (filters), Brighter (decorators) |
 | **Testing** | In-memory transport + 14+ E2E tests (Phase 2) | MassTransit, Wolverine, Rebus have in-memory transports |
 | **Workflows** | Continuation pattern (limited) | NServiceBus, MassTransit, Wolverine have full saga/state machines |
+| **Resilience** | Retry policies (3 strategies) | Wolverine/Brighter have circuit breakers; NServiceBus has two-phase retries |
+| **Large messages** | None (Service Bus 256KB limit) | NServiceBus has DataBus/claim-check pattern |
+| **Messaging patterns** | Publish/subscribe only | MassTransit has request/response; all have message scheduling |
 | **Transport** | Azure Service Bus only | Most support RabbitMQ, Kafka, SQL, in-memory |
 
 ## Roadmap Phases
@@ -145,14 +148,47 @@ Paired with the outbox for exactly-once semantics on the consumer side.
 - Configurable TTL for deduplication entries
 - Optional -- consumers opt in via configuration
 
-**3.3 Saga / State Machine Support (Design Phase)**
+**3.3 Message Scheduling SDK**
+
+Expose Azure Service Bus's native scheduling as a first-class SDK feature. Required prerequisite for saga timeouts (Phase 4).
+
+- `ISender.ScheduleMessage(IMessage, DateTimeOffset)` returning a cancellable `long sequenceNumber`
+- `ISender.CancelScheduledMessage(long sequenceNumber)`
+- Delegates to `ServiceBusSender.ScheduleMessageAsync` / `CancelScheduledMessageAsync`
+- Outbox integration: scheduled messages written to outbox with `ScheduledEnqueueTimeUtc`
+
+Reference: MassTransit's `IMessageScheduler`, Rebus's `bus.Defer()`.
+
+**3.4 Poison Message Classification**
+
+Distinguish transient failures (timeouts, 503s) from permanent failures (validation, deserialization). Permanent failures dead-letter immediately without wasting retry budget.
+
+- `IPermanentFailureClassifier` interface with default implementation for common exception types
+- Configurable per event type via `DefaultRetryPolicyProvider`
+- Extends existing retry pipeline in `StrictMessageHandler`
+
+Reference: NServiceBus two-phase recoverability (immediate + delayed retries).
+
+**3.5 Circuit Breaker Middleware**
+
+Pause message processing when a downstream dependency is systematically failing. Without it, every message burns retries against a broken dependency.
+
+- `CircuitBreakerMiddleware` implementing `IMessagePipelineBehavior`
+- Uses Polly V8 resilience pipeline
+- Configurable failure threshold, break duration, and half-open test count
+- When open: messages are abandoned (returned to queue for later), not dead-lettered
+- Per-endpoint or per-event-type configuration
+
+Reference: Wolverine per-endpoint circuit breaker, Brighter `[UseResiliencePipeline]`.
+
+**3.6 Saga / State Machine Support (Design Phase)**
 
 NimBus's continuation pattern is a limited form of saga. A full saga framework would enable multi-step workflows with timeout handling and compensation.
 
 Design-only in this phase:
 - State machine DSL (inspired by MassTransit's Automatonymous)
 - Saga state persistence (Cosmos DB)
-- Timeout scheduling via Service Bus scheduled messages
+- Timeout scheduling via Service Bus scheduled messages (uses 3.3)
 - Compensation actions on failure
 
 ---
@@ -177,28 +213,82 @@ Goal: Production hardening, developer experience polish, and ecosystem growth.
 - ~~Message flow visualization: timeline view in Event Details showing full message lifecycle~~
 - Alerting: webhook/email notifications for failed messages, dead-letters, or session blocks
 
-**4.2 SDK Developer Experience**
+**4.2 Claim-Check Pattern**
+
+Offload large message payloads to Azure Blob Storage, passing a reference through Service Bus. Solves the 256KB/1MB message size limit.
+
+- `ClaimCheckMiddleware` implementing `IMessagePipelineBehavior`
+- Configurable size threshold (e.g., >200KB triggers offload)
+- Publisher side: serialize payload to Blob Storage, replace body with blob reference
+- Consumer side: detect claim-check reference, retrieve payload from Blob Storage
+- Package as `NimBus.Extensions.ClaimCheck`
+
+Reference: NServiceBus DataBus / `[DataBusProperty]`, Azure claim-check pattern.
+
+**4.3 Request/Response**
+
+Synchronous request/response over the bus. A publisher sends a typed request and awaits a typed response with timeout handling.
+
+- `ISender.Request<TRequest, TResponse>(TRequest, TimeSpan timeout)` returning `Task<TResponse>`
+- Uses Azure Service Bus reply-to queue (session-based for correlation)
+- Timeout handling with `OperationCanceledException`
+- Enables query patterns between services without separate HTTP APIs
+
+Reference: MassTransit `IRequestClient<T>`.
+
+**4.4 Failed Message Hook**
+
+Application-level last-chance handler before dead-lettering. After retries are exhausted, dispatch to `IFailed<T>` for custom recovery, enriched diagnostics, or re-routing.
+
+- `IFailedMessageHandler<T>` interface invoked after retry exhaustion, before dead-letter
+- Handler can: log enriched diagnostics, send to alternative endpoint, modify and retry, or allow dead-letter
+- Registered via `builder.AddFailedHandler<OrderPlaced, OrderPlacedFailedHandler>()`
+
+Reference: Rebus `IFailed<T>`, MassTransit `Fault<T>`.
+
+**4.5 SDK Developer Experience**
 
 - Source generators: replace reflection-based event type discovery with compile-time source generators
 - Strongly-typed configuration: `NimBusOptions` pattern with validation
 - Better error messages: actionable errors when misconfigured
+- Message versioning: additive nullable fields, inheritance-based polymorphic dispatch, `[MessageVersion]` attribute
 
-**4.3 Saga / State Machine Implementation**
+**4.6 Saga / State Machine Implementation**
 
 Based on Phase 3 design work:
 - Saga persistence in Cosmos DB
-- Saga timeout scheduling
+- Saga timeout scheduling (uses message scheduling SDK from Phase 3.3)
 - Compensation actions
 - Saga visualization in WebApp
 
-**4.4 Transport Abstraction (Evaluate)**
+**4.7 Rate Limiting Middleware**
+
+Control message consumption rate to protect downstream services and manage API quotas.
+
+- `RateLimitingMiddleware` implementing `IMessagePipelineBehavior`
+- Uses `System.Threading.RateLimiting` (token bucket, sliding window, fixed window)
+- Configurable per event type or per endpoint
+- When limit exceeded: messages are abandoned (returned to queue), not dead-lettered
+
+**4.8 Notification Channels**
+
+Production-ready notification channels extending `NimBus.Extensions.Notifications`.
+
+- Webhook channel (HTTP POST with configurable payload template)
+- Microsoft Teams channel (incoming webhook connector)
+- Email channel (SendGrid or SMTP)
+- Severity-based routing: route Critical to all channels, Warning to webhook only
+- Rate limiting and batching to prevent notification storms
+- Completes the alerting feature (4.1)
+
+**4.9 Transport Abstraction (Evaluate)**
 
 Evaluate whether transport abstraction is worth the complexity:
 - Full abstraction: `ITransport` interface with Azure Service Bus, RabbitMQ, in-memory implementations
 - Minimal abstraction: keep Azure Service Bus as primary, add in-memory for testing only (Phase 2.2)
 - Recommendation: start with in-memory for testing, only abstract further if there's concrete demand
 
-**4.5 Documentation & Onboarding** -- Mostly Complete
+**4.10 Documentation & Onboarding** -- Mostly Complete
 
 - ~~Sample applications: Aspire Pub/Sub sample with Publisher, Subscriber (with DeferredProcessorService), and middleware demo~~
 - ~~CI/CD documentation: GitHub Actions and Azure DevOps deploy pipelines~~
@@ -252,13 +342,22 @@ Goal: If NimBus is to be open-sourced or adopted beyond its current org.
 | E2E test suite | High quality | Medium | **P1** | -- | Completed |
 | NuGet packages | Medium ecosystem | Small | **P4→P1** | 5 | Completed |
 | Middleware pipeline | High extensibility | Medium | **P2** | 3 | Completed |
+| Message scheduling SDK | High (saga prereq) | Small | **P1** | 3 | Not Started |
+| Poison message classification | High reliability | Small | **P2** | 3 | Not Started |
+| Circuit breaker middleware | High resilience | Small-Medium | **P2** | 3 | Not Started |
 | Inbox pattern | Medium reliability | Medium | **P2** | 3 | Not Started |
 | Saga design | High capability | Large | **P2** | 3 | Not Started |
+| Claim-check pattern | High (enterprise) | Medium | **P2** | 4 | Not Started |
+| Request/response | High capability | Medium | **P2** | 4 | Not Started |
+| Failed message hook | Medium reliability | Small | **P3** | 4 | Not Started |
 | WebApp enhancements | Medium ops | Large | **P3** | 4 | Mostly Complete |
 | CLI operational commands | Medium ops | Medium | **P3** | -- | Completed |
 | Documentation & onboarding | Medium DX | Medium | **P3** | 4 | Nearly Complete |
 | Source generators | Medium DX | Medium | **P3** | 4 | Not Started |
+| Message versioning | Medium contracts | Medium | **P3** | 4 | Not Started |
 | Saga implementation | High capability | Very large | **P3** | 4 | Not Started |
+| Rate limiting middleware | Medium resilience | Small | **P3** | 4 | Not Started |
+| Notification channels | Medium ops | Medium | **P3** | 4 | Not Started |
 | Transport abstraction | Low-Medium | Very large | **P4** | 4 | Not Started |
 | Multi-tenant | Low | Large | **P4** | 5 | Not Started |
 

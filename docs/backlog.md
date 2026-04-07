@@ -22,6 +22,7 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 | Item | Phase | Status | Description |
 |---|---|---|---|
 | [Configurable Retry Policies](#configurable-retry-policies) | 1 | Completed | Per-event-type and exception-based retry with backoff strategies |
+| [Message Scheduling SDK](#message-scheduling-sdk) | 3 | Not Started | First-class scheduled and cancellable message delivery via Service Bus |
 | [OpenTelemetry Tracing](#opentelemetry-tracing) | 2 | Completed | `Activity`-based distributed tracing across publish/subscribe/Resolver |
 | [In-Memory Transport](#in-memory-transport) | 2 | Completed | Test transport for running the full pipeline without Azure Service Bus |
 | [Health Checks](#health-checks) | 2 | Completed | `IHealthCheck` implementations for Service Bus, Cosmos, Resolver lag |
@@ -33,7 +34,11 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 | Item | Phase | Status | Description |
 |---|---|---|---|
 | [Middleware Pipeline](#middleware-pipeline) | 3 | Completed | `IMessagePipelineBehavior` pipeline with 3 built-in middleware (Logging, Metrics, Validation), 15 unit tests |
+| [Poison Message Classification](#poison-message-classification) | 3 | Not Started | Transient vs permanent failure detection with immediate dead-letter for unrecoverable errors |
+| [Circuit Breaker Middleware](#circuit-breaker-middleware) | 3 | Not Started | Pause processing when downstream dependencies are failing systemically |
 | [Inbox Pattern](#inbox-pattern) | 3 | Not Started | Idempotent consumers via MessageId deduplication |
+| [Claim-Check Pattern](#claim-check-pattern) | 4 | Not Started | Large payload offload to Azure Blob Storage |
+| [Request/Response](#requestresponse) | 4 | Not Started | Synchronous request/response over the bus with timeout handling |
 | [Saga Design](#saga-design) | 3 | Not Started | Research and prototype state machine support |
 
 ## P3 -- Lower
@@ -42,8 +47,12 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 |---|---|---|---|
 | [WebApp Enhancements](#webapp-enhancements) | 4 | Mostly Complete | All done except: alerting |
 | [CLI Operational Commands](#cli-operational-commands) | -- | Completed | All endpoint + container commands, colored help, Spectre.Console progress |
+| [Failed Message Hook](#failed-message-hook) | 4 | Not Started | Application-level last-chance handler before dead-lettering |
 | [Source Generators](#source-generators) | 4 | Not Started | Compile-time event type discovery replacing reflection |
+| [Message Versioning](#message-versioning) | 4 | Not Started | Schema evolution with polymorphic dispatch and version attributes |
 | [Saga Implementation](#saga-implementation) | 4 | Not Started | Full saga persistence, timeouts, compensation, WebApp visualization |
+| [Rate Limiting Middleware](#rate-limiting-middleware) | 4 | Not Started | Throttle message consumption to protect downstream services |
+| [Notification Channels](#notification-channels) | 4 | Not Started | Webhook, Teams, and email channels for production alerting |
 | [Documentation & Onboarding](#documentation--onboarding) | 4 | Mostly Complete | All done except: migration guide from MassTransit/NServiceBus |
 
 ## P4 -- Future
@@ -248,6 +257,121 @@ Tenant-isolated topics/subscriptions with per-tenant configuration and routing.
 **Priority:** P4 | **Phase:** 5 | **Status:** Not Started
 
 Optional integration with Marten or a custom event store. Separate `NimBus.EventSourcing` package. Only pursue if there's a concrete use case.
+
+### Message Scheduling SDK
+
+**Priority:** P1 | **Phase:** 3 | **Status:** Not Started
+
+First-class message scheduling exposing Azure Service Bus's native `ScheduledEnqueueTimeUtc`. Required prerequisite for saga timeouts.
+
+- `ISender.ScheduleMessage(IMessage, DateTimeOffset)` returning cancellable `long sequenceNumber`
+- `ISender.CancelScheduledMessage(long sequenceNumber)`
+- Outbox integration for scheduled messages
+- Replaces the limited `messageEnqueueDelay` (minutes-only) parameter
+
+Reference: MassTransit `IMessageScheduler`, Rebus `bus.Defer()`.
+
+### Poison Message Classification
+
+**Priority:** P2 | **Phase:** 3 | **Status:** Not Started
+
+Distinguish transient failures (timeouts, 503s, rate limits) from permanent failures (validation, deserialization, authorization). Permanent failures dead-letter immediately without consuming retry budget.
+
+- `IPermanentFailureClassifier` interface with default implementation for common exception types
+- Configurable per event type via `DefaultRetryPolicyProvider`
+- Extends existing retry pipeline in `StrictMessageHandler`
+- Two-phase retries: in-memory immediate retries for transient errors, delayed redelivery for systemic issues
+
+Reference: NServiceBus two-phase recoverability.
+
+### Circuit Breaker Middleware
+
+**Priority:** P2 | **Phase:** 3 | **Status:** Not Started
+
+Pause message processing when a downstream dependency is systematically failing. Prevents cascading dead-lettering when every message hits the same broken service.
+
+- `CircuitBreakerMiddleware` implementing `IMessagePipelineBehavior`
+- Uses Polly V8 resilience pipeline
+- Configurable failure threshold, break duration, half-open test count
+- When open: messages are abandoned (returned to queue), not dead-lettered
+- Per-endpoint or per-event-type configuration
+
+Reference: Wolverine per-endpoint circuit breaker, Brighter `[UseResiliencePipeline]`.
+
+### Claim-Check Pattern
+
+**Priority:** P2 | **Phase:** 4 | **Status:** Not Started
+
+Offload large message payloads (>256KB) to Azure Blob Storage, passing only a reference through Service Bus. Essential for messages with binary attachments or large JSON.
+
+- `ClaimCheckMiddleware` implementing `IMessagePipelineBehavior`
+- Publisher side: serialize payload to Blob Storage, replace body with blob URI
+- Consumer side: detect claim-check reference, retrieve payload transparently
+- Configurable size threshold
+- Package as `NimBus.Extensions.ClaimCheck`
+
+Reference: NServiceBus DataBus / `[DataBusProperty]`, Azure Architecture Center claim-check pattern.
+
+### Request/Response
+
+**Priority:** P2 | **Phase:** 4 | **Status:** Not Started
+
+Synchronous request/response over the bus. Enables query patterns (e.g., "get order status") between services without building separate HTTP APIs.
+
+- `ISender.Request<TRequest, TResponse>(TRequest, TimeSpan timeout)` returning `Task<TResponse>`
+- Uses Azure Service Bus reply-to queue with session-based correlation
+- Timeout handling with `OperationCanceledException`
+
+Reference: MassTransit `IRequestClient<T>`.
+
+### Failed Message Hook
+
+**Priority:** P3 | **Phase:** 4 | **Status:** Not Started
+
+Application-level last-chance handler before dead-lettering. After retries are exhausted, invoke an `IFailed<T>` handler for custom recovery, enriched diagnostics, or re-routing.
+
+- `IFailedMessageHandler<T>` interface invoked after retry exhaustion, before dead-letter
+- Handler can: log enriched diagnostics, send to alternative endpoint, modify and retry, or allow dead-letter
+- Registered via `builder.AddFailedHandler<OrderPlaced, OrderPlacedFailedHandler>()`
+
+Reference: Rebus `IFailed<T>`.
+
+### Message Versioning
+
+**Priority:** P3 | **Phase:** 4 | **Status:** Not Started
+
+Support evolving message contracts over time without breaking existing consumers. The #1 source of production incidents in long-lived messaging systems.
+
+- Additive nullable fields (works with JSON serialization; needs documentation and testing)
+- `[MessageVersion]` attribute for explicit version tracking
+- Inheritance-based polymorphic dispatch: `IEventHandler<OrderPlacedV1>` also receives `OrderPlacedV2` messages
+- Compile-time schema compatibility checks via source generators
+
+Reference: NServiceBus evolving contracts, polymorphic message dispatch.
+
+### Rate Limiting Middleware
+
+**Priority:** P3 | **Phase:** 4 | **Status:** Not Started
+
+Throttle message consumption rate to protect downstream services and external API quotas.
+
+- `RateLimitingMiddleware` implementing `IMessagePipelineBehavior`
+- Uses `System.Threading.RateLimiting` (token bucket, sliding window, fixed window)
+- Configurable per event type or per endpoint
+- When limit exceeded: messages are abandoned (returned to queue), not dead-lettered
+
+### Notification Channels
+
+**Priority:** P3 | **Phase:** 4 | **Status:** Not Started
+
+Production-ready notification channels extending the existing `NimBus.Extensions.Notifications` framework.
+
+- Webhook channel (HTTP POST with configurable payload template)
+- Microsoft Teams channel (incoming webhook connector)
+- Email channel (SendGrid or SMTP)
+- Severity-based routing: route Critical to all channels, Warning to webhook only
+- Rate limiting and batching to prevent notification storms
+- Completes the alerting feature (4.1)
 
 ### Aspire Integration
 

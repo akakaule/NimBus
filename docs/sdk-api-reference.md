@@ -68,9 +68,22 @@ public interface IPublisherClient
 | Method | Description |
 |---|---|
 | `Publish(event)` | Publish a single event. SessionId from `event.GetSessionId()`, auto-generated CorrelationId and MessageId. |
-| `Publish(event, sessionId, correlationId)` | Publish with explicit session and correlation IDs. |
+| `Publish(event, sessionId, correlationId)` | Publish with explicit session and correlation IDs. Overrides `GetSessionId()`. |
 | `Publish(event, sessionId, correlationId, messageId)` | Publish with all IDs explicit (for deterministic deduplication). |
 | `PublishBatch(events)` | Publish multiple events as a Service Bus batch. Respect batch size limits. |
+
+**Session ID controls ordering.** By default, `Publish(event)` uses the event's `GetSessionId()` method. The explicit overloads let the publisher control ordering independently:
+
+```csharp
+// Default: session ID from OrderPlaced.GetSessionId() (= OrderId)
+await publisher.Publish(order);
+
+// Explicit: group multiple event types under a shared session for cross-event ordering
+await publisher.Publish(order, customerId.ToString(), correlationId);
+
+// Explicit with deterministic message ID for deduplication
+await publisher.Publish(order, customerId.ToString(), correlationId, $"order-{order.OrderId}");
+```
 
 ---
 

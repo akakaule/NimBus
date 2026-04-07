@@ -13,7 +13,13 @@ Options considered:
 4. **Single consumer** — One consumer per entity type (no concurrency)
 
 ## Decision
-Use Azure Service Bus sessions with the entity ID (e.g., OrderId) as the session ID. Each event class defines `GetSessionId()` to control ordering boundaries.
+Use Azure Service Bus sessions with the entity ID (e.g., OrderId) as the session ID. Session IDs are determined in two ways:
+
+1. **Event-defined (default)** — Each event class overrides `GetSessionId()` to provide a default session key (e.g., `OrderId.ToString()`). Used when calling `publisher.Publish(event)`.
+2. **Publisher-controlled (explicit)** — The publisher can override the session ID at publish time via `publisher.Publish(event, sessionId, correlationId)` or `publisher.Publish(event, sessionId, correlationId, messageId)`. This enables scenarios where:
+   - The ordering key differs from the event's natural key
+   - Multiple event types should share a session for cross-event ordering
+   - The publisher needs deterministic message IDs for deduplication
 
 When a handler fails, the session is blocked — subsequent messages for that session are deferred to a separate subscription and replayed in FIFO order after recovery.
 

@@ -41,7 +41,7 @@ public class OrderPlaced : Event
 }
 ```
 
-`GetSessionId()` determines message ordering — all messages with the same session ID are processed in FIFO order.
+`GetSessionId()` provides the default session ID for message ordering — all messages with the same session ID are processed in FIFO order. The publisher can also override the session ID explicitly at publish time for advanced ordering scenarios (see [SDK API Reference](sdk-api-reference.md#ipublisherclient)).
 
 ## 2. Create a Publisher
 

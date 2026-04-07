@@ -9,7 +9,7 @@ When a session is blocked and deferred messages need to be replayed, a `ProcessD
 1. **Integrated** — `StrictMessageHandler.HandleProcessDeferredRequest()` processes deferred messages within the main session-enabled handler
 2. **Separated** — A dedicated `DeferredProcessorFunction` (or `DeferredProcessorService`) listens on a non-session subscription and handles it independently
 
-The integrated approach was the original NimBus design. DIS (the predecessor platform) used the separated approach.
+The integrated approach was the original design. The separated approach was adopted after proving more robust in production.
 
 ## Decision
 Remove `HandleProcessDeferredRequest()` from `StrictMessageHandler`. Each subscriber app hosts its own DeferredProcessor as either:
@@ -24,7 +24,7 @@ The `DeferredProcessor` subscription is provisioned with `RequiresSession = fals
 - Cleaner separation of concerns — the core handler doesn't need `IDeferredMessageProcessor` or topic name injection
 - DeferredProcessor can scale independently of the main handler
 - Simpler `StrictMessageHandler` constructors (fewer parameters)
-- Aligns with DIS's proven production architecture
+- Proven in production (adopted from an earlier version of the platform)
 - DeferredProcessor doesn't hold a session lock (runs on non-session subscription)
 
 ### Negative

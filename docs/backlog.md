@@ -40,11 +40,11 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 
 | Item | Phase | Status | Description |
 |---|---|---|---|
-| [WebApp Enhancements](#webapp-enhancements) | 4 | Mostly Complete | All done except: message flow visualization and alerting |
+| [WebApp Enhancements](#webapp-enhancements) | 4 | Mostly Complete | All done except: alerting |
 | [CLI Operational Commands](#cli-operational-commands) | -- | Completed | All endpoint + container commands, colored help, Spectre.Console progress |
 | [Source Generators](#source-generators) | 4 | Not Started | Compile-time event type discovery replacing reflection |
 | [Saga Implementation](#saga-implementation) | 4 | Not Started | Full saga persistence, timeouts, compensation, WebApp visualization |
-| [Documentation & Onboarding](#documentation--onboarding) | 4 | Mostly Complete | Message flows, deferred messages, pipeline middleware docs done; getting started guide, API reference, ADRs remaining |
+| [Documentation & Onboarding](#documentation--onboarding) | 4 | Mostly Complete | All done except: migration guide from MassTransit/NServiceBus |
 
 ## P4 -- Future
 
@@ -188,7 +188,7 @@ Design-only phase. Research state machine DSL (inspired by MassTransit Automaton
 - [x] Grouped by Error view on endpoint details with bulk Resubmit All / Skip All per error pattern
 - [x] EnumMemberModelBinder for correct enum query string binding (fixed metrics time scale)
 - [x] Millisecond precision in all datetime displays
-- [ ] Message flow visualization (trace a message through its full lifecycle)
+- [x] Message flow visualization: timeline view in Event Details showing full message lifecycle
 - [ ] Alerting (webhook/email for failures, dead-letters, session blocks)
 
 ### Source Generators
@@ -213,9 +213,11 @@ Based on Phase 3 design: saga persistence in Cosmos DB, timeout scheduling, comp
 - [x] Message flow documentation: `docs/message-flows.md` with 10 flow diagrams covering all message types
 - [x] Deferred message processing guide: `docs/deferred-messages.md` with Mermaid sequence diagrams
 - [x] Pipeline middleware documentation: `docs/pipeline-middleware.md` with patterns, built-in middleware, and API reference
-- [ ] Getting started guide
-- [ ] SDK API reference
-- [ ] Architecture decision records (ADRs)
+- [x] Getting started guide: `docs/getting-started.md`
+- [x] SDK API reference: `docs/sdk-api-reference.md`
+- [x] Architecture decision records: 8 ADRs in `docs/adr/`
+- [x] CLI reference: `docs/cli.md` with full command documentation
+- [x] Azure Functions hosting guide: `docs/azure-functions-hosting.md`
 - [ ] Migration guide from MassTransit/NServiceBus
 
 ### Transport Abstraction

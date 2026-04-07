@@ -174,7 +174,7 @@ Goal: Production hardening, developer experience polish, and ecosystem growth.
 - ~~Admin accordion redesign: Recovery, Cleanup, Infrastructure, Danger Zone sections~~
 - ~~EnumMemberModelBinder for correct period/enum query string binding~~
 - ~~Millisecond precision in all datetime displays~~
-- Message flow visualization: trace a message through its full lifecycle
+- ~~Message flow visualization: timeline view in Event Details showing full message lifecycle~~
 - Alerting: webhook/email notifications for failed messages, dead-letters, or session blocks
 
 **4.2 SDK Developer Experience**
@@ -206,9 +206,11 @@ Evaluate whether transport abstraction is worth the complexity:
 - ~~Message flow documentation: `docs/message-flows.md` with 10 flow diagrams~~
 - ~~Deferred message processing guide: `docs/deferred-messages.md` with Mermaid sequence diagrams~~
 - ~~Pipeline middleware documentation: `docs/pipeline-middleware.md` with patterns and API reference~~
-- Getting started guide
-- SDK API reference
-- Architecture decision records (ADRs)
+- ~~Getting started guide: `docs/getting-started.md`~~
+- ~~SDK API reference: `docs/sdk-api-reference.md`~~
+- ~~Architecture decision records: 8 ADRs in `docs/adr/`~~
+- ~~CLI reference: `docs/cli.md`~~
+- ~~Azure Functions hosting guide: `docs/azure-functions-hosting.md`~~
 - Migration guide from MassTransit/NServiceBus
 
 ---
@@ -254,7 +256,7 @@ Goal: If NimBus is to be open-sourced or adopted beyond its current org.
 | Saga design | High capability | Large | **P2** | 3 | Not Started |
 | WebApp enhancements | Medium ops | Large | **P3** | 4 | Mostly Complete |
 | CLI operational commands | Medium ops | Medium | **P3** | -- | Completed |
-| Documentation & onboarding | Medium DX | Medium | **P3** | 4 | Mostly Complete |
+| Documentation & onboarding | Medium DX | Medium | **P3** | 4 | Nearly Complete |
 | Source generators | Medium DX | Medium | **P3** | 4 | Not Started |
 | Saga implementation | High capability | Very large | **P3** | 4 | Not Started |
 | Transport abstraction | Low-Medium | Very large | **P4** | 4 | Not Started |

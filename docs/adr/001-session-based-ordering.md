@@ -31,8 +31,10 @@ When a handler fails, the session is blocked — subsequent messages for that se
 - Concurrent processing across different sessions (high throughput)
 - Native Service Bus feature — no external dependencies
 
-### Negative
-- Ties the platform to Azure Service Bus (sessions are protocol-specific, not available in RabbitMQ/Kafka)
+### Design Choice
+- NimBus is intentionally built for Azure Service Bus — sessions are a core platform capability, not an abstraction to be swapped. Transport abstraction is explicitly out of scope (see roadmap "What NOT to Do"). This focus enables deep integration with Service Bus features (sessions, dead-letter queues, scheduled delivery, forwarding subscriptions) without compromise.
+
+### Trade-offs
 - Session lock management adds complexity (lock renewal, idle timeout)
 - Maximum concurrent sessions is configurable but bounded
 - Testing requires session-aware mocking (addressed by `NimBus.Testing` in-memory transport)

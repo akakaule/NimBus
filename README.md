@@ -1,12 +1,6 @@
 # NimBus
 
-```text
- _   _ _           ____             
-| \ | (_)_ __ ___ | __ ) _   _ ___  
-|  \| | | '_ ` _ \|  _ \| | | / __| 
-| |\  | | | | | | | |_) | |_| \__ \ 
-|_| \_|_|_| |_| |_|____/ \__,_|___/ 
-```
+![NimBus](assets/banner.png)
 
 NimBus is an Azure Service Bus based integration platform with a shared SDK, management web app, and message tracking and storage.
 

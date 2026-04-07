@@ -250,6 +250,7 @@ You can then **Resubmit** or **Skip** the failed message from the Event Details 
 
 ## Next Steps
 
+- [Azure Functions Hosting](azure-functions-hosting.md) — Production hosting with Service Bus session triggers
 - [Message Flows](message-flows.md) — All 10 message flow patterns
 - [Deferred Messages](deferred-messages.md) — Session blocking and deferral mechanics
 - [Pipeline Middleware](pipeline-middleware.md) — Custom middleware and lifecycle observers

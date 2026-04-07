@@ -277,6 +277,7 @@ The pipeline uses `nb setup` to run all deployment steps (`infra apply` → `top
 | Guide | Description |
 |-------|-------------|
 | [Getting Started](docs/getting-started.md) | Step-by-step tutorial: create a publisher, subscriber, and run with Aspire |
+| [Azure Functions Hosting](docs/azure-functions-hosting.md) | Production hosting with Service Bus session triggers and DeferredProcessor |
 | [Message Flows](docs/message-flows.md) | All 10 message flow patterns with ASCII diagrams |
 | [Deferred Messages](docs/deferred-messages.md) | Session blocking and deferral mechanics with Mermaid diagrams |
 | [Pipeline Middleware](docs/pipeline-middleware.md) | Built-in middleware, custom behaviors, and lifecycle observers |

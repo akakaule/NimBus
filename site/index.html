@@ -34,6 +34,12 @@
 
         .container { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
 
+        .sr-only {
+            position: absolute; width: 1px; height: 1px;
+            padding: 0; margin: -1px; overflow: hidden;
+            clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+        }
+
         /* ── Hero ── */
         .hero {
             background: var(--bg-dark);
@@ -46,17 +52,6 @@
             max-width: 500px;
             height: auto;
             margin-bottom: 28px;
-        }
-
-        .hero-tagline {
-            font-size: 1.2rem;
-            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-            background: linear-gradient(90deg, var(--blue), #FFFFFF);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 20px;
-            letter-spacing: 0.5px;
         }
 
         .hero-subtitle {
@@ -83,13 +78,15 @@
             background: var(--blue);
             color: white;
         }
-        .btn-primary:hover { background: var(--blue-light); }
+        .btn-primary:hover, .btn-primary:focus-visible { background: var(--blue-light); }
 
         .btn-outline {
             border: 1.5px solid var(--text-muted);
             color: var(--text-light);
         }
-        .btn-outline:hover { border-color: var(--blue-light); color: var(--blue-light); }
+        .btn-outline:hover, .btn-outline:focus-visible { border-color: var(--blue-light); color: var(--blue-light); }
+
+        :focus-visible { outline: 2px solid var(--blue-light); outline-offset: 2px; }
 
         /* ── Sections ── */
         .section { padding: 80px 0; }
@@ -439,7 +436,6 @@
         @media (max-width: 768px) {
             .hero { padding: 48px 0 56px; }
             .hero-banner { max-width: 320px; }
-            .hero-tagline { font-size: 1rem; }
             .hero-subtitle { font-size: 1rem; }
             .section { padding: 56px 0; }
             .section-title { font-size: 1.6rem; }
@@ -455,6 +451,7 @@
 <!-- ── Hero ── -->
 <section class="hero">
     <div class="container">
+        <h1 class="sr-only">NimBus — The Operational Platform for Azure Service Bus</h1>
         <img src="banner.png" alt="NimBus" class="hero-banner">
         <p class="hero-subtitle">
             The operational platform for Azure Service Bus &mdash; session-ordered messaging

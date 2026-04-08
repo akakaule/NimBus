@@ -6,6 +6,7 @@ using System.ComponentModel.DataAnnotations;
 namespace NimBus.Events.Shipping
 {
     [Description("Published when a shipment leaves the warehouse.")]
+    [SessionKey(nameof(OrderId))]
     public class ShipmentDispatched : Event
     {
         public static readonly ShipmentDispatched Example = new ShipmentDispatched
@@ -36,6 +37,5 @@ namespace NimBus.Events.Shipping
         [Description("The UTC timestamp when the shipment left the warehouse.")]
         public DateTime DispatchedAt { get; set; }
 
-        public override string GetSessionId() => OrderId.ToString();
     }
 }

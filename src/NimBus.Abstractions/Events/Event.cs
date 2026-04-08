@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Reflection;
 
 namespace NimBus.Core.Events
 {
@@ -19,6 +20,18 @@ namespace NimBus.Core.Events
 
         public IEventType GetEventType() => new EventType(GetType());
 
-        public virtual string GetSessionId() => Guid.NewGuid().ToString();
+        public virtual string GetSessionId()
+        {
+            var attr = GetType().GetCustomAttribute<SessionKeyAttribute>();
+            if (attr is null)
+                return Guid.NewGuid().ToString();
+
+            var prop = GetType().GetProperty(attr.PropertyName);
+            if (prop is null)
+                throw new InvalidOperationException(
+                    $"[SessionKey(\"{attr.PropertyName}\")] on {GetType().Name} references a property that does not exist.");
+
+            return prop.GetValue(this)?.ToString() ?? Guid.NewGuid().ToString();
+        }
     }
 }

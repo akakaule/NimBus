@@ -6,6 +6,7 @@ using System.ComponentModel.DataAnnotations;
 namespace NimBus.Events.Customers
 {
     [Description("Published when a new customer signs up and is ready to participate in the platform workflow.")]
+    [SessionKey(nameof(CustomerId))]
     public class CustomerRegistered : Event
     {
         public static readonly CustomerRegistered Example = new CustomerRegistered
@@ -31,6 +32,5 @@ namespace NimBus.Events.Customers
         [Description("The customer segment assigned at registration time.")]
         public string Segment { get; set; }
 
-        public override string GetSessionId() => CustomerId.ToString();
     }
 }

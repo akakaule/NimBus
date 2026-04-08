@@ -6,6 +6,7 @@ using System.ComponentModel.DataAnnotations;
 namespace NimBus.Events.Inventory
 {
     [Description("Published when inventory has been reserved for an order.")]
+    [SessionKey(nameof(OrderId))]
     public class InventoryReserved : Event
     {
         public static readonly InventoryReserved Example = new InventoryReserved
@@ -32,6 +33,5 @@ namespace NimBus.Events.Inventory
         [Description("The number of order lines successfully reserved.")]
         public int ReservedLines { get; set; }
 
-        public override string GetSessionId() => OrderId.ToString();
     }
 }

@@ -6,6 +6,7 @@ using System.ComponentModel.DataAnnotations;
 namespace NimBus.Events.Orders
 {
     [Description("Published when a customer places a new order.")]
+    [SessionKey(nameof(OrderId))]
     public class OrderPlaced : Event
     {
         public static readonly OrderPlaced Example = new OrderPlaced
@@ -39,6 +40,5 @@ namespace NimBus.Events.Orders
         [Description("When true, the subscriber handler will simulate a failure for testing error flows.")]
         public bool SimulateFailure { get; set; }
 
-        public override string GetSessionId() => OrderId.ToString();
     }
 }

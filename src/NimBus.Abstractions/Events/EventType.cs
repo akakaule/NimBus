@@ -29,6 +29,8 @@ namespace NimBus.Core.Events
 
         public string Description => _type.GetCustomAttribute<DescriptionAttribute>()?.Description;
 
+        public string SessionKeyProperty => _type.GetCustomAttribute<SessionKeyAttribute>()?.PropertyName;
+
         public IEnumerable<IProperty> Properties =>
             _type.GetProperties()
             .Select(p => new Property(p));

@@ -6,6 +6,7 @@ using System.ComponentModel.DataAnnotations;
 namespace NimBus.Events.Payments
 {
     [Description("Published when payment has been successfully captured for an order.")]
+    [SessionKey(nameof(OrderId))]
     public class PaymentCaptured : Event
     {
         public static readonly PaymentCaptured Example = new PaymentCaptured
@@ -31,6 +32,5 @@ namespace NimBus.Events.Payments
         [Description("The UTC timestamp when the payment was captured.")]
         public DateTime CapturedAt { get; set; }
 
-        public override string GetSessionId() => OrderId.ToString();
     }
 }

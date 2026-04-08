@@ -6,6 +6,7 @@ using System.ComponentModel.DataAnnotations;
 namespace NimBus.Events.Notifications
 {
     [Description("Published when a customer-facing notification has been sent.")]
+    [SessionKey(nameof(OrderId))]
     public class CustomerNotified : Event
     {
         public static readonly CustomerNotified Example = new CustomerNotified
@@ -36,6 +37,5 @@ namespace NimBus.Events.Notifications
         [Description("The UTC timestamp when the notification was sent.")]
         public DateTime SentAt { get; set; }
 
-        public override string GetSessionId() => OrderId.ToString();
     }
 }

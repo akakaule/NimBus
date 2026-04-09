@@ -58,6 +58,9 @@ namespace NimBus.WebApp
         {
             // Bypass authentication for local development (requires explicit opt-in via config)
             var enableLocalDevAuth = Configuration.GetValue<bool>("EnableLocalDevAuthentication", false);
+            var hasNimBusIdentity = services.Any(s => s.ServiceType.FullName == "NimBus.Extensions.Identity.INimBusIdentityMarker");
+            var hasEntraId = Configuration.GetSection("AzureAd").GetValue<string>("ClientId") is { Length: > 0 };
+
             if (Env.IsDevelopment() && enableLocalDevAuth)
             {
                 System.Console.WriteLine("WARNING: Local development authentication bypass is ENABLED. This should NEVER be used in production!");
@@ -67,8 +70,58 @@ namespace NimBus.WebApp
 
                 services.AddControllersWithViews().AddMicrosoftIdentityUI();
             }
+            else if (hasNimBusIdentity && !hasEntraId)
+            {
+                // Identity-only mode: ASP.NET Core Identity cookies (no Azure AD)
+                services.AddControllersWithViews(options =>
+                {
+                    var policy = new AuthorizationPolicyBuilder()
+                        .RequireAuthenticatedUser()
+                        .Build();
+                    options.Filters.Add(new AuthorizeFilter(policy));
+                });
+            }
+            else if (hasNimBusIdentity && hasEntraId)
+            {
+                // Dual mode: Identity cookies + Azure AD
+                services
+                .AddAuthentication("Az")
+                .AddPolicyScheme("Az", "Authorize AzureAD, AzureADBearer, or Identity", options =>
+                {
+                    options.ForwardDefaultSelector = context =>
+                    {
+                        var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
+                        if (authHeader?.StartsWith("Bearer", StringComparison.Ordinal) == true)
+                        {
+                            return JwtBearerDefaults.AuthenticationScheme;
+                        }
+
+                        // If user has Identity cookie, use Identity scheme
+                        if (context.Request.Cookies.ContainsKey("NimBus.Identity"))
+                        {
+                            return Microsoft.AspNetCore.Identity.IdentityConstants.ApplicationScheme;
+                        }
+
+                        return OpenIdConnectDefaults.AuthenticationScheme;
+                    };
+                })
+                .AddMicrosoftIdentityWebApi(Configuration.GetSection("AzureAd"))
+                .EnableTokenAcquisitionToCallDownstreamApi()
+                .AddInMemoryTokenCaches();
+
+                services.AddMicrosoftIdentityWebAppAuthentication(Configuration, "AzureAd");
+
+                services.AddControllersWithViews(options =>
+                {
+                    var policy = new AuthorizationPolicyBuilder()
+                        .RequireAuthenticatedUser()
+                        .Build();
+                    options.Filters.Add(new AuthorizeFilter(policy));
+                }).AddMicrosoftIdentityUI();
+            }
             else
             {
+                // Entra ID only (original behavior)
                 services
                 .AddAuthentication("Az")
                 .AddPolicyScheme("Az", "Authorize AzureAD or AzureADBearer", options =>
@@ -254,14 +307,16 @@ namespace NimBus.WebApp
                 });
                 endpoints.MapHub<GridEventsHub>(Constants.AppEndpoints.GridEventHub);
                 endpoints.MapControllers();
+                var loginPath = app.ApplicationServices.GetService(
+                    Type.GetType("NimBus.Extensions.Identity.INimBusIdentityMarker, NimBus.Extensions.Identity")
+                    ?? typeof(object)) != null ? "/account/login" : "/login";
                 endpoints.MapFallbackToFile("index.html", new StaticFileOptions
                 {
                     OnPrepareResponse = ctx =>
                     {
                         if (!ctx.Context.User.Identity.IsAuthenticated)
                         {
-                            // Can redirect to any URL where you prefer.
-                            ctx.Context.Response.Redirect("/login");
+                            ctx.Context.Response.Redirect(loginPath);
                         }
                     }
                 });

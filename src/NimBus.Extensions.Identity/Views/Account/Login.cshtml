@@ -1,0 +1,68 @@
+@{
+    Layout = null;
+    var error = ViewData["Error"] as string;
+    var returnUrl = ViewData["ReturnUrl"] as string ?? "/";
+    var enableEntraId = ViewData["EnableEntraId"] is true;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign in - NimBus</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1E1E1E; color: #E2E8F0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .card { background: #282C34; border-radius: 12px; padding: 40px; width: 100%; max-width: 400px; box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+        h1 { font-size: 1.5rem; text-align: center; margin-bottom: 8px; }
+        .subtitle { text-align: center; color: #94A3B8; font-size: 0.9rem; margin-bottom: 28px; }
+        label { display: block; font-size: 0.85rem; color: #94A3B8; margin-bottom: 4px; }
+        input[type="email"], input[type="password"] { width: 100%; padding: 10px 12px; border: 1px solid #3E4451; border-radius: 6px; background: #1E1E1E; color: #E2E8F0; font-size: 0.95rem; margin-bottom: 16px; outline: none; }
+        input:focus { border-color: #0078D4; }
+        .btn { display: block; width: 100%; padding: 12px; border: none; border-radius: 6px; font-size: 0.95rem; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none; }
+        .btn-primary { background: #0078D4; color: white; margin-bottom: 12px; }
+        .btn-primary:hover { background: #2B9AFF; }
+        .btn-outline { background: transparent; border: 1px solid #3E4451; color: #E2E8F0; margin-bottom: 12px; }
+        .btn-outline:hover { border-color: #0078D4; }
+        .divider { text-align: center; color: #5C6370; font-size: 0.8rem; margin: 16px 0; position: relative; }
+        .divider::before, .divider::after { content: ''; position: absolute; top: 50%; width: 40%; height: 1px; background: #3E4451; }
+        .divider::before { left: 0; }
+        .divider::after { right: 0; }
+        .links { text-align: center; margin-top: 16px; font-size: 0.85rem; }
+        .links a { color: #0078D4; text-decoration: none; }
+        .links a:hover { text-decoration: underline; }
+        .error { background: #7F1D1D; color: #FCA5A5; padding: 10px 14px; border-radius: 6px; font-size: 0.85rem; margin-bottom: 16px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>NimBus</h1>
+        <p class="subtitle">Sign in to your account</p>
+
+        @if (!string.IsNullOrEmpty(error))
+        {
+            <div class="error">@error</div>
+        }
+
+        <form method="post" action="/account/login?returnUrl=@Uri.EscapeDataString(returnUrl)">
+            @Html.AntiForgeryToken()
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required autofocus />
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required />
+            <button type="submit" class="btn btn-primary">Sign in</button>
+        </form>
+
+        @if (enableEntraId)
+        {
+            <div class="divider">or</div>
+            <a href="/login" class="btn btn-outline">Sign in with Microsoft</a>
+        }
+
+        <div class="links">
+            <a href="/account/register">Create an account</a> &middot;
+            <a href="/account/forgot-password">Forgot password?</a>
+        </div>
+    </div>
+</body>
+</html>

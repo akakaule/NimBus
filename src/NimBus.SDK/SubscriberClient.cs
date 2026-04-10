@@ -19,7 +19,7 @@ namespace NimBus.SDK
 
         /// <summary>
         /// Creates a new SubscriberClient with the specified adapter and handler provider.
-        /// Used internally by DI registration via <see cref="Extensions.ServiceCollectionExtensions.AddNimBusSubscriber"/>.
+        /// Used internally by DI registration via <see cref="Extensions.ServiceCollectionExtensions.AddNimBusSubscriber(Microsoft.Extensions.DependencyInjection.IServiceCollection, string, System.Action{Extensions.NimBusSubscriberBuilder})"/>.
         /// For manual creation, use <see cref="CreateAsync"/> instead.
         /// </summary>
         internal SubscriberClient(IServiceBusAdapter serviceBusAdapter, EventHandlerProvider eventHandlerProvider)

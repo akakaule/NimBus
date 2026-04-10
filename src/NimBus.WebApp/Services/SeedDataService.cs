@@ -528,7 +528,7 @@ public class SeedDataService
             "OrderPlaced" => $@"{{""orderId"":""{id}"",""customerId"":""{Guid.NewGuid()}"",""currencyCode"":""EUR"",""totalAmount"":249.95,""salesChannel"":""Web""}}",
             "PaymentCaptured" => $@"{{""orderId"":""{id}"",""paymentId"":""{Guid.NewGuid()}"",""amount"":249.95,""capturedAt"":""{DateTime.UtcNow:O}""}}",
             "InventoryReserved" => $@"{{""orderId"":""{id}"",""reservationId"":""{Guid.NewGuid()}"",""warehouseCode"":""WH-DK01"",""reservedLines"":3}}",
-            "ShipmentDispatched" => $@"{{""orderId"":""{id}"",""shipmentId"":""{Guid.NewGuid()}"",""carrier"":""PostNord"",""trackingNumber"":""PN{id.ToString()[..8].ToUpper()}"",""dispatchedAt"":""{DateTime.UtcNow:O}""}}",
+            "ShipmentDispatched" => $@"{{""orderId"":""{id}"",""shipmentId"":""{Guid.NewGuid()}"",""carrier"":""PostNord"",""trackingNumber"":""PN{id.ToString()[..8].ToUpperInvariant()}"",""dispatchedAt"":""{DateTime.UtcNow:O}""}}",
             "CustomerNotified" => $@"{{""orderId"":""{id}"",""notificationId"":""{Guid.NewGuid()}"",""template"":""OrderConfirmation"",""channel"":""Email"",""sentAt"":""{DateTime.UtcNow:O}""}}",
             _ => $@"{{""id"":""{id}"",""eventType"":""{eventTypeId}"",""timestamp"":""{DateTime.UtcNow:O}""}}"
         };

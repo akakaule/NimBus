@@ -147,12 +147,12 @@ public class MetricsImplementation : IMetricsApiController
     internal static string ExtractErrorCategory(string errorText)
     {
         if (string.IsNullOrEmpty(errorText)) return "Unknown";
-        if (errorText.StartsWith("["))
+        if (errorText.StartsWith('['))
         {
-            var end = errorText.IndexOf(']');
+            var end = errorText.IndexOf(']', StringComparison.Ordinal);
             if (end > 0) return errorText[..(end + 1)];
         }
-        var colon = errorText.IndexOf(':');
+        var colon = errorText.IndexOf(':', StringComparison.Ordinal);
         if (colon > 0 && colon < 100) return errorText[..colon];
         return errorText.Length > 100 ? errorText[..100] : errorText;
     }

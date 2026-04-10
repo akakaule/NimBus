@@ -32,16 +32,33 @@ internal sealed class AppDeploymentService
         var resolverZip = PackagePublishOutput(resolverPublish, "resolver.zip");
         var webAppZip = PackagePublishOutput(webAppPublish, "webapp.zip");
 
+        CliOutput.WriteLine($"Stopping '{names.ResolverFunctionAppName}' for deployment...");
         await _az.EnsureSuccessAsync(
-            new[]
-            {
-                "functionapp", "deployment", "source", "config-zip",
-                "--resource-group", options.ResourceGroupName,
-                "--name", names.ResolverFunctionAppName,
-                "--src", resolverZip,
-            },
+            new[] { "functionapp", "stop", "--resource-group", options.ResourceGroupName, "--name", names.ResolverFunctionAppName },
             cancellationToken,
-            $"Failed to deploy the resolver app '{names.ResolverFunctionAppName}'.").ConfigureAwait(false);
+            $"Failed to stop '{names.ResolverFunctionAppName}'.").ConfigureAwait(false);
+
+        try
+        {
+            await _az.EnsureSuccessAsync(
+                new[]
+                {
+                    "functionapp", "deployment", "source", "config-zip",
+                    "--resource-group", options.ResourceGroupName,
+                    "--name", names.ResolverFunctionAppName,
+                    "--src", resolverZip,
+                },
+                cancellationToken,
+                $"Failed to deploy the resolver app '{names.ResolverFunctionAppName}'.").ConfigureAwait(false);
+        }
+        finally
+        {
+            CliOutput.WriteLine($"Starting '{names.ResolverFunctionAppName}'...");
+            await _az.EnsureSuccessAsync(
+                new[] { "functionapp", "start", "--resource-group", options.ResourceGroupName, "--name", names.ResolverFunctionAppName },
+                CancellationToken.None,
+                $"Failed to start '{names.ResolverFunctionAppName}'.").ConfigureAwait(false);
+        }
 
         await _az.EnsureSuccessAsync(
             new[]

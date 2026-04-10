@@ -18,7 +18,7 @@ public class PublisherClient : IPublisherClient
 
     /// <summary>
     /// Creates a new PublisherClient with the specified sender.
-    /// Preferred for DI registration via <see cref="Extensions.ServiceCollectionExtensions.AddNimBusPublisher"/>.
+    /// Preferred for DI registration via <see cref="Extensions.ServiceCollectionExtensions.AddNimBusPublisher(Microsoft.Extensions.DependencyInjection.IServiceCollection, string)"/>.
     /// </summary>
     /// <param name="sender">The sender to use for publishing messages.</param>
     public PublisherClient(ISender sender)

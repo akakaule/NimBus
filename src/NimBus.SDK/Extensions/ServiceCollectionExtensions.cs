@@ -159,7 +159,7 @@ namespace NimBus.SDK.Extensions
         /// <summary>
         /// Registers a NimBus receiver as a hosted service that listens to a Service Bus topic/subscription
         /// using a <see cref="Azure.Messaging.ServiceBus.ServiceBusSessionProcessor"/>.
-        /// Requires <see cref="AddNimBusSubscriber"/> to be called first to register the message handler pipeline.
+        /// Requires <see cref="AddNimBusSubscriber(IServiceCollection, string, Action{NimBusSubscriberBuilder})"/> to be called first to register the message handler pipeline.
         /// </summary>
         /// <param name="services">The service collection.</param>
         /// <param name="configure">Action to configure the receiver options.</param>

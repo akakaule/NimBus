@@ -8,7 +8,6 @@ namespace NimBus.Core.Messages
     public interface IReceivedMessage : IMessage
     {
         DateTime EnqueuedTimeUtc { get; }
-        string From { get; }
         new string MessageId { get; }
 
         new string EventTypeId { get; }

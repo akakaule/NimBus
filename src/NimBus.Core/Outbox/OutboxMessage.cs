@@ -48,6 +48,12 @@ namespace NimBus.Core.Outbox
         public DateTime CreatedAtUtc { get; set; }
 
         /// <summary>
+        /// Absolute scheduled delivery time. Null for immediate delivery.
+        /// Used by <see cref="ISender.ScheduleMessage"/> via the outbox.
+        /// </summary>
+        public DateTime? ScheduledEnqueueTimeUtc { get; set; }
+
+        /// <summary>
         /// When this outbox entry was dispatched to Service Bus. Null if pending.
         /// </summary>
         public DateTime? DispatchedAtUtc { get; set; }

@@ -25,6 +25,12 @@ namespace NimBus.ServiceBus
 
         public Task Send(IEnumerable<IMessage> messages, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default) =>
             _serviceBusSender.SendMessagesAsync(messages.Select(message => MessageHelper.ToServiceBusMessage(message, messageEnqueueDelay)).ToList(), cancellationToken);
+
+        public Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default) =>
+            _serviceBusSender.ScheduleMessageAsync(MessageHelper.ToServiceBusMessage(message), scheduledEnqueueTime, cancellationToken);
+
+        public Task CancelScheduledMessage(long sequenceNumber, CancellationToken cancellationToken = default) =>
+            _serviceBusSender.CancelScheduledMessageAsync(sequenceNumber, cancellationToken);
     }
 
     public class Sender : SenderBase

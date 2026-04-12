@@ -129,6 +129,24 @@ public class PublisherClient : IPublisherClient
     }
 
     /// <summary>
+    /// Schedules an event for delivery at the specified time.
+    /// Returns a sequence number that can be used to cancel the scheduled message.
+    /// </summary>
+    public async Task<long> Schedule(IEvent @event, DateTimeOffset scheduledEnqueueTime)
+    {
+        var message = GetMessage(@event);
+        return await _sender.ScheduleMessage(message, scheduledEnqueueTime);
+    }
+
+    /// <summary>
+    /// Cancels a previously scheduled message using the sequence number returned by <see cref="Schedule"/>.
+    /// </summary>
+    public async Task CancelScheduled(long sequenceNumber)
+    {
+        await _sender.CancelScheduledMessage(sequenceNumber);
+    }
+
+    /// <summary>
     /// Use to get batch of maximum possible size supported by Azure Service Bus
     /// </summary>
     /// <param name="events">Events you want to split into multiple batches</param>

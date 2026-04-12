@@ -379,6 +379,15 @@ public class ResponseServiceTests
             LastDelay = messageEnqueueDelay;
             return Task.CompletedTask;
         }
+
+        public Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
+        {
+            SentMessages.Add(message);
+            return Task.FromResult(0L);
+        }
+
+        public Task CancelScheduledMessage(long sequenceNumber, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 
     private sealed class FakeMessageContext : IMessageContext

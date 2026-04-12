@@ -34,6 +34,24 @@ namespace NimBus.Core.Outbox
             await _outbox.StoreBatchAsync(outboxMessages, cancellationToken);
         }
 
+        public async Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
+        {
+            var outboxMessage = ToOutboxMessage(message, 0);
+            outboxMessage.ScheduledEnqueueTimeUtc = scheduledEnqueueTime.UtcDateTime;
+            await _outbox.StoreAsync(outboxMessage, cancellationToken);
+            // Outbox returns 0 because the real sequence number is only assigned by
+            // Service Bus when OutboxDispatcher forwards the message. This means
+            // CancelScheduledMessage cannot work in outbox mode.
+            return 0L;
+        }
+
+        public Task CancelScheduledMessage(long sequenceNumber, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException(
+                "Cancelling scheduled messages is not supported when using the transactional outbox. " +
+                "The sequence number is only assigned by Service Bus after the outbox dispatches the message.");
+        }
+
         private static OutboxMessage ToOutboxMessage(IMessage message, int messageEnqueueDelay)
         {
             return new OutboxMessage

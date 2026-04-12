@@ -47,6 +47,9 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 |---|---|---|---|
 | [WebApp Enhancements](#webapp-enhancements) | 4 | Mostly Complete | All done except: alerting |
 | [CLI Operational Commands](#cli-operational-commands) | -- | Completed | All endpoint + container commands, colored help, Spectre.Console progress |
+| [SessionKey Attribute](#sessionkey-attribute) | -- | Completed | Declarative `[SessionKey(nameof(Prop))]` replacing `GetSessionId()` overrides |
+| [Identity Extension](#identity-extension) | -- | Completed | `NimBus.Extensions.Identity` for username/password auth with email verification |
+| [Product Website](#product-website) | -- | Completed | GitHub Pages landing site with architecture diagram, code examples, comparison |
 | [Failed Message Hook](#failed-message-hook) | 4 | Not Started | Application-level last-chance handler before dead-lettering |
 | [Source Generators](#source-generators) | 4 | Not Started | Compile-time event type discovery replacing reflection |
 | [Message Versioning](#message-versioning) | 4 | Not Started | Schema evolution with polymorphic dispatch and version attributes |
@@ -408,10 +411,46 @@ Expansion of the `nb` CLI with operational management commands using Spectre.Con
 - Endpoint management: delete sessions, purge subscriptions (with state/date filters), remove deprecated subscriptions/rules, topic/subscription/rule tree visualization
 - Container operations: delete documents, resubmit/skip messages, purge by destination, copy data between Cosmos DB instances
 - Enhanced CLI UX: colored help text generator, progress spinners, global connection string options (`-sbc`, `-dbc`)
+- Function App stop/start during deployment to prevent file lock errors
 
 Code paths:
 - `src/NimBus.CommandLine/Endpoint.cs`
 - `src/NimBus.CommandLine/Container.cs`
 - `src/NimBus.CommandLine/CommandRunner.cs`
+- `src/NimBus.CommandLine/AppDeploymentService.cs`
 - `src/NimBus.CommandLine/ColoredHelpTextGenerator.cs`
 - `src/NimBus.CommandLine/Models/`
+
+### SessionKey Attribute
+
+**Priority:** P3 | **Phase:** -- | **Status:** Completed
+
+Declarative `[SessionKey(nameof(OrderId))]` attribute as an alternative to overriding `GetSessionId()`. Events become clean DTOs without infrastructure method overrides. The base `Event.GetSessionId()` reads the attribute via reflection, falling back to `Guid.NewGuid()`. Existing overrides still take precedence (backward compatible).
+
+Code paths:
+- `src/NimBus.Abstractions/Events/SessionKeyAttribute.cs`
+- `src/NimBus.Abstractions/Events/Event.cs`
+- `src/NimBus.Abstractions/Events/EventType.cs` (SessionKeyProperty metadata)
+
+### Identity Extension
+
+**Priority:** P3 | **Phase:** -- | **Status:** Completed
+
+`NimBus.Extensions.Identity` — opt-in ASP.NET Core Identity extension for username/password authentication with email verification. SQL Server-backed, separate from the core WebApp. Supports three auth modes: Identity-only, Entra ID-only, or dual (both). Claims transformation maps Identity users to existing NimBus authorization model without changing `EndpointAuthorizationService`.
+
+Code paths:
+- `src/NimBus.Extensions.Identity/`
+- `src/NimBus.WebApp/Startup.cs` (Identity detection and auth mode routing)
+
+### Product Website
+
+**Priority:** P3 | **Phase:** -- | **Status:** Completed
+
+Static landing page at `site/index.html` deployed via GitHub Pages. Azure blue color scheme, SVG architecture diagram, code examples, session ordering visualization, competitor comparison table. Auto-deploys via `.github/workflows/pages.yml`.
+
+Live at: https://akakaule.github.io/NimBus/
+
+Code paths:
+- `site/index.html`
+- `site/banner.png`
+- `.github/workflows/pages.yml`

@@ -123,9 +123,10 @@ namespace NimBus.SDK.Extensions
                     retryPolicyProvider = sp.GetService<IRetryPolicyProvider>();
                 }
 
-                // Resolve pipeline and lifecycle notifier (registered via AddNimBus)
+                // Resolve pipeline, lifecycle notifier, and permanent failure classifier
                 var pipeline = sp.GetService<MessagePipeline>();
                 var lifecycleNotifier = sp.GetService<MessageLifecycleNotifier>();
+                var permanentFailureClassifier = sp.GetService<IPermanentFailureClassifier>();
 
                 var logger = sp.GetService<ILogger<StrictMessageHandler>>()
                     ?? (Microsoft.Extensions.Logging.ILogger)NullLogger.Instance;
@@ -136,7 +137,7 @@ namespace NimBus.SDK.Extensions
                 {
                     strictMessageHandler = new StrictMessageHandler(
                         eventHandlerProvider, responseService, logger,
-                        retryPolicyProvider, pipeline, lifecycleNotifier);
+                        retryPolicyProvider, pipeline, lifecycleNotifier, permanentFailureClassifier);
                 }
                 else if (retryPolicyProvider != null)
                 {

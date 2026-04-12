@@ -177,7 +177,7 @@ public class SeedDataService
 
             var evt = CreateUnresolvedEvent(eventId, sessionId, endpointId,
                 ResolutionStatus.Deferred, eventTypeId, timestamp);
-            evt.Reason = $"Blocked by seed-pending-{endpointId}-0";
+            evt.Reason = $"Blocked by seed-failed-{endpointId}-0";
             evt.MessageContent = content;
             await _cosmosClient.UploadDeferredMessage(eventId, sessionId, endpointId, evt);
 

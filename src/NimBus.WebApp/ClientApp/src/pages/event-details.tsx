@@ -54,8 +54,8 @@ const EventDetails = (props: EventDetailsProps) => {
       )
         client
           .getEventBlockedId(
-            tempCosmosEvent.sessionId!,
             tempCosmosEvent.endpointId!,
+            tempCosmosEvent.sessionId!,
           )
           .then(async (res) => {
             const tempBlockedEvents = [];

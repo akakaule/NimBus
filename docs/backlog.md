@@ -22,7 +22,7 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 | Item | Phase | Status | Description |
 |---|---|---|---|
 | [Configurable Retry Policies](#configurable-retry-policies) | 1 | Completed | Per-event-type and exception-based retry with backoff strategies |
-| [Message Scheduling SDK](#message-scheduling-sdk) | 3 | Not Started | First-class scheduled and cancellable message delivery via Service Bus |
+| [Message Scheduling SDK](#message-scheduling-sdk) | 3 | Completed | First-class scheduled and cancellable message delivery via Service Bus |
 | [OpenTelemetry Tracing](#opentelemetry-tracing) | 2 | Completed | `Activity`-based distributed tracing across publish/subscribe/Resolver |
 | [In-Memory Transport](#in-memory-transport) | 2 | Completed | Test transport for running the full pipeline without Azure Service Bus |
 | [Health Checks](#health-checks) | 2 | Completed | `IHealthCheck` implementations for Service Bus, Cosmos, Resolver lag |
@@ -39,7 +39,6 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 | [Inbox Pattern](#inbox-pattern) | 3 | Not Started | Idempotent consumers via MessageId deduplication |
 | [Claim-Check Pattern](#claim-check-pattern) | 4 | Not Started | Large payload offload to Azure Blob Storage |
 | [Request/Response](#requestresponse) | 4 | Not Started | Synchronous request/response over the bus with timeout handling |
-| [Saga Design](#saga-design) | 3 | Not Started | Research and prototype state machine support |
 
 ## P3 -- Lower
 
@@ -53,7 +52,7 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 | [Failed Message Hook](#failed-message-hook) | 4 | Not Started | Application-level last-chance handler before dead-lettering |
 | [Source Generators](#source-generators) | 4 | Not Started | Compile-time event type discovery replacing reflection |
 | [Message Versioning](#message-versioning) | 4 | Not Started | Schema evolution with polymorphic dispatch and version attributes |
-| [Saga Implementation](#saga-implementation) | 4 | Not Started | Full saga persistence, timeouts, compensation, WebApp visualization |
+| [Orchestration Pattern Guide](#orchestration-pattern-guide) | 3 | Not Started | Documentation and sample for multi-step workflow orchestration (ADR-009) |
 | [Rate Limiting Middleware](#rate-limiting-middleware) | 4 | Not Started | Throttle message consumption to protect downstream services |
 | [Notification Channels](#notification-channels) | 4 | Not Started | Webhook, Teams, and email channels for production alerting |
 | [Documentation & Onboarding](#documentation--onboarding) | 4 | Mostly Complete | All done except: migration guide from MassTransit/NServiceBus |
@@ -180,11 +179,16 @@ Code paths:
 
 Idempotent consumers via `MessageId` deduplication. Track processed IDs in Cosmos DB or SQL with configurable TTL. Consumers opt in via configuration. Pairs with the outbox for exactly-once semantics.
 
-### Saga Design
+### Orchestration Pattern Guide
 
-**Priority:** P2 | **Phase:** 3 | **Status:** Not Started
+**Priority:** P3 | **Phase:** 3 | **Status:** Not Started
 
-Design-only phase. Research state machine DSL (inspired by MassTransit Automatonymous), saga persistence in Cosmos DB, timeout scheduling via Service Bus scheduled messages, compensation actions.
+Documentation and sample showing how to build multi-step workflow orchestration services using NimBus's messaging primitives. Sagas are implemented as application-level services, not a NimBus framework feature (see [ADR-009](adr/009-orchestration-via-application-services.md)).
+
+- Orchestration pattern documentation (`docs/orchestration.md`)
+- Sample orchestrator service in the Aspire Pub/Sub sample
+- Timeout patterns using `ScheduleMessage` / `CancelScheduledMessage`
+- Compensation patterns via published events
 
 ### WebApp Enhancements
 
@@ -208,12 +212,6 @@ Design-only phase. Research state machine DSL (inspired by MassTransit Automaton
 **Priority:** P3 | **Phase:** 4 | **Status:** Not Started
 
 Replace reflection-based event type discovery with compile-time source generators. Strongly-typed `NimBusOptions` configuration with validation. Better error messages for misconfiguration.
-
-### Saga Implementation
-
-**Priority:** P3 | **Phase:** 4 | **Status:** Not Started
-
-Based on Phase 3 design: saga persistence in Cosmos DB, timeout scheduling, compensation actions, saga visualization in WebApp.
 
 ### Documentation & Onboarding
 
@@ -265,7 +263,7 @@ Optional integration with Marten or a custom event store. Separate `NimBus.Event
 
 **Priority:** P1 | **Phase:** 3 | **Status:** Not Started
 
-First-class message scheduling exposing Azure Service Bus's native `ScheduledEnqueueTimeUtc`. Required prerequisite for saga timeouts.
+First-class message scheduling exposing Azure Service Bus's native `ScheduledEnqueueTimeUtc`. Enables workflow timeouts in orchestration services.
 
 - `ISender.ScheduleMessage(IMessage, DateTimeOffset)` returning cancellable `long sequenceNumber`
 - `ISender.CancelScheduledMessage(long sequenceNumber)`

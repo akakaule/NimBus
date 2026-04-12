@@ -14,3 +14,4 @@ This directory contains Architecture Decision Records (ADRs) for the NimBus plat
 | [006](006-standard-logging.md) | Microsoft.Extensions.Logging over custom abstraction | Accepted | 2026-04 |
 | [007](007-code-first-catalog-export.md) | Code-first EventCatalog and AsyncAPI export | Accepted | 2026-04 |
 | [008](008-per-endpoint-cosmos-containers.md) | Per-endpoint Cosmos DB containers | Accepted | 2026-01 |
+| [009](009-orchestration-via-application-services.md) | Orchestration via application services, not a saga framework | Accepted | 2026-04 |

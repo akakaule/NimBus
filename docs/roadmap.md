@@ -14,7 +14,7 @@ NimBus is a mature, Azure-native event-driven integration platform with strong d
 | **DX** | DI integration + Aspire sample + NuGet packages | All competitors integrate with MS DI natively |
 | **Extensibility** | Middleware pipeline + extension framework with 3 built-in behaviors | NServiceBus (behaviors), MassTransit (filters), Brighter (decorators) |
 | **Testing** | In-memory transport + 14+ E2E tests (Phase 2) | MassTransit, Wolverine, Rebus have in-memory transports |
-| **Workflows** | Continuation pattern (limited) | NServiceBus, MassTransit, Wolverine have full saga/state machines |
+| **Workflows** | Orchestration via services + scheduling SDK (ADR-009) | NServiceBus, MassTransit, Wolverine have built-in saga/state machines |
 | **Resilience** | Retry policies (3 strategies) | Wolverine/Brighter have circuit breakers; NServiceBus has two-phase retries |
 | **Large messages** | None (Service Bus 256KB limit) | NServiceBus has DataBus/claim-check pattern |
 | **Messaging patterns** | Publish/subscribe only | MassTransit has request/response; all have message scheduling |
@@ -150,7 +150,7 @@ Paired with the outbox for exactly-once semantics on the consumer side.
 
 **3.3 Message Scheduling SDK**
 
-Expose Azure Service Bus's native scheduling as a first-class SDK feature. Required prerequisite for saga timeouts (Phase 4).
+Expose Azure Service Bus's native scheduling as a first-class SDK feature. Enables workflow timeouts in orchestration services.
 
 - `ISender.ScheduleMessage(IMessage, DateTimeOffset)` returning a cancellable `long sequenceNumber`
 - `ISender.CancelScheduledMessage(long sequenceNumber)`
@@ -181,15 +181,14 @@ Pause message processing when a downstream dependency is systematically failing.
 
 Reference: Wolverine per-endpoint circuit breaker, Brighter `[UseResiliencePipeline]`.
 
-**3.6 Saga / State Machine Support (Design Phase)**
+**3.6 Orchestration Pattern Guide**
 
-NimBus's continuation pattern is a limited form of saga. A full saga framework would enable multi-step workflows with timeout handling and compensation.
+Multi-step workflows (sagas) are implemented as application-level orchestration services, not as a NimBus framework feature. NimBus provides the messaging primitives; workflow coordination is plain C# in a dedicated service. See [ADR-009](adr/009-orchestration-via-application-services.md).
 
-Design-only in this phase:
-- State machine DSL (inspired by MassTransit's Automatonymous)
-- Saga state persistence (Cosmos DB)
-- Timeout scheduling via Service Bus scheduled messages (uses 3.3)
-- Compensation actions on failure
+- Orchestration pattern documentation (`docs/orchestration.md`)
+- Sample orchestrator service extending the Aspire Pub/Sub sample
+- Timeout patterns using `ScheduleMessage` / `CancelScheduledMessage` (Phase 3.3)
+- Compensation patterns via published events
 
 ---
 
@@ -253,15 +252,7 @@ Reference: Rebus `IFailed<T>`, MassTransit `Fault<T>`.
 - Better error messages: actionable errors when misconfigured
 - Message versioning: additive nullable fields, inheritance-based polymorphic dispatch, `[MessageVersion]` attribute
 
-**4.6 Saga / State Machine Implementation**
-
-Based on Phase 3 design work:
-- Saga persistence in Cosmos DB
-- Saga timeout scheduling (uses message scheduling SDK from Phase 3.3)
-- Compensation actions
-- Saga visualization in WebApp
-
-**4.7 Rate Limiting Middleware**
+**4.6 Rate Limiting Middleware**
 
 Control message consumption rate to protect downstream services and manage API quotas.
 
@@ -270,7 +261,7 @@ Control message consumption rate to protect downstream services and manage API q
 - Configurable per event type or per endpoint
 - When limit exceeded: messages are abandoned (returned to queue), not dead-lettered
 
-**4.8 Notification Channels**
+**4.7 Notification Channels**
 
 Production-ready notification channels extending `NimBus.Extensions.Notifications`.
 
@@ -281,14 +272,14 @@ Production-ready notification channels extending `NimBus.Extensions.Notification
 - Rate limiting and batching to prevent notification storms
 - Completes the alerting feature (4.1)
 
-**4.9 Transport Abstraction (Evaluate)**
+**4.8 Transport Abstraction (Evaluate)**
 
 Evaluate whether transport abstraction is worth the complexity:
 - Full abstraction: `ITransport` interface with Azure Service Bus, RabbitMQ, in-memory implementations
 - Minimal abstraction: keep Azure Service Bus as primary, add in-memory for testing only (Phase 2.2)
 - Recommendation: start with in-memory for testing, only abstract further if there's concrete demand
 
-**4.10 Documentation & Onboarding** -- Mostly Complete
+**4.9 Documentation & Onboarding** -- Mostly Complete
 
 - ~~Sample applications: Aspire Pub/Sub sample with Publisher, Subscriber (with DeferredProcessorService), and middleware demo~~
 - ~~CI/CD documentation: GitHub Actions and Azure DevOps deploy pipelines~~
@@ -342,11 +333,11 @@ Goal: If NimBus is to be open-sourced or adopted beyond its current org.
 | E2E test suite | High quality | Medium | **P1** | -- | Completed |
 | NuGet packages | Medium ecosystem | Small | **P4→P1** | 5 | Completed |
 | Middleware pipeline | High extensibility | Medium | **P2** | 3 | Completed |
-| Message scheduling SDK | High (saga prereq) | Small | **P1** | 3 | Not Started |
+| Message scheduling SDK | High (orchestration) | Small | **P1** | 3 | Completed |
 | Poison message classification | High reliability | Small | **P2** | 3 | Not Started |
 | Circuit breaker middleware | High resilience | Small-Medium | **P2** | 3 | Not Started |
 | Inbox pattern | Medium reliability | Medium | **P2** | 3 | Not Started |
-| Saga design | High capability | Large | **P2** | 3 | Not Started |
+| Orchestration pattern guide | Medium DX | Small | **P3** | 3 | Not Started |
 | Claim-check pattern | High (enterprise) | Medium | **P2** | 4 | Not Started |
 | Request/response | High capability | Medium | **P2** | 4 | Not Started |
 | Failed message hook | Medium reliability | Small | **P3** | 4 | Not Started |
@@ -355,7 +346,6 @@ Goal: If NimBus is to be open-sourced or adopted beyond its current org.
 | Documentation & onboarding | Medium DX | Medium | **P3** | 4 | Nearly Complete |
 | Source generators | Medium DX | Medium | **P3** | 4 | Not Started |
 | Message versioning | Medium contracts | Medium | **P3** | 4 | Not Started |
-| Saga implementation | High capability | Very large | **P3** | 4 | Not Started |
 | Rate limiting middleware | Medium resilience | Small | **P3** | 4 | Not Started |
 | Notification channels | Medium ops | Medium | **P3** | 4 | Not Started |
 | Transport abstraction | Low-Medium | Very large | **P4** | 4 | Not Started |

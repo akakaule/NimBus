@@ -40,7 +40,14 @@ namespace NimBus.Core.Outbox
                 try
                 {
                     var message = JsonConvert.DeserializeObject<Message>(outboxMessage.Payload);
-                    await _sender.Send(message, outboxMessage.EnqueueDelayMinutes, cancellationToken);
+                    if (outboxMessage.ScheduledEnqueueTimeUtc.HasValue)
+                    {
+                        await _sender.ScheduleMessage(message, new DateTimeOffset(outboxMessage.ScheduledEnqueueTimeUtc.Value, TimeSpan.Zero), cancellationToken);
+                    }
+                    else
+                    {
+                        await _sender.Send(message, outboxMessage.EnqueueDelayMinutes, cancellationToken);
+                    }
                     dispatched.Add(outboxMessage.Id);
                 }
                 catch (Exception)

@@ -37,6 +37,7 @@ namespace NimBus.Outbox.SqlServer
                     [CorrelationId]       NVARCHAR(256) NULL,
                     [Payload]             NVARCHAR(MAX) NOT NULL,
                     [EnqueueDelayMinutes] INT NOT NULL DEFAULT 0,
+                    [ScheduledEnqueueTimeUtc] DATETIME2 NULL,
                     [CreatedAtUtc]        DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
                     [DispatchedAtUtc]     DATETIME2 NULL,
                     INDEX IX_OutboxMessages_Pending NONCLUSTERED ([DispatchedAtUtc], [CreatedAtUtc]) WHERE [DispatchedAtUtc] IS NULL
@@ -54,9 +55,9 @@ namespace NimBus.Outbox.SqlServer
         {
             var sql = $@"
                 INSERT INTO {_options.FullTableName}
-                    ([Id], [MessageId], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [CreatedAtUtc])
+                    ([Id], [MessageId], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [ScheduledEnqueueTimeUtc], [CreatedAtUtc])
                 VALUES
-                    (@Id, @MessageId, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @CreatedAtUtc)";
+                    (@Id, @MessageId, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @ScheduledEnqueueTimeUtc, @CreatedAtUtc)";
 
             await using var connection = new SqlConnection(_options.ConnectionString);
             await connection.OpenAsync(cancellationToken);
@@ -98,7 +99,7 @@ namespace NimBus.Outbox.SqlServer
         public async Task<IReadOnlyList<OutboxMessage>> GetPendingAsync(int batchSize, CancellationToken cancellationToken = default)
         {
             var sql = $@"
-                SELECT TOP (@BatchSize) [Id], [MessageId], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [CreatedAtUtc]
+                SELECT TOP (@BatchSize) [Id], [MessageId], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [CreatedAtUtc], [ScheduledEnqueueTimeUtc]
                 FROM {_options.FullTableName}
                 WHERE [DispatchedAtUtc] IS NULL
                 ORDER BY [CreatedAtUtc] ASC";
@@ -123,6 +124,7 @@ namespace NimBus.Outbox.SqlServer
                     Payload = reader.GetString(5),
                     EnqueueDelayMinutes = reader.GetInt32(6),
                     CreatedAtUtc = reader.GetDateTime(7),
+                    ScheduledEnqueueTimeUtc = reader.IsDBNull(8) ? null : reader.GetDateTime(8),
                     DispatchedAtUtc = null
                 });
             }
@@ -188,6 +190,7 @@ namespace NimBus.Outbox.SqlServer
             command.Parameters.AddWithValue("@CorrelationId", (object)message.CorrelationId ?? DBNull.Value);
             command.Parameters.AddWithValue("@Payload", message.Payload);
             command.Parameters.AddWithValue("@EnqueueDelayMinutes", message.EnqueueDelayMinutes);
+            command.Parameters.AddWithValue("@ScheduledEnqueueTimeUtc", (object?)message.ScheduledEnqueueTimeUtc ?? DBNull.Value);
             command.Parameters.AddWithValue("@CreatedAtUtc", message.CreatedAtUtc);
         }
     }

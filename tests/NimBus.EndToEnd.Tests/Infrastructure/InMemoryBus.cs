@@ -133,6 +133,20 @@ internal sealed class InMemoryBus : ISender
         return results;
     }
 
+    public Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+        {
+            _allSentMessages.Add(message);
+            _sentMessagesWithDelay.Add((message, 0));
+        }
+        _messages.Enqueue(message);
+        return Task.FromResult(0L);
+    }
+
+    public Task CancelScheduledMessage(long sequenceNumber, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
     private FakeServiceBusSession GetOrCreateSession(string? sessionId)
     {
         var normalizedSessionId = NormalizeSessionId(sessionId);

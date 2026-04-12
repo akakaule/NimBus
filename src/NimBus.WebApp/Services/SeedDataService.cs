@@ -78,7 +78,7 @@ public class SeedDataService
     {
         var endpointId = endpoint.Id;
         var now = DateTime.UtcNow;
-        var sessionId = $"session-{endpointId}-001";
+        var pendingSessionId = $"session-{endpointId}-pending";
 
         // Pick event types: prefer consumed (subscriber scenarios), fall back to produced
         var eventTypes = endpoint.EventTypesConsumed.Any()
@@ -87,7 +87,7 @@ public class SeedDataService
 
         if (eventTypes.Count == 0) return;
 
-        // Pending events - spread across last 3 days
+        // Pending events - shared session (realistic: messages waiting in queue)
         for (int i = 0; i < PendingCount; i++)
         {
             var eventTypeId = eventTypes[i % eventTypes.Count];
@@ -104,25 +104,26 @@ public class SeedDataService
                 }
             };
 
-            var evt = CreateUnresolvedEvent(eventId, sessionId, endpointId,
+            var evt = CreateUnresolvedEvent(eventId, pendingSessionId, endpointId,
                 ResolutionStatus.Pending, eventTypeId, timestamp);
             evt.MessageContent = content;
-            await _cosmosClient.UploadPendingMessage(eventId, sessionId, endpointId, evt);
+            await _cosmosClient.UploadPendingMessage(eventId, pendingSessionId, endpointId, evt);
 
-            // Store linked message so Messages page can navigate to this event
             await _cosmosClient.StoreMessage(CreateMessageEntity(
                 eventId, messageId, endpointId, EndpointRole.Subscriber,
-                MessageType.EventRequest, eventTypeId, timestamp, sessionId, content));
+                MessageType.EventRequest, eventTypeId, timestamp, pendingSessionId, content));
 
             result.EventsCreated++;
             result.MessagesCreated++;
         }
 
-        // Failed events - spread across last 3 days
+        // Failed events - each gets its own session (realistic: independent order sessions)
+        // The first failed event (i=0) gets deferred events blocked behind it
         for (int i = 0; i < FailedCount; i++)
         {
+            var failedSessionId = $"session-{endpointId}-fail-{i}";
             var eventTypeId = eventTypes[i % eventTypes.Count];
-            var hoursAgo = SeedWindowHours / FailedCount * i + 2; // offset by 2h from pending
+            var hoursAgo = SeedWindowHours / FailedCount * i + 2;
             var timestamp = now.AddHours(-hoursAgo);
             var eventId = $"seed-failed-{endpointId}-{i}";
             var messageId = $"seed-msg-failed-{endpointId}-{i}";
@@ -142,56 +143,58 @@ public class SeedDataService
                 }
             };
 
-            var evt = CreateUnresolvedEvent(eventId, sessionId, endpointId,
+            var evt = CreateUnresolvedEvent(eventId, failedSessionId, endpointId,
                 ResolutionStatus.Failed, eventTypeId, timestamp);
             evt.RetryCount = 3 + i;
             evt.RetryLimit = 5 + i;
             evt.MessageContent = content;
-            await _cosmosClient.UploadFailedMessage(eventId, sessionId, endpointId, evt);
+            await _cosmosClient.UploadFailedMessage(eventId, failedSessionId, endpointId, evt);
 
-            // Store linked ErrorResponse message — feeds Failed Message Insights
             await _cosmosClient.StoreMessage(CreateMessageEntity(
                 eventId, messageId, endpointId, EndpointRole.Subscriber,
-                MessageType.ErrorResponse, eventTypeId, timestamp, sessionId, content));
+                MessageType.ErrorResponse, eventTypeId, timestamp, failedSessionId, content));
 
             result.EventsCreated++;
             result.MessagesCreated++;
-        }
 
-        // Deferred events - spread across last 3 days
-        for (int i = 0; i < DeferredCount; i++)
-        {
-            var eventTypeId = eventTypes[i % eventTypes.Count];
-            var hoursAgo = SeedWindowHours / DeferredCount * i + 5; // offset by 5h
-            var timestamp = now.AddHours(-hoursAgo);
-            var eventId = $"seed-deferred-{endpointId}-{i}";
-            var messageId = $"seed-msg-deferred-{endpointId}-{i}";
-            var content = new MessageContent
+            // Create deferred events blocked behind the first failed event
+            if (i == 0)
             {
-                EventContent = new EventContent
+                for (int d = 0; d < DeferredCount; d++)
                 {
-                    EventTypeId = eventTypeId,
-                    EventJson = GenerateSamplePayload(eventTypeId, eventId)
+                    var deferredEventTypeId = eventTypes[(d + 1) % eventTypes.Count];
+                    var deferredTimestamp = timestamp.AddMinutes(d + 1);
+                    var deferredEventId = $"seed-deferred-{endpointId}-{d}";
+                    var deferredMessageId = $"seed-msg-deferred-{endpointId}-{d}";
+                    var deferredContent = new MessageContent
+                    {
+                        EventContent = new EventContent
+                        {
+                            EventTypeId = deferredEventTypeId,
+                            EventJson = GenerateSamplePayload(deferredEventTypeId, deferredEventId)
+                        }
+                    };
+
+                    var deferredEvt = CreateUnresolvedEvent(deferredEventId, failedSessionId, endpointId,
+                        ResolutionStatus.Deferred, deferredEventTypeId, deferredTimestamp);
+                    deferredEvt.Reason = $"Blocked by {eventId}";
+                    deferredEvt.MessageContent = deferredContent;
+                    await _cosmosClient.UploadDeferredMessage(deferredEventId, failedSessionId, endpointId, deferredEvt);
+
+                    await _cosmosClient.StoreMessage(CreateMessageEntity(
+                        deferredEventId, deferredMessageId, endpointId, EndpointRole.Subscriber,
+                        MessageType.EventRequest, deferredEventTypeId, deferredTimestamp, failedSessionId, deferredContent));
+
+                    result.EventsCreated++;
+                    result.MessagesCreated++;
                 }
-            };
-
-            var evt = CreateUnresolvedEvent(eventId, sessionId, endpointId,
-                ResolutionStatus.Deferred, eventTypeId, timestamp);
-            evt.Reason = $"Blocked by seed-failed-{endpointId}-0";
-            evt.MessageContent = content;
-            await _cosmosClient.UploadDeferredMessage(eventId, sessionId, endpointId, evt);
-
-            await _cosmosClient.StoreMessage(CreateMessageEntity(
-                eventId, messageId, endpointId, EndpointRole.Subscriber,
-                MessageType.EventRequest, eventTypeId, timestamp, sessionId, content));
-
-            result.EventsCreated++;
-            result.MessagesCreated++;
+            }
         }
 
-        // DeadLettered events - spread across last 3 days
+        // DeadLettered events - each gets its own session
         for (int i = 0; i < DeadLetteredCount; i++)
         {
+            var dlSessionId = $"session-{endpointId}-dl-{i}";
             var eventTypeId = eventTypes[i % eventTypes.Count];
             var hoursAgo = SeedWindowHours / DeadLetteredCount * i + 10; // offset by 10h
             var timestamp = now.AddHours(-hoursAgo);
@@ -213,18 +216,18 @@ public class SeedDataService
                 }
             };
 
-            var evt = CreateUnresolvedEvent(eventId, sessionId, endpointId,
+            var evt = CreateUnresolvedEvent(eventId, dlSessionId, endpointId,
                 ResolutionStatus.DeadLettered, eventTypeId, timestamp);
             evt.RetryCount = 10;
             evt.RetryLimit = 10;
             evt.DeadLetterReason = "MaxDeliveryCountExceeded";
             evt.DeadLetterErrorDescription = "Max delivery count of 10 exceeded";
             evt.MessageContent = content;
-            await _cosmosClient.UploadDeadletteredMessage(eventId, sessionId, endpointId, evt);
+            await _cosmosClient.UploadDeadletteredMessage(eventId, dlSessionId, endpointId, evt);
 
             await _cosmosClient.StoreMessage(CreateMessageEntity(
                 eventId, messageId, endpointId, EndpointRole.Subscriber,
-                MessageType.ErrorResponse, eventTypeId, timestamp, sessionId, content));
+                MessageType.ErrorResponse, eventTypeId, timestamp, dlSessionId, content));
 
             result.EventsCreated++;
             result.MessagesCreated++;
@@ -356,25 +359,63 @@ public class SeedDataService
 
     public async Task ClearSeedDataAsync()
     {
-        // Clean up per-endpoint events + their linked messages
-        var prefixCounts = new (string Prefix, string MsgPrefix, int Count)[]
-        {
-            ("seed-pending-", "seed-msg-pending-", PendingCount),
-            ("seed-failed-", "seed-msg-failed-", FailedCount),
-            ("seed-deferred-", "seed-msg-deferred-", DeferredCount),
-            ("seed-deadletter-", "seed-msg-deadletter-", DeadLetteredCount),
-        };
         foreach (var endpoint in PlatformEndpoints)
         {
             var endpointId = endpoint.Id;
-            var sessionId = $"session-{endpointId}-001";
-            foreach (var (prefix, msgPrefix, count) in prefixCounts)
+
+            // Pending events — shared session
+            var pendingSessionId = $"session-{endpointId}-pending";
+            for (int i = 0; i < PendingCount; i++)
             {
-                for (int i = 0; i < count; i++)
+                var eventId = $"seed-pending-{endpointId}-{i}";
+                var messageId = $"seed-msg-pending-{endpointId}-{i}";
+                try { await _cosmosClient.RemoveMessage(eventId, pendingSessionId, endpointId); } catch { }
+                try { await _cosmosClient.RemoveStoredMessage(eventId, messageId); } catch { }
+            }
+
+            // Failed events — per-failure session; deferred events on first failure's session
+            for (int i = 0; i < FailedCount; i++)
+            {
+                var failedSessionId = $"session-{endpointId}-fail-{i}";
+                var eventId = $"seed-failed-{endpointId}-{i}";
+                var messageId = $"seed-msg-failed-{endpointId}-{i}";
+                try { await _cosmosClient.RemoveMessage(eventId, failedSessionId, endpointId); } catch { }
+                try { await _cosmosClient.RemoveStoredMessage(eventId, messageId); } catch { }
+
+                if (i == 0)
                 {
-                    var eventId = $"{prefix}{endpointId}-{i}";
+                    for (int d = 0; d < DeferredCount; d++)
+                    {
+                        var deferredEventId = $"seed-deferred-{endpointId}-{d}";
+                        var deferredMessageId = $"seed-msg-deferred-{endpointId}-{d}";
+                        try { await _cosmosClient.RemoveMessage(deferredEventId, failedSessionId, endpointId); } catch { }
+                        try { await _cosmosClient.RemoveStoredMessage(deferredEventId, deferredMessageId); } catch { }
+                    }
+                }
+            }
+
+            // Dead-lettered events — per-dl session
+            for (int i = 0; i < DeadLetteredCount; i++)
+            {
+                var dlSessionId = $"session-{endpointId}-dl-{i}";
+                var eventId = $"seed-deadletter-{endpointId}-{i}";
+                var messageId = $"seed-msg-deadletter-{endpointId}-{i}";
+                try { await _cosmosClient.RemoveMessage(eventId, dlSessionId, endpointId); } catch { }
+                try { await _cosmosClient.RemoveStoredMessage(eventId, messageId); } catch { }
+            }
+
+            // Also clean up legacy single-session seed data (from previous seed format)
+            var legacySessionId = $"session-{endpointId}-001";
+            var legacyPrefixes = new[] { "seed-pending-", "seed-failed-", "seed-deferred-", "seed-deadletter-" };
+            var legacyCounts = new[] { PendingCount, FailedCount, DeferredCount, DeadLetteredCount };
+            for (int p = 0; p < legacyPrefixes.Length; p++)
+            {
+                for (int i = 0; i < legacyCounts[p]; i++)
+                {
+                    var eventId = $"{legacyPrefixes[p]}{endpointId}-{i}";
+                    var msgPrefix = legacyPrefixes[p].Replace("seed-", "seed-msg-");
                     var messageId = $"{msgPrefix}{endpointId}-{i}";
-                    try { await _cosmosClient.RemoveMessage(eventId, sessionId, endpointId); } catch { }
+                    try { await _cosmosClient.RemoveMessage(eventId, legacySessionId, endpointId); } catch { }
                     try { await _cosmosClient.RemoveStoredMessage(eventId, messageId); } catch { }
                 }
             }

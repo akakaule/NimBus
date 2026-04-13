@@ -318,6 +318,7 @@ Follow the naming pattern `NimBus.Extensions.{Name}`:
 | Package | Description |
 |---------|-------------|
 | `NimBus.Extensions.Notifications` | Notification channels on failures/dead-letters |
+| `NimBus.Extensions.Identity` | Username/password authentication with email verification |
 | `NimBus.Extensions.TicketIntegration` | Automatic ticket creation on errors |
 | `NimBus.Extensions.AuditLog` | Audit trail for all messages |
 | `NimBus.Extensions.RateLimiting` | Throttle message processing |

@@ -143,12 +143,34 @@ public abstract class Event : IEvent
 }
 ```
 
-All events must override `GetSessionId()` to define the session key for ordered processing.
+The base class provides a default `GetSessionId()` that returns a random GUID (no ordering). Use `[SessionKey]` or override `GetSessionId()` for ordered processing.
+
+### SessionKey Attribute
+
+Declare the ordering key declaratively — no method override needed:
+
+```csharp
+[SessionKey(nameof(OrderId))]
+public class OrderPlaced : Event
+{
+    public Guid OrderId { get; set; }
+    public decimal TotalAmount { get; set; }
+}
+```
+
+The base `Event.GetSessionId()` reads the attribute via reflection and returns `OrderId.ToString()`.
+
+**Precedence order:**
+1. Publisher override — `Publish(event, sessionId, ...)` always wins
+2. Method override — `GetSessionId()` override on the event class
+3. Attribute — `[SessionKey(nameof(Prop))]` on the event class
+4. Default — `Guid.NewGuid().ToString()` (no ordering)
 
 ### Recommended attributes
 
 | Attribute | Purpose |
 |---|---|
+| `[SessionKey(nameof(Prop))]` | Declares the session ordering key (alternative to overriding `GetSessionId()`) |
 | `[Description("...")]` | Event and property descriptions (used in AsyncAPI export) |
 | `[Required]` | Marks required fields (used in JSON Schema generation) |
 | `[Range(min, max)]` | Numeric validation range (used in JSON Schema) |
@@ -285,6 +307,189 @@ Full context available to middleware and internal handlers:
 | `MessageContent` | `MessageContent` | Event payload and error content |
 
 Control methods: `Complete()`, `Abandon()`, `DeadLetter()`, `Defer()`, `BlockSession()`, `UnblockSession()`.
+
+---
+
+## Message Scheduling
+
+Schedule messages for future delivery and cancel them if no longer needed.
+
+### ISender
+
+```csharp
+Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken ct = default);
+Task CancelScheduledMessage(long sequenceNumber, CancellationToken ct = default);
+```
+
+### PublisherClient
+
+```csharp
+// Schedule an event for 30 minutes from now
+var seq = await publisher.Schedule(orderReminder, DateTimeOffset.UtcNow.AddMinutes(30));
+
+// Cancel if no longer needed (e.g., payment received before timeout)
+await publisher.CancelScheduled(seq);
+```
+
+### Outbox integration
+
+When using the transactional outbox, scheduled messages are persisted with `ScheduledEnqueueTimeUtc` and dispatched via `ScheduleMessage` by the `OutboxDispatcher`. Note: `CancelScheduledMessage` throws `NotSupportedException` in outbox mode because the Service Bus sequence number is only assigned after dispatch.
+
+---
+
+## Permanent Failure Classification
+
+Classify exceptions as permanent (unrecoverable) to dead-letter immediately without consuming retry budget.
+
+### IPermanentFailureClassifier
+
+```csharp
+public interface IPermanentFailureClassifier
+{
+    bool IsPermanentFailure(Exception exception);
+}
+```
+
+### Default permanent types
+
+`DefaultPermanentFailureClassifier` classifies these as permanent:
+- `FormatException`, `InvalidCastException`, `ArgumentException` (and subtypes), `NotSupportedException`
+- Exception type names containing: `Serialization`, `Deserialization`, `Validation`
+
+### Registration
+
+```csharp
+// Option 1: Use defaults (register in DI)
+services.AddSingleton<IPermanentFailureClassifier, DefaultPermanentFailureClassifier>();
+
+// Option 2: Configure via subscriber builder
+services.AddNimBusSubscriber("BillingEndpoint", sub =>
+{
+    sub.AddHandler<OrderPlaced, OrderPlacedHandler>();
+    sub.ConfigurePermanentFailureClassifier(classifier =>
+    {
+        classifier.AddPermanentExceptionType<MyBusinessRuleException>();
+        classifier.AddPermanentExceptionNamePattern("Constraint");
+    });
+});
+```
+
+**Behavior:** When a handler throws a classified permanent exception, the message is dead-lettered immediately. No `RetryRequest` is sent, no session is blocked, and the retry budget is not consumed.
+
+---
+
+## Health Checks
+
+Standard `IHealthCheck` implementations for ASP.NET Core.
+
+### Registration
+
+```csharp
+services.AddServiceBusHealthCheck(serviceBusClient);        // checks ServiceBusClient.IsClosed
+services.AddCosmosDbHealthCheck(cosmosClient);               // calls ReadAccountAsync
+services.AddResolverLagCheck(cosmosClient, endpointId);      // heartbeat age thresholds
+```
+
+### Thresholds (Resolver Lag)
+
+| Status | Heartbeat Age |
+|---|---|
+| Healthy | < 5 minutes |
+| Degraded | 5–15 minutes |
+| Unhealthy | > 15 minutes |
+
+### Endpoints
+
+| Path | Purpose |
+|---|---|
+| `/health` | All health checks |
+| `/alive` | Liveness checks (tagged `"live"`) |
+| `/ready` | Readiness checks (tagged `"ready"`) |
+
+---
+
+## In-Memory Testing
+
+`NimBus.Testing` provides an in-memory transport for running the full pipeline without Azure Service Bus.
+
+### InMemoryMessageBus
+
+```csharp
+var bus = new InMemoryMessageBus();
+var publisher = new PublisherClient(bus);
+
+// Publish events
+await publisher.Publish(new OrderPlaced { OrderId = Guid.NewGuid() });
+
+// Deliver to handler
+await bus.DeliverAll(messageHandler);
+
+// Assert
+Assert.AreEqual(1, bus.SentMessages.Count);
+```
+
+### NimBusTestFixture
+
+```csharp
+var fixture = new NimBusTestFixture();
+fixture.RegisterHandler<OrderPlaced>(() => new OrderPlacedHandler());
+
+await fixture.Publisher.Publish(order);
+await fixture.DeliverAll();
+```
+
+### DI Registration
+
+```csharp
+services.AddNimBusTestTransport();  // replaces Service Bus with in-memory
+```
+
+### Scheduled Messages (testing)
+
+```csharp
+var bus = new InMemoryMessageBus();
+var seq = await bus.ScheduleMessage(message, DateTimeOffset.UtcNow.AddHours(1));
+
+Assert.AreEqual(1, bus.ScheduledMessages.Count);
+
+await bus.CancelScheduledMessage(seq);
+Assert.AreEqual(0, bus.ScheduledMessages.Count);
+```
+
+---
+
+## Identity Extension
+
+`NimBus.Extensions.Identity` adds username/password authentication with email verification as an alternative to Entra ID. Opt-in — the core WebApp has no SQL Server dependency without it.
+
+### Registration
+
+```csharp
+services.AddNimBusIdentity(options =>
+{
+    options.ConnectionString = "Server=...";
+    options.RequireEmailConfirmation = true;
+    options.EnableEntraIdLogin = true;  // show "Sign in with Microsoft" alongside local login
+    options.Smtp = new SmtpOptions
+    {
+        Host = "smtp.example.com",
+        Port = 587,
+        FromAddress = "nimbus@example.com"
+    };
+});
+```
+
+### Auth modes
+
+| Mode | Condition |
+|---|---|
+| Entra ID only | No Identity registered (default) |
+| Identity only | Identity registered, no AzureAd config |
+| Dual | Both configured — login page shows both options |
+
+### Claims mapping
+
+Identity users are automatically mapped to the same claims the WebApp's `EndpointAuthorizationService` checks (`oid`, `name`, `groups`). No changes to authorization logic needed.
 
 ---
 

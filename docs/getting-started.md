@@ -41,7 +41,18 @@ public class OrderPlaced : Event
 }
 ```
 
-`GetSessionId()` provides the default session ID for message ordering — all messages with the same session ID are processed in FIFO order. The publisher can also override the session ID explicitly at publish time for advanced ordering scenarios (see [SDK API Reference](sdk-api-reference.md#ipublisherclient)).
+**Tip:** You can use the `[SessionKey]` attribute instead of overriding `GetSessionId()`:
+
+```csharp
+[SessionKey(nameof(OrderId))]
+public class OrderPlaced : Event
+{
+    public Guid OrderId { get; set; }
+    // ... no GetSessionId() override needed
+}
+```
+
+`GetSessionId()` (or `[SessionKey]`) provides the default session ID for message ordering — all messages with the same session ID are processed in FIFO order. The publisher can also override the session ID explicitly at publish time for advanced ordering scenarios (see [SDK API Reference](sdk-api-reference.md#sessionkey-attribute)).
 
 ## 2. Create a Publisher
 

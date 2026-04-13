@@ -64,7 +64,7 @@ namespace NimBus.SDK.Extensions
         public NimBusSubscriberBuilder ConfigurePermanentFailureClassifier(Action<DefaultPermanentFailureClassifier> configure)
         {
             var classifier = new DefaultPermanentFailureClassifier();
-            configure(classifier);
+            (configure ?? throw new ArgumentNullException(nameof(configure)))(classifier);
             Services.AddSingleton<IPermanentFailureClassifier>(classifier);
             return this;
         }

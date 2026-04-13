@@ -10,7 +10,7 @@ namespace NimBus.Core.Messages.Exceptions;
 public class PermanentFailureException : Exception
 {
     public PermanentFailureException(Exception innerException)
-        : base($"Permanent failure: {innerException.Message}", innerException)
+        : base($"Permanent failure: {innerException?.Message}", innerException ?? throw new ArgumentNullException(nameof(innerException)))
     {
     }
 }

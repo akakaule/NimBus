@@ -12,8 +12,8 @@ namespace NimBus.Core.Messages
     {
         private readonly IEventContextHandler _eventContextHandler;
         private readonly IResponseService _responseService;
-        private readonly IRetryPolicyProvider _retryPolicyProvider;
-        private readonly IPermanentFailureClassifier _permanentFailureClassifier;
+        private readonly IRetryPolicyProvider? _retryPolicyProvider;
+        private readonly IPermanentFailureClassifier? _permanentFailureClassifier;
         private readonly ILogger _logger;
 
         public StrictMessageHandler(IEventContextHandler eventContextHandler, IResponseService responseService, ILogger logger = null)
@@ -28,7 +28,7 @@ namespace NimBus.Core.Messages
             IEventContextHandler eventContextHandler,
             IResponseService responseService,
             ILogger logger,
-            IRetryPolicyProvider retryPolicyProvider) : base(logger ?? NullLogger.Instance)
+            IRetryPolicyProvider? retryPolicyProvider) : base(logger ?? NullLogger.Instance)
         {
             _eventContextHandler = eventContextHandler;
             _responseService = responseService;
@@ -40,7 +40,7 @@ namespace NimBus.Core.Messages
             IEventContextHandler eventContextHandler,
             IResponseService responseService,
             ILogger logger,
-            IRetryPolicyProvider retryPolicyProvider,
+            IRetryPolicyProvider? retryPolicyProvider,
             MessagePipeline pipeline,
             MessageLifecycleNotifier lifecycleNotifier,
             IPermanentFailureClassifier permanentFailureClassifier = null) : base(logger ?? NullLogger.Instance, pipeline, lifecycleNotifier)

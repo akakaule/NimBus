@@ -55,6 +55,12 @@ public class DefaultPermanentFailureClassifier : IPermanentFailureClassifier
     /// </summary>
     public DefaultPermanentFailureClassifier AddPermanentExceptionNamePattern(string pattern)
     {
+        if (string.IsNullOrWhiteSpace(pattern))
+            throw new ArgumentException("Pattern cannot be null, empty, or whitespace.", nameof(pattern));
+
+        if (_permanentNamePatterns.Any(p => string.Equals(p, pattern, StringComparison.OrdinalIgnoreCase)))
+            return this;
+
         _permanentNamePatterns.Add(pattern);
         return this;
     }

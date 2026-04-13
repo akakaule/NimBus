@@ -111,7 +111,7 @@ namespace NimBus.SDK.Extensions
                 }
 
                 // Build retry policy provider
-                IRetryPolicyProvider retryPolicyProvider = null;
+                IRetryPolicyProvider? retryPolicyProvider = null;
                 if (builder.RetryPolicyConfigurator != null)
                 {
                     var provider = new DefaultRetryPolicyProvider();

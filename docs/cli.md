@@ -52,7 +52,7 @@ nb infra apply --solution-id nimbus --environment dev --resource-group rg-nimbus
 | `--location` | No | Azure region override |
 | `--webapp-version` | No | Version string for web app settings |
 
-Deploys core infrastructure (Service Bus, Cosmos DB, App Insights) and web app infrastructure via bicep. Automatically creates Application Insights API keys and retrieves connection strings.
+Deploys core infrastructure (Service Bus, Cosmos DB, App Insights) and web app infrastructure via bicep. Automatically creates an Application Insights API key and resolves required resource endpoints/namespace settings.
 
 ---
 

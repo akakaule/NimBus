@@ -347,7 +347,7 @@ namespace NimBus.ServiceBus
         }
 
         private MessageContent GetContent() =>
-            JsonConvert.DeserializeObject<MessageContent>(Encoding.UTF8.GetString(_sbMessage.Body));
+            JsonConvert.DeserializeObject<MessageContent>(Encoding.UTF8.GetString(_sbMessage.Body), Core.Messages.Constants.SafeJsonSettings);
 
 
         private async Task UpdateSessionState(SessionState sessionState, CancellationToken cancellationToken = default)

@@ -2,7 +2,6 @@ namespace NimBus.CommandLine;
 
 internal sealed class InfrastructureDeployer
 {
-    private const string CosmosDatabaseName = "MessageDatabase";
     private readonly CommandContext _context;
     private readonly AzureCliRunner _az;
 
@@ -31,8 +30,8 @@ internal sealed class InfrastructureDeployer
         await _az.EnsureExtensionAsync("application-insights", cancellationToken).ConfigureAwait(false);
 
         var appInsightsApiKey = await EnsureAppInsightsApiKeyAsync(options.ResourceGroupName, names.AppInsightsName, cancellationToken).ConfigureAwait(false);
-        var cosmosConnectionString = await GetCosmosConnectionStringAsync(options.ResourceGroupName, names.CosmosAccountName, cancellationToken).ConfigureAwait(false);
-        var managerConnectionString = await GetServiceBusConnectionStringAsync(options.ResourceGroupName, names.ServiceBusNamespace, cancellationToken).ConfigureAwait(false);
+        var cosmosAccountEndpoint = await GetCosmosAccountEndpointAsync(options.ResourceGroupName, names.CosmosAccountName, cancellationToken).ConfigureAwait(false);
+        var serviceBusFullyQualifiedNamespace = GetServiceBusFullyQualifiedNamespace(names.ServiceBusNamespace);
         var appInsightsAppId = await _az.CaptureValueAsync(
             new[]
             {
@@ -64,8 +63,8 @@ internal sealed class InfrastructureDeployer
             appInsightsApiKey,
             appInsightsAppId,
             instrumentationKey,
-            cosmosConnectionString,
-            managerConnectionString,
+            cosmosAccountEndpoint,
+            serviceBusFullyQualifiedNamespace,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -101,8 +100,8 @@ internal sealed class InfrastructureDeployer
         string appInsightsApiKey,
         string appInsightsAppId,
         string instrumentationKey,
-        string cosmosConnectionString,
-        string managerConnectionString,
+        string cosmosAccountEndpoint,
+        string serviceBusFullyQualifiedNamespace,
         CancellationToken cancellationToken)
     {
         var arguments = new List<string>
@@ -117,8 +116,8 @@ internal sealed class InfrastructureDeployer
             $"apiKey={appInsightsApiKey}",
             $"appInsightsAppId={appInsightsAppId}",
             $"instrumentationKey={instrumentationKey}",
-            $"cosmosDbConnectionString={cosmosConnectionString}",
-            $"managerServiceBusConnection={managerConnectionString}",
+            $"cosmosAccountEndpoint={cosmosAccountEndpoint}",
+            $"serviceBusFullyQualifiedNamespace={serviceBusFullyQualifiedNamespace}",
         };
 
         if (!string.IsNullOrWhiteSpace(options.Location))
@@ -175,50 +174,19 @@ internal sealed class InfrastructureDeployer
             $"Failed to create the Application Insights API key for '{appInsightsName}'.").ConfigureAwait(false);
     }
 
-    private async Task<string> GetCosmosConnectionStringAsync(string resourceGroupName, string cosmosAccountName, CancellationToken cancellationToken)
-    {
-        var exists = await _az.CaptureValueAsync(
-            new[]
-            {
-                "cosmosdb", "sql", "database", "exists",
-                "--resource-group", resourceGroupName,
-                "--account-name", cosmosAccountName,
-                "--name", CosmosDatabaseName,
-                "--output", "tsv",
-            },
-            cancellationToken,
-            $"Failed to verify the '{CosmosDatabaseName}' Cosmos database.").ConfigureAwait(false);
-
-        if (!string.Equals(exists, "true", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Placeholder";
-        }
-
-        return await _az.CaptureValueAsync(
-            new[]
-            {
-                "cosmosdb", "keys", "list",
-                "--resource-group", resourceGroupName,
-                "--name", cosmosAccountName,
-                "--type", "connection-strings",
-                "--query", "connectionStrings[0].connectionString",
-                "--output", "tsv",
-            },
-            cancellationToken,
-            $"Failed to read the Cosmos DB connection string for '{cosmosAccountName}'.").ConfigureAwait(false);
-    }
-
-    private Task<string> GetServiceBusConnectionStringAsync(string resourceGroupName, string namespaceName, CancellationToken cancellationToken) =>
+    private Task<string> GetCosmosAccountEndpointAsync(string resourceGroupName, string cosmosAccountName, CancellationToken cancellationToken) =>
         _az.CaptureValueAsync(
             new[]
             {
-                "servicebus", "namespace", "authorization-rule", "keys", "list",
+                "cosmosdb", "show",
                 "--resource-group", resourceGroupName,
-                "--namespace-name", namespaceName,
-                "--name", "RootManageSharedAccessKey",
-                "--query", "primaryConnectionString",
+                "--name", cosmosAccountName,
+                "--query", "documentEndpoint",
                 "--output", "tsv",
             },
             cancellationToken,
-            $"Failed to read the Service Bus connection string for '{namespaceName}'.");
+            $"Failed to read the Cosmos DB endpoint for '{cosmosAccountName}'.");
+
+    private static string GetServiceBusFullyQualifiedNamespace(string namespaceName) =>
+        $"{namespaceName}.servicebus.windows.net";
 }

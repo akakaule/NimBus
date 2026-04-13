@@ -107,8 +107,8 @@ namespace NimBus.Core.Messages
                 {
                     ErrorText = exception.Message,
                     ErrorType = exception.GetType().FullName,
-                    ExceptionStackTrace = exception.ToString(),
-                    ExceptionSource = exception.Source,
+                    ExceptionStackTrace = null,
+                    ExceptionSource = null,
                 },
                 EventContent = messageContext.MessageContent.EventContent
             };

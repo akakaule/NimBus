@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.Threading;
 using NimBus.Core.Events;
 using System.Threading.Tasks;
 
@@ -25,5 +27,16 @@ namespace NimBus.SDK
         /// <param name="events">Events you want to split into multiple batches</param>
         /// <returns>Batches of events</returns>
         IEnumerable<IEnumerable<IEvent>> GetBatches(List<IEvent> events);
+
+        /// <summary>
+        /// Sends a request and awaits a typed response with timeout.
+        /// Uses Azure Service Bus sessions for reply correlation.
+        /// </summary>
+        Task<TResponse> Request<TRequest, TResponse>(TRequest request, TimeSpan timeout, CancellationToken cancellationToken = default)
+            where TRequest : IEvent
+            where TResponse : class
+        {
+            throw new NotSupportedException("Request/response requires a ServiceBusClient. Use PublisherClient with a ServiceBusClient constructor.");
+        }
     }
 }

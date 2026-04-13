@@ -17,6 +17,8 @@ namespace NimBus.Outbox.SqlServer
         public SqlServerOutbox(SqlServerOutboxOptions options)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
+            ValidateSqlIdentifier(_options.Schema, nameof(_options.Schema));
+            ValidateSqlIdentifier(_options.TableName, nameof(_options.TableName));
         }
 
         /// <summary>
@@ -100,7 +102,7 @@ namespace NimBus.Outbox.SqlServer
         {
             var sql = $@"
                 SELECT TOP (@BatchSize) [Id], [MessageId], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [CreatedAtUtc], [ScheduledEnqueueTimeUtc]
-                FROM {_options.FullTableName}
+                FROM {_options.FullTableName} WITH (UPDLOCK, READPAST)
                 WHERE [DispatchedAtUtc] IS NULL
                 ORDER BY [CreatedAtUtc] ASC";
 
@@ -179,6 +181,16 @@ namespace NimBus.Outbox.SqlServer
             await using var command = new SqlCommand(sql, connection);
             command.Parameters.AddWithValue("@CutoffTime", DateTime.UtcNow.Subtract(olderThan));
             return await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        private static void ValidateSqlIdentifier(string value, string parameterName)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                throw new ArgumentException($"SQL identifier '{parameterName}' cannot be null or empty.", parameterName);
+            // Allow characters valid in bracket-quoted SQL Server identifiers, but reject
+            // characters that could escape the brackets or enable injection.
+            if (value.Contains(']') || value.Contains('\'') || value.Contains(';') || value.Contains("--", StringComparison.Ordinal))
+                throw new ArgumentException($"SQL identifier '{parameterName}' contains characters that are not allowed (], ', ;, or --).", parameterName);
         }
 
         private static void AddOutboxMessageParameters(SqlCommand command, OutboxMessage message)

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Security.Claims;
@@ -15,21 +16,31 @@ namespace NimBus.WebApp
     public class LocalDevAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
     {
         private readonly IConfiguration _configuration;
+        private readonly IWebHostEnvironment _environment;
         private readonly ILogger<LocalDevAuthHandler> _authLogger;
 
         public LocalDevAuthHandler(
             IOptionsMonitor<AuthenticationSchemeOptions> options,
             ILoggerFactory logger,
             UrlEncoder encoder,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            IWebHostEnvironment environment)
             : base(options, logger, encoder)
         {
             _configuration = configuration;
+            _environment = environment;
             _authLogger = logger.CreateLogger<LocalDevAuthHandler>();
         }
 
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {
+            // Defense-in-depth: ensure this handler cannot grant access outside Development
+            if (!_environment.IsDevelopment())
+            {
+                _authLogger.LogError("CRITICAL: LocalDevAuthHandler was invoked outside of Development environment. This is a security misconfiguration. Denying request.");
+                return Task.FromResult(AuthenticateResult.Fail("Local development authentication is not available outside Development environment."));
+            }
+
             // Safety check: only allow bypass if explicitly enabled in configuration
             var enableLocalDevAuth = _configuration.GetValue<bool>("EnableLocalDevAuthentication", false);
 

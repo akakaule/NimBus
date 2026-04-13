@@ -56,6 +56,16 @@ namespace NimBus.WebApp
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
+            // Security: Fail fast if dangerous development-only settings are active in non-Development environments
+            if (!Env.IsDevelopment())
+            {
+                if (Configuration.GetValue<bool>("BypassEndpointAuthorization", false))
+                    throw new InvalidOperationException("SECURITY: BypassEndpointAuthorization must not be enabled outside Development environment. Remove this setting from production configuration.");
+
+                if (Configuration.GetValue<bool>("EnableLocalDevAuthentication", false))
+                    throw new InvalidOperationException("SECURITY: EnableLocalDevAuthentication must not be enabled outside Development environment. Remove this setting from production configuration.");
+            }
+
             // Bypass authentication for local development (requires explicit opt-in via config)
             var enableLocalDevAuth = Configuration.GetValue<bool>("EnableLocalDevAuthentication", false);
             var hasNimBusIdentity = services.Any(s => s.ServiceType.FullName == "NimBus.Extensions.Identity.INimBusIdentityMarker");

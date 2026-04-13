@@ -15,6 +15,7 @@ namespace NimBus.SDK;
 public class PublisherClient : IPublisherClient
 {
     private readonly ISender _sender;
+    private ServiceBusClient _serviceBusClient;
 
     /// <summary>
     /// Creates a new PublisherClient with the specified sender.
@@ -44,7 +45,7 @@ public class PublisherClient : IPublisherClient
         var serviceBusSender = client.CreateSender(endpoint);
         var sender = new Sender(serviceBusSender);
 
-        return Task.FromResult(new PublisherClient(sender));
+        return Task.FromResult(new PublisherClient(sender) { _serviceBusClient = client });
     }
 
     /// <summary>
@@ -58,6 +59,7 @@ public class PublisherClient : IPublisherClient
 
         var serviceBusSender = client.CreateSender(endpoint);
         _sender = new Sender(serviceBusSender);
+        _serviceBusClient = client;
     }
 
     public async Task Publish(IEvent @event)
@@ -144,6 +146,56 @@ public class PublisherClient : IPublisherClient
     public async Task CancelScheduled(long sequenceNumber)
     {
         await _sender.CancelScheduledMessage(sequenceNumber);
+    }
+
+    /// <summary>
+    /// Sends a request and awaits a typed response with timeout.
+    /// Uses Azure Service Bus sessions for reply correlation.
+    /// Requires a PublisherClient created with a ServiceBusClient (via CreateAsync or constructor).
+    /// </summary>
+    public async Task<TResponse> Request<TRequest, TResponse>(TRequest request, TimeSpan timeout, CancellationToken cancellationToken = default)
+        where TRequest : IEvent
+        where TResponse : class
+    {
+        if (_serviceBusClient == null)
+            throw new InvalidOperationException(
+                "Request/response requires a ServiceBusClient. Use PublisherClient.CreateAsync(client, endpoint) or the ServiceBusClient constructor.");
+
+        var replySessionId = Guid.NewGuid().ToString();
+        var msg = (Message)GetMessage(request);
+        msg.ReplyTo = msg.To;
+        msg.ReplyToSessionId = replySessionId;
+        var message = (IMessage)msg;
+
+        await _sender.Send(message, cancellationToken: cancellationToken);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(timeout);
+
+        ServiceBusSessionReceiver receiver = null;
+        try
+        {
+            receiver = await _serviceBusClient.AcceptSessionAsync(
+                message.To, $"{message.To}-reply", replySessionId, cancellationToken: cts.Token);
+
+            var reply = await receiver.ReceiveMessageAsync(timeout, cts.Token);
+            if (reply == null)
+                throw new TimeoutException($"No response received within {timeout}");
+
+            await receiver.CompleteMessageAsync(reply, cts.Token);
+
+            var body = reply.Body.ToString();
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<TResponse>(body);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"No response received within {timeout}");
+        }
+        finally
+        {
+            if (receiver != null)
+                await receiver.DisposeAsync();
+        }
     }
 
     /// <summary>

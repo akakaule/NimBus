@@ -39,7 +39,7 @@ namespace NimBus.Core.Outbox
             {
                 try
                 {
-                    var message = JsonConvert.DeserializeObject<Message>(outboxMessage.Payload);
+                    var message = JsonConvert.DeserializeObject<Message>(outboxMessage.Payload, Constants.SafeJsonSettings);
                     if (outboxMessage.ScheduledEnqueueTimeUtc.HasValue)
                     {
                         await _sender.ScheduleMessage(message, new DateTimeOffset(outboxMessage.ScheduledEnqueueTimeUtc.Value, TimeSpan.Zero), cancellationToken);

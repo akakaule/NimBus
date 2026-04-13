@@ -45,6 +45,18 @@
         /// W3C trace context diagnostic ID for distributed tracing.
         /// </summary>
         string DiagnosticId => null;
+
+        /// <summary>
+        /// Reply-to destination for request/response patterns.
+        /// Set by the requester; the responder sends the response to this address.
+        /// </summary>
+        string ReplyTo => null;
+
+        /// <summary>
+        /// Session ID for reply correlation in request/response patterns.
+        /// The requester listens on this session for the response.
+        /// </summary>
+        string ReplyToSessionId => null;
     }
 
     public class Message : IMessage
@@ -73,5 +85,7 @@
         public string OriginalSessionId { get; set; }
         public int? DeferralSequence { get; set; }
         public string DiagnosticId { get; set; }
+        public string ReplyTo { get; set; }
+        public string ReplyToSessionId { get; set; }
     }
 }

@@ -45,6 +45,12 @@ namespace NimBus.ServiceBus
 
             result.SessionId = message.SessionId;
             result.CorrelationId = message.CorrelationId;
+
+            if (!string.IsNullOrEmpty(message.ReplyTo))
+                result.ReplyTo = message.ReplyTo;
+            if (!string.IsNullOrEmpty(message.ReplyToSessionId))
+                result.ReplyToSessionId = message.ReplyToSessionId;
+
             return result;
         }
 

@@ -276,6 +276,54 @@
         .ordering-diagram .def { color: #E5C07B; }
         .ordering-diagram .arrow { color: #5C6370; }
 
+        /* ── Screenshots ── */
+        .screenshot-item {
+            margin-bottom: 48px;
+        }
+
+        .screenshot-item:last-child { margin-bottom: 0; }
+
+        .screenshot-img {
+            width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+            border: 1px solid var(--border);
+        }
+
+        .screenshot-caption {
+            margin-top: 16px;
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+        }
+
+        .screenshot-number {
+            background: var(--blue);
+            color: white;
+            font-size: 0.8rem;
+            font-weight: 700;
+            min-width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .screenshot-text h3 {
+            font-size: 1.1rem;
+            margin-bottom: 4px;
+            color: var(--text-primary);
+        }
+
+        .screenshot-text p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
         /* ── Architecture ── */
         .arch-grid {
             display: grid;
@@ -652,6 +700,69 @@ services.<span class="fn">AddNimBusSubscriber</span>(<span class="str">"BillingE
 <span class="arrow">4.</span> <span class="ok">CustomerNotified</span>  <span class="arrow">&rarr;</span> <span class="ok">Replayed</span>
 
 <span class="label">Other sessions: unaffected, processing in parallel</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ── Screenshots ── -->
+<section class="section section-dark">
+    <div class="container">
+        <h2 class="section-title" style="color: var(--text-light);">See it in action</h2>
+        <p class="section-subtitle">The NimBus Management WebApp gives your operations team full control.</p>
+
+        <div class="screenshot-item">
+            <img src="screenshots/endpoints.png" alt="Endpoints overview" class="screenshot-img" loading="lazy">
+            <div class="screenshot-caption">
+                <span class="screenshot-number">1</span>
+                <div class="screenshot-text">
+                    <h3 style="color: var(--text-light);">Endpoints Overview</h3>
+                    <p style="color: var(--text-muted);">See all your endpoints at a glance with real-time counts of failed, deferred, and pending messages. Status indicators show which endpoints need attention. One click to drill into details.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="screenshot-item">
+            <img src="screenshots/endpoint details.png" alt="Endpoint details with message list" class="screenshot-img" loading="lazy">
+            <div class="screenshot-caption">
+                <span class="screenshot-number">2</span>
+                <div class="screenshot-text">
+                    <h3 style="color: var(--text-light);">Endpoint Details</h3>
+                    <p style="color: var(--text-muted);">Filter messages by status, event type, event ID, or session ID. Every failed and dead-lettered message is listed with its session, event type, and timestamps. Resubmit or skip individual messages directly from the list.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="screenshot-item">
+            <img src="screenshots/event details.png" alt="Event details with error information and payload" class="screenshot-img" loading="lazy">
+            <div class="screenshot-caption">
+                <span class="screenshot-number">3</span>
+                <div class="screenshot-text">
+                    <h3 style="color: var(--text-light);">Event Details &amp; Error Recovery</h3>
+                    <p style="color: var(--text-muted);">Inspect the full message: identifiers, status, error details with stack trace, and the original JSON payload. Resubmit the message as-is, resubmit with modifications, skip it, or delete it. The Flow tab shows the complete message lifecycle timeline. The Blocked tab shows deferred messages waiting behind this failure.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="screenshot-item">
+            <img src="screenshots/metrics.png" alt="Metrics dashboard with time-series charts" class="screenshot-img" loading="lazy">
+            <div class="screenshot-caption">
+                <span class="screenshot-number">4</span>
+                <div class="screenshot-text">
+                    <h3 style="color: var(--text-light);">Metrics Dashboard</h3>
+                    <p style="color: var(--text-muted);">KPI summary cards show total messages, failures, and failure rate at a glance. The time-series area chart tracks message activity over configurable time windows (1h to 30d). Published messages are broken down by event type per endpoint.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="screenshot-item">
+            <img src="screenshots/failed message insights.png" alt="Failed message insights with error pattern grouping" class="screenshot-img" loading="lazy">
+            <div class="screenshot-caption">
+                <span class="screenshot-number">5</span>
+                <div class="screenshot-text">
+                    <h3 style="color: var(--text-light);">Failed Message Insights</h3>
+                    <p style="color: var(--text-muted);">Error patterns are automatically grouped and ranked by frequency. See which error categories affect which endpoints and event types. Identify systemic issues (like downstream timeouts or rate limiting) vs one-off failures at a glance.</p>
+                </div>
             </div>
         </div>
     </div>

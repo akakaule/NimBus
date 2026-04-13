@@ -57,6 +57,18 @@ namespace NimBus.SDK.Extensions
             return this;
         }
 
+        /// <summary>
+        /// Configures the permanent failure classifier. Exceptions classified as permanent
+        /// are dead-lettered immediately without consuming retry budget.
+        /// </summary>
+        public NimBusSubscriberBuilder ConfigurePermanentFailureClassifier(Action<DefaultPermanentFailureClassifier> configure)
+        {
+            var classifier = new DefaultPermanentFailureClassifier();
+            (configure ?? throw new ArgumentNullException(nameof(configure)))(classifier);
+            Services.AddSingleton<IPermanentFailureClassifier>(classifier);
+            return this;
+        }
+
         internal class HandlerRegistration
         {
             public string EventTypeId { get; set; }

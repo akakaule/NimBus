@@ -458,6 +458,98 @@ public class ErrorHandlingTests
         Assert.AreEqual(Constants.RetryId, retryRequest.To, "RetryRequest should be addressed to Retry");
     }
 
+    // ── Permanent Failure Classification ───────────────────────────────
+
+    [TestMethod]
+    public async Task Publish_PermanentFailure_DeadLetteredImmediatelyNoRetry()
+    {
+        // Arrange — handler throws ArgumentException (permanent by default)
+        var classifier = new DefaultPermanentFailureClassifier();
+        var retryProvider = new DefaultRetryPolicyProvider();
+        retryProvider.SetDefaultPolicy(new RetryPolicy { MaxRetries = 5, Strategy = BackoffStrategy.Fixed, BaseDelay = TimeSpan.FromMinutes(1) });
+        var fixture = new EndToEndFixture(classifier, retryProvider);
+        var handler = new RecordingOrderPlacedHandler
+        {
+            ExceptionToThrow = new ArgumentException("Invalid order data")
+        };
+        fixture.RegisterHandler(() => handler);
+
+        // Act
+        await fixture.Publisher.Publish(new OrderPlaced("s-permanent") { OrderId = "ORD-P1" });
+        var results = await fixture.DeliverAllWithResults();
+
+        // Assert — dead-lettered immediately, no retry response
+        Assert.AreEqual(1, results.Count);
+        Assert.IsTrue(results[0].Session.WasDeadLettered, "Permanent failure should be dead-lettered");
+        Assert.IsFalse(fixture.ResponseBus.SentMessages.Any(m => m.MessageType == MessageType.RetryRequest),
+            "No RetryRequest should be sent for permanent failures");
+    }
+
+    [TestMethod]
+    public async Task Publish_FormatException_DeadLetteredImmediately()
+    {
+        // Arrange — FormatException is permanent by default
+        var classifier = new DefaultPermanentFailureClassifier();
+        var fixture = new EndToEndFixture(classifier);
+        var handler = new RecordingOrderPlacedHandler
+        {
+            ExceptionToThrow = new FormatException("Invalid date format")
+        };
+        fixture.RegisterHandler(() => handler);
+
+        // Act
+        await fixture.Publisher.Publish(new OrderPlaced("s-format") { OrderId = "ORD-FMT" });
+        var results = await fixture.DeliverAllWithResults();
+
+        // Assert
+        Assert.IsTrue(results[0].Session.WasDeadLettered, "FormatException should be dead-lettered immediately");
+    }
+
+    [TestMethod]
+    public async Task Publish_NonPermanentFailure_NormalRetryFlow()
+    {
+        // Arrange — HttpRequestException is NOT permanent (transient infra error)
+        var classifier = new DefaultPermanentFailureClassifier();
+        var retryProvider = new DefaultRetryPolicyProvider();
+        retryProvider.SetDefaultPolicy(new RetryPolicy { MaxRetries = 3, Strategy = BackoffStrategy.Fixed, BaseDelay = TimeSpan.FromMinutes(1) });
+        var fixture = new EndToEndFixture(classifier, retryProvider);
+        var handler = new RecordingOrderPlacedHandler
+        {
+            ExceptionToThrow = new System.Net.Http.HttpRequestException("Connection refused")
+        };
+        fixture.RegisterHandler(() => handler);
+
+        // Act
+        await fixture.Publisher.Publish(new OrderPlaced("s-http") { OrderId = "ORD-HTTP" });
+        var results = await fixture.DeliverAllWithResults();
+
+        // Assert — NOT dead-lettered, retry response sent
+        Assert.IsFalse(results[0].Session.WasDeadLettered, "HttpRequestException should NOT be dead-lettered");
+        Assert.IsTrue(fixture.ResponseBus.SentMessages.Any(m => m.MessageType == MessageType.RetryRequest),
+            "RetryRequest should be sent for non-permanent failures");
+    }
+
+    [TestMethod]
+    public async Task Publish_CustomPermanentType_DeadLettered()
+    {
+        // Arrange — register a custom exception type as permanent
+        var classifier = new DefaultPermanentFailureClassifier();
+        classifier.AddPermanentExceptionType<InvalidOperationException>();
+        var fixture = new EndToEndFixture(classifier);
+        var handler = new RecordingOrderPlacedHandler
+        {
+            ExceptionToThrow = new InvalidOperationException("Business rule violation")
+        };
+        fixture.RegisterHandler(() => handler);
+
+        // Act
+        await fixture.Publisher.Publish(new OrderPlaced("s-custom") { OrderId = "ORD-CUS" });
+        var results = await fixture.DeliverAllWithResults();
+
+        // Assert
+        Assert.IsTrue(results[0].Session.WasDeadLettered, "Custom permanent exception type should be dead-lettered");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     /// <summary>

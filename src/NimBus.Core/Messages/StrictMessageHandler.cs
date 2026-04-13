@@ -12,7 +12,8 @@ namespace NimBus.Core.Messages
     {
         private readonly IEventContextHandler _eventContextHandler;
         private readonly IResponseService _responseService;
-        private readonly IRetryPolicyProvider _retryPolicyProvider;
+        private readonly IRetryPolicyProvider? _retryPolicyProvider;
+        private readonly IPermanentFailureClassifier? _permanentFailureClassifier;
         private readonly ILogger _logger;
 
         public StrictMessageHandler(IEventContextHandler eventContextHandler, IResponseService responseService, ILogger logger = null)
@@ -27,7 +28,7 @@ namespace NimBus.Core.Messages
             IEventContextHandler eventContextHandler,
             IResponseService responseService,
             ILogger logger,
-            IRetryPolicyProvider retryPolicyProvider) : base(logger ?? NullLogger.Instance)
+            IRetryPolicyProvider? retryPolicyProvider) : base(logger ?? NullLogger.Instance)
         {
             _eventContextHandler = eventContextHandler;
             _responseService = responseService;
@@ -39,13 +40,15 @@ namespace NimBus.Core.Messages
             IEventContextHandler eventContextHandler,
             IResponseService responseService,
             ILogger logger,
-            IRetryPolicyProvider retryPolicyProvider,
+            IRetryPolicyProvider? retryPolicyProvider,
             MessagePipeline pipeline,
-            MessageLifecycleNotifier lifecycleNotifier) : base(logger ?? NullLogger.Instance, pipeline, lifecycleNotifier)
+            MessageLifecycleNotifier lifecycleNotifier,
+            IPermanentFailureClassifier permanentFailureClassifier = null) : base(logger ?? NullLogger.Instance, pipeline, lifecycleNotifier)
         {
             _eventContextHandler = eventContextHandler;
             _responseService = responseService;
             _retryPolicyProvider = retryPolicyProvider;
+            _permanentFailureClassifier = permanentFailureClassifier;
             _logger = logger ?? NullLogger.Instance;
         }
 
@@ -297,6 +300,11 @@ namespace NimBus.Core.Messages
             }
             catch (Exception exception)
             {
+                if (_permanentFailureClassifier?.IsPermanentFailure(exception) == true)
+                {
+                    throw new PermanentFailureException(exception);
+                }
+
                 throw new EventContextHandlerException(exception)
                 {
                     Source = exception.Source

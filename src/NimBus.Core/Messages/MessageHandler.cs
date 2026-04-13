@@ -79,6 +79,31 @@ namespace NimBus.Core.Messages
             catch (EventContextHandlerException)
             {
             }
+            catch (PermanentFailureException permanentFailure)
+            {
+                _logger.LogWarning("Permanent failure — dead-lettering without retry. EventId:{EventId}, Exception:{ExceptionType}",
+                    messageContext?.EventId, permanentFailure.InnerException?.GetType().Name);
+
+                if (_lifecycleNotifier?.HasObservers == true)
+                {
+                    await _lifecycleNotifier.NotifyFailed(messageContext, permanentFailure.InnerException ?? permanentFailure, cancellationToken);
+                }
+
+                try
+                {
+                    var reason = $"Permanent failure: {permanentFailure.InnerException?.GetType().Name}";
+                    await messageContext.DeadLetter(reason, permanentFailure.InnerException, cancellationToken);
+
+                    if (_lifecycleNotifier?.HasObservers == true)
+                    {
+                        await _lifecycleNotifier.NotifyDeadLettered(messageContext, reason, permanentFailure.InnerException, cancellationToken);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to dead-letter permanent failure message. EventId:{EventId}", messageContext?.EventId);
+                }
+            }
             catch (MessageAlreadyDeadLetteredException alreadyDeadLettered)
             {
                 // Message was already dead-lettered by middleware (e.g., ValidationMiddleware).

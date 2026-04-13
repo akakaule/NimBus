@@ -62,6 +62,26 @@ internal sealed class EndToEndFixture
             retryPolicyProvider);
     }
 
+    public EndToEndFixture(IPermanentFailureClassifier classifier, IRetryPolicyProvider? retryPolicyProvider = null)
+    {
+        _publishBus = new InMemoryBus();
+        _responseBus = new InMemoryBus();
+
+        Publisher = new PublisherClient(_publishBus);
+
+        _eventHandlerProvider = new EventHandlerProvider();
+        var responseService = new ResponseService(_responseBus);
+
+        _messageHandler = new StrictMessageHandler(
+            _eventHandlerProvider,
+            responseService,
+            NullLogger.Instance,
+            retryPolicyProvider,
+            pipeline: null,
+            lifecycleNotifier: null,
+            permanentFailureClassifier: classifier);
+    }
+
     /// <summary>
     /// Constructor for pipeline and lifecycle integration tests.
     /// Uses a PipelineMessageHandler that wraps event handling with pipeline behaviors and lifecycle notifications.

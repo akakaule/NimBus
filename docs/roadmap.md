@@ -334,12 +334,12 @@ Goal: If NimBus is to be open-sourced or adopted beyond its current org.
 | NuGet packages | Medium ecosystem | Small | **P4→P1** | 5 | Completed |
 | Middleware pipeline | High extensibility | Medium | **P2** | 3 | Completed |
 | Message scheduling SDK | High (orchestration) | Small | **P1** | 3 | Completed |
-| Poison message classification | High reliability | Small | **P2** | 3 | Not Started |
+| Poison message classification | High reliability | Small | **P2** | 3 | Completed |
 | Circuit breaker middleware | High resilience | Small-Medium | **P2** | 3 | Not Started |
 | Inbox pattern | Medium reliability | Medium | **P2** | 3 | Not Started |
 | Orchestration pattern guide | Medium DX | Small | **P3** | 3 | Not Started |
 | Claim-check pattern | High (enterprise) | Medium | **P2** | 4 | Not Started |
-| Request/response | High capability | Medium | **P2** | 4 | Not Started |
+| Request/response | High capability | Medium | **P2** | 4 | Completed |
 | Failed message hook | Medium reliability | Small | **P3** | 4 | Not Started |
 | WebApp enhancements | Medium ops | Large | **P3** | 4 | Mostly Complete |
 | CLI operational commands | Medium ops | Medium | **P3** | -- | Completed |

@@ -34,11 +34,11 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 | Item | Phase | Status | Description |
 |---|---|---|---|
 | [Middleware Pipeline](#middleware-pipeline) | 3 | Completed | `IMessagePipelineBehavior` pipeline with 3 built-in middleware (Logging, Metrics, Validation), 15 unit tests |
-| [Poison Message Classification](#poison-message-classification) | 3 | In Progress | Transient vs permanent failure detection with immediate dead-letter for unrecoverable errors (PR #4) |
+| [Poison Message Classification](#poison-message-classification) | 3 | Completed | Transient vs permanent failure detection with immediate dead-letter for unrecoverable errors |
 | [Circuit Breaker Middleware](#circuit-breaker-middleware) | 3 | Not Started | Pause processing when downstream dependencies are failing systemically |
 | [Inbox Pattern](#inbox-pattern) | 3 | Not Started | Idempotent consumers via MessageId deduplication |
 | [Claim-Check Pattern](#claim-check-pattern) | 4 | Not Started | Large payload offload to Azure Blob Storage |
-| [Request/Response](#requestresponse) | 4 | Not Started | Synchronous request/response over the bus with timeout handling |
+| [Request/Response](#requestresponse) | 4 | Completed | Synchronous request/response over the bus with session-based reply correlation |
 
 ## P3 -- Lower
 

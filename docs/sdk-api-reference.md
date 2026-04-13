@@ -337,6 +337,117 @@ When using the transactional outbox, scheduled messages are persisted with `Sche
 
 ---
 
+## Request/Response
+
+Send a typed request and await a typed response with timeout handling. Uses Azure Service Bus sessions for reply correlation.
+
+### PublisherClient
+
+```csharp
+var status = await publisher.Request<GetOrderStatus, OrderStatusResponse>(
+    new GetOrderStatus { OrderId = orderId },
+    timeout: TimeSpan.FromSeconds(30));
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `request` | `TRequest` | The request event (must extend `Event`) |
+| `timeout` | `TimeSpan` | Maximum time to wait for a response |
+| `cancellationToken` | `CancellationToken` | Optional cancellation |
+
+Returns `TResponse` or throws `TimeoutException` if no response is received within the timeout.
+
+**Requirements:** The `PublisherClient` must be created with a `ServiceBusClient` (via `CreateAsync` or the `ServiceBusClient` constructor). The ISender-only constructor does not support request/response.
+
+### How it works
+
+1. Requester generates a unique `replySessionId` and sets `ReplyTo` and `ReplyToSessionId` on the outgoing message
+2. Requester opens a `ServiceBusSessionReceiver` on a reply subscription filtered by the `replySessionId`
+3. Responder handles the request and sends a JSON-serialized response to the `ReplyTo` address with the matching session ID
+4. Requester receives the response, deserializes it as `TResponse`, and returns
+
+### IRequestHandler\<TRequest, TResponse\>
+
+```csharp
+public interface IRequestHandler<TRequest, TResponse>
+    where TRequest : IEvent
+    where TResponse : class
+{
+    Task<TResponse> Handle(TRequest request, CancellationToken cancellationToken = default);
+}
+```
+
+### Defining request and response types
+
+```csharp
+// Request — a normal NimBus event
+[Description("Query the current status of an order.")]
+[SessionKey(nameof(OrderId))]
+public class GetOrderStatus : Event
+{
+    [Required]
+    public Guid OrderId { get; set; }
+}
+
+// Response — a plain C# class (serialized as JSON)
+public class OrderStatusResponse
+{
+    public Guid OrderId { get; set; }
+    public string Status { get; set; }
+    public DateTime LastUpdated { get; set; }
+}
+```
+
+### Implementing a request handler
+
+```csharp
+public class GetOrderStatusHandler : IRequestHandler<GetOrderStatus, OrderStatusResponse>
+{
+    private readonly IOrderRepository _repository;
+
+    public GetOrderStatusHandler(IOrderRepository repository)
+    {
+        _repository = repository;
+    }
+
+    public async Task<OrderStatusResponse> Handle(GetOrderStatus request, CancellationToken ct)
+    {
+        var order = await _repository.GetByIdAsync(request.OrderId, ct);
+        return new OrderStatusResponse
+        {
+            OrderId = order.Id,
+            Status = order.Status,
+            LastUpdated = order.UpdatedAt
+        };
+    }
+}
+```
+
+### Message model properties
+
+| Property | Type | Description |
+|---|---|---|
+| `ReplyTo` | `string` | Reply destination set by the requester |
+| `ReplyToSessionId` | `string` | Session ID for reply correlation |
+
+These are set automatically by `PublisherClient.Request()` and mapped to the corresponding `ServiceBusMessage` properties.
+
+### Error handling
+
+| Scenario | Behavior |
+|---|---|
+| No response within timeout | Throws `TimeoutException` |
+| Caller cancels via `CancellationToken` | Throws `OperationCanceledException` |
+| No `ServiceBusClient` available | Throws `InvalidOperationException` |
+
+### Limitations
+
+- Requires a reply subscription on the Service Bus topic (e.g., `{EndpointName}-reply` with session support)
+- Not supported via the transactional outbox (request/response is inherently synchronous)
+- Each request creates and disposes a `ServiceBusSessionReceiver` — not suited for high-throughput scenarios (use pub/sub for that)
+
+---
+
 ## Permanent Failure Classification
 
 Classify exceptions as permanent (unrecoverable) to dead-letter immediately without consuming retry budget.

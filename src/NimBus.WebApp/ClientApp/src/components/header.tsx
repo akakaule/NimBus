@@ -36,6 +36,9 @@ const Header = (props: HeaderProps) => {
               alt="NimBus"
             />
           </a>
+          <span className="hidden lg:inline ml-3 text-sm text-muted-foreground italic">
+            A nimbus for your Azure cloud.
+          </span>
           <Badge
             variant="secondary"
             className="ml-3 bg-transparent text-muted-foreground"

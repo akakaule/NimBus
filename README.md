@@ -2,6 +2,8 @@
 
 ![NimBus](assets/banner.png)
 
+> *A nimbus for your Azure cloud — ordered, audited, and always accounted for.*
+
 NimBus is an Azure Service Bus based integration platform with a shared SDK, management web app, and message tracking and storage.
 
 ## Repository Layout

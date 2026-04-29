@@ -31,17 +31,24 @@ const ACTIONABLE_STATUSES = [
   api.ResolutionStatus.Deferred,
 ];
 
-const DEFAULT_FAILED_STATUSES: api.ResolutionStatus[] = [
-  api.ResolutionStatus.Failed,
-  api.ResolutionStatus.DeadLettered,
-];
+// URL sentinel meaning "user explicitly wants no status filter". We need this
+// because an absent `status` param falls back to defaults (Failed) — so without
+// the sentinel, "show all statuses" would silently revert to the default after
+// any navigation. Pressing "All statuses" or removing the last chip writes
+// `?status=*`; buildEventFilterFromParams translates it back to no filter
+// before hitting the API, and the chip combobox treats it as zero chips.
+const STATUS_ALL_SENTINEL = "*";
+
+function isAllStatusesSentinel(status: string[]): boolean {
+  return status.length === 1 && status[0] === STATUS_ALL_SENTINEL;
+}
 
 // URL-driven filter shape. Only the most-visible fields are persisted; advanced
 // filters (payload, enqueued, updated) live in the FilterContext as draft state
-// only and are picked up at Search-time. The default `status` of "Failed +
-// DeadLettered" matches the operator UX where the page opens pre-filtered to
-// actionable items. Declared as a closed `type` so it satisfies the
-// index-signature constraint of `useUrlFilters<T>`.
+// only and are picked up at Search-time. The default `status` of "Failed"
+// matches the operator UX where the page opens pre-filtered to the most common
+// actionable case (also the Reset target). Declared as a closed `type` so it
+// satisfies the index-signature constraint of `useUrlFilters<T>`.
 type EndpointFilterParams = {
   status: string[];
   eventTypeId: string[];
@@ -52,10 +59,7 @@ type EndpointFilterParams = {
 };
 
 const DEFAULT_ENDPOINT_FILTER_PARAMS: EndpointFilterParams = {
-  status: [
-    api.ResolutionStatus.Failed,
-    api.ResolutionStatus.DeadLettered,
-  ],
+  status: [api.ResolutionStatus.Failed],
   eventTypeId: [],
   eventId: "",
   sessionId: "",
@@ -69,7 +73,10 @@ function buildEventFilterFromParams(
 ): api.EventFilter {
   const filter = new api.EventFilter();
   filter.endpointId = endpointId;
-  filter.resolutionStatus = params.status as api.ResolutionStatus[];
+  // Sentinel ["*"] means "no status filter" — leave resolutionStatus empty.
+  filter.resolutionStatus = isAllStatusesSentinel(params.status)
+    ? []
+    : (params.status as api.ResolutionStatus[]);
   if (params.eventTypeId.length) filter.eventTypeId = [...params.eventTypeId];
   if (params.eventId) filter.eventId = params.eventId;
   if (params.sessionId) filter.sessionId = params.sessionId;
@@ -80,8 +87,11 @@ function paramsFromEventFilter(
   filter: api.EventFilter,
   current: EndpointFilterParams,
 ): EndpointFilterParams {
+  // Search committed an empty status array → user means "all statuses". Write
+  // the sentinel so the URL preserves intent across navigation.
+  const rawStatus = (filter.resolutionStatus ?? []) as string[];
   return {
-    status: (filter.resolutionStatus ?? []) as string[],
+    status: rawStatus.length === 0 ? [STATUS_ALL_SENTINEL] : rawStatus,
     eventTypeId: (filter.eventTypeId ?? []) as string[],
     eventId: filter.eventId ?? "",
     sessionId: filter.sessionId ?? "",
@@ -479,16 +489,20 @@ const EventsPanel = (props: EventsPanelProps) => {
     resetFilters();
   };
 
-  // "All statuses" — keep all other filters but blank out the status array in the URL.
+  // "All statuses" — show every status. Writes the explicit sentinel so the
+  // intent survives navigation; an absent param would otherwise fall back to
+  // the default (Failed) on the next render.
   const handleClearStatus = (): void => {
-    applyFilters({ ...applied, status: [] });
+    applyFilters({ ...applied, status: [STATUS_ALL_SENTINEL] });
   };
 
   // Commit-on-change for the Status combobox: chip add/remove writes to the
   // URL immediately so browser Back from an event-detail page restores the
-  // exact filter the user had selected, not the page's defaults.
+  // exact filter the user had selected, not the page's defaults. Removing the
+  // last chip is treated as "All statuses" (sentinel) for the same reason.
   const handleStatusChange = (next: api.ResolutionStatus[]): void => {
-    applyFilters({ ...applied, status: next as string[] });
+    const nextStatus = next.length === 0 ? [STATUS_ALL_SENTINEL] : (next as string[]);
+    applyFilters({ ...applied, status: nextStatus });
   };
 
   const setMaxResults = (next: number): void => {
@@ -537,6 +551,12 @@ const EventsPanel = (props: EventsPanelProps) => {
     },
   ];
 
+  // Hide the sentinel from the combobox — "all statuses" should render as an
+  // empty chip area, not a chip literally labelled "*".
+  const displayedStatuses = isAllStatusesSentinel(applied.status)
+    ? []
+    : (applied.status as api.ResolutionStatus[]);
+
   // Key the filter subtree on URL state so sub-filter inputs re-mount and re-seed
   // from `initialValue` props whenever the URL changes (e.g. browser Back/forward).
   const filterRemountKey = `${applied.status.join(",")}|${applied.eventTypeId.join(",")}|${applied.eventId}|${applied.sessionId}`;
@@ -550,7 +570,7 @@ const EventsPanel = (props: EventsPanelProps) => {
           onReset={handleReset}
           onClearStatus={handleClearStatus}
           onStatusChange={handleStatusChange}
-          initialStatuses={applied.status as api.ResolutionStatus[]}
+          initialStatuses={displayedStatuses}
           initialEventTypes={applied.eventTypeId}
           initialEventId={applied.eventId}
           initialSessionId={applied.sessionId}

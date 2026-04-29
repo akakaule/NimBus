@@ -302,10 +302,17 @@ static class Endpoint
             Name = endpointName.ToLower(),
             Subscriptions = new List<SubscriptionDto>
             {
+                // Endpoint subscription — also hosts the continuation and retry rules
+                // (the provisioner attaches them here, not as separate subs).
                 new SubscriptionDto
                 {
                     Name = endpointName, TopicName = endpointName,
-                    Rules = new List<RuleDto> { new RuleDto { Name = $"to-{endpointName}", SubscriptionName = endpointName } }
+                    Rules = new List<RuleDto>
+                    {
+                        new RuleDto { Name = $"to-{endpointName}", SubscriptionName = endpointName },
+                        new RuleDto { Name = "continuation", SubscriptionName = endpointName },
+                        new RuleDto { Name = "retry", SubscriptionName = endpointName }
+                    }
                 },
                 new SubscriptionDto
                 {
@@ -318,28 +325,13 @@ static class Endpoint
                 },
                 new SubscriptionDto
                 {
-                    Name = "broker", TopicName = endpointName,
-                    Rules = new List<RuleDto> { new RuleDto { Name = $"from-{endpointName}", SubscriptionName = "broker" } }
-                },
-                new SubscriptionDto
-                {
-                    Name = "continuation", TopicName = endpointName,
-                    Rules = new List<RuleDto> { new RuleDto { Name = "continuation", SubscriptionName = "continuation" } }
-                },
-                new SubscriptionDto
-                {
-                    Name = "retry", TopicName = endpointName,
-                    Rules = new List<RuleDto> { new RuleDto { Name = "retry", SubscriptionName = "retry" } }
-                },
-                new SubscriptionDto
-                {
                     Name = "deferred", TopicName = endpointName,
-                    Rules = new List<RuleDto> { new RuleDto { Name = "to-deferred", SubscriptionName = "deferred" } }
+                    Rules = new List<RuleDto> { new RuleDto { Name = "deferredfilter", SubscriptionName = "deferred" } }
                 },
                 new SubscriptionDto
                 {
                     Name = "deferredprocessor", TopicName = endpointName,
-                    Rules = new List<RuleDto> { new RuleDto { Name = "to-deferredprocessor", SubscriptionName = "deferredprocessor" } }
+                    Rules = new List<RuleDto> { new RuleDto { Name = "deferredprocessorfilter", SubscriptionName = "deferredprocessor" } }
                 }
             }
         };

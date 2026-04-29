@@ -1024,16 +1024,20 @@ public class AdminService : IAdminService
             Name = endpointName,
             Subscriptions = new List<SubscriptionSnapshot>
             {
-                // Main subscription
+                // Endpoint subscription — carries the consumer's "to-<endpoint>" rule
+                // plus the continuation and retry rules (the provisioner attaches
+                // continuation/retry as rules on the endpoint sub, not as separate subs).
                 new SubscriptionSnapshot
                 {
                     Name = endpointName,
                     Rules = new List<RuleSnapshot>
                     {
-                        new RuleSnapshot { Name = $"to-{endpointName}", SubscriptionName = endpointName }
+                        new RuleSnapshot { Name = $"to-{endpointName}", SubscriptionName = endpointName },
+                        new RuleSnapshot { Name = "continuation", SubscriptionName = endpointName },
+                        new RuleSnapshot { Name = "retry", SubscriptionName = endpointName }
                     }
                 },
-                // Resolver subscription
+                // Resolver subscription — fans out every published event for audit.
                 new SubscriptionSnapshot
                 {
                     Name = "resolver",
@@ -1043,49 +1047,22 @@ public class AdminService : IAdminService
                         new RuleSnapshot { Name = $"from-{endpointName}", SubscriptionName = "resolver" }
                     }
                 },
-                // Broker subscription
-                new SubscriptionSnapshot
-                {
-                    Name = "broker",
-                    Rules = new List<RuleSnapshot>
-                    {
-                        new RuleSnapshot { Name = $"from-{endpointName}", SubscriptionName = "broker" }
-                    }
-                },
-                // Continuation subscription
-                new SubscriptionSnapshot
-                {
-                    Name = "continuation",
-                    Rules = new List<RuleSnapshot>
-                    {
-                        new RuleSnapshot { Name = "continuation", SubscriptionName = "continuation" }
-                    }
-                },
-                // Retry subscription
-                new SubscriptionSnapshot
-                {
-                    Name = "retry",
-                    Rules = new List<RuleSnapshot>
-                    {
-                        new RuleSnapshot { Name = "retry", SubscriptionName = "retry" }
-                    }
-                },
-                // Deferred subscription
+                // Deferred subscription — captures sessions parked behind a failure.
                 new SubscriptionSnapshot
                 {
                     Name = "deferred",
                     Rules = new List<RuleSnapshot>
                     {
-                        new RuleSnapshot { Name = "to-deferred", SubscriptionName = "deferred" }
+                        new RuleSnapshot { Name = "deferredfilter", SubscriptionName = "deferred" }
                     }
                 },
-                // DeferredProcessor subscription
+                // DeferredProcessor subscription — drains parked sessions after resubmit.
                 new SubscriptionSnapshot
                 {
                     Name = "deferredprocessor",
                     Rules = new List<RuleSnapshot>
                     {
-                        new RuleSnapshot { Name = "to-deferredprocessor", SubscriptionName = "deferredprocessor" }
+                        new RuleSnapshot { Name = "deferredprocessorfilter", SubscriptionName = "deferredprocessor" }
                     }
                 }
             }

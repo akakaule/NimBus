@@ -61,6 +61,15 @@ namespace NimBus.Outbox.SqlServer
                 VALUES
                     (@Id, @MessageId, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @ScheduledEnqueueTimeUtc, @CreatedAtUtc)";
 
+            var ambient = SqlServerOutboxAmbientTransaction.Current;
+            if (ambient.HasValue)
+            {
+                await using var ambientCommand = new SqlCommand(sql, ambient.Value.Connection, ambient.Value.Transaction);
+                AddOutboxMessageParameters(ambientCommand, message);
+                await ambientCommand.ExecuteNonQueryAsync(cancellationToken);
+                return;
+            }
+
             await using var connection = new SqlConnection(_options.ConnectionString);
             await connection.OpenAsync(cancellationToken);
             await using var command = new SqlCommand(sql, connection);
@@ -70,6 +79,24 @@ namespace NimBus.Outbox.SqlServer
 
         public async Task StoreBatchAsync(IEnumerable<OutboxMessage> messages, CancellationToken cancellationToken = default)
         {
+            var ambient = SqlServerOutboxAmbientTransaction.Current;
+            if (ambient.HasValue)
+            {
+                foreach (var message in messages)
+                {
+                    var ambientSql = $@"
+                        INSERT INTO {_options.FullTableName}
+                            ([Id], [MessageId], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [CreatedAtUtc])
+                        VALUES
+                            (@Id, @MessageId, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @CreatedAtUtc)";
+
+                    await using var ambientCommand = new SqlCommand(ambientSql, ambient.Value.Connection, ambient.Value.Transaction);
+                    AddOutboxMessageParameters(ambientCommand, message);
+                    await ambientCommand.ExecuteNonQueryAsync(cancellationToken);
+                }
+                return;
+            }
+
             await using var connection = new SqlConnection(_options.ConnectionString);
             await connection.OpenAsync(cancellationToken);
             await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);

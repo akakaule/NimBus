@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Input } from "components/ui/input";
 import { Button } from "components/ui/button";
 import { Select } from "components/ui/select";
@@ -9,8 +9,47 @@ import {
   AuditSearchFilterAuditType,
 } from "api-client";
 
+/**
+ * Plain string-keyed shape of the audit filter, suitable for URL-param round-tripping.
+ * Declared as a closed `type` so it satisfies the index-signature constraint of `useUrlFilters<T>`.
+ */
+export type AuditFilterValues = {
+  endpointId: string;
+  eventId: string;
+  auditorName: string;
+  eventTypeId: string;
+  auditType: string;
+  createdFrom: string;
+  createdTo: string;
+};
+
+export const EMPTY_AUDIT_FILTER: AuditFilterValues = {
+  endpointId: "",
+  eventId: "",
+  auditorName: "",
+  eventTypeId: "",
+  auditType: "",
+  createdFrom: "",
+  createdTo: "",
+};
+
+export function toAuditSearchFilter(v: AuditFilterValues): AuditSearchFilter {
+  const filter = new AuditSearchFilter();
+  if (v.endpointId) filter.endpointId = v.endpointId;
+  if (v.eventId) filter.eventId = v.eventId;
+  if (v.auditorName) filter.auditorName = v.auditorName;
+  if (v.eventTypeId) filter.eventTypeId = v.eventTypeId;
+  if (v.auditType)
+    filter.auditType = v.auditType as AuditSearchFilterAuditType;
+  if (v.createdFrom) filter.createdAtFrom = new Date(v.createdFrom) as any;
+  if (v.createdTo) filter.createdAtTo = new Date(v.createdTo) as any;
+  return filter;
+}
+
 interface AuditFilterBarProps {
-  onSearch: (filter: AuditSearchFilter) => void;
+  value: AuditFilterValues;
+  onSearch: (filter: AuditFilterValues) => void;
+  onReset: () => void;
   isLoading: boolean;
 }
 
@@ -19,17 +58,18 @@ const auditTypeOptions = Object.entries(AuditSearchFilterAuditType).map(
 );
 
 export default function AuditFilterBar({
+  value,
   onSearch,
+  onReset,
   isLoading,
 }: AuditFilterBarProps) {
-  const [endpointId, setEndpointId] = useState("");
-  const [eventId, setEventId] = useState("");
-  const [auditorName, setAuditorName] = useState("");
-  const [eventTypeId, setEventTypeId] = useState("");
-  const [auditType, setAuditType] = useState<string>("");
-  const [createdFrom, setCreatedFrom] = useState("");
-  const [createdTo, setCreatedTo] = useState("");
+  const [draft, setDraft] = useState<AuditFilterValues>(value);
   const [endpoints, setEndpoints] = useState<string[]>([]);
+
+  // When the applied filter changes (new search OR browser Back/forward), reset the draft.
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
 
   useEffect(() => {
     const client = new Client(CookieAuth());
@@ -39,35 +79,24 @@ export default function AuditFilterBar({
       .catch(() => setEndpoints([]));
   }, []);
 
-  const endpointOptions = [
-    { value: "", label: "All endpoints" },
-    ...endpoints.map((endpoint) => ({ value: endpoint, label: endpoint })),
-  ];
+  const endpointOptions = useMemo(
+    () => [
+      { value: "", label: "All endpoints" },
+      ...endpoints.map((endpoint) => ({ value: endpoint, label: endpoint })),
+    ],
+    [endpoints],
+  );
 
-  const handleSearch = () => {
-    const filter = new AuditSearchFilter();
-    if (endpointId) filter.endpointId = endpointId;
-    if (eventId) filter.eventId = eventId;
-    if (auditorName) filter.auditorName = auditorName;
-    if (eventTypeId) filter.eventTypeId = eventTypeId;
-    if (auditType)
-      filter.auditType = auditType as AuditSearchFilterAuditType;
-    if (createdFrom) filter.createdAtFrom = new Date(createdFrom) as any;
-    if (createdTo) filter.createdAtTo = new Date(createdTo) as any;
-    onSearch(filter);
-  };
+  const update = <K extends keyof AuditFilterValues>(
+    key: K,
+    next: AuditFilterValues[K],
+  ) => setDraft((d) => ({ ...d, [key]: next }));
 
+  const handleSearch = () => onSearch(draft);
   const handleReset = () => {
-    setEndpointId("");
-    setEventId("");
-    setAuditorName("");
-    setEventTypeId("");
-    setAuditType("");
-    setCreatedFrom("");
-    setCreatedTo("");
-    onSearch(new AuditSearchFilter());
+    setDraft(EMPTY_AUDIT_FILTER);
+    onReset();
   };
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleSearch();
   };
@@ -80,8 +109,8 @@ export default function AuditFilterBar({
             Endpoint
           </label>
           <Select
-            value={endpointId}
-            onChange={(e) => setEndpointId(e.target.value)}
+            value={draft.endpointId}
+            onChange={(e) => update("endpointId", e.target.value)}
             options={endpointOptions}
           />
         </div>
@@ -90,8 +119,8 @@ export default function AuditFilterBar({
             Event ID
           </label>
           <Input
-            value={eventId}
-            onChange={(e) => setEventId(e.target.value)}
+            value={draft.eventId}
+            onChange={(e) => update("eventId", e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Filter by event ID..."
           />
@@ -101,8 +130,8 @@ export default function AuditFilterBar({
             Auditor
           </label>
           <Input
-            value={auditorName}
-            onChange={(e) => setAuditorName(e.target.value)}
+            value={draft.auditorName}
+            onChange={(e) => update("auditorName", e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Filter by auditor..."
           />
@@ -112,8 +141,8 @@ export default function AuditFilterBar({
             Event Type
           </label>
           <Input
-            value={eventTypeId}
-            onChange={(e) => setEventTypeId(e.target.value)}
+            value={draft.eventTypeId}
+            onChange={(e) => update("eventTypeId", e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Filter by event type..."
           />
@@ -123,8 +152,8 @@ export default function AuditFilterBar({
             Action Type
           </label>
           <select
-            value={auditType}
-            onChange={(e) => setAuditType(e.target.value)}
+            value={draft.auditType}
+            onChange={(e) => update("auditType", e.target.value)}
             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-0 focus:border-primary focus:ring-primary-200"
           >
             <option value="">All types</option>
@@ -141,8 +170,8 @@ export default function AuditFilterBar({
           </label>
           <Input
             type="datetime-local"
-            value={createdFrom}
-            onChange={(e) => setCreatedFrom(e.target.value)}
+            value={draft.createdFrom}
+            onChange={(e) => update("createdFrom", e.target.value)}
             onKeyDown={handleKeyDown}
           />
         </div>
@@ -152,8 +181,8 @@ export default function AuditFilterBar({
           </label>
           <Input
             type="datetime-local"
-            value={createdTo}
-            onChange={(e) => setCreatedTo(e.target.value)}
+            value={draft.createdTo}
+            onChange={(e) => update("createdTo", e.target.value)}
             onKeyDown={handleKeyDown}
           />
         </div>

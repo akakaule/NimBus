@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Input } from "components/ui/input";
 import { Button } from "components/ui/button";
 import { Select } from "components/ui/select";
@@ -10,8 +10,67 @@ import {
   MessageSearchFilterMessageType,
 } from "api-client";
 
+/**
+ * Plain string-keyed shape of the message filter, suitable for URL-param round-tripping.
+ * The page owns this; the bar is a controlled component over it.
+ *
+ * Declared as a closed `type` (not `interface`) so it satisfies the index-signature
+ * constraint of `useUrlFilters<T>`.
+ */
+export type MessageFilterValues = {
+  endpointId: string;
+  eventId: string;
+  messageId: string;
+  sessionId: string;
+  eventTypeId: string;
+  from: string;
+  to: string;
+  messageType: string;
+  enqueuedFrom: string;
+  enqueuedTo: string;
+};
+
+export const EMPTY_MESSAGE_FILTER: MessageFilterValues = {
+  endpointId: "",
+  eventId: "",
+  messageId: "",
+  sessionId: "",
+  eventTypeId: "",
+  from: "",
+  to: "",
+  messageType: "",
+  enqueuedFrom: "",
+  enqueuedTo: "",
+};
+
+/**
+ * Build a MessageSearchFilter (the API contract type) from the flat filter values.
+ */
+export function toMessageSearchFilter(
+  v: MessageFilterValues,
+): MessageSearchFilter {
+  const filter = new MessageSearchFilter();
+  if (v.endpointId) filter.endpointId = v.endpointId;
+  if (v.eventId) filter.eventId = v.eventId;
+  if (v.messageId) filter.messageId = v.messageId;
+  if (v.sessionId) filter.sessionId = v.sessionId;
+  if (v.eventTypeId) filter.eventTypeId = [v.eventTypeId];
+  if (v.from) filter.senderEndpoint = v.from;
+  if (v.to) filter.receiverEndpoint = v.to;
+  if (v.messageType)
+    filter.messageType = v.messageType as MessageSearchFilterMessageType;
+  if (v.enqueuedFrom) filter.enqueuedAtFrom = new Date(v.enqueuedFrom) as any;
+  if (v.enqueuedTo) filter.enqueuedAtTo = new Date(v.enqueuedTo) as any;
+  return filter;
+}
+
 interface MessageFilterBarProps {
-  onSearch: (filter: MessageSearchFilter) => void;
+  /** Currently applied filter (URL-driven). The bar's draft state is reset to this whenever it changes. */
+  value: MessageFilterValues;
+  /** Called when the user clicks Search. Receives the typed-up draft. */
+  onSearch: (filter: MessageFilterValues) => void;
+  /** Called when the user clicks Reset. */
+  onReset: () => void;
   isLoading: boolean;
 }
 
@@ -20,23 +79,21 @@ const messageTypeOptions = Object.entries(MessageSearchFilterMessageType).map(
 );
 
 export default function MessageFilterBar({
+  value,
   onSearch,
+  onReset,
   isLoading,
 }: MessageFilterBarProps) {
-  const [endpointId, setEndpointId] = useState("");
-  const [eventId, setEventId] = useState("");
-  const [messageId, setMessageId] = useState("");
-  const [sessionId, setSessionId] = useState("");
-  const [eventTypeId, setEventTypeId] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [messageType, setMessageType] = useState<string>("");
-  const [enqueuedFrom, setEnqueuedFrom] = useState("");
-  const [enqueuedTo, setEnqueuedTo] = useState("");
+  const [draft, setDraft] = useState<MessageFilterValues>(value);
   const [endpoints, setEndpoints] = useState<string[]>([]);
   const [eventTypeOptions, setEventTypeOptions] = useState<ComboboxOption[]>(
     [],
   );
+
+  // When the applied filter changes (new search OR browser Back/forward), reset the draft.
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
 
   useEffect(() => {
     const client = new Client(CookieAuth());
@@ -57,41 +114,24 @@ export default function MessageFilterBar({
       .catch(() => setEventTypeOptions([]));
   }, []);
 
-  const endpointOptions = [
-    { value: "", label: "All endpoints" },
-    ...endpoints.map((endpoint) => ({ value: endpoint, label: endpoint })),
-  ];
+  const endpointOptions = useMemo(
+    () => [
+      { value: "", label: "All endpoints" },
+      ...endpoints.map((endpoint) => ({ value: endpoint, label: endpoint })),
+    ],
+    [endpoints],
+  );
 
-  const handleSearch = () => {
-    const filter = new MessageSearchFilter();
-    if (endpointId) filter.endpointId = endpointId;
-    if (eventId) filter.eventId = eventId;
-    if (messageId) filter.messageId = messageId;
-    if (sessionId) filter.sessionId = sessionId;
-    if (eventTypeId) filter.eventTypeId = [eventTypeId];
-    if (from) filter.senderEndpoint = from;
-    if (to) filter.receiverEndpoint = to;
-    if (messageType)
-      filter.messageType = messageType as MessageSearchFilterMessageType;
-    if (enqueuedFrom) filter.enqueuedAtFrom = new Date(enqueuedFrom) as any;
-    if (enqueuedTo) filter.enqueuedAtTo = new Date(enqueuedTo) as any;
-    onSearch(filter);
-  };
+  const update = <K extends keyof MessageFilterValues>(
+    key: K,
+    next: MessageFilterValues[K],
+  ) => setDraft((d) => ({ ...d, [key]: next }));
 
+  const handleSearch = () => onSearch(draft);
   const handleReset = () => {
-    setEndpointId("");
-    setEventId("");
-    setMessageId("");
-    setSessionId("");
-    setEventTypeId("");
-    setFrom("");
-    setTo("");
-    setMessageType("");
-    setEnqueuedFrom("");
-    setEnqueuedTo("");
-    onSearch(new MessageSearchFilter());
+    setDraft(EMPTY_MESSAGE_FILTER);
+    onReset();
   };
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleSearch();
   };
@@ -104,8 +144,8 @@ export default function MessageFilterBar({
             Endpoint
           </label>
           <Select
-            value={endpointId}
-            onChange={(e) => setEndpointId(e.target.value)}
+            value={draft.endpointId}
+            onChange={(e) => update("endpointId", e.target.value)}
             options={endpointOptions}
           />
         </div>
@@ -114,8 +154,8 @@ export default function MessageFilterBar({
             Event ID
           </label>
           <Input
-            value={eventId}
-            onChange={(e) => setEventId(e.target.value)}
+            value={draft.eventId}
+            onChange={(e) => update("eventId", e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Filter by event ID..."
           />
@@ -125,8 +165,8 @@ export default function MessageFilterBar({
             Message ID
           </label>
           <Input
-            value={messageId}
-            onChange={(e) => setMessageId(e.target.value)}
+            value={draft.messageId}
+            onChange={(e) => update("messageId", e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Filter by message ID..."
           />
@@ -136,8 +176,8 @@ export default function MessageFilterBar({
             Session ID
           </label>
           <Input
-            value={sessionId}
-            onChange={(e) => setSessionId(e.target.value)}
+            value={draft.sessionId}
+            onChange={(e) => update("sessionId", e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Filter by session ID..."
           />
@@ -148,8 +188,8 @@ export default function MessageFilterBar({
           </label>
           <Combobox
             options={eventTypeOptions}
-            value={eventTypeId ? [eventTypeId] : []}
-            onChange={(val) => setEventTypeId(val[0] ?? "")}
+            value={draft.eventTypeId ? [draft.eventTypeId] : []}
+            onChange={(val) => update("eventTypeId", val[0] ?? "")}
             placeholder="Filter by event type..."
             multiple={false}
           />
@@ -159,8 +199,8 @@ export default function MessageFilterBar({
             From (Publisher)
           </label>
           <Select
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
+            value={draft.from}
+            onChange={(e) => update("from", e.target.value)}
             options={endpointOptions}
           />
         </div>
@@ -169,8 +209,8 @@ export default function MessageFilterBar({
             To (Subscriber)
           </label>
           <Select
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
+            value={draft.to}
+            onChange={(e) => update("to", e.target.value)}
             options={endpointOptions}
           />
         </div>
@@ -179,8 +219,8 @@ export default function MessageFilterBar({
             Message Type
           </label>
           <select
-            value={messageType}
-            onChange={(e) => setMessageType(e.target.value)}
+            value={draft.messageType}
+            onChange={(e) => update("messageType", e.target.value)}
             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-0 focus:border-primary focus:ring-primary-200"
           >
             <option value="">All types</option>
@@ -197,8 +237,8 @@ export default function MessageFilterBar({
           </label>
           <Input
             type="datetime-local"
-            value={enqueuedFrom}
-            onChange={(e) => setEnqueuedFrom(e.target.value)}
+            value={draft.enqueuedFrom}
+            onChange={(e) => update("enqueuedFrom", e.target.value)}
             onKeyDown={handleKeyDown}
           />
         </div>
@@ -208,8 +248,8 @@ export default function MessageFilterBar({
           </label>
           <Input
             type="datetime-local"
-            value={enqueuedTo}
-            onChange={(e) => setEnqueuedTo(e.target.value)}
+            value={draft.enqueuedTo}
+            onChange={(e) => update("enqueuedTo", e.target.value)}
             onKeyDown={handleKeyDown}
           />
         </div>

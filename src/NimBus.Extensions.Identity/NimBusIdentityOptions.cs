@@ -16,11 +16,6 @@ public class NimBusIdentityOptions
     public string Schema { get; set; } = "nimbus";
 
     /// <summary>
-    /// Automatically create the Identity database on startup. Default: true.
-    /// </summary>
-    public bool AutoCreateDatabase { get; set; } = true;
-
-    /// <summary>
     /// Require email confirmation before allowing login. Default: true.
     /// </summary>
     public bool RequireEmailConfirmation { get; set; } = true;

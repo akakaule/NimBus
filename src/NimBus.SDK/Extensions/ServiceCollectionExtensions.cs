@@ -211,8 +211,10 @@ namespace NimBus.SDK.Extensions
                         "OutboxDispatcherSender is not registered. Register AddNimBusPublisher before AddNimBusOutboxDispatcher, " +
                         "or register OutboxDispatcherSender manually.");
 
-                var dispatcher = new OutboxDispatcher(outbox, sender);
-                return new OutboxDispatcherHostedService(dispatcher, pollingInterval ?? TimeSpan.FromSeconds(1), batchSize);
+                var dispatcherLogger = sp.GetService<ILogger<OutboxDispatcher>>();
+                var hostedLogger = sp.GetService<ILogger<OutboxDispatcherHostedService>>();
+                var dispatcher = new OutboxDispatcher(outbox, sender, dispatcherLogger);
+                return new OutboxDispatcherHostedService(dispatcher, pollingInterval ?? TimeSpan.FromSeconds(1), batchSize, hostedLogger);
             });
 
             return services;

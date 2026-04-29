@@ -38,7 +38,7 @@ public class AccountController : Controller
 
     [HttpPost("login")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Login(string email, string password, string? returnUrl = null)
+    public async Task<IActionResult> Login(string email, string password, bool rememberMe = false, string? returnUrl = null)
     {
         returnUrl ??= "/";
         ViewData["ReturnUrl"] = returnUrl;
@@ -63,7 +63,7 @@ public class AccountController : Controller
             return View();
         }
 
-        var result = await _signInManager.PasswordSignInAsync(user, password, isPersistent: true, lockoutOnFailure: true);
+        var result = await _signInManager.PasswordSignInAsync(user, password, isPersistent: rememberMe, lockoutOnFailure: true);
         if (result.Succeeded)
             return LocalRedirect(returnUrl);
 
@@ -211,6 +211,7 @@ public class AccountController : Controller
     }
 
     [HttpPost("logout")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Logout()
     {
         await _signInManager.SignOutAsync();

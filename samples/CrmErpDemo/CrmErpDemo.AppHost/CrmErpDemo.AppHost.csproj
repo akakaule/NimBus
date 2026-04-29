@@ -1,0 +1,30 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.2.4">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsAspireHost>true</IsAspireHost>
+    <UserSecretsId>crmerpdemo-apphost</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.AppHost" Version="13.2.4" />
+    <PackageReference Include="Aspire.Hosting.SqlServer" Version="13.2.4" />
+    <PackageReference Include="Aspire.Hosting.JavaScript" Version="13.2.4" />
+    <PackageReference Include="Aspire.Hosting.Azure.Functions" Version="13.2.4" />
+    <PackageReference Include="CommunityToolkit.Aspire.Hosting.DbGate" Version="9.7.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CrmErpDemo.Contracts\CrmErpDemo.Contracts.csproj" IsAspireProjectResource="false" />
+    <ProjectReference Include="..\CrmErpDemo.Provisioner\CrmErpDemo.Provisioner.csproj" />
+    <ProjectReference Include="..\Crm.Api\Crm.Api.csproj" />
+    <ProjectReference Include="..\Crm.Adapter\Crm.Adapter.csproj" />
+    <ProjectReference Include="..\Erp.Api\Erp.Api.csproj" />
+    <ProjectReference Include="..\Erp.Adapter.Functions\Erp.Adapter.Functions.csproj" />
+    <ProjectReference Include="..\..\..\src\NimBus.Resolver\NimBus.Resolver.csproj" />
+    <ProjectReference Include="..\..\..\src\NimBus.WebApp\NimBus.WebApp.csproj" />
+  </ItemGroup>
+
+</Project>

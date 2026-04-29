@@ -62,6 +62,88 @@ public sealed class ServiceBusTopologyProvisionerTests
     }
 
     [Fact]
+    public async Task ApplyAsync_CrossTopicForwardRule_OnlyMatchesOriginalPublishes()
+    {
+        // Regression for the forwarding-loop bug: when an event type is produced AND
+        // consumed by both endpoints (e.g. ContactCreated in CrmErpDemo where CRM and
+        // ERP both publish and subscribe), a forward rule that filters only on
+        // EventTypeId triggers on its own forwarded output:
+        //   CRM publishes -> forwarded to ERP -> ERP's forward sub re-matches the
+        //   same EventTypeId -> forwarded back to CRM -> ...
+        // Service Bus's MaxHopCount eventually dead-letters the message
+        // ("Maximum transfer hop count is exceeded").
+        // The fix: filter must include "AND user.From IS NULL" so the rule only fires
+        // on original publishes (where the publisher never sets From), not on
+        // already-forwarded copies (where the action SETs From=<endpoint>).
+        var client = new RecordingAdministrationClient();
+
+        var crm = new EventEndpoint(
+            "CrmEndpoint",
+            produces: new[] { "ContactCreated" },
+            consumes: new[] { "ContactCreated" });
+        var erp = new EventEndpoint(
+            "ErpEndpoint",
+            produces: new[] { "ContactCreated" },
+            consumes: new[] { "ContactCreated" });
+
+        var sut = CreateProvisioner(client, new TestPlatform(crm, erp));
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        var crmToErpRule = Assert.Single(client.CreatedRules, r =>
+            r.TopicName == "CrmEndpoint" && r.SubscriptionName == "ErpEndpoint" && r.Rule.Name == "ContactCreated");
+        var erpToCrmRule = Assert.Single(client.CreatedRules, r =>
+            r.TopicName == "ErpEndpoint" && r.SubscriptionName == "CrmEndpoint" && r.Rule.Name == "ContactCreated");
+
+        var crmFilter = ((SqlRuleFilter)crmToErpRule.Rule.Filter).SqlExpression;
+        var erpFilter = ((SqlRuleFilter)erpToCrmRule.Rule.Filter).SqlExpression;
+
+        Assert.Contains("user.From IS NULL", crmFilter, StringComparison.Ordinal);
+        Assert.Contains("user.From IS NULL", erpFilter, StringComparison.Ordinal);
+        Assert.Contains("user.EventTypeId = 'ContactCreated'", crmFilter, StringComparison.Ordinal);
+        Assert.Contains("user.EventTypeId = 'ContactCreated'", erpFilter, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_WithMultipleEventsToSameConsumer_KeepsAllForwardingRules()
+    {
+        // Regression for the ForwardTo-comparison bug: when a producer endpoint emits
+        // multiple events all consumed by the same other endpoint, the provisioner used
+        // to call EnsureForwardSubscriptionAsync once per event. Each call after the
+        // first detected a "ForwardTo mismatch" (because Azure normalises ForwardTo to
+        // a lowercased entity name or full URL while the code passes the PascalCase
+        // bare name) and deleted+recreated the subscription, wiping every rule added
+        // by previous iterations. End state: only the LAST rule (alphabetically) survived.
+        var client = new RecordingAdministrationClient(forwardToNormalizer: forwardTo => forwardTo?.ToLowerInvariant());
+
+        var producer = new EventEndpoint(
+            "CrmEndpoint",
+            produces: new[] { "AccountCreated", "AccountUpdated", "ContactCreated", "ContactUpdated" },
+            consumes: Array.Empty<string>());
+        var consumer = new EventEndpoint(
+            "ErpEndpoint",
+            produces: Array.Empty<string>(),
+            consumes: new[] { "AccountCreated", "AccountUpdated", "ContactCreated", "ContactUpdated" });
+
+        var sut = CreateProvisioner(client, new TestPlatform(producer, consumer));
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        // The cross-topic forward subscription should be created exactly once and never deleted.
+        Assert.Single(client.CreatedSubscriptions.Where(s =>
+            s.TopicName == "CrmEndpoint" && s.SubscriptionName == "ErpEndpoint"));
+        Assert.DoesNotContain(client.DeletedSubscriptions, x =>
+            x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
+
+        // All four forwarding rules must coexist — not just the alphabetically-last one.
+        foreach (var eventName in new[] { "AccountCreated", "AccountUpdated", "ContactCreated", "ContactUpdated" })
+        {
+            Assert.Contains(client.CreatedRules, r =>
+                r.TopicName == "CrmEndpoint" &&
+                r.SubscriptionName == "ErpEndpoint" &&
+                r.Rule.Name == eventName);
+        }
+    }
+
+    [Fact]
     public async Task ApplyAsync_WithMatchingTopology_DoesNotRecreateSubscriptionsOrRules()
     {
         var client = new RecordingAdministrationClient();
@@ -130,6 +212,16 @@ public sealed class ServiceBusTopologyProvisionerTests
         private readonly Dictionary<(string TopicName, string SubscriptionName), SubscriptionProperties> _subscriptions = new();
         private readonly Dictionary<(string TopicName, string SubscriptionName, string RuleName), RuleProperties> _rules = new();
         private readonly HashSet<string> _topics = new(StringComparer.Ordinal);
+        private readonly Func<string?, string?> _forwardToNormalizer;
+
+        public RecordingAdministrationClient(Func<string?, string?>? forwardToNormalizer = null)
+        {
+            // Azure Service Bus normalises ForwardTo on read (e.g. lowercases entity
+            // names, returns full URLs). The default test client preserves what was
+            // sent so most tests don't have to care; specific tests opt in to a
+            // normalisation function to model Azure's behaviour.
+            _forwardToNormalizer = forwardToNormalizer ?? (forwardTo => forwardTo);
+        }
 
         public List<CreateSubscriptionOptions> CreatedSubscriptions { get; } = new();
         public List<(string TopicName, string SubscriptionName)> DeletedSubscriptions { get; } = new();
@@ -177,7 +269,7 @@ public sealed class ServiceBusTopologyProvisionerTests
                 options.TopicName,
                 options.SubscriptionName,
                 requiresSession: options.RequiresSession,
-                forwardTo: options.ForwardTo);
+                forwardTo: _forwardToNormalizer(options.ForwardTo));
             _subscriptions[(options.TopicName, options.SubscriptionName)] = subscription;
             // Azure Service Bus auto-creates a $Default rule on new subscriptions
             _rules[(options.TopicName, options.SubscriptionName, "$Default")] =
@@ -279,6 +371,52 @@ public sealed class ServiceBusTopologyProvisionerTests
         public IEnumerable<IEventType> EventTypesProduced => Array.Empty<IEventType>();
         public IEnumerable<IEventType> EventTypesConsumed => Array.Empty<IEventType>();
         public IEnumerable<IRoleAssignment> RoleAssignments => Array.Empty<IRoleAssignment>();
+    }
+
+    private sealed class EventEndpoint : IEndpoint
+    {
+        public EventEndpoint(string id, IEnumerable<string> produces, IEnumerable<string> consumes)
+        {
+            Id = id;
+            Name = id;
+            EventTypesProduced = produces.Select(name => (IEventType)new TestEventType(name)).ToList();
+            EventTypesConsumed = consumes.Select(name => (IEventType)new TestEventType(name)).ToList();
+        }
+
+        public string Id { get; }
+        public string Name { get; }
+        public string Description => string.Empty;
+        public string Namespace => "Tests";
+        public string SecurityGroupName => string.Empty;
+        public ISystem System => null!;
+        public IEnumerable<IEventType> EventTypesProduced { get; }
+        public IEnumerable<IEventType> EventTypesConsumed { get; }
+        public IEnumerable<IRoleAssignment> RoleAssignments => Array.Empty<IRoleAssignment>();
+    }
+
+    private sealed class TestEventType : IEventType
+    {
+        public TestEventType(string id)
+        {
+            Id = id;
+            Name = id;
+        }
+
+        public string Id { get; }
+        public string Name { get; }
+        public string Namespace => "Tests";
+        public string Description => string.Empty;
+        public string SessionKeyProperty => string.Empty;
+        public IEnumerable<IProperty> Properties => Array.Empty<IProperty>();
+        public Type GetEventClassType() => typeof(TestEventType);
+        public IEvent GetEventExample() => null!;
+
+        // Equality keyed on Id so Platform.GetConsumers (which uses
+        // EventTypesConsumed.Contains) matches across endpoints that each
+        // own their own IEventType instances for the same logical event.
+        public override bool Equals(object? obj) =>
+            obj is TestEventType other && string.Equals(Id, other.Id, StringComparison.Ordinal);
+        public override int GetHashCode() => Id.GetHashCode(StringComparison.Ordinal);
     }
 }
 

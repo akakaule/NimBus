@@ -12,6 +12,7 @@ import EventFiltering from "./filter/event-filtering";
 import FilterContext, { IFilterContext } from "./filter/filtering-context";
 import TruncatedGuid from "components/common/truncated-guid";
 import ErrorGroupedView from "./error-grouped-view";
+import { useUrlFilters } from "hooks/use-url-filters";
 
 interface EventsPanelProps {
   endpointId: string;
@@ -35,9 +36,68 @@ const DEFAULT_FAILED_STATUSES: api.ResolutionStatus[] = [
   api.ResolutionStatus.DeadLettered,
 ];
 
+// URL-driven filter shape. Only the most-visible fields are persisted; advanced
+// filters (payload, enqueued, updated) live in the FilterContext as draft state
+// only and are picked up at Search-time. The default `status` of "Failed +
+// DeadLettered" matches the operator UX where the page opens pre-filtered to
+// actionable items. Declared as a closed `type` so it satisfies the
+// index-signature constraint of `useUrlFilters<T>`.
+type EndpointFilterParams = {
+  status: string[];
+  eventTypeId: string[];
+  eventId: string;
+  sessionId: string;
+  viewMode: string;
+  maxResults: string;
+};
+
+const DEFAULT_ENDPOINT_FILTER_PARAMS: EndpointFilterParams = {
+  status: [
+    api.ResolutionStatus.Failed,
+    api.ResolutionStatus.DeadLettered,
+  ],
+  eventTypeId: [],
+  eventId: "",
+  sessionId: "",
+  viewMode: "list",
+  maxResults: "100",
+};
+
+function buildEventFilterFromParams(
+  params: EndpointFilterParams,
+  endpointId: string,
+): api.EventFilter {
+  const filter = new api.EventFilter();
+  filter.endpointId = endpointId;
+  filter.resolutionStatus = params.status as api.ResolutionStatus[];
+  if (params.eventTypeId.length) filter.eventTypeId = [...params.eventTypeId];
+  if (params.eventId) filter.eventId = params.eventId;
+  if (params.sessionId) filter.sessionId = params.sessionId;
+  return filter;
+}
+
+function paramsFromEventFilter(
+  filter: api.EventFilter,
+  current: EndpointFilterParams,
+): EndpointFilterParams {
+  return {
+    status: (filter.resolutionStatus ?? []) as string[],
+    eventTypeId: (filter.eventTypeId ?? []) as string[],
+    eventId: filter.eventId ?? "",
+    sessionId: filter.sessionId ?? "",
+    viewMode: current.viewMode,
+    maxResults: current.maxResults,
+  };
+}
+
 const EventsPanel = (props: EventsPanelProps) => {
   const client = new api.Client(api.CookieAuth());
   const params = useParams();
+  const endpointId = props.endpointId || params.id!;
+
+  const { applied, applyFilters, resetFilters, setFiltersWithoutHistory } =
+    useUrlFilters<EndpointFilterParams>(DEFAULT_ENDPOINT_FILTER_PARAMS);
+
   const [events, setEvents] = React.useState<api.Event[]>([]);
   const [sessions, setSessions] = React.useState<Record<string, SessionState>>(
     {},
@@ -50,37 +110,50 @@ const EventsPanel = (props: EventsPanelProps) => {
   const [currentFilter, setCurrentFilter] = React.useState<
     api.EventFilter | undefined
   >();
-  const [maxResults, setMaxResults] = React.useState<number>(100);
-  const hasFetchedRef = React.useRef(false);
-  const [viewMode, setViewMode] = React.useState<"list" | "grouped">("list");
-  const [initialStatuses, setInitialStatuses] = React.useState<
-    api.ResolutionStatus[]
-  >([...DEFAULT_FAILED_STATUSES]);
 
-  const endpointId = props.endpointId || params.id!;
+  const maxResults = Number(applied.maxResults) || 100;
+  const viewMode = (applied.viewMode === "grouped" ? "grouped" : "list") as
+    | "list"
+    | "grouped";
 
-  // Initialize filter with failed statuses
-  const [eventFilter, setEventFilter] = React.useState<api.EventFilter>(() => {
-    const filter = new api.EventFilter();
-    filter.endpointId = endpointId;
-    filter.resolutionStatus = [...DEFAULT_FAILED_STATUSES];
-    return filter;
-  });
+  // EventFilter (draft) is derived from URL on mount and on URL change. Sub-filters
+  // mutate this via the FilterContext as the user types; URL only updates on Search.
+  const [eventFilter, setEventFilter] = React.useState<api.EventFilter>(() =>
+    buildEventFilterFromParams(applied, endpointId),
+  );
+
+  // When the URL changes (Back/forward, Search, Reset, bookmark load) reset the
+  // draft filter to match. Sub-filter components are also keyed on URL state so
+  // their internal input state re-seeds from the URL-derived initialValue props.
+  React.useEffect(() => {
+    setEventFilter(buildEventFilterFromParams(applied, endpointId));
+  }, [applied, endpointId]);
 
   const context: IFilterContext = {
     filterContext: eventFilter,
     setProjectContext: setEventFilter,
   };
 
-  // Auto-fetch failed events on mount
+  // Materialise the default `status=Failed&status=DeadLettered` into the URL on
+  // first mount when the URL has no status param. This makes the operator's
+  // default landing state explicit in the URL — essential for browser Back from
+  // a message-detail page to land back on the *same* filter the user saw.
   React.useEffect(() => {
-    if (hasFetchedRef.current || !endpointId) {
-      return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("status")) {
+      setFiltersWithoutHistory(applied);
     }
-    hasFetchedRef.current = true;
-    fetchEvents(eventFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endpointId]);
+  }, []);
+
+  // Re-fetch whenever the applied (URL) filter changes. Covers initial mount,
+  // Search, Reset, browser Back/forward, and direct bookmark loads.
+  React.useEffect(() => {
+    if (!endpointId) return;
+    setSessions({});
+    fetchEvents(buildEventFilterFromParams(applied, endpointId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applied, endpointId]);
 
   // Update rows when events or sessions change
   React.useEffect(() => {
@@ -395,30 +468,35 @@ const EventsPanel = (props: EventsPanelProps) => {
     );
   };
 
-  const handleFilterClicked = async (
-    filter: api.EventFilter,
-  ): Promise<void> => {
-    setSessions({});
-    await fetchEvents(filter);
+  // User clicked Search — write the current draft filter to the URL.
+  // The useEffect on `applied` then refetches.
+  const handleFilterClicked = (filter: api.EventFilter): void => {
+    applyFilters(paramsFromEventFilter(filter, applied));
   };
 
+  // Reset — clear all URL filter params back to defaults (which include Failed status).
   const handleReset = (): void => {
-    const resetFilter = new api.EventFilter();
-    resetFilter.endpointId = endpointId;
-    resetFilter.resolutionStatus = [...DEFAULT_FAILED_STATUSES];
-    setInitialStatuses([...DEFAULT_FAILED_STATUSES]);
-    setEventFilter(resetFilter);
-    setSessions({});
-    fetchEvents(resetFilter);
+    resetFilters();
   };
 
+  // "All statuses" — keep all other filters but blank out the status array in the URL.
   const handleClearStatus = (): void => {
-    const clearStatusFilter = eventFilter.clone();
-    clearStatusFilter.resolutionStatus = [];
-    setInitialStatuses([]);
-    setEventFilter(clearStatusFilter);
-    setSessions({});
-    fetchEvents(clearStatusFilter);
+    applyFilters({ ...applied, status: [] });
+  };
+
+  // Commit-on-change for the Status combobox: chip add/remove writes to the
+  // URL immediately so browser Back from an event-detail page restores the
+  // exact filter the user had selected, not the page's defaults.
+  const handleStatusChange = (next: api.ResolutionStatus[]): void => {
+    applyFilters({ ...applied, status: next as string[] });
+  };
+
+  const setMaxResults = (next: number): void => {
+    applyFilters({ ...applied, maxResults: String(next) });
+  };
+
+  const setViewMode = (next: "list" | "grouped"): void => {
+    applyFilters({ ...applied, viewMode: next });
   };
 
   const headCells: ITableHeadCell[] = [
@@ -459,14 +537,23 @@ const EventsPanel = (props: EventsPanelProps) => {
     },
   ];
 
+  // Key the filter subtree on URL state so sub-filter inputs re-mount and re-seed
+  // from `initialValue` props whenever the URL changes (e.g. browser Back/forward).
+  const filterRemountKey = `${applied.status.join(",")}|${applied.eventTypeId.join(",")}|${applied.eventId}|${applied.sessionId}`;
+
   return (
     <FilterContext.Provider value={context}>
       <div className="flex flex-col gap-4">
         <EventFiltering
+          key={filterRemountKey}
           handleFilterClicked={handleFilterClicked}
           onReset={handleReset}
           onClearStatus={handleClearStatus}
-          initialStatuses={initialStatuses}
+          onStatusChange={handleStatusChange}
+          initialStatuses={applied.status as api.ResolutionStatus[]}
+          initialEventTypes={applied.eventTypeId}
+          initialEventId={applied.eventId}
+          initialSessionId={applied.sessionId}
           maxResults={maxResults}
           onMaxResultsChange={setMaxResults}
         />

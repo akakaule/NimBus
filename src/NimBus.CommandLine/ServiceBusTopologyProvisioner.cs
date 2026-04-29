@@ -110,12 +110,24 @@ public sealed class ServiceBusTopologyProvisioner
                 .OrderBy(consumer => consumer.Id, StringComparer.Ordinal))
             {
                 await EnsureForwardSubscriptionAsync(client, endpoint.Id, consumer.Id, consumer.Id, cancellationToken).ConfigureAwait(false);
+                // Filter must require user.From IS NULL so this rule only fires on
+                // ORIGINAL publishes, never on messages already forwarded into this
+                // topic by another endpoint. Without that guard, an event type that
+                // is produced AND consumed by both endpoints (e.g. ContactCreated in
+                // CrmErpDemo) creates a forwarding loop:
+                //   CRM publishes -> forwarded to ERP -> ERP's forward sub matches
+                //   the same EventTypeId -> forwarded back to CRM -> ...
+                // until Service Bus's MaxHopCount kicks in and dead-letters the
+                // message ("Maximum transfer hop count is exceeded").
+                // PublisherClient never sets From on the original publish; only the
+                // action below populates it, so checking IS NULL cleanly excludes
+                // forwarded copies.
                 await EnsureRuleAsync(
                     client,
                     endpoint.Id,
                     consumer.Id,
                     eventType.Id,
-                    $"user.EventTypeId = '{eventType.Id}'",
+                    $"user.EventTypeId = '{eventType.Id}' AND user.From IS NULL",
                     $"SET user.From = '{endpoint.Id}'; SET user.EventId = newid(); SET user.To = '{consumer.Id}';",
                     cancellationToken).ConfigureAwait(false);
             }
@@ -176,7 +188,7 @@ public sealed class ServiceBusTopologyProvisioner
             existing = await client.GetSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
             CliOutput.WriteLine($"Created session subscription '{subscriptionName}' on topic '{topicName}'.");
         }
-        else if (!existing.RequiresSession || !string.Equals(existing.ForwardTo, forwardTo, StringComparison.Ordinal))
+        else if (!existing.RequiresSession || !ForwardToMatches(existing.ForwardTo, forwardTo))
         {
             await client.DeleteSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
             await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: true, forwardTo), cancellationToken).ConfigureAwait(false);
@@ -202,7 +214,7 @@ public sealed class ServiceBusTopologyProvisioner
             await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: false, forwardTo), cancellationToken).ConfigureAwait(false);
             CliOutput.WriteLine($"Created forward subscription '{subscriptionName}' on topic '{topicName}' to '{forwardTo}'.");
         }
-        else if (existing.RequiresSession || !string.Equals(existing.ForwardTo, forwardTo, StringComparison.Ordinal))
+        else if (existing.RequiresSession || !ForwardToMatches(existing.ForwardTo, forwardTo))
         {
             await client.DeleteSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
             await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: false, forwardTo), cancellationToken).ConfigureAwait(false);
@@ -210,6 +222,37 @@ public sealed class ServiceBusTopologyProvisioner
         }
 
         await DeleteRuleIfExistsAsync(client, topicName, subscriptionName, "$Default", cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Compares an existing subscription's ForwardTo (which Azure stores as a normalised
+    /// entity path — usually lowercased, sometimes the bare name and sometimes a full URL)
+    /// against the desired entity name we passed at creation time.
+    ///
+    /// The previous implementation used <see cref="string.Equals(string?, string?, StringComparison)"/>
+    /// with <see cref="StringComparison.Ordinal"/>, which rejected matches whenever Azure
+    /// normalised the value (e.g. lowercasing "ErpEndpoint" to "erpendpoint", or expanding
+    /// to a full sb://... URL). That caused the surrounding code to delete and recreate the
+    /// subscription on every call, wiping out previously-added forwarding rules.
+    /// </summary>
+    private static bool ForwardToMatches(string? existingForwardTo, string? desiredForwardTo)
+    {
+        var existingEmpty = string.IsNullOrEmpty(existingForwardTo);
+        var desiredEmpty = string.IsNullOrEmpty(desiredForwardTo);
+        if (existingEmpty && desiredEmpty) return true;
+        if (existingEmpty || desiredEmpty) return false;
+
+        // Compare trailing entity names case-insensitively. Handles all observed forms:
+        //   "ErpEndpoint", "erpendpoint", "sb://ns.servicebus.windows.net/erpendpoint".
+        var existingTail = TrailingSegment(existingForwardTo!);
+        var desiredTail = TrailingSegment(desiredForwardTo!);
+        return string.Equals(existingTail, desiredTail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string TrailingSegment(string path)
+    {
+        var lastSlash = path.LastIndexOf('/');
+        return lastSlash < 0 ? path : path.Substring(lastSlash + 1);
     }
 
     private static async Task EnsureDeferredSubscriptionAsync(ServiceBusAdministrationClient client, string topicName, CancellationToken cancellationToken)

@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.Core.Outbox;
 using System;
 using System.Threading;
@@ -14,16 +16,26 @@ namespace NimBus.SDK.Hosting
         private readonly OutboxDispatcher _dispatcher;
         private readonly TimeSpan _pollingInterval;
         private readonly int _batchSize;
+        private readonly ILogger<OutboxDispatcherHostedService> _logger;
 
-        public OutboxDispatcherHostedService(OutboxDispatcher dispatcher, TimeSpan pollingInterval, int batchSize)
+        public OutboxDispatcherHostedService(
+            OutboxDispatcher dispatcher,
+            TimeSpan pollingInterval,
+            int batchSize,
+            ILogger<OutboxDispatcherHostedService> logger = null)
         {
             _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             _pollingInterval = pollingInterval;
             _batchSize = batchSize;
+            _logger = logger ?? NullLogger<OutboxDispatcherHostedService>.Instance;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            _logger.LogInformation(
+                "OutboxDispatcherHostedService started (polling interval {Interval}, batch size {BatchSize})",
+                _pollingInterval, _batchSize);
+
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
@@ -38,9 +50,10 @@ namespace NimBus.SDK.Hosting
                 {
                     break;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Log and continue - transient failures should not stop the dispatcher
+                    // Transient failures should not stop the dispatcher; log and continue.
+                    _logger.LogError(ex, "Outbox dispatcher poll failed; will retry after {Interval}.", _pollingInterval);
                 }
 
                 await Task.Delay(_pollingInterval, stoppingToken);

@@ -1,10 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import * as api from "api-client";
 import { formatMoment } from "functions/endpoint.functions";
 import DataTable, { ITableRow, ITableHeadCell } from "components/data-table";
 import Page from "components/page";
 import TruncatedGuid from "components/common/truncated-guid";
-import AuditFilterBar from "components/audits/audit-filter-bar";
+import AuditFilterBar, {
+  EMPTY_AUDIT_FILTER,
+  type AuditFilterValues,
+  toAuditSearchFilter,
+} from "components/audits/audit-filter-bar";
+import { useUrlFilters } from "hooks/use-url-filters";
 
 enum Column {
   createdAt = "createdAt",
@@ -103,14 +108,17 @@ function mapAuditToRow(entry: api.AuditEntry): ITableRow {
 }
 
 export default function AuditsList() {
+  // URL is the source of truth for the applied filter; browser Back/forward restores it for free.
+  const { applied, applyFilters, resetFilters } =
+    useUrlFilters<AuditFilterValues>(EMPTY_AUDIT_FILTER);
+
   const [audits, setAudits] = useState<api.AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [continuationToken, setContinuationToken] = useState<
     string | undefined
   >(undefined);
-  const [currentFilter, setCurrentFilter] = useState<api.AuditSearchFilter>(
-    () => new api.AuditSearchFilter(),
-  );
+
+  const apiFilter = useMemo(() => toAuditSearchFilter(applied), [applied]);
 
   const fetchAudits = useCallback(
     async (filter: api.AuditSearchFilter, token?: string, append = false) => {
@@ -141,18 +149,13 @@ export default function AuditsList() {
   );
 
   useEffect(() => {
-    fetchAudits(currentFilter);
-  }, []);
-
-  const handleSearch = (filter: api.AuditSearchFilter) => {
-    setCurrentFilter(filter);
     setContinuationToken(undefined);
-    fetchAudits(filter);
-  };
+    fetchAudits(apiFilter);
+  }, [apiFilter, fetchAudits]);
 
   const handlePageChange = () => {
     if (continuationToken) {
-      fetchAudits(currentFilter, continuationToken, true);
+      fetchAudits(apiFilter, continuationToken, true);
     }
   };
 
@@ -161,7 +164,12 @@ export default function AuditsList() {
   return (
     <Page title="Audit Log">
       <div className="flex flex-col w-full">
-        <AuditFilterBar onSearch={handleSearch} isLoading={loading} />
+        <AuditFilterBar
+          value={applied}
+          onSearch={(next) => applyFilters(next)}
+          onReset={resetFilters}
+          isLoading={loading}
+        />
         <DataTable
           headCells={headCells}
           rows={rows}

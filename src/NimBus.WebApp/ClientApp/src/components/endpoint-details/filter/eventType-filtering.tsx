@@ -4,7 +4,10 @@ import { useParams } from "react-router-dom";
 import { Combobox } from "components/ui/combobox";
 import { getEventTypesByEndpoint } from "hooks/event-types";
 
-type EventTypeFilteringProps = {};
+interface EventTypeFilteringProps {
+  /** Initial selection to seed the multi-select from (typically URL-derived). Optional. */
+  initialValue?: string[];
+}
 
 const EventTypeFiltering = (props: EventTypeFilteringProps) => {
   const params = useParams();
@@ -12,7 +15,7 @@ const EventTypeFiltering = (props: EventTypeFilteringProps) => {
   const ctx = React.useContext(FilterContext);
   const [eventTypes, setEventTypes] = React.useState<string[]>([]);
   const [selectedEventTypes, setSelectedEventTypes] = React.useState<string[]>(
-    [],
+    () => props.initialValue ?? [],
   );
 
   React.useEffect(() => {

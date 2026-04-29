@@ -5,6 +5,12 @@ import { Combobox } from "components/ui/combobox";
 
 interface StatusFilteringProps {
   initialValue?: api.ResolutionStatus[];
+  /**
+   * Optional commit-on-change hook. When provided, status changes are persisted
+   * to the URL immediately (not deferred to Search) so back-nav from a detail
+   * page restores the same filter the user was looking at.
+   */
+  onStatusChange?: (next: api.ResolutionStatus[]) => void;
 }
 
 const StatusFiltering = (props: StatusFilteringProps) => {
@@ -33,8 +39,10 @@ const StatusFiltering = (props: StatusFilteringProps) => {
   const handleChange = (newValue: string[]) => {
     setSelectedStatus(newValue);
     const filters = ctx.filterContext;
-    filters.resolutionStatus = newValue as api.ResolutionStatus[];
+    const typed = newValue as api.ResolutionStatus[];
+    filters.resolutionStatus = typed;
     ctx.setProjectContext(filters);
+    props.onStatusChange?.(typed);
   };
 
   return (

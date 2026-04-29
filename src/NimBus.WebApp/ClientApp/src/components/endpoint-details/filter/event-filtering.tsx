@@ -54,7 +54,12 @@ interface EventFilteringProps {
   handleFilterClicked: (eventFilter: api.EventFilter) => void;
   onReset?: () => void;
   onClearStatus?: () => void;
+  /** Commit-on-change for status — persists chip add/remove to the URL immediately. */
+  onStatusChange?: (next: api.ResolutionStatus[]) => void;
   initialStatuses?: api.ResolutionStatus[];
+  initialEventTypes?: string[];
+  initialEventId?: string;
+  initialSessionId?: string;
   maxResults?: number;
   onMaxResultsChange?: (value: number) => void;
 }
@@ -78,19 +83,20 @@ const EventFiltering = (props: EventFilteringProps) => {
     <>
       <div className="grid grid-cols-[repeat(4,1fr)_auto] gap-3">
         <div>
-          <EventTypeFiltering />
+          <EventTypeFiltering initialValue={props.initialEventTypes} />
         </div>
         <div>
           <StatusFiltering
             key={statusKey}
             initialValue={props.initialStatuses}
+            onStatusChange={props.onStatusChange}
           />
         </div>
         <div>
-          <EventIdFiltering />
+          <EventIdFiltering initialValue={props.initialEventId} />
         </div>
         <div>
-          <SessionFiltering />
+          <SessionFiltering initialValue={props.initialSessionId} />
         </div>
         <div className="flex items-end justify-end gap-2">
           {props.onMaxResultsChange && (

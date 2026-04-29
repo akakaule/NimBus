@@ -1,10 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import * as api from "api-client";
 import { formatMoment } from "functions/endpoint.functions";
 import DataTable, { ITableRow, ITableHeadCell } from "components/data-table";
 import Page from "components/page";
 import TruncatedGuid from "components/common/truncated-guid";
-import MessageFilterBar from "components/messages/message-filter-bar";
+import MessageFilterBar, {
+  EMPTY_MESSAGE_FILTER,
+  type MessageFilterValues,
+  toMessageSearchFilter,
+} from "components/messages/message-filter-bar";
+import { useUrlFilters } from "hooks/use-url-filters";
 
 enum Column {
   eventId = "eventId",
@@ -95,19 +100,19 @@ function mapMessageToRow(msg: api.Message): ITableRow {
   };
 }
 
-function createDefaultFilter(): api.MessageSearchFilter {
-  return new api.MessageSearchFilter();
-}
-
 export default function MessagesList() {
+  // URL is the source of truth for the applied filter — useUrlFilters reads from
+  // and writes to query params, so browser Back/forward restores the filter for free.
+  const { applied, applyFilters, resetFilters } =
+    useUrlFilters<MessageFilterValues>(EMPTY_MESSAGE_FILTER);
+
   const [messages, setMessages] = useState<api.Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [continuationToken, setContinuationToken] = useState<
     string | undefined
   >(undefined);
-  const [currentFilter, setCurrentFilter] = useState<api.MessageSearchFilter>(
-    () => createDefaultFilter(),
-  );
+
+  const apiFilter = useMemo(() => toMessageSearchFilter(applied), [applied]);
 
   const fetchMessages = useCallback(
     async (filter: api.MessageSearchFilter, token?: string, append = false) => {
@@ -137,19 +142,16 @@ export default function MessagesList() {
     [],
   );
 
+  // Re-fetch whenever the applied filter changes — covers initial mount, Search,
+  // Reset, browser Back/forward, and direct URL-bookmark loads.
   useEffect(() => {
-    fetchMessages(currentFilter);
-  }, []);
-
-  const handleSearch = (filter: api.MessageSearchFilter) => {
-    setCurrentFilter(filter);
     setContinuationToken(undefined);
-    fetchMessages(filter);
-  };
+    fetchMessages(apiFilter);
+  }, [apiFilter, fetchMessages]);
 
   const handlePageChange = () => {
     if (continuationToken && !loading) {
-      fetchMessages(currentFilter, continuationToken, true);
+      fetchMessages(apiFilter, continuationToken, true);
     }
   };
 
@@ -158,7 +160,12 @@ export default function MessagesList() {
   return (
     <Page title="Messages">
       <div className="flex flex-col w-full">
-        <MessageFilterBar onSearch={handleSearch} isLoading={loading} />
+        <MessageFilterBar
+          value={applied}
+          onSearch={(next) => applyFilters(next)}
+          onReset={resetFilters}
+          isLoading={loading}
+        />
         <DataTable
           headCells={headCells}
           rows={rows}

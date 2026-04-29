@@ -186,7 +186,38 @@ namespace NimBus.WebApp
 
             services.AddSignalR();
 
-            services.AddSingleton<IPlatform, PlatformConfiguration>();
+            // IPlatform catalog selection.
+            // By default the WebApp shows the bundled PlatformConfiguration (Storefront/Billing/Warehouse).
+            // Samples that define their own platform (e.g. CrmErpDemo) inject the catalog via config:
+            //   NimBus:PlatformType     = "CrmErpDemo.Contracts.CrmErpPlatformConfiguration"
+            //   NimBus:PlatformAssembly = absolute path to CrmErpDemo.Contracts.dll (optional; required
+            //                             when the assembly isn't already loaded in the WebApp process).
+            services.AddSingleton<IPlatform>(sp =>
+            {
+                var cfg = sp.GetRequiredService<IConfiguration>();
+                var typeName = cfg["NimBus:PlatformType"];
+                if (string.IsNullOrWhiteSpace(typeName))
+                    return new PlatformConfiguration();
+
+                var assemblyPath = cfg["NimBus:PlatformAssembly"];
+                System.Reflection.Assembly? assembly = null;
+                if (!string.IsNullOrWhiteSpace(assemblyPath) && System.IO.File.Exists(assemblyPath))
+                    assembly = System.Reflection.Assembly.LoadFrom(assemblyPath);
+
+                var type = assembly?.GetType(typeName, throwOnError: false)
+                           ?? Type.GetType(typeName, throwOnError: false);
+                if (type == null)
+                    throw new InvalidOperationException(
+                        $"NimBus:PlatformType '{typeName}' could not be resolved. " +
+                        (assemblyPath is null
+                            ? "Set NimBus:PlatformAssembly to the DLL path, or reference the assembly from NimBus.WebApp."
+                            : $"Checked assembly at '{assemblyPath}'."));
+
+                if (!typeof(IPlatform).IsAssignableFrom(type))
+                    throw new InvalidOperationException($"Type '{typeName}' does not implement IPlatform.");
+
+                return (IPlatform)Activator.CreateInstance(type)!;
+            });
 
             string serviceBusFqns = Configuration.GetValue<string>("AzureWebJobsServiceBus__fullyQualifiedNamespace");
             string serviceBusConnection = Configuration.GetConnectionString("servicebus")

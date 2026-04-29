@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.Core.Messages;
 using Newtonsoft.Json;
 using System;
@@ -15,11 +17,13 @@ namespace NimBus.Core.Outbox
     {
         private readonly IOutbox _outbox;
         private readonly ISender _sender;
+        private readonly ILogger<OutboxDispatcher> _logger;
 
-        public OutboxDispatcher(IOutbox outbox, ISender sender)
+        public OutboxDispatcher(IOutbox outbox, ISender sender, ILogger<OutboxDispatcher> logger = null)
         {
             _outbox = outbox ?? throw new ArgumentNullException(nameof(outbox));
             _sender = sender ?? throw new ArgumentNullException(nameof(sender));
+            _logger = logger ?? NullLogger<OutboxDispatcher>.Instance;
         }
 
         /// <summary>
@@ -33,6 +37,8 @@ namespace NimBus.Core.Outbox
             var pending = await _outbox.GetPendingAsync(batchSize, cancellationToken);
             if (pending.Count == 0)
                 return 0;
+
+            _logger.LogDebug("Outbox dispatch poll found {PendingCount} pending message(s)", pending.Count);
 
             var dispatched = new List<string>();
             foreach (var outboxMessage in pending)
@@ -49,11 +55,18 @@ namespace NimBus.Core.Outbox
                         await _sender.Send(message, outboxMessage.EnqueueDelayMinutes, cancellationToken);
                     }
                     dispatched.Add(outboxMessage.Id);
+                    _logger.LogDebug(
+                        "Outbox dispatched message {OutboxId} (event {EventTypeId}, session {SessionId}, messageId {MessageId})",
+                        outboxMessage.Id, outboxMessage.EventTypeId, outboxMessage.SessionId, outboxMessage.MessageId);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
                     // Stop dispatching on first failure to maintain ordering.
                     // The failed message will be retried on the next poll.
+                    _logger.LogError(
+                        ex,
+                        "Outbox dispatch failed for message {OutboxId} (event {EventTypeId}, session {SessionId}, messageId {MessageId}). Halting this poll; will retry next interval.",
+                        outboxMessage.Id, outboxMessage.EventTypeId, outboxMessage.SessionId, outboxMessage.MessageId);
                     break;
                 }
             }

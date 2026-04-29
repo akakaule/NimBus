@@ -32,6 +32,8 @@
         .links a { color: #0078D4; text-decoration: none; }
         .links a:hover { text-decoration: underline; }
         .error { background: #7F1D1D; color: #FCA5A5; padding: 10px 14px; border-radius: 6px; font-size: 0.85rem; margin-bottom: 16px; }
+        .remember { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #94A3B8; margin-bottom: 16px; }
+        .remember input { margin: 0; }
     </style>
 </head>
 <body>
@@ -50,6 +52,10 @@
             <input type="email" id="email" name="email" required autofocus />
             <label for="password">Password</label>
             <input type="password" id="password" name="password" required />
+            <label class="remember">
+                <input type="checkbox" id="rememberMe" name="rememberMe" value="true" />
+                Remember me on this device
+            </label>
             <button type="submit" class="btn btn-primary">Sign in</button>
         </form>
 

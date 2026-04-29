@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as api from "api-client";
 import Page from "components/page";
 import { Spinner } from "components/ui/spinner";
@@ -11,6 +11,7 @@ import EventTypeNamespaceGroup, {
   INamespaceGroup,
   EventTypeWithCounts,
 } from "components/event-types/event-type-namespace-group";
+import { useUrlFilters } from "hooks/use-url-filters";
 
 enum TableColumns {
   name = "name",
@@ -20,12 +21,32 @@ enum TableColumns {
   consumers = "consumers",
 }
 
+// URL-driven filter shape. searchTerm + selectedNamespace + viewMode are all stored
+// in query params so that pressing Back (e.g. after drilling into an event type)
+// restores the same filter state. Declared as a closed `type` so it satisfies the
+// index-signature constraint of `useUrlFilters<T>`.
+type EventTypesFilter = {
+  searchTerm: string;
+  selectedNamespace: string;
+  viewMode: string;
+};
+
+const DEFAULT_EVENT_TYPES_FILTER: EventTypesFilter = {
+  searchTerm: "",
+  selectedNamespace: "",
+  viewMode: "cards",
+};
+
 const EventTypesList: React.FC = () => {
+  const { applied, setFiltersWithoutHistory } =
+    useUrlFilters<EventTypesFilter>(DEFAULT_EVENT_TYPES_FILTER);
+
+  const searchTerm = applied.searchTerm;
+  const selectedNamespace = applied.selectedNamespace;
+  const viewMode = (applied.viewMode === "table" ? "table" : "cards") as ViewMode;
+
   const [eventTypes, setEventTypes] = useState<api.EventType[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedNamespace, setSelectedNamespace] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>("cards");
 
   useEffect(() => {
     const fetchData = async () => {
@@ -176,6 +197,17 @@ const EventTypesList: React.FC = () => {
       </Page>
     );
   }
+
+  // Live-filter inputs (no Search button): every change replaces the current URL
+  // entry rather than adding a new one, so history isn't polluted with one entry
+  // per keystroke. Browser Back from a detail page still returns to the URL with
+  // filters applied.
+  const setSearchTerm = (next: string) =>
+    setFiltersWithoutHistory({ ...applied, searchTerm: next });
+  const setSelectedNamespace = (next: string) =>
+    setFiltersWithoutHistory({ ...applied, selectedNamespace: next });
+  const setViewMode = (next: ViewMode) =>
+    setFiltersWithoutHistory({ ...applied, viewMode: next });
 
   return (
     <Page title="Event Types">

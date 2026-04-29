@@ -57,9 +57,11 @@ public class EndpointAuthorizationService : IEndpointAuthorizationService
             return false;
         }
 
-        // Check if user has the EIP_Management security group claim (admins can manage all endpoints)
+        // Check if user has the EIP_Management security group claim (admins can manage all endpoints).
+        // Restrict match to the "groups" claim type so non-group claims (e.g. scp, preferred_username)
+        // whose value happens to contain "EIP_Management" cannot elevate privileges.
         var userClaims = context.User.Identities.FirstOrDefault()?.Claims;
-        if (userClaims != null && userClaims.Any(c => c.Value == "EIP_Management"))
+        if (userClaims != null && userClaims.Any(c => c.Type == "groups" && c.Value == "EIP_Management"))
         {
             _logger.LogInformation("User authorized for endpoint '{EndpointId}' via EIP_Management group", endpointId);
             return true;

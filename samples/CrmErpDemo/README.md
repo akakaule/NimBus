@@ -359,10 +359,6 @@ The Aspire dashboard opens automatically. Wait for `provisioner` to complete, th
 5. Restart `erp-api` from the Aspire dashboard.
 6. From **nimbus-ops**, resubmit the failed message → flow completes; the link-erp callback updates the account.
 
-## Why this layout (vs. a separate repo)
-
-Same logic the existing `samples/AspirePubSub/` follows: the demo lives next to the SDK so refactors can't silently break it (CI catches sample drift), project references avoid NuGet lag, and discoverability is high. `node_modules/` is git-ignored.
-
 ## Out of scope (v1)
 
 No authn/authz, no multi-tenant, no production deployment scripts, no non-Azure transports, no realistic tax/currency/shipping math, no automated browser tests, no UI i18n, no Sales Orders/Products/Inventory.

@@ -412,6 +412,8 @@ public class ResponseServiceTests
         public string DeadLetterErrorDescription { get; set; }
         public bool IsDeferred { get; set; }
         public int ThrottleRetryCount { get; set; }
+        public long? QueueTimeMs { get; set; }
+        public long? ProcessingTimeMs { get; set; }
 
         public Task Complete(CancellationToken ct = default) => Task.CompletedTask;
         public Task Abandon(TransientException ex) => Task.CompletedTask;

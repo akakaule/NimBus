@@ -641,6 +641,8 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 RetryLimit = e.RetryLimit,
                 DeadLetterReason = e.DeadLetterReason,
                 DeadLetterErrorDescription = e.DeadLetterErrorDescription,
+                QueueTimeMs = e.QueueTimeMs,
+                ProcessingTimeMs = e.ProcessingTimeMs,
             };
         }
     }

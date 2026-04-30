@@ -606,6 +606,8 @@ public class StrictMessageHandlerTests
         public string DeadLetterErrorDescription { get; set; }
         public bool IsDeferred { get; set; }
         public int ThrottleRetryCount { get; set; }
+        public long? QueueTimeMs { get; set; }
+        public long? ProcessingTimeMs { get; set; }
 
         // Configurable behavior
         public string BlockedByEventId { get; set; }

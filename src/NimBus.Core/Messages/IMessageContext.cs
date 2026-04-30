@@ -84,5 +84,20 @@ namespace NimBus.Core.Messages
         /// <param name="throttleRetryCount">The retry count to set on the new message.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
         Task ScheduleRedelivery(TimeSpan delay, int throttleRetryCount, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Time the inbound message spent in Service Bus before the handler was
+        /// invoked (enqueued → handler entry). Set by ServiceBusAdapter at the
+        /// receive boundary; read by ResponseService when constructing the
+        /// outgoing response so the Resolver can persist it.
+        /// </summary>
+        long? QueueTimeMs { get; set; }
+
+        /// <summary>
+        /// Time the handler spent running (handler entry → completion or failure).
+        /// Set by MetricsMiddleware after the pipeline returns; read by
+        /// ResponseService when constructing the outgoing response.
+        /// </summary>
+        long? ProcessingTimeMs { get; set; }
     }
 }

@@ -108,6 +108,10 @@ namespace NimBus.ServiceBus
                 new KeyValuePair<string, object>("messaging.event_type", eventType),
                 new KeyValuePair<string, object>("messaging.destination", destination));
 
+            // Stash on the context so ResponseService can copy it onto the
+            // outgoing response message and the Resolver can persist it.
+            messageContext.QueueTimeMs = (long)queueWaitMs;
+
             try
             {
                 await _messageHandler.Handle(messageContext, cancellationToken);

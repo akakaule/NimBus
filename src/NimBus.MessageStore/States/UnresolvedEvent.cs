@@ -42,5 +42,11 @@ namespace NimBus.MessageStore
         public string To { get; set; }
         public string From { get; set; }
         public MessageContent MessageContent { get; set; }
+
+        // Per-message timings carried on the response message (subscriber →
+        // Resolver). Nullable: original publishes don't have them, and old
+        // documents written before this field existed deserialize as null.
+        public long? QueueTimeMs { get; set; }
+        public long? ProcessingTimeMs { get; set; }
     }
 }

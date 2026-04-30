@@ -185,6 +185,8 @@ public class ResolverServiceTests
         public string DeadLetterErrorDescription { get; set; } = null!;
         public bool IsDeferred { get; set; }
         public int ThrottleRetryCount { get; set; }
+        public long? QueueTimeMs { get; set; }
+        public long? ProcessingTimeMs { get; set; }
 
         public int CompletedCalls { get; private set; }
         public int DeadLetterCalls { get; private set; }

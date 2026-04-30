@@ -5361,6 +5361,8 @@ export class Event implements IEvent {
     endpointId?: string;
     retryCount?: number | undefined;
     retryLimit?: number | undefined;
+    queueTimeMs?: number | undefined;
+    processingTimeMs?: number | undefined;
     messageType?: string;
     deadLetterReason?: string;
     deadLetterErrorDescription?: string;
@@ -5401,6 +5403,8 @@ export class Event implements IEvent {
             this.endpointId = _data["endpointId"];
             this.retryCount = _data["retryCount"];
             this.retryLimit = _data["retryLimit"];
+            this.queueTimeMs = _data["queueTimeMs"];
+            this.processingTimeMs = _data["processingTimeMs"];
             this.messageType = _data["messageType"];
             this.deadLetterReason = _data["deadLetterReason"];
             this.deadLetterErrorDescription = _data["deadLetterErrorDescription"];
@@ -5439,6 +5443,8 @@ export class Event implements IEvent {
         data["endpointId"] = this.endpointId;
         data["retryCount"] = this.retryCount;
         data["retryLimit"] = this.retryLimit;
+        data["queueTimeMs"] = this.queueTimeMs;
+        data["processingTimeMs"] = this.processingTimeMs;
         data["messageType"] = this.messageType;
         data["deadLetterReason"] = this.deadLetterReason;
         data["deadLetterErrorDescription"] = this.deadLetterErrorDescription;
@@ -5473,6 +5479,8 @@ export interface IEvent {
     endpointId?: string;
     retryCount?: number | undefined;
     retryLimit?: number | undefined;
+    queueTimeMs?: number | undefined;
+    processingTimeMs?: number | undefined;
     messageType?: string;
     deadLetterReason?: string;
     deadLetterErrorDescription?: string;
@@ -7510,12 +7518,9 @@ export interface ILatencyOverview {
 export class EndpointLatency implements IEndpointLatency {
     endpointId?: string;
     eventTypeId?: string;
-    count?: number;
-    avgLatencyMs?: number;
-    p50LatencyMs?: number;
-    p95LatencyMs?: number;
-    p99LatencyMs?: number;
-    maxLatencyMs?: number;
+    queue?: LatencyStats;
+    processing?: LatencyStats;
+    e2e?: LatencyStats;
 
     [key: string]: any;
 
@@ -7536,12 +7541,9 @@ export class EndpointLatency implements IEndpointLatency {
             }
             this.endpointId = _data["endpointId"];
             this.eventTypeId = _data["eventTypeId"];
-            this.count = _data["count"];
-            this.avgLatencyMs = _data["avgLatencyMs"];
-            this.p50LatencyMs = _data["p50LatencyMs"];
-            this.p95LatencyMs = _data["p95LatencyMs"];
-            this.p99LatencyMs = _data["p99LatencyMs"];
-            this.maxLatencyMs = _data["maxLatencyMs"];
+            this.queue = _data["queue"] ? LatencyStats.fromJS(_data["queue"]) : undefined as any;
+            this.processing = _data["processing"] ? LatencyStats.fromJS(_data["processing"]) : undefined as any;
+            this.e2e = _data["e2e"] ? LatencyStats.fromJS(_data["e2e"]) : undefined as any;
         }
     }
 
@@ -7560,12 +7562,9 @@ export class EndpointLatency implements IEndpointLatency {
         }
         data["endpointId"] = this.endpointId;
         data["eventTypeId"] = this.eventTypeId;
-        data["count"] = this.count;
-        data["avgLatencyMs"] = this.avgLatencyMs;
-        data["p50LatencyMs"] = this.p50LatencyMs;
-        data["p95LatencyMs"] = this.p95LatencyMs;
-        data["p99LatencyMs"] = this.p99LatencyMs;
-        data["maxLatencyMs"] = this.maxLatencyMs;
+        data["queue"] = this.queue ? this.queue.toJSON() : undefined as any;
+        data["processing"] = this.processing ? this.processing.toJSON() : undefined as any;
+        data["e2e"] = this.e2e ? this.e2e.toJSON() : undefined as any;
         return data;
     }
 
@@ -7580,12 +7579,84 @@ export class EndpointLatency implements IEndpointLatency {
 export interface IEndpointLatency {
     endpointId?: string;
     eventTypeId?: string;
+    queue?: LatencyStats;
+    processing?: LatencyStats;
+    e2e?: LatencyStats;
+
+    [key: string]: any;
+}
+
+export class LatencyStats implements ILatencyStats {
     count?: number;
-    avgLatencyMs?: number;
-    p50LatencyMs?: number;
-    p95LatencyMs?: number;
-    p99LatencyMs?: number;
-    maxLatencyMs?: number;
+    avgMs?: number;
+    p50Ms?: number;
+    p95Ms?: number;
+    p99Ms?: number;
+    maxMs?: number;
+
+    [key: string]: any;
+
+    constructor(data?: ILatencyStats) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.count = _data["count"];
+            this.avgMs = _data["avgMs"];
+            this.p50Ms = _data["p50Ms"];
+            this.p95Ms = _data["p95Ms"];
+            this.p99Ms = _data["p99Ms"];
+            this.maxMs = _data["maxMs"];
+        }
+    }
+
+    static fromJS(data: any): LatencyStats {
+        data = typeof data === 'object' ? data : {};
+        let result = new LatencyStats();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["count"] = this.count;
+        data["avgMs"] = this.avgMs;
+        data["p50Ms"] = this.p50Ms;
+        data["p95Ms"] = this.p95Ms;
+        data["p99Ms"] = this.p99Ms;
+        data["maxMs"] = this.maxMs;
+        return data;
+    }
+
+    clone(): LatencyStats {
+        const json = this.toJSON();
+        let result = new LatencyStats();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ILatencyStats {
+    count?: number;
+    avgMs?: number;
+    p50Ms?: number;
+    p95Ms?: number;
+    p99Ms?: number;
+    maxMs?: number;
 
     [key: string]: any;
 }

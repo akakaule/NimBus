@@ -108,6 +108,37 @@ namespace NimBus.ServiceBus
             }
         }
 
+        // QueueTimeMs / ProcessingTimeMs are measured during this receive — initial
+        // value comes from the inbound message's user properties (when the inbound
+        // is itself a response that already carries timings, e.g. on the Resolver
+        // side), and the receive pipeline overwrites them with locally-measured
+        // values via the setter. Plain backing fields, no SB round-trip.
+        private long? _queueTimeMs;
+        private long? _processingTimeMs;
+
+        public long? QueueTimeMs
+        {
+            get => _queueTimeMs ?? TryReadLong(UserPropertyName.QueueTimeMs);
+            set => _queueTimeMs = value;
+        }
+
+        public long? ProcessingTimeMs
+        {
+            get => _processingTimeMs ?? TryReadLong(UserPropertyName.ProcessingTimeMs);
+            set => _processingTimeMs = value;
+        }
+
+        private long? TryReadLong(UserPropertyName name)
+        {
+            try
+            {
+                var value = _sbMessage.GetUserProperty(name);
+                if (value is null) return null;
+                return long.TryParse(value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : null;
+            }
+            catch { return null; }
+        }
+
 
         /// <summary>
         /// We actually don't do anything when Abandon is called.

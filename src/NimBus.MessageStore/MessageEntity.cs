@@ -44,4 +44,6 @@ public class MessageEntity : IReceivedMessage
     public string DeadLetterErrorDescription { get; set; }
     public string OriginalSessionId { get; set; }
     public int? DeferralSequence { get; set; }
+    public long? QueueTimeMs { get; set; }
+    public long? ProcessingTimeMs { get; set; }
 }

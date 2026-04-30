@@ -60,13 +60,27 @@ public class MetricsImplementation : IMetricsApiController
             {
                 EndpointId = m.Destination,
                 EventTypeId = m.EventType,
-                Count = m.Count,
-                AvgLatencyMs = Math.Round(m.AvgMs, 1),
-                P50LatencyMs = Math.Round(m.P50Ms, 1),
-                P95LatencyMs = Math.Round(m.P95Ms, 1),
-                P99LatencyMs = Math.Round(m.P99Ms, 1),
-                MaxLatencyMs = Math.Round(m.MaxMs, 1),
+                Queue = ToDto(m.Queue),
+                Processing = ToDto(m.Processing),
+                E2e = ToDto(m.E2E),
             }).ToList()
+        };
+    }
+
+    // Histogram series may be missing (e.g. processing time has no row when a
+    // message is rejected before the pipeline runs). Return an empty stats
+    // object so the UI can render `—` instead of dropping the row entirely.
+    private static global::NimBus.WebApp.ManagementApi.LatencyStats ToDto(global::NimBus.WebApp.Services.ApplicationInsights.LatencyStats source)
+    {
+        if (source is null) return new global::NimBus.WebApp.ManagementApi.LatencyStats();
+        return new global::NimBus.WebApp.ManagementApi.LatencyStats
+        {
+            Count = source.Count,
+            AvgMs = Math.Round(source.AvgMs, 1),
+            P50Ms = Math.Round(source.P50Ms, 1),
+            P95Ms = Math.Round(source.P95Ms, 1),
+            P99Ms = Math.Round(source.P99Ms, 1),
+            MaxMs = Math.Round(source.MaxMs, 1),
         };
     }
 

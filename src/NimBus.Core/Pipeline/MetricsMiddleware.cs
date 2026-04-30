@@ -41,6 +41,9 @@ public sealed class MetricsMiddleware : IMessagePipelineBehavior
 
             s_duration.Record(sw.Elapsed.TotalMilliseconds, tags);
             s_processed.Add(1, tags);
+            // Stash on the context so ResponseService can carry it onto the
+            // outgoing response and the Resolver can persist per-message timings.
+            context.ProcessingTimeMs = sw.ElapsedMilliseconds;
         }
         catch (Exception)
         {
@@ -48,6 +51,7 @@ public sealed class MetricsMiddleware : IMessagePipelineBehavior
 
             s_duration.Record(sw.Elapsed.TotalMilliseconds, tags);
             s_failed.Add(1, tags);
+            context.ProcessingTimeMs = sw.ElapsedMilliseconds;
 
             throw;
         }

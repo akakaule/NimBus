@@ -13,6 +13,14 @@ import { formatMoment } from "functions/endpoint.functions";
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 
+// Format a millisecond duration for display: "—" when null, "Xms" under 1s,
+// "X.Ys" otherwise. Used for Queue Time / Processing Time on the detail page.
+function formatDurationMs(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined) return "—";
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(2)}s`;
+}
+
 interface IMessageListingProps {
   eventDetails: api.Event | undefined;
   eventTypes: api.EventType[];
@@ -299,6 +307,22 @@ export default function MessageListing(props: IMessageListingProps) {
               </td>
               <td className="py-2">
                 {formatMoment(props.eventDetails?.enqueuedTimeUtc)}
+              </td>
+            </tr>
+            <tr className="hover:bg-accent">
+              <td className="py-2 pr-4">
+                <b>Queue Time</b>
+              </td>
+              <td className="py-2">
+                {formatDurationMs(props.eventDetails?.queueTimeMs)}
+              </td>
+            </tr>
+            <tr className="hover:bg-accent">
+              <td className="py-2 pr-4">
+                <b>Processing Time</b>
+              </td>
+              <td className="py-2">
+                {formatDurationMs(props.eventDetails?.processingTimeMs)}
               </td>
             </tr>
           </tbody>

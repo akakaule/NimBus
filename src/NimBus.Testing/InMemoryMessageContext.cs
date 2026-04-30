@@ -49,6 +49,8 @@ public class InMemoryMessageContext : IMessageContext
 
     // IMessageContext
     public bool IsDeferred => _message.DeferralSequence.HasValue;
+    public long? QueueTimeMs { get; set; }
+    public long? ProcessingTimeMs { get; set; }
 
     public Task Complete(CancellationToken cancellationToken = default)
     {

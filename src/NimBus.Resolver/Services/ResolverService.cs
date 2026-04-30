@@ -144,6 +144,10 @@ namespace NimBus.Broker.Services
                 DeadLetterErrorDescription = message.DeadLetterErrorDescription,
                 DeadLetterReason = message.DeadLetterReason,
                 EventTypeId = message.EventTypeId ?? message?.MessageContent?.EventContent?.EventTypeId,
+                // Per-message timings carried on the response message by the
+                // subscriber. Null on EventRequest / original publishes.
+                QueueTimeMs = message.QueueTimeMs,
+                ProcessingTimeMs = message.ProcessingTimeMs,
             };
         }
 
@@ -210,6 +214,8 @@ namespace NimBus.Broker.Services
                 To = message.To,
                 From = message.From,
                 MessageContent = message.MessageContent,
+                QueueTimeMs = message.QueueTimeMs,
+                ProcessingTimeMs = message.ProcessingTimeMs,
             };
         }
 

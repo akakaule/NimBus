@@ -72,8 +72,12 @@ namespace NimBus.WebApp.Services.ApplicationInsights
                 _ => "30d"
             };
 
-            var query = "customMetrics" +
-                $" | where name == 'nimbus.message.e2e_latency'" +
+            // One union query covering all three histograms — keeps per-row tags
+            // (destination, eventType) aligned across queue / processing / e2e
+            // and lets KQL compute percentiles for each in a single round-trip.
+            var query =
+                "customMetrics" +
+                $" | where name in ('nimbus.message.queue_wait', 'nimbus.pipeline.duration', 'nimbus.message.e2e_latency')" +
                 $" | where timestamp >= ago({periodKql})" +
                 " | extend eventType = tostring(customDimensions['messaging.event_type'])," +
                 "          destination = tostring(customDimensions['messaging.destination'])" +
@@ -84,38 +88,70 @@ namespace NimBus.WebApp.Services.ApplicationInsights
                 "     p95 = percentile(value, 95)," +
                 "     p99 = percentile(value, 99)," +
                 "     max_ = max(value)" +
-                "   by destination, eventType" +
-                " | order by destination asc, eventType asc";
+                "   by name, destination, eventType" +
+                " | order by destination asc, eventType asc, name asc";
 
             var req = $"query?query={HttpUtility.UrlEncode(query)}";
             using var response = await client.GetAsync(req);
             var result = await response.Content.ReadAsStringAsync();
             var obj = JsonConvert.DeserializeObject<AppInsightsResultRaw>(result);
 
-            var metrics = new List<LatencyMetric>();
             var table = obj?.Tables?.FirstOrDefault();
-            if (table == null) return metrics;
+            if (table == null) return new List<LatencyMetric>();
 
             var colMap = new Dictionary<string, int>();
             for (var i = 0; i < table.Columns.Length; i++)
                 colMap[table.Columns[i].Name] = i;
 
+            // Group the three histogram rows back into a single LatencyMetric per
+            // (destination, eventType). Missing histograms (e.g. processing time
+            // not recorded for a flow that aborts before the pipeline) leave the
+            // corresponding stats at zero/null.
+            var grouped = new Dictionary<(string Destination, string EventType), LatencyMetric>();
+
             foreach (var row in table.Rows)
             {
-                metrics.Add(new LatencyMetric
+                var name = colMap.TryGetValue("name", out var nameIdx) ? row[nameIdx] : "";
+                var destination = colMap.TryGetValue("destination", out var destinationIdx) ? row[destinationIdx] : "";
+                var eventType = colMap.TryGetValue("eventType", out var eventTypeIdx) ? row[eventTypeIdx] : "";
+
+                var key = (destination, eventType);
+                if (!grouped.TryGetValue(key, out var metric))
                 {
-                    Destination = colMap.TryGetValue("destination", out var destinationIdx) ? row[destinationIdx] : "",
-                    EventType = colMap.TryGetValue("eventType", out var eventTypeIdx) ? row[eventTypeIdx] : "",
-                    Count = colMap.TryGetValue("count_", out var countIdx) ? int.TryParse(row[countIdx], out var c) ? c : 0 : 0,
-                    AvgMs = colMap.TryGetValue("avg_", out var avgIdx) ? double.TryParse(row[avgIdx], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var a) ? a : 0 : 0,
-                    P50Ms = colMap.TryGetValue("p50", out var p50Idx) ? double.TryParse(row[p50Idx], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var p50) ? p50 : 0 : 0,
-                    P95Ms = colMap.TryGetValue("p95", out var p95Idx) ? double.TryParse(row[p95Idx], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var p95) ? p95 : 0 : 0,
-                    P99Ms = colMap.TryGetValue("p99", out var p99Idx) ? double.TryParse(row[p99Idx], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var p99) ? p99 : 0 : 0,
-                    MaxMs = colMap.TryGetValue("max_", out var maxIdx) ? double.TryParse(row[maxIdx], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var m) ? m : 0 : 0,
-                });
+                    metric = new LatencyMetric { Destination = destination, EventType = eventType };
+                    grouped[key] = metric;
+                }
+
+                var stats = ParseStats(row, colMap);
+                switch (name)
+                {
+                    case "nimbus.message.queue_wait":
+                        metric.Queue = stats;
+                        break;
+                    case "nimbus.pipeline.duration":
+                        metric.Processing = stats;
+                        break;
+                    case "nimbus.message.e2e_latency":
+                        metric.E2E = stats;
+                        break;
+                }
             }
 
-            return metrics;
+            return grouped.Values.ToList();
+        }
+
+        private static LatencyStats ParseStats(string[] row, Dictionary<string, int> colMap)
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            return new LatencyStats
+            {
+                Count = colMap.TryGetValue("count_", out var countIdx) && int.TryParse(row[countIdx], out var c) ? c : 0,
+                AvgMs = colMap.TryGetValue("avg_", out var avgIdx) && double.TryParse(row[avgIdx], System.Globalization.NumberStyles.Any, inv, out var a) ? a : 0,
+                P50Ms = colMap.TryGetValue("p50", out var p50Idx) && double.TryParse(row[p50Idx], System.Globalization.NumberStyles.Any, inv, out var p50) ? p50 : 0,
+                P95Ms = colMap.TryGetValue("p95", out var p95Idx) && double.TryParse(row[p95Idx], System.Globalization.NumberStyles.Any, inv, out var p95) ? p95 : 0,
+                P99Ms = colMap.TryGetValue("p99", out var p99Idx) && double.TryParse(row[p99Idx], System.Globalization.NumberStyles.Any, inv, out var p99) ? p99 : 0,
+                MaxMs = colMap.TryGetValue("max_", out var maxIdx) && double.TryParse(row[maxIdx], System.Globalization.NumberStyles.Any, inv, out var m) ? m : 0,
+            };
         }
     }
 
@@ -130,6 +166,13 @@ namespace NimBus.WebApp.Services.ApplicationInsights
     {
         public string Destination { get; set; }
         public string EventType { get; set; }
+        public LatencyStats Queue { get; set; }
+        public LatencyStats Processing { get; set; }
+        public LatencyStats E2E { get; set; }
+    }
+
+    public class LatencyStats
+    {
         public int Count { get; set; }
         public double AvgMs { get; set; }
         public double P50Ms { get; set; }

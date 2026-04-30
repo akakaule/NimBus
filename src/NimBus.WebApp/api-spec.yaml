@@ -2086,6 +2086,14 @@ components:
         retryLimit:
           type: integer
           nullable: true
+        queueTimeMs:
+          type: integer
+          format: int64
+          nullable: true
+        processingTimeMs:
+          type: integer
+          format: int64
+          nullable: true
         messageType:
           type: string
         deadLetterReason:
@@ -2608,21 +2616,31 @@ components:
           type: string
         eventTypeId:
           type: string
+        queue:
+          $ref: '#/components/schemas/LatencyStats'
+        processing:
+          $ref: '#/components/schemas/LatencyStats'
+        e2e:
+          $ref: '#/components/schemas/LatencyStats'
+    LatencyStats:
+      title: LatencyStats
+      type: object
+      properties:
         count:
           type: integer
-        avgLatencyMs:
+        avgMs:
           type: number
           format: double
-        p50LatencyMs:
+        p50Ms:
           type: number
           format: double
-        p95LatencyMs:
+        p95Ms:
           type: number
           format: double
-        p99LatencyMs:
+        p99Ms:
           type: number
           format: double
-        maxLatencyMs:
+        maxMs:
           type: number
           format: double
     FailedInsightsOverview:

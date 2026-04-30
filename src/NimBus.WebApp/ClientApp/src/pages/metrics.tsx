@@ -43,6 +43,22 @@ function formatMs(ms: number | undefined): string {
   return `${Math.round(ms)}ms`;
 }
 
+type LatencyPercentile = "p50" | "p95" | "p99" | "avg" | "max";
+
+function pickStat(
+  stats: api.LatencyStats | undefined,
+  pct: LatencyPercentile,
+): number {
+  if (!stats) return 0;
+  switch (pct) {
+    case "p50": return stats.p50Ms ?? 0;
+    case "p95": return stats.p95Ms ?? 0;
+    case "p99": return stats.p99Ms ?? 0;
+    case "avg": return stats.avgMs ?? 0;
+    case "max": return stats.maxMs ?? 0;
+  }
+}
+
 function formatTimestamp(ts: string | undefined, bucketSize: string | undefined): string {
   if (!ts) return "";
   // Timestamps are ISO substrings: "2026-03-26" (day), "2026-03-26T13" (hour), "2026-03-26T13:05" (minute)
@@ -74,6 +90,7 @@ export default function Metrics() {
   const [timeseriesData, setTimeseriesData] = useState<api.TimeSeriesOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<api.Period>(api.Period._1d);
+  const [latencyPercentile, setLatencyPercentile] = useState<LatencyPercentile>("p95");
 
   const fetchMetrics = useCallback(async (p: api.Period) => {
     setLoading(true);
@@ -139,12 +156,15 @@ export default function Metrics() {
   const totalMessages = totalHandled + totalFailed;
   const failureRate = totalMessages > 0 ? (totalFailed / totalMessages) * 100 : 0;
 
-  // Latency chart data: group by event type, show P50/P95/P99
+  // Latency chart data: one row per (endpoint × eventType) with three grouped
+  // bars at the selected percentile — Queue (enqueue → handler entry),
+  // Processing (handler entry → completion), E2E (enqueue → completion).
+  // Q + P should ≈ E2E (small drift from middleware overhead is normal).
   const latencyChartData = (latencyData?.latencies ?? []).map((l) => ({
     label: `${l.endpointId ?? ""}/${l.eventTypeId ?? ""}`,
-    P50: l.p50LatencyMs ?? 0,
-    P95: l.p95LatencyMs ?? 0,
-    P99: l.p99LatencyMs ?? 0,
+    Queue: pickStat(l.queue, latencyPercentile),
+    Processing: pickStat(l.processing, latencyPercentile),
+    E2E: pickStat(l.e2e, latencyPercentile),
   }));
 
   return (
@@ -512,10 +532,32 @@ export default function Metrics() {
               </CardContent>
             </Card>
 
-            {/* End-to-End Latency */}
+            {/* Latency Breakdown — Queue + Processing ≈ End-to-End */}
             <Card>
               <CardHeader>
-                <CardTitle>End-to-End Latency</CardTitle>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div>
+                    <CardTitle>Latency Breakdown</CardTitle>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Queue (enqueue → handler) + Processing (handler → done) ≈ End-to-End
+                    </p>
+                  </div>
+                  <div className="flex gap-1">
+                    {(["avg", "p50", "p95", "p99", "max"] as LatencyPercentile[]).map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setLatencyPercentile(p)}
+                        className={`px-3 py-1 text-xs font-semibold rounded-md border transition-colors ${
+                          latencyPercentile === p
+                            ? "bg-primary text-white border-primary"
+                            : "bg-card text-foreground border-border hover:bg-accent"
+                        }`}
+                      >
+                        {p.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
                 {latencyChartData.length === 0 ? (
@@ -526,7 +568,7 @@ export default function Metrics() {
                   <>
                     <ResponsiveContainer
                       width="100%"
-                      height={Math.max(200, latencyChartData.length * 50)}
+                      height={Math.max(200, latencyChartData.length * 60)}
                     >
                       <BarChart
                         data={latencyChartData}
@@ -553,9 +595,9 @@ export default function Metrics() {
                           }
                         />
                         <Legend />
-                        <Bar dataKey="P50" fill="#3b82f6" name="P50" />
-                        <Bar dataKey="P95" fill="#f59e0b" name="P95" />
-                        <Bar dataKey="P99" fill="#ef4444" name="P99" />
+                        <Bar dataKey="Queue" fill="#3b82f6" name="Queue" />
+                        <Bar dataKey="Processing" fill="#10b981" name="Processing" />
+                        <Bar dataKey="E2E" fill="#ef4444" name="End-to-End" />
                       </BarChart>
                     </ResponsiveContainer>
                     <table className="w-full mt-4 text-sm">
@@ -563,6 +605,7 @@ export default function Metrics() {
                         <tr className="border-b">
                           <th className="text-left py-2 px-3">Endpoint</th>
                           <th className="text-left py-2 px-3">Event Type</th>
+                          <th className="text-left py-2 px-3">Metric</th>
                           <th className="text-right py-2 px-3">Count</th>
                           <th className="text-right py-2 px-3">Avg</th>
                           <th className="text-right py-2 px-3">P50</th>
@@ -582,38 +625,33 @@ export default function Metrics() {
                                 b.eventTypeId ?? "",
                               ),
                           )
-                          .map((l, i) => (
-                            <tr key={i} className="border-b">
-                              <td className="py-2 px-3">{l.endpointId}</td>
-                              <td className="py-2 px-3">{l.eventTypeId}</td>
-                              <td className="text-right py-2 px-3">
-                                {l.count}
-                              </td>
-                              <td className="text-right py-2 px-3">
-                                {formatMs(l.avgLatencyMs)}
-                              </td>
-                              <td className="text-right py-2 px-3">
-                                {formatMs(l.p50LatencyMs)}
-                              </td>
-                              <td className="text-right py-2 px-3">
-                                <span
-                                  className={
-                                    (l.p95LatencyMs ?? 0) > 30000
-                                      ? "text-red-600 font-semibold"
-                                      : ""
-                                  }
-                                >
-                                  {formatMs(l.p95LatencyMs)}
-                                </span>
-                              </td>
-                              <td className="text-right py-2 px-3">
-                                {formatMs(l.p99LatencyMs)}
-                              </td>
-                              <td className="text-right py-2 px-3">
-                                {formatMs(l.maxLatencyMs)}
-                              </td>
-                            </tr>
-                          ))}
+                          .flatMap((l, i) => {
+                            // Three rows per (endpoint, eventType) — one per histogram.
+                            // First row carries the endpoint/event labels; the others are
+                            // visually grouped by leaving those cells blank.
+                            const stats: { name: string; data: api.LatencyStats | undefined; warn?: boolean }[] = [
+                              { name: "Queue", data: l.queue },
+                              { name: "Processing", data: l.processing },
+                              { name: "End-to-End", data: l.e2e, warn: true },
+                            ];
+                            return stats.map((s, j) => (
+                              <tr key={`${i}-${j}`} className={j === stats.length - 1 ? "border-b" : ""}>
+                                <td className="py-1 px-3">{j === 0 ? l.endpointId : ""}</td>
+                                <td className="py-1 px-3">{j === 0 ? l.eventTypeId : ""}</td>
+                                <td className="py-1 px-3 text-muted-foreground">{s.name}</td>
+                                <td className="text-right py-1 px-3">{s.data?.count ?? 0}</td>
+                                <td className="text-right py-1 px-3">{formatMs(s.data?.avgMs)}</td>
+                                <td className="text-right py-1 px-3">{formatMs(s.data?.p50Ms)}</td>
+                                <td className="text-right py-1 px-3">
+                                  <span className={s.warn && (s.data?.p95Ms ?? 0) > 30000 ? "text-red-600 font-semibold" : ""}>
+                                    {formatMs(s.data?.p95Ms)}
+                                  </span>
+                                </td>
+                                <td className="text-right py-1 px-3">{formatMs(s.data?.p99Ms)}</td>
+                                <td className="text-right py-1 px-3">{formatMs(s.data?.maxMs)}</td>
+                              </tr>
+                            ));
+                          })}
                       </tbody>
                     </table>
                   </>

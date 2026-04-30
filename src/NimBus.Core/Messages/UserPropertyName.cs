@@ -16,5 +16,7 @@
         EventTypeId,
         OriginalSessionId,
         DeferralSequence,
+        QueueTimeMs,
+        ProcessingTimeMs,
     }
 }

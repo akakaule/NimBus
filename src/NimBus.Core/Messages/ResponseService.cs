@@ -80,6 +80,10 @@ namespace NimBus.Core.Messages
                 EventTypeId = messageContext.EventTypeId,
                 MessageType = responseType,
                 MessageContent = responseContent,
+                // Carry per-message timings to the Resolver so it can persist them
+                // on the audit doc — the message detail page renders them.
+                QueueTimeMs = messageContext.QueueTimeMs,
+                ProcessingTimeMs = messageContext.ProcessingTimeMs,
             };
 
 

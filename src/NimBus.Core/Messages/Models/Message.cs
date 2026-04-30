@@ -57,6 +57,21 @@
         /// The requester listens on this session for the response.
         /// </summary>
         string ReplyToSessionId => null;
+
+        /// <summary>
+        /// Time the message spent in Service Bus before the handler was invoked
+        /// (enqueued → handler entry). Populated on response messages by the
+        /// receiving subscriber so the Resolver can persist it on the audit doc.
+        /// Null on original publishes.
+        /// </summary>
+        long? QueueTimeMs => null;
+
+        /// <summary>
+        /// Time the handler took to run (handler entry → completion / failure).
+        /// Populated on response messages by the receiving subscriber. Null on
+        /// original publishes.
+        /// </summary>
+        long? ProcessingTimeMs => null;
     }
 
     public class Message : IMessage
@@ -87,5 +102,7 @@
         public string DiagnosticId { get; set; }
         public string ReplyTo { get; set; }
         public string ReplyToSessionId { get; set; }
+        public long? QueueTimeMs { get; set; }
+        public long? ProcessingTimeMs { get; set; }
     }
 }

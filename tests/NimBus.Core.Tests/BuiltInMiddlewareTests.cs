@@ -37,6 +37,8 @@ file sealed class TestMessageContext : IMessageContext
     public string DeadLetterErrorDescription { get; set; }
     public bool IsDeferred { get; set; }
     public int ThrottleRetryCount { get; set; }
+    public long? QueueTimeMs { get; set; }
+    public long? ProcessingTimeMs { get; set; }
 
     public int DeadLetterCalls { get; private set; }
     public int CompleteCalls { get; private set; }

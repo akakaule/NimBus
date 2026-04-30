@@ -37,6 +37,8 @@ public static class Mapper
             EndpointId = @event.EndpointId,
             RetryCount = @event.RetryCount,
             RetryLimit = @event.RetryLimit,
+            QueueTimeMs = @event.QueueTimeMs,
+            ProcessingTimeMs = @event.ProcessingTimeMs,
             MessageType = @event.MessageType.ToString(),
             DeadLetterReason = @event.DeadLetterReason,
             DeadLetterErrorDescription = @event.DeadLetterErrorDescription,

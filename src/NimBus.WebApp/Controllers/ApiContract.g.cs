@@ -4159,6 +4159,8 @@ namespace NimBus.WebApp.ManagementApi
         private string _endpointId;
         private int? _retryCount;
         private int? _retryLimit;
+        private long? _queueTimeMs;
+        private long? _processingTimeMs;
         private string _messageType;
         private string _deadLetterReason;
         private string _deadLetterErrorDescription;
@@ -4297,6 +4299,32 @@ namespace NimBus.WebApp.ManagementApi
                 if (_retryLimit != value)
                 {
                     _retryLimit = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("queueTimeMs", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long? QueueTimeMs    {
+            get { return _queueTimeMs; }
+            set
+            {
+                if (_queueTimeMs != value)
+                {
+                    _queueTimeMs = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("processingTimeMs", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long? ProcessingTimeMs    {
+            get { return _processingTimeMs; }
+            set
+            {
+                if (_processingTimeMs != value)
+                {
+                    _processingTimeMs = value;
                     RaisePropertyChanged();
                 }
             }
@@ -7089,12 +7117,9 @@ namespace NimBus.WebApp.ManagementApi
     {
         private string _endpointId;
         private string _eventTypeId;
-        private int _count;
-        private double _avgLatencyMs;
-        private double _p50LatencyMs;
-        private double _p95LatencyMs;
-        private double _p99LatencyMs;
-        private double _maxLatencyMs;
+        private LatencyStats _queue;
+        private LatencyStats _processing;
+        private LatencyStats _e2e;
 
         [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string EndpointId    {
@@ -7122,79 +7147,40 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
-        [Newtonsoft.Json.JsonProperty("count", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public int Count    {
-            get { return _count; }
+        [Newtonsoft.Json.JsonProperty("queue", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public LatencyStats Queue    {
+            get { return _queue; }
             set
             {
-                if (_count != value)
+                if (_queue != value)
                 {
-                    _count = value;
+                    _queue = value;
                     RaisePropertyChanged();
                 }
             }
         }
 
-        [Newtonsoft.Json.JsonProperty("avgLatencyMs", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public double AvgLatencyMs    {
-            get { return _avgLatencyMs; }
+        [Newtonsoft.Json.JsonProperty("processing", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public LatencyStats Processing    {
+            get { return _processing; }
             set
             {
-                if (_avgLatencyMs != value)
+                if (_processing != value)
                 {
-                    _avgLatencyMs = value;
+                    _processing = value;
                     RaisePropertyChanged();
                 }
             }
         }
 
-        [Newtonsoft.Json.JsonProperty("p50LatencyMs", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public double P50LatencyMs    {
-            get { return _p50LatencyMs; }
+        [Newtonsoft.Json.JsonProperty("e2e", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public LatencyStats E2e    {
+            get { return _e2e; }
             set
             {
-                if (_p50LatencyMs != value)
+                if (_e2e != value)
                 {
-                    _p50LatencyMs = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
-        [Newtonsoft.Json.JsonProperty("p95LatencyMs", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public double P95LatencyMs    {
-            get { return _p95LatencyMs; }
-            set
-            {
-                if (_p95LatencyMs != value)
-                {
-                    _p95LatencyMs = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
-        [Newtonsoft.Json.JsonProperty("p99LatencyMs", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public double P99LatencyMs    {
-            get { return _p99LatencyMs; }
-            set
-            {
-                if (_p99LatencyMs != value)
-                {
-                    _p99LatencyMs = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
-        [Newtonsoft.Json.JsonProperty("maxLatencyMs", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public double MaxLatencyMs    {
-            get { return _maxLatencyMs; }
-            set
-            {
-                if (_maxLatencyMs != value)
-                {
-                    _maxLatencyMs = value;
+                    _e2e = value;
                     RaisePropertyChanged();
                 }
             }
@@ -7219,6 +7205,125 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return Newtonsoft.Json.JsonConvert.DeserializeObject<EndpointLatency>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class LatencyStats : System.ComponentModel.INotifyPropertyChanged
+    {
+        private int _count;
+        private double _avgMs;
+        private double _p50Ms;
+        private double _p95Ms;
+        private double _p99Ms;
+        private double _maxMs;
+
+        [Newtonsoft.Json.JsonProperty("count", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Count    {
+            get { return _count; }
+            set
+            {
+                if (_count != value)
+                {
+                    _count = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("avgMs", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public double AvgMs    {
+            get { return _avgMs; }
+            set
+            {
+                if (_avgMs != value)
+                {
+                    _avgMs = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("p50Ms", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public double P50Ms    {
+            get { return _p50Ms; }
+            set
+            {
+                if (_p50Ms != value)
+                {
+                    _p50Ms = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("p95Ms", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public double P95Ms    {
+            get { return _p95Ms; }
+            set
+            {
+                if (_p95Ms != value)
+                {
+                    _p95Ms = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("p99Ms", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public double P99Ms    {
+            get { return _p99Ms; }
+            set
+            {
+                if (_p99Ms != value)
+                {
+                    _p99Ms = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("maxMs", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public double MaxMs    {
+            get { return _maxMs; }
+            set
+            {
+                if (_maxMs != value)
+                {
+                    _maxMs = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static LatencyStats FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<LatencyStats>(data, new Newtonsoft.Json.JsonSerializerSettings());
 
         }
         public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;

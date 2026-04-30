@@ -33,6 +33,18 @@ namespace NimBus.ServiceBus
                 result.ApplicationProperties[UserPropertyName.DeferralSequence.ToString()] = message.DeferralSequence.Value;
             }
 
+            // Per-message timings: only set on response messages produced by the
+            // receive pipeline (subscriber → Resolver). Original publishes leave
+            // these null so they're absent on the wire.
+            if (message.QueueTimeMs.HasValue)
+            {
+                result.ApplicationProperties[UserPropertyName.QueueTimeMs.ToString()] = message.QueueTimeMs.Value;
+            }
+            if (message.ProcessingTimeMs.HasValue)
+            {
+                result.ApplicationProperties[UserPropertyName.ProcessingTimeMs.ToString()] = message.ProcessingTimeMs.Value;
+            }
+
             var diagnosticId = message.DiagnosticId ?? Activity.Current?.Id;
             if (!string.IsNullOrEmpty(diagnosticId))
                 result.ApplicationProperties[NimBusDiagnostics.DiagnosticIdProperty] = diagnosticId;

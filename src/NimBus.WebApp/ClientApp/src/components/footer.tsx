@@ -17,7 +17,7 @@ const Footer = () => {
         variant="secondary"
         className="bg-transparent text-muted-foreground"
       >
-        &copy; 2023 - EET Group
+        @ 2026 - Nimbus
       </Badge>
     </div>
   );

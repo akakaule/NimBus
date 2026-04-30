@@ -2620,8 +2620,6 @@ components:
           $ref: '#/components/schemas/LatencyStats'
         processing:
           $ref: '#/components/schemas/LatencyStats'
-        e2e:
-          $ref: '#/components/schemas/LatencyStats'
     LatencyStats:
       title: LatencyStats
       type: object
@@ -2631,13 +2629,7 @@ components:
         avgMs:
           type: number
           format: double
-        p50Ms:
-          type: number
-          format: double
-        p95Ms:
-          type: number
-          format: double
-        p99Ms:
+        minMs:
           type: number
           format: double
         maxMs:

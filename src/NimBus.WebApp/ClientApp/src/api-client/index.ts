@@ -7520,7 +7520,6 @@ export class EndpointLatency implements IEndpointLatency {
     eventTypeId?: string;
     queue?: LatencyStats;
     processing?: LatencyStats;
-    e2e?: LatencyStats;
 
     [key: string]: any;
 
@@ -7543,7 +7542,6 @@ export class EndpointLatency implements IEndpointLatency {
             this.eventTypeId = _data["eventTypeId"];
             this.queue = _data["queue"] ? LatencyStats.fromJS(_data["queue"]) : undefined as any;
             this.processing = _data["processing"] ? LatencyStats.fromJS(_data["processing"]) : undefined as any;
-            this.e2e = _data["e2e"] ? LatencyStats.fromJS(_data["e2e"]) : undefined as any;
         }
     }
 
@@ -7564,7 +7562,6 @@ export class EndpointLatency implements IEndpointLatency {
         data["eventTypeId"] = this.eventTypeId;
         data["queue"] = this.queue ? this.queue.toJSON() : undefined as any;
         data["processing"] = this.processing ? this.processing.toJSON() : undefined as any;
-        data["e2e"] = this.e2e ? this.e2e.toJSON() : undefined as any;
         return data;
     }
 
@@ -7581,7 +7578,6 @@ export interface IEndpointLatency {
     eventTypeId?: string;
     queue?: LatencyStats;
     processing?: LatencyStats;
-    e2e?: LatencyStats;
 
     [key: string]: any;
 }
@@ -7589,9 +7585,7 @@ export interface IEndpointLatency {
 export class LatencyStats implements ILatencyStats {
     count?: number;
     avgMs?: number;
-    p50Ms?: number;
-    p95Ms?: number;
-    p99Ms?: number;
+    minMs?: number;
     maxMs?: number;
 
     [key: string]: any;
@@ -7613,9 +7607,7 @@ export class LatencyStats implements ILatencyStats {
             }
             this.count = _data["count"];
             this.avgMs = _data["avgMs"];
-            this.p50Ms = _data["p50Ms"];
-            this.p95Ms = _data["p95Ms"];
-            this.p99Ms = _data["p99Ms"];
+            this.minMs = _data["minMs"];
             this.maxMs = _data["maxMs"];
         }
     }
@@ -7635,9 +7627,7 @@ export class LatencyStats implements ILatencyStats {
         }
         data["count"] = this.count;
         data["avgMs"] = this.avgMs;
-        data["p50Ms"] = this.p50Ms;
-        data["p95Ms"] = this.p95Ms;
-        data["p99Ms"] = this.p99Ms;
+        data["minMs"] = this.minMs;
         data["maxMs"] = this.maxMs;
         return data;
     }
@@ -7653,9 +7643,7 @@ export class LatencyStats implements ILatencyStats {
 export interface ILatencyStats {
     count?: number;
     avgMs?: number;
-    p50Ms?: number;
-    p95Ms?: number;
-    p99Ms?: number;
+    minMs?: number;
     maxMs?: number;
 
     [key: string]: any;

@@ -165,6 +165,8 @@ public interface ICosmosDbClient
 
     // Metrics aggregation
     Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from);
+
+    Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from);
     Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from);
     Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel);
 }
@@ -1711,6 +1713,102 @@ public class CosmosDbClient : ICosmosDbClient
             Handled = handled,
             Failed = failed
         };
+    }
+
+    public async Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from)
+    {
+        // Server-side aggregation over all ResolutionResponse / ErrorResponse
+        // documents in the period. Two queries (one per timing series) so we
+        // can WHERE-out null values cleanly — the GROUP BY keys must align
+        // across the two so we can stitch them back together.
+        // Picking only outcome documents avoids double-counting (the original
+        // EventRequest doesn't carry timings; only the response does).
+        var container = await GetMessagesContainer();
+        var fromIso = from.ToString("o");
+        var outcomeFilter =
+            "(c.message.MessageType = 'ResolutionResponse' OR " +
+            " c.message.MessageType = 'ErrorResponse' OR " +
+            " c.message.MessageType = 'SkipResponse' OR " +
+            " c.message.MessageType = 'DeferralResponse' OR " +
+            " c.message.MessageType = 'UnsupportedResponse')";
+
+        var queueRows = await RunLatencyAggregateQuery(container,
+            "SELECT c.endpointId, c.message.EventTypeId, " +
+            "       COUNT(1) AS count, " +
+            "       AVG(c.message.QueueTimeMs) AS avg, " +
+            "       MIN(c.message.QueueTimeMs) AS min, " +
+            "       MAX(c.message.QueueTimeMs) AS max " +
+            "FROM c " +
+            $"WHERE {outcomeFilter} " +
+            "AND c.message.EnqueuedTimeUtc >= @from " +
+            "AND IS_DEFINED(c.message.QueueTimeMs) " +
+            "AND c.message.QueueTimeMs != null " +
+            "GROUP BY c.endpointId, c.message.EventTypeId",
+            fromIso);
+
+        var processingRows = await RunLatencyAggregateQuery(container,
+            "SELECT c.endpointId, c.message.EventTypeId, " +
+            "       COUNT(1) AS count, " +
+            "       AVG(c.message.ProcessingTimeMs) AS avg, " +
+            "       MIN(c.message.ProcessingTimeMs) AS min, " +
+            "       MAX(c.message.ProcessingTimeMs) AS max " +
+            "FROM c " +
+            $"WHERE {outcomeFilter} " +
+            "AND c.message.EnqueuedTimeUtc >= @from " +
+            "AND IS_DEFINED(c.message.ProcessingTimeMs) " +
+            "AND c.message.ProcessingTimeMs != null " +
+            "GROUP BY c.endpointId, c.message.EventTypeId",
+            fromIso);
+
+        // Merge by (endpointId, eventTypeId). One side may be missing rows
+        // (e.g. processing time not captured pre-fix); leaves that side at
+        // its default zeroed aggregate.
+        var grouped = new Dictionary<(string Endpoint, string EventType), EndpointLatencyAggregate>();
+        foreach (var row in queueRows)
+        {
+            var key = (row.EndpointId ?? string.Empty, row.EventTypeId ?? string.Empty);
+            if (!grouped.TryGetValue(key, out var agg))
+            {
+                agg = new EndpointLatencyAggregate { EndpointId = key.Item1, EventTypeId = key.Item2 };
+                grouped[key] = agg;
+            }
+            agg.Queue = new LatencyAggregate { Count = row.Count, AvgMs = row.Avg, MinMs = row.Min, MaxMs = row.Max };
+        }
+        foreach (var row in processingRows)
+        {
+            var key = (row.EndpointId ?? string.Empty, row.EventTypeId ?? string.Empty);
+            if (!grouped.TryGetValue(key, out var agg))
+            {
+                agg = new EndpointLatencyAggregate { EndpointId = key.Item1, EventTypeId = key.Item2 };
+                grouped[key] = agg;
+            }
+            agg.Processing = new LatencyAggregate { Count = row.Count, AvgMs = row.Avg, MinMs = row.Min, MaxMs = row.Max };
+        }
+
+        return new EndpointLatencyMetricsResult { Latencies = grouped.Values.ToList() };
+    }
+
+    private async Task<List<LatencyAggregateRow>> RunLatencyAggregateQuery(ICosmosContainerAdapter container, string sql, string fromIso)
+    {
+        var query = new QueryDefinition(sql).WithParameter("@from", fromIso);
+        var iterator = container.GetItemQueryIterator<LatencyAggregateRow>(query);
+        var results = new List<LatencyAggregateRow>();
+        while (iterator.HasMoreResults)
+        {
+            var page = await iterator.ReadNextAsync();
+            foreach (var row in page) results.Add(row);
+        }
+        return results;
+    }
+
+    private sealed class LatencyAggregateRow
+    {
+        [JsonProperty("endpointId")] public string EndpointId { get; set; }
+        [JsonProperty("EventTypeId")] public string EventTypeId { get; set; }
+        [JsonProperty("count")] public int Count { get; set; }
+        [JsonProperty("avg")] public double Avg { get; set; }
+        [JsonProperty("min")] public double Min { get; set; }
+        [JsonProperty("max")] public double Max { get; set; }
     }
 
     public async Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from)

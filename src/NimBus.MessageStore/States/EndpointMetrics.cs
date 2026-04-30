@@ -39,3 +39,28 @@ public class FailedMessageInfo
     public DateTime EnqueuedTimeUtc { get; set; }
     public string EventId { get; set; }
 }
+
+public class EndpointLatencyMetricsResult
+{
+    public List<EndpointLatencyAggregate> Latencies { get; set; } = new();
+}
+
+// One row per (endpoint, eventType) with both timing series side-by-side.
+// Computed server-side in Cosmos via AVG/MIN/MAX/COUNT GROUP BY — no
+// percentiles (would require pulling raw values into memory; not viable
+// at scale). Tail latency is monitored via App Insights histograms instead.
+public class EndpointLatencyAggregate
+{
+    public string EndpointId { get; set; }
+    public string EventTypeId { get; set; }
+    public LatencyAggregate Queue { get; set; } = new();
+    public LatencyAggregate Processing { get; set; } = new();
+}
+
+public class LatencyAggregate
+{
+    public int Count { get; set; }
+    public double AvgMs { get; set; }
+    public double MinMs { get; set; }
+    public double MaxMs { get; set; }
+}

@@ -5,20 +5,18 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using NimBus.MessageStore;
+using NimBus.MessageStore.States;
 using NimBus.WebApp.ManagementApi;
-using NimBus.WebApp.Services.ApplicationInsights;
 
 namespace NimBus.WebApp.Controllers.ApiContract;
 
 public class MetricsImplementation : IMetricsApiController
 {
     private readonly ICosmosDbClient _cosmosClient;
-    private readonly IApplicationInsightsService _appInsights;
 
-    public MetricsImplementation(ICosmosDbClient cosmosClient, IApplicationInsightsService appInsights)
+    public MetricsImplementation(ICosmosDbClient cosmosClient)
     {
         _cosmosClient = cosmosClient;
-        _appInsights = appInsights;
     }
 
     public async Task<ActionResult<MetricsOverview>> GetMetricsOverviewAsync(Period period)
@@ -51,35 +49,36 @@ public class MetricsImplementation : IMetricsApiController
 
     public async Task<ActionResult<LatencyOverview>> GetMetricsLatencyAsync(Period period)
     {
-        var timeSpan = PeriodToTimeSpan(period);
-        var metrics = await _appInsights.GetLatencyMetrics(timeSpan);
+        // Aggregated server-side in Cosmos against the per-message timings the
+        // Resolver persists on every outcome document — no App Insights
+        // dependency, no in-memory raw-value scan. Percentiles are
+        // intentionally omitted: Cosmos can't compute them without pulling
+        // raw values, and AVG/MIN/MAX gives enough signal for an operator
+        // dashboard. Tail latency monitoring lives with the OpenTelemetry
+        // histograms (nimbus.message.queue_wait, nimbus.pipeline.duration).
+        var from = DateTime.UtcNow - PeriodToTimeSpan(period);
+        var result = await _cosmosClient.GetEndpointLatencyMetrics(from);
 
         return new LatencyOverview
         {
-            Latencies = metrics.Select(m => new EndpointLatency
+            Latencies = result.Latencies.Select(m => new EndpointLatency
             {
-                EndpointId = m.Destination,
-                EventTypeId = m.EventType,
+                EndpointId = m.EndpointId,
+                EventTypeId = m.EventTypeId,
                 Queue = ToDto(m.Queue),
                 Processing = ToDto(m.Processing),
-                E2e = ToDto(m.E2E),
             }).ToList()
         };
     }
 
-    // Histogram series may be missing (e.g. processing time has no row when a
-    // message is rejected before the pipeline runs). Return an empty stats
-    // object so the UI can render `—` instead of dropping the row entirely.
-    private static global::NimBus.WebApp.ManagementApi.LatencyStats ToDto(global::NimBus.WebApp.Services.ApplicationInsights.LatencyStats source)
+    private static LatencyStats ToDto(LatencyAggregate source)
     {
-        if (source is null) return new global::NimBus.WebApp.ManagementApi.LatencyStats();
-        return new global::NimBus.WebApp.ManagementApi.LatencyStats
+        if (source is null) return new LatencyStats();
+        return new LatencyStats
         {
             Count = source.Count,
             AvgMs = Math.Round(source.AvgMs, 1),
-            P50Ms = Math.Round(source.P50Ms, 1),
-            P95Ms = Math.Round(source.P95Ms, 1),
-            P99Ms = Math.Round(source.P99Ms, 1),
+            MinMs = Math.Round(source.MinMs, 1),
             MaxMs = Math.Round(source.MaxMs, 1),
         };
     }

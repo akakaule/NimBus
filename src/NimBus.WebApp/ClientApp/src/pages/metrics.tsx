@@ -43,18 +43,16 @@ function formatMs(ms: number | undefined): string {
   return `${Math.round(ms)}ms`;
 }
 
-type LatencyPercentile = "p50" | "p95" | "p99" | "avg" | "max";
+type LatencyAggKind = "avg" | "min" | "max";
 
 function pickStat(
   stats: api.LatencyStats | undefined,
-  pct: LatencyPercentile,
+  kind: LatencyAggKind,
 ): number {
   if (!stats) return 0;
-  switch (pct) {
-    case "p50": return stats.p50Ms ?? 0;
-    case "p95": return stats.p95Ms ?? 0;
-    case "p99": return stats.p99Ms ?? 0;
+  switch (kind) {
     case "avg": return stats.avgMs ?? 0;
+    case "min": return stats.minMs ?? 0;
     case "max": return stats.maxMs ?? 0;
   }
 }
@@ -90,7 +88,7 @@ export default function Metrics() {
   const [timeseriesData, setTimeseriesData] = useState<api.TimeSeriesOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<api.Period>(api.Period._1d);
-  const [latencyPercentile, setLatencyPercentile] = useState<LatencyPercentile>("p95");
+  const [latencyAgg, setLatencyAgg] = useState<LatencyAggKind>("avg");
 
   const fetchMetrics = useCallback(async (p: api.Period) => {
     setLoading(true);
@@ -156,15 +154,15 @@ export default function Metrics() {
   const totalMessages = totalHandled + totalFailed;
   const failureRate = totalMessages > 0 ? (totalFailed / totalMessages) * 100 : 0;
 
-  // Latency chart data: one row per (endpoint × eventType) with three grouped
-  // bars at the selected percentile — Queue (enqueue → handler entry),
-  // Processing (handler entry → completion), E2E (enqueue → completion).
-  // Q + P should ≈ E2E (small drift from middleware overhead is normal).
+  // Latency chart data: one row per (endpoint × eventType) with two grouped
+  // bars at the selected aggregate — Queue (enqueue → handler entry) and
+  // Processing (handler entry → completion). Aggregated server-side in
+  // Cosmos; percentiles intentionally not surfaced (would require
+  // raw-value scans). Tail-latency monitoring lives with the OTel histograms.
   const latencyChartData = (latencyData?.latencies ?? []).map((l) => ({
     label: `${l.endpointId ?? ""}/${l.eventTypeId ?? ""}`,
-    Queue: pickStat(l.queue, latencyPercentile),
-    Processing: pickStat(l.processing, latencyPercentile),
-    E2E: pickStat(l.e2e, latencyPercentile),
+    Queue: pickStat(l.queue, latencyAgg),
+    Processing: pickStat(l.processing, latencyAgg),
   }));
 
   return (
@@ -532,23 +530,23 @@ export default function Metrics() {
               </CardContent>
             </Card>
 
-            {/* Latency Breakdown — Queue + Processing ≈ End-to-End */}
+            {/* Latency Breakdown — Queue (enqueue → handler) + Processing (handler → done) */}
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div>
                     <CardTitle>Latency Breakdown</CardTitle>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Queue (enqueue → handler) + Processing (handler → done) ≈ End-to-End
+                      Queue (enqueue → handler) + Processing (handler → done). Aggregated from per-message timings; tail-latency lives in the OpenTelemetry histograms.
                     </p>
                   </div>
                   <div className="flex gap-1">
-                    {(["avg", "p50", "p95", "p99", "max"] as LatencyPercentile[]).map((p) => (
+                    {(["avg", "min", "max"] as LatencyAggKind[]).map((p) => (
                       <button
                         key={p}
-                        onClick={() => setLatencyPercentile(p)}
+                        onClick={() => setLatencyAgg(p)}
                         className={`px-3 py-1 text-xs font-semibold rounded-md border transition-colors ${
-                          latencyPercentile === p
+                          latencyAgg === p
                             ? "bg-primary text-white border-primary"
                             : "bg-card text-foreground border-border hover:bg-accent"
                         }`}
@@ -568,7 +566,7 @@ export default function Metrics() {
                   <>
                     <ResponsiveContainer
                       width="100%"
-                      height={Math.max(200, latencyChartData.length * 60)}
+                      height={Math.max(200, latencyChartData.length * 50)}
                     >
                       <BarChart
                         data={latencyChartData}
@@ -597,7 +595,6 @@ export default function Metrics() {
                         <Legend />
                         <Bar dataKey="Queue" fill="#3b82f6" name="Queue" />
                         <Bar dataKey="Processing" fill="#10b981" name="Processing" />
-                        <Bar dataKey="E2E" fill="#ef4444" name="End-to-End" />
                       </BarChart>
                     </ResponsiveContainer>
                     <table className="w-full mt-4 text-sm">
@@ -608,9 +605,7 @@ export default function Metrics() {
                           <th className="text-left py-2 px-3">Metric</th>
                           <th className="text-right py-2 px-3">Count</th>
                           <th className="text-right py-2 px-3">Avg</th>
-                          <th className="text-right py-2 px-3">P50</th>
-                          <th className="text-right py-2 px-3">P95</th>
-                          <th className="text-right py-2 px-3">P99</th>
+                          <th className="text-right py-2 px-3">Min</th>
                           <th className="text-right py-2 px-3">Max</th>
                         </tr>
                       </thead>
@@ -626,13 +621,12 @@ export default function Metrics() {
                               ),
                           )
                           .flatMap((l, i) => {
-                            // Three rows per (endpoint, eventType) — one per histogram.
-                            // First row carries the endpoint/event labels; the others are
-                            // visually grouped by leaving those cells blank.
+                            // Two rows per (endpoint, eventType) — one per timing series.
+                            // First row carries the endpoint/event labels; the second leaves
+                            // those cells blank for visual grouping.
                             const stats: { name: string; data: api.LatencyStats | undefined; warn?: boolean }[] = [
                               { name: "Queue", data: l.queue },
-                              { name: "Processing", data: l.processing },
-                              { name: "End-to-End", data: l.e2e, warn: true },
+                              { name: "Processing", data: l.processing, warn: true },
                             ];
                             return stats.map((s, j) => (
                               <tr key={`${i}-${j}`} className={j === stats.length - 1 ? "border-b" : ""}>
@@ -640,14 +634,12 @@ export default function Metrics() {
                                 <td className="py-1 px-3">{j === 0 ? l.eventTypeId : ""}</td>
                                 <td className="py-1 px-3 text-muted-foreground">{s.name}</td>
                                 <td className="text-right py-1 px-3">{s.data?.count ?? 0}</td>
-                                <td className="text-right py-1 px-3">{formatMs(s.data?.avgMs)}</td>
-                                <td className="text-right py-1 px-3">{formatMs(s.data?.p50Ms)}</td>
                                 <td className="text-right py-1 px-3">
-                                  <span className={s.warn && (s.data?.p95Ms ?? 0) > 30000 ? "text-red-600 font-semibold" : ""}>
-                                    {formatMs(s.data?.p95Ms)}
+                                  <span className={s.warn && (s.data?.avgMs ?? 0) > 30000 ? "text-red-600 font-semibold" : ""}>
+                                    {formatMs(s.data?.avgMs)}
                                   </span>
                                 </td>
-                                <td className="text-right py-1 px-3">{formatMs(s.data?.p99Ms)}</td>
+                                <td className="text-right py-1 px-3">{formatMs(s.data?.minMs)}</td>
                                 <td className="text-right py-1 px-3">{formatMs(s.data?.maxMs)}</td>
                               </tr>
                             ));

@@ -7119,7 +7119,6 @@ namespace NimBus.WebApp.ManagementApi
         private string _eventTypeId;
         private LatencyStats _queue;
         private LatencyStats _processing;
-        private LatencyStats _e2e;
 
         [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string EndpointId    {
@@ -7173,19 +7172,6 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
-        [Newtonsoft.Json.JsonProperty("e2e", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public LatencyStats E2e    {
-            get { return _e2e; }
-            set
-            {
-                if (_e2e != value)
-                {
-                    _e2e = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
         private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
 
         [Newtonsoft.Json.JsonExtensionData]
@@ -7222,9 +7208,7 @@ namespace NimBus.WebApp.ManagementApi
     {
         private int _count;
         private double _avgMs;
-        private double _p50Ms;
-        private double _p95Ms;
-        private double _p99Ms;
+        private double _minMs;
         private double _maxMs;
 
         [Newtonsoft.Json.JsonProperty("count", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
@@ -7253,40 +7237,14 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
-        [Newtonsoft.Json.JsonProperty("p50Ms", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public double P50Ms    {
-            get { return _p50Ms; }
+        [Newtonsoft.Json.JsonProperty("minMs", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public double MinMs    {
+            get { return _minMs; }
             set
             {
-                if (_p50Ms != value)
+                if (_minMs != value)
                 {
-                    _p50Ms = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
-        [Newtonsoft.Json.JsonProperty("p95Ms", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public double P95Ms    {
-            get { return _p95Ms; }
-            set
-            {
-                if (_p95Ms != value)
-                {
-                    _p95Ms = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
-        [Newtonsoft.Json.JsonProperty("p99Ms", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public double P99Ms    {
-            get { return _p99Ms; }
-            set
-            {
-                if (_p99Ms != value)
-                {
-                    _p99Ms = value;
+                    _minMs = value;
                     RaisePropertyChanged();
                 }
             }

@@ -57,6 +57,12 @@ builder.Services.AddNimBusReceiver(opts =>
 {
     opts.TopicName = "CrmEndpoint";
     opts.SubscriptionName = "CrmEndpoint";
+    // SDK default is 1, which makes the whole CrmEndpoint serial across every
+    // session and event type — far below the Erp.Adapter.Functions side which
+    // allows 200 concurrent sessions (host.json). 32 is a demo-friendly middle
+    // ground: 32× the current throughput with enough headroom that the shared
+    // SQL Server isn't fighting itself. Per-session ordering still holds.
+    opts.MaxConcurrentSessions = 32;
 });
 
 // Deferred processor.

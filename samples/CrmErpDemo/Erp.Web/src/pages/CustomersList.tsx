@@ -6,11 +6,17 @@ export default function CustomersList() {
   const [rows, setRows] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
 
-  async function load() {
-    setLoading(true);
-    try { setRows(await api.listCustomers()); } finally { setLoading(false); }
+  // initial=true on the first mount shows the loading placeholder; background
+  // polls re-fetch silently so the table doesn't flash "Loading…" every 3s.
+  async function load(initial = false) {
+    if (initial) setLoading(true);
+    try { setRows(await api.listCustomers()); } finally { if (initial) setLoading(false); }
   }
-  useEffect(() => { load(); const t = setInterval(load, 3000); return () => clearInterval(t); }, []);
+  useEffect(() => {
+    load(true);
+    const t = setInterval(() => load(false), 3000);
+    return () => clearInterval(t);
+  }, []);
 
   return (
     <section>

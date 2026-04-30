@@ -111,6 +111,12 @@ namespace NimBus.ServiceBus
             // Stash on the context so ResponseService can copy it onto the
             // outgoing response message and the Resolver can persist it.
             messageContext.QueueTimeMs = (long)queueWaitMs;
+            // Marker for processing-time computation. The terminal handler sends
+            // the response INSIDE the pipeline, so any "set ProcessingTimeMs in
+            // middleware after await next()" approach happens after the response
+            // already left. Reading "now − HandlerStartedAtUtc" at response-build
+            // time gives the correct elapsed without that ordering issue.
+            messageContext.HandlerStartedAtUtc = DateTime.UtcNow;
 
             try
             {

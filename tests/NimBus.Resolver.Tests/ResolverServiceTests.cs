@@ -187,6 +187,7 @@ public class ResolverServiceTests
         public int ThrottleRetryCount { get; set; }
         public long? QueueTimeMs { get; set; }
         public long? ProcessingTimeMs { get; set; }
+        public DateTime? HandlerStartedAtUtc { get; set; }
 
         public int CompletedCalls { get; private set; }
         public int DeadLetterCalls { get; private set; }

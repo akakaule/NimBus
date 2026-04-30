@@ -608,6 +608,7 @@ public class StrictMessageHandlerTests
         public int ThrottleRetryCount { get; set; }
         public long? QueueTimeMs { get; set; }
         public long? ProcessingTimeMs { get; set; }
+        public DateTime? HandlerStartedAtUtc { get; set; }
 
         // Configurable behavior
         public string BlockedByEventId { get; set; }

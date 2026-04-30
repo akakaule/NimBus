@@ -128,6 +128,8 @@ namespace NimBus.ServiceBus
             set => _processingTimeMs = value;
         }
 
+        public DateTime? HandlerStartedAtUtc { get; set; }
+
         private long? TryReadLong(UserPropertyName name)
         {
             try

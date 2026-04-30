@@ -95,9 +95,19 @@ namespace NimBus.Core.Messages
 
         /// <summary>
         /// Time the handler spent running (handler entry → completion or failure).
-        /// Set by MetricsMiddleware after the pipeline returns; read by
-        /// ResponseService when constructing the outgoing response.
+        /// May be set explicitly (e.g. by middleware) or computed by
+        /// ResponseService at response-build time from <see cref="HandlerStartedAtUtc"/>.
         /// </summary>
         long? ProcessingTimeMs { get; set; }
+
+        /// <summary>
+        /// UTC timestamp captured at handler entry (immediately before the
+        /// pipeline runs). ResponseService uses this to compute processing
+        /// time when the outgoing response is built — needed because the
+        /// terminal handler sends the response INSIDE the pipeline, before
+        /// any post-await middleware (e.g. MetricsMiddleware) can finalise
+        /// <see cref="ProcessingTimeMs"/>.
+        /// </summary>
+        DateTime? HandlerStartedAtUtc { get; set; }
     }
 }

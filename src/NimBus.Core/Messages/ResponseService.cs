@@ -83,8 +83,22 @@ namespace NimBus.Core.Messages
                 // Carry per-message timings to the Resolver so it can persist them
                 // on the audit doc — the message detail page renders them.
                 QueueTimeMs = messageContext.QueueTimeMs,
-                ProcessingTimeMs = messageContext.ProcessingTimeMs,
+                ProcessingTimeMs = ComputeProcessingTimeMs(messageContext),
             };
+
+        // The terminal handler calls SendResolutionResponse INSIDE the pipeline,
+        // before any post-await middleware can finalise ProcessingTimeMs. Prefer
+        // an explicitly-set value (used by tests / unusual flows); otherwise
+        // compute from HandlerStartedAtUtc captured by ServiceBusAdapter at the
+        // receive boundary.
+        private static long? ComputeProcessingTimeMs(IMessageContext messageContext)
+        {
+            if (messageContext.ProcessingTimeMs.HasValue)
+                return messageContext.ProcessingTimeMs;
+            if (messageContext.HandlerStartedAtUtc is { } start)
+                return Math.Max(0, (long)(DateTime.UtcNow - start).TotalMilliseconds);
+            return null;
+        }
 
 
         private IMessage CreateRetryResponse(IMessageContext messageContext, MessageType responseType, MessageContent responseContent) =>

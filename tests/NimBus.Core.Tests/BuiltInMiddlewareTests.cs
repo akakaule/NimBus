@@ -39,6 +39,7 @@ file sealed class TestMessageContext : IMessageContext
     public int ThrottleRetryCount { get; set; }
     public long? QueueTimeMs { get; set; }
     public long? ProcessingTimeMs { get; set; }
+    public DateTime? HandlerStartedAtUtc { get; set; }
 
     public int DeadLetterCalls { get; private set; }
     public int CompleteCalls { get; private set; }

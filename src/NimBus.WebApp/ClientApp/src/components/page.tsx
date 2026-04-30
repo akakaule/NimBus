@@ -1,5 +1,5 @@
 import { useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "components/ui/button";
 
 interface IPage {
@@ -26,6 +26,20 @@ const ArrowBackIcon = () => (
 const Page: React.FC<IPage> = (props) => {
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Prefer browser back so we return to the *exact* previous SPA entry — for
+  // a row click in /Messages?endpointId=... the user lands back on that
+  // pre-filtered list, not the generic backUrl. location.key is "default"
+  // only for an initial deep-linked entry (no SPA history yet); in that case
+  // we fall back to the explicit backUrl so the button still does something.
+  const handleBack = () => {
+    if (location.key !== "default") {
+      navigate(-1);
+    } else if (props.backUrl) {
+      navigate(props.backUrl, { state: { tabIndex: props.backIndex } });
+    }
+  };
 
   useEffect(() => {
     if (ref.current && props.offsetDimensionsHandler !== undefined) {
@@ -41,11 +55,7 @@ const Page: React.FC<IPage> = (props) => {
       <h1 className="text-3xl font-bold my-8 flex items-center gap-2">
         {props.backbutton ? (
           <Button
-            onClick={() => {
-              navigate(props.backUrl!, {
-                state: { tabIndex: props.backIndex },
-              });
-            }}
+            onClick={handleBack}
             aria-label="Go back"
             variant="ghost"
             size="sm"

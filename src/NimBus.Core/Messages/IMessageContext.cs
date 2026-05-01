@@ -11,8 +11,8 @@ namespace NimBus.Core.Messages
         new string MessageId { get; }
 
         new string EventTypeId { get; }
-        string DeadLetterReason { get; }
-        string DeadLetterErrorDescription { get; }
+        new string DeadLetterReason { get; }
+        new string DeadLetterErrorDescription { get; }
     }
 
     public interface IMessageContext : IReceivedMessage
@@ -91,14 +91,14 @@ namespace NimBus.Core.Messages
         /// receive boundary; read by ResponseService when constructing the
         /// outgoing response so the Resolver can persist it.
         /// </summary>
-        long? QueueTimeMs { get; set; }
+        new long? QueueTimeMs { get; set; }
 
         /// <summary>
         /// Time the handler spent running (handler entry → completion or failure).
         /// May be set explicitly (e.g. by middleware) or computed by
         /// ResponseService at response-build time from <see cref="HandlerStartedAtUtc"/>.
         /// </summary>
-        long? ProcessingTimeMs { get; set; }
+        new long? ProcessingTimeMs { get; set; }
 
         /// <summary>
         /// UTC timestamp captured at handler entry (immediately before the

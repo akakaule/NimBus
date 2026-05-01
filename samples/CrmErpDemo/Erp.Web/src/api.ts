@@ -24,6 +24,11 @@ export interface Contact {
   isDeleted?: boolean;
 }
 
+export interface ModeState {
+  enabled: boolean;
+  changedAt: string;
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -49,6 +54,22 @@ export const api = {
     }).then(json<Customer>),
   deleteCustomer: (id: string) =>
     fetch(`/api/customers/${id}`, { method: 'DELETE' }).then(json<Customer>),
+
+  getServiceMode: () => fetch('/api/admin/service-mode').then(json<ModeState>),
+  setServiceMode: (enabled: boolean) =>
+    fetch('/api/admin/service-mode', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    }).then(json<ModeState>),
+
+  getErrorMode: () => fetch('/api/admin/error-mode').then(json<ModeState>),
+  setErrorMode: (enabled: boolean) =>
+    fetch('/api/admin/error-mode', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    }).then(json<ModeState>),
 
   listContacts: () => fetch('/api/contacts').then(json<Contact[]>),
   getContact: (id: string) => fetch(`/api/contacts/${id}`).then(json<Contact>),

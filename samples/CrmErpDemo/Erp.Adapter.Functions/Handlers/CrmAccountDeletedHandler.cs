@@ -5,11 +5,15 @@ using NimBus.SDK.EventHandlers;
 
 namespace Erp.Adapter.Functions.Handlers;
 
-public sealed class CrmAccountDeletedHandler(IErpApiClient erp, ILogger<CrmAccountDeletedHandler> logger)
+public sealed class CrmAccountDeletedHandler(
+    IErpApiClient erp,
+    IServiceModeClient modeClient,
+    ILogger<CrmAccountDeletedHandler> logger)
     : IEventHandler<CrmAccountDeleted>
 {
     public async Task Handle(CrmAccountDeleted message, IEventHandlerContext context, CancellationToken cancellationToken = default)
     {
+        await ErrorModeGuard.ThrowIfEnabledAsync(modeClient, context, logger, cancellationToken);
         logger.LogInformation(
             "Marking ERP customer deleted (matched by CrmAccountId {AccountId})",
             message.AccountId);

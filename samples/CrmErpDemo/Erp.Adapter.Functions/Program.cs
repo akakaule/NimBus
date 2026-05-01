@@ -2,6 +2,7 @@ using Azure.Messaging.ServiceBus;
 using CrmErpDemo.Contracts.Events;
 using Erp.Adapter.Functions.Clients;
 using Erp.Adapter.Functions.Handlers;
+using Erp.Adapter.Functions.Pipeline;
 using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.Azure.Functions.Worker.OpenTelemetry;
 using Microsoft.Extensions.Configuration;
@@ -31,13 +32,19 @@ builder.Services.AddSingleton<ServiceBusClient>(sp =>
     return new ServiceBusClient(connection);
 });
 
-builder.Services.AddHttpClient<IErpApiClient, ErpApiClient>(c =>
-{
-    var cfg = builder.Configuration["services:erp-api:https:0"]
-        ?? builder.Configuration["services:erp-api:http:0"]
-        ?? builder.Configuration["Erp:ApiBaseUrl"]
+static string ResolveErpApiBaseUrl(IConfiguration cfg) =>
+    cfg["services:erp-api:https:0"]
+        ?? cfg["services:erp-api:http:0"]
+        ?? cfg["Erp:ApiBaseUrl"]
         ?? throw new InvalidOperationException("Erp API base URL is required (service discovery or Erp:ApiBaseUrl).");
-    c.BaseAddress = new Uri(cfg);
+
+builder.Services.AddHttpClient<IErpApiClient, ErpApiClient>(c =>
+    c.BaseAddress = new Uri(ResolveErpApiBaseUrl(builder.Configuration)));
+
+builder.Services.AddHttpClient<IServiceModeClient, ServiceModeClient>(c =>
+{
+    c.BaseAddress = new Uri(ResolveErpApiBaseUrl(builder.Configuration));
+    c.Timeout = TimeSpan.FromSeconds(2);
 });
 
 builder.Services.AddNimBus(n =>
@@ -45,6 +52,7 @@ builder.Services.AddNimBus(n =>
     n.AddPipelineBehavior<LoggingMiddleware>();
     n.AddPipelineBehavior<MetricsMiddleware>();
     n.AddPipelineBehavior<ValidationMiddleware>();
+    n.AddPipelineBehavior<ServiceModeMiddleware>();
 });
 
 builder.Services.AddNimBusSubscriber("ErpEndpoint", sub =>

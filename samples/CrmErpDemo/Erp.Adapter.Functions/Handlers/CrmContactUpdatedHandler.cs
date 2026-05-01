@@ -5,11 +5,15 @@ using NimBus.SDK.EventHandlers;
 
 namespace Erp.Adapter.Functions.Handlers;
 
-public sealed class CrmContactUpdatedHandler(IErpApiClient erp, ILogger<CrmContactUpdatedHandler> logger)
+public sealed class CrmContactUpdatedHandler(
+    IErpApiClient erp,
+    IServiceModeClient modeClient,
+    ILogger<CrmContactUpdatedHandler> logger)
     : IEventHandler<CrmContactUpdated>
 {
     public async Task Handle(CrmContactUpdated message, IEventHandlerContext context, CancellationToken cancellationToken = default)
     {
+        await ErrorModeGuard.ThrowIfEnabledAsync(modeClient, context, logger, cancellationToken);
         logger.LogInformation("Upserting ERP contact {ContactId} from CRM update", message.ContactId);
 
         await erp.UpsertContactAsync(

@@ -26,6 +26,9 @@ var erpConnectionString = builder.Configuration.GetConnectionString("erp")
 
 builder.Services.AddDbContext<ErpDbContext>(opt => opt.UseSqlServer(erpConnectionString));
 
+builder.Services.AddSingleton<ServiceModeState>();
+builder.Services.AddSingleton<ErrorModeState>();
+
 // ERP hosts the outbox dispatcher (the Functions adapter doesn't host long-running polling).
 builder.Services.AddNimBusSqlServerOutbox(erpConnectionString);
 if (hasServiceBus)
@@ -104,5 +107,6 @@ if (!initSucceeded)
 
 app.MapCustomerEndpoints();
 app.MapErpContactEndpoints();
+app.MapAdminEndpoints();
 
 app.Run();

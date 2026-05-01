@@ -14,17 +14,24 @@ namespace NimBus.Core.Messages
         private readonly ILogger _logger;
         private readonly MessagePipeline _pipeline;
         private readonly MessageLifecycleNotifier _lifecycleNotifier;
+        private readonly IResponseService _responseService;
 
         public MessageHandler(ILogger logger)
-            : this(logger, null, null)
+            : this(logger, null, null, null)
         {
         }
 
         public MessageHandler(ILogger logger, MessagePipeline pipeline, MessageLifecycleNotifier lifecycleNotifier)
+            : this(logger, pipeline, lifecycleNotifier, null)
+        {
+        }
+
+        public MessageHandler(ILogger logger, MessagePipeline pipeline, MessageLifecycleNotifier lifecycleNotifier, IResponseService responseService)
         {
             _logger = logger ?? NullLogger.Instance;
             _pipeline = pipeline;
             _lifecycleNotifier = lifecycleNotifier;
+            _responseService = responseService;
         }
 
         public async Task Handle(IMessageContext messageContext, CancellationToken cancellationToken = default)
@@ -92,6 +99,7 @@ namespace NimBus.Core.Messages
                 try
                 {
                     var reason = $"Permanent failure: {permanentFailure.InnerException?.GetType().Name}";
+                    await NotifyResolverOfDeadLetter(messageContext, reason, permanentFailure.InnerException, cancellationToken);
                     await messageContext.DeadLetter(reason, permanentFailure.InnerException, cancellationToken);
 
                     if (_lifecycleNotifier?.HasObservers == true)
@@ -111,6 +119,8 @@ namespace NimBus.Core.Messages
                 _logger.LogWarning("Message already dead-lettered by middleware. EventId:{EventId}, Reason:{Reason}",
                     messageContext?.EventId, alreadyDeadLettered.Message);
 
+                await NotifyResolverOfDeadLetter(messageContext, alreadyDeadLettered.Message, alreadyDeadLettered, cancellationToken);
+
                 if (_lifecycleNotifier?.HasObservers == true)
                 {
                     await _lifecycleNotifier.NotifyFailed(messageContext, alreadyDeadLettered, cancellationToken);
@@ -128,6 +138,7 @@ namespace NimBus.Core.Messages
                 {
                     _logger.LogError(unexpectedException, "Unexpected Error. Failed to handle message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
                         messageContext?.EventId, messageContext.MessageId, messageContext.SessionId);
+                    await NotifyResolverOfDeadLetter(messageContext, "Failed to handle message.", unexpectedException, cancellationToken);
                     await messageContext.DeadLetter("Failed to handle message.", unexpectedException, cancellationToken);
 
                     if (_lifecycleNotifier?.HasObservers == true)
@@ -140,6 +151,24 @@ namespace NimBus.Core.Messages
                     _logger.LogError(ex, "Failed to deadletter message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
                         messageContext?.EventId, messageContext.MessageId, messageContext.SessionId);
                 }
+            }
+        }
+
+        private async Task NotifyResolverOfDeadLetter(IMessageContext messageContext, string reason, Exception exception, CancellationToken cancellationToken)
+        {
+            if (_responseService == null || messageContext == null) return;
+            try
+            {
+                await _responseService.SendDeadLetterResponse(messageContext, reason, exception, cancellationToken);
+            }
+            catch (Exception sendException)
+            {
+                // Best-effort: a failure to publish the dead-letter notification must not
+                // prevent the message from being dead-lettered. The DLQ is the source of
+                // truth — the operator can still resubmit from the Manager.
+                _logger.LogWarning(sendException,
+                    "Failed to publish dead-letter notification to Resolver. EventId:{EventId}, MessageId:{MessageId}",
+                    messageContext.EventId, messageContext.MessageId);
             }
         }
 

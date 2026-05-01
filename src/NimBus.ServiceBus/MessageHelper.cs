@@ -45,6 +45,18 @@ namespace NimBus.ServiceBus
                 result.ApplicationProperties[UserPropertyName.ProcessingTimeMs.ToString()] = message.ProcessingTimeMs.Value;
             }
 
+            // Dead-letter notification messages carry the SB dead-letter properties as
+            // user properties so the Resolver can mirror them into the audit record and
+            // classify the resolution status as DeadLettered.
+            if (!string.IsNullOrEmpty(message.DeadLetterReason))
+            {
+                result.ApplicationProperties[UserPropertyName.DeadLetterReason.ToString()] = message.DeadLetterReason;
+            }
+            if (!string.IsNullOrEmpty(message.DeadLetterErrorDescription))
+            {
+                result.ApplicationProperties[UserPropertyName.DeadLetterErrorDescription.ToString()] = message.DeadLetterErrorDescription;
+            }
+
             var diagnosticId = message.DiagnosticId ?? Activity.Current?.Id;
             if (!string.IsNullOrEmpty(diagnosticId))
                 result.ApplicationProperties[NimBusDiagnostics.DiagnosticIdProperty] = diagnosticId;

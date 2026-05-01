@@ -106,6 +106,26 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(0, ctx.DeadLetterCalls);
     }
 
+    // ── Dead-letter Resolver notification ───────────────────────────────
+
+    [TestMethod]
+    public async Task HandleResubmissionRequest_FromNonManager_NotifiesResolverOfDeadLetter()
+    {
+        // UnauthorizedAccessException flows through the base MessageHandler's
+        // unexpected-exception catch — should both DeadLetter and notify the Resolver.
+        var ctx = CreateContext(messageType: MessageType.ResubmissionRequest, from: "SomeEndpoint");
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.DeadLetterCalls);
+        Assert.AreEqual(1, response.DeadLetterCalls);
+        Assert.AreEqual("Failed to handle message.", response.LastDeadLetterReason);
+        Assert.IsInstanceOfType(response.LastDeadLetterException, typeof(UnauthorizedAccessException));
+    }
+
     [TestMethod]
     public async Task HandleEventRequest_HandlerThrowsWithRetryDefinition_SendsRetryResponse()
     {
@@ -556,11 +576,21 @@ public class StrictMessageHandlerTests
         public int ContinuationCalls { get; private set; }
         public int SendToDeferredSubscriptionCalls { get; private set; }
         public int ProcessDeferredCalls { get; private set; }
+        public int DeadLetterCalls { get; private set; }
+        public string LastDeadLetterReason { get; private set; }
+        public Exception LastDeadLetterException { get; private set; }
         public int? LastRetryDelayMinutes { get; private set; }
 
         public Task SendResolutionResponse(IMessageContext mc, CancellationToken ct = default) { ResolutionCalls++; return Task.CompletedTask; }
         public Task SendSkipResponse(IMessageContext mc, CancellationToken ct = default) { SkipCalls++; return Task.CompletedTask; }
         public Task SendErrorResponse(IMessageContext mc, Exception ex, CancellationToken ct = default) { ErrorCalls++; return Task.CompletedTask; }
+        public Task SendDeadLetterResponse(IMessageContext mc, string reason, Exception ex, CancellationToken ct = default)
+        {
+            DeadLetterCalls++;
+            LastDeadLetterReason = reason;
+            LastDeadLetterException = ex;
+            return Task.CompletedTask;
+        }
         public Task SendDeferralResponse(IMessageContext mc, SessionBlockedException ex, CancellationToken ct = default) { DeferralCalls++; return Task.CompletedTask; }
         public Task SendRetryResponse(IMessageContext mc, int delay, CancellationToken ct = default) { RetryCalls++; LastRetryDelayMinutes = delay; return Task.CompletedTask; }
         public Task SendUnsupportedResponse(IMessageContext mc, CancellationToken ct = default) { UnsupportedCalls++; return Task.CompletedTask; }

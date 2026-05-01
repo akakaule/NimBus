@@ -77,6 +77,39 @@ public class ResponseServiceTests
         Assert.AreEqual(typeof(InvalidOperationException).FullName, msg.MessageContent.ErrorContent.ErrorType);
     }
 
+    // ── SendDeadLetterResponse ──────────────────────────────────────────
+
+    [TestMethod]
+    public async Task SendDeadLetterResponse_RoutesToResolverWithDeadLetterProperties()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var ex = new InvalidOperationException("boom");
+
+        await sut.SendDeadLetterResponse(CreateContext(), reason: "Failed to handle message.", exception: ex);
+
+        var msg = sender.SentMessages.Single();
+        Assert.AreEqual(Constants.ResolverId, msg.To);
+        Assert.AreEqual(MessageType.ErrorResponse, msg.MessageType);
+        Assert.AreEqual("Failed to handle message.", msg.DeadLetterReason);
+        Assert.IsNotNull(msg.DeadLetterErrorDescription);
+        StringAssert.Contains(msg.DeadLetterErrorDescription, "boom");
+        StringAssert.Contains(msg.DeadLetterErrorDescription, nameof(InvalidOperationException));
+    }
+
+    [TestMethod]
+    public async Task SendDeadLetterResponse_WithoutException_StillCarriesReason()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+
+        await sut.SendDeadLetterResponse(CreateContext(), reason: "Validation failed: EventId is required", exception: null);
+
+        var msg = sender.SentMessages.Single();
+        Assert.AreEqual("Validation failed: EventId is required", msg.DeadLetterReason);
+        Assert.AreEqual("Validation failed: EventId is required", msg.DeadLetterErrorDescription);
+    }
+
     // ── SendDeferralResponse ────────────────────────────────────────────
 
     [TestMethod]

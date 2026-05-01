@@ -94,12 +94,14 @@ internal sealed class EndToEndFixture
         Publisher = new PublisherClient(_publishBus);
 
         _eventHandlerProvider = new EventHandlerProvider();
+        var responseService = new ResponseService(_responseBus);
 
         _messageHandler = new PipelineMessageHandler(
             NullLogger.Instance,
             _eventHandlerProvider,
             pipeline,
-            notifier);
+            notifier,
+            responseService);
     }
 
     /// <summary>
@@ -140,8 +142,9 @@ internal sealed class PipelineMessageHandler : MessageHandler
         Microsoft.Extensions.Logging.ILogger logger,
         IEventContextHandler eventContextHandler,
         MessagePipeline? pipeline,
-        MessageLifecycleNotifier? notifier)
-        : base(logger, pipeline, notifier)
+        MessageLifecycleNotifier? notifier,
+        IResponseService? responseService = null)
+        : base(logger, pipeline, notifier, responseService)
     {
         _eventContextHandler = eventContextHandler;
     }

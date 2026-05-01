@@ -32,7 +32,7 @@ const ACTIONABLE_STATUSES = [
 ];
 
 // URL sentinel meaning "user explicitly wants no status filter". We need this
-// because an absent `status` param falls back to defaults (Failed) — so without
+// because an absent `status` param falls back to defaults (Failed/DeadLettered/Unsupported) — so without
 // the sentinel, "show all statuses" would silently revert to the default after
 // any navigation. Pressing "All statuses" or removing the last chip writes
 // `?status=*`; buildEventFilterFromParams translates it back to no filter
@@ -45,9 +45,10 @@ function isAllStatusesSentinel(status: string[]): boolean {
 
 // URL-driven filter shape. Only the most-visible fields are persisted; advanced
 // filters (payload, enqueued, updated) live in the FilterContext as draft state
-// only and are picked up at Search-time. The default `status` of "Failed"
-// matches the operator UX where the page opens pre-filtered to the most common
-// actionable case (also the Reset target). Declared as a closed `type` so it
+// only and are picked up at Search-time. The default `status` set of
+// "Failed + DeadLettered + Unsupported" matches the operator UX where the page
+// opens pre-filtered to the most common failed-message states (also the Reset
+// target). Declared as a closed `type` so it
 // satisfies the index-signature constraint of `useUrlFilters<T>`.
 type EndpointFilterParams = {
   status: string[];
@@ -59,7 +60,11 @@ type EndpointFilterParams = {
 };
 
 const DEFAULT_ENDPOINT_FILTER_PARAMS: EndpointFilterParams = {
-  status: [api.ResolutionStatus.Failed],
+  status: [
+    api.ResolutionStatus.Failed,
+    api.ResolutionStatus.DeadLettered,
+    api.ResolutionStatus.Unsupported,
+  ],
   eventTypeId: [],
   eventId: "",
   sessionId: "",
@@ -144,7 +149,7 @@ const EventsPanel = (props: EventsPanelProps) => {
     setProjectContext: setEventFilter,
   };
 
-  // Materialise the default `status=Failed&status=DeadLettered` into the URL on
+  // Materialise the default failed-message statuses into the URL on
   // first mount when the URL has no status param. This makes the operator's
   // default landing state explicit in the URL — essential for browser Back from
   // a message-detail page to land back on the *same* filter the user saw.
@@ -484,14 +489,14 @@ const EventsPanel = (props: EventsPanelProps) => {
     applyFilters(paramsFromEventFilter(filter, applied));
   };
 
-  // Reset — clear all URL filter params back to defaults (which include Failed status).
+  // Reset — clear all URL filter params back to defaults (failed-message statuses).
   const handleReset = (): void => {
     resetFilters();
   };
 
   // "All statuses" — show every status. Writes the explicit sentinel so the
   // intent survives navigation; an absent param would otherwise fall back to
-  // the default (Failed) on the next render.
+  // the default failed-message statuses on the next render.
   const handleClearStatus = (): void => {
     applyFilters({ ...applied, status: [STATUS_ALL_SENTINEL] });
   };

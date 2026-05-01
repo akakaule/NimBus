@@ -9,6 +9,13 @@ namespace NimBus.Core.Messages
         Task SendResolutionResponse(IMessageContext messageContext, CancellationToken cancellationToken = default);
         Task SendSkipResponse(IMessageContext messageContext, CancellationToken cancellationToken = default);
         Task SendErrorResponse(IMessageContext messageContext, Exception exception, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Notifies the Resolver that a message was dead-lettered. Sends a response
+        /// message routed to the Resolver carrying the dead-letter reason and
+        /// formatted exception so the audit record is classified as DeadLettered.
+        /// </summary>
+        Task SendDeadLetterResponse(IMessageContext messageContext, string reason, Exception exception, CancellationToken cancellationToken = default);
         Task SendDeferralResponse(IMessageContext messageContext, SessionBlockedException exception, CancellationToken cancellationToken = default);
         Task SendContinuationRequestToSelf(IMessageContext deferredMessageContext, CancellationToken cancellationToken = default);
         Task SendRetryResponse(IMessageContext messageContext, int messageDelayMinutes, CancellationToken cancellationToken = default);

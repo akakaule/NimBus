@@ -286,6 +286,43 @@ public class PipelineAndLifecycleTests
         Assert.IsTrue(results[0].Session.WasDeadLettered, "Message should be dead-lettered");
     }
 
+    [TestMethod]
+    public async Task Pipeline_BehaviorThrowsBeforeNext_ResolverReceivesDeadLetterNotification()
+    {
+        // Arrange — middleware throws (same shape as the demo's ServiceModeMiddleware).
+        // Verifies that NimBus publishes a notification to the Resolver carrying the
+        // DeadLetterReason / DeadLetterErrorDescription, in addition to dead-lettering
+        // the inbound message.
+        var services = new ServiceCollection();
+        services.AddNimBus(builder =>
+        {
+            builder.AddPipelineBehavior<ThrowingBehavior>();
+        });
+        var sp = services.BuildServiceProvider();
+        var pipeline = sp.GetRequiredService<MessagePipeline>();
+        var notifier = sp.GetRequiredService<MessageLifecycleNotifier>();
+
+        var fixture = new EndToEndFixture(pipeline, notifier);
+        var handler = new RecordingOrderPlacedHandler();
+        fixture.RegisterHandler(() => handler);
+
+        // Act
+        await fixture.Publisher.Publish(new OrderPlaced("s-dlq-notify") { OrderId = "ORD-DLQ" });
+        var results = await fixture.DeliverAllWithResults();
+
+        // Assert — inbound was dead-lettered AND a notification was sent to the Resolver
+        Assert.IsTrue(results[0].Session.WasDeadLettered, "Inbound message should be dead-lettered");
+
+        var notification = fixture.ResponseBus.SentMessages.SingleOrDefault(m =>
+            m.To == Constants.ResolverId && !string.IsNullOrEmpty(m.DeadLetterErrorDescription));
+        Assert.IsNotNull(notification, "Resolver should receive a notification with DeadLetterErrorDescription set");
+        Assert.AreEqual("Failed to handle message.", notification.DeadLetterReason);
+        Assert.AreEqual(MessageType.ErrorResponse, notification.MessageType,
+            "Notification routes via ErrorResponse — Resolver classifies as DeadLettered because DeadLetterErrorDescription is set");
+        StringAssert.Contains(notification.DeadLetterErrorDescription, "ThrowingBehavior",
+            "Description should carry the formatted exception so operators see why");
+    }
+
     // ── Behaviors ────────────────────────────────────────────────────────
 
     private sealed class LoggingBehavior : IMessagePipelineBehavior

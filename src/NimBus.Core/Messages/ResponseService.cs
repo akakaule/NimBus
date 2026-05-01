@@ -32,6 +32,23 @@ namespace NimBus.Core.Messages
             await _sender.Send(response, cancellationToken: cancellationToken);
         }
 
+        public async Task SendDeadLetterResponse(IMessageContext messageContext, string reason, Exception exception, CancellationToken cancellationToken = default)
+        {
+            // Routed to the Resolver as an ErrorResponse with the dead-letter properties
+            // populated. The Resolver short-circuits on DeadLetterErrorDescription and
+            // classifies the audit record as DeadLettered regardless of MessageType.
+            var content = exception != null
+                ? CreateErrorContent(exception, messageContext)
+                : new MessageContent { EventContent = messageContext.MessageContent?.EventContent };
+            var response = (Message)CreateResponse(messageContext, MessageType.ErrorResponse, content);
+            response.DeadLetterReason = reason;
+            response.DeadLetterErrorDescription = FormatDeadLetterDescription(exception, reason);
+            await _sender.Send(response, cancellationToken: cancellationToken);
+        }
+
+        private static string FormatDeadLetterDescription(Exception exception, string reason) =>
+            exception?.ToString() ?? reason;
+
         public async Task SendDeferralResponse(IMessageContext messageContext, SessionBlockedException exception, CancellationToken cancellationToken = default)
         {
             IMessage response = CreateResponse(messageContext, MessageType.DeferralResponse, CreateErrorContent(exception, messageContext));

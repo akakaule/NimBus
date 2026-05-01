@@ -72,6 +72,21 @@
         /// original publishes.
         /// </summary>
         long? ProcessingTimeMs => null;
+
+        /// <summary>
+        /// Reason the message was dead-lettered, mirrored from the Service Bus
+        /// dead-letter properties. Set on dead-letter notification messages
+        /// sent to the Resolver so it can record the dead-letter outcome.
+        /// </summary>
+        string DeadLetterReason => null;
+
+        /// <summary>
+        /// Detailed error description for a dead-lettered message (typically
+        /// the formatted exception). Set on dead-letter notification messages
+        /// sent to the Resolver — its presence drives the Resolver to classify
+        /// the audit record as DeadLettered.
+        /// </summary>
+        string DeadLetterErrorDescription => null;
     }
 
     public class Message : IMessage
@@ -104,5 +119,7 @@
         public string ReplyToSessionId { get; set; }
         public long? QueueTimeMs { get; set; }
         public long? ProcessingTimeMs { get; set; }
+        public string DeadLetterReason { get; set; }
+        public string DeadLetterErrorDescription { get; set; }
     }
 }

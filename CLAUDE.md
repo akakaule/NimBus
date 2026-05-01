@@ -64,7 +64,8 @@ docs/
   sdk-api-reference.md     # SDK API guide
   getting-started.md       # Quick start
   pipeline-middleware.md   # Middleware pattern documentation
-  message-flows.md         # 10 message flow diagrams
+  message-flows.md         # 12 message flow diagrams
+  error-handling.md        # Adapter error-handling reference (exception types, retry vs DLQ)
   deferred-messages.md     # Deferred message processing guide
   cli.md                   # CLI command reference
   extensions.md            # Extension framework

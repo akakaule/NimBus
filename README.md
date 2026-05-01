@@ -274,7 +274,8 @@ The pipeline uses `nb setup` to run all deployment steps (`infra apply` → `top
 |-------|-------------|
 | [Getting Started](docs/getting-started.md) | Step-by-step tutorial: create a publisher, subscriber, and run with Aspire |
 | [Azure Functions Hosting](docs/azure-functions-hosting.md) | Production hosting with Service Bus session triggers and DeferredProcessor |
-| [Message Flows](docs/message-flows.md) | All 10 message flow patterns with ASCII diagrams |
+| [Message Flows](docs/message-flows.md) | All 12 message flow patterns with mermaid diagrams |
+| [Error Handling](docs/error-handling.md) | Adapter error-handling reference (transient, retry, dead-letter, classification) |
 | [Deferred Messages](docs/deferred-messages.md) | Session blocking and deferral mechanics with Mermaid diagrams |
 | [Pipeline Middleware](docs/pipeline-middleware.md) | Built-in middleware, custom behaviors, and lifecycle observers |
 | [CLI Reference](docs/cli.md) | All `nb` commands: infra, topology, deploy, endpoint, container, catalog |
@@ -282,6 +283,15 @@ The pipeline uses `nb setup` to run all deployment steps (`infra apply` → `top
 | [Extensions](docs/extensions.md) | Extension framework guide |
 | [Architecture](docs/architecture.md) | System design and component overview |
 | [Roadmap](docs/roadmap.md) | Feature roadmap through H2 2027 |
+
+## Acknowledgments
+
+NimBus owes a clear intellectual debt to two open-source projects in the .NET messaging space. The design of the SDK, the pipeline of behaviors, the recoverability story (retries, dead-letter, audit, operator-driven resubmit/skip), and the framing of session-based ordering as a first-class concern are all heavily influenced by prior art from these communities.
+
+- **[NServiceBus](https://particular.net/nservicebus)** by Particular Software — the primary source of inspiration. NimBus's approach to message handlers, the pipeline-of-behaviors pattern, the transactional outbox, the centralized audit/recovery surface (in the spirit of ServiceControl + ServicePulse), and the emphasis on operator workflows over silent dead-letter all trace back to NServiceBus's ecosystem.
+- **[Rebus](https://github.com/rebus-org/Rebus)** by Mogens Heller Grabe and contributors — additional inspiration for SDK ergonomics and the transport-agnostic framing of messaging abstractions.
+
+NimBus is an independent implementation targeted specifically at Azure Service Bus + Cosmos DB and is not a port, fork, or derivative of either project. Any awkward design choices here are NimBus's own.
 
 ## License
 

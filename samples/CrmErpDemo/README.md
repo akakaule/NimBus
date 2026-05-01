@@ -359,6 +359,8 @@ The Aspire dashboard opens automatically. Wait for `provisioner` to complete, th
 5. Restart `erp-api` from the Aspire dashboard.
 6. From **nimbus-ops**, resubmit the failed message → flow completes; the link-erp callback updates the account.
 
+For the full classification of error types in an adapter (transient redelivery, retry, immediate dead-letter, validation rejection) and how each path is recorded by the Resolver, see [`docs/error-handling.md`](../../docs/error-handling.md).
+
 ## Out of scope (v1)
 
 No authn/authz, no multi-tenant, no production deployment scripts, no non-Azure transports, no realistic tax/currency/shipping math, no automated browser tests, no UI i18n, no Sales Orders/Products/Inventory.

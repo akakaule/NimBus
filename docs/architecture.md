@@ -512,6 +512,8 @@ Key behaviors:
 - continuation and deferred processing
 - manager-only recovery operations for some command types
 
+For the full set of error paths (transient redelivery, retry vs. dead-letter classification, validation rejection) see [`error-handling.md`](error-handling.md).
+
 ### 3. Resolver persistence flow
 
 ```mermaid

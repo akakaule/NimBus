@@ -6,24 +6,16 @@ NimBus includes a middleware pipeline that wraps message processing, allowing cr
 
 Middleware behaviors implement `IMessagePipelineBehavior` and execute in registration order, each wrapping the next. The innermost step is the actual message handler (`StrictMessageHandler`).
 
-```
-Request enters
-  ↓
-LoggingMiddleware (before)
-  ↓
-MetricsMiddleware (before)
-  ↓
-ValidationMiddleware (check)
-  ↓
-StrictMessageHandler → EventHandler
-  ↓
-ValidationMiddleware (done)
-  ↓
-MetricsMiddleware (record duration)
-  ↓
-LoggingMiddleware (log result)
-  ↓
-Response exits
+```mermaid
+flowchart TD
+    Req[Request enters] --> L1[LoggingMiddleware - before]
+    L1 --> M1[MetricsMiddleware - before]
+    M1 --> V1[ValidationMiddleware - check]
+    V1 --> H[StrictMessageHandler → EventHandler]
+    H --> V2[ValidationMiddleware - done]
+    V2 --> M2[MetricsMiddleware - record duration]
+    M2 --> L2[LoggingMiddleware - log result]
+    L2 --> Res[Response exits]
 ```
 
 Each behavior receives the full `IMessageContext` and a `next` delegate. Calling `await next(context, ct)` passes control to the next behavior (or the terminal handler). Not calling `next` short-circuits the pipeline.
@@ -149,6 +141,8 @@ Middleware is resolved from DI, so constructor injection works for any registere
 ## Common Patterns
 
 ### Exception Handling
+
+For the full classification of how each exception type is handled (transient redelivery, retry, dead-letter), see [`error-handling.md`](error-handling.md).
 
 Wrap `next()` in try/catch to handle or transform exceptions:
 

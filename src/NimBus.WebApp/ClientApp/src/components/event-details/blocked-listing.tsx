@@ -36,9 +36,13 @@ export default function BlockedListing(props: IBlockedListing) {
 
   const mapEvents = () => {
     const iRows = props.events.map((item) => {
+      const endpointId = item.message.endpointId ?? item.message.to;
       const row: ITableRow = {
         id: item.message.eventId!,
         bodyActions: [],
+        route: endpointId
+          ? `/Message/Index/${endpointId}/${item.message.eventId}/0`
+          : undefined,
         data: new Map([
           [
             "eventId",

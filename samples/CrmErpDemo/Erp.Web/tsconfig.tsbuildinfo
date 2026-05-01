@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/api.ts","./src/main.tsx","./src/pages/contactform.tsx","./src/pages/contactslist.tsx","./src/pages/customerform.tsx","./src/pages/customerslist.tsx"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/api.ts","./src/fakedata.ts","./src/main.tsx","./src/pages/contactform.tsx","./src/pages/contactslist.tsx","./src/pages/customerform.tsx","./src/pages/customerslist.tsx"],"version":"5.9.3"}

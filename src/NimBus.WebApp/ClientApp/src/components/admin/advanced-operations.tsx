@@ -207,7 +207,7 @@ export function DeleteByStatusCard({ endpoints }: { endpoints: EndpointOption[] 
     <Card>
       <CardHeader>
         <CardTitle>Delete Events by Status</CardTitle>
-        <CardDescription>Delete events from Cosmos DB filtered by resolution status</CardDescription>
+        <CardDescription>Delete events filtered by resolution status</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
@@ -305,7 +305,7 @@ export function SkipMessagesCard({ endpoints }: { endpoints: EndpointOption[] })
     <Card>
       <CardHeader>
         <CardTitle>Skip Messages</CardTitle>
-        <CardDescription>Mark events as Skipped in Cosmos DB (transition from failure/deferred states)</CardDescription>
+        <CardDescription>Mark events as Skipped (transition from failure/deferred states)</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
@@ -466,7 +466,7 @@ export function CopyEndpointCard({ endpoints }: { endpoints: EndpointOption[] })
     <Card>
       <CardHeader>
         <CardTitle>Copy Endpoint Data</CardTitle>
-        <CardDescription>Copy events and messages from this Cosmos DB to another instance</CardDescription>
+        <CardDescription>Copy events and messages from this storage instance to another (Cosmos DB only)</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
@@ -515,7 +515,7 @@ export function CopyEndpointCard({ endpoints }: { endpoints: EndpointOption[] })
           )}
 
           <ConfirmDestructiveAction isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={handleExecute}
-            title="Copy Endpoint Data" description={`This will copy data from endpoint "${selected[0] ?? ""}" to the target Cosmos DB.`}
+            title="Copy Endpoint Data" description={`This will copy data from endpoint "${selected[0] ?? ""}" to the target instance.`}
             confirmText={selected[0] ?? ""} isLoading={executing} />
         </div>
       </CardContent>
@@ -546,7 +546,7 @@ export function DeleteAllEventsCard({ endpoints }: { endpoints: EndpointOption[]
     <Card>
       <CardHeader>
         <CardTitle>Delete All Events</CardTitle>
-        <CardDescription>Delete the entire endpoint container from Cosmos DB. This removes all events regardless of status.</CardDescription>
+        <CardDescription>Delete the entire endpoint container from storage. This removes all events regardless of status.</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
@@ -562,7 +562,7 @@ export function DeleteAllEventsCard({ endpoints }: { endpoints: EndpointOption[]
           {result && <OperationProgress processed={result.processed ?? 0} succeeded={result.succeeded ?? 0} failed={result.failed ?? 0} errors={result.errors} isComplete={true} />}
 
           <ConfirmDestructiveAction isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={handleExecute}
-            title="Delete All Events" description={`This will permanently delete ALL events for endpoint "${selected[0] ?? ""}". The entire Cosmos DB container will be removed. This action cannot be undone.`}
+            title="Delete All Events" description={`This will permanently delete ALL events for endpoint "${selected[0] ?? ""}". The entire storage container will be removed. This action cannot be undone.`}
             confirmText={selected[0] ?? ""} isLoading={executing} />
         </div>
       </CardContent>

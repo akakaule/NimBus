@@ -460,7 +460,7 @@ export default function MessageListing(props: IMessageListingProps) {
         <ModalHeader>Delete Event</ModalHeader>
         <ModalBody>
           <p className="text-sm">
-            This will permanently delete the event from Cosmos DB.{" "}
+            This will permanently delete the event from storage.{" "}
             <span className="font-semibold text-red-600">This action cannot be undone.</span>
           </p>
         </ModalBody>

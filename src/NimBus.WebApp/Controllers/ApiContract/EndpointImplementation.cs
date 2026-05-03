@@ -5,6 +5,7 @@ using System.Net;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
 using NimBus.WebApp.ManagementApi;
 using Microsoft.AspNetCore.Http;
 using NimBus.Core;
@@ -29,7 +30,7 @@ public class EndpointImplementation : IEndpointApiController
 {
     private readonly IPlatform platform;
     private readonly IConfiguration configuration;
-    private readonly ICosmosDbClient cosmosClient;
+    private readonly INimBusMessageStore cosmosClient;
     private readonly IServiceBusManagement serviceBusManagement;
     private readonly IEndpointAuthorizationService _authorizationService;
     private readonly HttpContext _context;
@@ -40,7 +41,7 @@ public class EndpointImplementation : IEndpointApiController
         IHttpContextAccessor contextAccessor,
         IPlatform platform,
         IConfiguration configuration,
-        ICosmosDbClient cosmosClient,
+        INimBusMessageStore cosmosClient,
         IServiceBusManagement serviceBusManagement,
         IEndpointAuthorizationService authorizationService)
     {
@@ -80,6 +81,10 @@ public class EndpointImplementation : IEndpointApiController
         {
             return new NotFoundObjectResult("Endpoint container not found in database");
         }
+        catch (EndpointNotFoundException)
+        {
+            return new NotFoundObjectResult("Endpoint container not found in database");
+        }
 
         return new OkObjectResult(endpointStateCounts.Select(Mapper.EndpointStatusCountFromEndpointStateCount));
     }
@@ -115,6 +120,10 @@ public class EndpointImplementation : IEndpointApiController
         {
             return new NotFoundObjectResult("Endpoint not found");
         }
+        catch (EndpointNotFoundException)
+        {
+            return new NotFoundObjectResult("Endpoint not found");
+        }
     }
 
     public async Task<ActionResult<EndpointStatus>> GetApiEndpointstatusStatusEndpointNameAsync(string endpointName)
@@ -140,6 +149,10 @@ public class EndpointImplementation : IEndpointApiController
                 return new OkObjectResult(Mapper.SessionStatusFromSessionState(sessionState));
             }
             catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
+            }
+            catch (EndpointNotFoundException)
             {
                 return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
             }
@@ -192,6 +205,10 @@ public class EndpointImplementation : IEndpointApiController
         {
             return new NotFoundObjectResult("Endpoint container not found in database");
         }
+        catch (EndpointNotFoundException)
+        {
+            return new NotFoundObjectResult("Endpoint container not found in database");
+        }
 
         return new OkObjectResult(endpointStateCounts.Select(Mapper.EndpointStatusCountFromEndpointStateCount));
     }
@@ -219,6 +236,11 @@ public class EndpointImplementation : IEndpointApiController
                         result.Add(Mapper.EndpointStatusCountFromEndpointStateCount(endpointStateCount));
                     }
                     catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+                    {
+                        cts.Cancel();
+                        returnObjectIfCancelled = new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
+                    }
+                    catch (EndpointNotFoundException)
                     {
                         cts.Cancel();
                         returnObjectIfCancelled = new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
@@ -274,6 +296,10 @@ public class EndpointImplementation : IEndpointApiController
         {
             return new NotFoundObjectResult("Endpoint not found");
         }
+        catch (EndpointNotFoundException)
+        {
+            return new NotFoundObjectResult("Endpoint not found");
+        }
     }
 
     public async Task<ActionResult<IEnumerable<string>>> GetEndpointsAllAsync()
@@ -298,6 +324,10 @@ public class EndpointImplementation : IEndpointApiController
                 return new OkObjectResult(result);
             }
             catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                return new NotFoundObjectResult($"Endpoint container '{endpointName}' not found in database");
+            }
+            catch (EndpointNotFoundException)
             {
                 return new NotFoundObjectResult($"Endpoint container '{endpointName}' not found in database");
             }
@@ -331,6 +361,10 @@ public class EndpointImplementation : IEndpointApiController
             {
                 return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
             }
+            catch (EndpointNotFoundException)
+            {
+                return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
+            }
         }
         return new NotFoundObjectResult("Endpoint not found");
     }
@@ -350,6 +384,10 @@ public class EndpointImplementation : IEndpointApiController
             return new OkObjectResult(result);
         }
         catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
+        }
+        catch (EndpointNotFoundException)
         {
             return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
         }

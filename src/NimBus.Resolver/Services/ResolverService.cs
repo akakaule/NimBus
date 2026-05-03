@@ -2,6 +2,7 @@
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -11,7 +12,8 @@ namespace NimBus.Broker.Services
 {
     public class ResolverService : IMessageHandler
     {
-        private readonly ICosmosDbClient _cosmosClient;
+        private readonly IMessageTrackingStore _store;
+        private readonly IMessageStateChangeNotifier _notifier;
         private readonly ILogger _logger;
 
         private const int MaxThrottleRetries = 10;
@@ -32,9 +34,10 @@ namespace NimBus.Broker.Services
             [MessageType.UnsupportedResponse] = ResolutionStatus.Unsupported,
         };
 
-        public ResolverService(ICosmosDbClient cosmosClient, ILogger logger = null)
+        public ResolverService(IMessageTrackingStore store, IMessageStateChangeNotifier notifier = null, ILogger logger = null)
         {
-            _cosmosClient = cosmosClient;
+            _store = store;
+            _notifier = notifier ?? new NoopMessageStateChangeNotifier();
             _logger = logger;
         }
 
@@ -47,15 +50,22 @@ namespace NimBus.Broker.Services
             {
                 MessageEntity messageEntity = await CreateMessageEntity(messageContext);
 
-                await _cosmosClient.StoreMessage(messageEntity);
+                await _store.StoreMessage(messageEntity);
 
                 var status = await UpdateState(messageEntity);
 
                 _logger?.Information("Resolver: Updated Endpoint EndpointId:{EndpointId}, Status:{Status}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
                     messageEntity.EndpointId, status, messageEntity.EventId, messageContext.MessageId, messageEntity.SessionId);
+
+                // Fire state-change notification (provider-neutral). Webhook is no longer
+                // the only way for the WebApp to learn about updates; this works for any
+                // storage provider including SQL Server which has no Change Feed.
+                try { await _notifier.NotifyEndpointStateChangedAsync(messageEntity.EndpointId, cancellationToken); }
+                catch (Exception notifyEx) { _logger?.Warning(notifyEx, "Resolver: state-change notification failed (non-fatal)"); }
+
                 await messageContext.Complete(cancellationToken);
             }
-            catch (RequestLimitException ex)
+            catch (StorageProviderTransientException ex) when (ex.RetryAfter.HasValue)
             {
                 await HandleThrottling(messageContext, ex.RetryAfter, cancellationToken);
             }
@@ -121,7 +131,7 @@ namespace NimBus.Broker.Services
             if (message.MessageType == MessageType.RetryRequest)
             {
                 var messageAudit = new MessageAuditEntity() { AuditorName = Constants.ManagerId, AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Retry };
-                await _cosmosClient.StoreMessageAudit(message.EventId, messageAudit);
+                await _store.StoreMessageAudit(message.EventId, messageAudit);
             }
 
             var (endpointId, endpointRole) = DetermineEndpoint(message);
@@ -226,13 +236,13 @@ namespace NimBus.Broker.Services
 
             var statusHandlers = new Dictionary<ResolutionStatus, Func<Task>>
             {
-                [ResolutionStatus.Completed] = () => _cosmosClient.UploadCompletedMessage(message.EventId, message.SessionId, message.EndpointId, unresolvedEvent),
-                [ResolutionStatus.Skipped] = () => _cosmosClient.UploadSkippedMessage(message.EventId, message.SessionId, message.EndpointId, unresolvedEvent),
-                [ResolutionStatus.Failed] = () => _cosmosClient.UploadFailedMessage(message.EventId, message.SessionId, message.EndpointId, unresolvedEvent),
-                [ResolutionStatus.Deferred] = () => _cosmosClient.UploadDeferredMessage(message.EventId, message.SessionId, message.EndpointId, unresolvedEvent),
-                [ResolutionStatus.Pending] = () => _cosmosClient.UploadPendingMessage(message.EventId, message.SessionId, message.EndpointId, unresolvedEvent),
-                [ResolutionStatus.DeadLettered] = () => _cosmosClient.UploadDeadletteredMessage(message.EventId, message.SessionId, message.EndpointId, unresolvedEvent),
-                [ResolutionStatus.Unsupported] = () => _cosmosClient.UploadUnsupportedMessage(message.EventId, message.SessionId, message.EndpointId, unresolvedEvent),
+                [ResolutionStatus.Completed] = () => _store.UploadCompletedMessage(message.EventId, message.SessionId, message.EndpointId, unresolvedEvent),
+                [ResolutionStatus.Skipped] = () => _store.UploadSkippedMessage(message.EventId, message.SessionId, message.EndpointId, unresolvedEvent),
+                [ResolutionStatus.Failed] = () => _store.UploadFailedMessage(message.EventId, message.SessionId, message.EndpointId, unresolvedEvent),
+                [ResolutionStatus.Deferred] = () => _store.UploadDeferredMessage(message.EventId, message.SessionId, message.EndpointId, unresolvedEvent),
+                [ResolutionStatus.Pending] = () => _store.UploadPendingMessage(message.EventId, message.SessionId, message.EndpointId, unresolvedEvent),
+                [ResolutionStatus.DeadLettered] = () => _store.UploadDeadletteredMessage(message.EventId, message.SessionId, message.EndpointId, unresolvedEvent),
+                [ResolutionStatus.Unsupported] = () => _store.UploadUnsupportedMessage(message.EventId, message.SessionId, message.EndpointId, unresolvedEvent),
             };
 
             if (statusHandlers.TryGetValue(status, out var handler))

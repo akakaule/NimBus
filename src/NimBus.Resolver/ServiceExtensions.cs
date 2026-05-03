@@ -3,9 +3,7 @@ using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 using NimBus.Broker.Services;
 using NimBus.Core.Messages;
-using NimBus.MessageStore;
 using NimBus.ServiceBus;
-using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
@@ -14,28 +12,13 @@ namespace NimBus.Resolver
 {
     public static class ServiceExtensions
     {
+        /// <summary>
+        /// Legacy IServiceCollection-based registration. Storage provider must be
+        /// registered separately via NimBus builder (AddCosmosDbMessageStore /
+        /// AddSqlServerMessageStore).
+        /// </summary>
         public static IServiceCollection AddResolver(this IServiceCollection services)
         {
-            services.AddSingleton(sp =>
-            {
-                var config = sp.GetRequiredService<IConfiguration>();
-                var endpoint = config.GetValue<string>("CosmosAccountEndpoint");
-                if (!string.IsNullOrEmpty(endpoint) && !endpoint.Contains("AccountKey="))
-                    return new CosmosClient(endpoint, new DefaultAzureCredential());
-
-                var connectionString = endpoint
-                    ?? config.GetConnectionString("cosmos")
-                    ?? config.GetValue<string>("CosmosConnection")
-                    ?? throw new InvalidOperationException("CosmosConnection configuration is required");
-                return new CosmosClient(connectionString);
-            });
-
-            services.AddSingleton<ICosmosDbClient>(sp =>
-            {
-                var cosmosClient = sp.GetRequiredService<CosmosClient>();
-                return new CosmosDbClient(cosmosClient, Log.Logger);
-            });
-
             services.AddSingleton<Serilog.ILogger>(Log.Logger);
 
             services.AddSingleton<IMessageHandler, ResolverService>();

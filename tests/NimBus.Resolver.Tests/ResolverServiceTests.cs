@@ -237,7 +237,7 @@ public class ResolverServiceTests
         }
     }
 
-    private sealed class FakeCosmosDbClient : ICosmosDbClient
+    private sealed class FakeCosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.INimBusMessageStore
     {
         public Exception? StoreMessageException { get; set; }
         public List<MessageEntity> StoredMessages { get; } = new();

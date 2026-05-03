@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Extensions;
+using NimBus.Testing;
 using NimBus.Core.Messages;
 using NimBus.Core.Pipeline;
 using System;
@@ -288,6 +289,7 @@ public class PipelineWiringTests
         services.AddSingleton(log);
         services.AddNimBus(builder =>
         {
+            builder.AddInMemoryMessageStore();
             builder.AddPipelineBehavior<TrackingBehavior>();
         });
 
@@ -313,6 +315,7 @@ public class PipelineWiringTests
         services.AddLogging();
         services.AddNimBus(builder =>
         {
+            builder.AddInMemoryMessageStore();
             builder.AddPipelineBehavior<LoggingMiddleware>();
             builder.AddPipelineBehavior<MetricsMiddleware>();
             builder.AddPipelineBehavior<ValidationMiddleware>();
@@ -338,6 +341,7 @@ public class PipelineWiringTests
         services.AddLogging();
         services.AddNimBus(builder =>
         {
+            builder.AddInMemoryMessageStore();
             builder.AddPipelineBehavior<ValidationMiddleware>();
         });
 

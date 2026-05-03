@@ -7,6 +7,7 @@ using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Messages;
 using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using NimBus.ServiceBus;
 using NimBus.WebApp.ManagementApi;
@@ -20,11 +21,11 @@ namespace NimBus.WebApp.Services;
 
 public class SeedDataService
 {
-    private readonly ICosmosDbClient _cosmosClient;
+    private readonly INimBusMessageStore _cosmosClient;
     private readonly ServiceBusClient _sbClient;
     private readonly IPlatform _platform;
 
-    public SeedDataService(ICosmosDbClient cosmosClient, ServiceBusClient sbClient, IPlatform platform)
+    public SeedDataService(INimBusMessageStore cosmosClient, ServiceBusClient sbClient, IPlatform platform)
     {
         _cosmosClient = cosmosClient;
         _sbClient = sbClient;

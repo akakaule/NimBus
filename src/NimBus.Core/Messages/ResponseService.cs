@@ -153,6 +153,11 @@ namespace NimBus.Core.Messages
             IMessage deferredMessage = new Message()
             {
                 To = Constants.DeferredSubscriptionName,
+                // Preserve the publisher endpoint name. When this parked message is later
+                // republished by DeferredMessageProcessor and the receiver picks it back up,
+                // StrictMessageHandler reads messageContext.From and throws InvalidMessageException
+                // if the property is missing.
+                From = messageContext.From,
                 CorrelationId = messageContext.CorrelationId,
                 SessionId = messageContext.SessionId,           // Session-enabled deferred subscription
                 EventId = messageContext.EventId,

@@ -9,6 +9,7 @@ using Newtonsoft.Json.Linq;
 using NimBus.Core;
 using NimBus.Manager;
 using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
 using NimBus.WebApp.ManagementApi;
 using Microsoft.Extensions.Logging;
 using CoreConstants = NimBus.Core.Messages.Constants;
@@ -18,8 +19,11 @@ namespace NimBus.WebApp.Services;
 public class AdminService : IAdminService
 {
     private readonly IPlatform _platform;
-    private readonly ICosmosDbClient _cosmosClient;
-    private readonly CosmosClient _rawCosmosClient;
+    private readonly INimBusMessageStore _cosmosClient;
+    // Cosmos-only: cross-account copy + bulk-delete-by-recipient operations use the raw
+    // Cosmos client directly. Null when the active provider is not Cosmos.
+    private readonly CosmosClient? _rawCosmosClient;
+    private readonly IStorageProviderCapabilities _capabilities;
     private readonly ServiceBusAdministrationClient _sbAdmin;
     private readonly ServiceBusClient _sbClient;
     private readonly IManagerClient _managerClient;
@@ -32,20 +36,32 @@ public class AdminService : IAdminService
 
     public AdminService(
         IPlatform platform,
-        ICosmosDbClient cosmosClient,
-        CosmosClient rawCosmosClient,
+        INimBusMessageStore cosmosClient,
+        IStorageProviderCapabilities capabilities,
         ServiceBusAdministrationClient sbAdmin,
         ServiceBusClient sbClient,
         IManagerClient managerClient,
-        ILogger<AdminService> logger)
+        ILogger<AdminService> logger,
+        CosmosClient? rawCosmosClient = null)
     {
         _platform = platform;
         _cosmosClient = cosmosClient;
+        _capabilities = capabilities;
         _rawCosmosClient = rawCosmosClient;
         _sbAdmin = sbAdmin;
         _sbClient = sbClient;
         _managerClient = managerClient;
         _logger = logger;
+    }
+
+    private void EnsureCosmosOnlyOperation(string operationName)
+    {
+        if (!_capabilities.SupportsCrossAccountCopy || _rawCosmosClient is null)
+        {
+            throw new NotSupportedException(
+                $"{operationName} is supported only when the Cosmos DB storage provider is active. " +
+                "Operators using the SQL Server provider should use SQL Server backup/restore tooling instead.");
+        }
     }
 
     // ───────────────────────── Platform Configuration ─────────────────────────
@@ -736,7 +752,8 @@ public class AdminService : IAdminService
 
     public async Task<int> DeleteMessagesByToPreviewAsync(string toField)
     {
-        var container = _rawCosmosClient.GetDatabase(DatabaseId).GetContainer(MessagesContainer);
+        EnsureCosmosOnlyOperation(nameof(DeleteMessagesByToPreviewAsync));
+        var container = _rawCosmosClient!.GetDatabase(DatabaseId).GetContainer(MessagesContainer);
         var query = new QueryDefinition("SELECT VALUE COUNT(1) FROM c WHERE c.message.To = @to")
             .WithParameter("@to", toField);
 
@@ -752,7 +769,8 @@ public class AdminService : IAdminService
 
     public async Task<BulkOperationResult> DeleteMessagesByToAsync(string toField)
     {
-        var container = _rawCosmosClient.GetDatabase(DatabaseId).GetContainer(MessagesContainer);
+        EnsureCosmosOnlyOperation(nameof(DeleteMessagesByToAsync));
+        var container = _rawCosmosClient!.GetDatabase(DatabaseId).GetContainer(MessagesContainer);
         var query = new QueryDefinition("SELECT * FROM c WHERE c.message.To = @to")
             .WithParameter("@to", toField);
 
@@ -910,8 +928,9 @@ public class AdminService : IAdminService
 
     public async Task<CopyResult> CopyEndpointDataAsync(string endpointId, string targetConnectionString, DateTime? from, DateTime? to, List<string> statuses, int? batchSize)
     {
+        EnsureCosmosOnlyOperation(nameof(CopyEndpointDataAsync));
         using var targetClient = new CosmosClient(targetConnectionString);
-        var sourceDb = _rawCosmosClient.GetDatabase(DatabaseId);
+        var sourceDb = _rawCosmosClient!.GetDatabase(DatabaseId);
         var targetDb = targetClient.GetDatabase(DatabaseId);
 
         // Copy events

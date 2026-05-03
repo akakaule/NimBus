@@ -30,7 +30,10 @@ internal sealed class InfrastructureDeployer
         await _az.EnsureExtensionAsync("application-insights", cancellationToken).ConfigureAwait(false);
 
         var appInsightsApiKey = await EnsureAppInsightsApiKeyAsync(options.ResourceGroupName, names.AppInsightsName, cancellationToken).ConfigureAwait(false);
-        var cosmosAccountEndpoint = await GetCosmosAccountEndpointAsync(options.ResourceGroupName, names.CosmosAccountName, cancellationToken).ConfigureAwait(false);
+        var cosmosAccountEndpoint = options.StorageProvider == StorageProviderChoice.Cosmos
+            ? await GetCosmosAccountEndpointAsync(options.ResourceGroupName, names.CosmosAccountName, cancellationToken).ConfigureAwait(false)
+            : string.Empty;
+        var sqlConnectionString = await ResolveSqlConnectionStringAsync(options, names, cancellationToken).ConfigureAwait(false);
         var serviceBusFullyQualifiedNamespace = GetServiceBusFullyQualifiedNamespace(names.ServiceBusNamespace);
         var appInsightsAppId = await _az.CaptureValueAsync(
             new[]
@@ -64,12 +67,30 @@ internal sealed class InfrastructureDeployer
             appInsightsAppId,
             instrumentationKey,
             cosmosAccountEndpoint,
+            sqlConnectionString,
             serviceBusFullyQualifiedNamespace,
             cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task<string> ResolveSqlConnectionStringAsync(InfrastructureOptions options, DeploymentNames names, CancellationToken cancellationToken)
+    {
+        if (options.StorageProvider != StorageProviderChoice.SqlServer) return string.Empty;
+        if (options.SqlMode == SqlProvisioningMode.External)
+        {
+            return options.SqlConnectionString ?? string.Empty;
+        }
+        // Provisioned: assemble a connection string for the AAD-managed identity wiring; the
+        // bicep template emits the FQDN. We return a placeholder format the WebApp resolves
+        // against its managed identity at runtime.
+        var sqlServerName = $"sql-{names.SolutionId.ToLowerInvariant()}-{names.Environment.ToLowerInvariant()}";
+        return $"Server=tcp:{sqlServerName}.database.windows.net,1433;Initial Catalog=MessageDatabase;Authentication=Active Directory Default;Encrypt=true;";
+    }
+
     private async Task DeployCoreInfrastructureAsync(InfrastructureOptions options, DeploymentNames names, CancellationToken cancellationToken)
     {
+        var storageProviderParam = options.StorageProvider == StorageProviderChoice.SqlServer ? "sqlserver" : "cosmos";
+        var sqlModeParam = options.SqlMode == SqlProvisioningMode.External ? "external" : "provision";
+
         var arguments = new List<string>
         {
             "deployment", "group", "create",
@@ -80,7 +101,15 @@ internal sealed class InfrastructureDeployer
             $"environment={names.Environment}",
             $"resolverId={NimBus.Core.Messages.Constants.ResolverId}",
             $"uniqueDeploy={Guid.NewGuid():N}",
+            $"storageProvider={storageProviderParam}",
+            $"sqlMode={sqlModeParam}",
         };
+
+        if (options.StorageProvider == StorageProviderChoice.SqlServer && options.SqlMode == SqlProvisioningMode.Provision)
+        {
+            arguments.Add($"sqlAdminLogin={options.SqlAdminLogin}");
+            arguments.Add($"sqlAdminPassword={options.SqlAdminPassword}");
+        }
 
         if (!string.IsNullOrWhiteSpace(options.Location))
         {
@@ -101,6 +130,7 @@ internal sealed class InfrastructureDeployer
         string appInsightsAppId,
         string instrumentationKey,
         string cosmosAccountEndpoint,
+        string sqlConnectionString,
         string serviceBusFullyQualifiedNamespace,
         CancellationToken cancellationToken)
     {
@@ -117,6 +147,7 @@ internal sealed class InfrastructureDeployer
             $"appInsightsAppId={appInsightsAppId}",
             $"instrumentationKey={instrumentationKey}",
             $"cosmosAccountEndpoint={cosmosAccountEndpoint}",
+            $"sqlConnectionString={sqlConnectionString}",
             $"serviceBusFullyQualifiedNamespace={serviceBusFullyQualifiedNamespace}",
         };
 

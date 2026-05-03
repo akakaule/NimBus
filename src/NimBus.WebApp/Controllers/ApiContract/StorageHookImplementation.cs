@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http;
 using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
 using NimBus.WebApp.ManagementApi;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
@@ -26,7 +27,7 @@ namespace NimBus.WebApp.Controllers
     {
         private readonly IHubContext<GridEventsHub> _hubContext;
         private readonly ILogger<StorageHookImplementation> _logger;
-        private readonly ICosmosDbClient _cosmosClient;
+        private readonly INimBusMessageStore _cosmosClient;
         private readonly IPlatform _platform;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly string _webhookKey;
@@ -34,7 +35,7 @@ namespace NimBus.WebApp.Controllers
         public StorageHookImplementation(
             IHubContext<GridEventsHub> gridEventsHubContext,
             ILogger<StorageHookImplementation> logger,
-            ICosmosDbClient cosmosClient,
+            INimBusMessageStore cosmosClient,
             IPlatform platform,
             IHttpContextAccessor httpContextAccessor,
             IConfiguration configuration)
@@ -47,7 +48,16 @@ namespace NimBus.WebApp.Controllers
             _webhookKey = configuration.GetValue<string>("EventGrid:WebhookKey") ?? string.Empty;
         }
 
-        public async Task<IActionResult> StoragehookReceiveCosmosAsync(string endpointId)
+        // The storage-hook webhook is currently a Cosmos-only mechanism (Cosmos Change
+        // Feed → Event Grid → here). The route name retains "Cosmos" for backwards
+        // compatibility with the OpenAPI spec; the implementation delegates to a
+        // provider-neutral handler that pushes the SignalR update. SQL deployments
+        // receive the same SignalR pushes via the Resolver write-path notifier.
+        [Obsolete("Renamed semantically to StoragehookReceiveAsync. The route name is kept for OpenAPI back-compat; future cleanup will rename both.")]
+        public Task<IActionResult> StoragehookReceiveCosmosAsync(string endpointId)
+            => StoragehookReceiveAsync(endpointId);
+
+        public async Task<IActionResult> StoragehookReceiveAsync(string endpointId)
         {
             if (!ValidateWebhookKey())
                 return new UnauthorizedResult();

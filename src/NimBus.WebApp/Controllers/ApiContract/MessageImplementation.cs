@@ -1,4 +1,5 @@
 using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
 using NimBus.WebApp.ManagementApi;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -10,10 +11,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
 {
     public class MessageImplementation : IMessageApiController
     {
-        private readonly ICosmosDbClient _cosmosClient;
+        private readonly INimBusMessageStore _cosmosClient;
         private readonly ILogger<MessageImplementation> _logger;
 
-        public MessageImplementation(ICosmosDbClient cosmosClient, ILogger<MessageImplementation> logger)
+        public MessageImplementation(INimBusMessageStore cosmosClient, ILogger<MessageImplementation> logger)
         {
             _cosmosClient = cosmosClient;
             _logger = logger;

@@ -31,3 +31,11 @@ An `audits` container stores the audit trail, partitioned by `/eventId`.
 - Cross-endpoint queries require querying multiple containers
 - Container creation on first use (handled by the Resolver)
 - Higher baseline cost if many endpoints have low throughput (minimum RU/s per container)
+
+## Note on the SQL Server provider
+
+The per-endpoint container model does not translate cleanly to SQL Server (it
+would mean dynamic DDL at runtime per endpoint). The SQL provider introduced in
+ADR-010 uses a single-table-per-concern layout with `EndpointId` as a
+discriminator and composite indexes. See `docs/adr/010-pluggable-message-storage.md`
+and `docs/storage-providers.md` for details.

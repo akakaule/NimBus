@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using NimBus.WebApp.ManagementApi;
 
@@ -12,9 +13,9 @@ namespace NimBus.WebApp.Controllers.ApiContract;
 
 public class MetricsImplementation : IMetricsApiController
 {
-    private readonly ICosmosDbClient _cosmosClient;
+    private readonly INimBusMessageStore _cosmosClient;
 
-    public MetricsImplementation(ICosmosDbClient cosmosClient)
+    public MetricsImplementation(INimBusMessageStore cosmosClient)
     {
         _cosmosClient = cosmosClient;
     }

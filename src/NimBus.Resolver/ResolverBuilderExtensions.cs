@@ -1,48 +1,29 @@
 using Azure.Identity;
 using Azure.Messaging.ServiceBus;
-using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NimBus.Broker.Services;
 using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
-using NimBus.MessageStore;
 using NimBus.ServiceBus;
-using Serilog;
 
 namespace NimBus.Resolver
 {
     /// <summary>
     /// Extension methods to register Resolver services via the NimBus builder.
+    /// Storage provider registration is the consumer's responsibility — call
+    /// AddCosmosDbMessageStore() or AddSqlServerMessageStore() in the host
+    /// composition root before AddResolver().
     /// </summary>
     public static class ResolverBuilderExtensions
     {
         /// <summary>
-        /// Adds the Resolver services (Cosmos DB, Service Bus, message handling) to the NimBus builder.
+        /// Adds the Resolver services (Service Bus listener + message handling) to the
+        /// NimBus builder. The active storage provider must already be registered.
         /// </summary>
         public static INimBusBuilder AddResolver(this INimBusBuilder builder)
         {
             var services = builder.Services;
-
-            services.AddSingleton(sp =>
-            {
-                var config = sp.GetRequiredService<IConfiguration>();
-                var endpoint = config.GetValue<string>("CosmosAccountEndpoint");
-                if (!string.IsNullOrEmpty(endpoint) && !endpoint.Contains("AccountKey="))
-                    return new CosmosClient(endpoint, new DefaultAzureCredential());
-
-                var connectionString = endpoint
-                    ?? config.GetConnectionString("cosmos")
-                    ?? config.GetValue<string>("CosmosConnection")
-                    ?? throw new InvalidOperationException("CosmosConnection configuration is required");
-                return new CosmosClient(connectionString);
-            });
-
-            services.AddSingleton<ICosmosDbClient>(sp =>
-            {
-                var cosmosClient = sp.GetRequiredService<CosmosClient>();
-                return new CosmosDbClient(cosmosClient, Log.Logger);
-            });
 
             services.AddSingleton<IMessageHandler, ResolverService>();
 

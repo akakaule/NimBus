@@ -223,7 +223,7 @@ export function DeleteDeadLetteredCard({
       <CardHeader>
         <CardTitle>Delete Dead-Lettered Messages</CardTitle>
         <CardDescription>
-          Remove all dead-lettered messages from Cosmos DB for an endpoint
+          Remove all dead-lettered messages for an endpoint
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -331,7 +331,7 @@ export function DeleteEventCard({ endpoints }: { endpoints: EndpointOption[] }) 
       <CardHeader>
         <CardTitle>Delete Single Event</CardTitle>
         <CardDescription>
-          Delete a specific event by ID from Cosmos DB
+          Delete a specific event by ID
         </CardDescription>
       </CardHeader>
       <CardContent>

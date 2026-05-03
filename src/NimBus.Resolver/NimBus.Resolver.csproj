@@ -14,7 +14,7 @@
     <Content Include="local.settings.json" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Azure.Identity" Version="1.16.0" />
+    <PackageReference Include="Azure.Identity" Version="1.17.1" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.51.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.OpenTelemetry" Version="1.1.0" />
     <!-- Pin OpenTelemetry.Api to a non-vulnerable version (GHSA-g94r-2vxg-569j); overrides the
@@ -30,7 +30,8 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\NimBus.MessageStore\NimBus.MessageStore.csproj" />
+    <ProjectReference Include="..\NimBus.MessageStore.CosmosDb\NimBus.MessageStore.CosmosDb.csproj" />
+    <ProjectReference Include="..\NimBus.MessageStore.SqlServer\NimBus.MessageStore.SqlServer.csproj" />
     <ProjectReference Include="..\NimBus.SDK\NimBus.SDK.csproj" />
     <ProjectReference Include="..\NimBus.ServiceDefaults\NimBus.ServiceDefaults.csproj" />
   </ItemGroup>

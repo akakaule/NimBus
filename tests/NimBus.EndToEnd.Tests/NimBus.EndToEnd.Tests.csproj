@@ -18,6 +18,7 @@
     <ProjectReference Include="..\..\src\NimBus.Core\NimBus.Core.csproj" />
     <ProjectReference Include="..\..\src\NimBus.SDK\NimBus.SDK.csproj" />
     <ProjectReference Include="..\..\src\NimBus.ServiceBus\NimBus.ServiceBus.csproj" />
+    <ProjectReference Include="..\..\src\NimBus.Testing\NimBus.Testing.csproj" />
   </ItemGroup>
 
 </Project>

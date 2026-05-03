@@ -4,6 +4,25 @@ param locationParam string = 'westeurope'
 param resolverId string
 param uniqueDeploy string
 
+// Storage provider selection. 'cosmos' (default, backwards-compatible) provisions a
+// Cosmos DB account. 'sqlserver' skips Cosmos and may optionally provision Azure SQL
+// when sqlMode is 'provision'; 'external' expects a customer-supplied connection string.
+@allowed([
+  'cosmos'
+  'sqlserver'
+])
+param storageProvider string = 'cosmos'
+
+@allowed([
+  'provision'
+  'external'
+])
+param sqlMode string = 'provision'
+
+param sqlAdminLogin string = ''
+@secure()
+param sqlAdminPassword string = ''
+
 //##############################################
 // Define names Azure resource names
 //##############################################
@@ -18,6 +37,10 @@ var coreAppServicePlanName = 'asp-${toLower(solutionId)}-${toLower(environment)}
 var cosmosAccountName = 'cosmos-${toLower(solutionId)}-${toLower(environment)}'
 
 var cosmosDbName = 'MessageDatabase'
+
+var sqlServerName = 'sql-${toLower(solutionId)}-${toLower(environment)}'
+
+var sqlDbName = 'MessageDatabase'
 
 var resolverFunctionAppName = 'func-${toLower(solutionId)}-${toLower(environment)}-resolver'
 
@@ -55,12 +78,27 @@ module applicationinsights 'templates/applicationInsights.bicep' = {
 //# Cosmos DB: Create Account and Database
 //##############################################
 
-module cosmosAccount 'templates/cosmosDB.bicep' = {
+module cosmosAccount 'templates/cosmosDB.bicep' = if (storageProvider == 'cosmos') {
   name: 'cosmosDBDeploy'
   params: {
     name: cosmosAccountName
     dbname: cosmosDbName
     location: location
+  }
+}
+
+//##############################################
+//# Azure SQL: Create server + database (only when storageProvider=sqlserver and sqlMode=provision)
+//##############################################
+
+module azureSql 'templates/azureSql.bicep' = if (storageProvider == 'sqlserver' && sqlMode == 'provision') {
+  name: 'azureSqlDeploy'
+  params: {
+    serverName: sqlServerName
+    databaseName: sqlDbName
+    location: location
+    administratorLogin: sqlAdminLogin
+    administratorPassword: sqlAdminPassword
   }
 }
 
@@ -107,7 +145,7 @@ module functionappplan 'templates/functionAppPlan.bicep' = {
 //# Resolver: Create Function app
 //##############################################
 
-var resolverappsettings = [
+var commonResolverSettings = [
   {
     name: 'GlobalTraceLogInstrKey'
     value: applicationinsights.outputs.instrumentationKey
@@ -119,10 +157,6 @@ var resolverappsettings = [
   {
     name: 'ResolverId'
     value: resolverId
-  }
-  {
-    name: 'CosmosAccountEndpoint'
-    value: cosmosAccount.outputs.accountEndpoint
   }
   {
     name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
@@ -137,6 +171,22 @@ var resolverappsettings = [
     value: serviceBusNamespace.outputs.fullyQualifiedNamespace
   }
 ]
+
+var cosmosResolverSetting = storageProvider == 'cosmos' ? [
+  {
+    name: 'CosmosAccountEndpoint'
+    value: cosmosAccount.outputs.accountEndpoint
+  }
+] : []
+
+var sqlResolverSetting = storageProvider == 'sqlserver' && sqlMode == 'provision' ? [
+  {
+    name: 'SqlConnection'
+    value: 'Server=tcp:${azureSql.outputs.serverFqdn},1433;Initial Catalog=${sqlDbName};Authentication=Active Directory Default;Encrypt=true;'
+  }
+] : []
+
+var resolverappsettings = concat(commonResolverSettings, cosmosResolverSetting, sqlResolverSetting)
 
 module resolverFunction 'templates/functionApp.bicep' = {
   name: 'resolverDeploy'
@@ -156,11 +206,15 @@ module resolverFunction 'templates/functionApp.bicep' = {
 //# Resolver: RBAC role assignments
 //##############################################
 
+// Service Bus RBAC must always be granted to the resolver identity (managed-identity
+// access to receive/complete messages). Cosmos role assignment is gated inside the
+// module so SQL deployments don't try to create Cosmos sqlRoleAssignments resources.
 module resolverRoleAssignments 'templates/roleAssignments.bicep' = {
   name: 'resolverRoleAssignmentsDeploy'
   params: {
     serviceBusNamespaceName: sbNamespace
-    cosmosAccountName: cosmosAccountName
+    cosmosAccountName: storageProvider == 'cosmos' ? cosmosAccountName : ''
     principalId: resolverFunction.outputs.principalId
+    storageProvider: storageProvider
   }
 }

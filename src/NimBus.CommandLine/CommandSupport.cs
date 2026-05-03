@@ -106,7 +106,24 @@ internal sealed record InfrastructureOptions(
     string ResourceGroupName,
     string? ResourceNamePostFix,
     string? Location,
-    string WebAppVersion);
+    string WebAppVersion,
+    StorageProviderChoice StorageProvider = StorageProviderChoice.Cosmos,
+    SqlProvisioningMode SqlMode = SqlProvisioningMode.Provision,
+    string? SqlConnectionString = null,
+    string? SqlAdminLogin = null,
+    string? SqlAdminPassword = null);
+
+internal enum StorageProviderChoice
+{
+    Cosmos,
+    SqlServer,
+}
+
+internal enum SqlProvisioningMode
+{
+    Provision,
+    External,
+}
 
 internal sealed record TopologyOptions(
     string SolutionId,

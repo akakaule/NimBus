@@ -102,7 +102,7 @@ export default function Operations() {
           </AccordionTrigger>
           <AccordionContent itemId="cleanup">
             <p className="text-sm text-muted-foreground mb-4">
-              Remove resolved, dead-lettered, or specific messages from Cosmos DB.
+              Remove resolved, dead-lettered, or specific messages.
             </p>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <DeleteDeadLetteredCard endpoints={endpoints} />

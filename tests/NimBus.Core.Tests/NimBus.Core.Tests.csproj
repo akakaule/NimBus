@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NimBus.Core\NimBus.Core.csproj" />
+    <ProjectReference Include="..\..\src\NimBus.Testing\NimBus.Testing.csproj" />
   </ItemGroup>
 
 </Project>

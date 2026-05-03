@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Extensions;
+using NimBus.Testing;
 using NimBus.Core.Messages;
 using NimBus.EndToEnd.Tests.Infrastructure;
 
@@ -22,6 +23,7 @@ public class PipelineAndLifecycleTests
         services.AddSingleton(executionLog);
         services.AddNimBus(builder =>
         {
+            builder.AddInMemoryMessageStore();
             builder.AddPipelineBehavior<LoggingBehavior>();
         });
         var sp = services.BuildServiceProvider();
@@ -54,6 +56,7 @@ public class PipelineAndLifecycleTests
         services.AddSingleton(executionLog);
         services.AddNimBus(builder =>
         {
+            builder.AddInMemoryMessageStore();
             builder.AddPipelineBehavior<OuterBehavior>();
             builder.AddPipelineBehavior<InnerBehavior>();
         });
@@ -82,6 +85,7 @@ public class PipelineAndLifecycleTests
         var services = new ServiceCollection();
         services.AddNimBus(builder =>
         {
+            builder.AddInMemoryMessageStore();
             builder.AddPipelineBehavior<ShortCircuitBehavior>();
         });
         var sp = services.BuildServiceProvider();
@@ -158,6 +162,7 @@ public class PipelineAndLifecycleTests
         services.AddSingleton<IMessageLifecycleObserver>(observer);
         services.AddNimBus(builder =>
         {
+            builder.AddInMemoryMessageStore();
             builder.AddPipelineBehavior<LoggingBehavior>();
         });
         var sp = services.BuildServiceProvider();
@@ -229,6 +234,7 @@ public class PipelineAndLifecycleTests
         services.AddSingleton<IMessageLifecycleObserver>(observer);
         services.AddNimBus(builder =>
         {
+            builder.AddInMemoryMessageStore();
             builder.AddPipelineBehavior<ExceptionSwallowingBehavior>();
         });
         var sp = services.BuildServiceProvider();
@@ -263,6 +269,7 @@ public class PipelineAndLifecycleTests
         services.AddSingleton<IMessageLifecycleObserver>(observer);
         services.AddNimBus(builder =>
         {
+            builder.AddInMemoryMessageStore();
             builder.AddPipelineBehavior<ThrowingBehavior>();
         });
         var sp = services.BuildServiceProvider();
@@ -296,6 +303,7 @@ public class PipelineAndLifecycleTests
         var services = new ServiceCollection();
         services.AddNimBus(builder =>
         {
+            builder.AddInMemoryMessageStore();
             builder.AddPipelineBehavior<ThrowingBehavior>();
         });
         var sp = services.BuildServiceProvider();

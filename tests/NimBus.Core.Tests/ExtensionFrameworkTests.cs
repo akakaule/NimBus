@@ -2,6 +2,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Extensions;
+using NimBus.Testing;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using System;
@@ -26,6 +27,7 @@ public class MessagePipelineTests
         services.AddSingleton(executionLog);
         services.AddNimBus(builder =>
         {
+            builder.AddInMemoryMessageStore();
             builder.AddPipelineBehavior<FirstBehavior>();
             builder.AddPipelineBehavior<SecondBehavior>();
         });
@@ -49,7 +51,7 @@ public class MessagePipelineTests
     public async Task Pipeline_WithNoBehaviors_CallsTerminalHandlerDirectly()
     {
         var services = new ServiceCollection();
-        services.AddNimBus();
+        services.AddNimBus(b => b.AddInMemoryMessageStore());
 
         var sp = services.BuildServiceProvider();
         var pipeline = sp.GetRequiredService<MessagePipeline>();
@@ -72,6 +74,7 @@ public class MessagePipelineTests
         var services = new ServiceCollection();
         services.AddNimBus(builder =>
         {
+            builder.AddInMemoryMessageStore();
             builder.AddPipelineBehavior<ShortCircuitBehavior>();
         });
 
@@ -282,7 +285,7 @@ public class NimBusBuilderTests
     public void AddNimBus_RegistersCoreServices()
     {
         var services = new ServiceCollection();
-        services.AddNimBus();
+        services.AddNimBus(b => b.AddInMemoryMessageStore());
 
         var sp = services.BuildServiceProvider();
 
@@ -291,12 +294,53 @@ public class NimBusBuilderTests
     }
 
     [TestMethod]
+    public void AddNimBus_WithoutStorageProvider_ThrowsClearError()
+    {
+        var services = new ServiceCollection();
+        var ex = Assert.ThrowsException<InvalidOperationException>(() => services.AddNimBus());
+        StringAssert.Contains(ex.Message, "AddCosmosDbMessageStore");
+        StringAssert.Contains(ex.Message, "AddSqlServerMessageStore");
+    }
+
+    [TestMethod]
+    public void AddNimBus_WithMultipleStorageProviders_ThrowsClearError()
+    {
+        var services = new ServiceCollection();
+        var ex = Assert.ThrowsException<InvalidOperationException>(() => services.AddNimBus(b =>
+        {
+            b.AddInMemoryMessageStore();
+            b.AddInMemoryMessageStore();
+        }));
+        StringAssert.Contains(ex.Message, "More than one");
+    }
+
+    [TestMethod]
+    public void AddNimBus_ValidatesAfterConfigureCallback_NotInBuilderConstructor()
+    {
+        // Regression for Codex feedback: validation must run after the configure
+        // callback has had a chance to register a provider, not in the builder ctor.
+        var services = new ServiceCollection();
+        services.AddNimBus(b =>
+        {
+            // If validation ran in the builder ctor, this call would never execute
+            // because construction would have already thrown.
+            b.AddInMemoryMessageStore();
+        });
+        // Reaching this line without an exception proves the ordering is correct.
+        Assert.IsNotNull(services.BuildServiceProvider().GetService<MessagePipeline>());
+    }
+
+    [TestMethod]
     public void AddExtension_CallsConfigureOnExtension()
     {
         var extension = new TestExtension();
         var services = new ServiceCollection();
 
-        services.AddNimBus(builder => builder.AddExtension(extension));
+        services.AddNimBus(builder =>
+        {
+            builder.AddInMemoryMessageStore();
+            builder.AddExtension(extension);
+        });
 
         Assert.IsTrue(extension.WasConfigured);
     }
@@ -306,7 +350,11 @@ public class NimBusBuilderTests
     {
         var services = new ServiceCollection();
 
-        services.AddNimBus(builder => builder.AddExtension<TestExtension>());
+        services.AddNimBus(builder =>
+        {
+            builder.AddInMemoryMessageStore();
+            builder.AddExtension<TestExtension>();
+        });
 
         var sp = services.BuildServiceProvider();
         Assert.IsNotNull(sp.GetService<MessagePipeline>());
@@ -321,6 +369,7 @@ public class NimBusBuilderTests
 
         services.AddNimBus(builder =>
         {
+            builder.AddInMemoryMessageStore();
             builder.AddExtension(ext1);
             builder.AddExtension(ext2);
         });

@@ -9,9 +9,9 @@ are two implementations:
 | Cosmos DB | `NimBus.MessageStore.CosmosDb` | Greenfield Azure deployments where Cosmos is approved |
 | SQL Server | `NimBus.MessageStore.SqlServer` | Organizations whose approved infrastructure does not include Cosmos DB |
 
-The legacy `NimBus.MessageStore` package remains as a deprecated type-forwarder
-shim that resolves to the Cosmos provider — it is scheduled for removal in a
-future major version.
+The Cosmos provider used to ship as `NimBus.MessageStore`. Update your
+package reference to `NimBus.MessageStore.CosmosDb` and your registration
+call to `AddCosmosDbMessageStore(...)`. Type namespaces are unchanged.
 
 Exactly one provider must be registered per running application instance. The
 NimBus builder validates this at `Build()` time and fails fast otherwise.

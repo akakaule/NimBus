@@ -161,7 +161,7 @@ Acceptance Scenarios:
 #### SQL Server provider
 
 - FR-020: The SQL Server provider MUST be implemented as `NimBus.MessageStore.SqlServer`, a separate project and NuGet package.
-- FR-021: The Cosmos DB provider MUST be relocated/renamed to `NimBus.MessageStore.CosmosDb` for symmetry. The legacy `NimBus.MessageStore` package MUST remain as a backwards-compatible shim (type-forwarders or thin re-export) marked `[Obsolete]`, scheduled for removal in a future major version.
+- FR-021: The Cosmos DB provider MUST be relocated/renamed to `NimBus.MessageStore.CosmosDb` for symmetry. Existing consumers update their package reference and registration call to the new name; type namespaces (`NimBus.MessageStore.*`) are unchanged.
 - FR-022: The SQL Server provider MUST persist all data necessary to reproduce existing Cosmos-backed behavior: message records, audit records, resolver state, subscriptions, endpoint metadata, heartbeats, and metrics aggregates.
 - FR-023: The SQL Server provider MUST support the full `ResolutionStatus` enum: `Pending`, `Deferred`, `Failed`, `TooManyRequests`, `DeadLettered`, `Unsupported`, `Published`, `Completed`, `Skipped`. Each value MUST round-trip through the provider conformance suite.
 - FR-024: The SQL Server provider MUST preserve `EventId`, `MessageId`, `OriginatingMessageId`, `ParentMessageId`, `CorrelationId`, `SessionId`, `EndpointId`, `EventTypeId`, `EnqueuedTimeUtc`, retry/dead-letter metadata, and per-message timing fields (`QueueTimeMs`, `ProcessingTimeMs`).
@@ -202,7 +202,7 @@ Acceptance Scenarios:
 - FR-060: Existing Cosmos DB deployments MUST NOT require data migration to keep working after upgrade.
 - FR-061: Cross-provider data migration (Cosmos → SQL or vice versa) is out of scope for v1.
 - FR-062: Existing public publishing and subscribing APIs (`AddNimBusPublisher`, `AddNimBusSubscriber`, `IEventHandler<T>`) MUST NOT change.
-- FR-063: The legacy `NimBus.MessageStore` package name MUST continue to resolve through the type-forwarder shim for at least one major version after the rename.
+- FR-063: Renaming `NimBus.MessageStore` to `NimBus.MessageStore.CosmosDb` is a one-time breaking change for downstream consumers — they update their package reference and registration call. Type namespaces (`NimBus.MessageStore.*`) are unchanged so `using` directives keep working.
 
 #### Testing & documentation
 
@@ -240,7 +240,7 @@ Acceptance Scenarios:
 ### Measurable Outcomes
 
 - SC-001: A NimBus solution can be deployed entirely without Cosmos DB by running `nb infra apply --storage-provider sqlserver` and registering `AddSqlServerMessageStore(...)` in the host. No Cosmos resources are provisioned, no Cosmos packages are referenced, and no Cosmos secrets are required.
-- SC-002: Existing Cosmos-backed solutions continue to work after upgrade without code, configuration, or data migration changes (legacy `NimBus.MessageStore` package resolves; legacy registration call sites continue to compile via the shim).
+- SC-002: Existing Cosmos-backed solutions migrate by updating one package reference (`NimBus.MessageStore` → `NimBus.MessageStore.CosmosDb`) and one registration call (`AddMessageStore` → `AddCosmosDbMessageStore`); no schema, configuration, or data migration is required, and `using` directives keep working unchanged.
 - SC-003: The SQL Server provider passes 100% of the shared conformance test suite.
 - SC-004: WebApp message list, message detail, audit search, endpoint state, and metrics views return equivalent results across Cosmos and SQL Server providers for the same message flow scenarios.
 - SC-005: Resolver status transitions across the full `ResolutionStatus` enum are persisted correctly in both providers.
@@ -257,7 +257,7 @@ Acceptance Scenarios:
 - Message payload bodies (`MessageContent`) are stored in the message store today and will be in the SQL Server provider as well.
 - SQL Server is the first alternate provider but the feature delivers a general provider model usable for future PostgreSQL/MySQL/etc. providers.
 - DbUp is the chosen schema provisioning tool; EF Core migrations and hand-managed scripts have been considered and rejected for v1.
-- The legacy `NimBus.MessageStore` package will continue to compile through type-forwarders for at least one major version after the rename.
+- The Cosmos provider package is renamed to `NimBus.MessageStore.CosmosDb`. Existing consumers update their package reference and registration call; type namespaces are unchanged.
 
 ## Out of Scope
 
@@ -282,7 +282,7 @@ Acceptance Scenarios:
 - v1 supports a true SQL-only deployment, including CLI and Bicep changes (see User Story 6, FR-040–FR-046).
 - SQL Server provider is a full replacement for `ICosmosDbClient` (messages, audits, state, subscriptions, endpoint metadata, heartbeats, metrics, time-series). See FR-001/FR-002.
 - Schema management uses **DbUp**.
-- Cosmos provider package is renamed to `NimBus.MessageStore.CosmosDb`. Old package name preserved as `[Obsolete]` shim for one major version.
+- Cosmos provider package is renamed to `NimBus.MessageStore.CosmosDb`. Consumers update their package reference and registration call once.
 - SQL Server package is named `NimBus.MessageStore.SqlServer` (matches `NimBus.Outbox.SqlServer` precedent).
 - Provider validation at startup is performed by the NimBus builder at `Build()` time.
 - Message payload bodies are stored in the message store; the SQL provider preserves this.

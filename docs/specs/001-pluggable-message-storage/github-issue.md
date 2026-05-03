@@ -8,7 +8,7 @@ Today NimBus is hard-wired to Cosmos DB for all operational state (messages, aud
 
 1. Decompose `ICosmosDbClient` into four provider-neutral contracts.
 2. Ship a SQL Server provider as a separate NuGet package (`NimBus.MessageStore.SqlServer`).
-3. Rename the Cosmos provider to `NimBus.MessageStore.CosmosDb`, leaving `NimBus.MessageStore` as a `[Obsolete]` type-forwarding shim.
+3. Rename the Cosmos provider to `NimBus.MessageStore.CosmosDb`. Consumers update their package reference and registration call once; type namespaces are unchanged.
 4. Make the deployment pipeline (`nb infra apply`, Bicep) support a **true SQL-only** deployment — no Cosmos resources provisioned, no Cosmos secrets required.
 5. Validate provider registration in the builder so startup fails fast on zero / multiple providers.
 
@@ -79,7 +79,7 @@ Constraints:
 - Existing Cosmos deployments work after upgrade with **no** code, config, or data migration.
 - Cross-provider data migration is out of scope.
 - `AddNimBusPublisher`, `AddNimBusSubscriber`, `IEventHandler<T>` unchanged.
-- `NimBus.MessageStore` package stays as a `[Obsolete]` type-forwarder for at least one major version.
+- Migration is a one-time package-reference + registration-call rename; type namespaces (`NimBus.MessageStore.*`) are unchanged.
 
 ## Testing & docs (FR-070..FR-072)
 
@@ -91,7 +91,7 @@ Constraints:
 ## Acceptance criteria
 
 - [ ] **SC-001** — `nb infra apply --storage-provider sqlserver` + `AddSqlServerMessageStore(...)` produces a working deployment with **no** Cosmos resources, packages, or secrets.
-- [ ] **SC-002** — Existing Cosmos solutions upgrade with no code/config/data changes (legacy package + registration call sites still resolve via the shim).
+- [ ] **SC-002** — Existing Cosmos solutions migrate by updating one package reference (`NimBus.MessageStore` → `NimBus.MessageStore.CosmosDb`) and one registration call (`AddMessageStore` → `AddCosmosDbMessageStore`); no schema, config, or data migration required.
 - [ ] **SC-003** — SQL Server provider passes 100% of the shared conformance suite.
 - [ ] **SC-004** — WebApp message list, detail, audit search, endpoint state, and metrics views return equivalent results across both providers for the same scenarios.
 - [ ] **SC-005** — Full `ResolutionStatus` enum round-trips correctly in both providers.
@@ -132,4 +132,4 @@ Constraints:
 
 ## Suggested labels
 
-`enhancement` · `storage` · `sql-server` · `cosmos-db` · `breaking-change-shimmed` · `infra` · `webapp` · `cli`
+`enhancement` · `storage` · `sql-server` · `cosmos-db` · `breaking-change` · `infra` · `webapp` · `cli`

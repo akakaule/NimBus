@@ -39,9 +39,10 @@ error message when zero or more than one provider is registered. This fires
 before any `IHostedService` starts.
 
 ### Cosmos provider package
-- Project: `NimBus.MessageStore.CosmosDb` (renamed from `NimBus.MessageStore`)
-- Legacy `NimBus.MessageStore` package preserved as a `[TypeForwardedTo]` shim,
-  marked `[Obsolete]`, scheduled for removal in a future major version.
+- Project: `NimBus.MessageStore.CosmosDb` (renamed from `NimBus.MessageStore`).
+  Existing consumers update their package reference and registration call to the
+  new name; types keep the `NimBus.MessageStore.*` namespaces so `using` directives
+  do not change.
 - Centralized config-key parsing (`CosmosAccountEndpoint` / `cosmos` connection
   string / `CosmosConnection`) into `AddCosmosDbMessageStore()`.
 
@@ -101,7 +102,10 @@ suite against a `mcr.microsoft.com/mssql/server:2022-latest` service container.
 
 ### Negative
 - Two paths to maintain. CI now spins up a SQL Server container.
-- Type-forwarder shim is permanent until a major version bump.
+- Renaming the Cosmos package is a one-time breaking change for downstream
+  consumers — they must update their package reference and registration call
+  (`AddMessageStore` → `AddCosmosDbMessageStore`). Namespaces are unchanged so
+  `using` directives keep working.
 - Some WebApp services still take an `INimBusMessageStore` aggregate — splitting
   by contract is a follow-up cleanup.
 

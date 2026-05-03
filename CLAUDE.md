@@ -36,7 +36,6 @@ src/
   NimBus.MessageStore.Abstractions/ # Provider-neutral storage contracts (IMessageTrackingStore, ISubscriptionStore, IEndpointMetadataStore, IMetricsStore)
   NimBus.MessageStore.CosmosDb/     # Cosmos DB storage provider
   NimBus.MessageStore.SqlServer/    # SQL Server storage provider (DbUp-managed schema)
-  NimBus.MessageStore/              # [Obsolete] Legacy type-forwarder shim → CosmosDb
   NimBus.Manager/          # Management client abstractions
   NimBus.Management.ServiceBus/  # Service Bus management operations
   NimBus.Outbox.SqlServer/ # Transactional outbox (SQL Server)

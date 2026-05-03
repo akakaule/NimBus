@@ -23,6 +23,15 @@ param sqlAdminLogin string = ''
 @secure()
 param sqlAdminPassword string = ''
 
+// Resolver Function App hosting plan. 'ElasticPremium' (default, EP1, Windows)
+// preserves the existing behavior. 'FlexConsumption' provisions a Flex Consumption
+// plan (FC1, Linux) that scales to zero — significantly cheaper for dev/test.
+@allowed([
+  'ElasticPremium'
+  'FlexConsumption'
+])
+param resolverPlan string = 'ElasticPremium'
+
 //##############################################
 // Define names Azure resource names
 //##############################################
@@ -111,6 +120,10 @@ module funcstorageaccount 'templates/storageaccount.bicep' = {
   params : {
     name: funcStorageAccountName
     location: location
+    // Flex Consumption needs a blob container holding the app package, referenced
+    // from the Function App via SystemAssignedIdentity. Provision it inline so
+    // the container exists before resolverFunctionFlex tries to bind to it.
+    createDeploymentContainer: resolverPlan == 'FlexConsumption'
   }
 }
 
@@ -128,24 +141,11 @@ module appserviceplan 'templates/appServicePlan.bicep' = {
 }
 
 //##############################################
-//# Create App Service Plan for function apps
+//# Resolver: Function App settings shared by both plan types
 //##############################################
 
-module functionappplan 'templates/functionAppPlan.bicep' = {
-  name: 'functionAppplanDeploy'
-  params: {
-    name: coreAppServicePlanName
-    skuName: 'EP1'
-    location: location
-  }
-}
-
-
-//##############################################
-//# Resolver: Create Function app
-//##############################################
-
-var commonResolverSettings = [
+// Settings every resolver host needs regardless of plan type.
+var sharedResolverSettings = [
   {
     name: 'GlobalTraceLogInstrKey'
     value: applicationinsights.outputs.instrumentationKey
@@ -159,6 +159,15 @@ var commonResolverSettings = [
     value: resolverId
   }
   {
+    name: 'AzureWebJobsServiceBus__fullyQualifiedNamespace'
+    value: serviceBusNamespace.outputs.fullyQualifiedNamespace
+  }
+]
+
+// Elastic Premium needs the Windows host to know where its content share lives.
+// Flex Consumption rejects these settings.
+var elasticPremiumExtraSettings = resolverPlan == 'ElasticPremium' ? [
+  {
     name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
     value: funcstorageaccount.outputs.connectionString
   }
@@ -166,11 +175,7 @@ var commonResolverSettings = [
     name: 'WEBSITE_CONTENTSHARE'
     value: '${toLower(resolverFunctionAppName)}${uniqueString(uniqueDeploy)}'
   }
-  {
-    name: 'AzureWebJobsServiceBus__fullyQualifiedNamespace'
-    value: serviceBusNamespace.outputs.fullyQualifiedNamespace
-  }
-]
+] : []
 
 var cosmosResolverSetting = storageProvider == 'cosmos' ? [
   {
@@ -186,21 +191,62 @@ var sqlResolverSetting = storageProvider == 'sqlserver' && sqlMode == 'provision
   }
 ] : []
 
-var resolverappsettings = concat(commonResolverSettings, cosmosResolverSetting, sqlResolverSetting)
+var resolverappsettings = concat(sharedResolverSettings, elasticPremiumExtraSettings, cosmosResolverSetting, sqlResolverSetting)
 
-module resolverFunction 'templates/functionApp.bicep' = {
+//##############################################
+//# Resolver: Hosting plan + Function App (Elastic Premium branch)
+//##############################################
+
+module functionappplanElastic 'templates/functionAppPlan.bicep' = if (resolverPlan == 'ElasticPremium') {
+  name: 'functionAppplanDeploy'
+  params: {
+    name: coreAppServicePlanName
+    skuName: 'EP1'
+    location: location
+  }
+}
+
+module resolverFunctionElastic 'templates/functionApp.bicep' = if (resolverPlan == 'ElasticPremium') {
   name: 'resolverDeploy'
   params: {
     appName: resolverFunctionAppName
     appInsightsInstrumentationKey: applicationinsights.outputs.instrumentationKey
-    appServicePlanId: functionappplan.outputs.id
+    appServicePlanId: functionappplanElastic.outputs.id
     functionAppVersion: '4'
     storageConnectionString: funcstorageaccount.outputs.connectionString
     location: location
     settings: resolverappsettings
   }
-
 }
+
+//##############################################
+//# Resolver: Hosting plan + Function App (Flex Consumption branch)
+//##############################################
+
+module functionappplanFlex 'templates/flexConsumptionPlan.bicep' = if (resolverPlan == 'FlexConsumption') {
+  name: 'functionAppplanFlexDeploy'
+  params: {
+    name: coreAppServicePlanName
+    location: location
+  }
+}
+
+module resolverFunctionFlex 'templates/flexConsumptionFunctionApp.bicep' = if (resolverPlan == 'FlexConsumption') {
+  name: 'resolverFlexDeploy'
+  params: {
+    appName: resolverFunctionAppName
+    appServicePlanId: functionappplanFlex.outputs.id
+    storageAccountName: funcstorageaccount.outputs.storageName
+    deploymentStorageBlobUri: '${funcstorageaccount.outputs.blobEndpoint}app-package-resolver'
+    location: location
+    settings: resolverappsettings
+  }
+}
+
+// Branch-aware principal id; one of the two modules deploys, the other is skipped.
+var resolverPrincipalId = resolverPlan == 'FlexConsumption'
+  ? resolverFunctionFlex.outputs.principalId
+  : resolverFunctionElastic.outputs.principalId
 
 //##############################################
 //# Resolver: RBAC role assignments
@@ -209,12 +255,16 @@ module resolverFunction 'templates/functionApp.bicep' = {
 // Service Bus RBAC must always be granted to the resolver identity (managed-identity
 // access to receive/complete messages). Cosmos role assignment is gated inside the
 // module so SQL deployments don't try to create Cosmos sqlRoleAssignments resources.
+// Flex Consumption additionally needs Storage Blob Data Contributor on the function
+// storage account for the deployment package + AzureWebJobsStorage host runtime.
 module resolverRoleAssignments 'templates/roleAssignments.bicep' = {
   name: 'resolverRoleAssignmentsDeploy'
   params: {
     serviceBusNamespaceName: sbNamespace
     cosmosAccountName: storageProvider == 'cosmos' ? cosmosAccountName : ''
-    principalId: resolverFunction.outputs.principalId
+    principalId: resolverPrincipalId
     storageProvider: storageProvider
+    funcStorageAccountName: funcStorageAccountName
+    grantFuncStorageBlobDataContributor: resolverPlan == 'FlexConsumption'
   }
 }

@@ -111,7 +111,8 @@ internal sealed record InfrastructureOptions(
     SqlProvisioningMode SqlMode = SqlProvisioningMode.Provision,
     string? SqlConnectionString = null,
     string? SqlAdminLogin = null,
-    string? SqlAdminPassword = null);
+    string? SqlAdminPassword = null,
+    ResolverPlanChoice ResolverPlan = ResolverPlanChoice.ElasticPremium);
 
 internal enum StorageProviderChoice
 {
@@ -123,6 +124,12 @@ internal enum SqlProvisioningMode
 {
     Provision,
     External,
+}
+
+internal enum ResolverPlanChoice
+{
+    ElasticPremium,
+    FlexConsumption,
 }
 
 internal sealed record TopologyOptions(

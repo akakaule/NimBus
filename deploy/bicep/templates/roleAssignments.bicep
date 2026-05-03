@@ -8,6 +8,13 @@ param principalId string
 ])
 param storageProvider string = 'cosmos'
 
+// When the resolver runs on Flex Consumption, it needs identity-based access to
+// the function-app storage account: the AzureWebJobsStorage host runtime AND the
+// deployment package container (functionAppConfig.deployment.storage with
+// SystemAssignedIdentity) both require Storage Blob Data Contributor.
+param funcStorageAccountName string = ''
+param grantFuncStorageBlobDataContributor bool = false
+
 // ----------------------------------------------------------------------------
 // Service Bus Data Owner — required regardless of storage provider so the
 // resolver identity can receive and complete messages via managed identity.
@@ -48,5 +55,27 @@ resource cosmosRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssi
     roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/${cosmosDataContributorRoleId}'
     principalId: principalId
     scope: cosmosAccount.id
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Storage Blob Data Contributor on the function storage account — only when the
+// resolver runs on Flex Consumption (which uses SystemAssignedIdentity for both
+// AzureWebJobsStorage and the app-package container).
+// ----------------------------------------------------------------------------
+
+var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+
+resource funcStorageAccount 'Microsoft.Storage/storageAccounts@2021-09-01' existing = if (grantFuncStorageBlobDataContributor) {
+  name: funcStorageAccountName
+}
+
+resource funcStorageBlobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (grantFuncStorageBlobDataContributor) {
+  name: guid(funcStorageAccount.id, principalId, storageBlobDataContributorRoleId)
+  scope: funcStorageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
+    principalId: principalId
+    principalType: 'ServicePrincipal'
   }
 }

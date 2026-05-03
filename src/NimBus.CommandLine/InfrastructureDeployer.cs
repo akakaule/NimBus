@@ -90,6 +90,7 @@ internal sealed class InfrastructureDeployer
     {
         var storageProviderParam = options.StorageProvider == StorageProviderChoice.SqlServer ? "sqlserver" : "cosmos";
         var sqlModeParam = options.SqlMode == SqlProvisioningMode.External ? "external" : "provision";
+        var resolverPlanParam = options.ResolverPlan == ResolverPlanChoice.FlexConsumption ? "FlexConsumption" : "ElasticPremium";
 
         var arguments = new List<string>
         {
@@ -103,6 +104,7 @@ internal sealed class InfrastructureDeployer
             $"uniqueDeploy={Guid.NewGuid():N}",
             $"storageProvider={storageProviderParam}",
             $"sqlMode={sqlModeParam}",
+            $"resolverPlan={resolverPlanParam}",
         };
 
         if (options.StorageProvider == StorageProviderChoice.SqlServer && options.SqlMode == SqlProvisioningMode.Provision)

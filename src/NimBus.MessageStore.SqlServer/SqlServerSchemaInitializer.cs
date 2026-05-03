@@ -89,8 +89,7 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
                     "or switch to ProvisioningMode.AutoApply for development. Pending scripts: " +
                     string.Join(", ", pending));
             }
-            _logger.LogInformation("SQL Server message-store schema verified ({Count} scripts already applied).",
-                upgrader.GetExecutedScripts().Count);
+            _logger.LogInformation("SQL Server message-store schema verified.");
             return;
         }
 

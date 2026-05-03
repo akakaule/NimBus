@@ -257,7 +257,9 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                     true,
                     String.IsNullOrEmpty(continuationToken) ? null : continuationToken,
                     requestOptions)
-                .Where(e => e.Status.Equals(FailedStatus, StringComparison.OrdinalIgnoreCase)
+                .Where(e => e.Status.Equals(PendingStatus, StringComparison.OrdinalIgnoreCase)
+                            || e.Status.Equals(DeferredStatus, StringComparison.OrdinalIgnoreCase)
+                            || e.Status.Equals(FailedStatus, StringComparison.OrdinalIgnoreCase)
                             || e.Status.Equals(DLQStatus, StringComparison.OrdinalIgnoreCase)
                             || e.Status.Equals(UnsupportedStatus, StringComparison.OrdinalIgnoreCase))
                 .Where(e => !e.Deleted.HasValue || !e.Deleted.Value)
@@ -269,6 +271,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             var deferredEvents = new List<string>();
             var deadletteredEvents = new List<string>();
             var unsupportedEvents = new List<string>();
+            var unresolvedEvents = new List<UnresolvedEvent>();
             var token = "";
             if (result.HasMoreResults)
             {
@@ -276,6 +279,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 token = feed.ContinuationToken;
                 foreach (var eventDbo in feed)
                 {
+                    unresolvedEvents.Add(eventDbo.Event);
                     var status = eventDbo.Status;
                     switch (status)
                     {
@@ -308,6 +312,8 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 FailedEvents = failedEvents,
                 DeadletteredEvents = deadletteredEvents,
                 UnsupportedEvents = unsupportedEvents,
+                EnrichedUnresolvedEvents = unresolvedEvents,
+                EventTime = DateTime.UtcNow,
                 ContinuationToken = token
             };
 
@@ -1533,8 +1539,20 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             PatchOperation.Replace("/IsHeartbeatEnabled", enable),
         };
 
-        var item = await container.PatchItemAsync<EndpointMetadata>(endpointId, new PartitionKey(endpointId), patchOperations);
-
+        try
+        {
+            await container.PatchItemAsync<EndpointMetadata>(endpointId, new PartitionKey(endpointId), patchOperations);
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            await SetEndpointMetadata(new EndpointMetadata
+            {
+                EndpointId = endpointId,
+                IsHeartbeatEnabled = enable,
+                Heartbeats = new List<Heartbeat>(),
+                TechnicalContacts = new List<TechnicalContact>(),
+            });
+        }
     }
 
     public async Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata)
@@ -1807,19 +1825,20 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
             fromIso);
 
-        var allBucketKeys = GenerateBucketKeys(from, DateTime.UtcNow, substringLength);
-        var dataPoints = new List<TimeSeriesBucket>();
+        var allBucketKeys = GenerateBucketKeys(from, DateTime.UtcNow, substringLength)
+            .Concat(publishedBuckets.Keys)
+            .Concat(handledBuckets.Keys)
+            .Concat(failedBuckets.Keys)
+            .Distinct()
+            .OrderBy(k => k);
 
-        foreach (var key in allBucketKeys)
+        var dataPoints = allBucketKeys.Select(key => new TimeSeriesBucket
         {
-            dataPoints.Add(new TimeSeriesBucket
-            {
-                Timestamp = key,
-                Published = publishedBuckets.GetValueOrDefault(key),
-                Handled = handledBuckets.GetValueOrDefault(key),
-                Failed = failedBuckets.GetValueOrDefault(key)
-            });
-        }
+            Timestamp = key,
+            Published = publishedBuckets.GetValueOrDefault(key),
+            Handled = handledBuckets.GetValueOrDefault(key),
+            Failed = failedBuckets.GetValueOrDefault(key)
+        }).ToList();
 
         return new TimeSeriesResult { BucketSize = bucketLabel, DataPoints = dataPoints };
     }

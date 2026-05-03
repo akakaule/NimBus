@@ -377,12 +377,23 @@ GROUP BY Status";
     public async Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId)
     {
         var sql = $@"
-SELECT COUNT(*) FROM {T("UnresolvedEvents")}
+SELECT EventId, SessionId, Status
+FROM {T("UnresolvedEvents")}
 WHERE EndpointId = @EndpointId AND SessionId = @SessionId
-  AND Status IN ('Pending','Deferred') AND Deleted = 0";
+  AND Status IN ('Pending','Deferred') AND Deleted = 0
+ORDER BY UpdatedAtUtc DESC, Id DESC";
         await using var conn = Open();
-        var count = await conn.ExecuteScalarAsync<int>(sql, new { EndpointId = endpointId, SessionId = sessionId }, commandTimeout: _commandTimeout);
-        return new SessionStateCount { SessionId = sessionId, PendingEvents = Array.Empty<string>(), DeferredEvents = Array.Empty<string>() };
+        var rows = (await conn.QueryAsync<(string EventId, string? SessionId, string Status)>(
+            sql,
+            new { EndpointId = endpointId, SessionId = sessionId },
+            commandTimeout: _commandTimeout)).ToList();
+
+        return new SessionStateCount
+        {
+            SessionId = sessionId,
+            PendingEvents = rows.Where(r => r.Status == "Pending").Select(CompositeEventId),
+            DeferredEvents = rows.Where(r => r.Status == "Deferred").Select(CompositeEventId),
+        };
     }
 
     public async Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds)
@@ -390,18 +401,69 @@ WHERE EndpointId = @EndpointId AND SessionId = @SessionId
         var ids = sessionIds.ToArray();
         if (ids.Length == 0) return Array.Empty<SessionStateCount>();
         var sql = $@"
-SELECT SessionId, COUNT(*) AS Count
+SELECT EventId, SessionId, Status
 FROM {T("UnresolvedEvents")}
 WHERE EndpointId = @EndpointId AND SessionId IN @Ids
   AND Status IN ('Pending','Deferred') AND Deleted = 0
-GROUP BY SessionId";
+ORDER BY SessionId, UpdatedAtUtc DESC, Id DESC";
         await using var conn = Open();
-        var rows = await conn.QueryAsync<(string SessionId, int Count)>(sql, new { EndpointId = endpointId, Ids = ids }, commandTimeout: _commandTimeout);
-        return rows.Select(r => new SessionStateCount { SessionId = r.SessionId, PendingEvents = Array.Empty<string>(), DeferredEvents = Array.Empty<string>() }).ToList();
+        var rows = (await conn.QueryAsync<(string EventId, string? SessionId, string Status)>(
+            sql,
+            new { EndpointId = endpointId, Ids = ids },
+            commandTimeout: _commandTimeout)).ToList();
+
+        var grouped = rows
+            .Where(r => !string.IsNullOrEmpty(r.SessionId))
+            .GroupBy(r => r.SessionId!)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        return ids.Select(sessionId =>
+        {
+            grouped.TryGetValue(sessionId, out var sessionRows);
+            sessionRows ??= new List<(string EventId, string? SessionId, string Status)>();
+            return new SessionStateCount
+            {
+                SessionId = sessionId,
+                PendingEvents = sessionRows.Where(r => r.Status == "Pending").Select(CompositeEventId),
+                DeferredEvents = sessionRows.Where(r => r.Status == "Deferred").Select(CompositeEventId),
+            };
+        }).ToList();
     }
 
-    public Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken)
-        => Task.FromResult(new EndpointState { EndpointId = endpointId, EventTime = DateTime.UtcNow });
+    public async Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken)
+    {
+        var offset = DecodeOffset(continuationToken);
+        var effectivePageSize = pageSize > 0 ? pageSize : 100;
+
+        var sql = $@"
+SELECT *
+FROM {T("UnresolvedEvents")}
+WHERE EndpointId = @EndpointId
+  AND Status IN ('Pending','Deferred','Failed','DeadLettered','Unsupported')
+  AND Deleted = 0
+ORDER BY UpdatedAtUtc DESC, Id DESC
+OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
+
+        await using var conn = Open();
+        var rows = (await conn.QueryAsync(
+            sql,
+            new { EndpointId = endpointId, Offset = offset, PageSize = effectivePageSize },
+            commandTimeout: _commandTimeout)).ToList();
+
+        var events = rows.Select(MapUnresolvedEventRow).ToList();
+        return new EndpointState
+        {
+            EndpointId = endpointId,
+            EventTime = DateTime.UtcNow,
+            EnrichedUnresolvedEvents = events,
+            PendingEvents = events.Where(e => e.ResolutionStatus == ResolutionStatus.Pending).Select(CompositeEventId).ToList(),
+            DeferredEvents = events.Where(e => e.ResolutionStatus == ResolutionStatus.Deferred).Select(CompositeEventId).ToList(),
+            FailedEvents = events.Where(e => e.ResolutionStatus == ResolutionStatus.Failed).Select(CompositeEventId).ToList(),
+            DeadletteredEvents = events.Where(e => e.ResolutionStatus == ResolutionStatus.DeadLettered).Select(CompositeEventId).ToList(),
+            UnsupportedEvents = events.Where(e => e.ResolutionStatus == ResolutionStatus.Unsupported).Select(CompositeEventId).ToList(),
+            ContinuationToken = events.Count == effectivePageSize ? EncodeOffset(offset + effectivePageSize) : string.Empty,
+        };
+    }
 
     // ───────── Single-event lookups ─────────
 
@@ -447,7 +509,10 @@ GROUP BY SessionId";
         if (ids.Length == 0) return new List<UnresolvedEvent>();
         await using var conn = Open();
         var rows = await conn.QueryAsync(
-            $"SELECT * FROM {T("UnresolvedEvents")} WHERE EndpointId = @E AND EventId IN @Ids AND Deleted = 0",
+            $@"SELECT * FROM {T("UnresolvedEvents")}
+               WHERE EndpointId = @E
+                 AND (EventId IN @Ids OR CONCAT(EventId, '_', ISNULL(SessionId, '')) IN @Ids)
+                 AND Deleted = 0",
             new { E = endpointId, Ids = ids }, commandTimeout: _commandTimeout);
         return rows.Select(MapUnresolvedEventRow).ToList();
     }
@@ -523,10 +588,57 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
     }
 
     public Task<IEnumerable<BlockedMessageEvent>> GetBlockedEventsOnSession(string endpointId, string sessionId)
-        => Task.FromResult<IEnumerable<BlockedMessageEvent>>(Array.Empty<BlockedMessageEvent>());
+        => GetBlockedEventsOnSessionCore(endpointId, sessionId);
 
     public Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId)
-        => Task.FromResult<IEnumerable<BlockedMessageEvent>>(Array.Empty<BlockedMessageEvent>());
+        => GetInvalidEventsOnSessionCore(endpointId);
+
+    private async Task<IEnumerable<BlockedMessageEvent>> GetBlockedEventsOnSessionCore(string endpointId, string sessionId)
+    {
+        await using var conn = Open();
+        var rows = await conn.QueryAsync(
+            $@"SELECT EventId, LastMessageId, OriginatingMessageId, Status
+               FROM {T("UnresolvedEvents")}
+               WHERE EndpointId = @EndpointId
+                 AND SessionId = @SessionId
+                 AND Status IN ('Pending','Deferred')
+                 AND Deleted = 0
+               ORDER BY UpdatedAtUtc DESC, Id DESC",
+            new { EndpointId = endpointId, SessionId = sessionId },
+            commandTimeout: _commandTimeout);
+
+        return rows.Select(MapBlockedMessageEvent).Cast<BlockedMessageEvent>().ToList();
+    }
+
+    private async Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSessionCore(string endpointId)
+    {
+        await using var conn = Open();
+        var rows = await conn.QueryAsync(
+            $@"SELECT EventId, LastMessageId, OriginatingMessageId, Status
+               FROM {T("UnresolvedEvents")}
+               WHERE EndpointId = @EndpointId
+                 AND EndpointRole = 'Publisher'
+                 AND Deleted = 0
+               ORDER BY UpdatedAtUtc DESC, Id DESC",
+            new { EndpointId = endpointId },
+            commandTimeout: _commandTimeout);
+
+        return rows.Select(MapBlockedMessageEvent).Cast<BlockedMessageEvent>().ToList();
+    }
+
+    private static BlockedMessageEvent MapBlockedMessageEvent(dynamic row)
+    {
+        var originatingMessageId = (string?)row.OriginatingMessageId ?? string.Empty;
+        var lastMessageId = (string?)row.LastMessageId ?? string.Empty;
+        return new BlockedMessageEvent
+        {
+            EventId = row.EventId,
+            OriginatingId = string.Equals(originatingMessageId, "self", StringComparison.OrdinalIgnoreCase)
+                ? lastMessageId
+                : originatingMessageId,
+            Status = row.Status,
+        };
+    }
 
     private static UnresolvedEvent MapUnresolvedEventRow(dynamic row)
     {
@@ -638,7 +750,24 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
     }
 
     public Task<string> GetEndpointErrorList(string endpointId)
-        => Task.FromResult(string.Empty);
+        => GetEndpointErrorListCore(endpointId);
+
+    private async Task<string> GetEndpointErrorListCore(string endpointId)
+    {
+        await using var conn = Open();
+        var ids = await conn.QueryAsync<string>(
+            $@"SELECT CONCAT(EventId, '_', ISNULL(SessionId, ''))
+               FROM {T("UnresolvedEvents")}
+               WHERE EndpointId = @EndpointId
+                 AND Status IN ('Failed','Deferred')
+                 AND Deleted = 0
+               ORDER BY UpdatedAtUtc DESC, Id DESC",
+            new { EndpointId = endpointId },
+            commandTimeout: _commandTimeout);
+
+        var list = ids.ToList();
+        return list.Count == 0 ? string.Empty : string.Join(";", list) + ";";
+    }
 
     // ───────── Subscription store ─────────
 
@@ -751,7 +880,9 @@ WHERE Id = @Id";
             $"SELECT * FROM {T("EndpointMetadata")} WHERE EndpointId = @E",
             new { E = endpointId }, commandTimeout: _commandTimeout);
         if (row == null) throw new EndpointNotFoundException(endpointId);
-        return MapMetadataRow(row);
+        var metadata = MapMetadataRow(row);
+        metadata.Heartbeats = await GetHeartbeats(conn, endpointId);
+        return metadata;
     }
 
     public async Task<List<EndpointMetadata>> GetMetadatas()
@@ -831,7 +962,16 @@ VALUES (@EndpointId, @EndpointOwner, @EndpointOwnerTeam, @EndpointOwnerEmail, @I
     {
         var sql = $@"
 INSERT INTO {T("Heartbeats")} (EndpointId, MessageId, StartTimeUtc, ReceivedTimeUtc, EndTimeUtc, EndpointHeartbeatStatus)
-VALUES (@EndpointId, @MessageId, @StartTime, @ReceivedTime, @EndTime, @Status)";
+VALUES (@EndpointId, @MessageId, @StartTime, @ReceivedTime, @EndTime, @Status);
+
+MERGE {T("EndpointMetadata")} AS target
+USING (SELECT @EndpointId AS EndpointId) AS source
+ON target.EndpointId = source.EndpointId
+WHEN MATCHED THEN UPDATE SET
+    EndpointHeartbeatStatus = @Status,
+    UpdatedAtUtc = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT (EndpointId, EndpointHeartbeatStatus)
+VALUES (@EndpointId, @Status);";
         await using var conn = Open();
         var rows = await conn.ExecuteAsync(sql, new
         {
@@ -856,18 +996,59 @@ VALUES (@EndpointId, @MessageId, @StartTime, @ReceivedTime, @EndTime, @Status)";
         TechnicalContacts = string.IsNullOrEmpty((string?)row.TechnicalContactsJson)
             ? new List<TechnicalContact>()
             : JsonConvert.DeserializeObject<List<TechnicalContact>>((string)row.TechnicalContactsJson) ?? new List<TechnicalContact>(),
+        Heartbeats = new List<Heartbeat>(),
         SubscriptionStatus = row.SubscriptionStatus,
     };
+
+    private async Task<List<Heartbeat>> GetHeartbeats(SqlConnection conn, string endpointId)
+    {
+        var rows = await conn.QueryAsync(
+            $@"SELECT MessageId, StartTimeUtc, ReceivedTimeUtc, EndTimeUtc, EndpointHeartbeatStatus
+               FROM {T("Heartbeats")}
+               WHERE EndpointId = @EndpointId
+               ORDER BY ReceivedTimeUtc DESC",
+            new { EndpointId = endpointId },
+            commandTimeout: _commandTimeout);
+
+        return rows.Select(row => new Heartbeat
+        {
+            MessageId = row.MessageId ?? string.Empty,
+            StartTime = row.StartTimeUtc,
+            ReceivedTime = row.ReceivedTimeUtc,
+            EndTime = row.EndTimeUtc,
+            EndpointHeartbeatStatus = Enum.TryParse((string?)row.EndpointHeartbeatStatus, out HeartbeatStatus status)
+                ? status
+                : HeartbeatStatus.Unknown,
+        }).ToList();
+    }
 
     // ───────── Metrics ─────────
 
     public async Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from)
     {
         var sql = $@"
-SELECT EndpointId, EventTypeId, MessageType, EventCount
-FROM {T("EndpointEventTypeCounts")}";
+SELECT
+    CASE
+        WHEN MessageType = 'EventRequest' AND NULLIF(FromAddress, '') IS NOT NULL THEN FromAddress
+        ELSE EndpointId
+    END AS EndpointId,
+    EventTypeId,
+    MessageType,
+    COUNT_BIG(*) AS EventCount
+FROM {T("Messages")}
+WHERE EnqueuedTimeUtc >= @From
+GROUP BY
+    CASE
+        WHEN MessageType = 'EventRequest' AND NULLIF(FromAddress, '') IS NOT NULL THEN FromAddress
+        ELSE EndpointId
+    END,
+    EventTypeId,
+    MessageType";
         await using var conn = Open();
-        var rows = await conn.QueryAsync<(string EndpointId, string EventTypeId, string MessageType, long EventCount)>(sql, commandTimeout: _commandTimeout);
+        var rows = await conn.QueryAsync<(string EndpointId, string EventTypeId, string MessageType, long EventCount)>(
+            sql,
+            new { From = from },
+            commandTimeout: _commandTimeout);
         var result = new EndpointMetricsResult();
         foreach (var r in rows)
         {
@@ -884,17 +1065,145 @@ FROM {T("EndpointEventTypeCounts")}";
     }
 
     public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from)
-        => Task.FromResult(new EndpointLatencyMetricsResult());
+    {
+        var sql = $@"
+SELECT EndpointId, EventTypeId, QueueTimeMs, ProcessingTimeMs
+FROM {T("Messages")}
+WHERE EnqueuedTimeUtc >= @From
+  AND MessageType IN ('ResolutionResponse', 'ErrorResponse', 'SkipResponse', 'DeferralResponse', 'UnsupportedResponse')
+  AND (QueueTimeMs IS NOT NULL OR ProcessingTimeMs IS NOT NULL)";
+
+        return GetEndpointLatencyMetricsCore(sql, from);
+    }
+
+    private async Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetricsCore(string sql, DateTime from)
+    {
+        await using var conn = Open();
+        var rows = await conn.QueryAsync<(string EndpointId, string EventTypeId, long? QueueTimeMs, long? ProcessingTimeMs)>(
+            sql,
+            new { From = from },
+            commandTimeout: _commandTimeout);
+
+        var latencies = rows
+            .GroupBy(r => (r.EndpointId, r.EventTypeId))
+            .Select(g => new EndpointLatencyAggregate
+            {
+                EndpointId = g.Key.EndpointId,
+                EventTypeId = g.Key.EventTypeId,
+                Queue = AggregateLatency(g.Select(r => r.QueueTimeMs)),
+                Processing = AggregateLatency(g.Select(r => r.ProcessingTimeMs)),
+            })
+            .ToList();
+
+        return new EndpointLatencyMetricsResult { Latencies = latencies };
+    }
 
     public async Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from)
     {
         await using var conn = Open();
         var rows = await conn.QueryAsync<FailedMessageInfo>(
-            $"SELECT EndpointId, EventTypeId, ErrorText, EnqueuedTimeUtc, EventId FROM {T("FailedMessageInsights")} WHERE EnqueuedTimeUtc >= @From",
+            $@"SELECT
+                   EndpointId,
+                   EventTypeId,
+                   COALESCE(NULLIF(JSON_VALUE(MessageContentJson, '$.ErrorContent.ErrorText'), ''), DeadLetterErrorDescription, '') AS ErrorText,
+                   EnqueuedTimeUtc,
+                   EventId
+               FROM {T("Messages")}
+               WHERE MessageType = 'ErrorResponse'
+                 AND EnqueuedTimeUtc >= @From",
             new { From = from }, commandTimeout: _commandTimeout);
         return rows.ToList();
     }
 
-    public Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
-        => Task.FromResult(new TimeSeriesResult { BucketSize = bucketLabel });
+    public async Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+    {
+        await using var conn = Open();
+        var rows = await conn.QueryAsync<(string MessageType, DateTime EnqueuedTimeUtc)>(
+            $@"SELECT MessageType, EnqueuedTimeUtc
+               FROM {T("Messages")}
+               WHERE EnqueuedTimeUtc >= @From
+                 AND MessageType IN ('EventRequest', 'ResolutionResponse', 'ErrorResponse')",
+            new { From = from },
+            commandTimeout: _commandTimeout);
+
+        var buckets = GenerateBucketKeys(from, DateTime.UtcNow, substringLength)
+            .ToDictionary(k => k, k => new TimeSeriesBucket { Timestamp = k });
+
+        foreach (var row in rows)
+        {
+            var key = DateTime.SpecifyKind(row.EnqueuedTimeUtc, DateTimeKind.Utc).ToString("o")[..substringLength];
+            if (!buckets.TryGetValue(key, out var bucket))
+            {
+                bucket = new TimeSeriesBucket { Timestamp = key };
+                buckets[key] = bucket;
+            }
+
+            switch (row.MessageType)
+            {
+                case "EventRequest":
+                    bucket.Published++;
+                    break;
+                case "ResolutionResponse":
+                    bucket.Handled++;
+                    break;
+                case "ErrorResponse":
+                    bucket.Failed++;
+                    break;
+            }
+        }
+
+        return new TimeSeriesResult
+        {
+            BucketSize = bucketLabel,
+            DataPoints = buckets.Values.OrderBy(b => b.Timestamp).ToList(),
+        };
+    }
+
+    private static LatencyAggregate AggregateLatency(IEnumerable<long?> values)
+    {
+        var captured = values.Where(v => v.HasValue).Select(v => (double)v!.Value).ToList();
+        return captured.Count == 0
+            ? new LatencyAggregate()
+            : new LatencyAggregate
+            {
+                Count = captured.Count,
+                AvgMs = captured.Average(),
+                MinMs = captured.Min(),
+                MaxMs = captured.Max(),
+            };
+    }
+
+    private static List<string> GenerateBucketKeys(DateTime from, DateTime to, int substringLength)
+    {
+        var current = substringLength switch
+        {
+            16 => new DateTime(from.Year, from.Month, from.Day, from.Hour, from.Minute, 0, DateTimeKind.Utc),
+            13 => new DateTime(from.Year, from.Month, from.Day, from.Hour, 0, 0, DateTimeKind.Utc),
+            10 => new DateTime(from.Year, from.Month, from.Day, 0, 0, 0, DateTimeKind.Utc),
+            _ => new DateTime(from.Year, from.Month, from.Day, from.Hour, 0, 0, DateTimeKind.Utc)
+        };
+
+        var step = substringLength switch
+        {
+            16 => TimeSpan.FromMinutes(1),
+            13 => TimeSpan.FromHours(1),
+            10 => TimeSpan.FromDays(1),
+            _ => TimeSpan.FromHours(1)
+        };
+
+        var keys = new List<string>();
+        while (current <= to)
+        {
+            keys.Add(current.ToString("o")[..substringLength]);
+            current += step;
+        }
+
+        return keys;
+    }
+
+    private static string CompositeEventId((string EventId, string? SessionId, string Status) row)
+        => $"{row.EventId}_{row.SessionId ?? string.Empty}";
+
+    private static string CompositeEventId(UnresolvedEvent @event)
+        => $"{@event.EventId}_{@event.SessionId ?? string.Empty}";
 }

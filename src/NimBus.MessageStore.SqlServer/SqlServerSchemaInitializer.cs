@@ -1,12 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using DbUp;
-using DbUp.Engine;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -22,6 +19,25 @@ namespace NimBus.MessageStore.SqlServer;
 /// </summary>
 internal sealed class SqlServerSchemaInitializer : IHostedService
 {
+    private static readonly string[] RequiredTables =
+    {
+        "DbUpJournal",
+        "Messages",
+        "UnresolvedEvents",
+        "MessageAudits",
+        "EndpointSubscriptions",
+        "EndpointMetadata",
+        "Heartbeats",
+        "BlockedMessages",
+        "InvalidMessages",
+    };
+
+    private static readonly string[] RequiredViews =
+    {
+        "EndpointEventTypeCounts",
+        "FailedMessageInsights",
+    };
+
     private readonly SqlServerMessageStoreOptions _options;
     private readonly ILogger<SqlServerSchemaInitializer> _logger;
 
@@ -39,16 +55,16 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
         if (string.IsNullOrWhiteSpace(_options.Schema))
             throw new InvalidOperationException("SqlServerMessageStoreOptions.Schema is required.");
 
-        // DbUp's journal table lives in the configured schema, and EnsureTableExistsAndIsLatestVersion
-        // runs before any DbUp script — including the one that creates the schema. Bootstrap the
-        // schema directly so DbUp's journal creation has somewhere to land.
-        await using (var conn = new SqlConnection(_options.ConnectionString))
+        if (_options.ProvisioningMode == SchemaProvisioningMode.VerifyOnly)
         {
-            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = @schema) EXEC('CREATE SCHEMA [{_options.Schema.Replace("]", "]]", StringComparison.Ordinal)}]')";
-            cmd.Parameters.Add(new SqlParameter("@schema", _options.Schema));
-            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await VerifyRequiredArtifacts(cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            // DbUp's journal table lives in the configured schema, and journal setup
+            // runs before any DbUp script. Bootstrap the schema directly so journal
+            // creation has somewhere to land; 0001_Schema.sql remains idempotent.
+            await EnsureSchemaExists(cancellationToken).ConfigureAwait(false);
         }
 
         var assembly = typeof(SqlServerSchemaInitializer).Assembly;
@@ -90,4 +106,80 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    private async Task EnsureSchemaExists(CancellationToken cancellationToken)
+    {
+        await using var conn = new SqlConnection(_options.ConnectionString);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = @Schema)
+BEGIN
+    DECLARE @sql nvarchar(max) = N'CREATE SCHEMA ' + QUOTENAME(@Schema);
+    EXEC sp_executesql @sql;
+END";
+        cmd.Parameters.AddWithValue("@Schema", _options.Schema);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task VerifyRequiredArtifacts(CancellationToken cancellationToken)
+    {
+        await using var conn = new SqlConnection(_options.ConnectionString);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        var missing = new List<string>();
+        if (!await SchemaExists(conn, cancellationToken).ConfigureAwait(false))
+        {
+            missing.Add($"schema '{_options.Schema}'");
+            missing.AddRange(RequiredTables.Select(Qualified));
+            missing.AddRange(RequiredViews.Select(Qualified));
+        }
+        else
+        {
+            foreach (var table in RequiredTables)
+            {
+                if (!await ObjectExists(conn, "U", table, cancellationToken).ConfigureAwait(false))
+                    missing.Add(Qualified(table));
+            }
+
+            foreach (var view in RequiredViews)
+            {
+                if (!await ObjectExists(conn, "V", view, cancellationToken).ConfigureAwait(false))
+                    missing.Add(Qualified(view));
+            }
+        }
+
+        if (missing.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "SQL Server message-store schema is missing or out of date. Missing artifacts: " +
+                string.Join(", ", missing));
+        }
+    }
+
+    private async Task<bool> SchemaExists(SqlConnection conn, CancellationToken cancellationToken)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(1) FROM sys.schemas WHERE name = @Schema";
+        cmd.Parameters.AddWithValue("@Schema", _options.Schema);
+        var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return Convert.ToInt32(result) > 0;
+    }
+
+    private async Task<bool> ObjectExists(SqlConnection conn, string type, string name, CancellationToken cancellationToken)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+SELECT COUNT(1)
+FROM sys.objects o
+INNER JOIN sys.schemas s ON s.schema_id = o.schema_id
+WHERE s.name = @Schema AND o.name = @Name AND o.type = @Type";
+        cmd.Parameters.AddWithValue("@Schema", _options.Schema);
+        cmd.Parameters.AddWithValue("@Name", name);
+        cmd.Parameters.AddWithValue("@Type", type);
+        var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return Convert.ToInt32(result) > 0;
+    }
+
+    private string Qualified(string objectName) => $"[{_options.Schema}].[{objectName}]";
 }

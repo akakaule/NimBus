@@ -74,7 +74,7 @@ public class InMemoryMessageStore : INimBusMessageStore
     public Task<List<UnresolvedEvent>> GetEventsByIds(string endpointId, IEnumerable<string> eventIds)
     {
         var set = new HashSet<string>(eventIds);
-        return Task.FromResult(_events.Values.Where(e => e.EndpointId == endpointId && set.Contains(e.EventId)).ToList());
+        return Task.FromResult(_events.Values.Where(e => e.EndpointId == endpointId && (set.Contains(e.EventId) || set.Contains(CompositeEventId(e)))).ToList());
     }
 
     public Task<IEnumerable<UnresolvedEvent>> GetCompletedEventsOnEndpoint(string endpointId)
@@ -111,22 +111,61 @@ public class InMemoryMessageStore : INimBusMessageStore
     }
 
     public Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId)
-        => Task.FromResult(new SessionStateCount { SessionId = sessionId, PendingEvents = Array.Empty<string>(), DeferredEvents = Array.Empty<string>() });
+    {
+        var events = _events.Values
+            .Where(e => e.EndpointId == endpointId && (e.SessionId ?? string.Empty) == (sessionId ?? string.Empty))
+            .ToList();
+
+        return Task.FromResult(new SessionStateCount
+        {
+            SessionId = sessionId,
+            PendingEvents = events.Where(e => e.ResolutionStatus == ResolutionStatus.Pending).Select(CompositeEventId).ToList(),
+            DeferredEvents = events.Where(e => e.ResolutionStatus == ResolutionStatus.Deferred).Select(CompositeEventId).ToList(),
+        });
+    }
 
     public Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds)
-        => Task.FromResult<IEnumerable<SessionStateCount>>(sessionIds.Select(s => new SessionStateCount { SessionId = s, PendingEvents = Array.Empty<string>(), DeferredEvents = Array.Empty<string>() }).ToList());
+        => Task.FromResult<IEnumerable<SessionStateCount>>(sessionIds.Select(s => DownloadEndpointSessionStateCount(endpointId, s).GetAwaiter().GetResult()).ToList());
 
     public Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken)
-        => Task.FromResult(new EndpointState { EndpointId = endpointId, EventTime = DateTime.UtcNow });
+    {
+        var take = pageSize > 0 ? pageSize : 100;
+        var events = _events.Values
+            .Where(e => e.EndpointId == endpointId)
+            .Where(e => e.ResolutionStatus is ResolutionStatus.Pending or ResolutionStatus.Deferred or ResolutionStatus.Failed or ResolutionStatus.DeadLettered or ResolutionStatus.Unsupported)
+            .OrderByDescending(e => e.UpdatedAt)
+            .Take(take)
+            .ToList();
+
+        return Task.FromResult(new EndpointState
+        {
+            EndpointId = endpointId,
+            EventTime = DateTime.UtcNow,
+            EnrichedUnresolvedEvents = events,
+            PendingEvents = events.Where(e => e.ResolutionStatus == ResolutionStatus.Pending).Select(CompositeEventId).ToList(),
+            DeferredEvents = events.Where(e => e.ResolutionStatus == ResolutionStatus.Deferred).Select(CompositeEventId).ToList(),
+            FailedEvents = events.Where(e => e.ResolutionStatus == ResolutionStatus.Failed).Select(CompositeEventId).ToList(),
+            DeadletteredEvents = events.Where(e => e.ResolutionStatus == ResolutionStatus.DeadLettered).Select(CompositeEventId).ToList(),
+            UnsupportedEvents = events.Where(e => e.ResolutionStatus == ResolutionStatus.Unsupported).Select(CompositeEventId).ToList(),
+            ContinuationToken = events.Count == take ? "more" : string.Empty,
+        });
+    }
 
     public Task<IEnumerable<BlockedMessageEvent>> GetBlockedEventsOnSession(string endpointId, string sessionId)
-        => Task.FromResult<IEnumerable<BlockedMessageEvent>>(Array.Empty<BlockedMessageEvent>());
+        => Task.FromResult<IEnumerable<BlockedMessageEvent>>(_events.Values
+            .Where(e => e.EndpointId == endpointId && (e.SessionId ?? string.Empty) == (sessionId ?? string.Empty))
+            .Where(e => e.ResolutionStatus is ResolutionStatus.Pending or ResolutionStatus.Deferred)
+            .Select(ToBlockedMessageEvent)
+            .ToList());
 
     public Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId)
         => Task.FromResult<IEnumerable<UnresolvedEvent>>(_events.Values.Where(e => e.EndpointId == endpointId && e.ResolutionStatus == ResolutionStatus.Pending).ToList());
 
     public Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId)
-        => Task.FromResult<IEnumerable<BlockedMessageEvent>>(Array.Empty<BlockedMessageEvent>());
+        => Task.FromResult<IEnumerable<BlockedMessageEvent>>(_events.Values
+            .Where(e => e.EndpointId == endpointId && e.EndpointRole == EndpointRole.Publisher)
+            .Select(ToBlockedMessageEvent)
+            .ToList());
 
     public Task<bool> RemoveMessage(string eventId, string sessionId, string endpointId)
         => Task.FromResult(_events.TryRemove(Key(endpointId, eventId, sessionId), out _));
@@ -217,7 +256,16 @@ public class InMemoryMessageStore : INimBusMessageStore
         return Task.FromResult(new AuditSearchResult { Audits = results });
     }
 
-    public Task<string> GetEndpointErrorList(string endpointId) => Task.FromResult(string.Empty);
+    public Task<string> GetEndpointErrorList(string endpointId)
+    {
+        var ids = _events.Values
+            .Where(e => e.EndpointId == endpointId)
+            .Where(e => e.ResolutionStatus is ResolutionStatus.Failed or ResolutionStatus.Deferred)
+            .Select(CompositeEventId)
+            .ToList();
+
+        return Task.FromResult(ids.Count == 0 ? string.Empty : string.Join(";", ids) + ";");
+    }
 
     public Task<EndpointSubscription> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency)
     {
@@ -272,6 +320,8 @@ public class InMemoryMessageStore : INimBusMessageStore
 
     public Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata)
     {
+        endpointMetadata.TechnicalContacts ??= new List<TechnicalContact>();
+        endpointMetadata.Heartbeats ??= new List<Heartbeat>();
         _metadata[endpointMetadata.EndpointId] = endpointMetadata;
         return Task.FromResult(true);
     }
@@ -286,12 +336,190 @@ public class InMemoryMessageStore : INimBusMessageStore
 
     public Task<bool> SetHeartbeat(Heartbeat heartbeat, string endpointId)
     {
-        lock (_heartbeatLock) _heartbeats.Add(heartbeat);
+        lock (_heartbeatLock)
+        {
+            _heartbeats.Add(heartbeat);
+            if (!_metadata.TryGetValue(endpointId, out var metadata))
+            {
+                metadata = new EndpointMetadata { EndpointId = endpointId };
+                _metadata[endpointId] = metadata;
+            }
+
+            metadata.EndpointHeartbeatStatus = heartbeat.EndpointHeartbeatStatus;
+            metadata.Heartbeats ??= new List<Heartbeat>();
+            var existing = metadata.Heartbeats.FirstOrDefault(h => h.MessageId == heartbeat.MessageId);
+            if (existing == null)
+            {
+                metadata.Heartbeats.Add(heartbeat);
+            }
+            else
+            {
+                existing.StartTime = heartbeat.StartTime;
+                existing.ReceivedTime = heartbeat.ReceivedTime;
+                existing.EndTime = heartbeat.EndTime;
+                existing.EndpointHeartbeatStatus = heartbeat.EndpointHeartbeatStatus;
+            }
+        }
         return Task.FromResult(true);
     }
 
-    public Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from) => Task.FromResult(new EndpointMetricsResult());
-    public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from) => Task.FromResult(new EndpointLatencyMetricsResult());
-    public Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from) => Task.FromResult(new List<FailedMessageInfo>());
-    public Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel) => Task.FromResult(new TimeSeriesResult { BucketSize = bucketLabel });
+    public Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from)
+    {
+        var messages = _messages.Values.Where(m => m.EnqueuedTimeUtc >= from).ToList();
+        return Task.FromResult(new EndpointMetricsResult
+        {
+            Published = CountByEndpointAndEventType(messages.Where(m => m.MessageType == MessageType.EventRequest), published: true),
+            Handled = CountByEndpointAndEventType(messages.Where(m => m.MessageType == MessageType.ResolutionResponse), published: false),
+            Failed = CountByEndpointAndEventType(messages.Where(m => m.MessageType == MessageType.ErrorResponse), published: false),
+        });
+    }
+
+    public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from)
+    {
+        var outcomeTypes = new HashSet<MessageType>
+        {
+            MessageType.ResolutionResponse,
+            MessageType.ErrorResponse,
+            MessageType.SkipResponse,
+            MessageType.DeferralResponse,
+            MessageType.UnsupportedResponse,
+        };
+
+        var latencies = _messages.Values
+            .Where(m => m.EnqueuedTimeUtc >= from && outcomeTypes.Contains(m.MessageType))
+            .GroupBy(m => (EndpointId: m.EndpointId ?? string.Empty, EventTypeId: m.EventTypeId ?? string.Empty))
+            .Select(g => new EndpointLatencyAggregate
+            {
+                EndpointId = g.Key.EndpointId,
+                EventTypeId = g.Key.EventTypeId,
+                Queue = Aggregate(g.Select(m => m.QueueTimeMs)),
+                Processing = Aggregate(g.Select(m => m.ProcessingTimeMs)),
+            })
+            .ToList();
+
+        return Task.FromResult(new EndpointLatencyMetricsResult { Latencies = latencies });
+    }
+
+    public Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from)
+    {
+        var results = _messages.Values
+            .Where(m => m.EnqueuedTimeUtc >= from && m.MessageType == MessageType.ErrorResponse)
+            .Select(m => new FailedMessageInfo
+            {
+                EndpointId = m.EndpointId,
+                EventTypeId = m.EventTypeId,
+                ErrorText = m.MessageContent?.ErrorContent?.ErrorText ?? m.DeadLetterErrorDescription ?? string.Empty,
+                EnqueuedTimeUtc = m.EnqueuedTimeUtc,
+                EventId = m.EventId,
+            })
+            .ToList();
+
+        return Task.FromResult(results);
+    }
+
+    public Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+    {
+        var buckets = GenerateBucketKeys(from, DateTime.UtcNow, substringLength)
+            .ToDictionary(k => k, k => new TimeSeriesBucket { Timestamp = k });
+
+        foreach (var message in _messages.Values.Where(m => m.EnqueuedTimeUtc >= from))
+        {
+            var key = message.EnqueuedTimeUtc.ToUniversalTime().ToString("o")[..substringLength];
+            if (!buckets.TryGetValue(key, out var bucket))
+            {
+                bucket = new TimeSeriesBucket { Timestamp = key };
+                buckets[key] = bucket;
+            }
+
+            switch (message.MessageType)
+            {
+                case MessageType.EventRequest:
+                    bucket.Published++;
+                    break;
+                case MessageType.ResolutionResponse:
+                    bucket.Handled++;
+                    break;
+                case MessageType.ErrorResponse:
+                    bucket.Failed++;
+                    break;
+            }
+        }
+
+        return Task.FromResult(new TimeSeriesResult
+        {
+            BucketSize = bucketLabel,
+            DataPoints = buckets.Values.OrderBy(b => b.Timestamp).ToList(),
+        });
+    }
+
+    private static List<EndpointEventTypeCount> CountByEndpointAndEventType(IEnumerable<MessageEntity> messages, bool published)
+        => messages
+            .GroupBy(m => (
+                EndpointId: published ? (m.From ?? string.Empty) : (m.EndpointId ?? string.Empty),
+                EventTypeId: m.EventTypeId ?? string.Empty))
+            .Select(g => new EndpointEventTypeCount
+            {
+                EndpointId = g.Key.EndpointId,
+                EventTypeId = g.Key.EventTypeId,
+                Count = g.Count(),
+            })
+            .ToList();
+
+    private static string CompositeEventId(UnresolvedEvent @event)
+        => $"{@event.EventId}_{@event.SessionId ?? string.Empty}";
+
+    private static BlockedMessageEvent ToBlockedMessageEvent(UnresolvedEvent @event)
+    {
+        var originatingMessageId = @event.OriginatingMessageId ?? string.Empty;
+        return new BlockedMessageEvent
+        {
+            EventId = @event.EventId,
+            OriginatingId = string.Equals(originatingMessageId, "self", StringComparison.OrdinalIgnoreCase)
+                ? @event.LastMessageId
+                : originatingMessageId,
+            Status = @event.ResolutionStatus.ToString(),
+        };
+    }
+
+    private static LatencyAggregate Aggregate(IEnumerable<long?> values)
+    {
+        var captured = values.Where(v => v.HasValue).Select(v => (double)v!.Value).ToList();
+        return captured.Count == 0
+            ? new LatencyAggregate()
+            : new LatencyAggregate
+            {
+                Count = captured.Count,
+                AvgMs = captured.Average(),
+                MinMs = captured.Min(),
+                MaxMs = captured.Max(),
+            };
+    }
+
+    private static List<string> GenerateBucketKeys(DateTime from, DateTime to, int substringLength)
+    {
+        var current = substringLength switch
+        {
+            16 => new DateTime(from.Year, from.Month, from.Day, from.Hour, from.Minute, 0, DateTimeKind.Utc),
+            13 => new DateTime(from.Year, from.Month, from.Day, from.Hour, 0, 0, DateTimeKind.Utc),
+            10 => new DateTime(from.Year, from.Month, from.Day, 0, 0, 0, DateTimeKind.Utc),
+            _ => new DateTime(from.Year, from.Month, from.Day, from.Hour, 0, 0, DateTimeKind.Utc)
+        };
+
+        var step = substringLength switch
+        {
+            16 => TimeSpan.FromMinutes(1),
+            13 => TimeSpan.FromHours(1),
+            10 => TimeSpan.FromDays(1),
+            _ => TimeSpan.FromHours(1)
+        };
+
+        var keys = new List<string>();
+        while (current <= to)
+        {
+            keys.Add(current.ToString("o")[..substringLength]);
+            current += step;
+        }
+
+        return keys;
+    }
 }

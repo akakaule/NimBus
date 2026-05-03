@@ -12,7 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Azure.Identity" Version="1.16.0" />
+    <PackageReference Include="Azure.Identity" Version="1.17.1" />
     <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.22.0" />
     <PackageReference Include="Microsoft.Identity.Web" Version="3.8.2" />
     <PackageReference Include="Microsoft.Identity.Web.UI" Version="3.8.2" />
@@ -72,7 +72,9 @@
     <ProjectReference Include="..\NimBus.Core\NimBus.Core.csproj" />
     <ProjectReference Include="..\NimBus.Manager\NimBus.Manager.csproj" />
     <ProjectReference Include="..\NimBus.Management.ServiceBus\NimBus.Management.ServiceBus.csproj" />
-    <ProjectReference Include="..\NimBus.MessageStore\NimBus.MessageStore.csproj" />
+    <ProjectReference Include="..\NimBus.MessageStore.Abstractions\NimBus.MessageStore.Abstractions.csproj" />
+    <ProjectReference Include="..\NimBus.MessageStore.CosmosDb\NimBus.MessageStore.CosmosDb.csproj" />
+    <ProjectReference Include="..\NimBus.MessageStore.SqlServer\NimBus.MessageStore.SqlServer.csproj" />
     <ProjectReference Include="..\NimBus\NimBus.csproj" />
     <ProjectReference Include="..\NimBus.SDK\NimBus.SDK.csproj" />
     <ProjectReference Include="..\NimBus.ServiceBus\NimBus.ServiceBus.csproj" />

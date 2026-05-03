@@ -58,6 +58,39 @@ internal static class Program
         }
     }
 
+    private static StorageProviderChoice ParseStorageProvider(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return StorageProviderChoice.Cosmos;
+        return value.ToLowerInvariant() switch
+        {
+            "cosmos" => StorageProviderChoice.Cosmos,
+            "sqlserver" or "sql" or "sql-server" => StorageProviderChoice.SqlServer,
+            _ => throw new InvalidOperationException($"Unknown --storage-provider value '{value}'. Expected 'cosmos' or 'sqlserver'."),
+        };
+    }
+
+    private static SqlProvisioningMode ParseSqlMode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return SqlProvisioningMode.Provision;
+        return value.ToLowerInvariant() switch
+        {
+            "provision" => SqlProvisioningMode.Provision,
+            "external" => SqlProvisioningMode.External,
+            _ => throw new InvalidOperationException($"Unknown --sql-mode value '{value}'. Expected 'provision' or 'external'."),
+        };
+    }
+
+    private static ResolverPlanChoice ParseResolverPlan(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return ResolverPlanChoice.ElasticPremium;
+        return value.Replace("-", "", StringComparison.Ordinal).ToLowerInvariant() switch
+        {
+            "elasticpremium" or "ep1" or "premium" => ResolverPlanChoice.ElasticPremium,
+            "flexconsumption" or "flex" or "fc1" => ResolverPlanChoice.FlexConsumption,
+            _ => throw new InvalidOperationException($"Unknown --resolver-plan value '{value}'. Expected 'ElasticPremium' or 'FlexConsumption'."),
+        };
+    }
+
     private static void ConfigureInfraCommands(CommandLineApplication app)
     {
         app.Command("infra", infraCommand =>
@@ -77,6 +110,12 @@ internal static class Program
                 var location = applyCommand.Option("--location <AZURE-REGION>", "Optional location override passed to the bicep templates.", CommandOptionType.SingleValue);
                 var resourceNamePostfix = applyCommand.Option("--resource-name-postfix <VALUE>", "Reserved for compatibility with the legacy pipeline scripts.", CommandOptionType.SingleValue);
                 var webAppVersion = applyCommand.Option("--webapp-version <VALUE>", "Version string stored in the web app settings.", CommandOptionType.SingleValue);
+                var storageProvider = applyCommand.Option("--storage-provider <PROVIDER>", "Storage provider for NimBus message persistence: cosmos | sqlserver. Defaults to 'cosmos' for backwards compatibility.", CommandOptionType.SingleValue);
+                var sqlMode = applyCommand.Option("--sql-mode <MODE>", "When --storage-provider is sqlserver: 'provision' deploys a new Azure SQL resource; 'external' uses --sql-connection-string.", CommandOptionType.SingleValue);
+                var sqlConnectionString = applyCommand.Option("--sql-connection-string <VALUE>", "Pre-existing SQL Server connection string. Required when --sql-mode is 'external'.", CommandOptionType.SingleValue);
+                var sqlAdminLogin = applyCommand.Option("--sql-admin-login <VALUE>", "SQL admin login when --sql-mode is 'provision'.", CommandOptionType.SingleValue);
+                var sqlAdminPassword = applyCommand.Option("--sql-admin-password <VALUE>", "SQL admin password when --sql-mode is 'provision'.", CommandOptionType.SingleValue);
+                var resolverPlan = applyCommand.Option("--resolver-plan <PLAN>", "Hosting plan for the resolver Function App: ElasticPremium | FlexConsumption. Defaults to 'ElasticPremium' (EP1, Windows). 'FlexConsumption' is the cheaper scale-to-zero Linux option suited for dev/test.", CommandOptionType.SingleValue);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
@@ -84,13 +123,32 @@ internal static class Program
                     var az = new AzureCliRunner();
                     var deployer = new InfrastructureDeployer(context, az);
 
+                    var providerChoice = ParseStorageProvider(storageProvider.Value());
+                    var sqlProvisioningMode = ParseSqlMode(sqlMode.Value());
+                    var resolverPlanChoice = ParseResolverPlan(resolverPlan.Value());
+
+                    if (providerChoice == StorageProviderChoice.SqlServer)
+                    {
+                        if (sqlProvisioningMode == SqlProvisioningMode.External && string.IsNullOrWhiteSpace(sqlConnectionString.Value()))
+                            throw new InvalidOperationException("--sql-connection-string is required when --sql-mode is 'external'.");
+                        if (sqlProvisioningMode == SqlProvisioningMode.Provision &&
+                            (string.IsNullOrWhiteSpace(sqlAdminLogin.Value()) || string.IsNullOrWhiteSpace(sqlAdminPassword.Value())))
+                            throw new InvalidOperationException("--sql-admin-login and --sql-admin-password are required when --sql-mode is 'provision'.");
+                    }
+
                     var options = new InfrastructureOptions(
                         solutionId.Value(),
                         environment.Value(),
                         resourceGroup.Value(),
                         resourceNamePostfix.Value(),
                         location.Value(),
-                        webAppVersion.HasValue() ? webAppVersion.Value()! : $"local-{DateTime.UtcNow:yyyyMMddHHmmss}");
+                        webAppVersion.HasValue() ? webAppVersion.Value()! : $"local-{DateTime.UtcNow:yyyyMMddHHmmss}",
+                        providerChoice,
+                        sqlProvisioningMode,
+                        sqlConnectionString.Value(),
+                        sqlAdminLogin.Value(),
+                        sqlAdminPassword.Value(),
+                        resolverPlanChoice);
 
                     await deployer.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
                     return 0;
@@ -195,6 +253,7 @@ internal static class Program
             var resourceNamePostfix = setupCommand.Option("--resource-name-postfix <VALUE>", "Reserved for compatibility with the legacy pipeline scripts.", CommandOptionType.SingleValue);
             var webAppVersion = setupCommand.Option("--webapp-version <VALUE>", "Version string stored in the web app settings.", CommandOptionType.SingleValue);
             var configuration = setupCommand.Option("--configuration <NAME>", "Build configuration passed to dotnet publish.", CommandOptionType.SingleValue);
+            var setupResolverPlan = setupCommand.Option("--resolver-plan <PLAN>", "Hosting plan for the resolver Function App: ElasticPremium | FlexConsumption. Defaults to 'ElasticPremium'. Use 'FlexConsumption' for cheaper dev/test.", CommandOptionType.SingleValue);
 
             setupCommand.OnExecuteAsync(async cancellationToken =>
             {
@@ -210,7 +269,8 @@ internal static class Program
                     resourceGroup.Value(),
                     resourceNamePostfix.Value(),
                     location.Value(),
-                    webAppVersion.HasValue() ? webAppVersion.Value()! : $"local-{DateTime.UtcNow:yyyyMMddHHmmss}");
+                    webAppVersion.HasValue() ? webAppVersion.Value()! : $"local-{DateTime.UtcNow:yyyyMMddHHmmss}",
+                    ResolverPlan: ParseResolverPlan(setupResolverPlan.Value()));
 
                 var topologyOptions = new TopologyOptions(solutionId.Value(), environment.Value(), resourceGroup.Value());
                 var appOptions = new AppDeploymentOptions(

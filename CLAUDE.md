@@ -33,11 +33,13 @@ src/
   NimBus.ServiceBus/       # Azure Service Bus transport, provisioning, health checks
   NimBus.SDK/              # Publisher/subscriber DI registration, hosted services
   NimBus.Resolver/         # Message outcome tracking and state management
-  NimBus.MessageStore/     # Cosmos DB storage layer
+  NimBus.MessageStore.Abstractions/ # Provider-neutral storage contracts (IMessageTrackingStore, ISubscriptionStore, IEndpointMetadataStore, IMetricsStore)
+  NimBus.MessageStore.CosmosDb/     # Cosmos DB storage provider
+  NimBus.MessageStore.SqlServer/    # SQL Server storage provider (DbUp-managed schema)
   NimBus.Manager/          # Management client abstractions
   NimBus.Management.ServiceBus/  # Service Bus management operations
   NimBus.Outbox.SqlServer/ # Transactional outbox (SQL Server)
-  NimBus.Testing/          # In-memory transport for tests
+  NimBus.Testing/          # In-memory transport + storage conformance suite
   NimBus.Extensions.Notifications/  # Failure/dead-letter notifications
   NimBus.CommandLine/      # `nb` CLI tool (Spectre.Console)
   NimBus.WebApp/           # ASP.NET Core management UI
@@ -52,6 +54,9 @@ tests/
   NimBus.CommandLine.Tests/
   NimBus.Resolver.Tests/
   NimBus.EndToEnd.Tests/   # 14+ integration tests
+  NimBus.MessageStore.InMemory.Tests/   # In-memory store conformance run
+  NimBus.MessageStore.CosmosDb.Tests/   # Cosmos provider conformance run
+  NimBus.MessageStore.SqlServer.Tests/  # SQL provider conformance run (CI service container)
 
 samples/
   NimBus.Aspire/           # Aspire Pub/Sub sample (Publisher, Subscriber, Provisioner, ResolverWorker)

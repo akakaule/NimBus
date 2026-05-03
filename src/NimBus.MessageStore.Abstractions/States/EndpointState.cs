@@ -12,6 +12,7 @@ namespace NimBus.MessageStore
             PendingEvents = new List<string>();
             FailedEvents = new List<string>();
             DeferredEvents = new List<string>();
+            DeadletteredEvents = new List<string>();
             EnrichedUnresolvedEvents = new List<UnresolvedEvent>();
             UnsupportedEvents = new List<string>();
         }
@@ -26,7 +27,11 @@ namespace NimBus.MessageStore
         public IEnumerable<string> UnsupportedEvents { get; set; }
         public IEnumerable<string> GetAllUnresolvedEvents
         {
-            get => PendingEvents.Concat(FailedEvents).Concat(DeferredEvents);
+            get => PendingEvents
+                .Concat(FailedEvents)
+                .Concat(DeferredEvents)
+                .Concat(DeadletteredEvents)
+                .Concat(UnsupportedEvents);
         }
         public DateTime EventTime { get; set; }
     }

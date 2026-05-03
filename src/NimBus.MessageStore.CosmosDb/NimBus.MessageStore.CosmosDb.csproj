@@ -7,7 +7,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Azure.Identity" Version="1.17.1" />
     <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.45.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0-preview.1.25080.5" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.0-preview.1.25080.5" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0-preview.1.25080.5" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0-preview.1.25080.5" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.0-preview.1.25120.3" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.0-preview.1.25080.5" />
@@ -18,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NimBus.Core\NimBus.Core.csproj" />
+    <ProjectReference Include="..\NimBus.MessageStore.Abstractions\NimBus.MessageStore.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

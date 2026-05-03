@@ -32,5 +32,13 @@ namespace NimBus.Core.Extensions
         /// Registers a NimBus extension instance.
         /// </summary>
         INimBusBuilder AddExtension(INimBusExtension extension);
+
+        /// <summary>
+        /// Explicit opt-out from storage-provider validation. Use for hosts that
+        /// only publish/subscribe and never use the message store (e.g. pure
+        /// adapters that own their own outbox via AddNimBusSqlServerOutbox and
+        /// don't host the Resolver).
+        /// </summary>
+        INimBusBuilder WithoutStorageProvider();
     }
 }

@@ -35,9 +35,12 @@ builder.Services.AddSingleton<OutboxDispatcherSender>(sp =>
 });
 builder.Services.AddNimBusOutboxDispatcher(TimeSpan.FromSeconds(1));
 
-// Middleware pipeline.
+// Middleware pipeline. Crm.Adapter is a pure publish/subscribe adapter — it owns
+// its own outbox via AddNimBusSqlServerOutbox above and does not read or write
+// the NimBus message store. Opt out of storage validation accordingly.
 builder.Services.AddNimBus(n =>
 {
+    n.WithoutStorageProvider();
     n.AddPipelineBehavior<LoggingMiddleware>();
     n.AddPipelineBehavior<MetricsMiddleware>();
     n.AddPipelineBehavior<ValidationMiddleware>();

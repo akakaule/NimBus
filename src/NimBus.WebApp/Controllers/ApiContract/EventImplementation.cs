@@ -1,6 +1,7 @@
 ﻿using NimBus.Core;
 using NimBus.Manager;
 using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
 using NimBus.WebApp.Services.ApplicationInsights;
@@ -24,7 +25,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
     {
         private readonly IPlatform platform;
         private readonly ILogger<EventImplementation> logger;
-        private readonly ICosmosDbClient cosmosClient;
+        private readonly INimBusMessageStore cosmosClient;
         private readonly IManagerClient managerClient;
         private readonly IApplicationInsightsService applicationInsightsService;
         private readonly IConfiguration configuration;
@@ -36,7 +37,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             IPlatform platform,
             IManagerClient managerClient,
             ILogger<EventImplementation> logger,
-            ICosmosDbClient cosmosClient,
+            INimBusMessageStore cosmosClient,
             IConfiguration config,
             IEndpointAuthorizationService authorizationService,
             IAdminService adminService)
@@ -482,6 +483,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
             }
+            catch (EndpointNotFoundException)
+            {
+                return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
+            }
         }
 
         public async Task<ActionResult<IEnumerable<Event>>> GetEventPendingIdAsync(string endpointId)
@@ -501,6 +506,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return events;
             }
             catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
+            }
+            catch (EndpointNotFoundException)
             {
                 return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
             }
@@ -525,6 +534,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
             }
+            catch (EndpointNotFoundException)
+            {
+                return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
+            }
         }
 
 
@@ -545,6 +558,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
             }
+            catch (EndpointNotFoundException)
+            {
+                return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
+            }
         }
 
         public async Task<ActionResult<Event>> GetEventDeadletterEndpointIdEventIdAsync(string endpointId, string eventId, string sessionId)
@@ -561,6 +578,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return Mapper.EventFromMessageStoreEvent(result);
             }
             catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
+            }
+            catch (EndpointNotFoundException)
             {
                 return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
             }
@@ -588,6 +609,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 };
             }
             catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
+            }
+            catch (EndpointNotFoundException)
             {
                 return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
             }

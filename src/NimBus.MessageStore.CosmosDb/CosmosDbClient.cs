@@ -13,71 +13,6 @@ using System.Threading.Tasks;
 
 namespace NimBus.MessageStore;
 
-public class MessageFilter
-{
-    public string? EndpointId { get; set; }
-    public string? EventId { get; set; }
-    public string? MessageId { get; set; }
-    public string? SessionId { get; set; }
-    public List<string>? EventTypeId { get; set; }
-    public string? From { get; set; }
-    public string? To { get; set; }
-    public MessageType? MessageType { get; set; }
-    public DateTime? EnqueuedAtFrom { get; set; }
-    public DateTime? EnqueuedAtTo { get; set; }
-}
-
-public class MessageSearchResult
-{
-    public IEnumerable<MessageEntity> Messages { get; set; } = Enumerable.Empty<MessageEntity>();
-    public string? ContinuationToken { get; set; }
-}
-
-public class AuditFilter
-{
-    public string? EventId { get; set; }
-    public string? EndpointId { get; set; }
-    public string? AuditorName { get; set; }
-    public string? EventTypeId { get; set; }
-    public MessageAuditType? AuditType { get; set; }
-    public DateTime? CreatedAtFrom { get; set; }
-    public DateTime? CreatedAtTo { get; set; }
-}
-
-public class AuditSearchResult
-{
-    public IEnumerable<AuditSearchItem> Audits { get; set; } = Enumerable.Empty<AuditSearchItem>();
-    public string? ContinuationToken { get; set; }
-}
-
-public class AuditSearchItem
-{
-    public string EventId { get; set; }
-    public string? EndpointId { get; set; }
-    public string? EventTypeId { get; set; }
-    public MessageAuditEntity Audit { get; set; }
-    public DateTime CreatedAt { get; set; }
-}
-
-public class EventFilter
-{
-    public string? EndPointId { get; set; }
-
-    public DateTime? UpdatedAtFrom { get; set; }
-    public DateTime? UpdatedAtTo { get; set; }
-    public DateTime? EnqueuedAtFrom { get; set; }
-    public DateTime? EnqueuedAtTo { get; set; }
-
-    public string? EventId { get; set; }
-    public List<string>? EventTypeId { get; set; }
-    public string? SessionId { get; set; }
-    public string? To { get; set; }
-    public string? From { get; set; }
-    public List<string>? ResolutionStatus { get; set; }
-    public string? Payload { get; set; }
-    public MessageType? MessageType { get; set; }
-}
-
 public interface ICosmosDbClient
 {
     Task<bool> UploadPendingMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content);
@@ -171,7 +106,7 @@ public interface ICosmosDbClient
     Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel);
 }
 
-public class CosmosDbClient : ICosmosDbClient
+public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.INimBusMessageStore
 {
     private readonly ICosmosClientAdapter _cosmosClient;
     private readonly ILogger _logger;
@@ -322,7 +257,9 @@ public class CosmosDbClient : ICosmosDbClient
                     true,
                     String.IsNullOrEmpty(continuationToken) ? null : continuationToken,
                     requestOptions)
-                .Where(e => e.Status.Equals(FailedStatus, StringComparison.OrdinalIgnoreCase)
+                .Where(e => e.Status.Equals(PendingStatus, StringComparison.OrdinalIgnoreCase)
+                            || e.Status.Equals(DeferredStatus, StringComparison.OrdinalIgnoreCase)
+                            || e.Status.Equals(FailedStatus, StringComparison.OrdinalIgnoreCase)
                             || e.Status.Equals(DLQStatus, StringComparison.OrdinalIgnoreCase)
                             || e.Status.Equals(UnsupportedStatus, StringComparison.OrdinalIgnoreCase))
                 .Where(e => !e.Deleted.HasValue || !e.Deleted.Value)
@@ -334,6 +271,7 @@ public class CosmosDbClient : ICosmosDbClient
             var deferredEvents = new List<string>();
             var deadletteredEvents = new List<string>();
             var unsupportedEvents = new List<string>();
+            var unresolvedEvents = new List<UnresolvedEvent>();
             var token = "";
             if (result.HasMoreResults)
             {
@@ -341,6 +279,7 @@ public class CosmosDbClient : ICosmosDbClient
                 token = feed.ContinuationToken;
                 foreach (var eventDbo in feed)
                 {
+                    unresolvedEvents.Add(eventDbo.Event);
                     var status = eventDbo.Status;
                     switch (status)
                     {
@@ -373,6 +312,8 @@ public class CosmosDbClient : ICosmosDbClient
                 FailedEvents = failedEvents,
                 DeadletteredEvents = deadletteredEvents,
                 UnsupportedEvents = unsupportedEvents,
+                EnrichedUnresolvedEvents = unresolvedEvents,
+                EventTime = DateTime.UtcNow,
                 ContinuationToken = token
             };
 
@@ -1598,8 +1539,20 @@ public class CosmosDbClient : ICosmosDbClient
             PatchOperation.Replace("/IsHeartbeatEnabled", enable),
         };
 
-        var item = await container.PatchItemAsync<EndpointMetadata>(endpointId, new PartitionKey(endpointId), patchOperations);
-
+        try
+        {
+            await container.PatchItemAsync<EndpointMetadata>(endpointId, new PartitionKey(endpointId), patchOperations);
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            await SetEndpointMetadata(new EndpointMetadata
+            {
+                EndpointId = endpointId,
+                IsHeartbeatEnabled = enable,
+                Heartbeats = new List<Heartbeat>(),
+                TechnicalContacts = new List<TechnicalContact>(),
+            });
+        }
     }
 
     public async Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata)
@@ -1872,19 +1825,20 @@ public class CosmosDbClient : ICosmosDbClient
             $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
             fromIso);
 
-        var allBucketKeys = GenerateBucketKeys(from, DateTime.UtcNow, substringLength);
-        var dataPoints = new List<TimeSeriesBucket>();
+        var allBucketKeys = GenerateBucketKeys(from, DateTime.UtcNow, substringLength)
+            .Concat(publishedBuckets.Keys)
+            .Concat(handledBuckets.Keys)
+            .Concat(failedBuckets.Keys)
+            .Distinct()
+            .OrderBy(k => k);
 
-        foreach (var key in allBucketKeys)
+        var dataPoints = allBucketKeys.Select(key => new TimeSeriesBucket
         {
-            dataPoints.Add(new TimeSeriesBucket
-            {
-                Timestamp = key,
-                Published = publishedBuckets.GetValueOrDefault(key),
-                Handled = handledBuckets.GetValueOrDefault(key),
-                Failed = failedBuckets.GetValueOrDefault(key)
-            });
-        }
+            Timestamp = key,
+            Published = publishedBuckets.GetValueOrDefault(key),
+            Handled = handledBuckets.GetValueOrDefault(key),
+            Failed = failedBuckets.GetValueOrDefault(key)
+        }).ToList();
 
         return new TimeSeriesResult { BucketSize = bucketLabel, DataPoints = dataPoints };
     }

@@ -23,7 +23,7 @@ graph TB
     end
 
     sb["<b>Azure Service Bus</b><br/>[Software system]<br/><i>topics: crmendpoint, erpendpoint</i>"]
-    ops["<b>nimbus-ops + Resolver</b><br/>[Software system]<br/><i>operator UI, resubmit / skip,<br/>full audit trail in Cosmos</i>"]
+    ops["<b>nimbus-ops + Resolver</b><br/>[Software system]<br/><i>operator UI, resubmit / skip,<br/>full audit trail in SQL or Cosmos</i>"]
     dbgate["<b>dbgate</b><br/>[Container: web SQL UI]<br/><i>browses crm + erp DBs</i>"]
 
     user -->|HTTPS| crmWeb
@@ -315,24 +315,50 @@ samples/CrmErpDemo/
 - .NET 10 SDK (preview)
 - Node.js 22+ (for the SPAs)
 - Docker (for the Aspire-managed SQL Server container)
-- Azure Service Bus + Cosmos DB connection strings (real Azure or emulators)
+- Azure Service Bus connection string (real Azure namespace — there is no local emulator path)
+- Azure Cosmos DB connection string only when running with `--StorageProvider cosmos` (default is SQL Server, no Cosmos required)
 
-## Running locally
+## Storage provider
+
+NimBus's message store (audit trail, resolver state, blocked sessions, metrics) runs against **SQL Server by default**, in a database named `nimbus` on the same Aspire-managed SQL Server container that already hosts `crm` and `erp`. No extra setup beyond the Service Bus secret.
+
+Cosmos is an alternative — supply `ConnectionStrings:cosmos` as a user secret and pass `--StorageProvider cosmos` to the AppHost. The AppHost reads the flag at `samples/CrmErpDemo/CrmErpDemo.AppHost/Program.cs:7-11`; the same value is bridged to the Resolver and `nimbus-ops` WebApp via `NimBus__StorageProvider` so they call the matching `AddSqlServerMessageStore()` / `AddCosmosDbMessageStore()` registration.
+
+The CRM and ERP business databases (and their `nimbus.OutboxMessages` outbox tables) are always SQL Server regardless of the message-store choice.
+
+## Running locally — SQL Server (default)
 
 ```bash
-# 1. Configure connection strings (one-time)
+# 1. Configure the Service Bus secret (one-time)
 dotnet user-secrets --project samples/CrmErpDemo/CrmErpDemo.AppHost set ConnectionStrings:servicebus "Endpoint=sb://..."
-dotnet user-secrets --project samples/CrmErpDemo/CrmErpDemo.AppHost set ConnectionStrings:cosmos "AccountEndpoint=https://...;AccountKey=..."
 
 # 2. Install SPA dependencies (first run only)
 (cd samples/CrmErpDemo/Crm.Web && npm install)
 (cd samples/CrmErpDemo/Erp.Web && npm install)
 
-# 3. Run the demo
+# 3. Run the demo (SQL Server is the default storage provider)
 dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost
 ```
 
-The Aspire dashboard opens automatically. Wait for `provisioner` to complete, then everything else turns green.
+The Aspire dashboard opens automatically. Wait for `provisioner` to complete, then everything else turns green. On first start the SQL Server provider's DbUp migrations create the `nimbus` schema (`Messages`, `UnresolvedEvents`, `MessageAudits`, `EndpointSubscriptions`, `EndpointMetadata`, `Heartbeats`, `BlockedMessages`, `InvalidMessages` + metrics views). DbGate is on the dashboard if you want to browse them.
+
+To be explicit about the provider:
+
+```bash
+dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost -- --StorageProvider sqlserver
+```
+
+## Running locally — Cosmos DB
+
+```bash
+# Add the Cosmos secret in addition to ConnectionStrings:servicebus
+dotnet user-secrets --project samples/CrmErpDemo/CrmErpDemo.AppHost set ConnectionStrings:cosmos "AccountEndpoint=https://...;AccountKey=..."
+
+# Run with the cosmos flag
+dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost -- --StorageProvider cosmos
+```
+
+In Cosmos mode Aspire skips provisioning the `nimbus` SQL database; the Resolver and WebApp call `AddCosmosDbMessageStore()` instead.
 
 ## End-to-end happy path
 

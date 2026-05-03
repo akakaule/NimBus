@@ -28,8 +28,10 @@ using System.Linq;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.Middleware;
 using System.Text.Json.Serialization;
-using Microsoft.Azure.Cosmos;
+using NimBus.Core.Extensions;
 using NimBus.Management.ServiceBus;
+using NimBus.MessageStore.SqlServer;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
@@ -233,19 +235,33 @@ namespace NimBus.WebApp
                 services.AddSingleton(new ServiceBusAdministrationClient(serviceBusConnection));
                 services.AddSingleton(new ServiceBusClient(serviceBusConnection));
             }
-            string cosmosEndpoint = Configuration.GetValue<string>("CosmosAccountEndpoint");
-            string cosmosConnection = Configuration.GetConnectionString("cosmos")
-                ?? Configuration.GetValue<string>("CosmosConnection");
-            services.AddSingleton<CosmosClient>(sp =>
+            // Provider selection is configuration-driven (NimBus__StorageProvider /
+            // StorageProvider env-var or appsetting, default 'cosmos'). SQL Server
+            // is selected when explicitly configured OR when no Cosmos config is
+            // present but a SQL connection string is.
+            var storageProvider = Configuration.GetValue<string>("NimBus:StorageProvider")
+                ?? Configuration.GetValue<string>("StorageProvider");
+            if (string.IsNullOrWhiteSpace(storageProvider))
             {
-                if (!string.IsNullOrEmpty(cosmosEndpoint) && !cosmosEndpoint.Contains("AccountKey="))
-                    return new CosmosClient(cosmosEndpoint, new DefaultAzureCredential());
-                return new CosmosClient(cosmosConnection);
-            });
-            services.AddSingleton<ICosmosDbClient>(sp =>
+                var hasSqlConfig = !string.IsNullOrWhiteSpace(Configuration.GetValue<string>("SqlConnection"))
+                    || !string.IsNullOrWhiteSpace(Configuration.GetConnectionString("sqlserver"))
+                    || !string.IsNullOrWhiteSpace(Configuration.GetValue<string>("SqlServerConnection"));
+                var hasCosmosConfig = !string.IsNullOrWhiteSpace(Configuration.GetValue<string>("CosmosAccountEndpoint"))
+                    || !string.IsNullOrWhiteSpace(Configuration.GetConnectionString("cosmos"))
+                    || !string.IsNullOrWhiteSpace(Configuration.GetValue<string>("CosmosConnection"));
+                storageProvider = (hasSqlConfig && !hasCosmosConfig) ? "sqlserver" : "cosmos";
+            }
+
+            services.AddNimBus(nimbus =>
             {
-                var cosmosClient = sp.GetRequiredService<CosmosClient>();
-                return new CosmosDbClient(cosmosClient);
+                if (string.Equals(storageProvider, "sqlserver", StringComparison.OrdinalIgnoreCase))
+                {
+                    nimbus.AddSqlServerMessageStore();
+                }
+                else
+                {
+                    nimbus.AddCosmosDbMessageStore();
+                }
             });
 
             services.AddSingleton<IManagerClient, ManagerClient>();
@@ -283,10 +299,21 @@ namespace NimBus.WebApp
                 services.AddOpenTelemetry().UseOtlpExporter();
             }
 
-            services.AddHealthChecks()
-                .AddServiceBusHealthCheck()
-                .AddCosmosDbHealthCheck()
-                .AddResolverLagCheck();
+            var healthChecks = services.AddHealthChecks()
+                .AddServiceBusHealthCheck();
+            if (string.Equals(storageProvider, "sqlserver", StringComparison.OrdinalIgnoreCase))
+            {
+                healthChecks.AddCheck<SqlServerMessageStoreHealthCheck>(
+                    "sqlserver-messagestore",
+                    failureStatus: HealthStatus.Unhealthy,
+                    tags: new[] { "ready" });
+            }
+            else
+            {
+                healthChecks
+                    .AddCosmosDbHealthCheck()
+                    .AddResolverLagCheck();
+            }
             services.AddScoped<IEndpointAuthorizationService, EndpointAuthorizationService>();
             services.AddTransient<IEndpointApiController, EndpointImplementation>();
             services.AddTransient<IStorageHookApiController, StorageHookImplementation>();

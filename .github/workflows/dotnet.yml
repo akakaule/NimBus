@@ -14,6 +14,27 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    services:
+      # SQL Server service container for the SQL Server message store conformance suite.
+      # Tests skip themselves when NIMBUS_SQL_TEST_CONNECTION is unset, so this only
+      # adds runtime cost when the SQL provider needs real coverage in CI.
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: 'Y'
+          MSSQL_SA_PASSWORD: 'YourStrong@Passw0rd'
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P YourStrong@Passw0rd -No -Q 'SELECT 1' || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong@Passw0rd -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 30s
+
+    env:
+      NIMBUS_SQL_TEST_CONNECTION: "Server=localhost,1433;User ID=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;Database=master"
+
     steps:
     - uses: actions/checkout@v4
     - name: Setup .NET

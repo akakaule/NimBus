@@ -5,7 +5,14 @@ param webAppVersion string
 param apiKey string
 param appInsightsAppId string
 param instrumentationKey string
-param cosmosAccountEndpoint string
+// Cosmos endpoint is optional now: empty when the active provider is SQL Server.
+param cosmosAccountEndpoint string = ''
+// SQL connection string. Empty when the active provider is Cosmos. Exactly one of
+// cosmosAccountEndpoint and sqlConnectionString must be non-empty. Secret-marked so
+// it does not appear in deployment history; production deployments should pass a
+// Key Vault reference (e.g. @Microsoft.KeyVault(...)) instead of a literal string.
+@secure()
+param sqlConnectionString string = ''
 param serviceBusFullyQualifiedNamespace string
 param locationParam string = 'westeurope'
 
@@ -22,11 +29,25 @@ var managementWebAppName = 'webapp-${toLower(solutionId)}-${toLower(environment)
 
 var cosmosAccountName = 'cosmos-${toLower(solutionId)}-${toLower(environment)}'
 
+var isDevelopmentEnvironment = contains([
+  'dev'
+  'development'
+], toLower(environment))
+
 //##############################################
 // Create Web App: Conflict Resolution Web App
 //##############################################
 
-var webappsettings = [
+// Validate exactly one of the storage settings is supplied. Empty strings on both
+// sides would silently leave the WebApp without a storage backend.
+var hasCosmos = !empty(cosmosAccountEndpoint)
+var hasSql = !empty(sqlConnectionString)
+var validStorageInput = (hasCosmos && !hasSql) || (!hasCosmos && hasSql)
+
+#disable-next-line BCP088
+var storageValidation = validStorageInput ? '' : '[ERROR] Exactly one of cosmosAccountEndpoint or sqlConnectionString must be provided.'
+
+var coreWebAppSettings = [
   {
     name: 'AzureWebJobsServiceBus__fullyQualifiedNamespace'
     value: serviceBusFullyQualifiedNamespace
@@ -59,11 +80,36 @@ var webappsettings = [
     name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
     value: instrumentationKey
   }
+]
+
+var cosmosSetting = hasCosmos ? [
   {
     name: 'CosmosAccountEndpoint'
     value: cosmosAccountEndpoint
   }
-]
+] : []
+
+var sqlSetting = hasSql ? [
+  {
+    name: 'SqlConnection'
+    value: sqlConnectionString
+  }
+] : []
+
+var baseWebAppSettings = concat(coreWebAppSettings, cosmosSetting, sqlSetting)
+
+var developmentDiagnosticSettings = isDevelopmentEnvironment ? [
+  {
+    name: 'ASPNETCORE_DETAILEDERRORS'
+    value: 'true'
+  }
+  {
+    name: 'ASPNETCORE_CAPTURESTARTUPERRORS'
+    value: 'true'
+  }
+] : []
+
+var webappsettings = concat(baseWebAppSettings, developmentDiagnosticSettings)
 
 module webAppModule 'templates/webApp.bicep' = {
   name: 'webAppDeploy'

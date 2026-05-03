@@ -173,7 +173,7 @@ export function SessionPurgeCard({ endpoints }: { endpoints: EndpointOption[] })
                   </div>
                   <div>
                     <span className="text-muted-foreground">
-                      Cosmos events:
+                      Storage events:
                     </span>{" "}
                     <Badge variant="info" size="sm">
                       {preview.cosmosEventCount}
@@ -241,7 +241,7 @@ export function SessionPurgeCard({ endpoints }: { endpoints: EndpointOption[] })
                           : "text-muted-foreground"
                       }
                     >
-                      Cosmos events removed: {result.cosmosEventsRemoved}
+                      Storage events removed: {result.cosmosEventsRemoved}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -280,7 +280,7 @@ export function SessionPurgeCard({ endpoints }: { endpoints: EndpointOption[] })
         onClose={() => setShowConfirm(false)}
         onConfirm={handlePurge}
         title="Purge Session"
-        description={`This will remove all active messages, deferred messages (including Deferred subscription), Cosmos events, and clear the session state for "${confirmText}".`}
+        description={`This will remove all active messages, deferred messages (including Deferred subscription), stored events, and clear the session state for "${confirmText}".`}
         confirmText={confirmText}
         isLoading={purging}
       />

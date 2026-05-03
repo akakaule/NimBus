@@ -67,7 +67,7 @@ Pre-release versions are supported (e.g. `v1.0.0-preview.1`).
 ## Prerequisites
 
 - .NET 10 SDK preview, matching the project target frameworks.
-- Node.js, required by `src/NimBus.WebApp` during build.
+- Node.js 22+ (LTS), required by `src/NimBus.WebApp/ClientApp` and the `samples/CrmErpDemo/Crm.Web` / `Erp.Web` SPAs during build. Vite 8 and Vitest 4 are the minimum supported toolchain; older Node versions will fail at `npm install`.
 - Access to NuGet package sources used by the solution.
 
 ## Build

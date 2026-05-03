@@ -1,0 +1,21 @@
+{
+  "name": "crmerpdemo-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:happy": "playwright test 01-happy-path",
+    "test:error": "playwright test 02-error-mode-recovery",
+    "test:blocked": "playwright test 03-blocked-messages-recovery",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^22.0.0",
+    "dotenv": "^16.4.5",
+    "typescript": "^5.6.0"
+  }
+}

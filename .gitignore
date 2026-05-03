@@ -117,6 +117,7 @@ src/Workflow/IP.Workflow.Web/.idea/.idea.IP.Workflow.dir/.idea/
 /nul
 /AGENTS.md
 *stackdump
+**/.aspire/
 /src/.dotnet_home/
 /src/.dotnet-cli/
 /src/.nuget_packages/

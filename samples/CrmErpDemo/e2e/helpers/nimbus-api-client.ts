@@ -1,0 +1,104 @@
+import type { APIRequestContext } from "@playwright/test";
+import { request } from "@playwright/test";
+import { ServiceUrls } from "./service-urls.js";
+
+export interface EndpointStatusCount {
+  endpointId: string;
+  subscriptionStatus: string;
+  eventTime: string;
+  failedCount: number;
+  deferredCount: number;
+  pendingCount: number;
+  unsupportedCount: number;
+  deadletterCount: number;
+}
+
+export interface NimBusEvent {
+  eventId: string;
+  sessionId: string;
+  endpointId: string;
+  eventTypeId: string;
+  resolutionStatus: string;
+  lastMessageId: string;
+  // ... many more fields, but tests only need the above
+  [key: string]: unknown;
+}
+
+export interface SearchResponse {
+  events: NimBusEvent[];
+  continuationToken: string | null;
+}
+
+export interface EventFilter {
+  endPointId?: string | null;
+  eventId?: string | null;
+  sessionId?: string | null;
+  resolutionStatus?: string[];
+  eventTypeId?: string[];
+  to?: string | null;
+  from?: string | null;
+  payload?: string | null;
+  // dates omitted for brevity
+}
+
+/**
+ * REST-only client for the NimBus management WebApp. Tests use this for
+ * assertions and bulk setup; the resubmit-via-UI flow lives in the spec
+ * file itself so the test still demonstrates the operator's actual workflow.
+ */
+export class NimBusApiClient {
+  private constructor(private readonly api: APIRequestContext) {}
+
+  static async create(): Promise<NimBusApiClient> {
+    const api = await request.newContext({
+      baseURL: ServiceUrls.nimbusOps,
+      ignoreHTTPSErrors: true,
+      extraHTTPHeaders: { "api-version": "2" },
+    });
+    return new NimBusApiClient(api);
+  }
+
+  async dispose(): Promise<void> {
+    await this.api.dispose();
+  }
+
+  /** Bulk endpoint state counts. Pass the endpoint IDs you care about. */
+  async getStatusCounts(endpointIds: string[]): Promise<EndpointStatusCount[]> {
+    const res = await this.api.post("/api/endpoint/status/count", { data: endpointIds });
+    if (!res.ok()) throw new Error(`NimBus POST status/count → ${res.status()} ${await res.text()}`);
+    return (await res.json()) as EndpointStatusCount[];
+  }
+
+  /** Get a single endpoint's state count. */
+  async getStatusCount(endpointId: string): Promise<EndpointStatusCount> {
+    const res = await this.api.get(`/api/endpoint/${endpointId}/status/count`);
+    if (!res.ok()) throw new Error(`NimBus GET ${endpointId}/status/count → ${res.status()}`);
+    return (await res.json()) as EndpointStatusCount;
+  }
+
+  /** Search messages on an endpoint by filter (status, event id, session id, etc.). */
+  async searchEvents(endpointId: string, filter: EventFilter, max = 100): Promise<NimBusEvent[]> {
+    const res = await this.api.post(`/api/event/${endpointId}/getByFilter`, {
+      data: {
+        continuationToken: "",
+        eventFilter: filter,
+        maxSearchItemsCount: max,
+      },
+    });
+    if (!res.ok()) throw new Error(`NimBus search → ${res.status()} ${await res.text()}`);
+    const body = (await res.json()) as SearchResponse;
+    return body.events ?? [];
+  }
+
+  /** Resubmit a single failed event by (eventId, lastMessageId). */
+  async resubmit(eventId: string, messageId: string): Promise<void> {
+    const res = await this.api.post(`/api/event/resubmit/${eventId}/${messageId}`);
+    if (!res.ok()) throw new Error(`NimBus resubmit → ${res.status()} ${await res.text()}`);
+  }
+
+  /** Trigger reprocessing of all Deferred messages on a (endpoint, session). */
+  async reprocessDeferred(endpointId: string, sessionId: string): Promise<void> {
+    const res = await this.api.post(`/api/event/reprocess-deferred/${endpointId}/${sessionId}`);
+    if (!res.ok()) throw new Error(`NimBus reprocess-deferred → ${res.status()} ${await res.text()}`);
+  }
+}

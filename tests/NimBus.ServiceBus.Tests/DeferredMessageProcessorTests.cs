@@ -142,9 +142,12 @@ public class DeferredMessageProcessorTests
     public async Task ProcessDeferredMessagesAsync_RepublishedMessage_ExcludesDeferredProperties()
     {
         var client = new RecordingServiceBusClient();
+        // Production code path: SendToDeferredSubscription sets To = "Deferred" so
+        // the deferred copy routes to the Deferred subscription on the topic. The
+        // republish must NOT carry that value — it would loop back / be dropped.
         var msg = CreateReceivedMessage("corr-1", deferralSequence: 5, extraProps: new Dictionary<string, object>
         {
-            { UserPropertyName.To.ToString(), "AnalyticsEndpoint" },
+            { UserPropertyName.To.ToString(), "Deferred" },
             { UserPropertyName.EventId.ToString(), "event-1" },
         });
         client.SessionReceiver.ReceiveBatches.Add(new List<ServiceBusReceivedMessage> { msg });
@@ -157,7 +160,8 @@ public class DeferredMessageProcessorTests
             "OriginalSessionId should be excluded");
         Assert.IsFalse(republished.ApplicationProperties.ContainsKey(UserPropertyName.DeferralSequence.ToString()),
             "DeferralSequence should be excluded");
-        Assert.AreEqual("AnalyticsEndpoint", republished.ApplicationProperties[UserPropertyName.To.ToString()]);
+        Assert.AreEqual("my-topic", republished.ApplicationProperties[UserPropertyName.To.ToString()],
+            "To must be reset to the destination topic so the main `user.To = '<endpointId>'` filter matches");
         Assert.AreEqual("event-1", republished.ApplicationProperties[UserPropertyName.EventId.ToString()]);
     }
 

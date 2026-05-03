@@ -66,7 +66,7 @@ namespace NimBus.ServiceBus
                             cancellationToken.ThrowIfCancellationRequested();
 
                             // Re-publish to main topic for normal processing
-                            var republishedMessage = CreateRepublishedMessage(message, sessionId);
+                            var republishedMessage = CreateRepublishedMessage(message, sessionId, topicName);
                             await sender.SendMessageAsync(republishedMessage, cancellationToken);
 
                             // Complete the deferred message
@@ -97,19 +97,29 @@ namespace NimBus.ServiceBus
             return 0;
         }
 
-        private static Azure.Messaging.ServiceBus.ServiceBusMessage CreateRepublishedMessage(ServiceBusReceivedMessage deferredMessage, string sessionId)
+        private static Azure.Messaging.ServiceBus.ServiceBusMessage CreateRepublishedMessage(ServiceBusReceivedMessage deferredMessage, string sessionId, string topicName)
         {
             var result = new Azure.Messaging.ServiceBus.ServiceBusMessage(deferredMessage.Body);
 
-            // Copy all application properties except the deferred-specific ones
+            // Copy all application properties except the deferred-specific ones.
+            // We also drop "To" because the inbound deferred message's To is "Deferred"
+            // (set by SendToDeferredSubscription so the message routes to the Deferred
+            // subscription on the topic). Re-using that value would route the republish
+            // back into the Deferred subscription instead of the main endpoint.
             foreach (var prop in deferredMessage.ApplicationProperties)
             {
                 if (prop.Key != UserPropertyName.OriginalSessionId.ToString() &&
-                    prop.Key != UserPropertyName.DeferralSequence.ToString())
+                    prop.Key != UserPropertyName.DeferralSequence.ToString() &&
+                    prop.Key != UserPropertyName.To.ToString())
                 {
                     result.ApplicationProperties[prop.Key] = prop.Value;
                 }
             }
+
+            // Restore To to the destination endpoint so the main subscription's
+            // `user.To = '<endpointId>'` filter matches. In NimBus's topology, topic
+            // name equals endpoint name (one topic per endpoint).
+            result.ApplicationProperties[UserPropertyName.To.ToString()] = topicName;
 
             // Set the session ID so it goes back to the correct session
             result.SessionId = sessionId;

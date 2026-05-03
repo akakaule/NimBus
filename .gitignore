@@ -118,6 +118,8 @@ src/Workflow/IP.Workflow.Web/.idea/.idea.IP.Workflow.dir/.idea/
 /AGENTS.md
 *stackdump
 **/.aspire/
+# Compiled ARM templates emitted by `bicep build` — sources of truth are *.bicep.
+/deploy/bicep/**/*.json
 /src/.dotnet_home/
 /src/.dotnet-cli/
 /src/.nuget_packages/

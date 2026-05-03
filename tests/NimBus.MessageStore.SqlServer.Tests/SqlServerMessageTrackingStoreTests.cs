@@ -2,6 +2,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -42,6 +43,27 @@ public sealed class SqlServerMessageTrackingStoreTests : MessageTrackingStoreCon
         });
         var initializer = new SqlServerSchemaInitializer(options, NullLogger<SqlServerSchemaInitializer>.Instance);
         await initializer.StartAsync(CancellationToken.None);
+    }
+
+    [TestInitialize]
+    public async Task ResetSchema()
+    {
+        if (string.IsNullOrEmpty(_connectionString))
+            return;
+
+        await using var conn = new SqlConnection(_connectionString);
+        await conn.OpenAsync();
+        var sql = $@"
+            TRUNCATE TABLE [{TestSchema}].[Messages];
+            TRUNCATE TABLE [{TestSchema}].[UnresolvedEvents];
+            TRUNCATE TABLE [{TestSchema}].[MessageAudits];
+            TRUNCATE TABLE [{TestSchema}].[EndpointSubscriptions];
+            TRUNCATE TABLE [{TestSchema}].[EndpointMetadata];
+            TRUNCATE TABLE [{TestSchema}].[Heartbeats];
+            TRUNCATE TABLE [{TestSchema}].[BlockedMessages];
+            TRUNCATE TABLE [{TestSchema}].[InvalidMessages];";
+        await using var cmd = new SqlCommand(sql, conn);
+        await cmd.ExecuteNonQueryAsync();
     }
 
     protected override IMessageTrackingStore CreateStore()

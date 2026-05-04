@@ -16,6 +16,39 @@ if (storageProvider is not ("sqlserver" or "cosmos"))
         $"Unknown StorageProvider '{storageProvider}'. Use 'sqlserver' (default) or 'cosmos'.");
 }
 
+// NimBus transport toggle. CLI flag (--Transport rabbitmq) wins; NIMBUS_TRANSPORT
+// env-var is a fallback. Default 'servicebus' keeps the existing CrmErpDemo wiring;
+// Phase 6.3 sub-issue switches the default to 'rabbitmq' once the provider lands.
+var transportProvider = (
+        builder.Configuration["Transport"]
+        ?? Environment.GetEnvironmentVariable("NIMBUS_TRANSPORT")
+        ?? "servicebus")
+    .ToLowerInvariant();
+
+if (transportProvider is not ("servicebus" or "rabbitmq" or "inmemory"))
+{
+    throw new InvalidOperationException(
+        $"Unknown Transport '{transportProvider}'. Use 'servicebus' (default), 'rabbitmq', or 'inmemory'.");
+}
+
+var servicebusConfigured = !string.IsNullOrWhiteSpace(builder.Configuration["ConnectionStrings:servicebus"]);
+var rabbitmqConfigured = !string.IsNullOrWhiteSpace(builder.Configuration["ConnectionStrings:rabbitmq"])
+    || !string.IsNullOrWhiteSpace(builder.Configuration["RabbitMq:Host"]);
+if (transportProvider == "servicebus" && !servicebusConfigured && rabbitmqConfigured)
+{
+    throw new InvalidOperationException(
+        "Transport=servicebus but ConnectionStrings:servicebus is not set; only RabbitMQ config is present. " +
+        "Pass --Transport rabbitmq (or set NIMBUS_TRANSPORT=rabbitmq) or supply a Service Bus connection string.");
+}
+if (transportProvider == "rabbitmq" && !rabbitmqConfigured && servicebusConfigured)
+{
+    throw new InvalidOperationException(
+        "Transport=rabbitmq but no RabbitMq:Host / ConnectionStrings:rabbitmq is set; only Service Bus config is present. " +
+        "Pass --Transport servicebus (or set NIMBUS_TRANSPORT=servicebus) or supply RabbitMQ connection settings.");
+}
+
+Console.WriteLine($"[CrmErpDemo.AppHost] StorageProvider={storageProvider} Transport={transportProvider}");
+
 // External resources — Service Bus is the only always-non-local dependency.
 var servicebus = builder.AddConnectionString("servicebus");
 
@@ -57,6 +90,7 @@ var resolver = builder.AddAzureFunctionsProject<Projects.NimBus_Resolver>("resol
     .WithReference(servicebus)
     .WithEnvironment("ResolverId", "Resolver")
     .WithEnvironment("AzureWebJobsServiceBus", builder.Configuration["ConnectionStrings:servicebus"]!)
+    .WithEnvironment("NimBus__Transport", transportProvider)
     .WaitFor(provisioner);
 
 // Point nimbus-ops at the CRM/ERP platform catalog instead of the default
@@ -66,6 +100,7 @@ var nimbusOps = builder.AddProject<Projects.NimBus_WebApp>("nimbus-ops")
     .WithReference(servicebus)
     .WithEnvironment("NimBus__PlatformType", typeof(CrmErpDemo.Contracts.CrmErpPlatformConfiguration).FullName!)
     .WithEnvironment("NimBus__PlatformAssembly", crmErpContractsPath)
+    .WithEnvironment("NimBus__Transport", transportProvider)
     .WithEndpoint("http", e => e.Port = 28376)
     .WithEndpoint("https", e => e.Port = 28375)
     .WithExternalHttpEndpoints()

@@ -252,6 +252,24 @@ namespace NimBus.WebApp
                 storageProvider = (hasSqlConfig && !hasCosmosConfig) ? "sqlserver" : "cosmos";
             }
 
+            // Transport selection mirrors the storage block: NimBus:Transport (or
+            // Transport) from configuration, falling back to 'servicebus'.
+            // Recognised values are 'servicebus' (default), 'rabbitmq', and 'inmemory'.
+            // The matching Add{Transport}Transport() extension methods land in
+            // follow-up tasks; until those exist, every value falls through to
+            // WithoutTransport() so legacy ServiceBus wiring keeps working — but
+            // unknown values still error for fast feedback.
+            var transportProvider = (
+                    Configuration.GetValue<string>("NimBus:Transport")
+                    ?? Configuration.GetValue<string>("Transport")
+                    ?? "servicebus")
+                .ToLowerInvariant();
+            if (transportProvider is not ("servicebus" or "rabbitmq" or "inmemory"))
+            {
+                throw new InvalidOperationException(
+                    $"Unknown NimBus:Transport '{transportProvider}'. Use 'servicebus' (default), 'rabbitmq', or 'inmemory'.");
+            }
+
             services.AddNimBus(nimbus =>
             {
                 if (string.Equals(storageProvider, "sqlserver", StringComparison.OrdinalIgnoreCase))
@@ -263,9 +281,27 @@ namespace NimBus.WebApp
                     nimbus.AddCosmosDbMessageStore();
                 }
 
-                // Phase 6 transition: AddServiceBusTransport() ships in a follow-up task. Until then,
-                // hosts that wire Service Bus the legacy way must opt out of transport validation.
-                nimbus.WithoutTransport();
+                // Phase 6 transition: Add{Transport}Transport() extension methods ship
+                // with tasks #18 (ServiceBus) and #24 (RabbitMQ). Until those land,
+                // every selection falls through to WithoutTransport() and the legacy
+                // ServiceBus wiring in NimBus.SDK keeps working. The switch block is
+                // the seam those tasks fill in.
+                switch (transportProvider)
+                {
+                    case "servicebus":
+                        // TODO(#18): replace with nimbus.AddServiceBusTransport();
+                        nimbus.WithoutTransport();
+                        break;
+                    case "rabbitmq":
+                        // TODO(#24): replace with nimbus.AddRabbitMqTransport(...);
+                        throw new InvalidOperationException(
+                            "NimBus:Transport=rabbitmq selected but the RabbitMQ provider has not landed yet (Phase 6.2 / task #24). " +
+                            "Use 'servicebus' until then.");
+                    case "inmemory":
+                        // TODO(#18 follow-up): replace with nimbus.AddInMemoryTransport();
+                        nimbus.WithoutTransport();
+                        break;
+                }
             });
 
             services.AddSingleton<IManagerClient, ManagerClient>();

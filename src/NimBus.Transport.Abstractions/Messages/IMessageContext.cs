@@ -1,10 +1,18 @@
-﻿using NimBus.Core.Messages.Exceptions;
+using NimBus.Core.Messages.Exceptions;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace NimBus.Core.Messages
 {
+    /// <summary>
+    /// Read-only view of a message that has been received from a transport.
+    /// Promoted into <c>NimBus.Transport.Abstractions</c> alongside
+    /// <see cref="IMessageContext"/> so transport adapters expose the same
+    /// contract without depending on <c>NimBus.Core</c>; namespace stays
+    /// <c>NimBus.Core.Messages</c> with a <c>[TypeForwardedTo]</c> in
+    /// <c>NimBus.Core</c> preserving source compatibility for existing consumers.
+    /// </summary>
     public interface IReceivedMessage : IMessage
     {
         DateTime EnqueuedTimeUtc { get; }
@@ -15,6 +23,24 @@ namespace NimBus.Core.Messages
         new string DeadLetterErrorDescription { get; }
     }
 
+    /// <summary>
+    /// Transport-agnostic message-handling context: read-only message access plus
+    /// settle operations (<c>Complete</c>, <c>Abandon</c>, <c>DeadLetter</c>,
+    /// <c>Defer</c>) that providers translate into broker-native primitives.
+    ///
+    /// Promoted into <c>NimBus.Transport.Abstractions</c> as Pass 2 of issue #18,
+    /// after task #16 removed <c>ScheduleRedelivery</c> and
+    /// <c>ThrottleRetryCount</c> (now living on the Cosmos throttling hosted
+    /// service / <see cref="IMessage"/> wire model respectively). Namespace is
+    /// retained as <c>NimBus.Core.Messages</c> with a <c>[TypeForwardedTo]</c>
+    /// declaration in the <c>NimBus.Core</c> assembly so existing
+    /// <c>using NimBus.Core.Messages;</c> directives stay source-compatible.
+    ///
+    /// The <c>[Obsolete]</c> session-state bridges remain for one major version
+    /// while consumers migrate to <see cref="NimBus.MessageStore.Abstractions.ISessionStateStore"/>
+    /// injection (issue #16 follow-up D removes them; this file moves them
+    /// verbatim).
+    /// </summary>
     public interface IMessageContext : IReceivedMessage
     {
         bool IsDeferred { get; }

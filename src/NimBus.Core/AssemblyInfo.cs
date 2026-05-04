@@ -14,14 +14,17 @@ using System.Runtime.CompilerServices;
 [assembly: TypeForwardedTo(typeof(NimBus.Core.Messages.ErrorContent))]
 [assembly: TypeForwardedTo(typeof(NimBus.Core.Messages.Exceptions.TransientException))]
 
-// Transport-interface batch (Pass 1 of task #18). Only the dependency-clean
-// interfaces ship in this pass:
+// Transport-interface batch — Pass 1 (dependency-clean):
 //   - ISender depends solely on IMessage, which moved with the wire-model batch
 //   - IDeferredMessageProcessor depends only on BCL types
-// IMessageContext, IReceivedMessage, and IMessageHandler (which references
-// IMessageContext) are deferred to Pass 2. They land once the in-flight
-// extraction of ScheduleRedelivery + ThrottleRetryCount from IMessageContext
-// (task #16 follow-up C) is complete, so the transport surface promotes in its
-// final post-disentanglement shape rather than racing further mutations.
 [assembly: TypeForwardedTo(typeof(NimBus.Core.Messages.ISender))]
 [assembly: TypeForwardedTo(typeof(NimBus.Core.Messages.IDeferredMessageProcessor))]
+
+// Transport-interface batch — Pass 2 (post-disentanglement). IMessageContext is
+// in its final shape after task #16 follow-up C extracted ScheduleRedelivery
+// and ThrottleRetryCount, so these three interfaces can move without racing
+// further mutations. IMessageHandler references IMessageContext, so the three
+// must promote together.
+[assembly: TypeForwardedTo(typeof(NimBus.Core.Messages.IReceivedMessage))]
+[assembly: TypeForwardedTo(typeof(NimBus.Core.Messages.IMessageContext))]
+[assembly: TypeForwardedTo(typeof(NimBus.Core.Messages.IMessageHandler))]

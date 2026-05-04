@@ -55,6 +55,8 @@ public class InMemoryMessageContext : IMessageContext
     public long? QueueTimeMs { get; set; }
     public long? ProcessingTimeMs { get; set; }
     public DateTime? HandlerStartedAtUtc { get; set; }
+    public HandlerOutcome HandlerOutcome { get; set; }
+    public HandoffMetadata HandoffMetadata { get; set; }
 
     public Task Complete(CancellationToken cancellationToken = default)
     {

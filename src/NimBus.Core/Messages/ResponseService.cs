@@ -55,6 +55,17 @@ namespace NimBus.Core.Messages
             await _sender.Send(response, cancellationToken: cancellationToken);
         }
 
+        public async Task SendPendingHandoffResponse(IMessageContext messageContext, HandoffMetadata handoff, CancellationToken cancellationToken = default)
+        {
+            var response = (Message)CreateResponse(messageContext, MessageType.PendingHandoffResponse, messageContext.MessageContent);
+            response.HandoffReason = handoff?.Reason;
+            response.ExternalJobId = handoff?.ExternalJobId;
+            response.ExpectedBy = handoff?.ExpectedBy.HasValue == true
+                ? DateTime.UtcNow.Add(handoff.ExpectedBy.Value)
+                : (DateTime?)null;
+            await _sender.Send(response, cancellationToken: cancellationToken);
+        }
+
         public async Task SendRetryResponse(IMessageContext messageContext, int messageDelayMinutes, CancellationToken cancellationToken = default)
         {
             IMessage response = CreateRetryResponse(messageContext, MessageType.RetryRequest, responseContent: messageContext.MessageContent);

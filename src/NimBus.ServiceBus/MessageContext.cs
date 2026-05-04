@@ -157,6 +157,10 @@ namespace NimBus.ServiceBus
 
         public DateTime? HandlerStartedAtUtc { get; set; }
 
+        public HandlerOutcome HandlerOutcome { get; set; }
+
+        public HandoffMetadata HandoffMetadata { get; set; }
+
         private long? TryReadLong(UserPropertyName name)
         {
             try

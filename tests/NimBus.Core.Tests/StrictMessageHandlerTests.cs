@@ -106,6 +106,181 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(0, ctx.DeadLetterCalls);
     }
 
+    // ── PendingHandoff outcome ──────────────────────────────────────────
+
+    [TestMethod]
+    public async Task HandleEventRequest_HandlerSignalsPendingHandoff_SendsHandoffResponseAndBlocksSession()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var metadata = new HandoffMetadata("DMF import in flight", "JOB-42", TimeSpan.FromMinutes(5));
+        var handler = new FakeEventContextHandler
+        {
+            OnHandle = c =>
+            {
+                c.HandlerOutcome = HandlerOutcome.PendingHandoff;
+                c.HandoffMetadata = metadata;
+            },
+        };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, handler.HandleCalls);
+        Assert.AreEqual(1, response.PendingHandoffCalls, "PendingHandoffResponse should fire");
+        Assert.AreEqual(0, response.ResolutionCalls, "ResolutionResponse must NOT fire when handler signals PendingHandoff");
+        Assert.AreSame(metadata, response.LastPendingHandoffMetadata);
+        Assert.AreEqual(1, ctx.BlockSessionCalls, "Session must be blocked so siblings defer");
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_HandlerSignalsPendingHandoffThenThrows_FailurePathWins()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var handler = new FakeEventContextHandler
+        {
+            OnHandle = c =>
+            {
+                c.HandlerOutcome = HandlerOutcome.PendingHandoff;
+                c.HandoffMetadata = new HandoffMetadata("about to fail", null, null);
+            },
+            ThrowOnHandle = new InvalidOperationException("boom"),
+        };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, response.PendingHandoffCalls, "PendingHandoff must not fire when handler throws");
+        Assert.AreEqual(1, response.ErrorCalls, "Failure path wins");
+        Assert.AreEqual(1, ctx.BlockSessionCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_HandlerCallsMarkPendingHandoffTwice_LastCallWins()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var first = new HandoffMetadata("first", "JOB-1", TimeSpan.FromMinutes(1));
+        var second = new HandoffMetadata("second", "JOB-2", TimeSpan.FromMinutes(10));
+        var handler = new FakeEventContextHandler
+        {
+            OnHandle = c =>
+            {
+                c.HandlerOutcome = HandlerOutcome.PendingHandoff;
+                c.HandoffMetadata = first;
+                // Simulate a second MarkPendingHandoff call — last write wins.
+                c.HandoffMetadata = second;
+            },
+        };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, response.PendingHandoffCalls);
+        Assert.AreSame(second, response.LastPendingHandoffMetadata, "Second MarkPendingHandoff call must overwrite the first");
+        Assert.AreSame(second, ctx.HandoffMetadata);
+    }
+
+    // ── HandleHandoffCompletedRequest ───────────────────────────────────
+
+    [TestMethod]
+    public async Task HandleHandoffCompletedRequest_AuthorizedAndBlockedByThis_UnblocksAndSendsResolution()
+    {
+        var ctx = CreateContext(messageType: MessageType.HandoffCompletedRequest, from: "Manager");
+        ctx.IsSessionBlockedByThisResult = true;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.UnblockSessionCalls);
+        Assert.AreEqual(1, response.ResolutionCalls, "Resolver-bound ResolutionResponse flips Pending → Completed");
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleHandoffCompletedRequest_FromNonManager_DeadLetters()
+    {
+        var ctx = CreateContext(messageType: MessageType.HandoffCompletedRequest, from: "SomeEndpoint");
+        ctx.IsSessionBlockedByThisResult = true;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        // UnauthorizedAccessException flows through the base MessageHandler -> dead-letters
+        Assert.AreEqual(1, ctx.DeadLetterCalls);
+        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(0, response.ResolutionCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleHandoffCompletedRequest_NotBlockedByThis_DoesNothing()
+    {
+        var ctx = CreateContext(messageType: MessageType.HandoffCompletedRequest, from: "Manager");
+        ctx.IsSessionBlockedByThisResult = false;
+        ctx.BlockedByEventId = "different-event";
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        // VerifySessionIsBlockedByThis throws SessionBlockedException, which the
+        // base MessageHandler swallows. No state changes — the message is left
+        // for redelivery (per the existing pattern for other control flows).
+        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(0, response.ResolutionCalls);
+        Assert.AreEqual(0, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleHandoffFailedRequest_AuthorizedAndBlockedByThis_SendsErrorAndKeepsSessionBlocked()
+    {
+        var ctx = CreateContext(messageType: MessageType.HandoffFailedRequest, from: "Manager");
+        ctx.IsSessionBlockedByThisResult = true;
+        ctx.MessageContent = new MessageContent
+        {
+            EventContent = new EventContent { EventTypeId = "OrderPlaced", EventJson = "{}" },
+            ErrorContent = new ErrorContent
+            {
+                ErrorText = "DMF rejected: invalid postal code",
+                ErrorType = "DmfValidationError",
+            },
+        };
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, response.ErrorCalls, "Resolver-bound ErrorResponse flips Pending → Failed");
+        Assert.AreEqual(0, ctx.UnblockSessionCalls, "Session stays blocked — operator decides Resubmit/Skip");
+        Assert.AreEqual(1, ctx.CompletedCalls);
+        Assert.IsNotNull(response.LastErrorException);
+        var errorMessage = response.LastErrorException.InnerException?.Message ?? response.LastErrorException.Message;
+        StringAssert.Contains(errorMessage, "DMF rejected: invalid postal code", "Operator-supplied errorText must be preserved verbatim");
+    }
+
+    [TestMethod]
+    public async Task HandleHandoffCompletedRequest_DoesNotInvokeUserHandler()
+    {
+        var ctx = CreateContext(messageType: MessageType.HandoffCompletedRequest, from: "Manager");
+        ctx.IsSessionBlockedByThisResult = true;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, handler.HandleCalls, "HandoffCompleted must NOT re-invoke the user handler");
+    }
+
     // ── Dead-letter Resolver notification ───────────────────────────────
 
     [TestMethod]
@@ -555,10 +730,12 @@ public class StrictMessageHandlerTests
     {
         public int HandleCalls { get; private set; }
         public Exception ThrowOnHandle { get; set; }
+        public Action<IMessageContext> OnHandle { get; set; }
 
         public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
         {
             HandleCalls++;
+            OnHandle?.Invoke(context);
             if (ThrowOnHandle != null)
                 throw ThrowOnHandle;
             return Task.CompletedTask;
@@ -577,13 +754,16 @@ public class StrictMessageHandlerTests
         public int SendToDeferredSubscriptionCalls { get; private set; }
         public int ProcessDeferredCalls { get; private set; }
         public int DeadLetterCalls { get; private set; }
+        public int PendingHandoffCalls { get; private set; }
+        public HandoffMetadata LastPendingHandoffMetadata { get; private set; }
         public string LastDeadLetterReason { get; private set; }
         public Exception LastDeadLetterException { get; private set; }
+        public Exception LastErrorException { get; private set; }
         public int? LastRetryDelayMinutes { get; private set; }
 
         public Task SendResolutionResponse(IMessageContext mc, CancellationToken ct = default) { ResolutionCalls++; return Task.CompletedTask; }
         public Task SendSkipResponse(IMessageContext mc, CancellationToken ct = default) { SkipCalls++; return Task.CompletedTask; }
-        public Task SendErrorResponse(IMessageContext mc, Exception ex, CancellationToken ct = default) { ErrorCalls++; return Task.CompletedTask; }
+        public Task SendErrorResponse(IMessageContext mc, Exception ex, CancellationToken ct = default) { ErrorCalls++; LastErrorException = ex; return Task.CompletedTask; }
         public Task SendDeadLetterResponse(IMessageContext mc, string reason, Exception ex, CancellationToken ct = default)
         {
             DeadLetterCalls++;
@@ -597,6 +777,12 @@ public class StrictMessageHandlerTests
         public Task SendContinuationRequestToSelf(IMessageContext mc, CancellationToken ct = default) { ContinuationCalls++; return Task.CompletedTask; }
         public Task SendToDeferredSubscription(IMessageContext mc, int seq, CancellationToken ct = default) { SendToDeferredSubscriptionCalls++; return Task.CompletedTask; }
         public Task SendProcessDeferredRequest(IMessageContext mc, CancellationToken ct = default) { ProcessDeferredCalls++; return Task.CompletedTask; }
+        public Task SendPendingHandoffResponse(IMessageContext mc, HandoffMetadata handoff, CancellationToken ct = default)
+        {
+            PendingHandoffCalls++;
+            LastPendingHandoffMetadata = handoff;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class FakeDeferredMessageProcessor : IDeferredMessageProcessor
@@ -642,6 +828,8 @@ public class StrictMessageHandlerTests
         public long? QueueTimeMs { get; set; }
         public long? ProcessingTimeMs { get; set; }
         public DateTime? HandlerStartedAtUtc { get; set; }
+        public HandlerOutcome HandlerOutcome { get; set; }
+        public HandoffMetadata HandoffMetadata { get; set; }
 
         // Configurable behavior
         public string BlockedByEventId { get; set; }

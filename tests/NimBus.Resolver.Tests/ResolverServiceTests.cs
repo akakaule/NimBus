@@ -191,6 +191,8 @@ public class ResolverServiceTests
         public long? QueueTimeMs { get; set; }
         public long? ProcessingTimeMs { get; set; }
         public DateTime? HandlerStartedAtUtc { get; set; }
+        public HandlerOutcome HandlerOutcome { get; set; }
+        public HandoffMetadata HandoffMetadata { get; set; }
 
         public int CompletedCalls { get; private set; }
         public int DeadLetterCalls { get; private set; }

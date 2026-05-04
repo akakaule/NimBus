@@ -161,6 +161,8 @@ public class MessagePipelineTests
         public long? QueueTimeMs { get; set; }
         public long? ProcessingTimeMs { get; set; }
         public DateTime? HandlerStartedAtUtc { get; set; }
+        public HandlerOutcome HandlerOutcome { get; set; }
+        public HandoffMetadata HandoffMetadata { get; set; }
 
         public Task Complete(CancellationToken ct = default) => Task.CompletedTask;
         public Task Abandon(TransientException ex) => Task.CompletedTask;

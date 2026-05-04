@@ -112,5 +112,23 @@ namespace NimBus.Core.Messages
         /// <see cref="ProcessingTimeMs"/>.
         /// </summary>
         DateTime? HandlerStartedAtUtc { get; set; }
+
+        /// <summary>
+        /// Outcome signalled by the handler via
+        /// <c>IEventHandlerContext.MarkPendingHandoff</c>. Defaults to
+        /// <see cref="HandlerOutcome.Default"/>; flips to
+        /// <see cref="HandlerOutcome.PendingHandoff"/> when the handler hands
+        /// work off to a long-running external system. Read by
+        /// <c>StrictMessageHandler</c> after the handler returns to decide
+        /// whether to send a PendingHandoffResponse and block the session.
+        /// </summary>
+        HandlerOutcome HandlerOutcome { get; set; }
+
+        /// <summary>
+        /// Metadata supplied by the handler alongside
+        /// <see cref="HandlerOutcome.PendingHandoff"/>. Null when
+        /// <see cref="HandlerOutcome"/> is <see cref="HandlerOutcome.Default"/>.
+        /// </summary>
+        HandoffMetadata HandoffMetadata { get; set; }
     }
 }

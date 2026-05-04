@@ -25,6 +25,29 @@ public interface IManagerClient
     /// </summary>
     /// <param name="errorResponse">ErrorResponse received from endpoint, representing the error that needs to be resolved.</param>
     Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId);
+
+    /// <summary>
+    /// Drive a Pending → Completed transition for a message currently parked in the
+    /// PendingHandoff state. The subscriber acknowledges the request without re-invoking
+    /// the user handler.
+    /// </summary>
+    /// <param name="pendingEntry">The pending audit entry that was projected from a PendingHandoffResponse.</param>
+    /// <param name="endpoint">The subscriber endpoint that owns the pending message.</param>
+    /// <param name="detailsJson">Optional JSON payload describing the completion result; carried in MessageContent.EventContent.EventJson.</param>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="pendingEntry"/> is not in the PendingHandoff sub-status.</exception>
+    Task CompleteHandoff(MessageEntity pendingEntry, string endpoint, string detailsJson = null);
+
+    /// <summary>
+    /// Drive a Pending → Failed transition for a message currently parked in the
+    /// PendingHandoff state. The supplied error text is surfaced to the subscriber's
+    /// HandleHandoffFailedRequest via MessageContent.ErrorContent.
+    /// </summary>
+    /// <param name="pendingEntry">The pending audit entry that was projected from a PendingHandoffResponse.</param>
+    /// <param name="endpoint">The subscriber endpoint that owns the pending message.</param>
+    /// <param name="errorText">Human-readable error text describing the failure.</param>
+    /// <param name="errorType">Optional logical error type / classifier.</param>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="pendingEntry"/> is not in the PendingHandoff sub-status.</exception>
+    Task FailHandoff(MessageEntity pendingEntry, string endpoint, string errorText, string errorType = null);
 }
 
 public class ManagerClient : IManagerClient
@@ -81,6 +104,73 @@ public class ManagerClient : IManagerClient
             ParentMessageId = errorResponse.MessageId,
             EventTypeId = eventTypeId,
             OriginatingMessageId = errorResponse.OriginatingMessageId ?? errorResponse.MessageId
+        };
+
+        await using var sender = _serviceBusClient.CreateSender(endpoint);
+        await sender.SendMessageAsync(MessageHelper.ToServiceBusMessage(message));
+    }
+
+    public async Task CompleteHandoff(MessageEntity pendingEntry, string endpoint, string detailsJson = null)
+    {
+        if (pendingEntry.PendingSubStatus != "Handoff")
+            throw new InvalidOperationException($"CompleteHandoff requires PendingSubStatus='Handoff'; got '{pendingEntry.PendingSubStatus ?? "<null>"}' for EventId={pendingEntry.EventId}.");
+
+        _logger?.Verbose($"MANAGER COMPLETE HANDOFF: SessionId: {pendingEntry.SessionId} EventId: {pendingEntry.EventId} Endpoint: {endpoint} ");
+
+        var messageContent = new MessageContent();
+        if (!string.IsNullOrEmpty(detailsJson))
+        {
+            messageContent.EventContent = new EventContent
+            {
+                EventTypeId = pendingEntry.EventTypeId,
+                EventJson = detailsJson,
+            };
+        }
+
+        var message = new Message
+        {
+            CorrelationId = pendingEntry.CorrelationId,
+            EventId = pendingEntry.EventId,
+            SessionId = pendingEntry.SessionId,
+            To = endpoint,
+            From = Constants.ManagerId,
+            OriginatingMessageId = pendingEntry.OriginatingMessageId ?? pendingEntry.MessageId,
+            ParentMessageId = pendingEntry.MessageId,
+            MessageType = MessageType.HandoffCompletedRequest,
+            EventTypeId = pendingEntry.EventTypeId,
+            MessageContent = messageContent,
+        };
+
+        await using var sender = _serviceBusClient.CreateSender(endpoint);
+        await sender.SendMessageAsync(MessageHelper.ToServiceBusMessage(message));
+    }
+
+    public async Task FailHandoff(MessageEntity pendingEntry, string endpoint, string errorText, string errorType = null)
+    {
+        if (pendingEntry.PendingSubStatus != "Handoff")
+            throw new InvalidOperationException($"FailHandoff requires PendingSubStatus='Handoff'; got '{pendingEntry.PendingSubStatus ?? "<null>"}' for EventId={pendingEntry.EventId}.");
+
+        _logger?.Verbose($"MANAGER FAIL HANDOFF: SessionId: {pendingEntry.SessionId} EventId: {pendingEntry.EventId} Endpoint: {endpoint} ErrorType: {errorType} ");
+
+        var message = new Message
+        {
+            CorrelationId = pendingEntry.CorrelationId,
+            EventId = pendingEntry.EventId,
+            SessionId = pendingEntry.SessionId,
+            To = endpoint,
+            From = Constants.ManagerId,
+            OriginatingMessageId = pendingEntry.OriginatingMessageId ?? pendingEntry.MessageId,
+            ParentMessageId = pendingEntry.MessageId,
+            MessageType = MessageType.HandoffFailedRequest,
+            EventTypeId = pendingEntry.EventTypeId,
+            MessageContent = new MessageContent
+            {
+                ErrorContent = new ErrorContent
+                {
+                    ErrorText = errorText,
+                    ErrorType = errorType,
+                },
+            },
         };
 
         await using var sender = _serviceBusClient.CreateSender(endpoint);

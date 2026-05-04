@@ -18,7 +18,8 @@ NimBus is a mature, Azure-native event-driven integration platform with strong d
 | **Resilience** | Retry policies (3 strategies) | Wolverine/Brighter have circuit breakers; NServiceBus has two-phase retries |
 | **Large messages** | None (Service Bus 256KB limit) | NServiceBus has DataBus/claim-check pattern |
 | **Messaging patterns** | Publish/subscribe only | MassTransit has request/response; all have message scheduling |
-| **Transport** | Azure Service Bus only | Most support RabbitMQ, Kafka, SQL, in-memory |
+| **Transport** | Azure Service Bus + RabbitMQ (Phase 6, on-premise) | Most support Kafka, SQL, in-memory in addition |
+| **Local/on-prem deployment** | RabbitMQ + SQL Server, no Azure dependency (Phase 6) | NServiceBus / Wolverine / MassTransit support multiple on-prem transports natively |
 
 ## Roadmap Phases
 
@@ -272,12 +273,9 @@ Production-ready notification channels extending `NimBus.Extensions.Notification
 - Rate limiting and batching to prevent notification storms
 - Completes the alerting feature (4.1)
 
-**4.8 Transport Abstraction (Evaluate)**
+**4.8 Transport Abstraction** -- Committed (delivered in Phase 6)
 
-Evaluate whether transport abstraction is worth the complexity:
-- Full abstraction: `ITransport` interface with Azure Service Bus, RabbitMQ, in-memory implementations
-- Minimal abstraction: keep Azure Service Bus as primary, add in-memory for testing only (Phase 2.2)
-- Recommendation: start with in-memory for testing, only abstract further if there's concrete demand
+The original "evaluate only" framing assumed no concrete demand. Concrete demand has materialized: on-premise / cloud-agnostic teams that cannot adopt Azure Service Bus. The work is now committed and delivered as Phase 6 (*Multi-transport: RabbitMQ on-premise*). See [ADR-011](adr/011-rabbitmq-as-second-transport.md) for the design.
 
 **4.9 Documentation & Onboarding** -- Mostly Complete
 
@@ -319,6 +317,38 @@ Goal: If NimBus is to be open-sourced or adopted beyond its current org.
 - If there's demand, integrate with Marten or a custom event store
 - Keep as a separate `NimBus.EventSourcing` package
 
+---
+
+### Phase 6: Multi-transport -- RabbitMQ on-premise
+
+Goal: enable on-premise / cloud-agnostic deployments with no Azure dependency. Delivered in four gated phases per [ADR-011](adr/011-rabbitmq-as-second-transport.md).
+
+**6.1 `NimBus.Transport.Abstractions` extraction (refactor, no behavioural change)**
+
+- New project housing `ISender`, `IMessageContext`, `IReceivedMessage`, `IMessageHandler`, `IDeferredMessageProcessor`, plus new `ITransportProviderRegistration`, `ITransportCapabilities`, `ITransportManagement` markers
+- Fix existing leakage: drop `Azure.Messaging.ServiceBus` references from `NimBus.SDK`, `NimBus.Resolver`, `NimBus.WebApp`
+- Move deferred-by-session out of the transport layer into `NimBus.Core` (park in `MessageStore` keyed by session, replay on unblock — works for any transport)
+- New transport conformance suite in `NimBus.Testing.Conformance`, mirroring the storage conformance suite
+- `NimBus__Transport` env-var bridged through `NimBus.AppHost` and `samples/CrmErpDemo/CrmErpDemo.AppHost`, default `servicebus`
+- **Decision gate at end of this phase**: review the seam; stop if the abstraction came out leaky
+
+**6.2 `NimBus.Transport.RabbitMQ` provider package**
+
+- `RabbitMQ.Client` 7.x. `AddRabbitMqTransport(...)` builder entry point matching `AddSqlServerMessageStore` shape
+- Sessions emulated via `rabbitmq_consistent_hash_exchange` plugin + `single-active-consumer` queues, default 16 partitions per endpoint
+- Scheduled enqueue via `rabbitmq_delayed_message_exchange` plugin (hard prerequisite — fail loud at startup if missing)
+- Dead-letter via DLX per endpoint; mirrored into `MessageStore.UnresolvedEvents` identically to ASB DLQ
+- `RabbitMqTopologyProvisioner` declares exchanges/bindings/queues/DLX/alternate-exchange (replaces topics/subscriptions/SQL filter rules)
+- Health check covers connection liveness + plugin-loaded state
+- Conformance suite green against a Testcontainers-managed RabbitMQ broker
+
+**6.3 Demos, CLI, and operability**
+
+- CrmErpDemo accepts `--Transport rabbitmq`; AppHost spins up a RabbitMQ container instead of requiring `ConnectionStrings:servicebus`
+- New sample: `samples/RabbitMqOnPrem/` — minimal publisher + subscriber + RabbitMQ container, no Azure dependencies
+- `nb topology apply --transport {servicebus|rabbitmq}`; `nb infra apply` skips ASB provisioning when transport is `rabbitmq`
+- WebApp topology view becomes transport-aware (queues vs. subscriptions)
+
 ## Priority Matrix
 
 | Item | Impact | Effort | Priority | Phase | Status |
@@ -348,12 +378,12 @@ Goal: If NimBus is to be open-sourced or adopted beyond its current org.
 | Message versioning | Medium contracts | Medium | **P3** | 4 | Not Started |
 | Rate limiting middleware | Medium resilience | Small | **P3** | 4 | Not Started |
 | Notification channels | Medium ops | Medium | **P3** | 4 | Not Started |
-| Transport abstraction | Low-Medium | Very large | **P4** | 4 | Not Started |
+| Transport abstraction (RabbitMQ on-premise) | High (on-prem unlock) | Very large | **P4→P2** | 6 | Not Started |
 | Multi-tenant | Low | Large | **P4** | 5 | Not Started |
 
 ## What NOT to Do
 
-- **Don't abstract transports prematurely.** Azure Service Bus is NimBus's strength. Adding RabbitMQ/Kafka support before there's demand adds complexity without value. In-memory for testing is sufficient.
+- **Azure Service Bus remains the primary, recommended transport for greenfield Azure deployments.** As of 2026-05, RabbitMQ is a committed second transport for on-premise / cloud-agnostic deployments (Phase 6, [ADR-011](adr/011-rabbitmq-as-second-transport.md)). Do **not** add a third transport (Kafka, NATS, SQS, …) without the same level of concrete demand and a fresh ADR — the multi-transport split is sized for two providers, not n.
 - **Don't chase feature parity with NServiceBus.** NServiceBus has 15+ years of development. Focus on NimBus's unique value (Resolver, WebApp, sessions) and close only the critical gaps.
 - **Don't rewrite the WebApp.** It works. Enhance incrementally. The SPA + SignalR + API architecture is solid.
 - **Don't build event sourcing unless there's a concrete use case.** It's a separate concern. Wolverine does it well with Marten -- recommend that for teams needing event sourcing alongside NimBus.

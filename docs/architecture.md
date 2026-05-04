@@ -2,12 +2,12 @@
 
 ## Overview
 
-NimBus is a message-driven integration platform built around Azure Service Bus, Cosmos DB, and a small set of deployable control-plane services. The repository combines:
+NimBus is a message-driven integration platform built around a pluggable messaging transport, a pluggable operational state store, and a small set of deployable control-plane services. The repository combines:
 
 - domain and topology definitions
 - a transport-agnostic messaging workflow engine
-- Azure Service Bus transport adapters
-- an operational state store in Cosmos DB
+- transport adapters — Azure Service Bus today; RabbitMQ committed for on-premise deployments per [ADR-011](adr/011-rabbitmq-as-second-transport.md)
+- a pluggable operational state store — SQL Server or Cosmos DB per [ADR-010](adr/010-pluggable-message-storage.md)
 - a management web application
 - a resolver worker that materializes message history and per-endpoint resolution state
 - CLI and infrastructure assets for deployment and topology provisioning
@@ -738,7 +738,7 @@ This is a useful signal that the architecture is intentionally centered on a reu
 - the web app is broad in scope: UI host, API host, SignalR hub, control plane, and telemetry aggregator
 - build/publish complexity is higher because the web app couples SPA, NSwag generation, and server publish steps
 - Cosmos client logic is concentrated in a large `CosmosDbClient`, which makes the persistence layer powerful but dense
-- the architecture is strongly Azure-centric; portability is limited by design
+- Azure Service Bus has been the single supported transport. Phase 6 ([ADR-011](adr/011-rabbitmq-as-second-transport.md)) adds RabbitMQ as a committed second transport for on-premise deployments; until that lands the architecture remains Azure-centric in practice
 
 ## Recommended reading order
 

@@ -39,6 +39,7 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 | [Inbox Pattern](#inbox-pattern) | 3 | Not Started | Idempotent consumers via MessageId deduplication |
 | [Claim-Check Pattern](#claim-check-pattern) | 4 | Not Started | Large payload offload to Azure Blob Storage |
 | [Request/Response](#requestresponse) | 4 | Completed | Synchronous request/response over the bus with session-based reply correlation |
+| [Transport Abstraction (RabbitMQ on-premise)](#transport-abstraction) | 6 | Not Started | RabbitMQ as a committed second transport — `NimBus.Transport.Abstractions` + RabbitMQ provider per ADR-011 |
 
 ## P3 -- Lower
 
@@ -61,7 +62,6 @@ Actionable work items extracted from the [roadmap](roadmap.md), organized by pri
 
 | Item | Phase | Status | Description |
 |---|---|---|---|
-| [Transport Abstraction](#transport-abstraction) | 4 | Not Started | Evaluate `ITransport` interface for multi-transport support |
 | [NuGet Packages](#nuget-packages) | 5 | Completed | NuGet packaging with SourceLink, GitHub Actions publish workflow, MIT license |
 | [Multi-Tenant Support](#multi-tenant-support) | 5 | Not Started | Tenant-isolated topics, subscriptions, and routing |
 | [Event Sourcing](#event-sourcing) | 5 | Not Started | Optional Marten/custom event store integration |
@@ -232,9 +232,17 @@ Replace reflection-based event type discovery with compile-time source generator
 
 ### Transport Abstraction
 
-**Priority:** P4 | **Phase:** 4 | **Status:** Not Started
+**Priority:** P2 | **Phase:** 6 | **Status:** Not Started
 
-Evaluate `ITransport` interface for multi-transport support. Recommendation: start with in-memory for testing (Phase 2.2), only abstract further if there's concrete demand for RabbitMQ/Kafka.
+RabbitMQ as a committed second, production-grade transport for on-premise / cloud-agnostic deployments. Promoted from P4 *Evaluate* to P2 once concrete demand materialized. Full design in [ADR-011](adr/011-rabbitmq-as-second-transport.md).
+
+Delivered in three sub-phases:
+
+- **6.1 — `NimBus.Transport.Abstractions`** (refactor, no behavioural change). New project housing the transport-neutral interfaces (`ISender`, `IMessageContext`, `IReceivedMessage`, `IMessageHandler`, `IDeferredMessageProcessor`) plus new `ITransportProviderRegistration`, `ITransportCapabilities`, `ITransportManagement` markers. Drops `Azure.Messaging.ServiceBus` references from `NimBus.SDK` / `NimBus.Resolver` / `NimBus.WebApp`. Moves deferred-by-session out of the transport layer into `NimBus.Core` (park-and-replay against `MessageStore`). Adds transport conformance suite to `NimBus.Testing.Conformance`. **Decision gate at end of this sub-phase.**
+- **6.2 — `NimBus.Transport.RabbitMQ` provider package**. `RabbitMQ.Client` 7.x. Sessions via `rabbitmq_consistent_hash_exchange` plugin + `single-active-consumer` (default 16 partitions per endpoint). Scheduled enqueue via `rabbitmq_delayed_message_exchange` plugin (hard prerequisite). Dead-letter via DLX per endpoint. New `RabbitMqTopologyProvisioner`. Health check.
+- **6.3 — Demos, CLI, operability**. CrmErpDemo accepts `--Transport rabbitmq`; new `samples/RabbitMqOnPrem/`; `nb topology apply --transport {servicebus|rabbitmq}`; transport-aware WebApp topology view.
+
+Reference: ADR-010 *Pluggable Message Storage Providers* — Phase 6 mirrors its package layout (`Abstractions` + per-provider package), builder-time validation, and conformance-suite pattern.
 
 ### NuGet Packages
 

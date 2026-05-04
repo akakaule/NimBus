@@ -18,7 +18,9 @@ public static class InMemoryMessageStoreServiceCollectionExtensions
     {
         builder.Services.AddSingleton<IStorageProviderRegistration>(_ => new InMemoryStorageProviderRegistration());
         builder.Services.AddSingleton<IStorageProviderCapabilities>(_ => new InMemoryStorageProviderCapabilities());
-        builder.Services.AddSingleton<ISessionStateStore, InMemorySessionStateStore>();
+        builder.Services.AddSingleton<InMemorySessionStateStore>();
+        builder.Services.AddSingleton<ISessionStateStore>(sp => sp.GetRequiredService<InMemorySessionStateStore>());
+        builder.Services.AddSingleton<IParkedMessageStore>(sp => new InMemoryParkedMessageStore(sp.GetRequiredService<InMemorySessionStateStore>()));
         return builder;
     }
 

@@ -147,17 +147,78 @@ public sealed class InMemorySessionStateStore : ISessionStateStore
         return Task.CompletedTask;
     }
 
-    // TODO: task #5 implementation — issue #20
     public Task<int> GetLastReplayedSequence(string endpointId, string sessionId, CancellationToken cancellationToken = default)
-        => Task.FromResult(0);
+    {
+        if (!_states.TryGetValue((endpointId, sessionId), out var state))
+            return Task.FromResult(-1);
+        lock (state.Gate)
+        {
+            return Task.FromResult(state.LastReplayedSequence);
+        }
+    }
 
-    // TODO: task #5 implementation — issue #20
     public Task<bool> TryAdvanceLastReplayedSequence(string endpointId, string sessionId, int expectedCurrent, int newValue, CancellationToken cancellationToken = default)
-        => Task.FromResult(false);
+    {
+        var state = GetOrCreate(endpointId, sessionId);
+        lock (state.Gate)
+        {
+            if (state.LastReplayedSequence != expectedCurrent)
+                return Task.FromResult(false);
+            // Forward-only invariant: never let the checkpoint go backwards.
+            if (newValue <= state.LastReplayedSequence)
+                return Task.FromResult(false);
+            state.LastReplayedSequence = newValue;
+            return Task.FromResult(true);
+        }
+    }
 
-    // TODO: task #5 implementation — issue #20
     public Task<int> GetActiveParkCount(string endpointId, string sessionId, CancellationToken cancellationToken = default)
-        => Task.FromResult(0);
+    {
+        if (!_states.TryGetValue((endpointId, sessionId), out var state))
+            return Task.FromResult(0);
+        lock (state.Gate)
+        {
+            return Task.FromResult(state.ActiveParkCount);
+        }
+    }
+
+    /// <summary>
+    /// Increments the active-park counter. Called by the in-memory parked-message
+    /// store on a successful park to keep <see cref="GetActiveParkCount"/>
+    /// cheap. Not part of the public <see cref="ISessionStateStore"/> surface —
+    /// SQL/Cosmos providers update their counter via their own DB calls.
+    /// </summary>
+    internal void IncrementActiveParkCount(string endpointId, string sessionId)
+    {
+        var state = GetOrCreate(endpointId, sessionId);
+        lock (state.Gate)
+        {
+            state.ActiveParkCount += 1;
+        }
+    }
+
+    /// <summary>
+    /// Decrements the active-park counter (clamped at zero). Called by the
+    /// in-memory parked-message store on a successful replay/skip/dead-letter.
+    /// </summary>
+    internal void DecrementActiveParkCount(string endpointId, string sessionId)
+    {
+        if (!_states.TryGetValue((endpointId, sessionId), out var state)) return;
+        lock (state.Gate)
+        {
+            if (state.ActiveParkCount > 0) state.ActiveParkCount -= 1;
+        }
+    }
+
+    /// <summary>Reconciles the active-park counter against an authoritative count.</summary>
+    internal void SetActiveParkCount(string endpointId, string sessionId, int count)
+    {
+        var state = GetOrCreate(endpointId, sessionId);
+        lock (state.Gate)
+        {
+            state.ActiveParkCount = count < 0 ? 0 : count;
+        }
+    }
 
     private sealed class SessionStateRecord
     {
@@ -165,5 +226,7 @@ public sealed class InMemorySessionStateStore : ISessionStateStore
         public string? BlockedByEventId { get; set; }
         public int DeferredCount { get; set; }
         public int NextDeferralSequence { get; set; }
+        public int LastReplayedSequence { get; set; } = -1;
+        public int ActiveParkCount { get; set; }
     }
 }

@@ -102,65 +102,77 @@ public class InMemoryMessageContext : IMessageContext
         return ReceiveNextDeferred(cancellationToken);
     }
 
+    [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
     public Task BlockSession(CancellationToken cancellationToken = default)
     {
         _sessionState.BlockedByEventId = EventId;
         return Task.CompletedTask;
     }
 
+    [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
     public Task UnblockSession(CancellationToken cancellationToken = default)
     {
         _sessionState.BlockedByEventId = null;
         return Task.CompletedTask;
     }
 
+    [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
     public Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default)
     {
         return Task.FromResult(!string.IsNullOrEmpty(_sessionState.BlockedByEventId));
     }
 
+    [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
     public Task<bool> IsSessionBlockedByThis(CancellationToken cancellationToken = default)
     {
         return Task.FromResult(_sessionState.BlockedByEventId == EventId);
     }
 
+    [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
     public Task<bool> IsSessionBlockedByEventId(CancellationToken cancellationToken = default)
     {
         return Task.FromResult(!string.IsNullOrEmpty(_sessionState.BlockedByEventId));
     }
 
+    [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
     public Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default)
     {
         return Task.FromResult(_sessionState.BlockedByEventId);
     }
 
+    [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
     public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken cancellationToken = default)
     {
         return Task.FromResult(_sessionState.NextDeferralSequence++);
     }
 
+    [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
     public Task IncrementDeferredCount(CancellationToken cancellationToken = default)
     {
         _sessionState.DeferredCount++;
         return Task.CompletedTask;
     }
 
+    [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
     public Task DecrementDeferredCount(CancellationToken cancellationToken = default)
     {
         _sessionState.DeferredCount = Math.Max(0, _sessionState.DeferredCount - 1);
         return Task.CompletedTask;
     }
 
+    [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
     public Task<int> GetDeferredCount(CancellationToken cancellationToken = default)
     {
         return Task.FromResult(_sessionState.DeferredCount);
     }
 
+    [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
     public Task<bool> HasDeferredMessages(CancellationToken cancellationToken = default)
     {
         return Task.FromResult(_sessionState.DeferredCount > 0 || _sessionState.DeferredMessages.Count > 0);
     }
 
+    [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
     public Task ResetDeferredCount(CancellationToken cancellationToken = default)
     {
         _sessionState.DeferredCount = 0;

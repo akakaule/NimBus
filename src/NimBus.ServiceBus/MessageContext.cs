@@ -149,6 +149,7 @@ namespace NimBus.ServiceBus
         /// </summary>
         public Task Abandon(TransientException exception) => Task.CompletedTask;
 
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task BlockSession(CancellationToken cancellationToken = default)
         {
             SessionState state = await GetSessionState(cancellationToken);
@@ -156,6 +157,7 @@ namespace NimBus.ServiceBus
             await UpdateSessionState(state, cancellationToken);
         }
 
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task UnblockSession(CancellationToken cancellationToken = default)
         {
             SessionState state = await GetSessionState(cancellationToken);
@@ -263,6 +265,7 @@ namespace NimBus.ServiceBus
             }
         }
 
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default)
         {
             SessionState state = await GetSessionState(cancellationToken);
@@ -270,18 +273,21 @@ namespace NimBus.ServiceBus
                 || state.DeferredSequenceNumbers.Any();
         }
 
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task<bool> IsSessionBlockedByEventId(CancellationToken cancellationToken = default)
         {
             SessionState state = await GetSessionState(cancellationToken);
             return !string.IsNullOrEmpty(state.BlockedByEventId);
         }
 
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task<bool> IsSessionBlockedByThis(CancellationToken cancellationToken = default)
         {
             SessionState state = await GetSessionState(cancellationToken);
             return !string.IsNullOrEmpty(state.BlockedByEventId) && state.BlockedByEventId.Equals(EventId, StringComparison.OrdinalIgnoreCase);
         }
 
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default)
         {
             SessionState state = await GetSessionState(cancellationToken);
@@ -415,6 +421,7 @@ namespace NimBus.ServiceBus
             }
         }
 
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken cancellationToken = default)
         {
             SessionState state = await GetSessionState(cancellationToken);
@@ -424,6 +431,7 @@ namespace NimBus.ServiceBus
             return sequence;
         }
 
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task IncrementDeferredCount(CancellationToken cancellationToken = default)
         {
             SessionState state = await GetSessionState(cancellationToken);
@@ -431,6 +439,7 @@ namespace NimBus.ServiceBus
             await UpdateSessionState(state, cancellationToken);
         }
 
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task DecrementDeferredCount(CancellationToken cancellationToken = default)
         {
             SessionState state = await GetSessionState(cancellationToken);
@@ -441,18 +450,21 @@ namespace NimBus.ServiceBus
             }
         }
 
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task<int> GetDeferredCount(CancellationToken cancellationToken = default)
         {
             SessionState state = await GetSessionState(cancellationToken);
             return state.DeferredCount;
         }
 
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task<bool> HasDeferredMessages(CancellationToken cancellationToken = default)
         {
             SessionState state = await GetSessionState(cancellationToken);
             return state.HasDeferredMessages();
         }
 
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task ResetDeferredCount(CancellationToken cancellationToken = default)
         {
             SessionState state = await GetSessionState(cancellationToken);

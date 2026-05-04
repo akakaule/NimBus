@@ -30,43 +30,61 @@ namespace NimBus.Core.Messages
 
         Task<IMessageContext> ReceiveNextDeferred(CancellationToken cancellationToken = default);
         Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken cancellationToken = default);
+
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         Task BlockSession(CancellationToken cancellationToken = default);
+
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         Task UnblockSession(CancellationToken cancellationToken = default);
+
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default);
+
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         Task<bool> IsSessionBlockedByThis(CancellationToken cancellationToken = default);
+
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         Task<bool> IsSessionBlockedByEventId(CancellationToken cancellationToken = default);
+
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Gets the next deferral sequence number and increments the counter.
         /// Used for ordering messages in the non-session deferred subscription.
         /// </summary>
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Increments the deferred message count in session state.
         /// </summary>
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         Task IncrementDeferredCount(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Decrements the deferred message count in session state.
         /// </summary>
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         Task DecrementDeferredCount(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Gets the current deferred message count from session state.
         /// </summary>
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         Task<int> GetDeferredCount(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Checks if there are any deferred messages (legacy or new approach).
         /// </summary>
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         Task<bool> HasDeferredMessages(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Resets the deferred message count to zero.
         /// Called after all deferred messages have been republished.
         /// </summary>
+        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         Task ResetDeferredCount(CancellationToken cancellationToken = default);
 
         /// <summary>

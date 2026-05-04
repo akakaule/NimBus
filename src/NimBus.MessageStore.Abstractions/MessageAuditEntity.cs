@@ -18,6 +18,16 @@ namespace NimBus.MessageStore
         ResubmitWithChanges,
         Skip,
         Retry,
-        Comment
+        Comment,
+
+        // Park-and-replay audit types (transport-agnostic deferred-by-session).
+        // Emitted identically across transports — see
+        // docs/specs/003-rabbitmq-transport/deferred-by-session-design.md §7.
+        Parked,
+        ReplayStarted,
+        Replayed,
+        ReplayCompleted,
+        ReplaySkippedByOperator,
+        ReplayDeadLettered,
     }
 }

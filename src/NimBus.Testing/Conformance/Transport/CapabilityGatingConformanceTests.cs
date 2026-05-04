@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Transport.Abstractions;
 
 namespace NimBus.Testing.Conformance.Transport;
 
@@ -21,18 +22,16 @@ namespace NimBus.Testing.Conformance.Transport;
 [TestClass]
 public abstract class CapabilityGatingConformanceTests
 {
-    // TODO: Once task #2 (issue #17) lands, change return types to ITransportProvider /
-    // ITransportCapabilities.
     /// <summary>
     /// Returns a transport provider whose declared capabilities are under test.
     /// </summary>
-    protected abstract ITransportProviderPlaceholder CreateTransport();
+    protected abstract ITransportProviderRegistration CreateTransport();
 
     /// <summary>
     /// Returns the capability descriptor for the transport returned by
     /// <see cref="CreateTransport"/>. Asserted against actual transport behaviour.
     /// </summary>
-    protected abstract ITransportCapabilitiesPlaceholder CreateCapabilities();
+    protected abstract ITransportCapabilities CreateCapabilities();
 
     /// <summary>
     /// When a transport declares a feature unsupported (e.g.

@@ -1,13 +1,14 @@
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Transport.Abstractions;
 
 namespace NimBus.Testing.Conformance.Transport;
 
-// TODO: Add capability gating once ITransportCapabilities is defined (task #2 / issue #17):
-// when CreateCapabilities().SupportsScheduledEnqueue == false, this class must report all
-// its tests as skipped (e.g. via [TestInitialize] calling Assert.Inconclusive, or via a
-// custom MSTest discovery hook). The "tests skipped, not failed" requirement is asserted
-// by CapabilityGatingConformanceTests.UnsupportedFeature_TestsAreSkippedNotFailed.
+// Capability gating: when CreateCapabilities().SupportsScheduledEnqueue == false this
+// class must report all its tests as skipped (e.g. via [TestInitialize] calling
+// Assert.Inconclusive, or a custom MSTest discovery hook). The "tests skipped, not
+// failed" requirement is asserted by
+// CapabilityGatingConformanceTests.UnsupportedFeature_TestsAreSkippedNotFailed.
 /// <summary>
 /// Provider-agnostic conformance for native scheduled enqueue (delayed delivery): a
 /// scheduled message is delivered close to its target time, never before its target,
@@ -24,12 +25,11 @@ namespace NimBus.Testing.Conformance.Transport;
 [TestClass]
 public abstract class ScheduledEnqueueConformanceTests
 {
-    // TODO: Once task #2 (issue #17) lands, change return type to ITransportProvider.
     /// <summary>
     /// Returns a transport provider (or test-double) wired to an isolated topology with
     /// scheduled-enqueue capability declared.
     /// </summary>
-    protected abstract ITransportProviderPlaceholder CreateTransport();
+    protected abstract ITransportProviderRegistration CreateTransport();
 
     /// <summary>
     /// A message scheduled for time T is delivered to the receiver within ~1 second of T

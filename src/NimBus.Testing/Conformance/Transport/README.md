@@ -2,7 +2,7 @@
 
 A provider-agnostic test suite that every NimBus transport (in-memory, Service Bus, RabbitMQ, ...) must pass. Mirrors the pattern of `MessageTrackingStoreConformanceTests` in the parent `Conformance/` directory.
 
-> Status: **scaffolded skeletons only**. Test method names are locked; test bodies will be filled in once the transport abstractions (task #2 / issue #17) and the deferred-by-session refactor (task #5 / issue #20) land. Tracked in [#21](https://github.com/akakaule/NimBus/issues/21).
+> Status: **scaffolded skeletons** wired to the real `NimBus.Transport.Abstractions` types. Test method names are locked; test bodies will be filled in alongside the transport-provider implementations. Tracked in [#21](https://github.com/akakaule/NimBus/issues/21).
 
 ## What is here
 
@@ -18,8 +18,6 @@ Seven abstract `[TestClass]`es, one per scenario category:
 | `BlockedSessionLifecycleConformanceTests` | Block / unblock persistence, `BlockedByEventId`, per-session independence | FR-091 *Blocked-session lifecycle* |
 | `CapabilityGatingConformanceTests` | Meta-tests: unsupported features SKIP not FAIL; declared flags match actual behaviour | FR-091 *Capability gating* |
 
-There is also `ITransportProviderPlaceholder.cs` — placeholder marker types. These are temporary stand-ins for `NimBus.Transport.Abstractions.ITransportProvider` and `ITransportCapabilities` and will be deleted once task #2 lands.
-
 ## How a transport provider plugs in
 
 For each abstract class above, create a concrete subclass in your transport's test project that overrides the template method(s):
@@ -29,7 +27,7 @@ For each abstract class above, create a concrete subclass in your transport's te
 [TestClass]
 public sealed class RabbitMqSendReceiveConformanceTests : SendReceiveConformanceTests
 {
-    protected override ITransportProvider CreateTransport()
+    protected override ITransportProviderRegistration CreateTransport()
         => new RabbitMqTransportProvider(/* Testcontainers-managed broker */);
 }
 ```
@@ -61,8 +59,7 @@ Per **FR-092**, CI runs the in-memory + Service Bus suites unconditionally and t
 
 ## Follow-up work
 
-1. Replace `ITransportProviderPlaceholder` / `ITransportCapabilitiesPlaceholder` with the real abstractions once task #2 (issue #17) lands.
-2. Fill in test bodies — one PR per category is fine.
-3. Stand up the concrete InMemory / Service Bus / RabbitMQ runs in their respective test projects.
-4. Wire CI per FR-092 / NFR-008.
-5. Migrate transport-agnostic E2E tests under `tests/NimBus.EndToEnd.Tests/` to be parametrised by transport (FR-093).
+1. Fill in test bodies — one PR per category is fine.
+2. Stand up the concrete InMemory / Service Bus / RabbitMQ runs in their respective test projects.
+3. Wire CI per FR-092 / NFR-008.
+4. Migrate transport-agnostic E2E tests under `tests/NimBus.EndToEnd.Tests/` to be parametrised by transport (FR-093).

@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Transport.Abstractions;
 
 namespace NimBus.Testing.Conformance.Transport;
 
@@ -21,12 +22,11 @@ namespace NimBus.Testing.Conformance.Transport;
 [TestClass]
 public abstract class BlockedSessionLifecycleConformanceTests
 {
-    // TODO: Once task #2 (issue #17) lands, change return type to ITransportProvider.
     /// <summary>
     /// Returns a transport provider (or test-double) wired to an isolated topology and a
     /// fresh blocked-session store.
     /// </summary>
-    protected abstract ITransportProviderPlaceholder CreateTransport();
+    protected abstract ITransportProviderRegistration CreateTransport();
 
     /// <summary>
     /// Blocking a session persists the block such that a subsequent process restart still

@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Transport.Abstractions;
 
 namespace NimBus.Testing.Conformance.Transport;
 
@@ -18,12 +19,11 @@ namespace NimBus.Testing.Conformance.Transport;
 [TestClass]
 public abstract class DeferredReplayConformanceTests
 {
-    // TODO: Once task #2 (issue #17) lands, change return type to ITransportProvider.
     /// <summary>
     /// Returns a transport provider (or test-double) wired to an isolated topology with a
     /// receiver participating in the park-and-replay pipeline.
     /// </summary>
-    protected abstract ITransportProviderPlaceholder CreateTransport();
+    protected abstract ITransportProviderRegistration CreateTransport();
 
     /// <summary>
     /// When a session is blocked, subsequent messages on that session are parked

@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Transport.Abstractions;
 
 namespace NimBus.Testing.Conformance.Transport;
 
@@ -17,13 +18,12 @@ namespace NimBus.Testing.Conformance.Transport;
 [TestClass]
 public abstract class SendReceiveConformanceTests
 {
-    // TODO: Once task #2 (issue #17) lands, change return type to ITransportProvider.
     /// <summary>
     /// Returns a transport provider (or test-double) wired to an isolated topology.
     /// Each test invokes this once; concrete implementations must guarantee isolation
     /// so tests do not see each other's messages.
     /// </summary>
-    protected abstract ITransportProviderPlaceholder CreateTransport();
+    protected abstract ITransportProviderRegistration CreateTransport();
 
     /// <summary>
     /// Publishing a message and receiving it round-trips the full envelope (headers + body)

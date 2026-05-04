@@ -93,18 +93,54 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
             return;
         }
 
-        var result = upgrader.PerformUpgrade();
-        if (!result.Successful)
+        // Multiple NimBus services (Resolver, WebApp, …) hosted in the same Aspire
+        // AppHost all run AutoApply on startup against the same database. Serialize
+        // concurrent DbUp runs with a session-scoped sp_getapplock so they don't
+        // race on table creation between the IF-OBJECT_ID guard and CREATE TABLE.
+        // The second runner waits, finds the journal already populated, and exits
+        // without applying anything.
+        await using (var lockConn = new SqlConnection(_options.ConnectionString))
         {
-            throw new InvalidOperationException(
-                $"DbUp failed to apply NimBus message-store schema: {result.Error?.Message}", result.Error);
-        }
+            await lockConn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await AcquireSchemaUpgradeLock(lockConn, cancellationToken).ConfigureAwait(false);
 
-        _logger.LogInformation("SQL Server message-store schema upgrade applied {Count} script(s).",
-            result.Scripts.Count());
+            var result = upgrader.PerformUpgrade();
+            if (!result.Successful)
+            {
+                throw new InvalidOperationException(
+                    $"DbUp failed to apply NimBus message-store schema: {result.Error?.Message}", result.Error);
+            }
+
+            _logger.LogInformation("SQL Server message-store schema upgrade applied {Count} script(s).",
+                result.Scripts.Count());
+        }
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    private async Task AcquireSchemaUpgradeLock(SqlConnection conn, CancellationToken cancellationToken)
+    {
+        const int lockTimeoutMs = 60_000;
+        var resource = $"NimBus.Schema.{_options.Schema}";
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "EXEC @result = sp_getapplock @Resource = @res, @LockMode = N'Exclusive', @LockOwner = N'Session', @LockTimeout = @timeout";
+        cmd.CommandTimeout = (lockTimeoutMs / 1000) + 30;
+        var resultParam = cmd.Parameters.Add("@result", System.Data.SqlDbType.Int);
+        resultParam.Direction = System.Data.ParameterDirection.Output;
+        cmd.Parameters.AddWithValue("@res", resource);
+        cmd.Parameters.AddWithValue("@timeout", lockTimeoutMs);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        var status = resultParam.Value is int i ? i : -999;
+        // 0 = lock granted synchronously; 1 = lock granted after waiting for other sessions.
+        // Negative values are failures (-1 timeout, -2 cancelled, -3 deadlock, -999 parameter error).
+        if (status < 0)
+        {
+            throw new InvalidOperationException(
+                $"Could not acquire schema-upgrade lock for '{resource}' on the SQL Server (sp_getapplock returned {status}). " +
+                "Another NimBus instance may be holding the lock; retry once it finishes, or extend the lockTimeout.");
+        }
+    }
 
     private async Task EnsureSchemaExists(CancellationToken cancellationToken)
     {

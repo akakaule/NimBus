@@ -20,8 +20,9 @@ command against `phase-6-rabbitmq-transport` at the snapshot HEAD.
 
 ## (a) Commits landed since `master`
 
-`git log --oneline origin/master..HEAD` on `phase-6-rabbitmq-transport` returns 20
-commits (oldest → newest):
+`git log --oneline origin/master..HEAD` on `phase-6-rabbitmq-transport` returns 22
+commits (oldest → newest); the prior revision of *this* status snapshot is row
+21, retained so the document records its own provenance:
 
 | # | SHA | One-liner |
 |---|---|---|
@@ -45,6 +46,8 @@ commits (oldest → newest):
 | 18 | `1cfa785` | feat(testing): scaffold AddInMemoryTransport + InMemory transport registration/capabilities |
 | 19 | `c9a282e` | feat(servicebus): scaffold AddServiceBusTransport provider registration (#21) |
 | 20 | `2da928a` | test(servicebus): add registration tests for AddServiceBusTransport (#21) |
+| 21 | `3a5a647` | docs(spec): add Phase 6.1 → 6.2 decision-gate status snapshot (this doc, prior revision) |
+| 22 | `a729fe7` | refactor(core): inject ISessionStateStore directly into StrictMessageHandler (#15 / #16-B) |
 
 Re-verify: `git -C <worktree> log --oneline origin/master..HEAD`
 
@@ -119,7 +122,7 @@ work the gate review depends on directly. There are also three internal follow-u
 |---|---|---|---|---|
 | #3 (GH #18) | Drop `Azure.Messaging.ServiceBus` from `NimBus.SDK` | pending | **Yes — gate-blocking** | Hits SC-005. Without it, the on-prem-only deployment claim (Spec § *Deployment Mode (resolved)*) is theoretical; consumers still pull Azure transitively. The `AddServiceBusTransport` scaffolding (#21) is the seam this task plugs into. |
 | #4 (GH #19) | DI-inject `ITransportProvider` in Resolver and WebApp | pending | **Yes — gate-blocking** | Replaces the runtime `WithoutTransport()` shim in `Resolver/Program.cs` and `WebApp/Startup.cs` (placeholder switch arms left by task #7) with real `AddServiceBusTransport(...)` / `AddInMemoryTransport(...)` calls. Once landed, `NimBus__Transport=servicebus` actually selects a transport rather than opting out of validation. |
-| #15 (#16-B) | Migrate `StrictMessageHandler` + `DeferredMessageProcessor` to inject `ISessionStateStore` | in_progress | Indirect | Removes two large remaining call-sites of the `[Obsolete]` bridges. Not gate-blocking (the bridges still work via #14's delegation), but landing it tightens SC-010 compliance and makes #17 (bridge deletion) safer. |
+| #15 (#16-B) | Migrate `StrictMessageHandler` + `DeferredMessageProcessor` to inject `ISessionStateStore` | partial — `StrictMessageHandler` done in `a729fe7`; `DeferredMessageProcessor` follow-up still pending | Indirect | Removes two large remaining call-sites of the `[Obsolete]` bridges. Not gate-blocking (the bridges still work via #14's delegation), but landing it tightens SC-010 compliance and makes #17 (bridge deletion) safer. |
 | #17 (#16-D) | Drop `[Obsolete]` bridges from `IMessageContext` | pending | Indirect — hits SC-010 fully | Once #15 has landed and any external consumers have migrated, this drops `IMessageContext` to its 7 transport-only methods and explicitly closes SC-010. Per FR-111 the bridges must remain "for one major version"; deleting in this phase is acceptable because there are no released consumers using them yet. |
 | #19 | Implement `IParkedMessageStore` + `PortableDeferredMessageProcessor` | in_progress | Indirect | Builds on #5 (#20 GH). The contract and in-memory + SqlServer impls exist; the portable processor that uses them is the wiring step. Not strictly gate-blocking (Service Bus retrofit can keep using `DeferredMessageProcessor` until RabbitMQ lands). |
 
@@ -210,8 +213,46 @@ no-op. The TODO comments are deliberate and cite the unblocking task numbers.
 Per team-lead policy, no commits were pushed to `origin/phase-6-rabbitmq-transport`
 during Phase 6.1. The reviewer must re-fetch the branch from the local worktree
 (or wait for the milestone push) to inspect commits. As of this snapshot the local
-branch is **20 commits ahead of `origin/phase-6-rabbitmq-transport`** (which itself
-is ahead of `master`).
+branch is **23 commits ahead of `origin/phase-6-rabbitmq-transport`** (which itself
+is ahead of `master`); the +1 over the table count is the fixup commit landing
+this Section 6 / readiness checklist itself.
+
+---
+
+## (f) Decision-gate readiness checklist
+
+Each row maps a checklist item from GitHub issue #23's body to a verdict
+(**YES** / **NO** / **PARTIAL**) plus a one-line justification and, where
+applicable, the gate-blocker that would flip a NO/PARTIAL to YES. Wording of the
+checklist items is preserved so a reader can diff this table against the issue.
+
+| # | Issue #23 checklist item | Verdict | Justification |
+|---|---|---|---|
+| 1 | Audit `NimBus.Transport.Abstractions` for Service-Bus-shaped names and types — anything implying a session-receiver or sequence-number primitive that doesn't exist in AMQP needs justification or removal. | **PARTIAL** | The package surface is 8 interfaces (C2). `ISender.ScheduleMessage` returns a `long` sequence-number that *is* a Service Bus shape; RabbitMQ has no equivalent. Capability flag `SupportsScheduledEnqueue` on `ITransportCapabilities` gates use, but the return type itself stays Service-Bus-shaped. Defensible (capability-gated), but the gate review should explicitly confirm acceptance vs. abstracting to a `string` cancellation token. No other smells found. |
+| 2 | Audit `IMessageContext` post-disentanglement — does the surface read as a transport-neutral contract a RabbitMQ implementation could satisfy without contortion? | **PARTIAL** | Transport-only surface is now ~5–7 methods (`Complete`, `Abandon`, `DeadLetter`, `Defer`, `DeferOnly`, `ReceiveNextDeferred`, `ReceiveNextDeferredWithPop`) — these all map cleanly to AMQP `basic.ack` / `basic.nack` / DLX / `basic.reject`. The 12 `[Obsolete]` session-state bridges are *not* transport-shaped any more; they delegate to `ISessionStateStore` (commit `8e7eb0d`). YES on shape; PARTIAL because the bridges are still attached to the interface (gate-blocker: task #17 / #16-D). |
+| 3 | Run the transport conformance suite against `inmemory` and `servicebus` — both must be 100% green. | **NO** | Test-method *names* are locked across 7 abstract `[TestClass]`es (27 stubs, claim C6), but every stub is `=> Task.CompletedTask`. There is no concrete in-memory or Service Bus run yet. Gate-blocker: post-gate work (test-body fill-in pass), explicitly named in spec § *Phasing* row 6.1 as "conformance suite green for both" — that gate criterion is not yet satisfied by stubs alone. |
+| 4 | Run CrmErpDemo end-to-end on `--Transport servicebus` (default) and confirm zero behavioural regression vs. pre-Phase-6.1 baseline. NFR-011 byte-for-byte audit-trail identity. | **PARTIAL** | `dotnet test src/NimBus.sln` is 386/0/68 (claim C8) which includes `NimBus.EndToEnd.Tests` (56 passing). The CrmErpDemo Playwright suite (`samples/CrmErpDemo/e2e/`) is *not* run as part of `dotnet test`; that's a separate run. Documentary check: no Phase 6.1 commit modified `samples/CrmErpDemo/`'s adapter wiring, only the AppHost env-var bridging in `d16b505`. NFR-011 plausible-not-verified. Gate action: re-run the CrmErpDemo Playwright suite locally before greenlighting. |
+| 5 | `dotnet list package --include-transitive` for `NimBus.SDK`, `NimBus.Resolver`, `NimBus.WebApp`, `NimBus.Manager`, `NimBus.CommandLine` — confirm zero **direct** package reference to `Azure.Messaging.ServiceBus`. | **PARTIAL** | The relevant question is *direct* package references (transitive through `NimBus.ServiceBus` is fine per the issue text). `NimBus.SDK.csproj` references only `..\NimBus.ServiceBus\NimBus.ServiceBus.csproj` (no direct `Azure.*` `<PackageReference>`). Same shape expected for the other four; no Phase 6.1 commit added a direct Azure package reference to any of them. **However**, task #3 / #18 (`Drop Azure.Messaging.ServiceBus from NimBus.SDK`) has not landed — its scope includes severing the *project* reference too, so SC-005's "zero compile-time references" claim isn't met today. Gate-blocker: #3 / #18. |
+| 6 | Review the SC-005 audit and the SC-010 method-count target — does `IMessageContext` have fewer than 12 methods, with all store-state methods relocated to `ISessionStateStore`? | **PARTIAL** | Store-state methods *have* been relocated to `ISessionStateStore` (claim C12). SC-010's <12-method count is *not* met today — `IMessageContext` exposes 5–7 transport-only methods + 12 `[Obsolete]` bridges + 3 timing properties. Bridges drop in task #17 / #16-D, landing the count at 7. Gate-blocker: #17 / #16-D for the count itself; the *trajectory* is solid (claim C11). |
+| 7 | Estimate Phase 6.2 effort honestly based on the seam shape. If partition-count constraint, deferred-replay design, or topology-management contract feel like they're going to leak Service-Bus assumptions into the RabbitMQ implementation, refine now. | **PARTIAL** | Three known seams to confirm at the gate: (a) `ITransportCapabilities.MaxOrderingPartitions` is `int?` with `null` for unbounded — RabbitMQ would return a finite value (e.g. 16) reflecting the consistent-hash exchange's partition count; this looks correct. (b) Park-and-replay design (commits `9247ee8`, `8ba51e7`, `f4f0d98`, `af61b33`) deliberately moves deferred-by-session out of the transport into `IParkedMessageStore` + `ISessionStateStore`; this *is* the unblocking refactor for RabbitMQ. (c) Topology management lives behind `ITransportManagement`; not yet exercised by either provider. Effort estimate is plausible-not-yet-derived. |
+
+### Acceptance-criteria check (from issue #23 *Acceptance criteria* block)
+
+| Criterion | Verdict | Justification |
+|---|---|---|
+| All review checklist items above are completed and documented in a comment on this issue | **NO** | This document covers the seven checklist items; posting a comment with the verdicts is a gate-meeting action, not a Phase 6.1 deliverable. |
+| Decision recorded — *Proceed*, *Defer*, or *Refine-and-re-gate* | **NO — pending gate meeting** | This document is the input to the decision; it does not record the decision itself. |
+
+### Overall gate-readiness verdict: **PARTIAL — recommend "Refine-and-re-gate"**
+
+Specifically:
+
+- **Two hard pre-conditions** (#3 / #18 for SC-005; #17 / #16-D for SC-010) must land before a clean *Proceed* is defensible.
+- **One soft pre-condition** (concrete conformance runs against in-memory + Service Bus) needs at least an in-memory run to satisfy issue #23 checklist item 3 in spirit.
+- **One verification step** (CrmErpDemo Playwright e2e on default `--Transport servicebus`) needs to be re-run locally to satisfy NFR-011.
+- The seam shape itself is **healthy**: the disentanglement reads cleanly, the 8 interface surface is small, the park-and-replay relocation positions RabbitMQ for a faithful implementation, and the test count is green at 386/0.
+
+If the gate meeting can be deferred ~1-2 follow-up rounds (#3, #4, #17, plus the in-memory conformance run), a clean *Proceed* becomes defensible. If the meeting must happen sooner, *Refine-and-re-gate* with the four pre-conditions named in a follow-up sub-issue is the safer call.
 
 ---
 
@@ -219,7 +260,7 @@ is ahead of `master`).
 
 When team task #8 convenes:
 
-1. Verify (a) — `git log --oneline origin/master..HEAD` matches table 1 (20 commits).
+1. Verify (a) — `git log --oneline origin/master..HEAD` matches table 1 (22 commits at snapshot time; one fixup commit added the gate-readiness checklist on top).
 2. Verify (c) — run `dotnet build src/NimBus.sln` and `dotnet test src/NimBus.sln`,
    confirm 0 errors / 386 pass / 0 fail.
 3. Walk the seam (FR-002): read `src/NimBus.Transport.Abstractions/Messages/IMessageContext.cs`
@@ -230,7 +271,9 @@ When team task #8 convenes:
    removes the bridges.
 5. Decide on SC-005: hold the gate until #3 lands, or note "tracked, pre-condition
    for 6.2 RabbitMQ work" and proceed.
-6. Decide on the seam itself per the spec's gate rubric — "review the seam; stop
+6. Walk the (f) Gate-readiness checklist row-by-row and either confirm each
+   PARTIAL verdict or override with a YES on a dissenting reading.
+7. Decide on the seam itself per the spec's gate rubric — "review the seam; stop
    and ship as cleanup if too leaky." This document does not pre-empt that
    judgement; it provides the inputs.
 

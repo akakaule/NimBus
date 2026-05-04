@@ -220,15 +220,60 @@ WHERE EndpointId = @EndpointId AND SessionId = @SessionId;";
             commandTimeout: _commandTimeout, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
-    // TODO: task #5 implementation — issue #20
-    public Task<int> GetLastReplayedSequence(string endpointId, string sessionId, CancellationToken cancellationToken = default)
-        => Task.FromResult(0);
+    public async Task<int> GetLastReplayedSequence(string endpointId, string sessionId, CancellationToken cancellationToken = default)
+    {
+        var sql = $@"
+SELECT TOP 1 LastReplayedSequence
+FROM {T("SessionStates")}
+WHERE EndpointId = @EndpointId AND SessionId = @SessionId;";
 
-    // TODO: task #5 implementation — issue #20
-    public Task<bool> TryAdvanceLastReplayedSequence(string endpointId, string sessionId, int expectedCurrent, int newValue, CancellationToken cancellationToken = default)
-        => Task.FromResult(false);
+        await using var conn = Open();
+        var result = await conn.ExecuteScalarAsync<int?>(new CommandDefinition(sql,
+            new { EndpointId = endpointId, SessionId = sessionId },
+            commandTimeout: _commandTimeout, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        // -1 is the design's "no replay yet" sentinel; rows that don't exist
+        // also return -1 here, which is correct (no replay has occurred).
+        return result ?? -1;
+    }
 
-    // TODO: task #5 implementation — issue #20
-    public Task<int> GetActiveParkCount(string endpointId, string sessionId, CancellationToken cancellationToken = default)
-        => Task.FromResult(0);
+    public async Task<bool> TryAdvanceLastReplayedSequence(string endpointId, string sessionId, int expectedCurrent, int newValue, CancellationToken cancellationToken = default)
+    {
+        // Forward-only conditional advance: only update if the current value
+        // matches expectedCurrent AND newValue strictly exceeds it. Concurrent
+        // replayers race here — the loser sees rows == 0 and re-reads the
+        // checkpoint, no distributed lock required.
+        var sql = $@"
+MERGE {T("SessionStates")} WITH (HOLDLOCK) AS target
+USING (SELECT @EndpointId AS EndpointId, @SessionId AS SessionId) AS source
+    ON target.EndpointId = source.EndpointId AND target.SessionId = source.SessionId
+WHEN MATCHED AND target.LastReplayedSequence = @Expected AND @NewValue > target.LastReplayedSequence THEN
+    UPDATE SET LastReplayedSequence = @NewValue, UpdatedAtUtc = SYSUTCDATETIME()
+WHEN NOT MATCHED AND @Expected = -1 AND @NewValue > -1 THEN
+    INSERT (EndpointId, SessionId, LastReplayedSequence)
+    VALUES (@EndpointId, @SessionId, @NewValue);";
+
+        await using var conn = Open();
+        var rows = await conn.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            EndpointId = endpointId,
+            SessionId = sessionId,
+            Expected = expectedCurrent,
+            NewValue = newValue,
+        }, commandTimeout: _commandTimeout, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        return rows == 1;
+    }
+
+    public async Task<int> GetActiveParkCount(string endpointId, string sessionId, CancellationToken cancellationToken = default)
+    {
+        var sql = $@"
+SELECT TOP 1 ActiveParkCount
+FROM {T("SessionStates")}
+WHERE EndpointId = @EndpointId AND SessionId = @SessionId;";
+
+        await using var conn = Open();
+        var result = await conn.ExecuteScalarAsync<int?>(new CommandDefinition(sql,
+            new { EndpointId = endpointId, SessionId = sessionId },
+            commandTimeout: _commandTimeout, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        return result ?? 0;
+    }
 }

@@ -88,22 +88,6 @@ namespace NimBus.Core.Messages
         Task ResetDeferredCount(CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Gets the throttle retry count from message properties.
-        /// Used for tracking exponential backoff retries due to rate limiting.
-        /// </summary>
-        int ThrottleRetryCount { get; }
-
-        /// <summary>
-        /// Schedules the current message for redelivery after a delay.
-        /// Creates a new message with the same content and completes the original.
-        /// Used for exponential backoff when Cosmos DB is throttled.
-        /// </summary>
-        /// <param name="delay">The delay before the message is redelivered.</param>
-        /// <param name="throttleRetryCount">The retry count to set on the new message.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
-        Task ScheduleRedelivery(TimeSpan delay, int throttleRetryCount, CancellationToken cancellationToken = default);
-
-        /// <summary>
         /// Time the inbound message spent in Service Bus before the handler was
         /// invoked (enqueued → handler entry). Set by ServiceBusAdapter at the
         /// receive boundary; read by ResponseService when constructing the

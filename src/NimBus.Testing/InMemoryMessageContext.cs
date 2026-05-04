@@ -179,12 +179,4 @@ public class InMemoryMessageContext : IMessageContext
         return Task.CompletedTask;
     }
 
-    public int ThrottleRetryCount => 0;
-
-    public Task ScheduleRedelivery(TimeSpan delay, int throttleRetryCount, CancellationToken cancellationToken = default)
-    {
-        // In tests, just complete the original (tests rarely exercise throttle path)
-        IsCompleted = true;
-        return Task.CompletedTask;
-    }
 }

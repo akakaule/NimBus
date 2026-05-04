@@ -234,11 +234,6 @@ public class ResolverServiceTests
         public Task<int> GetDeferredCount(CancellationToken cancellationToken = default) => Task.FromResult(0);
         public Task<bool> HasDeferredMessages(CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task ResetDeferredCount(CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        // Bridge: still on IMessageContext but no longer exercised — Resolver
-        // now invokes ThrottledRedeliveryHostedService instead. The next commit
-        // drops this from the interface and from the fake.
-        public Task ScheduleRedelivery(TimeSpan delay, int throttleRetryCount, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class FakeSender : ISender

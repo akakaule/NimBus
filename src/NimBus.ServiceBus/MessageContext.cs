@@ -472,49 +472,5 @@ namespace NimBus.ServiceBus
             await UpdateSessionState(state, cancellationToken);
         }
 
-        public async Task ScheduleRedelivery(TimeSpan delay, int throttleRetryCount, CancellationToken cancellationToken = default)
-        {
-            // Create new message with same content
-            var receivedMessage = _sbMessage.Message;
-            var newMessage = new Azure.Messaging.ServiceBus.ServiceBusMessage(_sbMessage.Body)
-            {
-                SessionId = SessionId,
-                CorrelationId = CorrelationId,
-                MessageId = Guid.NewGuid().ToString(),
-                // Copy standard Service Bus properties
-                ContentType = receivedMessage.ContentType,
-                Subject = receivedMessage.Subject,
-                ReplyTo = receivedMessage.ReplyTo,
-                ReplyToSessionId = receivedMessage.ReplyToSessionId,
-                PartitionKey = receivedMessage.PartitionKey
-            };
-
-            // Copy all application properties from original message
-            foreach (var prop in receivedMessage.ApplicationProperties)
-            {
-                newMessage.ApplicationProperties[prop.Key] = prop.Value;
-            }
-
-            // Set/update throttle retry count
-            newMessage.ApplicationProperties[ThrottleRetryCountProperty] = throttleRetryCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-            // Schedule for future delivery
-            var scheduledTime = DateTimeOffset.UtcNow.Add(delay);
-            try
-            {
-                await _sbSession.SendScheduledMessageAsync(newMessage, scheduledTime, cancellationToken);
-                // Complete original message only after successful scheduling
-                await Complete(cancellationToken);
-            }
-            catch (InvalidOperationException)
-            {
-                // SendScheduledMessageAsync requires ServiceBusClient + entityPath which may not be available
-                // in all handler configurations (e.g., ServiceBusSessionReceiver path).
-                // Fall back to letting the message retry via lock expiration - don't complete it.
-                // The message will be redelivered after the lock expires (~30s).
-                throw new Core.Messages.Exceptions.TransientException(
-                    "Scheduled redelivery not available in current configuration. Message will retry after lock expiration.");
-            }
-        }
     }
 }

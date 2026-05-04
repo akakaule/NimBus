@@ -1,9 +1,11 @@
 using Azure.Messaging.ServiceBus;
 using Erp.Api;
 using Erp.Api.Endpoints;
+using Erp.Api.HandoffMode;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
+using NimBus.Manager;
 using NimBus.Outbox.SqlServer;
 using NimBus.SDK.Extensions;
 using NimBus.SDK.Hosting;
@@ -28,6 +30,8 @@ builder.Services.AddDbContext<ErpDbContext>(opt => opt.UseSqlServer(erpConnectio
 
 builder.Services.AddSingleton<ServiceModeState>();
 builder.Services.AddSingleton<ErrorModeState>();
+builder.Services.AddSingleton<HandoffModeState>();
+builder.Services.AddSingleton<HandoffJobTracker>();
 
 // ERP hosts the outbox dispatcher (the Functions adapter doesn't host long-running polling).
 builder.Services.AddNimBusSqlServerOutbox(erpConnectionString);
@@ -40,6 +44,13 @@ if (hasServiceBus)
         return new OutboxDispatcherSender(client.CreateSender("ErpEndpoint"));
     });
     builder.Services.AddNimBusOutboxDispatcher(TimeSpan.FromSeconds(1));
+
+    // ManagerClient drives Pending → Completed/Failed transitions for handoff
+    // jobs once the ERP "DMF import" completes. Only registered when Service Bus
+    // is wired — without it the handoff demo can't issue control messages.
+    builder.Services.AddSingleton<IManagerClient>(sp =>
+        new ManagerClient(sp.GetRequiredService<ServiceBusClient>()));
+    builder.Services.AddHostedService<HandoffJobBackgroundService>();
 }
 else
 {
@@ -108,5 +119,6 @@ if (!initSucceeded)
 app.MapCustomerEndpoints();
 app.MapErpContactEndpoints();
 app.MapAdminEndpoints();
+app.MapHandoffEndpoints();
 
 app.Run();

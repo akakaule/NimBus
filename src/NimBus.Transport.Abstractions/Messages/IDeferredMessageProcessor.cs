@@ -5,6 +5,10 @@ namespace NimBus.Core.Messages
 {
     /// <summary>
     /// Interface for processing deferred messages from the non-session subscription.
+    /// Promoted into <c>NimBus.Transport.Abstractions</c> as part of Phase 6.1;
+    /// namespace stays <c>NimBus.Core.Messages</c> and a
+    /// <c>[TypeForwardedTo]</c> in <c>NimBus.Core</c> preserves source
+    /// compatibility for existing consumers.
     /// </summary>
     public interface IDeferredMessageProcessor
     {

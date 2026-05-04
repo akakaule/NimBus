@@ -96,5 +96,13 @@ namespace NimBus.Core.Messages
         /// the audit record as DeadLettered.
         /// </summary>
         string DeadLetterErrorDescription => null;
+
+        /// <summary>
+        /// Per-message counter for storage-throttling redelivery. Stamped by the
+        /// Cosmos throttling hosted service when a 429 forces a scheduled resend;
+        /// read by the Resolver on the next receive to decide whether to redeliver
+        /// again or dead-letter. Zero on original publishes.
+        /// </summary>
+        int ThrottleRetryCount => 0;
     }
 }

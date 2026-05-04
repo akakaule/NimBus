@@ -32,5 +32,6 @@ namespace NimBus.Core.Messages
         public long? ProcessingTimeMs { get; set; }
         public string DeadLetterReason { get; set; }
         public string DeadLetterErrorDescription { get; set; }
+        public int ThrottleRetryCount { get; set; }
     }
 }

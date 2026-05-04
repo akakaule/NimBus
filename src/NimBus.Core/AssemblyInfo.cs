@@ -13,3 +13,15 @@ using System.Runtime.CompilerServices;
 [assembly: TypeForwardedTo(typeof(NimBus.Core.Messages.EventContent))]
 [assembly: TypeForwardedTo(typeof(NimBus.Core.Messages.ErrorContent))]
 [assembly: TypeForwardedTo(typeof(NimBus.Core.Messages.Exceptions.TransientException))]
+
+// Transport-interface batch (Pass 1 of task #18). Only the dependency-clean
+// interfaces ship in this pass:
+//   - ISender depends solely on IMessage, which moved with the wire-model batch
+//   - IDeferredMessageProcessor depends only on BCL types
+// IMessageContext, IReceivedMessage, and IMessageHandler (which references
+// IMessageContext) are deferred to Pass 2. They land once the in-flight
+// extraction of ScheduleRedelivery + ThrottleRetryCount from IMessageContext
+// (task #16 follow-up C) is complete, so the transport surface promotes in its
+// final post-disentanglement shape rather than racing further mutations.
+[assembly: TypeForwardedTo(typeof(NimBus.Core.Messages.ISender))]
+[assembly: TypeForwardedTo(typeof(NimBus.Core.Messages.IDeferredMessageProcessor))]

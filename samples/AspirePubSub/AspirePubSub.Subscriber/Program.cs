@@ -19,6 +19,8 @@ builder.AddAzureServiceBusClient("servicebus");
 builder.Services.AddNimBus(nimbus =>
 {
     nimbus.WithoutStorageProvider();
+    // Phase 6 transition: AddServiceBusTransport() ships in a follow-up task.
+    nimbus.WithoutTransport();
     nimbus.AddPipelineBehavior<LoggingMiddleware>();
     nimbus.AddPipelineBehavior<MetricsMiddleware>();
     nimbus.AddPipelineBehavior<ValidationMiddleware>();

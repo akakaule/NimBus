@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NimBus.Abstractions\NimBus.Abstractions.csproj" />
+    <ProjectReference Include="..\NimBus.Transport.Abstractions\NimBus.Transport.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

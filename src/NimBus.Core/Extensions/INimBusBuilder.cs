@@ -40,5 +40,12 @@ namespace NimBus.Core.Extensions
         /// don't host the Resolver).
         /// </summary>
         INimBusBuilder WithoutStorageProvider();
+
+        /// <summary>
+        /// Explicit opt-out from transport-provider validation. Use for unit tests
+        /// or hosts that wire their own fake transport instead of registering one
+        /// of the production providers (Service Bus, RabbitMQ, in-memory).
+        /// </summary>
+        INimBusBuilder WithoutTransport();
     }
 }

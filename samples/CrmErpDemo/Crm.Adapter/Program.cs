@@ -41,6 +41,8 @@ builder.Services.AddNimBusOutboxDispatcher(TimeSpan.FromSeconds(1));
 builder.Services.AddNimBus(n =>
 {
     n.WithoutStorageProvider();
+    // Phase 6 transition: AddServiceBusTransport() ships in a follow-up task.
+    n.WithoutTransport();
     n.AddPipelineBehavior<LoggingMiddleware>();
     n.AddPipelineBehavior<MetricsMiddleware>();
     n.AddPipelineBehavior<ValidationMiddleware>();

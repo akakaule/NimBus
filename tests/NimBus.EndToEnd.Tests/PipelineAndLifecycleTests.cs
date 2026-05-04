@@ -24,6 +24,7 @@ public class PipelineAndLifecycleTests
         services.AddNimBus(builder =>
         {
             builder.AddInMemoryMessageStore();
+            builder.WithoutTransport();
             builder.AddPipelineBehavior<LoggingBehavior>();
         });
         var sp = services.BuildServiceProvider();
@@ -57,6 +58,7 @@ public class PipelineAndLifecycleTests
         services.AddNimBus(builder =>
         {
             builder.AddInMemoryMessageStore();
+            builder.WithoutTransport();
             builder.AddPipelineBehavior<OuterBehavior>();
             builder.AddPipelineBehavior<InnerBehavior>();
         });
@@ -86,6 +88,7 @@ public class PipelineAndLifecycleTests
         services.AddNimBus(builder =>
         {
             builder.AddInMemoryMessageStore();
+            builder.WithoutTransport();
             builder.AddPipelineBehavior<ShortCircuitBehavior>();
         });
         var sp = services.BuildServiceProvider();
@@ -163,6 +166,7 @@ public class PipelineAndLifecycleTests
         services.AddNimBus(builder =>
         {
             builder.AddInMemoryMessageStore();
+            builder.WithoutTransport();
             builder.AddPipelineBehavior<LoggingBehavior>();
         });
         var sp = services.BuildServiceProvider();
@@ -235,6 +239,7 @@ public class PipelineAndLifecycleTests
         services.AddNimBus(builder =>
         {
             builder.AddInMemoryMessageStore();
+            builder.WithoutTransport();
             builder.AddPipelineBehavior<ExceptionSwallowingBehavior>();
         });
         var sp = services.BuildServiceProvider();
@@ -270,6 +275,7 @@ public class PipelineAndLifecycleTests
         services.AddNimBus(builder =>
         {
             builder.AddInMemoryMessageStore();
+            builder.WithoutTransport();
             builder.AddPipelineBehavior<ThrowingBehavior>();
         });
         var sp = services.BuildServiceProvider();
@@ -304,6 +310,7 @@ public class PipelineAndLifecycleTests
         services.AddNimBus(builder =>
         {
             builder.AddInMemoryMessageStore();
+            builder.WithoutTransport();
             builder.AddPipelineBehavior<ThrowingBehavior>();
         });
         var sp = services.BuildServiceProvider();

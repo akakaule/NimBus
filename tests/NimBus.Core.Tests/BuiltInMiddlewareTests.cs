@@ -290,6 +290,7 @@ public class PipelineWiringTests
         services.AddNimBus(builder =>
         {
             builder.AddInMemoryMessageStore();
+            builder.WithoutTransport();
             builder.AddPipelineBehavior<TrackingBehavior>();
         });
 
@@ -316,6 +317,7 @@ public class PipelineWiringTests
         services.AddNimBus(builder =>
         {
             builder.AddInMemoryMessageStore();
+            builder.WithoutTransport();
             builder.AddPipelineBehavior<LoggingMiddleware>();
             builder.AddPipelineBehavior<MetricsMiddleware>();
             builder.AddPipelineBehavior<ValidationMiddleware>();
@@ -342,6 +344,7 @@ public class PipelineWiringTests
         services.AddNimBus(builder =>
         {
             builder.AddInMemoryMessageStore();
+            builder.WithoutTransport();
             builder.AddPipelineBehavior<ValidationMiddleware>();
         });
 

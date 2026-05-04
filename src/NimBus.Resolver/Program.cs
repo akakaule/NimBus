@@ -56,6 +56,10 @@ builder.Services.AddNimBus(nimbus =>
     {
         nimbus.AddCosmosDbMessageStore();
     }
+
+    // Phase 6 transition: AddServiceBusTransport() ships in a follow-up task. Until then,
+    // hosts that wire Service Bus the legacy way must opt out of transport validation.
+    nimbus.WithoutTransport();
 });
 
 builder.Services.AddResolver();

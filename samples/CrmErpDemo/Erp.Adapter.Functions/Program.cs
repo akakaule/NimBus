@@ -51,6 +51,8 @@ builder.Services.AddNimBus(n =>
 {
     // Pure subscriber/dispatcher Functions worker — no NimBus message store needed.
     n.WithoutStorageProvider();
+    // Phase 6 transition: AddServiceBusTransport() ships in a follow-up task.
+    n.WithoutTransport();
     n.AddPipelineBehavior<LoggingMiddleware>();
     n.AddPipelineBehavior<MetricsMiddleware>();
     n.AddPipelineBehavior<ValidationMiddleware>();

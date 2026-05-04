@@ -28,6 +28,7 @@ public class MessagePipelineTests
         services.AddNimBus(builder =>
         {
             builder.AddInMemoryMessageStore();
+            builder.WithoutTransport();
             builder.AddPipelineBehavior<FirstBehavior>();
             builder.AddPipelineBehavior<SecondBehavior>();
         });
@@ -51,7 +52,11 @@ public class MessagePipelineTests
     public async Task Pipeline_WithNoBehaviors_CallsTerminalHandlerDirectly()
     {
         var services = new ServiceCollection();
-        services.AddNimBus(b => b.AddInMemoryMessageStore());
+        services.AddNimBus(b =>
+        {
+            b.AddInMemoryMessageStore();
+            b.WithoutTransport();
+        });
 
         var sp = services.BuildServiceProvider();
         var pipeline = sp.GetRequiredService<MessagePipeline>();
@@ -75,6 +80,7 @@ public class MessagePipelineTests
         services.AddNimBus(builder =>
         {
             builder.AddInMemoryMessageStore();
+            builder.WithoutTransport();
             builder.AddPipelineBehavior<ShortCircuitBehavior>();
         });
 
@@ -285,7 +291,11 @@ public class NimBusBuilderTests
     public void AddNimBus_RegistersCoreServices()
     {
         var services = new ServiceCollection();
-        services.AddNimBus(b => b.AddInMemoryMessageStore());
+        services.AddNimBus(b =>
+        {
+            b.AddInMemoryMessageStore();
+            b.WithoutTransport();
+        });
 
         var sp = services.BuildServiceProvider();
 
@@ -325,6 +335,7 @@ public class NimBusBuilderTests
             // If validation ran in the builder ctor, this call would never execute
             // because construction would have already thrown.
             b.AddInMemoryMessageStore();
+            b.WithoutTransport();
         });
         // Reaching this line without an exception proves the ordering is correct.
         Assert.IsNotNull(services.BuildServiceProvider().GetService<MessagePipeline>());
@@ -339,6 +350,7 @@ public class NimBusBuilderTests
         services.AddNimBus(builder =>
         {
             builder.AddInMemoryMessageStore();
+            builder.WithoutTransport();
             builder.AddExtension(extension);
         });
 
@@ -353,6 +365,7 @@ public class NimBusBuilderTests
         services.AddNimBus(builder =>
         {
             builder.AddInMemoryMessageStore();
+            builder.WithoutTransport();
             builder.AddExtension<TestExtension>();
         });
 
@@ -370,6 +383,7 @@ public class NimBusBuilderTests
         services.AddNimBus(builder =>
         {
             builder.AddInMemoryMessageStore();
+            builder.WithoutTransport();
             builder.AddExtension(ext1);
             builder.AddExtension(ext2);
         });

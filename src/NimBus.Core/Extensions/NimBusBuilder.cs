@@ -66,6 +66,22 @@ namespace NimBus.Core.Extensions
         private sealed class NoStorageProviderMarker { }
 
         /// <summary>
+        /// Explicit opt-out for hosts that wire a fake transport (unit tests) or
+        /// otherwise do not register one of the production transport providers
+        /// (<c>AddServiceBusTransport</c>, <c>AddRabbitMqTransport</c>,
+        /// <c>AddInMemoryTransport</c>). Without this, builder validation requires
+        /// <see cref="TransportProviderRegistrationTypeName"/>.
+        /// </summary>
+        public INimBusBuilder WithoutTransport()
+        {
+            Services.AddSingleton<NoTransportProviderMarker>();
+            return this;
+        }
+
+        // Internal marker used by Build() to recognise the explicit transport opt-out.
+        private sealed class NoTransportProviderMarker { }
+
+        /// <summary>
         /// Builds the pipeline and registers remaining infrastructure services.
         /// Called internally by <see cref="NimBusServiceCollectionExtensions.AddNimBus"/>.
         /// </summary>
@@ -81,12 +97,18 @@ namespace NimBus.Core.Extensions
             Services.AddSingleton<MessagePipeline>();
 
             ValidateStorageProvider();
+            ValidateTransportProvider();
         }
 
         // Looked up by string to avoid a project reference from NimBus.Core to
         // NimBus.MessageStore.Abstractions (which already references Core).
         private const string StorageProviderRegistrationTypeName =
             "NimBus.MessageStore.Abstractions.IStorageProviderRegistration";
+
+        // Looked up by string to keep validation symmetric with the storage pattern,
+        // even though NimBus.Core does carry a project reference to NimBus.Transport.Abstractions.
+        private const string TransportProviderRegistrationTypeName =
+            "NimBus.Transport.Abstractions.ITransportProviderRegistration";
 
         private void ValidateStorageProvider()
         {
@@ -123,6 +145,44 @@ namespace NimBus.Core.Extensions
                     $"More than one NimBus storage provider was registered ({providerDescriptors.Count}). " +
                     "Exactly one provider must be active per running application instance. Remove all but one of " +
                     "the AddXxxMessageStore() calls in your AddNimBus(builder => ...) configuration.");
+            }
+        }
+
+        private void ValidateTransportProvider()
+        {
+            var hasOptOut = Services.Any(sd => sd.ServiceType == typeof(NoTransportProviderMarker));
+
+            var providerDescriptors = Services
+                .Where(sd => string.Equals(sd.ServiceType.FullName, TransportProviderRegistrationTypeName, StringComparison.Ordinal))
+                .ToList();
+
+            if (hasOptOut && providerDescriptors.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "WithoutTransport() was called alongside an AddXxxTransport() registration. " +
+                    "Pick one: either explicitly opt out of a transport, or register exactly one provider.");
+            }
+
+            if (hasOptOut)
+            {
+                return;
+            }
+
+            if (providerDescriptors.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "No NimBus transport provider has been registered. Call AddServiceBusTransport() or " +
+                    "AddRabbitMqTransport() (or another provider's registration extension) inside your " +
+                    "AddNimBus(builder => ...) configuration. Hosts that wire a fake transport for unit tests " +
+                    "can call WithoutTransport() instead.");
+            }
+
+            if (providerDescriptors.Count > 1)
+            {
+                throw new InvalidOperationException(
+                    $"More than one NimBus transport provider was registered ({providerDescriptors.Count}). " +
+                    "Exactly one provider must be active per running application instance. Remove all but one of " +
+                    "the AddXxxTransport() calls in your AddNimBus(builder => ...) configuration.");
             }
         }
     }

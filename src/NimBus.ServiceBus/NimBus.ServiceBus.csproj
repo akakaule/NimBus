@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NimBus.Core\NimBus.Core.csproj" />
+    <ProjectReference Include="..\NimBus.MessageStore.Abstractions\NimBus.MessageStore.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

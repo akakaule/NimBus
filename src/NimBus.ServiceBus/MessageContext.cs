@@ -1,6 +1,7 @@
 ﻿using Azure.Messaging.ServiceBus;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
+using NimBus.MessageStore.Abstractions;
 using Newtonsoft.Json;
 using System;
 using System.Linq;
@@ -14,6 +15,7 @@ namespace NimBus.ServiceBus
     {
         private readonly IServiceBusMessage _sbMessage;
         private readonly IServiceBusSession _sbSession;
+        private readonly ISessionStateStore _sessionStateStore;
         private readonly bool _isDeferred;
 
         private const int MaxDeadLetterErrorDescriptionLength = 4096;
@@ -21,9 +23,19 @@ namespace NimBus.ServiceBus
         private const string ThrottleRetryCountProperty = "ThrottleRetryCount";
 
         public MessageContext(IServiceBusMessage sbMessage, IServiceBusSession sbSession, bool isDeferred = false)
+            : this(sbMessage, sbSession, sessionStateStore: null, isDeferred)
+        {
+        }
+
+        public MessageContext(
+            IServiceBusMessage sbMessage,
+            IServiceBusSession sbSession,
+            ISessionStateStore sessionStateStore,
+            bool isDeferred = false)
         {
             _sbMessage = sbMessage ?? throw new ArgumentNullException(nameof(sbMessage));
             _sbSession = sbSession ?? throw new ArgumentNullException(nameof(sbSession));
+            _sessionStateStore = sessionStateStore;
 
             _isDeferred = isDeferred;
         }
@@ -152,6 +164,11 @@ namespace NimBus.ServiceBus
         [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task BlockSession(CancellationToken cancellationToken = default)
         {
+            if (_sessionStateStore != null)
+            {
+                await _sessionStateStore.BlockSession(To, SessionId, EventId, cancellationToken);
+                return;
+            }
             SessionState state = await GetSessionState(cancellationToken);
             state.BlockedByEventId = EventId;
             await UpdateSessionState(state, cancellationToken);
@@ -160,6 +177,11 @@ namespace NimBus.ServiceBus
         [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task UnblockSession(CancellationToken cancellationToken = default)
         {
+            if (_sessionStateStore != null)
+            {
+                await _sessionStateStore.UnblockSession(To, SessionId, cancellationToken);
+                return;
+            }
             SessionState state = await GetSessionState(cancellationToken);
             state.BlockedByEventId = null;
             await UpdateSessionState(state, cancellationToken);
@@ -268,6 +290,10 @@ namespace NimBus.ServiceBus
         [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default)
         {
+            if (_sessionStateStore != null)
+            {
+                return await _sessionStateStore.IsSessionBlocked(To, SessionId, cancellationToken);
+            }
             SessionState state = await GetSessionState(cancellationToken);
             return !string.IsNullOrEmpty(state.BlockedByEventId)
                 || state.DeferredSequenceNumbers.Any();
@@ -276,6 +302,10 @@ namespace NimBus.ServiceBus
         [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task<bool> IsSessionBlockedByEventId(CancellationToken cancellationToken = default)
         {
+            if (_sessionStateStore != null)
+            {
+                return await _sessionStateStore.IsSessionBlockedByEventId(To, SessionId, cancellationToken);
+            }
             SessionState state = await GetSessionState(cancellationToken);
             return !string.IsNullOrEmpty(state.BlockedByEventId);
         }
@@ -283,6 +313,10 @@ namespace NimBus.ServiceBus
         [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task<bool> IsSessionBlockedByThis(CancellationToken cancellationToken = default)
         {
+            if (_sessionStateStore != null)
+            {
+                return await _sessionStateStore.IsSessionBlockedByThis(To, SessionId, EventId, cancellationToken);
+            }
             SessionState state = await GetSessionState(cancellationToken);
             return !string.IsNullOrEmpty(state.BlockedByEventId) && state.BlockedByEventId.Equals(EventId, StringComparison.OrdinalIgnoreCase);
         }
@@ -290,6 +324,12 @@ namespace NimBus.ServiceBus
         [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default)
         {
+            if (_sessionStateStore != null)
+            {
+                var blockedBy = await _sessionStateStore.GetBlockedByEventId(To, SessionId, cancellationToken);
+                // Store returns string.Empty for "not blocked"; bridge contract is null.
+                return string.IsNullOrEmpty(blockedBy) ? null : blockedBy;
+            }
             SessionState state = await GetSessionState(cancellationToken);
             return state.BlockedByEventId;
         }
@@ -313,7 +353,7 @@ namespace NimBus.ServiceBus
 
                         continue;
                     }
-                    return new MessageContext(deferred, _sbSession, isDeferred: true);
+                    return new MessageContext(deferred, _sbSession, _sessionStateStore, isDeferred: true);
                 }
                 catch (ServiceBusException e) when (e.Reason == ServiceBusFailureReason.SessionLockLost)
                 {
@@ -354,7 +394,7 @@ namespace NimBus.ServiceBus
                         await UpdateSessionState(state, cancellationToken);
                     }
 
-                    return new MessageContext(deferred, _sbSession, isDeferred: true);
+                    return new MessageContext(deferred, _sbSession, _sessionStateStore, isDeferred: true);
                 }
                 catch (ServiceBusException e) when (e.Reason == ServiceBusFailureReason.SessionLockLost)
                 {
@@ -424,6 +464,10 @@ namespace NimBus.ServiceBus
         [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken cancellationToken = default)
         {
+            if (_sessionStateStore != null)
+            {
+                return await _sessionStateStore.GetNextDeferralSequenceAndIncrement(To, SessionId, cancellationToken);
+            }
             SessionState state = await GetSessionState(cancellationToken);
             int sequence = state.NextDeferralSequence;
             state.NextDeferralSequence++;
@@ -434,6 +478,11 @@ namespace NimBus.ServiceBus
         [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task IncrementDeferredCount(CancellationToken cancellationToken = default)
         {
+            if (_sessionStateStore != null)
+            {
+                await _sessionStateStore.IncrementDeferredCount(To, SessionId, cancellationToken);
+                return;
+            }
             SessionState state = await GetSessionState(cancellationToken);
             state.DeferredCount++;
             await UpdateSessionState(state, cancellationToken);
@@ -442,6 +491,11 @@ namespace NimBus.ServiceBus
         [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task DecrementDeferredCount(CancellationToken cancellationToken = default)
         {
+            if (_sessionStateStore != null)
+            {
+                await _sessionStateStore.DecrementDeferredCount(To, SessionId, cancellationToken);
+                return;
+            }
             SessionState state = await GetSessionState(cancellationToken);
             if (state.DeferredCount > 0)
             {
@@ -453,6 +507,10 @@ namespace NimBus.ServiceBus
         [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task<int> GetDeferredCount(CancellationToken cancellationToken = default)
         {
+            if (_sessionStateStore != null)
+            {
+                return await _sessionStateStore.GetDeferredCount(To, SessionId, cancellationToken);
+            }
             SessionState state = await GetSessionState(cancellationToken);
             return state.DeferredCount;
         }
@@ -460,6 +518,10 @@ namespace NimBus.ServiceBus
         [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task<bool> HasDeferredMessages(CancellationToken cancellationToken = default)
         {
+            if (_sessionStateStore != null)
+            {
+                return await _sessionStateStore.HasDeferredMessages(To, SessionId, cancellationToken);
+            }
             SessionState state = await GetSessionState(cancellationToken);
             return state.HasDeferredMessages();
         }
@@ -467,6 +529,11 @@ namespace NimBus.ServiceBus
         [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
         public async Task ResetDeferredCount(CancellationToken cancellationToken = default)
         {
+            if (_sessionStateStore != null)
+            {
+                await _sessionStateStore.ResetDeferredCount(To, SessionId, cancellationToken);
+                return;
+            }
             SessionState state = await GetSessionState(cancellationToken);
             state.DeferredCount = 0;
             await UpdateSessionState(state, cancellationToken);

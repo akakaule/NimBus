@@ -49,7 +49,8 @@ namespace NimBus.Resolver
                 var messageHandler = sp.GetRequiredService<IMessageHandler>();
                 var serviceBusClient = sp.GetRequiredService<ServiceBusClient>();
                 var entityPath = $"{resolverId}/{resolverId}";
-                return new ServiceBusAdapter(messageHandler, serviceBusClient, entityPath);
+                var sessionStateStore = sp.GetService<NimBus.MessageStore.Abstractions.ISessionStateStore>();
+                return new ServiceBusAdapter(messageHandler, serviceBusClient, entityPath, sessionStateStore);
             });
 
             return builder;

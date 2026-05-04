@@ -3,6 +3,7 @@ using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
+using NimBus.MessageStore.CosmosDb.Throttling;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -14,6 +15,7 @@ namespace NimBus.Broker.Services
     {
         private readonly IMessageTrackingStore _store;
         private readonly IMessageStateChangeNotifier _notifier;
+        private readonly ThrottledRedeliveryHostedService _throttledRedelivery;
         private readonly ILogger _logger;
 
         private const int MaxThrottleRetries = 10;
@@ -34,10 +36,15 @@ namespace NimBus.Broker.Services
             [MessageType.UnsupportedResponse] = ResolutionStatus.Unsupported,
         };
 
-        public ResolverService(IMessageTrackingStore store, IMessageStateChangeNotifier notifier = null, ILogger logger = null)
+        public ResolverService(
+            IMessageTrackingStore store,
+            IMessageStateChangeNotifier notifier = null,
+            ThrottledRedeliveryHostedService throttledRedelivery = null,
+            ILogger logger = null)
         {
             _store = store;
             _notifier = notifier ?? new NoopMessageStateChangeNotifier();
+            _throttledRedelivery = throttledRedelivery;
             _logger = logger;
         }
 
@@ -83,6 +90,9 @@ namespace NimBus.Broker.Services
 
         private async Task HandleThrottling(IMessageContext messageContext, TimeSpan? retryAfter, CancellationToken cancellationToken)
         {
+            // Throttle counter is carried on IMessage (set by the throttling service
+            // on the previously-scheduled copy). Hosts that don't register the
+            // throttled-redelivery service have it default to zero on every receive.
             var retryCount = messageContext.ThrottleRetryCount;
 
             if (retryCount >= MaxThrottleRetries)
@@ -90,6 +100,17 @@ namespace NimBus.Broker.Services
                 _logger?.Error("Resolver: Max throttle retries ({MaxRetries}) exceeded. DeadLettering. EventId:{EventId}, SessionId:{SessionId}",
                     MaxThrottleRetries, messageContext.EventId, messageContext.SessionId);
                 await messageContext.DeadLetter("Max throttle retries exceeded", null, cancellationToken);
+                return;
+            }
+
+            if (_throttledRedelivery is null)
+            {
+                // No Cosmos-throttling service registered (e.g. SQL-Server-only host
+                // where storage doesn't surface RetryAfter). Abandon so the transport
+                // redelivers via its native retry path; the message is never lost.
+                _logger?.Warning("Resolver: ThrottledRedeliveryHostedService not registered; abandoning to let transport retry. EventId:{EventId}, SessionId:{SessionId}",
+                    messageContext.EventId, messageContext.SessionId);
+                await messageContext.Abandon(new TransientException("Storage throttled but no throttled-redelivery service is registered."));
                 return;
             }
 
@@ -114,7 +135,7 @@ namespace NimBus.Broker.Services
 
             try
             {
-                await messageContext.ScheduleRedelivery(delay, retryCount + 1, cancellationToken);
+                await _throttledRedelivery.ScheduleRedelivery(messageContext, delay, retryCount + 1, cancellationToken);
             }
             catch (TransientException ex)
             {

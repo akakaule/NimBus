@@ -4,6 +4,7 @@ using NimBus.Broker.Services;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using NimBus.MessageStore;
+using NimBus.MessageStore.CosmosDb.Throttling;
 using NimBus.MessageStore.States;
 
 namespace NimBus.Resolver.Tests;
@@ -52,7 +53,6 @@ public class ResolverServiceTests
         Assert.AreEqual(ResolutionStatus.Pending, cosmos.PendingUploads[0].Content.ResolutionStatus);
         Assert.AreEqual(1, message.CompletedCalls);
         Assert.AreEqual(0, message.DeadLetterCalls);
-        Assert.AreEqual(0, message.ScheduleRedeliveryCalls);
     }
 
     [TestMethod]
@@ -79,15 +79,21 @@ public class ResolverServiceTests
         {
             StoreMessageException = new RequestLimitException(retryAfter),
         };
+        var sender = new FakeSender();
+        var redelivery = new ThrottledRedeliveryHostedService(sender);
         var message = CreateMessageContext(messageType: MessageType.EventRequest, throttleRetryCount: 2);
-        var service = CreateService(cosmos);
+        var service = CreateService(cosmos, redelivery);
 
         await service.Handle(message);
 
-        Assert.AreEqual(1, message.ScheduleRedeliveryCalls);
-        Assert.AreEqual(TimeSpan.FromSeconds(20), message.LastScheduledDelay);
-        Assert.AreEqual(3, message.LastScheduledRetryCount);
-        Assert.AreEqual(0, message.CompletedCalls);
+        Assert.AreEqual(1, sender.ScheduleMessageCalls.Count);
+        var scheduled = sender.ScheduleMessageCalls[0];
+        Assert.AreEqual(3, scheduled.Message.ThrottleRetryCount);
+        // Calculated backoff for retryCount=2 is 5s * 2^2 = 20s; cosmos retry-after
+        // (17s) is shorter so the calculated value wins.
+        var expectedScheduledTime = scheduled.IssuedAtUtc + TimeSpan.FromSeconds(20);
+        Assert.IsTrue(Math.Abs((scheduled.ScheduledTime - expectedScheduledTime).TotalSeconds) < 1.0);
+        Assert.AreEqual(1, message.CompletedCalls); // ScheduleRedelivery completes the original on success
         Assert.AreEqual(0, message.DeadLetterCalls);
     }
 
@@ -98,12 +104,14 @@ public class ResolverServiceTests
         {
             StoreMessageException = new RequestLimitException(TimeSpan.FromSeconds(1)),
         };
+        var sender = new FakeSender();
+        var redelivery = new ThrottledRedeliveryHostedService(sender);
         var message = CreateMessageContext(messageType: MessageType.EventRequest, throttleRetryCount: 10);
-        var service = CreateService(cosmos);
+        var service = CreateService(cosmos, redelivery);
 
         await service.Handle(message);
 
-        Assert.AreEqual(0, message.ScheduleRedeliveryCalls);
+        Assert.AreEqual(0, sender.ScheduleMessageCalls.Count);
         Assert.AreEqual(1, message.DeadLetterCalls);
         Assert.AreEqual("Max throttle retries exceeded", message.LastDeadLetterReason);
     }
@@ -125,10 +133,12 @@ public class ResolverServiceTests
         Assert.AreEqual(0, message.CompletedCalls);
     }
 
-    private static ResolverService CreateService(FakeCosmosDbClient? cosmos = null)
+    private static ResolverService CreateService(
+        FakeCosmosDbClient? cosmos = null,
+        ThrottledRedeliveryHostedService? throttledRedelivery = null)
     {
         cosmos ??= new FakeCosmosDbClient();
-        return new ResolverService(cosmos);
+        return new ResolverService(cosmos, notifier: null, throttledRedelivery: throttledRedelivery);
     }
 
     private static FakeMessageContext CreateMessageContext(
@@ -191,9 +201,6 @@ public class ResolverServiceTests
 
         public int CompletedCalls { get; private set; }
         public int DeadLetterCalls { get; private set; }
-        public int ScheduleRedeliveryCalls { get; private set; }
-        public TimeSpan? LastScheduledDelay { get; private set; }
-        public int? LastScheduledRetryCount { get; private set; }
         public string? LastDeadLetterReason { get; private set; }
 
         public Task Complete(CancellationToken cancellationToken = default)
@@ -228,14 +235,30 @@ public class ResolverServiceTests
         public Task<bool> HasDeferredMessages(CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task ResetDeferredCount(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-        public Task ScheduleRedelivery(TimeSpan delay, int throttleRetryCount, CancellationToken cancellationToken = default)
-        {
-            ScheduleRedeliveryCalls++;
-            LastScheduledDelay = delay;
-            LastScheduledRetryCount = throttleRetryCount;
-            return Task.CompletedTask;
-        }
+        // Bridge: still on IMessageContext but no longer exercised — Resolver
+        // now invokes ThrottledRedeliveryHostedService instead. The next commit
+        // drops this from the interface and from the fake.
+        public Task ScheduleRedelivery(TimeSpan delay, int throttleRetryCount, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
+
+    private sealed class FakeSender : ISender
+    {
+        public List<ScheduledSend> ScheduleMessageCalls { get; } = new();
+
+        public Task Send(IMessage message, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task Send(IEnumerable<IMessage> messages, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
+        {
+            ScheduleMessageCalls.Add(new ScheduledSend(message, scheduledEnqueueTime, DateTimeOffset.UtcNow));
+            return Task.FromResult((long)ScheduleMessageCalls.Count);
+        }
+
+        public Task CancelScheduledMessage(long sequenceNumber, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed record ScheduledSend(IMessage Message, DateTimeOffset ScheduledTime, DateTimeOffset IssuedAtUtc);
 
     private sealed class FakeCosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.INimBusMessageStore
     {

@@ -40,11 +40,12 @@ public static class ServiceBusTransportBuilderExtensions
 
         services.AddSingleton<ITransportProviderRegistration>(_ => new ServiceBusTransportProviderRegistration());
         services.AddSingleton<ITransportCapabilities>(_ => new ServiceBusTransportCapabilities());
+        services.AddSingleton<ITransportManagement, ServiceBusTransportManagement>();
 
         // TODO(#3 / #14): wire ServiceBusClient + ServiceBusAdapter here once the
         // constructor cascade settles. This scaffold only registers the provider
-        // marker, capabilities, and options so existing hosts can drop their
-        // WithoutTransport() opt-outs.
+        // marker, capabilities, options, and the management adapter so existing
+        // hosts can drop their WithoutTransport() opt-outs.
 
         return builder;
     }

@@ -1,5 +1,6 @@
 import * as React from "react";
 import * as api from "api-client";
+import { Badge } from "components/ui/badge";
 import { Button } from "components/ui/button";
 import {
   Modal,
@@ -108,6 +109,26 @@ export default function MessageListing(props: IMessageListingProps) {
     return status.toLowerCase() === "deferred";
   };
 
+  // PendingHandoff entries are healthy in-flight messages. Resubmit/Skip stay
+  // available so operators can override a stuck or wrong external job.
+  const isPendingHandoff = (
+    status: string | undefined,
+    pendingSubStatus: string | null | undefined,
+  ): boolean => {
+    if (!status || !pendingSubStatus) return false;
+    return (
+      status.toLowerCase() === "pending" &&
+      pendingSubStatus.toLowerCase() === "handoff"
+    );
+  };
+
+  const showOperatorActions =
+    isFailedMessage(props.eventDetails?.resolutionStatus) ||
+    isPendingHandoff(
+      props.eventDetails?.resolutionStatus,
+      props.eventDetails?.pendingSubStatus,
+    );
+
   const reprocessBtn: IButtonState = { isDisabled: false, text: "Reprocess" };
   const [reprocessButton, setReprocessButton] = useState(reprocessBtn);
 
@@ -184,7 +205,7 @@ export default function MessageListing(props: IMessageListingProps) {
     <div className="w-full">
       <h4 className="text-lg font-semibold flex items-center gap-4">
         Details
-        {isFailedMessage(props.eventDetails?.resolutionStatus) && (
+        {showOperatorActions && (
           <div className="flex gap-2">
             <Button
               size="xs"
@@ -211,7 +232,7 @@ export default function MessageListing(props: IMessageListingProps) {
             >
               {skipButton.text}
             </Button>
-            {props.deleteEvent && (
+            {props.deleteEvent && isFailedMessage(props.eventDetails?.resolutionStatus) && (
               <Button
                 size="xs"
                 colorScheme="red"
@@ -299,7 +320,19 @@ export default function MessageListing(props: IMessageListingProps) {
               <td className="py-2 pr-4">
                 <b>Status</b>
               </td>
-              <td className="py-2">{props.eventDetails?.resolutionStatus}</td>
+              <td className="py-2">
+                <span className="inline-flex items-center gap-2">
+                  {props.eventDetails?.resolutionStatus}
+                  {isPendingHandoff(
+                    props.eventDetails?.resolutionStatus,
+                    props.eventDetails?.pendingSubStatus,
+                  ) && (
+                    <Badge variant="info" size="sm">
+                      Awaiting external
+                    </Badge>
+                  )}
+                </span>
+              </td>
             </tr>
             <tr className="hover:bg-accent">
               <td className="py-2 pr-4">
@@ -328,6 +361,47 @@ export default function MessageListing(props: IMessageListingProps) {
           </tbody>
         </table>
         </div>
+        {(props.eventDetails?.handoffReason ||
+          props.eventDetails?.externalJobId ||
+          props.eventDetails?.expectedBy) && (
+          <div>
+            <h5 className="text-base font-semibold mb-3">Handoff details</h5>
+            <table className="w-full flex-1 text-sm mr-4">
+              <tbody>
+                {props.eventDetails?.handoffReason && (
+                  <tr className="hover:bg-accent">
+                    <td className="py-2 pr-4">
+                      <b>Reason</b>
+                    </td>
+                    <td className="py-2">
+                      {props.eventDetails?.handoffReason}
+                    </td>
+                  </tr>
+                )}
+                {props.eventDetails?.externalJobId && (
+                  <tr className="hover:bg-accent">
+                    <td className="py-2 pr-4">
+                      <b>External Job Id</b>
+                    </td>
+                    <td className="py-2">
+                      {props.eventDetails?.externalJobId}
+                    </td>
+                  </tr>
+                )}
+                {props.eventDetails?.expectedBy && (
+                  <tr className="hover:bg-accent">
+                    <td className="py-2 pr-4">
+                      <b>Expected By</b>
+                    </td>
+                    <td className="py-2">
+                      {formatMoment(props.eventDetails?.expectedBy)}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
       <br />
       {isFailedMessage(props.eventDetails?.resolutionStatus) && (

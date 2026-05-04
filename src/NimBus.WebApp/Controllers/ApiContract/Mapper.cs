@@ -64,7 +64,11 @@ public static class Mapper
                     EventJson = @event.MessageContent?.EventContent?.EventJson,
                     EventTypeId = @event.MessageContent?.EventContent?.EventTypeId,
                 }
-            }
+            },
+            PendingSubStatus = @event.PendingSubStatus,
+            HandoffReason = @event.HandoffReason,
+            ExternalJobId = @event.ExternalJobId,
+            ExpectedBy = @event.ExpectedBy,
         };
     }
 
@@ -105,6 +109,11 @@ public static class Mapper
 
         if (messageEntity.MessageContent?.ErrorContent != null)
             message.ErrorContent = MessageErrorContentFromErroryContent(messageEntity.MessageContent?.ErrorContent);
+
+        message.PendingSubStatus = messageEntity.PendingSubStatus;
+        message.HandoffReason = messageEntity.HandoffReason;
+        message.ExternalJobId = messageEntity.ExternalJobId;
+        message.ExpectedBy = messageEntity.ExpectedBy;
 
         return message;
     }
@@ -214,6 +223,9 @@ public static class Mapper
         };
     }
 
+    // Pending+Handoff entries (PendingSubStatus = "Handoff") roll into PendingCount
+    // automatically because their ResolutionStatus is Pending — no change needed
+    // here for the FR-040 dashboard-count requirement.
     internal static EndpointStatusCount EndpointStatusCountFromEndpointStateCount(EndpointStateCount state)
     {
         return new EndpointStatusCount

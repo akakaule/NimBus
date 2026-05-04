@@ -88,60 +88,43 @@ test.describe("Blocked/deferred messages drain after head resubmit", () => {
     await expect(failedRow).toBeVisible();
     await failedRow.locator("button", { hasText: "Resubmit" }).click();
 
-    // ── 5. Wait for the head failure to clear, then nudge the deferred backlog
-    //       on this session. Don't assert on global endpoint counts (the same
-    //       broker may have leftover state from prior runs); only check OUR
-    //       session.
-    await waitFor(
-      async () => {
-        const stillFailed = (await nimbus.searchEvents("ErpEndpoint", { resolutionStatus: ["Failed"] }))
-          .filter((e) => e.sessionId === account.id);
-        return stillFailed.length === 0 ? true : null;
-      },
-      { timeoutMs: Timeouts.failedMessageMs, description: `Head failure cleared for session ${account.id}` },
-    );
-
-    // Drain the deferred backlog. Two-phase: nudge the deferred-processor for
-    // the standard flow, then explicitly resubmit stragglers — that's the
-    // operator's fallback when auto-drain stalls. Each loop releases at most
-    // one deferred sibling, so iterate a few times.
-    const updateNames = new Set(updates.map((u) => u.legalName));
-    for (let attempt = 0; attempt < 6; attempt++) {
-      const customer = await erp.findCustomerByCrmAccountId(account.id);
-      if (customer && updateNames.has(customer.legalName)) {
-        // ERP saw at least one update — the operator's drain workflow worked.
-        // Keep going for the rest of the loop budget to push toward rev3.
-      }
-      await nimbus.reprocessDeferred("ErpEndpoint", account.id);
-      const deferred = (await nimbus.searchEvents("ErpEndpoint", { resolutionStatus: ["Deferred"] }))
-        .filter((e) => e.sessionId === account.id);
-      for (const e of deferred) {
-        try { await nimbus.resubmit(e.eventId, e.lastMessageId); } catch { /* tolerate */ }
-      }
-      await new Promise((r) => setTimeout(r, 8_000));
-    }
-
-    // ── 6. The ERP customer should have advanced past the initial create —
-    //       at minimum the operator's resubmit flow released at least one
-    //       deferred update. Reaching the LAST update (rev3) confirms FIFO
-    //       ordering held; we accept any update that matches one of our
-    //       revisions if rev3 hasn't propagated within budget (deferred drain
-    //       is best-effort under the demo's current configuration).
+    // ── 5. Strict design contract: resubmitting the head must auto-drain
+    //       the deferred backlog. NimBus's StrictMessageHandler sends a
+    //       ProcessDeferredRequest after a successful resubmit, which wakes
+    //       the DeferredProcessor function and republishes parked siblings
+    //       to the main subscription in DeferralSequence (FIFO) order.
+    //       No manual `reprocessDeferred` / per-event `resubmit` is required.
+    const lastRevName = updates[updates.length - 1].legalName;
     const finalCustomer = await waitFor(
       async () => {
         const c = await erp.findCustomerByCrmAccountId(account.id);
-        return c && updateNames.has(c.legalName) ? c : null;
+        return c && c.legalName === lastRevName ? c : null;
       },
-      { timeoutMs: Timeouts.propagationMs, description: `ERP customer advanced past initial create (${account.id})` },
+      {
+        timeoutMs: Timeouts.propagationMs,
+        description: `ERP customer reached final update ${lastRevName} (auto-drain of deferred backlog for session ${account.id})`,
+      },
     );
-    expect(updateNames.has(finalCustomer.legalName)).toBe(true);
-    if (finalCustomer.legalName !== updates[updates.length - 1].legalName) {
-      // eslint-disable-next-line no-console
-      console.warn(`[diag] ERP customer at ${finalCustomer.legalName}, not ${updates[updates.length - 1].legalName} (deferred backlog still draining).`);
-    }
+    expect(finalCustomer.legalName).toBe(lastRevName);
 
-    // ── 7. Capture endpoint state for diagnostics — log only, don't assert
-    //       cleanliness (other tests / prior runs may have left state behind).
+    // ── 6. The session should be fully clean — no Failed/Deferred events
+    //       remaining for OUR session on ErpEndpoint. (Don't assert on global
+    //       counts; the broker may carry leftover state from prior runs in
+    //       OTHER sessions.)
+    await waitFor(
+      async () => {
+        const stuck = (await nimbus.searchEvents("ErpEndpoint", {
+          resolutionStatus: ["Failed", "Deferred", "DeadLettered"],
+        })).filter((e) => e.sessionId === account.id);
+        return stuck.length === 0 ? true : null;
+      },
+      {
+        timeoutMs: Timeouts.failedMessageMs,
+        description: `No Failed/Deferred/DeadLettered events linger for session ${account.id} after auto-drain`,
+      },
+    );
+
+    // ── 7. Capture endpoint state for diagnostics — log only.
     const finalCounts = await nimbus.getStatusCounts(["CrmEndpoint", "ErpEndpoint"]);
     for (const c of finalCounts) {
       // eslint-disable-next-line no-console

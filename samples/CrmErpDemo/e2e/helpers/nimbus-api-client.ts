@@ -13,6 +13,17 @@ export interface EndpointStatusCount {
   deadletterCount: number;
 }
 
+export interface MessageErrorContent {
+  errorText?: string | null;
+  errorType?: string | null;
+  [key: string]: unknown;
+}
+
+export interface MessageContent {
+  errorContent?: MessageErrorContent | null;
+  [key: string]: unknown;
+}
+
 export interface NimBusEvent {
   eventId: string;
   sessionId: string;
@@ -20,6 +31,12 @@ export interface NimBusEvent {
   eventTypeId: string;
   resolutionStatus: string;
   lastMessageId: string;
+  pendingSubStatus?: string | null;
+  handoffReason?: string | null;
+  externalJobId?: string | null;
+  expectedBy?: string | null;
+  /** Search results nest the error under messageContent.errorContent. */
+  messageContent?: MessageContent | null;
   // ... many more fields, but tests only need the above
   [key: string]: unknown;
 }
@@ -94,6 +111,12 @@ export class NimBusApiClient {
   async resubmit(eventId: string, messageId: string): Promise<void> {
     const res = await this.api.post(`/api/event/resubmit/${eventId}/${messageId}`);
     if (!res.ok()) throw new Error(`NimBus resubmit → ${res.status()} ${await res.text()}`);
+  }
+
+  /** Skip a single event (terminal — flips Failed → Skipped, unblocks the session). */
+  async skipMessage(eventId: string, messageId: string): Promise<void> {
+    const res = await this.api.post(`/api/event/skip/${eventId}/${messageId}`);
+    if (!res.ok()) throw new Error(`NimBus skip → ${res.status()} ${await res.text()}`);
   }
 
   /** Trigger reprocessing of all Deferred messages on a (endpoint, session). */

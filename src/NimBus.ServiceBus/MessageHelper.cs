@@ -57,6 +57,14 @@ namespace NimBus.ServiceBus
                 result.ApplicationProperties[UserPropertyName.DeadLetterErrorDescription.ToString()] = message.DeadLetterErrorDescription;
             }
 
+            // Storage-throttling redelivery counter. Only stamp when non-zero so
+            // normal publishes don't carry the property — matches the legacy
+            // ScheduleRedelivery behaviour where zero meant "absent".
+            if (message.ThrottleRetryCount > 0)
+            {
+                result.ApplicationProperties[UserPropertyName.ThrottleRetryCount.ToString()] = message.ThrottleRetryCount;
+            }
+
             var diagnosticId = message.DiagnosticId ?? Activity.Current?.Id;
             if (!string.IsNullOrEmpty(diagnosticId))
                 result.ApplicationProperties[NimBusDiagnostics.DiagnosticIdProperty] = diagnosticId;

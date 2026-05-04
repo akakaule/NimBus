@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NimBus.Core.Extensions;
 using NimBus.MessageStore.Abstractions;
+using NimBus.MessageStore.CosmosDb.Throttling;
 
 namespace NimBus.MessageStore;
 
@@ -64,6 +65,7 @@ public static class CosmosDbMessageStoreBuilderExtensions
         services.AddSingleton<IMetricsStore>(sp => sp.GetRequiredService<INimBusMessageStore>());
         services.AddSingleton<ISessionStateStore>(sp =>
             new CosmosDbSessionStateStore(sp.GetRequiredService<CosmosClient>()));
+        services.AddSingleton<ThrottledRedeliveryHostedService>();
         services.AddSingleton<IStorageProviderRegistration>(_ => new CosmosDbStorageProviderRegistration());
         services.AddSingleton<IStorageProviderCapabilities>(_ => new CosmosDbStorageProviderCapabilities());
     }

@@ -18,5 +18,6 @@
         DeferralSequence,
         QueueTimeMs,
         ProcessingTimeMs,
+        ThrottleRetryCount,
     }
 }

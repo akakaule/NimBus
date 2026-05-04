@@ -14,21 +14,39 @@ NimBus is an Azure Service Bus based integration platform with a shared SDK, man
 
 Key projects:
 
+- `src/NimBus.Abstractions`: core interfaces (`IMessage`, `ISender`, `IEventHandler`, message context).
 - `src/NimBus.Core`: shared endpoint, event, message, and pipeline abstractions.
 - `src/NimBus`: platform configuration and built-in endpoint definitions.
 - `src/NimBus.CommandLine`: `nb` CLI for Azure infrastructure, topology provisioning, and deployment.
 - `src/NimBus.SDK`: publisher/subscriber SDK surface.
 - `src/NimBus.ServiceBus`: Service Bus integration layer.
-- `src/NimBus.MessageStore`: Cosmos DB backed message and state storage.
-- `src/NimBus.Manager`: management client abstractions used by the web app.
+- `src/NimBus.MessageStore.Abstractions`: provider-neutral storage contracts (`IMessageTrackingStore`, `ISubscriptionStore`, `IEndpointMetadataStore`, `IMetricsStore`).
+- `src/NimBus.MessageStore.CosmosDb`: Cosmos DB storage provider.
+- `src/NimBus.MessageStore.SqlServer`: SQL Server storage provider (DbUp-managed schema).
+- `src/NimBus.Manager` / `src/NimBus.Management.ServiceBus`: management client abstractions and Service Bus management operations used by the web app.
 - `src/NimBus.WebApp`: ASP.NET Core management UI plus the React/Vite client app.
 - `src/NimBus.Resolver`: tracks message outcomes and updates resolver state.
-- `src/NimBus.AppHost`: Aspire host for local orchestration.
-- `src/NimBus.Testing`: in-memory test transport for running the full pipeline without Azure.
+- `src/NimBus.AppHost` / `src/NimBus.ServiceDefaults`: Aspire host and shared defaults for local orchestration.
+- `src/NimBus.Testing`: in-memory transport plus the storage conformance suite that all message-store providers run against.
 - `src/NimBus.Outbox.SqlServer`: SQL Server transactional outbox implementation.
-- `samples/AspirePubSub/`: sample publisher, subscriber (with middleware + DeferredProcessor), provisioner, and resolver worker.
 
-### Extensions
+Samples live under `samples/`:
+
+- `samples/AspirePubSub/`: minimal publisher, subscriber (with middleware + DeferredProcessor), provisioner, and resolver worker.
+- `samples/CrmErpDemo/`: two-system CRM ↔ ERP integration demo — see the [CRM/ERP sample](#crmerp-integration-sample) section below.
+
+## Message Store
+
+The audit trail, resolver state, blocked sessions, and metrics live behind the contracts in `NimBus.MessageStore.Abstractions` and are pluggable across providers. Pick the one that fits your environment; both pass the same `NimBus.Testing` conformance suite.
+
+| Provider | Project | Registration | Notes |
+|----------|---------|--------------|-------|
+| SQL Server | `NimBus.MessageStore.SqlServer` | `services.AddSqlServerMessageStore(...)` | Schema is owned and migrated by DbUp on first run. Ships the `nimbus.Messages`, `UnresolvedEvents`, `MessageAudits`, `EndpointSubscriptions`, `EndpointMetadata`, `Heartbeats`, `BlockedMessages`, `InvalidMessages` tables plus metrics views. |
+| Cosmos DB | `NimBus.MessageStore.CosmosDb` | `services.AddCosmosDbMessageStore(...)` | Per-endpoint containers (see ADR-008). |
+
+The Aspire AppHost and the CRM/ERP demo both default to SQL Server and accept `--StorageProvider cosmos` to switch. The transactional outbox (`NimBus.Outbox.SqlServer`) is independent of the message-store choice.
+
+## Extensions
 
 NimBus uses an extension framework to separate core messaging from optional features. Extensions are registered through the `AddNimBus()` builder and can hook into the message pipeline and lifecycle events.
 
@@ -247,6 +265,37 @@ The Aspire dashboard opens automatically. You'll see:
 - **webapp** — starts after provisioner completes (external HTTP endpoint)
 - **publisher** — sample HTTP API (`POST /publish/order`, `POST /publish/order-failed`)
 - **subscriber** — sample event handler with middleware pipeline and separated DeferredProcessor
+
+## CRM/ERP integration sample
+
+`samples/CrmErpDemo/` is a larger, two-system reference scenario: a CRM and an ERP, each with its own SPA, REST API, SQL database, and adapter, exchanging domain events over Azure Service Bus.
+
+What it demonstrates:
+
+- **Transactional outbox** — entity insert and `nimbus.OutboxMessages` row commit on the same `SqlConnection` / `SqlTransaction` (no MSDTC), forwarded to Service Bus by an outbox dispatcher.
+- **Two hosting models, identical handlers** — CRM adapter runs as a .NET Worker (`BackgroundService`), ERP adapter runs as Azure Functions isolated worker; the same `IEventHandler<T>` works in both.
+- **Cross-topic forwarding without loops** — origin-prefixed event names (`CrmAccountCreated`, `ErpCustomerCreated`, …) plus `From IS NULL` filters on forwarding subscriptions make round-trip loops structurally impossible.
+- **Session-based ordering** — `[SessionKey(nameof(AccountId))]` keeps the `CrmAccountCreated → ErpCustomerCreated → link-erp` round-trip ordered per account.
+- **Operator surface** — reuses `nimbus-ops` (the `NimBus.WebApp` + Resolver) for full audit trail and resubmit/skip on dead-lettered sessions.
+- **Pluggable message store** — runs against SQL Server by default (in a `nimbus` database on the same Aspire-managed SQL container as the CRM and ERP DBs); pass `--StorageProvider cosmos` to switch the audit/resolver/metrics store to Cosmos DB.
+
+### Run it
+
+```powershell
+# 1. One-time secret (real Azure Service Bus namespace; no local emulator path)
+dotnet user-secrets --project samples/CrmErpDemo/CrmErpDemo.AppHost set ConnectionStrings:servicebus "Endpoint=sb://..."
+
+# 2. SPA dependencies (first run only)
+cd samples/CrmErpDemo/Crm.Web; npm install; cd ../../..
+cd samples/CrmErpDemo/Erp.Web; npm install; cd ../../..
+
+# 3. Launch the demo (SQL Server storage by default)
+dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost
+```
+
+Wait for `provisioner` to complete in the Aspire dashboard, then create an account in **crm-web** and watch it round-trip through `crm-adapter` → Service Bus → `erp-adapter` Function → `erp-api` → back to `crm-api` to populate the ERP customer id. Stop `erp-api` mid-flow to see the failure / blocked-session / resubmit path in **nimbus-ops**.
+
+Full architecture diagrams, message flows, topology details, and a v2 domains backlog are in [`samples/CrmErpDemo/README.md`](samples/CrmErpDemo/README.md).
 
 ## CI/CD
 

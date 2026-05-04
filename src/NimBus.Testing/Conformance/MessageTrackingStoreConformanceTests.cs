@@ -392,6 +392,33 @@ public abstract class MessageTrackingStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task PendingHandoff_fields_round_trip()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-handoff");
+        var eventId = Id("handoff-1");
+        var sessionId = "session-handoff";
+        var expectedBy = new DateTime(2026, 06, 01, 09, 00, 00, DateTimeKind.Utc);
+
+        var sample = SampleEvent(endpointId, eventId, sessionId);
+        sample.MessageType = MessageType.PendingHandoffResponse;
+        sample.PendingSubStatus = "Handoff";
+        sample.HandoffReason = "DMF import in progress";
+        sample.ExternalJobId = "DMF-JOB-42";
+        sample.ExpectedBy = expectedBy;
+
+        await store.UploadPendingMessage(eventId, sessionId, endpointId, sample);
+
+        var fetched = await store.GetPendingEvent(endpointId, eventId, sessionId);
+
+        Assert.AreEqual("Handoff", fetched.PendingSubStatus);
+        Assert.AreEqual("DMF import in progress", fetched.HandoffReason);
+        Assert.AreEqual("DMF-JOB-42", fetched.ExternalJobId);
+        Assert.IsNotNull(fetched.ExpectedBy);
+        Assert.AreEqual(expectedBy, fetched.ExpectedBy.Value.ToUniversalTime());
+    }
+
+    [TestMethod]
     public async Task SearchAudits_returns_matching_audits()
     {
         var store = CreateStore();

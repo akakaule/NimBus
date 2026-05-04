@@ -1,4 +1,6 @@
-﻿namespace NimBus.Core.Messages
+﻿using System;
+
+namespace NimBus.Core.Messages
 {
     public interface IMessage
     {
@@ -87,6 +89,28 @@
         /// the audit record as DeadLettered.
         /// </summary>
         string DeadLetterErrorDescription => null;
+
+        /// <summary>
+        /// Free-text reason supplied by an event handler when it signals
+        /// PendingHandoff via <c>IEventHandlerContext.MarkPendingHandoff</c>.
+        /// Carried on <see cref="MessageType.PendingHandoffResponse"/> to the
+        /// Resolver for audit-row enrichment.
+        /// </summary>
+        string HandoffReason => null;
+
+        /// <summary>
+        /// Optional external-system identifier (e.g. a D365 F&O DMF job id)
+        /// for messages awaiting completion of long-running external work.
+        /// Carried alongside <see cref="HandoffReason"/>.
+        /// </summary>
+        string ExternalJobId => null;
+
+        /// <summary>
+        /// Optional UTC deadline by which the external work is expected to
+        /// settle. Used by the optional Resolver-side timeout sweeper. Null
+        /// means no deadline (operator manages indefinitely).
+        /// </summary>
+        DateTime? ExpectedBy => null;
     }
 
     public class Message : IMessage
@@ -121,5 +145,8 @@
         public long? ProcessingTimeMs { get; set; }
         public string DeadLetterReason { get; set; }
         public string DeadLetterErrorDescription { get; set; }
+        public string HandoffReason { get; set; }
+        public string ExternalJobId { get; set; }
+        public DateTime? ExpectedBy { get; set; }
     }
 }

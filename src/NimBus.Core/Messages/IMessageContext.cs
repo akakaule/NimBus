@@ -13,6 +13,9 @@ namespace NimBus.Core.Messages
         new string EventTypeId { get; }
         new string DeadLetterReason { get; }
         new string DeadLetterErrorDescription { get; }
+        new string HandoffReason { get; }
+        new string ExternalJobId { get; }
+        new DateTime? ExpectedBy { get; }
     }
 
     public interface IMessageContext : IReceivedMessage

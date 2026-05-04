@@ -48,5 +48,14 @@ namespace NimBus.MessageStore
         // documents written before this field existed deserialize as null.
         public long? QueueTimeMs { get; set; }
         public long? ProcessingTimeMs { get; set; }
+
+        // PendingHandoff sub-status discriminator. null for ordinary Pending
+        // entries; "Handoff" when the row was projected from a
+        // PendingHandoffResponse so the WebApp can render an "Awaiting external"
+        // badge without changing the ResolutionStatus enum.
+        public string PendingSubStatus { get; set; }
+        public string HandoffReason { get; set; }
+        public string ExternalJobId { get; set; }
+        public DateTime? ExpectedBy { get; set; }
     }
 }

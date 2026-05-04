@@ -53,6 +53,33 @@ namespace NimBus.ServiceBus
             get { try { return GetUserProperty(UserPropertyName.DeadLetterErrorDescription); } catch (InvalidMessageException) { return null; } }
         }
 
+        public string HandoffReason
+        {
+            get { try { return GetUserProperty(UserPropertyName.HandoffReason); } catch (InvalidMessageException) { return null; } }
+        }
+
+        public string ExternalJobId
+        {
+            get { try { return GetUserProperty(UserPropertyName.ExternalJobId); } catch (InvalidMessageException) { return null; } }
+        }
+
+        public DateTime? ExpectedBy
+        {
+            get
+            {
+                try
+                {
+                    var value = GetUserProperty(UserPropertyName.ExpectedBy);
+                    if (string.IsNullOrEmpty(value)) return null;
+                    return DateTime.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var parsed)
+                        ? parsed
+                        : (DateTime?)null;
+                }
+                catch (InvalidMessageException) { return null; }
+                catch (FormatException) { return null; }
+            }
+        }
+
         public string OriginatingMessageId => _sbMessage.GetUserProperty(UserPropertyName.OriginatingMessageId) ?? Constants.Self;
 
         public string ParentMessageId => _sbMessage.GetUserProperty(UserPropertyName.ParentMessageId) ?? Constants.Self;

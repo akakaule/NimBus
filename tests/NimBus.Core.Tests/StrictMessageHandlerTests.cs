@@ -634,6 +634,9 @@ public class StrictMessageHandlerTests
         public string From { get; set; } = string.Empty;
         public string DeadLetterReason { get; set; }
         public string DeadLetterErrorDescription { get; set; }
+        public string HandoffReason { get; set; }
+        public string ExternalJobId { get; set; }
+        public DateTime? ExpectedBy { get; set; }
         public bool IsDeferred { get; set; }
         public int ThrottleRetryCount { get; set; }
         public long? QueueTimeMs { get; set; }

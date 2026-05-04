@@ -39,6 +39,9 @@ public class InMemoryMessageContext : IMessageContext
     public DateTime EnqueuedTimeUtc { get; }
     public string DeadLetterReason => DeadLetterReasonRecorded;
     public string DeadLetterErrorDescription => DeadLetterErrorDescriptionRecorded;
+    public string HandoffReason => _message.HandoffReason;
+    public string ExternalJobId => _message.ExternalJobId;
+    public DateTime? ExpectedBy => _message.ExpectedBy;
 
     // Observable state for test assertions
     public bool IsCompleted { get; private set; }

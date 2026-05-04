@@ -18,5 +18,8 @@
         DeferralSequence,
         QueueTimeMs,
         ProcessingTimeMs,
+        HandoffReason,
+        ExternalJobId,
+        ExpectedBy,
     }
 }

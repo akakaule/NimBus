@@ -317,6 +317,58 @@ sequenceDiagram
 
 If the notification send fails, the dead-letter still happens — the DLQ remains the source of truth and operators can recover via the Manager.
 
+### 13. PendingHandoff (Async Completion)
+
+The handler hands work off to a long-running external system (e.g. D365 F&O DMF) and signals it via `ctx.MarkPendingHandoff(reason, externalJobId, expectedBy)`. The subscriber sends a `PendingHandoffResponse` to the Resolver, blocks the session so siblings defer in FIFO order, and completes the inbound. Settlement happens later via a `HandoffCompletedRequest` (success) or `HandoffFailedRequest` (failure) issued by the Manager — neither re-invokes the user handler. See [ADR-012](adr/012-pending-handoff.md).
+
+```mermaid
+sequenceDiagram
+    participant Pub as Publisher
+    participant Ep as Endpoint Topic
+    participant Sub as SubscriberClient
+    participant Ext as External System
+    participant Mgr as ManagerClient
+    participant Res as Resolver Topic
+    participant Svc as ResolverService
+    participant DefProc as DeferredProcessor
+
+    Note over Pub,Svc: 1 — handler hands off
+    Pub->>Ep: EventRequest (event-1, session-X)
+    Ep->>Sub: main sub
+    Sub->>Sub: handler.Handle calls ctx.MarkPendingHandoff
+    Sub->>Ext: trigger external job (out of band)
+    Sub->>Ep: PendingHandoffResponse (To=Resolver, HandoffReason, ExternalJobId, ExpectedBy)
+    Sub->>Sub: BlockSession by event-1
+    Sub->>Ep: Complete inbound
+    Ep->>Res: forwarded
+    Res->>Svc: status = Pending, PendingSubStatus = "Handoff"
+
+    Note over Pub,DefProc: 2 — siblings on the same session defer (FIFO)
+    Pub->>Ep: EventRequest (event-2, session-X)
+    Ep->>Sub: main sub
+    Sub->>Sub: VerifySessionIsNotBlocked throws SessionBlockedException
+    Sub->>Ep: DeferralResponse + park on Deferred subscription
+    Ep->>Res: forwarded — status = Deferred
+
+    Note over Pub,DefProc: 3 — external system reports back, Manager settles
+    Ext-->>Mgr: status checker observes success
+    Mgr->>Ep: HandoffCompletedRequest (From=Manager, EventId=event-1)
+    Ep->>Sub: main sub (no user handler invocation)
+    Sub->>Sub: AuthorizeManagerRequest, VerifySessionIsBlockedByThis
+    Sub->>Sub: UnblockSession, ContinueWithAnyDeferredMessages
+    Sub->>Ep: ResolutionResponse (To=Resolver, EventId=event-1)
+    Sub->>Ep: ProcessDeferredRequest (To=DeferredProcessor)
+    Sub->>Ep: Complete HandoffCompletedRequest
+    Ep->>Res: forwarded — status flips Pending to Completed
+    Ep->>DefProc: DeferredProcessor sub picks up ProcessDeferredRequest
+    DefProc->>Ep: republish parked siblings as fresh EventRequests
+    Ep->>Sub: main sub — siblings handled in FIFO
+```
+
+The failure path is symmetrical: `ManagerClient.FailHandoff(entity, endpoint, errorText, errorType)` issues a `HandoffFailedRequest`, the subscriber's `HandleHandoffFailedRequest` synthesises an `EventContextHandlerException` that wraps a `HandoffFailedException(errorText, errorType)`, sends an `ErrorResponse` to the Resolver (status flips Pending to Failed with `errorText` preserved verbatim), and leaves the session blocked. The operator chooses Resubmit or Skip from the WebApp — both follow today's existing flows.
+
+`MarkPendingHandoff` is idempotent — calling it twice from the same handler invocation overwrites the metadata (last call wins). If the handler calls it AND then throws, the failure path takes precedence: an `ErrorResponse` is sent and the PendingHandoff metadata is discarded.
+
 ---
 
 ## Retry Policies

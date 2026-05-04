@@ -115,8 +115,70 @@ public interface IEventHandlerContext
     string CorrelationId { get; }
     string EventType { get; }
     string MessageId { get; }
+
+    // Read-only state set by MarkPendingHandoff (default: HandlerOutcome.Default).
+    HandlerOutcome Outcome { get; }
+    HandoffMetadata HandoffMetadata { get; }
+
+    // Signal that the handler has handed work off to a long-running external system.
+    // Idempotent — last call wins. See "Async completion via PendingHandoff" below.
+    void MarkPendingHandoff(string reason, string externalJobId = null, TimeSpan? expectedBy = null);
 }
 ```
+
+#### Async completion via PendingHandoff
+
+When a handler triggers an external long-running job (e.g. a D365 F&O DMF
+import) and the per-entity outcome only arrives later, calling
+`ctx.MarkPendingHandoff(...)` and returning normally tells NimBus to:
+
+1. Send a `PendingHandoffResponse` to the Resolver — the audit row is
+   recorded as `ResolutionStatus = Pending` with `PendingSubStatus = "Handoff"`.
+2. Block the session so sibling messages on the same session defer (FIFO)
+   until the external job settles.
+3. Complete the inbound Service Bus message — no peek-lock held for the
+   duration of the external work.
+
+The user handler is **not** re-invoked when the external system reports
+back. Settlement is driven by `IManagerClient.CompleteHandoff` (success) or
+`IManagerClient.FailHandoff` (failure). See [ADR-012](adr/012-pending-handoff.md)
+and the [PendingHandoff message flow](message-flows.md#13-pendinghandoff-async-completion).
+
+```csharp
+public class CreateOrderHandler : IEventHandler<OrderPlaced>
+{
+    private readonly IDmfClient _dmf;
+    private readonly ICorrelationStore _correlations;
+
+    public CreateOrderHandler(IDmfClient dmf, ICorrelationStore correlations)
+    {
+        _dmf = dmf;
+        _correlations = correlations;
+    }
+
+    public async Task Handle(OrderPlaced order, IEventHandlerContext ctx, CancellationToken ct)
+    {
+        // Trigger the long-running external import.
+        var jobId = await _dmf.QueueImportAsync(order, ct);
+
+        // Record (eventId, jobId) so the adapter's status checker can
+        // call ManagerClient.CompleteHandoff / FailHandoff later.
+        await _correlations.SaveAsync(ctx.EventId, jobId, ct);
+
+        // Tell NimBus this is a healthy in-flight handoff. The handler
+        // returns normally — no exception, no failure-path side effects.
+        ctx.MarkPendingHandoff(
+            reason: "DMF import in flight",
+            externalJobId: jobId,
+            expectedBy: TimeSpan.FromMinutes(15));
+    }
+}
+```
+
+`MarkPendingHandoff` is idempotent (last call wins). If the handler calls
+it AND then throws, the failure path takes precedence — an `ErrorResponse`
+is sent and the PendingHandoff metadata is discarded. PendingHandoff is NOT
+an exception path; see [`error-handling.md`](error-handling.md).
 
 ### ISubscriberClient
 

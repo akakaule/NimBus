@@ -62,6 +62,19 @@ flowchart TD
 endpoint dashboard (`Mapper.cs` aggregates `state.FailedCount + state.DeadletterCount`).
 `Pending` and `Unsupported` both fall under **Pending** in the same view.
 
+> **Note on PendingHandoff.** `IEventHandlerContext.MarkPendingHandoff(...)` is
+> **not** an exception path. The handler returns normally and
+> `StrictMessageHandler` reads `messageContext.HandlerOutcome` after the
+> handler returns to decide whether to send a `PendingHandoffResponse` and
+> block the session. The outcome maps to `ResolutionStatus = Pending` with
+> `PendingSubStatus = "Handoff"` — it shows up in the Pending column, not
+> Failed. Settlement is driven by two new control messages
+> (`HandoffCompletedRequest` / `HandoffFailedRequest`) issued by
+> `IManagerClient.CompleteHandoff` / `FailHandoff`, which DO NOT re-invoke
+> the user handler. See [ADR-012](adr/012-pending-handoff.md) and the
+> [PendingHandoff flow](message-flows.md#13-pendinghandoff-async-completion)
+> in the message-flows reference.
+
 ## Flows
 
 ### Transient failure (abandon + redeliver)

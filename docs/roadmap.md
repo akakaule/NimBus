@@ -246,6 +246,10 @@ Application-level last-chance handler before dead-lettering. After retries are e
 
 Reference: Rebus `IFailed<T>`, MassTransit `Fault<T>`.
 
+**4.4a Async Message Completion via PendingHandoff** -- Implemented (issue #15, [ADR-012](adr/012-pending-handoff.md))
+
+Handlers that hand work off to a long-running external system (e.g. D365 F&O DMF) signal it via `IEventHandlerContext.MarkPendingHandoff(reason, externalJobId, expectedBy)` and return normally. The audit row records `ResolutionStatus = Pending` with `PendingSubStatus = "Handoff"`; siblings on the same session defer in FIFO order. Settlement is driven by two new `IManagerClient` methods (`CompleteHandoff` / `FailHandoff`) without re-invoking the user handler. WebApp surfaces an "Awaiting external" badge and handoff-detail fields on Pending+Handoff entries.
+
 **4.5 SDK Developer Experience**
 
 - Source generators: replace reflection-based event type discovery with compile-time source generators

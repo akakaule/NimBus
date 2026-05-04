@@ -30,6 +30,7 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
         "Heartbeats",
         "BlockedMessages",
         "InvalidMessages",
+        "SessionStates",
     };
 
     private static readonly string[] RequiredViews =

@@ -29,6 +29,26 @@ export interface ModeState {
   changedAt: string;
 }
 
+export interface HandoffMode {
+  enabled: boolean;
+  durationSeconds: number;
+  failureRate: number;
+  changedAt: string;
+}
+
+export interface HandoffJob {
+  eventId: string;
+  sessionId: string;
+  messageId: string;
+  originatingMessageId?: string | null;
+  eventTypeId: string;
+  correlationId?: string | null;
+  externalJobId: string;
+  dueAt: string;
+  payloadJson: string;
+  registeredAt: string;
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -70,6 +90,16 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
     }).then(json<ModeState>),
+
+  getHandoffMode: () => fetch('/api/admin/handoff-mode').then(json<HandoffMode>),
+  setHandoffMode: (m: { enabled: boolean; durationSeconds: number; failureRate: number }) =>
+    fetch('/api/admin/handoff-mode', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(m),
+    }).then(json<HandoffMode>),
+
+  getHandoffJobs: () => fetch('/api/internal/handoff-jobs').then(json<HandoffJob[]>),
 
   listContacts: () => fetch('/api/contacts').then(json<Contact[]>),
   getContact: (id: string) => fetch(`/api/contacts/${id}`).then(json<Contact>),

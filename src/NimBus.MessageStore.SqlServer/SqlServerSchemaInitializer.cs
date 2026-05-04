@@ -58,30 +58,10 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
         if (_options.ProvisioningMode == SchemaProvisioningMode.VerifyOnly)
         {
             await VerifyRequiredArtifacts(cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            // DbUp's journal table lives in the configured schema, and journal setup
-            // runs before any DbUp script. Bootstrap the schema directly so journal
-            // creation has somewhere to land; 0001_Schema.sql remains idempotent.
-            await EnsureSchemaExists(cancellationToken).ConfigureAwait(false);
-        }
 
-        var assembly = typeof(SqlServerSchemaInitializer).Assembly;
-
-        var upgrader = DeployChanges.To
-            .SqlDatabase(_options.ConnectionString)
-            .WithScriptsEmbeddedInAssembly(
-                assembly,
-                name => name.Contains(".Schema.", StringComparison.OrdinalIgnoreCase) && name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
-            .WithVariable("schema", _options.Schema)
-            .JournalToSqlTable(_options.Schema, "DbUpJournal")
-            .LogToConsole()
-            .Build();
-
-        if (_options.ProvisioningMode == SchemaProvisioningMode.VerifyOnly)
-        {
-            var pending = upgrader.GetScriptsToExecute().Select(s => s.Name).ToList();
+            var verifyAssembly = typeof(SqlServerSchemaInitializer).Assembly;
+            var verifyUpgrader = BuildUpgrader(verifyAssembly);
+            var pending = verifyUpgrader.GetScriptsToExecute().Select(s => s.Name).ToList();
             if (pending.Count > 0)
             {
                 throw new InvalidOperationException(
@@ -95,14 +75,22 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
 
         // Multiple NimBus services (Resolver, WebApp, …) hosted in the same Aspire
         // AppHost all run AutoApply on startup against the same database. Serialize
-        // concurrent DbUp runs with a session-scoped sp_getapplock so they don't
-        // race on table creation between the IF-OBJECT_ID guard and CREATE TABLE.
-        // The second runner waits, finds the journal already populated, and exits
-        // without applying anything.
+        // EnsureSchemaExists + DbUp under a session-scoped sp_getapplock so they
+        // don't race on `CREATE SCHEMA` or on the IF-OBJECT_ID/CREATE TABLE pair.
+        // The second runner waits, finds the schema already created and the
+        // journal populated, and exits without applying anything.
         await using (var lockConn = new SqlConnection(_options.ConnectionString))
         {
             await lockConn.OpenAsync(cancellationToken).ConfigureAwait(false);
             await AcquireSchemaUpgradeLock(lockConn, cancellationToken).ConfigureAwait(false);
+
+            // DbUp's journal table lives in the configured schema, and journal setup
+            // runs before any DbUp script. Bootstrap the schema directly so journal
+            // creation has somewhere to land; 0001_Schema.sql remains idempotent.
+            await EnsureSchemaExists(cancellationToken).ConfigureAwait(false);
+
+            var assembly = typeof(SqlServerSchemaInitializer).Assembly;
+            var upgrader = BuildUpgrader(assembly);
 
             var result = upgrader.PerformUpgrade();
             if (!result.Successful)
@@ -115,6 +103,17 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
                 result.Scripts.Count());
         }
     }
+
+    private DbUp.Engine.UpgradeEngine BuildUpgrader(System.Reflection.Assembly assembly) =>
+        DeployChanges.To
+            .SqlDatabase(_options.ConnectionString)
+            .WithScriptsEmbeddedInAssembly(
+                assembly,
+                name => name.Contains(".Schema.", StringComparison.OrdinalIgnoreCase) && name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
+            .WithVariable("schema", _options.Schema)
+            .JournalToSqlTable(_options.Schema, "DbUpJournal")
+            .LogToConsole()
+            .Build();
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 

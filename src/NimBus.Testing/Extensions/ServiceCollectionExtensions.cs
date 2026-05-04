@@ -54,14 +54,16 @@ public static class ServiceCollectionExtensions
             var logger = sp.GetService<ILogger<StrictMessageHandler>>()
                 ?? (Microsoft.Extensions.Logging.ILogger)NullLogger.Instance;
 
+            var sessionStateStore = sp.GetService<NimBus.MessageStore.Abstractions.ISessionStateStore>();
+
             if (retryPolicyProvider != null)
             {
                 return new StrictMessageHandler(
-                    eventHandlerProvider, responseService, logger, retryPolicyProvider);
+                    eventHandlerProvider, responseService, logger, retryPolicyProvider, sessionStateStore);
             }
 
             return new StrictMessageHandler(
-                eventHandlerProvider, responseService, logger);
+                eventHandlerProvider, responseService, logger, sessionStateStore);
         });
 
         return services;

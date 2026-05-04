@@ -131,26 +131,27 @@ namespace NimBus.SDK.Extensions
                 var logger = sp.GetService<ILogger<StrictMessageHandler>>()
                     ?? (Microsoft.Extensions.Logging.ILogger)NullLogger.Instance;
 
+                var sessionStateStore = sp.GetService<NimBus.MessageStore.Abstractions.ISessionStateStore>();
+
                 // Create StrictMessageHandler with pipeline support
                 IMessageHandler strictMessageHandler;
                 if (pipeline != null || lifecycleNotifier != null)
                 {
                     strictMessageHandler = new StrictMessageHandler(
                         eventHandlerProvider, responseService, logger,
-                        retryPolicyProvider, pipeline, lifecycleNotifier, permanentFailureClassifier);
+                        retryPolicyProvider, pipeline, lifecycleNotifier, permanentFailureClassifier, sessionStateStore);
                 }
                 else if (retryPolicyProvider != null)
                 {
                     strictMessageHandler = new StrictMessageHandler(
-                        eventHandlerProvider, responseService, logger, retryPolicyProvider);
+                        eventHandlerProvider, responseService, logger, retryPolicyProvider, sessionStateStore);
                 }
                 else
                 {
                     strictMessageHandler = new StrictMessageHandler(
-                        eventHandlerProvider, responseService, logger);
+                        eventHandlerProvider, responseService, logger, sessionStateStore);
                 }
 
-                var sessionStateStore = sp.GetService<NimBus.MessageStore.Abstractions.ISessionStateStore>();
                 var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, options.EntityPath, sessionStateStore);
                 return new SubscriberClient(serviceBusAdapter, eventHandlerProvider);
             });

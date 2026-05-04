@@ -1,5 +1,6 @@
 using NimBus.Core.Extensions;
 using NimBus.Core.Messages.Exceptions;
+using NimBus.MessageStore.Abstractions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System;
@@ -14,13 +15,24 @@ namespace NimBus.Core.Messages
         private readonly IResponseService _responseService;
         private readonly IRetryPolicyProvider? _retryPolicyProvider;
         private readonly IPermanentFailureClassifier? _permanentFailureClassifier;
+        private readonly ISessionStateStore? _sessionStateStore;
         private readonly ILogger _logger;
 
         public StrictMessageHandler(IEventContextHandler eventContextHandler, IResponseService responseService, ILogger logger = null)
+            : this(eventContextHandler, responseService, logger, sessionStateStore: null)
+        {
+        }
+
+        public StrictMessageHandler(
+            IEventContextHandler eventContextHandler,
+            IResponseService responseService,
+            ILogger logger,
+            ISessionStateStore? sessionStateStore)
             : base(logger ?? NullLogger.Instance, pipeline: null, lifecycleNotifier: null, responseService: responseService)
         {
             _eventContextHandler = eventContextHandler;
             _responseService = responseService;
+            _sessionStateStore = sessionStateStore;
             _logger = logger ?? NullLogger.Instance;
         }
 
@@ -28,11 +40,23 @@ namespace NimBus.Core.Messages
             IEventContextHandler eventContextHandler,
             IResponseService responseService,
             ILogger logger,
-            IRetryPolicyProvider? retryPolicyProvider) : base(logger ?? NullLogger.Instance, pipeline: null, lifecycleNotifier: null, responseService: responseService)
+            IRetryPolicyProvider? retryPolicyProvider)
+            : this(eventContextHandler, responseService, logger, retryPolicyProvider, sessionStateStore: null)
+        {
+        }
+
+        public StrictMessageHandler(
+            IEventContextHandler eventContextHandler,
+            IResponseService responseService,
+            ILogger logger,
+            IRetryPolicyProvider? retryPolicyProvider,
+            ISessionStateStore? sessionStateStore)
+            : base(logger ?? NullLogger.Instance, pipeline: null, lifecycleNotifier: null, responseService: responseService)
         {
             _eventContextHandler = eventContextHandler;
             _responseService = responseService;
             _retryPolicyProvider = retryPolicyProvider;
+            _sessionStateStore = sessionStateStore;
             _logger = logger ?? NullLogger.Instance;
         }
 
@@ -43,12 +67,14 @@ namespace NimBus.Core.Messages
             IRetryPolicyProvider? retryPolicyProvider,
             MessagePipeline pipeline,
             MessageLifecycleNotifier lifecycleNotifier,
-            IPermanentFailureClassifier permanentFailureClassifier = null) : base(logger ?? NullLogger.Instance, pipeline, lifecycleNotifier, responseService)
+            IPermanentFailureClassifier permanentFailureClassifier = null,
+            ISessionStateStore? sessionStateStore = null) : base(logger ?? NullLogger.Instance, pipeline, lifecycleNotifier, responseService)
         {
             _eventContextHandler = eventContextHandler;
             _responseService = responseService;
             _retryPolicyProvider = retryPolicyProvider;
             _permanentFailureClassifier = permanentFailureClassifier;
+            _sessionStateStore = sessionStateStore;
             _logger = logger ?? NullLogger.Instance;
         }
 
@@ -130,7 +156,7 @@ namespace NimBus.Core.Messages
                 LogInfo(messageContext, "Handle (Resubmission)");
                 AuthorizeManagerRequest(messageContext);
                 await HandleEventContent(messageContext, cancellationToken);
-                if (await messageContext.IsSessionBlockedByThis(cancellationToken))
+                if (await IsSessionBlockedByThis(messageContext, cancellationToken))
                     await UnblockSession(messageContext, cancellationToken);
                 await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
                 await SendResolutionResponse(messageContext, cancellationToken);
@@ -208,9 +234,9 @@ namespace NimBus.Core.Messages
 
         private async Task DeferMessageToSubscription(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
-            int deferralSequence = await messageContext.GetNextDeferralSequenceAndIncrement(cancellationToken);
+            int deferralSequence = await GetNextDeferralSequenceAndIncrement(messageContext, cancellationToken);
             await _responseService.SendToDeferredSubscription(messageContext, deferralSequence, cancellationToken);
-            await messageContext.IncrementDeferredCount(cancellationToken);
+            await IncrementDeferredCount(messageContext, cancellationToken);
             await messageContext.Complete(cancellationToken);
         }
 
@@ -226,11 +252,78 @@ namespace NimBus.Core.Messages
         private Task SendDeferralResponse(IMessageContext messageContext, SessionBlockedException exception, CancellationToken cancellationToken = default) =>
             _responseService.SendDeferralResponse(messageContext, exception, cancellationToken);
 
-        private Task BlockSession(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
-            messageContext.BlockSession(cancellationToken);
+        // The session-state helpers below prefer the injected ISessionStateStore so
+        // that DI-wired hosts go straight to the store instead of routing through
+        // the [Obsolete] IMessageContext bridges. When no store is wired (legacy
+        // unit-test paths that construct StrictMessageHandler directly without DI),
+        // they fall back to the IMessageContext methods, whose bridge bodies cover
+        // the same semantics.
 
-        private Task UnblockSession(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
-            messageContext.UnblockSession(cancellationToken);
+        private Task BlockSession(IMessageContext messageContext, CancellationToken cancellationToken = default)
+        {
+            if (_sessionStateStore != null)
+                return _sessionStateStore.BlockSession(messageContext.To, messageContext.SessionId, messageContext.EventId, cancellationToken);
+#pragma warning disable CS0618 // Bridge fallback for hosts without DI-registered ISessionStateStore.
+            return messageContext.BlockSession(cancellationToken);
+#pragma warning restore CS0618
+        }
+
+        private Task UnblockSession(IMessageContext messageContext, CancellationToken cancellationToken = default)
+        {
+            if (_sessionStateStore != null)
+                return _sessionStateStore.UnblockSession(messageContext.To, messageContext.SessionId, cancellationToken);
+#pragma warning disable CS0618
+            return messageContext.UnblockSession(cancellationToken);
+#pragma warning restore CS0618
+        }
+
+        private Task<bool> IsSessionBlockedByThis(IMessageContext messageContext, CancellationToken cancellationToken = default)
+        {
+            if (_sessionStateStore != null)
+                return _sessionStateStore.IsSessionBlockedByThis(messageContext.To, messageContext.SessionId, messageContext.EventId, cancellationToken);
+#pragma warning disable CS0618
+            return messageContext.IsSessionBlockedByThis(cancellationToken);
+#pragma warning restore CS0618
+        }
+
+        private async Task<string> GetBlockedByEventId(IMessageContext messageContext, CancellationToken cancellationToken = default)
+        {
+            if (_sessionStateStore != null)
+            {
+                var value = await _sessionStateStore.GetBlockedByEventId(messageContext.To, messageContext.SessionId, cancellationToken);
+                return string.IsNullOrEmpty(value) ? null : value;
+            }
+#pragma warning disable CS0618
+            return await messageContext.GetBlockedByEventId(cancellationToken);
+#pragma warning restore CS0618
+        }
+
+        private Task<int> GetNextDeferralSequenceAndIncrement(IMessageContext messageContext, CancellationToken cancellationToken = default)
+        {
+            if (_sessionStateStore != null)
+                return _sessionStateStore.GetNextDeferralSequenceAndIncrement(messageContext.To, messageContext.SessionId, cancellationToken);
+#pragma warning disable CS0618
+            return messageContext.GetNextDeferralSequenceAndIncrement(cancellationToken);
+#pragma warning restore CS0618
+        }
+
+        private Task IncrementDeferredCount(IMessageContext messageContext, CancellationToken cancellationToken = default)
+        {
+            if (_sessionStateStore != null)
+                return _sessionStateStore.IncrementDeferredCount(messageContext.To, messageContext.SessionId, cancellationToken);
+#pragma warning disable CS0618
+            return messageContext.IncrementDeferredCount(cancellationToken);
+#pragma warning restore CS0618
+        }
+
+        private Task<int> GetDeferredCount(IMessageContext messageContext, CancellationToken cancellationToken = default)
+        {
+            if (_sessionStateStore != null)
+                return _sessionStateStore.GetDeferredCount(messageContext.To, messageContext.SessionId, cancellationToken);
+#pragma warning disable CS0618
+            return messageContext.GetDeferredCount(cancellationToken);
+#pragma warning restore CS0618
+        }
 
         private Task SendRetryResponse(IMessageContext messageContext, int messageDelayMinutes, CancellationToken cancellationToken = default) =>
             _responseService.SendRetryResponse(messageContext, messageDelayMinutes, cancellationToken);
@@ -270,16 +363,16 @@ namespace NimBus.Core.Messages
 
         private async Task VerifySessionIsBlockedByThis(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
-            if (!await messageContext.IsSessionBlockedByThis(cancellationToken))
+            if (!await IsSessionBlockedByThis(messageContext, cancellationToken))
             {
-                var blockedBy = await messageContext.GetBlockedByEventId(cancellationToken);
+                var blockedBy = await GetBlockedByEventId(messageContext, cancellationToken);
                 throw new SessionBlockedException($"Session {messageContext.SessionId} is blocked by {blockedBy}");
             }
         }
 
         private async Task VerifySessionIsNotBlocked(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
-            var blockedBy = await messageContext.GetBlockedByEventId(cancellationToken);
+            var blockedBy = await GetBlockedByEventId(messageContext, cancellationToken);
             if (!string.IsNullOrEmpty(blockedBy))
                 throw new SessionBlockedException($"Session {messageContext.SessionId} is blocked by {blockedBy}");
         }
@@ -322,7 +415,7 @@ namespace NimBus.Core.Messages
                 return;
             }
 
-            var deferredCount = await messageContext.GetDeferredCount(cancellationToken);
+            var deferredCount = await GetDeferredCount(messageContext, cancellationToken);
             if (deferredCount > 0)
             {
                 await _responseService.SendProcessDeferredRequest(messageContext, cancellationToken);

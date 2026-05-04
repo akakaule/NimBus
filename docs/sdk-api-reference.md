@@ -180,6 +180,9 @@ it AND then throws, the failure path takes precedence — an `ErrorResponse`
 is sent and the PendingHandoff metadata is discarded. PendingHandoff is NOT
 an exception path; see [`error-handling.md`](error-handling.md).
 
+**See also**: a runnable end-to-end showcase wiring this onto the ERP adapter
+in the CRM/ERP demo — [`samples/CrmErpDemo/README.md#showcase-pendinghandoff-async-erp-imports`](../samples/CrmErpDemo/README.md#showcase-pendinghandoff-async-erp-imports).
+
 ### ISubscriberClient
 
 ```csharp

@@ -387,6 +387,30 @@ In Cosmos mode Aspire skips provisioning the `nimbus` SQL database; the Resolver
 
 For the full classification of error types in an adapter (transient redelivery, retry, immediate dead-letter, validation rejection) and how each path is recorded by the Resolver, see [`docs/error-handling.md`](../../docs/error-handling.md).
 
+## Showcase: PendingHandoff (async ERP imports)
+
+NimBus's [PendingHandoff feature](../../docs/specs/002-async-message-completion/spec.md) ([ADR-012](../../docs/adr/012-pending-handoff.md)) lets a subscriber handler signal "work is in flight on an external system" via `ctx.MarkPendingHandoff(reason, externalJobId, expectedBy)` and return normally — the inbound message is settled, the session blocks for siblings, the audit row reads `Pending` + `PendingSubStatus = "Handoff"`, and settlement happens later via `ManagerClient.CompleteHandoff` / `FailHandoff` without re-invoking the user handler. This demo wires the feature onto the ERP adapter's `CrmAccountCreated` handler so the lifecycle (Pending badge, deferred siblings, completion replay, failure + operator Skip) is visible end-to-end in the AppHost.
+
+The control surface is in **erp-web → Admin**: a toggle plus duration and failure-rate sliders. `Erp.Api/HandoffMode/HandoffJobBackgroundService` simulates the external import, draining expired jobs once a second and rolling against the configured failure rate; on success it applies the upsert and calls `CompleteHandoff`, on failure it calls `FailHandoff` with one of a small set of canned `DMF rejected: ...` errors.
+
+### Manual smoke flow
+
+1. AppHost up → open **erp-web** → Admin → flip handoff mode ON, set ~30 s, 0% failure.
+2. Open **crm-web** → create account "Acme".
+3. Open **nimbus-ops** (the operator UI) → navigate to `ErpEndpoint` → see the `CrmAccountCreated` row marked **Pending** with the **Awaiting external** badge. Click it → the detail page shows `HandoffReason`, `ExternalJobId`, `ExpectedBy`.
+4. Back in **crm-web** → update "Acme" twice in quick succession.
+5. **nimbus-ops** → both updates show **Deferred** (queued behind the in-flight create on the same session).
+6. Wait. After ~30 s the create row flips to **Completed**, the deferred updates replay in FIFO order (also Completed), and the ERP customer in **erp-web** reflects the latest update.
+7. Re-flip Erp.Web admin: failure rate = 100%. Create another account.
+8. **nimbus-ops** → after ~30 s the row is **Failed** with `ErrorContent.ErrorText` matching one of the canned `DMF rejected: ...` strings verbatim. Click **Skip** → audit row flips to **Skipped**, session unblocks.
+
+### Automated coverage
+
+The lifecycle is exercised end-to-end by the Playwright suite in [`e2e/`](e2e/):
+
+- [`e2e/tests/04-pending-handoff-success.spec.ts`](e2e/tests/04-pending-handoff-success.spec.ts) — create handoff + 2 sibling updates → create reaches `Pending+Handoff`, updates Defer, all complete on settlement.
+- [`e2e/tests/05-pending-handoff-failure.spec.ts`](e2e/tests/05-pending-handoff-failure.spec.ts) — handoff fails with a `DMF rejected:` error → operator Skip flips the row to `Skipped`.
+
 ## Out of scope (v1)
 
 No authn/authz, no multi-tenant, no production deployment scripts, no non-Azure transports, no realistic tax/currency/shipping math, no automated browser tests, no UI i18n, no Sales Orders/Products/Inventory.

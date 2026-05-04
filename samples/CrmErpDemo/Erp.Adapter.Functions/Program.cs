@@ -1,6 +1,7 @@
 using Azure.Messaging.ServiceBus;
 using CrmErpDemo.Contracts.Events;
 using Erp.Adapter.Functions.Clients;
+using Erp.Adapter.Functions.HandoffMode;
 using Erp.Adapter.Functions.Handlers;
 using Erp.Adapter.Functions.Pipeline;
 using Microsoft.Azure.Functions.Worker.Builder;
@@ -46,6 +47,15 @@ builder.Services.AddHttpClient<IServiceModeClient, ServiceModeClient>(c =>
     c.BaseAddress = new Uri(ResolveErpApiBaseUrl(builder.Configuration));
     c.Timeout = TimeSpan.FromSeconds(2);
 });
+
+builder.Services.AddHttpClient<IHandoffModeClient, HandoffModeClient>(c =>
+{
+    c.BaseAddress = new Uri(ResolveErpApiBaseUrl(builder.Configuration));
+    c.Timeout = TimeSpan.FromSeconds(2);
+});
+
+builder.Services.AddHttpClient<IHandoffJobRegistration, HandoffJobRegistration>(c =>
+    c.BaseAddress = new Uri(ResolveErpApiBaseUrl(builder.Configuration)));
 
 builder.Services.AddNimBus(n =>
 {

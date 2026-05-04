@@ -90,4 +90,40 @@ public interface ISessionStateStore
     /// Called after all deferred messages have been republished.
     /// </summary>
     Task ResetDeferredCount(string endpointId, string sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the per-session replay checkpoint — the highest park sequence
+    /// number that has already been replayed for the session. Initial value is
+    /// <c>-1</c> (nothing replayed yet). Used by the portable deferred-by-session
+    /// replay loop to drive forward-only progress and resume safely after a
+    /// receiver crash. See
+    /// <c>docs/specs/003-rabbitmq-transport/deferred-by-session-design.md</c>
+    /// for context.
+    /// </summary>
+    Task<int> GetLastReplayedSequence(string endpointId, string sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Conditional, forward-only update of the replay checkpoint. Applies
+    /// <paramref name="newValue"/> if and only if the current stored value
+    /// equals <paramref name="expectedCurrent"/>. Returns <c>true</c> if the
+    /// update was applied; <c>false</c> if a concurrent replayer has already
+    /// advanced past the expected value (caller re-reads the checkpoint and
+    /// retries). This is the serialization point that lets two concurrent
+    /// replayers race safely without a distributed lock — see
+    /// <c>docs/specs/003-rabbitmq-transport/deferred-by-session-design.md</c>
+    /// §5.3.
+    /// </summary>
+    Task<bool> TryAdvanceLastReplayedSequence(string endpointId, string sessionId, int expectedCurrent, int newValue, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the count of non-terminal parked messages for the session — i.e.
+    /// messages that have been parked but neither replayed nor skipped. Used as
+    /// a hot-path read by receivers and by the replay loop's drained-check; the
+    /// implementation typically maintains a counter alongside the other session
+    /// state rather than running <c>COUNT(*)</c> against the parked-message
+    /// store. See
+    /// <c>docs/specs/003-rabbitmq-transport/deferred-by-session-design.md</c>
+    /// §11 / §17 for rationale.
+    /// </summary>
+    Task<int> GetActiveParkCount(string endpointId, string sessionId, CancellationToken cancellationToken = default);
 }

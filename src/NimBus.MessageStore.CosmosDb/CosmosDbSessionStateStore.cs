@@ -159,6 +159,18 @@ public sealed class CosmosDbSessionStateStore : ISessionStateStore
         doc.DeferredCount = 0;
         await Upsert(doc, cancellationToken).ConfigureAwait(false);
     }
+
+    // TODO: task #5 implementation — issue #20
+    public Task<int> GetLastReplayedSequence(string endpointId, string sessionId, CancellationToken cancellationToken = default)
+        => Task.FromResult(0);
+
+    // TODO: task #5 implementation — issue #20
+    public Task<bool> TryAdvanceLastReplayedSequence(string endpointId, string sessionId, int expectedCurrent, int newValue, CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
+
+    // TODO: task #5 implementation — issue #20
+    public Task<int> GetActiveParkCount(string endpointId, string sessionId, CancellationToken cancellationToken = default)
+        => Task.FromResult(0);
 }
 
 internal sealed class SessionStateDocument

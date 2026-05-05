@@ -9171,6 +9171,9 @@ export enum MessageType {
     SkipRequest = "skipRequest",
     ContinuationRequest = "continuationRequest",
     UnsupportedRequest = "unsupportedRequest",
+    PendingHandoffResponse = "pendingHandoffResponse",
+    HandoffCompletedRequest = "handoffCompletedRequest",
+    HandoffFailedRequest = "handoffFailedRequest",
 }
 
 export enum MessageEndpointRole {
@@ -9276,6 +9279,9 @@ export enum MessageSearchFilterMessageType {
     SkipRequest = "skipRequest",
     ContinuationRequest = "continuationRequest",
     UnsupportedRequest = "unsupportedRequest",
+    PendingHandoffResponse = "pendingHandoffResponse",
+    HandoffCompletedRequest = "handoffCompletedRequest",
+    HandoffFailedRequest = "handoffFailedRequest",
 }
 
 export enum AuditSearchFilterAuditType {

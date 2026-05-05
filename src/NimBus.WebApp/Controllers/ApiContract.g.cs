@@ -2253,6 +2253,10 @@ namespace NimBus.WebApp.ManagementApi
         private string _eventContent;
         private MessageErrorContent _errorContent;
         private string _originatingFrom;
+        private string _pendingSubStatus;
+        private string _handoffReason;
+        private string _externalJobId;
+        private System.DateTime? _expectedBy;
 
         [Newtonsoft.Json.JsonProperty("eventId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string EventId    {
@@ -2459,6 +2463,58 @@ namespace NimBus.WebApp.ManagementApi
                 if (_originatingFrom != value)
                 {
                     _originatingFrom = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("pendingSubStatus", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string PendingSubStatus    {
+            get { return _pendingSubStatus; }
+            set
+            {
+                if (_pendingSubStatus != value)
+                {
+                    _pendingSubStatus = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("handoffReason", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string HandoffReason    {
+            get { return _handoffReason; }
+            set
+            {
+                if (_handoffReason != value)
+                {
+                    _handoffReason = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("externalJobId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ExternalJobId    {
+            get { return _externalJobId; }
+            set
+            {
+                if (_externalJobId != value)
+                {
+                    _externalJobId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("expectedBy", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ExpectedBy    {
+            get { return _expectedBy; }
+            set
+            {
+                if (_expectedBy != value)
+                {
+                    _expectedBy = value;
                     RaisePropertyChanged();
                 }
             }
@@ -4172,6 +4228,10 @@ namespace NimBus.WebApp.ManagementApi
         private string _eventTypeId;
         private string _to;
         private string _from;
+        private string _pendingSubStatus;
+        private string _handoffReason;
+        private string _externalJobId;
+        private System.DateTime? _expectedBy;
         private MessageContent _messageContent;
 
         [Newtonsoft.Json.JsonProperty("updatedAt", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
@@ -4468,6 +4528,58 @@ namespace NimBus.WebApp.ManagementApi
                 if (_from != value)
                 {
                     _from = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("pendingSubStatus", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string PendingSubStatus    {
+            get { return _pendingSubStatus; }
+            set
+            {
+                if (_pendingSubStatus != value)
+                {
+                    _pendingSubStatus = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("handoffReason", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string HandoffReason    {
+            get { return _handoffReason; }
+            set
+            {
+                if (_handoffReason != value)
+                {
+                    _handoffReason = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("externalJobId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ExternalJobId    {
+            get { return _externalJobId; }
+            set
+            {
+                if (_externalJobId != value)
+                {
+                    _externalJobId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("expectedBy", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ExpectedBy    {
+            get { return _expectedBy; }
+            set
+            {
+                if (_expectedBy != value)
+                {
+                    _expectedBy = value;
                     RaisePropertyChanged();
                 }
             }

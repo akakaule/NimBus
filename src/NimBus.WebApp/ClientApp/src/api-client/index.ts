@@ -3985,6 +3985,10 @@ export class Message implements IMessage {
     eventContent?: string;
     errorContent?: MessageErrorContent;
     originatingFrom?: string;
+    pendingSubStatus?: string | undefined;
+    handoffReason?: string | undefined;
+    externalJobId?: string | undefined;
+    expectedBy?: moment.Moment | undefined;
 
     [key: string]: any;
 
@@ -4019,6 +4023,10 @@ export class Message implements IMessage {
             this.eventContent = _data["eventContent"];
             this.errorContent = _data["errorContent"] ? MessageErrorContent.fromJS(_data["errorContent"]) : undefined as any;
             this.originatingFrom = _data["originatingFrom"];
+            this.pendingSubStatus = _data["pendingSubStatus"];
+            this.handoffReason = _data["handoffReason"];
+            this.externalJobId = _data["externalJobId"];
+            this.expectedBy = _data["expectedBy"] ? moment(_data["expectedBy"].toString()) : undefined as any;
         }
     }
 
@@ -4051,6 +4059,10 @@ export class Message implements IMessage {
         data["eventContent"] = this.eventContent;
         data["errorContent"] = this.errorContent ? this.errorContent.toJSON() : undefined as any;
         data["originatingFrom"] = this.originatingFrom;
+        data["pendingSubStatus"] = this.pendingSubStatus;
+        data["handoffReason"] = this.handoffReason;
+        data["externalJobId"] = this.externalJobId;
+        data["expectedBy"] = this.expectedBy ? this.expectedBy.toISOString() : undefined as any;
         return data;
     }
 
@@ -4079,6 +4091,10 @@ export interface IMessage {
     eventContent?: string;
     errorContent?: MessageErrorContent;
     originatingFrom?: string;
+    pendingSubStatus?: string | undefined;
+    handoffReason?: string | undefined;
+    externalJobId?: string | undefined;
+    expectedBy?: moment.Moment | undefined;
 
     [key: string]: any;
 }
@@ -5374,6 +5390,10 @@ export class Event implements IEvent {
     eventTypeId?: string;
     to?: string;
     from?: string;
+    pendingSubStatus?: string | undefined;
+    handoffReason?: string | undefined;
+    externalJobId?: string | undefined;
+    expectedBy?: moment.Moment | undefined;
     messageContent?: MessageContent;
 
     [key: string]: any;
@@ -5416,6 +5436,10 @@ export class Event implements IEvent {
             this.eventTypeId = _data["eventTypeId"];
             this.to = _data["to"];
             this.from = _data["from"];
+            this.pendingSubStatus = _data["pendingSubStatus"];
+            this.handoffReason = _data["handoffReason"];
+            this.externalJobId = _data["externalJobId"];
+            this.expectedBy = _data["expectedBy"] ? moment(_data["expectedBy"].toString()) : undefined as any;
             this.messageContent = _data["messageContent"] ? MessageContent.fromJS(_data["messageContent"]) : undefined as any;
         }
     }
@@ -5456,6 +5480,10 @@ export class Event implements IEvent {
         data["eventTypeId"] = this.eventTypeId;
         data["to"] = this.to;
         data["from"] = this.from;
+        data["pendingSubStatus"] = this.pendingSubStatus;
+        data["handoffReason"] = this.handoffReason;
+        data["externalJobId"] = this.externalJobId;
+        data["expectedBy"] = this.expectedBy ? this.expectedBy.toISOString() : undefined as any;
         data["messageContent"] = this.messageContent ? this.messageContent.toJSON() : undefined as any;
         return data;
     }
@@ -5492,6 +5520,10 @@ export interface IEvent {
     eventTypeId?: string;
     to?: string;
     from?: string;
+    pendingSubStatus?: string | undefined;
+    handoffReason?: string | undefined;
+    externalJobId?: string | undefined;
+    expectedBy?: moment.Moment | undefined;
     messageContent?: MessageContent;
 
     [key: string]: any;

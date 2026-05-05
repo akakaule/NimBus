@@ -183,11 +183,16 @@ public class ResolverServiceTests
         public string From { get; set; } = string.Empty;
         public string DeadLetterReason { get; set; } = null!;
         public string DeadLetterErrorDescription { get; set; } = null!;
+        public string HandoffReason { get; set; }
+        public string ExternalJobId { get; set; }
+        public DateTime? ExpectedBy { get; set; }
         public bool IsDeferred { get; set; }
         public int ThrottleRetryCount { get; set; }
         public long? QueueTimeMs { get; set; }
         public long? ProcessingTimeMs { get; set; }
         public DateTime? HandlerStartedAtUtc { get; set; }
+        public HandlerOutcome HandlerOutcome { get; set; }
+        public HandoffMetadata HandoffMetadata { get; set; }
 
         public int CompletedCalls { get; private set; }
         public int DeadLetterCalls { get; private set; }

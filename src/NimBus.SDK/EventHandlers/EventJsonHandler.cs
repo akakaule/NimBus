@@ -20,7 +20,13 @@ namespace NimBus.SDK.EventHandlers
         public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
         {
             var @event = JsonConvert.DeserializeObject<T_Event>(context.MessageContent.EventContent.EventJson);
-            var eventHandlercontext = new EventHandlerContext { CorrelationId = context.CorrelationId, EventId = context.EventId, EventType = context.MessageContent.EventContent.EventTypeId };
+            var eventHandlercontext = new EventHandlerContext(context)
+            {
+                CorrelationId = context.CorrelationId,
+                EventId = context.EventId,
+                EventType = context.MessageContent.EventContent.EventTypeId,
+                MessageId = context.MessageId,
+            };
             return _eventHandler.Handle(@event, eventHandlercontext, cancellationToken);
         }
     }

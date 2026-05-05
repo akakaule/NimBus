@@ -66,6 +66,12 @@ var nimbusOps = builder.AddProject<Projects.NimBus_WebApp>("nimbus-ops")
     .WithReference(servicebus)
     .WithEnvironment("NimBus__PlatformType", typeof(CrmErpDemo.Contracts.CrmErpPlatformConfiguration).FullName!)
     .WithEnvironment("NimBus__PlatformAssembly", crmErpContractsPath)
+    // Local-dev auth bypass — required so the e2e Playwright suite (and a
+    // human operator browsing the dashboard) can hit the API without an
+    // Azure AD ClientId. Aspire defaults ASPNETCORE_ENVIRONMENT to Development
+    // for child projects, which is the gate Startup.cs checks before honoring
+    // this flag.
+    .WithEnvironment("EnableLocalDevAuthentication", "true")
     .WithEndpoint("http", e => e.Port = 28376)
     .WithEndpoint("https", e => e.Port = 28375)
     .WithExternalHttpEndpoints()

@@ -27,6 +27,13 @@ namespace NimBus.Broker.Services
             [MessageType.RetryRequest] = ResolutionStatus.Pending,
             [MessageType.SkipRequest] = ResolutionStatus.Pending,
             [MessageType.ContinuationRequest] = ResolutionStatus.Pending,
+            // PendingHandoff control flow. The response from the subscriber records
+            // the audit row as Pending+Handoff; the two Manager-issued requests are
+            // recorded as Pending audit rows that flip when their resulting
+            // ResolutionResponse / ErrorResponse arrive (via the existing path).
+            [MessageType.PendingHandoffResponse] = ResolutionStatus.Pending,
+            [MessageType.HandoffCompletedRequest] = ResolutionStatus.Pending,
+            [MessageType.HandoffFailedRequest] = ResolutionStatus.Pending,
             [MessageType.ErrorResponse] = ResolutionStatus.Failed,
             [MessageType.ResolutionResponse] = ResolutionStatus.Completed,
             [MessageType.DeferralResponse] = ResolutionStatus.Deferred,
@@ -158,6 +165,15 @@ namespace NimBus.Broker.Services
                 // subscriber. Null on EventRequest / original publishes.
                 QueueTimeMs = message.QueueTimeMs,
                 ProcessingTimeMs = message.ProcessingTimeMs,
+                // PendingHandoff metadata. Sub-status is set only on the
+                // PendingHandoffResponse audit row (the original Pending+Handoff
+                // entry); the Manager-issued HandoffCompleted/HandoffFailed
+                // requests are recorded as plain Pending so the subsequent
+                // ResolutionResponse / ErrorResponse can flip the original.
+                HandoffReason = message.HandoffReason,
+                ExternalJobId = message.ExternalJobId,
+                ExpectedBy = message.ExpectedBy,
+                PendingSubStatus = message.MessageType == MessageType.PendingHandoffResponse ? "Handoff" : null,
             };
         }
 
@@ -181,7 +197,9 @@ namespace NimBus.Broker.Services
                      message.MessageType == MessageType.ContinuationRequest ||
                      message.MessageType == MessageType.RetryRequest ||
                      message.MessageType == MessageType.ResubmissionRequest ||
-                     message.MessageType == MessageType.SkipRequest)
+                     message.MessageType == MessageType.SkipRequest ||
+                     message.MessageType == MessageType.HandoffCompletedRequest ||
+                     message.MessageType == MessageType.HandoffFailedRequest)
             {
                 endpointId = message.To;
             }
@@ -226,6 +244,13 @@ namespace NimBus.Broker.Services
                 MessageContent = message.MessageContent,
                 QueueTimeMs = message.QueueTimeMs,
                 ProcessingTimeMs = message.ProcessingTimeMs,
+                // PendingHandoff metadata: copy through from the projected
+                // MessageEntity so the UnresolvedEvent (i.e. the audit row
+                // surfaced by the WebApp) carries them too.
+                PendingSubStatus = message.PendingSubStatus,
+                HandoffReason = message.HandoffReason,
+                ExternalJobId = message.ExternalJobId,
+                ExpectedBy = message.ExpectedBy,
             };
         }
 

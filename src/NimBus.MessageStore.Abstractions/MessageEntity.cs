@@ -46,4 +46,11 @@ public class MessageEntity : IReceivedMessage
     public int? DeferralSequence { get; set; }
     public long? QueueTimeMs { get; set; }
     public long? ProcessingTimeMs { get; set; }
+
+    // PendingHandoff sub-status discriminator. null for ordinary Pending entries;
+    // "Handoff" when the audit row was projected from a PendingHandoffResponse.
+    public string PendingSubStatus { get; set; }
+    public string HandoffReason { get; set; }
+    public string ExternalJobId { get; set; }
+    public DateTime? ExpectedBy { get; set; }
 }

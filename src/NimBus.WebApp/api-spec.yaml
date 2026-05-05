@@ -1800,6 +1800,19 @@ components:
           $ref: '#/components/schemas/MessageErrorContent'
         originatingFrom:
           type: string
+        pendingSubStatus:
+          type: string
+          nullable: true
+        handoffReason:
+          type: string
+          nullable: true
+        externalJobId:
+          type: string
+          nullable: true
+        expectedBy:
+          type: string
+          format: date-time
+          nullable: true
     UnresolvedEvents:
       type: array
       items:
@@ -2116,6 +2129,19 @@ components:
           type: string
         from:
           type: string
+        pendingSubStatus:
+          type: string
+          nullable: true
+        handoffReason:
+          type: string
+          nullable: true
+        externalJobId:
+          type: string
+          nullable: true
+        expectedBy:
+          type: string
+          format: date-time
+          nullable: true
         messageContent:
           type: object
           properties:

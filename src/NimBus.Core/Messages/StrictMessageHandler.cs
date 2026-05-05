@@ -66,6 +66,21 @@ namespace NimBus.Core.Messages
                 {
                     await VerifySessionIsNotBlocked(messageContext, cancellationToken);
                     await HandleEventContent(messageContext, cancellationToken);
+
+                    // PendingHandoff branch — handler handed off to an external system.
+                    // Send PendingHandoffResponse, block the session so siblings defer
+                    // until the Manager settles via CompleteHandoff / FailHandoff, and
+                    // skip the usual ResolutionResponse. If HandleEventContent threw,
+                    // execution never reaches here — the catch branches below own it.
+                    if (messageContext.HandlerOutcome == HandlerOutcome.PendingHandoff)
+                    {
+                        await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata, cancellationToken);
+                        await BlockSession(messageContext, cancellationToken);
+                        await CompleteMessage(messageContext, cancellationToken);
+                        LogInfo(messageContext, "Successfully processed (PendingHandoff)");
+                        return;
+                    }
+
                     await SendResolutionResponse(messageContext, cancellationToken);
                 }
                 await CompleteMessage(messageContext, cancellationToken);
@@ -170,6 +185,35 @@ namespace NimBus.Core.Messages
             }
 
             LogInfo(messageContext, "Successfully processed (Skip)");
+        }
+
+        public override async Task HandleHandoffCompletedRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
+        {
+            LogInfo(messageContext, "Handle (HandoffCompleted)");
+            AuthorizeManagerRequest(messageContext);
+            await VerifySessionIsBlockedByThis(messageContext, cancellationToken);
+            await UnblockSession(messageContext, cancellationToken);
+            await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
+            // Existing ResolutionResponse path flips Pending → Completed on the
+            // original audit row. The user handler is intentionally NOT invoked.
+            await SendResolutionResponse(messageContext, cancellationToken);
+            await CompleteMessage(messageContext, cancellationToken);
+            LogInfo(messageContext, "Successfully processed (HandoffCompleted)");
+        }
+
+        public override async Task HandleHandoffFailedRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
+        {
+            LogInfo(messageContext, "Handle (HandoffFailed)");
+            AuthorizeManagerRequest(messageContext);
+            await VerifySessionIsBlockedByThis(messageContext, cancellationToken);
+            // Synthesise an exception from the inbound ErrorContent so the existing
+            // SendErrorResponse path flips the audit row Pending → Failed with the
+            // operator-supplied error text preserved verbatim. Session stays
+            // blocked — the operator decides Resubmit / Skip from the WebApp.
+            var handoffError = BuildHandoffError(messageContext);
+            await SendErrorResponse(messageContext, handoffError, cancellationToken);
+            await CompleteMessage(messageContext, cancellationToken);
+            LogInfo(messageContext, "Successfully processed (HandoffFailed)");
         }
 
         public override async Task HandleContinuationRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
@@ -354,6 +398,21 @@ namespace NimBus.Core.Messages
                 await SendRetryResponse(messageContext, retryDefinition.RetryDelay, cancellationToken);
             }
 #pragma warning restore CS0618
+        }
+
+        // HandoffFailedRequest carries errorText/errorType in
+        // MessageContent.ErrorContent. Wrap them in a synthetic
+        // EventContextHandlerException so the existing SendErrorResponse path
+        // produces a response whose ErrorText preserves the operator-supplied
+        // text verbatim. ErrorType is not round-tripped through this exception
+        // shape — the response's ErrorType reflects the synthetic wrapper, not
+        // the operator-supplied errorType.
+        private static EventContextHandlerException BuildHandoffError(IMessageContext messageContext)
+        {
+            var errorContent = messageContext?.MessageContent?.ErrorContent;
+            var errorText = errorContent?.ErrorText ?? "Handoff failed.";
+            var inner = new HandoffFailedException(errorText, errorContent?.ErrorType);
+            return new EventContextHandlerException(inner);
         }
 
         private void LogInfo(IMessageContext messageContext, string prefixMessage)

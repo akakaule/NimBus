@@ -27,6 +27,32 @@ export interface ServiceModeState {
   changedAt: string;
 }
 
+export interface HandoffModeRequest {
+  enabled: boolean;
+  durationSeconds: number;
+  failureRate: number;
+}
+
+export interface HandoffModeState {
+  enabled: boolean;
+  durationSeconds: number;
+  failureRate: number;
+  changedAt: string;
+}
+
+export interface HandoffJob {
+  eventId: string;
+  sessionId: string;
+  messageId: string;
+  originatingMessageId?: string | null;
+  eventTypeId: string;
+  correlationId?: string | null;
+  externalJobId: string;
+  dueAt: string;
+  payloadJson: string;
+  registeredAt: string;
+}
+
 export class ErpApiClient {
   private constructor(private readonly api: APIRequestContext) {}
 
@@ -104,5 +130,30 @@ export class ErpApiClient {
   async resetFailureModes(): Promise<void> {
     await this.setErrorMode(false);
     await this.setServiceMode(false);
+  }
+
+  // ─── Handoff mode (PendingHandoff showcase) ───────────────────
+
+  async getHandoffMode(): Promise<HandoffModeState> {
+    const res = await this.api.get("/api/admin/handoff-mode");
+    if (!res.ok()) throw new Error(`ERP GET handoff-mode → ${res.status()}`);
+    return (await res.json()) as HandoffModeState;
+  }
+
+  async setHandoffMode(req: HandoffModeRequest): Promise<HandoffModeState> {
+    const res = await this.api.put("/api/admin/handoff-mode", { data: req });
+    if (!res.ok()) throw new Error(`ERP PUT handoff-mode → ${res.status()} ${await res.text()}`);
+    return (await res.json()) as HandoffModeState;
+  }
+
+  /** Disable handoff mode with sensible defaults; safe to call from afterEach hooks. */
+  async resetHandoffMode(): Promise<void> {
+    await this.setHandoffMode({ enabled: false, durationSeconds: 10, failureRate: 0 });
+  }
+
+  async getHandoffJobs(): Promise<HandoffJob[]> {
+    const res = await this.api.get("/api/internal/handoff-jobs");
+    if (!res.ok()) throw new Error(`ERP GET handoff-jobs → ${res.status()}`);
+    return (await res.json()) as HandoffJob[];
   }
 }

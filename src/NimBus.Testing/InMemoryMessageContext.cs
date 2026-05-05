@@ -39,6 +39,9 @@ public class InMemoryMessageContext : IMessageContext
     public DateTime EnqueuedTimeUtc { get; }
     public string DeadLetterReason => DeadLetterReasonRecorded;
     public string DeadLetterErrorDescription => DeadLetterErrorDescriptionRecorded;
+    public string HandoffReason => _message.HandoffReason;
+    public string ExternalJobId => _message.ExternalJobId;
+    public DateTime? ExpectedBy => _message.ExpectedBy;
 
     // Observable state for test assertions
     public bool IsCompleted { get; private set; }
@@ -52,6 +55,8 @@ public class InMemoryMessageContext : IMessageContext
     public long? QueueTimeMs { get; set; }
     public long? ProcessingTimeMs { get; set; }
     public DateTime? HandlerStartedAtUtc { get; set; }
+    public HandlerOutcome HandlerOutcome { get; set; }
+    public HandoffMetadata HandoffMetadata { get; set; }
 
     public Task Complete(CancellationToken cancellationToken = default)
     {

@@ -57,6 +57,22 @@ namespace NimBus.ServiceBus
                 result.ApplicationProperties[UserPropertyName.DeadLetterErrorDescription.ToString()] = message.DeadLetterErrorDescription;
             }
 
+            // PendingHandoff metadata: carried on the PendingHandoffResponse to the
+            // Resolver so the audit row records reason / external job id / deadline.
+            if (!string.IsNullOrEmpty(message.HandoffReason))
+            {
+                result.ApplicationProperties[UserPropertyName.HandoffReason.ToString()] = message.HandoffReason;
+            }
+            if (!string.IsNullOrEmpty(message.ExternalJobId))
+            {
+                result.ApplicationProperties[UserPropertyName.ExternalJobId.ToString()] = message.ExternalJobId;
+            }
+            if (message.ExpectedBy.HasValue)
+            {
+                result.ApplicationProperties[UserPropertyName.ExpectedBy.ToString()] =
+                    message.ExpectedBy.Value.ToUniversalTime().ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+            }
+
             var diagnosticId = message.DiagnosticId ?? Activity.Current?.Id;
             if (!string.IsNullOrEmpty(diagnosticId))
                 result.ApplicationProperties[NimBusDiagnostics.DiagnosticIdProperty] = diagnosticId;

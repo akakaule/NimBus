@@ -13,6 +13,11 @@ import FilterContext, { IFilterContext } from "./filter/filtering-context";
 import TruncatedGuid from "components/common/truncated-guid";
 import ErrorGroupedView from "./error-grouped-view";
 import { useUrlFilters } from "hooks/use-url-filters";
+import { Badge } from "components/ui/badge";
+
+const isHandoffEvent = (event: api.Event): boolean =>
+  event.resolutionStatus === api.ResolutionStatus.Pending &&
+  (event.pendingSubStatus ?? "").toLowerCase() === "handoff";
 
 interface EventsPanelProps {
   endpointId: string;
@@ -180,6 +185,12 @@ const EventsPanel = (props: EventsPanelProps) => {
     if (!status) return false;
     return ACTIONABLE_STATUSES.includes(status as api.ResolutionStatus);
   };
+
+  // Pending+Handoff entries are healthy in-flight messages but operators retain
+  // manual override (FR-042) — they should expose the same Resubmit/Skip
+  // actions as the standard actionable statuses.
+  const isActionableEvent = (event: api.Event): boolean =>
+    isActionableStatus(event.resolutionStatus) || isHandoffEvent(event);
 
   const getSessions = (
     deferredEvents: string[],
@@ -355,7 +366,7 @@ const EventsPanel = (props: EventsPanelProps) => {
   };
 
   const getViableBodyActions = (event: api.Event): ITableBodyAction[] => {
-    if (!isActionableStatus(event.resolutionStatus)) {
+    if (!isActionableEvent(event)) {
       return [];
     }
 
@@ -429,7 +440,16 @@ const EventsPanel = (props: EventsPanelProps) => {
           [
             "status",
             {
-              value: item.resolutionStatus,
+              value: isHandoffEvent(item) ? (
+                <span className="inline-flex items-center gap-2">
+                  {item.resolutionStatus}
+                  <Badge variant="info" size="sm">
+                    Awaiting external
+                  </Badge>
+                </span>
+              ) : (
+                item.resolutionStatus
+              ),
               searchValue: item.resolutionStatus ?? "",
             },
           ],

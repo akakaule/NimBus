@@ -189,6 +189,12 @@ namespace NimBus.Core.Messages
                 case MessageType.ResubmissionRequest:
                     return HandleResubmissionRequest(messageContext, cancellationToken);
 
+                case MessageType.HandoffCompletedRequest:
+                    return HandleHandoffCompletedRequest(messageContext, cancellationToken);
+
+                case MessageType.HandoffFailedRequest:
+                    return HandleHandoffFailedRequest(messageContext, cancellationToken);
+
                 case MessageType.RetryRequest:
                     return HandleRetryRequest(messageContext, cancellationToken);
 
@@ -237,6 +243,12 @@ namespace NimBus.Core.Messages
             HandleDefault(messageContext, cancellationToken);
 
         public virtual Task HandleProcessDeferredRequest(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
+            HandleDefault(messageContext, cancellationToken);
+
+        public virtual Task HandleHandoffCompletedRequest(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
+            HandleDefault(messageContext, cancellationToken);
+
+        public virtual Task HandleHandoffFailedRequest(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
             HandleDefault(messageContext, cancellationToken);
     }
 }

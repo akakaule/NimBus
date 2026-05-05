@@ -32,5 +32,14 @@ namespace NimBus.Core.Messages
         /// Called when a session is unblocked and there are deferred messages to process.
         /// </summary>
         Task SendProcessDeferredRequest(IMessageContext messageContext, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Notifies the Resolver that the handler signalled
+        /// <c>HandlerOutcome.PendingHandoff</c>. Carries the supplied
+        /// <see cref="HandoffMetadata"/> on the response message; the
+        /// <c>ExpectedBy</c> duration is converted to an absolute UTC
+        /// deadline at send time.
+        /// </summary>
+        Task SendPendingHandoffResponse(IMessageContext messageContext, HandoffMetadata handoff, CancellationToken cancellationToken = default);
     }
 }

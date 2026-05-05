@@ -101,18 +101,26 @@ WHEN MATCHED THEN UPDATE SET
     FromAddress = @FromAddress,
     QueueTimeMs = @QueueTimeMs,
     ProcessingTimeMs = @ProcessingTimeMs,
+    PendingSubStatus = @PendingSubStatus,
+    HandoffReason = @HandoffReason,
+    ExternalJobId = @ExternalJobId,
+    ExpectedBy = @ExpectedBy,
     MessageContentJson = @MessageContentJson,
     Deleted = 0
 WHEN NOT MATCHED THEN INSERT (
     EventId, SessionId, EndpointId, Status, UpdatedAtUtc, EnqueuedTimeUtc, CorrelationId, EndpointRole,
     MessageType, RetryCount, RetryLimit, LastMessageId, OriginatingMessageId, ParentMessageId,
     OriginatingFrom, Reason, DeadLetterReason, DeadLetterErrorDescription, EventTypeId,
-    ToAddress, FromAddress, QueueTimeMs, ProcessingTimeMs, MessageContentJson)
+    ToAddress, FromAddress, QueueTimeMs, ProcessingTimeMs,
+    PendingSubStatus, HandoffReason, ExternalJobId, ExpectedBy,
+    MessageContentJson)
 VALUES (
     @EventId, @SessionId, @EndpointId, @Status, @UpdatedAt, @EnqueuedTimeUtc, @CorrelationId, @EndpointRole,
     @MessageType, @RetryCount, @RetryLimit, @LastMessageId, @OriginatingMessageId, @ParentMessageId,
     @OriginatingFrom, @Reason, @DeadLetterReason, @DeadLetterErrorDescription, @EventTypeId,
-    @ToAddress, @FromAddress, @QueueTimeMs, @ProcessingTimeMs, @MessageContentJson);";
+    @ToAddress, @FromAddress, @QueueTimeMs, @ProcessingTimeMs,
+    @PendingSubStatus, @HandoffReason, @ExternalJobId, @ExpectedBy,
+    @MessageContentJson);";
 
         await using var conn = Open();
         var rows = await conn.ExecuteAsync(sql, new
@@ -140,6 +148,10 @@ VALUES (
             FromAddress = content.From,
             QueueTimeMs = content.QueueTimeMs,
             ProcessingTimeMs = content.ProcessingTimeMs,
+            PendingSubStatus = content.PendingSubStatus,
+            HandoffReason = content.HandoffReason,
+            ExternalJobId = content.ExternalJobId,
+            ExpectedBy = content.ExpectedBy,
             MessageContentJson = JsonConvert.SerializeObject(content.MessageContent),
         }, commandTimeout: _commandTimeout);
 
@@ -667,10 +679,30 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
             From = row.FromAddress ?? string.Empty,
             QueueTimeMs = row.QueueTimeMs,
             ProcessingTimeMs = row.ProcessingTimeMs,
+            PendingSubStatus = TryReadString(row, "PendingSubStatus"),
+            HandoffReason = TryReadString(row, "HandoffReason"),
+            ExternalJobId = TryReadString(row, "ExternalJobId"),
+            ExpectedBy = TryReadDateTime(row, "ExpectedBy"),
             MessageContent = string.IsNullOrEmpty((string?)row.MessageContentJson)
                 ? new MessageContent()
                 : JsonConvert.DeserializeObject<MessageContent>((string)row.MessageContentJson) ?? new MessageContent(),
         };
+    }
+
+    // Dapper exposes rows as DapperRow, which is dictionary-like. Reading a column that
+    // does not exist throws — guard with the dictionary view so old rows / older callers
+    // don't break when the new nullable columns aren't projected.
+    private static string TryReadString(dynamic row, string columnName)
+    {
+        var dict = (IDictionary<string, object>)row;
+        return dict.TryGetValue(columnName, out var value) ? value as string : null;
+    }
+
+    private static DateTime? TryReadDateTime(dynamic row, string columnName)
+    {
+        var dict = (IDictionary<string, object>)row;
+        if (!dict.TryGetValue(columnName, out var value) || value is null) return null;
+        return value is DateTime dt ? dt : (DateTime?)null;
     }
 
     // ───────── Lifecycle / cleanup ─────────

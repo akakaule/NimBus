@@ -64,6 +64,7 @@ public static class RabbitMqTransportBuilderExtensions
         });
 
         services.AddSingleton<ITransportManagement, RabbitMqTransportManagement>();
+        services.AddSingleton<ITransportSessionOps, RabbitMqSessionOps>();
 
         return builder;
     }

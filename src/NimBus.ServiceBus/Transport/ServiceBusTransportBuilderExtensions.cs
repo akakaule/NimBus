@@ -115,6 +115,9 @@ public static class ServiceBusTransportBuilderExtensions
             sp.GetRequiredService<Func<string, ISender>>()));
 
         services.AddSingleton<ITransportManagement, ServiceBusTransportManagement>();
+        services.AddSingleton<ITransportSessionOps>(sp => new ServiceBusSessionOps(
+            sp.GetRequiredService<ServiceBusClient>(),
+            sp.GetService<Microsoft.Extensions.Logging.ILogger<ServiceBusSessionOps>>()));
 
         return builder;
     }

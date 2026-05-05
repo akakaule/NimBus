@@ -1,4 +1,3 @@
-using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,33 +12,22 @@ namespace NimBus.Resolver
     /// Extension methods to register Resolver services via the NimBus builder.
     /// Storage provider registration is the consumer's responsibility — call
     /// AddCosmosDbMessageStore() or AddSqlServerMessageStore() in the host
-    /// composition root before AddResolver().
+    /// composition root before AddResolver(). Transport-provider registration
+    /// (e.g. AddServiceBusTransport()) is also a prerequisite — the resolved
+    /// ServiceBusClient comes from there.
     /// </summary>
     public static class ResolverBuilderExtensions
     {
         /// <summary>
-        /// Adds the Resolver services (Service Bus listener + message handling) to the
-        /// NimBus builder. The active storage provider must already be registered.
+        /// Adds the Resolver services (message handling + Service Bus receive
+        /// adapter) to the NimBus builder. Caller must register the storage
+        /// provider and AddServiceBusTransport() before this call.
         /// </summary>
         public static INimBusBuilder AddResolver(this INimBusBuilder builder)
         {
             var services = builder.Services;
 
             services.AddSingleton<IMessageHandler, ResolverService>();
-
-            services.AddSingleton(sp =>
-            {
-                var config = sp.GetRequiredService<IConfiguration>();
-                var fqns = config.GetValue<string>("AzureWebJobsServiceBus__fullyQualifiedNamespace");
-                if (!string.IsNullOrEmpty(fqns) && !fqns.Contains("SharedAccessKey="))
-                    return new ServiceBusClient(fqns, new DefaultAzureCredential());
-
-                var connectionString = fqns
-                    ?? config.GetConnectionString("servicebus")
-                    ?? config.GetValue<string>("AzureWebJobsServiceBus")
-                    ?? throw new InvalidOperationException("AzureWebJobsServiceBus configuration is required");
-                return new ServiceBusClient(connectionString);
-            });
 
             services.AddSingleton<IServiceBusAdapter>(sp =>
             {

@@ -1,5 +1,4 @@
 using System;
-using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 using NimBus.Broker.Services;
 using NimBus.Core.Messages;
@@ -13,29 +12,17 @@ namespace NimBus.Resolver
     public static class ServiceExtensions
     {
         /// <summary>
-        /// Legacy IServiceCollection-based registration. Storage provider must be
-        /// registered separately via NimBus builder (AddCosmosDbMessageStore /
-        /// AddSqlServerMessageStore).
+        /// Legacy IServiceCollection-based registration. Storage and transport
+        /// providers must be registered separately via the NimBus builder
+        /// (AddCosmosDbMessageStore / AddSqlServerMessageStore +
+        /// AddServiceBusTransport) — the resolved <see cref="ServiceBusClient"/>
+        /// comes from <c>AddServiceBusTransport</c>.
         /// </summary>
         public static IServiceCollection AddResolver(this IServiceCollection services)
         {
             services.AddSingleton<Serilog.ILogger>(Log.Logger);
 
             services.AddSingleton<IMessageHandler, ResolverService>();
-
-            services.AddSingleton(sp =>
-            {
-                var config = sp.GetRequiredService<IConfiguration>();
-                var fqns = config.GetValue<string>("AzureWebJobsServiceBus__fullyQualifiedNamespace");
-                if (!string.IsNullOrEmpty(fqns) && !fqns.Contains("SharedAccessKey="))
-                    return new ServiceBusClient(fqns, new DefaultAzureCredential());
-
-                var connectionString = fqns
-                    ?? config.GetConnectionString("servicebus")
-                    ?? config.GetValue<string>("AzureWebJobsServiceBus")
-                    ?? throw new InvalidOperationException("AzureWebJobsServiceBus configuration is required");
-                return new ServiceBusClient(connectionString);
-            });
 
             services.AddSingleton<IServiceBusAdapter>(sp =>
             {

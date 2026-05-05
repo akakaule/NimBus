@@ -2,6 +2,7 @@ using NimBus.Resolver;
 using NimBus.Core.Extensions;
 using NimBus.MessageStore;
 using NimBus.MessageStore.SqlServer;
+using NimBus.ServiceBus.Transport;
 using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.Azure.Functions.Worker.OpenTelemetry;
 using Microsoft.Extensions.Configuration;
@@ -74,15 +75,15 @@ builder.Services.AddNimBus(nimbus =>
         nimbus.AddCosmosDbMessageStore();
     }
 
-    // Phase 6 transition: Add{Transport}Transport() extension methods ship with
-    // tasks #18 (ServiceBus) and #24 (RabbitMQ). Until those land, every selection
-    // falls through to WithoutTransport() and the legacy ServiceBus wiring in
-    // NimBus.SDK keeps working. The switch block is the seam those tasks fill in.
+    // Transport selection: AddServiceBusTransport (#21 / #24 / #4) registers the
+    // ServiceBusClient + ServiceBusAdministrationClient + IServiceBusManagement
+    // surface that ResolverBuilderExtensions consumes. RabbitMQ ships in Phase 6.2;
+    // in-memory is the testing transport (#22) and stays opt-out for now until
+    // its DI surface lights up.
     switch (transportProvider)
     {
         case "servicebus":
-            // TODO(#18): replace with nimbus.AddServiceBusTransport();
-            nimbus.WithoutTransport();
+            nimbus.AddServiceBusTransport();
             break;
         case "rabbitmq":
             // TODO(#24): replace with nimbus.AddRabbitMqTransport(...);
@@ -90,7 +91,7 @@ builder.Services.AddNimBus(nimbus =>
                 "NimBus:Transport=rabbitmq selected but the RabbitMQ provider has not landed yet (Phase 6.2 / task #24). " +
                 "Use 'servicebus' until then.");
         case "inmemory":
-            // TODO(#18 follow-up): replace with nimbus.AddInMemoryTransport();
+            // TODO(#22 follow-up): replace with nimbus.AddInMemoryTransport();
             nimbus.WithoutTransport();
             break;
     }

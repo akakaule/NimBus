@@ -11,6 +11,7 @@
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.AppHost" Version="13.2.4" />
     <PackageReference Include="Aspire.Hosting.SqlServer" Version="13.2.4" />
+    <PackageReference Include="Aspire.Hosting.RabbitMQ" Version="13.2.4" />
     <PackageReference Include="Aspire.Hosting.JavaScript" Version="13.2.4" />
     <PackageReference Include="Aspire.Hosting.Azure.Functions" Version="13.2.4" />
     <PackageReference Include="CommunityToolkit.Aspire.Hosting.DbGate" Version="9.7.0" />
@@ -25,6 +26,12 @@
     <ProjectReference Include="..\Erp.Adapter.Functions\Erp.Adapter.Functions.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.Resolver\NimBus.Resolver.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.WebApp\NimBus.WebApp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="enabled_plugins">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

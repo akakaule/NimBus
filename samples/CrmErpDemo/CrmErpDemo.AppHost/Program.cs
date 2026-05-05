@@ -17,8 +17,9 @@ if (storageProvider is not ("sqlserver" or "cosmos"))
 }
 
 // NimBus transport toggle. CLI flag (--Transport rabbitmq) wins; NIMBUS_TRANSPORT
-// env-var is a fallback. Default 'servicebus' keeps the existing CrmErpDemo wiring;
-// Phase 6.3 sub-issue switches the default to 'rabbitmq' once the provider lands.
+// env-var is a fallback. Default 'servicebus' keeps the Azure-shaped wiring; pass
+// `--Transport rabbitmq` for a fully on-premise demo (RabbitMQ container instead
+// of an Azure Service Bus connection string).
 var transportProvider = (
         builder.Configuration["Transport"]
         ?? Environment.GetEnvironmentVariable("NIMBUS_TRANSPORT")
@@ -32,25 +33,36 @@ if (transportProvider is not ("servicebus" or "rabbitmq" or "inmemory"))
 }
 
 var servicebusConfigured = !string.IsNullOrWhiteSpace(builder.Configuration["ConnectionStrings:servicebus"]);
-var rabbitmqConfigured = !string.IsNullOrWhiteSpace(builder.Configuration["ConnectionStrings:rabbitmq"])
-    || !string.IsNullOrWhiteSpace(builder.Configuration["RabbitMq:Host"]);
-if (transportProvider == "servicebus" && !servicebusConfigured && rabbitmqConfigured)
+if (transportProvider == "servicebus" && !servicebusConfigured)
 {
     throw new InvalidOperationException(
-        "Transport=servicebus but ConnectionStrings:servicebus is not set; only RabbitMQ config is present. " +
-        "Pass --Transport rabbitmq (or set NIMBUS_TRANSPORT=rabbitmq) or supply a Service Bus connection string.");
-}
-if (transportProvider == "rabbitmq" && !rabbitmqConfigured && servicebusConfigured)
-{
-    throw new InvalidOperationException(
-        "Transport=rabbitmq but no RabbitMq:Host / ConnectionStrings:rabbitmq is set; only Service Bus config is present. " +
-        "Pass --Transport servicebus (or set NIMBUS_TRANSPORT=servicebus) or supply RabbitMQ connection settings.");
+        "Transport=servicebus but ConnectionStrings:servicebus is not set. " +
+        "Pass --Transport rabbitmq (or set NIMBUS_TRANSPORT=rabbitmq) for the on-prem path " +
+        "or supply a Service Bus connection string via dotnet user-secrets.");
 }
 
 Console.WriteLine($"[CrmErpDemo.AppHost] StorageProvider={storageProvider} Transport={transportProvider}");
 
-// External resources — Service Bus is the only always-non-local dependency.
-var servicebus = builder.AddConnectionString("servicebus");
+// Transport resources. Service Bus is an external connection string; RabbitMQ is
+// an Aspire-managed container with both required NimBus plugins pre-loaded
+// (rabbitmq_consistent_hash_exchange, rabbitmq_delayed_message_exchange).
+IResourceBuilder<IResourceWithConnectionString>? servicebusResource = null;
+IResourceBuilder<IResourceWithConnectionString>? rabbitmqResource = null;
+
+if (transportProvider == "servicebus")
+{
+    servicebusResource = builder.AddConnectionString("servicebus");
+}
+else if (transportProvider == "rabbitmq")
+{
+    rabbitmqResource = builder.AddRabbitMQ("rabbitmq")
+        .WithImage("rabbitmq", "4-management")
+        .WithBindMount(
+            source: Path.Combine(AppContext.BaseDirectory, "enabled_plugins"),
+            target: "/etc/rabbitmq/enabled_plugins",
+            isReadOnly: true)
+        .WithManagementPlugin();
+}
 
 // SQL Server — Aspire spins up a container; CRM and ERP always get their own databases.
 // NimBus's message store also lives on this server when sqlserver is selected.
@@ -76,9 +88,15 @@ builder.AddDbGate("dbgate")
         ctx.EnvironmentVariables["PASSWORD_sql"] = sql.Resource.PasswordParameter;
     });
 
-// Provision topics/subscriptions for CrmEndpoint + ErpEndpoint.
-var provisioner = builder.AddProject<Projects.CrmErpDemo_Provisioner>("provisioner")
-    .WithReference(servicebus);
+// Provision topics/subscriptions for CrmEndpoint + ErpEndpoint. Service Bus only —
+// in rabbitmq mode the publisher/subscriber declare topology themselves on
+// startup via ITransportManagement.DeclareEndpointAsync.
+IResourceBuilder<Aspire.Hosting.ApplicationModel.IResource>? provisioner = null;
+if (transportProvider == "servicebus")
+{
+    provisioner = builder.AddProject<Projects.CrmErpDemo_Provisioner>("provisioner")
+        .WithReference(servicebusResource!);
+}
 
 // Reused operator surface — the same Resolver + WebApp used in the main NimBus.AppHost.
 //
@@ -87,24 +105,44 @@ var provisioner = builder.AddProject<Projects.CrmErpDemo_Provisioner>("provision
 // samples/CrmErpDemo/e2e/) can target deterministic URLs without scraping the
 // Aspire dashboard for DCP-assigned ports.
 var resolver = builder.AddAzureFunctionsProject<Projects.NimBus_Resolver>("resolver")
-    .WithReference(servicebus)
     .WithEnvironment("ResolverId", "Resolver")
-    .WithEnvironment("AzureWebJobsServiceBus", builder.Configuration["ConnectionStrings:servicebus"]!)
-    .WithEnvironment("NimBus__Transport", transportProvider)
-    .WaitFor(provisioner);
+    .WithEnvironment("NimBus__Transport", transportProvider);
+if (transportProvider == "servicebus")
+{
+    resolver = resolver
+        .WithReference(servicebusResource!)
+        .WithEnvironment("AzureWebJobsServiceBus", builder.Configuration["ConnectionStrings:servicebus"]!);
+    if (provisioner is not null)
+        resolver = resolver.WaitFor(provisioner);
+}
+else if (transportProvider == "rabbitmq")
+{
+    resolver = resolver.WithReference(rabbitmqResource!).WaitFor(rabbitmqResource!);
+}
 
-// Point nimbus-ops at the CRM/ERP platform catalog instead of the default
-// Storefront/Billing/Warehouse one, so Endpoints/EventTypes show Crm & Erp.
+// nimbus-ops — the WebApp's AdminService surface has Service-Bus-specific session
+// receivers / administration calls that don't yet route through ITransportSession
+// Ops (Phase 6.2 task #25). It boots cleanly on rabbitmq but admin endpoints that
+// touch sessions / topology will throw NotSupportedException-style DI errors. The
+// audit-trail and message-store views work transport-agnostically. Track in #28.
 var crmErpContractsPath = typeof(CrmErpDemo.Contracts.CrmErpPlatformConfiguration).Assembly.Location;
 var nimbusOps = builder.AddProject<Projects.NimBus_WebApp>("nimbus-ops")
-    .WithReference(servicebus)
     .WithEnvironment("NimBus__PlatformType", typeof(CrmErpDemo.Contracts.CrmErpPlatformConfiguration).FullName!)
     .WithEnvironment("NimBus__PlatformAssembly", crmErpContractsPath)
     .WithEnvironment("NimBus__Transport", transportProvider)
     .WithEndpoint("http", e => e.Port = 28376)
     .WithEndpoint("https", e => e.Port = 28375)
-    .WithExternalHttpEndpoints()
-    .WaitFor(provisioner);
+    .WithExternalHttpEndpoints();
+if (transportProvider == "servicebus")
+{
+    nimbusOps = nimbusOps.WithReference(servicebusResource!);
+    if (provisioner is not null)
+        nimbusOps = nimbusOps.WaitFor(provisioner);
+}
+else if (transportProvider == "rabbitmq")
+{
+    nimbusOps = nimbusOps.WithReference(rabbitmqResource!).WaitFor(rabbitmqResource!);
+}
 
 // Provider-specific wiring. The WebApp/Resolver pick their backend off NimBus__StorageProvider;
 // we set it explicitly so the AppHost CLI flag wins over the runtime auto-detect fallback.
@@ -131,21 +169,35 @@ else // cosmos — connection string is supplied via the AppHost user-secret Con
              .WithEnvironment("NimBus__StorageProvider", "cosmos");
 }
 
+void ApplyTransport<T>(IResourceBuilder<T> rb)
+    where T : IResourceWithEnvironment, IResourceWithWaitSupport
+{
+    if (transportProvider == "servicebus")
+    {
+        rb.WithReference(servicebusResource!);
+        if (provisioner is not null)
+            rb.WaitFor(provisioner);
+    }
+    else if (transportProvider == "rabbitmq")
+    {
+        rb.WithReference(rabbitmqResource!).WaitFor(rabbitmqResource!);
+    }
+    rb.WithEnvironment("NimBus__Transport", transportProvider);
+}
+
 // CRM side.
 var crmApi = builder.AddProject<Projects.Crm_Api>("crm-api")
-    .WithReference(servicebus)
     .WithReference(crmDb)
     .WithEndpoint("http", e => e.Port = 5080)
     .WithExternalHttpEndpoints()
-    .WaitFor(crmDb)
-    .WaitFor(provisioner);
+    .WaitFor(crmDb);
+ApplyTransport(crmApi);
 
-builder.AddProject<Projects.Crm_Adapter>("crm-adapter")
-    .WithReference(servicebus)
+var crmAdapter = builder.AddProject<Projects.Crm_Adapter>("crm-adapter")
     .WithReference(crmDb)
     .WithReference(crmApi)
-    .WaitFor(crmApi)
-    .WaitFor(provisioner);
+    .WaitFor(crmApi);
+ApplyTransport(crmAdapter);
 
 builder.AddViteApp("crm-web", "../Crm.Web")
     .WithReference(crmApi)
@@ -154,21 +206,33 @@ builder.AddViteApp("crm-web", "../Crm.Web")
 
 // ERP side.
 var erpApi = builder.AddProject<Projects.Erp_Api>("erp-api")
-    .WithReference(servicebus)
     .WithReference(erpDb)
     .WithEndpoint("http", e => e.Port = 5090)
     .WithExternalHttpEndpoints()
-    .WaitFor(erpDb)
-    .WaitFor(provisioner);
+    .WaitFor(erpDb);
+ApplyTransport(erpApi);
 
-builder.AddAzureFunctionsProject<Projects.Erp_Adapter_Functions>("erp-adapter")
-    .WithReference(servicebus)
+var erpAdapter = builder.AddAzureFunctionsProject<Projects.Erp_Adapter_Functions>("erp-adapter")
     .WithReference(erpApi)
-    .WithEnvironment("AzureWebJobsServiceBus", builder.Configuration["ConnectionStrings:servicebus"]!)
     .WithEnvironment("TopicName", "ErpEndpoint")
     .WithEnvironment("SubscriptionName", "ErpEndpoint")
-    .WaitFor(erpApi)
-    .WaitFor(provisioner);
+    .WaitFor(erpApi);
+if (transportProvider == "servicebus")
+{
+    erpAdapter = erpAdapter
+        .WithReference(servicebusResource!)
+        .WithEnvironment("AzureWebJobsServiceBus", builder.Configuration["ConnectionStrings:servicebus"]!);
+    if (provisioner is not null)
+        erpAdapter = erpAdapter.WaitFor(provisioner);
+}
+else if (transportProvider == "rabbitmq")
+{
+    // Erp.Adapter.Functions uses Azure Functions ServiceBus triggers, which do
+    // not have a RabbitMQ equivalent. Track ITransportSessionOps abstraction
+    // (#25) for the proper fix; until then the Functions adapter only runs
+    // under transport=servicebus.
+    erpAdapter = erpAdapter.WithEnvironment("NimBus__Transport", transportProvider);
+}
 
 builder.AddViteApp("erp-web", "../Erp.Web")
     .WithReference(erpApi)

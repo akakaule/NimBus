@@ -34,6 +34,7 @@
     <ProjectReference Include="..\NimBus.MessageStore.SqlServer\NimBus.MessageStore.SqlServer.csproj" />
     <ProjectReference Include="..\NimBus.SDK\NimBus.SDK.csproj" />
     <ProjectReference Include="..\NimBus.ServiceBus\NimBus.ServiceBus.csproj" />
+    <ProjectReference Include="..\NimBus.Transport.RabbitMQ\NimBus.Transport.RabbitMQ.csproj" />
     <ProjectReference Include="..\NimBus.ServiceDefaults\NimBus.ServiceDefaults.csproj" />
   </ItemGroup>
   <ItemGroup>

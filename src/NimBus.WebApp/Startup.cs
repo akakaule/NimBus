@@ -32,6 +32,7 @@ using NimBus.Core.Extensions;
 using NimBus.Management.ServiceBus;
 using NimBus.MessageStore.SqlServer;
 using NimBus.ServiceBus.Transport;
+using NimBus.Transport.RabbitMQ.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Azure.Identity;
 using Azure.Messaging.ServiceBus;
@@ -285,10 +286,30 @@ namespace NimBus.WebApp
                         nimbus.AddServiceBusTransport();
                         break;
                     case "rabbitmq":
-                        // TODO(#24): replace with nimbus.AddRabbitMqTransport(...);
-                        throw new InvalidOperationException(
-                            "NimBus:Transport=rabbitmq selected but the RabbitMQ provider has not landed yet (Phase 6.2 / task #24). " +
-                            "Use 'servicebus' until then.");
+                        nimbus.AddRabbitMqTransport(opt =>
+                        {
+                            // Aspire bridges the RabbitMQ container as
+                            // ConnectionStrings:rabbitmq (an AMQP URI). Discrete
+                            // RabbitMq:* settings are honoured as a fallback for
+                            // non-Aspire deployments.
+                            var rabbitUri = Configuration.GetConnectionString("rabbitmq");
+                            if (!string.IsNullOrWhiteSpace(rabbitUri))
+                            {
+                                opt.Uri = rabbitUri;
+                                return;
+                            }
+
+                            var rabbitSection = Configuration.GetSection("RabbitMq");
+                            if (rabbitSection.Exists())
+                            {
+                                opt.HostName = rabbitSection["HostName"] ?? opt.HostName;
+                                if (int.TryParse(rabbitSection["Port"], out var rabbitPort)) opt.Port = rabbitPort;
+                                opt.VirtualHost = rabbitSection["VirtualHost"] ?? opt.VirtualHost;
+                                opt.UserName = rabbitSection["UserName"] ?? opt.UserName;
+                                opt.Password = rabbitSection["Password"] ?? opt.Password;
+                            }
+                        });
+                        break;
                     case "inmemory":
                         // TODO(#22 follow-up): replace with nimbus.AddInMemoryTransport();
                         nimbus.WithoutTransport();

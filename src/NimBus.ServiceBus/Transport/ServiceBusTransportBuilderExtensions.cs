@@ -110,6 +110,10 @@ public static class ServiceBusTransportBuilderExtensions
             return endpoint => new Sender(client.CreateSender(endpoint));
         });
 
+        services.TryAddSingleton<IRequestSender>(sp => new ServiceBusRequestSender(
+            sp.GetRequiredService<ServiceBusClient>(),
+            sp.GetRequiredService<Func<string, ISender>>()));
+
         services.AddSingleton<ITransportManagement, ServiceBusTransportManagement>();
 
         return builder;

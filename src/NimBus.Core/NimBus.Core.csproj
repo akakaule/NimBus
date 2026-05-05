@@ -19,6 +19,7 @@
 	  <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0-preview.1.25080.5" />
 	  <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
 	  <PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
+	  <PackageReference Include="System.IO.Hashing" Version="9.0.3" />
   </ItemGroup>
 
   <ItemGroup>

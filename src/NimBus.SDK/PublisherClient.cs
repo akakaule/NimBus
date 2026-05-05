@@ -15,6 +15,7 @@ namespace NimBus.SDK;
 public class PublisherClient : IPublisherClient
 {
     private readonly ISender _sender;
+    private readonly IRequestSender? _requestSender;
     private ServiceBusClient _serviceBusClient;
 
     /// <summary>
@@ -23,8 +24,23 @@ public class PublisherClient : IPublisherClient
     /// </summary>
     /// <param name="sender">The sender to use for publishing messages.</param>
     public PublisherClient(ISender sender)
+        : this(sender, requestSender: null)
+    {
+    }
+
+    /// <summary>
+    /// Creates a new PublisherClient with the specified sender and an optional
+    /// transport-supplied <see cref="IRequestSender"/> for request/response
+    /// flows. The DI registration in
+    /// <see cref="Extensions.ServiceCollectionExtensions.AddNimBusPublisher(Microsoft.Extensions.DependencyInjection.IServiceCollection, string)"/>
+    /// resolves the request-sender from the active transport — for example,
+    /// <c>AddServiceBusTransport</c> registers
+    /// <see cref="ServiceBusRequestSender"/>.
+    /// </summary>
+    public PublisherClient(ISender sender, IRequestSender? requestSender)
     {
         _sender = sender ?? throw new ArgumentNullException(nameof(sender));
+        _requestSender = requestSender;
     }
 
     /// <summary>
@@ -69,11 +85,10 @@ public class PublisherClient : IPublisherClient
 
     public async Task Publish(IEvent @event, string sessionId, string correlationId)
     {
-        var eventType = @event.GetEventType();
-        var messagePayload = JsonConvert.SerializeObject(@event);
-        var messageId = $"{eventType.Id}-{DeterministicHash(messagePayload)}";
-
-        await Publish(@event, sessionId, correlationId, messageId);
+        // EventMessageBuilder.Build derives the deterministic message id when
+        // none is supplied; use that as the single source of truth.
+        var built = EventMessageBuilder.Build(@event, correlationId, messageId: null, sessionId);
+        await Publish(@event, sessionId, correlationId, built.MessageId);
     }
 
     public async Task Publish(IEvent @event, string sessionId, string correlationId, string messageId)
@@ -149,53 +164,21 @@ public class PublisherClient : IPublisherClient
     }
 
     /// <summary>
-    /// Sends a request and awaits a typed response with timeout.
-    /// Uses Azure Service Bus sessions for reply correlation.
-    /// Requires a PublisherClient created with a ServiceBusClient (via CreateAsync or constructor).
+    /// Sends a request and awaits a typed response with timeout. Delegates to
+    /// the registered <see cref="IRequestSender"/> (Service Bus implementation
+    /// uses session-based reply queues; other transports plug their own
+    /// correlation strategy).
     /// </summary>
-    public async Task<TResponse> Request<TRequest, TResponse>(TRequest request, TimeSpan timeout, CancellationToken cancellationToken = default)
+    public Task<TResponse> Request<TRequest, TResponse>(TRequest request, TimeSpan timeout, CancellationToken cancellationToken = default)
         where TRequest : IEvent
         where TResponse : class
     {
-        if (_serviceBusClient == null)
+        if (_requestSender is null)
             throw new InvalidOperationException(
-                "Request/response requires a ServiceBusClient. Use PublisherClient.CreateAsync(client, endpoint) or the ServiceBusClient constructor.");
+                "Request/response requires an IRequestSender. Register a transport that ships one " +
+                "(e.g. AddServiceBusTransport) before resolving IPublisherClient.");
 
-        var replySessionId = Guid.NewGuid().ToString();
-        var msg = (Message)GetMessage(request);
-        msg.ReplyTo = msg.To;
-        msg.ReplyToSessionId = replySessionId;
-        var message = (IMessage)msg;
-
-        await _sender.Send(message, cancellationToken: cancellationToken);
-
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(timeout);
-
-        ServiceBusSessionReceiver receiver = null;
-        try
-        {
-            receiver = await _serviceBusClient.AcceptSessionAsync(
-                message.To, $"{message.To}-reply", replySessionId, cancellationToken: cts.Token);
-
-            var reply = await receiver.ReceiveMessageAsync(timeout, cts.Token);
-            if (reply == null)
-                throw new TimeoutException($"No response received within {timeout}");
-
-            await receiver.CompleteMessageAsync(reply, cts.Token);
-
-            var body = reply.Body.ToString();
-            return Newtonsoft.Json.JsonConvert.DeserializeObject<TResponse>(body);
-        }
-        catch (OperationCanceledException) when (cts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-        {
-            throw new TimeoutException($"No response received within {timeout}");
-        }
-        finally
-        {
-            if (receiver != null)
-                await receiver.DisposeAsync();
-        }
+        return _requestSender.Request<TRequest, TResponse>(request, timeout, cancellationToken);
     }
 
     /// <summary>
@@ -246,46 +229,9 @@ public class PublisherClient : IPublisherClient
         } while (events.Any());
     }
 
-    private IMessage GetMessage(IEvent @event, string correlationId = null, string messageId = null, string sessionId = null)
-    {
-        return GetMessageStatic(@event, correlationId, messageId, sessionId);
-    }
-
     private static IMessage GetMessageStatic(IEvent @event, string correlationId = null, string messageId = null, string sessionId = null)
-    {
-        @event.Validate();
+        => EventMessageBuilder.Build(@event, correlationId, messageId, sessionId);
 
-        var eventType = @event.GetEventType().Id;
-        var messagePayload = JsonConvert.SerializeObject(@event);
-        messageId ??= $"{eventType}-{DeterministicHash(messagePayload)}";
-        sessionId ??= @event.GetSessionId();
-        correlationId ??= Guid.NewGuid().ToString();
-        var message = new Message()
-        {
-            To = eventType,
-            EventTypeId = eventType,
-            SessionId = sessionId,
-            CorrelationId = correlationId,
-            MessageId = messageId,
-            RetryCount = 0,
-            MessageType = MessageType.EventRequest,
-            MessageContent = new MessageContent
-            {
-                EventContent = new EventContent
-                {
-                    EventTypeId = eventType,
-                    EventJson = messagePayload
-                }
-            }
-        };
-        message.DiagnosticId = Activity.Current?.Id;
-        return message;
-    }
-
-    private static string DeterministicHash(string input)
-    {
-        var hash = System.IO.Hashing.XxHash64.HashToUInt64(
-            System.Text.Encoding.UTF8.GetBytes(input));
-        return hash.ToString("x16", System.Globalization.CultureInfo.InvariantCulture);
-    }
+    private IMessage GetMessage(IEvent @event, string correlationId = null, string messageId = null, string sessionId = null)
+        => EventMessageBuilder.Build(@event, correlationId, messageId, sessionId);
 }

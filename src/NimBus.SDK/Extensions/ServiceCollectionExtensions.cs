@@ -59,7 +59,8 @@ namespace NimBus.SDK.Extensions
                     sender = senderFactory(options.Endpoint);
                 }
 
-                return new PublisherClient(sender);
+                var requestSender = sp.GetService<IRequestSender>();
+                return new PublisherClient(sender, requestSender);
             });
 
             return services;

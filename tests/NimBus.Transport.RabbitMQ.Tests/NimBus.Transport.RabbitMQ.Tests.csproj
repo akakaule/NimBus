@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>NimBus.Transport.RabbitMQ.Tests</AssemblyName>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0-preview.1.25080.5" />
+    <PackageReference Include="MSTest.TestAdapter" Version="2.2.10" />
+    <PackageReference Include="MSTest.TestFramework" Version="2.2.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NimBus.Transport.RabbitMQ\NimBus.Transport.RabbitMQ.csproj" />
+    <ProjectReference Include="..\..\src\NimBus.Testing\NimBus.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

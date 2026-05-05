@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <IsPackable>true</IsPackable>
+    <Description>RabbitMQ transport provider for the NimBus messaging platform. Implements the NimBus.Transport.Abstractions surface using the rabbitmq_consistent_hash_exchange and rabbitmq_delayed_message_exchange plugins.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="NimBus.Transport.RabbitMQ.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="RabbitMQ.Client" Version="7.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.0-preview.1.25120.3" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0-preview.1.25080.5" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0-preview.1.25080.5" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.0-preview.1.25080.5" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NimBus.Core\NimBus.Core.csproj" />
+    <ProjectReference Include="..\NimBus.Transport.Abstractions\NimBus.Transport.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

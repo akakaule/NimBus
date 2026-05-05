@@ -31,6 +31,7 @@ using System.Text.Json.Serialization;
 using NimBus.Core.Extensions;
 using NimBus.Management.ServiceBus;
 using NimBus.MessageStore.SqlServer;
+using NimBus.ServiceBus.Transport;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Azure.Identity;
 using Azure.Messaging.ServiceBus;
@@ -221,20 +222,12 @@ namespace NimBus.WebApp
                 return (IPlatform)Activator.CreateInstance(type)!;
             });
 
-            string serviceBusFqns = Configuration.GetValue<string>("AzureWebJobsServiceBus__fullyQualifiedNamespace");
-            string serviceBusConnection = Configuration.GetConnectionString("servicebus")
-                ?? Configuration.GetValue<string>("AzureWebJobsServiceBus");
-            if (!string.IsNullOrEmpty(serviceBusFqns) && !serviceBusFqns.Contains("SharedAccessKey="))
-            {
-                var credential = new DefaultAzureCredential();
-                services.AddSingleton(new ServiceBusAdministrationClient(serviceBusFqns, credential));
-                services.AddSingleton(new ServiceBusClient(serviceBusFqns, credential));
-            }
-            else
-            {
-                services.AddSingleton(new ServiceBusAdministrationClient(serviceBusConnection));
-                services.AddSingleton(new ServiceBusClient(serviceBusConnection));
-            }
+            // ServiceBusClient + ServiceBusAdministrationClient + IServiceBusManagement
+            // are now registered by AddServiceBusTransport() inside the AddNimBus
+            // configuration callback below (Phase 6.1, task #4 / issue #19). The
+            // probe order (AzureWebJobsServiceBus__fullyQualifiedNamespace →
+            // ConnectionStrings:servicebus → AzureWebJobsServiceBus) is retained
+            // by ServiceBusTransportOptions.
             // Provider selection is configuration-driven (NimBus__StorageProvider /
             // StorageProvider env-var or appsetting, default 'cosmos'). SQL Server
             // is selected when explicitly configured OR when no Cosmos config is
@@ -289,8 +282,7 @@ namespace NimBus.WebApp
                 switch (transportProvider)
                 {
                     case "servicebus":
-                        // TODO(#18): replace with nimbus.AddServiceBusTransport();
-                        nimbus.WithoutTransport();
+                        nimbus.AddServiceBusTransport();
                         break;
                     case "rabbitmq":
                         // TODO(#24): replace with nimbus.AddRabbitMqTransport(...);
@@ -298,7 +290,7 @@ namespace NimBus.WebApp
                             "NimBus:Transport=rabbitmq selected but the RabbitMQ provider has not landed yet (Phase 6.2 / task #24). " +
                             "Use 'servicebus' until then.");
                     case "inmemory":
-                        // TODO(#18 follow-up): replace with nimbus.AddInMemoryTransport();
+                        // TODO(#22 follow-up): replace with nimbus.AddInMemoryTransport();
                         nimbus.WithoutTransport();
                         break;
                 }
@@ -308,7 +300,7 @@ namespace NimBus.WebApp
 
             services.AddSingleton<ICodeRepoService>(sp => new CodeRepoService(Configuration["RepositoryUrl"]));
 
-            services.AddSingleton<IServiceBusManagement>(sp => new ServiceBusManagement(sp.GetRequiredService<ServiceBusAdministrationClient>()));
+            // IServiceBusManagement is now registered by AddServiceBusTransport above (#4 / #21).
 
             services.AddSingleton<IApplicationInsightsService>(services =>
                 new ApplicationInsightsService(Configuration.GetValue<string>("AppInsights:ApplicationId"), Configuration.GetValue<string>("AppInsights:ApiKey"))

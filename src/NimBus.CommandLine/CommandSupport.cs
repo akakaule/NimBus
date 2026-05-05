@@ -112,12 +112,19 @@ internal sealed record InfrastructureOptions(
     string? SqlConnectionString = null,
     string? SqlAdminLogin = null,
     string? SqlAdminPassword = null,
-    ResolverPlanChoice ResolverPlan = ResolverPlanChoice.ElasticPremium);
+    ResolverPlanChoice ResolverPlan = ResolverPlanChoice.ElasticPremium,
+    TransportChoice Transport = TransportChoice.ServiceBus);
 
 internal enum StorageProviderChoice
 {
     Cosmos,
     SqlServer,
+}
+
+internal enum TransportChoice
+{
+    ServiceBus,
+    RabbitMq,
 }
 
 internal enum SqlProvisioningMode
@@ -135,7 +142,14 @@ internal enum ResolverPlanChoice
 internal sealed record TopologyOptions(
     string SolutionId,
     string Environment,
-    string ResourceGroupName);
+    string ResourceGroupName,
+    TransportChoice Transport = TransportChoice.ServiceBus,
+    string? RabbitUri = null,
+    string? RabbitHost = null,
+    int? RabbitPort = null,
+    string? RabbitVirtualHost = null,
+    string? RabbitUser = null,
+    string? RabbitPassword = null);
 
 internal sealed record AppDeploymentOptions(
     string SolutionId,

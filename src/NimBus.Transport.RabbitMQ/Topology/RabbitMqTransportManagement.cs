@@ -20,7 +20,7 @@ namespace NimBus.Transport.RabbitMQ.Topology;
 /// </list>
 /// Calls are idempotent: re-declaring an existing entity is a no-op.
 /// </summary>
-internal sealed class RabbitMqTransportManagement : ITransportManagement
+public sealed class RabbitMqTransportManagement : ITransportManagement
 {
     private readonly RabbitMqConnectionFactory _connectionFactory;
     private readonly RabbitMqTransportOptions _options;

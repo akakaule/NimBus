@@ -69,6 +69,17 @@ internal static class Program
         };
     }
 
+    internal static TransportChoice ParseTransport(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return TransportChoice.ServiceBus;
+        return value.ToLowerInvariant() switch
+        {
+            "servicebus" or "sb" => TransportChoice.ServiceBus,
+            "rabbitmq" or "rabbit" or "rmq" => TransportChoice.RabbitMq,
+            _ => throw new InvalidOperationException($"Unknown --transport value '{value}'. Expected 'servicebus' or 'rabbitmq'."),
+        };
+    }
+
     private static SqlProvisioningMode ParseSqlMode(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return SqlProvisioningMode.Provision;
@@ -116,6 +127,7 @@ internal static class Program
                 var sqlAdminLogin = applyCommand.Option("--sql-admin-login <VALUE>", "SQL admin login when --sql-mode is 'provision'.", CommandOptionType.SingleValue);
                 var sqlAdminPassword = applyCommand.Option("--sql-admin-password <VALUE>", "SQL admin password when --sql-mode is 'provision'.", CommandOptionType.SingleValue);
                 var resolverPlan = applyCommand.Option("--resolver-plan <PLAN>", "Hosting plan for the resolver Function App: ElasticPremium | FlexConsumption. Defaults to 'ElasticPremium' (EP1, Windows). 'FlexConsumption' is the cheaper scale-to-zero Linux option suited for dev/test.", CommandOptionType.SingleValue);
+                var transport = applyCommand.Option("--transport <PROVIDER>", "Transport provider: servicebus (default) | rabbitmq. When 'rabbitmq', skips Service Bus namespace provisioning entirely; combine with --storage-provider sqlserver for a fully on-premise deployment (no Cosmos, no Service Bus).", CommandOptionType.SingleValue);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
@@ -126,6 +138,7 @@ internal static class Program
                     var providerChoice = ParseStorageProvider(storageProvider.Value());
                     var sqlProvisioningMode = ParseSqlMode(sqlMode.Value());
                     var resolverPlanChoice = ParseResolverPlan(resolverPlan.Value());
+                    var transportChoice = ParseTransport(transport.Value());
 
                     if (providerChoice == StorageProviderChoice.SqlServer)
                     {
@@ -148,7 +161,27 @@ internal static class Program
                         sqlConnectionString.Value(),
                         sqlAdminLogin.Value(),
                         sqlAdminPassword.Value(),
-                        resolverPlanChoice);
+                        resolverPlanChoice,
+                        transportChoice);
+
+                    if (transportChoice == TransportChoice.RabbitMq)
+                    {
+                        // FR-072: when transport=rabbitmq, no Azure infra is provisioned
+                        // by `nb infra apply` (no Service Bus namespace). When storage is
+                        // also sqlserver-on-prem, the deployment is fully on-premise.
+                        // Topology declaration moves to `nb topology apply --transport
+                        // rabbitmq` against the running broker.
+                        AnsiConsole.MarkupLine(
+                            "[yellow]--transport rabbitmq selected: skipping Service Bus namespace provisioning. " +
+                            "Run 'nb topology apply --transport rabbitmq' against your broker to declare endpoints.[/]");
+                        if (providerChoice != StorageProviderChoice.SqlServer)
+                        {
+                            AnsiConsole.MarkupLine(
+                                "[yellow]Note: --storage-provider is '" + providerChoice + "'. For a fully on-premise " +
+                                "deployment, combine --transport rabbitmq with --storage-provider sqlserver.[/]");
+                        }
+                        return 0;
+                    }
 
                     await deployer.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
                     return 0;
@@ -182,20 +215,69 @@ internal static class Program
 
             topologyCommand.Command("apply", applyCommand =>
             {
-                applyCommand.Description = "Provision the Service Bus topology for the current PlatformConfiguration.";
+                applyCommand.Description = "Provision the topology for the current PlatformConfiguration. Defaults to Azure Service Bus; pass --transport rabbitmq for the on-prem broker.";
                 applyCommand.HelpOption(inherited: true);
 
-                var solutionId = applyCommand.Option("--solution-id <ID>", "Solution identifier used in Azure resource names.", CommandOptionType.SingleValue).IsRequired();
-                var environment = applyCommand.Option("--environment <NAME>", "Environment name used in Azure resource names.", CommandOptionType.SingleValue).IsRequired();
-                var resourceGroup = applyCommand.Option("--resource-group <NAME>", "Azure resource group containing the Service Bus namespace.", CommandOptionType.SingleValue).IsRequired();
+                var transport = applyCommand.Option("--transport <PROVIDER>", "Transport provider: servicebus (default) | rabbitmq. Defaults to NIMBUS_TRANSPORT env-var or 'servicebus'.", CommandOptionType.SingleValue);
+                var solutionId = applyCommand.Option("--solution-id <ID>", "Service Bus only: solution identifier used in Azure resource names.", CommandOptionType.SingleValue);
+                var environment = applyCommand.Option("--environment <NAME>", "Service Bus only: environment name used in Azure resource names.", CommandOptionType.SingleValue);
+                var resourceGroup = applyCommand.Option("--resource-group <NAME>", "Service Bus only: Azure resource group containing the Service Bus namespace.", CommandOptionType.SingleValue);
+                var rabbitUri = applyCommand.Option("--rabbit-uri <AMQP_URI>", "RabbitMQ only: AMQP URI (e.g. amqp://user:pass@host:5672/vhost). Wins over discrete --rabbit-* options when present.", CommandOptionType.SingleValue);
+                var rabbitHost = applyCommand.Option("--rabbit-host <HOST>", "RabbitMQ only: broker hostname. Default: localhost.", CommandOptionType.SingleValue);
+                var rabbitPort = applyCommand.Option("--rabbit-port <PORT>", "RabbitMQ only: broker AMQP port. Default: 5672.", CommandOptionType.SingleValue);
+                var rabbitVhost = applyCommand.Option("--rabbit-vhost <VHOST>", "RabbitMQ only: virtual host. Default: /.", CommandOptionType.SingleValue);
+                var rabbitUser = applyCommand.Option("--rabbit-user <USER>", "RabbitMQ only: broker username. Default: guest.", CommandOptionType.SingleValue);
+                var rabbitPassword = applyCommand.Option("--rabbit-password <PASSWORD>", "RabbitMQ only: broker password. Default: guest.", CommandOptionType.SingleValue);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
-                    var az = new AzureCliRunner();
-                    var provisioner = new ServiceBusTopologyProvisioner(az);
-                    var options = new TopologyOptions(solutionId.Value(), environment.Value(), resourceGroup.Value());
+                    var transportChoice = ParseTransport(
+                        transport.Value() ?? Environment.GetEnvironmentVariable("NIMBUS_TRANSPORT"));
 
-                    await provisioner.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
+                    if (transportChoice == TransportChoice.ServiceBus)
+                    {
+                        if (!solutionId.HasValue() || !environment.HasValue() || !resourceGroup.HasValue())
+                        {
+                            CliOutput.WriteError(
+                                "--solution-id, --environment, and --resource-group are required when --transport is 'servicebus'.");
+                            return 1;
+                        }
+
+                        var az = new AzureCliRunner();
+                        var provisioner = new ServiceBusTopologyProvisioner(az);
+                        var options = new TopologyOptions(
+                            solutionId.Value()!,
+                            environment.Value()!,
+                            resourceGroup.Value()!,
+                            TransportChoice.ServiceBus);
+
+                        await provisioner.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
+                        return 0;
+                    }
+
+                    int? port = null;
+                    if (rabbitPort.HasValue())
+                    {
+                        if (!int.TryParse(rabbitPort.Value(), out var parsedPort) || parsedPort <= 0)
+                        {
+                            CliOutput.WriteError($"Invalid --rabbit-port value '{rabbitPort.Value()}'. Expected a positive integer.");
+                            return 1;
+                        }
+                        port = parsedPort;
+                    }
+
+                    var rabbitOptions = new NimBus.Transport.RabbitMQ.RabbitMqTransportOptions
+                    {
+                        Uri = rabbitUri.Value(),
+                        HostName = rabbitHost.HasValue() ? rabbitHost.Value()! : "localhost",
+                        Port = port ?? 5672,
+                        VirtualHost = rabbitVhost.HasValue() ? rabbitVhost.Value()! : "/",
+                        UserName = rabbitUser.HasValue() ? rabbitUser.Value()! : "guest",
+                        Password = rabbitPassword.HasValue() ? rabbitPassword.Value()! : "guest",
+                    };
+
+                    var rabbitProvisioner = new RabbitMqTopologyProvisioner(rabbitOptions);
+                    await rabbitProvisioner.ApplyAsync(cancellationToken).ConfigureAwait(false);
                     return 0;
                 });
             });

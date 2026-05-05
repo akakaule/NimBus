@@ -11,7 +11,7 @@ namespace NimBus.Transport.RabbitMQ;
 /// enqueue is available when the <c>rabbitmq_delayed_message_exchange</c> plugin
 /// is loaded; the transport refuses to start without it.
 /// </summary>
-internal sealed class RabbitMqTransportCapabilities : ITransportCapabilities
+public sealed class RabbitMqTransportCapabilities : ITransportCapabilities
 {
     private readonly IOptions<RabbitMqTransportOptions> _options;
 

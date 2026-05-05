@@ -7,7 +7,7 @@ namespace NimBus.Transport.RabbitMQ.Topology;
 /// receiver, topology provisioner, and operator tooling all agree on the exact
 /// exchange and queue names without scattering format strings across the code.
 /// </summary>
-internal static class RabbitMqTopologyConventions
+public static class RabbitMqTopologyConventions
 {
     /// <summary>
     /// The consistent-hash exchange messages are published to for routing into

@@ -7,7 +7,7 @@ namespace NimBus.Transport.RabbitMQ;
 /// <c>NimBusBuilder.ValidateTransportProvider</c> to confirm exactly one transport
 /// provider is wired per running application instance.
 /// </summary>
-internal sealed class RabbitMqTransportProviderRegistration : ITransportProviderRegistration
+public sealed class RabbitMqTransportProviderRegistration : ITransportProviderRegistration
 {
     public string ProviderName => "RabbitMQ";
 }

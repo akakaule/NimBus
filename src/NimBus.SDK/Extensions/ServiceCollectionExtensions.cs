@@ -45,12 +45,9 @@ namespace NimBus.SDK.Extensions
 
             services.TryAddSingleton<IPublisherClient>(sp =>
             {
-                var client = sp.GetRequiredService<ServiceBusClient>();
                 var outbox = sp.GetService<IOutbox>();
 
-                var serviceBusSender = client.CreateSender(options.Endpoint);
                 ISender sender;
-
                 if (outbox != null)
                 {
                     // When outbox is configured, use OutboxSender for transactional safety
@@ -58,7 +55,8 @@ namespace NimBus.SDK.Extensions
                 }
                 else
                 {
-                    sender = new Sender(serviceBusSender);
+                    var senderFactory = sp.GetRequiredService<Func<string, ISender>>();
+                    sender = senderFactory(options.Endpoint);
                 }
 
                 return new PublisherClient(sender);
@@ -100,8 +98,8 @@ namespace NimBus.SDK.Extensions
                 var client = sp.GetRequiredService<ServiceBusClient>();
                 var deferredProcessor = sp.GetService<IDeferredMessageProcessor>();
 
-                var serviceBusSender = client.CreateSender(options.Endpoint);
-                var sender = new Sender(serviceBusSender);
+                var senderFactory = sp.GetRequiredService<Func<string, ISender>>();
+                var sender = senderFactory(options.Endpoint);
                 var responseService = new ResponseService(sender);
                 var eventHandlerProvider = new EventHandlerProvider();
 

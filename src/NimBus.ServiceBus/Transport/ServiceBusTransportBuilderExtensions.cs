@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NimBus.Core.Extensions;
+using NimBus.Core.Messages;
 using NimBus.Management.ServiceBus;
 using NimBus.Transport.Abstractions;
 
@@ -98,6 +99,16 @@ public static class ServiceBusTransportBuilderExtensions
         services.TryAddSingleton<ServiceBusAdministrationClient>(sp => CreateServiceBusAdministrationClient(sp));
         services.TryAddSingleton<IServiceBusManagement>(sp =>
             new ServiceBusManagement(sp.GetRequiredService<ServiceBusAdministrationClient>()));
+
+        // Per-endpoint ISender factory — the transport-neutral surface SDK
+        // publisher/subscriber registrations consume to send to a topic by name.
+        // RabbitMQ provider will register the same Func<string, ISender>
+        // signature with its own queue-bound implementation.
+        services.TryAddSingleton<Func<string, ISender>>(sp =>
+        {
+            var client = sp.GetRequiredService<ServiceBusClient>();
+            return endpoint => new Sender(client.CreateSender(endpoint));
+        });
 
         services.AddSingleton<ITransportManagement, ServiceBusTransportManagement>();
 

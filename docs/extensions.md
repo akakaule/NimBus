@@ -15,9 +15,13 @@ When adding a feature to NimBus, ask whether it belongs in core or in an extensi
 | Changes rarely once stable | May evolve independently |
 | Used by every deployment | Used by some deployments |
 
-**Core projects:** `NimBus.Abstractions`, `NimBus.Core`, `NimBus.ServiceBus`, `NimBus.SDK`, `NimBus` (platform config).
+**Core projects:** `NimBus.Abstractions`, `NimBus.Core`, `NimBus.Transport.Abstractions`, `NimBus.SDK`, `NimBus` (platform config).
 
-**Optional platform services** (not core but ship with the repo): `NimBus.MessageStore`, `NimBus.Resolver`, `NimBus.Manager`, `NimBus.WebApp`.
+**Transport providers** (separate NuGet packages, one is required per running app): `NimBus.ServiceBus`, `NimBus.Transport.RabbitMQ`. See [Transport providers](#transport-providers) below and [`docs/transports.md`](transports.md) for the per-provider operator guide.
+
+**Storage providers** (separate NuGet packages): `NimBus.MessageStore.CosmosDb`, `NimBus.MessageStore.SqlServer`. See [`docs/storage-providers.md`](storage-providers.md).
+
+**Optional platform services** (not core but ship with the repo): `NimBus.MessageStore.Abstractions`, `NimBus.Resolver`, `NimBus.Manager`, `NimBus.WebApp`.
 
 **Extensions** (separate NuGet packages): `NimBus.Extensions.Notifications`, and any future `NimBus.Extensions.*` packages.
 
@@ -219,6 +223,56 @@ The `MessageLifecycleContext` record provides these properties:
 | `MessageType` | `MessageType` | Request/response/error type |
 | `EnqueuedTimeUtc` | `DateTimeOffset` | When the message was enqueued |
 | `Timestamp` | `DateTimeOffset` | When this lifecycle event occurred |
+
+## Transport providers
+
+Transports are a different shape of extension: each provider is a NuGet
+package implementing `NimBus.Transport.Abstractions` and registered through
+its own `INimBusBuilder` extension method (`AddServiceBusTransport`,
+`AddRabbitMqTransport`, `AddInMemoryTransport`). Exactly one transport must
+be registered per running application; the builder validates this at
+`Build()` time.
+
+The provider contract:
+
+| Type | Purpose |
+|---|---|
+| `ISender` | Send / batch send / scheduled enqueue / cancel scheduled |
+| `IReceivedMessage` | Read-only message envelope |
+| `IMessageContext : IReceivedMessage` | Settle ops only — `Complete`, `Abandon`, `DeadLetter`, `Defer`, `DeferOnly`, `ReceiveNextDeferred[WithPop]`. Store-state operations (`BlockSession`, deferred-count tracking, …) live in `ISessionStateStore` in `NimBus.MessageStore.Abstractions`, **not here** — that disentanglement is what made the second transport tractable. |
+| `IMessageHandler` | Pipeline-terminus dispatch |
+| `IDeferredMessageProcessor` | Park-and-replay for blocked sessions. The portable implementation lives in `NimBus.Core` against `MessageStore`, so transports do not have to invent a session-deferral primitive. Service Bus may use its native session-deferral as an internal optimisation. |
+| `ITransportProviderRegistration` | Marker singleton for builder validation. Field: `ProviderName`. |
+| `ITransportCapabilities` | Feature flags consumers branch on: `SupportsNativeSessions`, `SupportsScheduledEnqueue`, `SupportsAutoForward`, `MaxOrderingPartitions` (`null` = unbounded). |
+| `ITransportManagement` | Topology operations: `DeclareEndpointAsync`, `ListEndpointsAsync`, `PurgeEndpointAsync`, `RemoveEndpointAsync`. |
+
+A new transport package looks like:
+
+```
+NimBus.Transport.YourBroker/
+├── NimBus.Transport.YourBroker.csproj             # refs NimBus.Transport.Abstractions
+├── YourBrokerTransportOptions.cs                   # IOptions shape
+├── YourBrokerTransportProviderRegistration.cs      # marker
+├── YourBrokerTransportCapabilities.cs              # feature flags
+├── YourBrokerTransportManagement.cs                # ITransportManagement
+├── YourBrokerSender.cs                             # ISender
+├── ...                                             # connection / receiver loop
+└── Extensions/
+    └── YourBrokerTransportBuilderExtensions.cs     # AddYourBrokerTransport(...)
+```
+
+The csproj should reference only `NimBus.Transport.Abstractions` (and
+optionally `NimBus.Core` for `Diagnostics` / `Outbox` markers like
+`INimBusDispatcherSender`). It must **not** reference `NimBus.SDK` or any
+other transport — package separation per NFR-002/003 is enforced through
+the package graph.
+
+> **Roadmap guardrail.** A third transport (Kafka, NATS, SQS, …) requires a
+> fresh ADR. The two-provider abstraction is sized for two providers, not n;
+> see `docs/roadmap.md`.
+
+For the per-provider operator guide (registration, options, plugin
+prerequisites, partition-count constraints), see [`docs/transports.md`](transports.md).
 
 ## Creating an extension package
 

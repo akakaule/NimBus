@@ -378,12 +378,12 @@ Goal: enable on-premise / cloud-agnostic deployments with no Azure dependency. D
 | Message versioning | Medium contracts | Medium | **P3** | 4 | Not Started |
 | Rate limiting middleware | Medium resilience | Small | **P3** | 4 | Not Started |
 | Notification channels | Medium ops | Medium | **P3** | 4 | Not Started |
-| Transport abstraction (RabbitMQ on-premise) | High (on-prem unlock) | Very large | **P4→P2** | 6 | Not Started |
+| Transport abstraction (RabbitMQ on-premise) | High (on-prem unlock) | Very large | **P4→P2** | 6 | In Progress (provider scaffold + topology + sender + CLI flag + on-prem sample landed; receiver loop + Testcontainers conformance pending) |
 | Multi-tenant | Low | Large | **P4** | 5 | Not Started |
 
 ## What NOT to Do
 
-- **Azure Service Bus remains the primary, recommended transport for greenfield Azure deployments.** As of 2026-05, RabbitMQ is a committed second transport for on-premise / cloud-agnostic deployments (Phase 6, [ADR-011](adr/011-rabbitmq-as-second-transport.md)). Do **not** add a third transport (Kafka, NATS, SQS, …) without the same level of concrete demand and a fresh ADR — the multi-transport split is sized for two providers, not n.
+- **Azure Service Bus remains the primary, recommended transport for greenfield Azure deployments.** As of 2026-05, RabbitMQ is a committed second transport for on-premise / cloud-agnostic deployments (Phase 6, [ADR-011](adr/011-rabbitmq-as-second-transport.md)) — provider scaffold, topology provisioner, sender, health check, CLI `--transport` flag, and `samples/RabbitMqOnPrem/` have landed; receiver loop + Testcontainers conformance suite + WebApp transport-aware UI remain. Do **not** add a third transport (Kafka, NATS, SQS, …) without the same level of concrete demand and a fresh ADR — the multi-transport split is sized for two providers, not n. See [`docs/transports.md`](transports.md) for the per-provider operator guide and [`docs/extensions.md`](extensions.md) for how to author a new transport package.
 - **Don't chase feature parity with NServiceBus.** NServiceBus has 15+ years of development. Focus on NimBus's unique value (Resolver, WebApp, sessions) and close only the critical gaps.
 - **Don't rewrite the WebApp.** It works. Enhance incrementally. The SPA + SignalR + API architecture is solid.
 - **Don't build event sourcing unless there's a concrete use case.** It's a separate concern. Wolverine does it well with Marten -- recommend that for teams needing event sourcing alongside NimBus.

@@ -46,7 +46,9 @@ internal static class SqlServerStoreTestHarness
             TRUNCATE TABLE [{schema}].[EndpointMetadata];
             TRUNCATE TABLE [{schema}].[Heartbeats];
             TRUNCATE TABLE [{schema}].[BlockedMessages];
-            TRUNCATE TABLE [{schema}].[InvalidMessages];";
+            TRUNCATE TABLE [{schema}].[InvalidMessages];
+            TRUNCATE TABLE [{schema}].[ParkedMessages];
+            TRUNCATE TABLE [{schema}].[SessionStates];";
         await using var cmd = new SqlCommand(sql, conn);
         await cmd.ExecuteNonQueryAsync();
     }
@@ -58,6 +60,24 @@ internal static class SqlServerStoreTestHarness
             Schema = GetSchema(testType),
             ProvisioningMode = SchemaProvisioningMode.VerifyOnly,
         }));
+
+    public static SqlServerSessionStateStore CreateSessionStateStore(Type testType)
+        => new(Options.Create(new SqlServerMessageStoreOptions
+        {
+            ConnectionString = GetConnectionString(),
+            Schema = GetSchema(testType),
+            ProvisioningMode = SchemaProvisioningMode.VerifyOnly,
+        }));
+
+    public static SqlServerParkedMessageStore CreateParkedStore(Type testType)
+        => new(
+            Options.Create(new SqlServerMessageStoreOptions
+            {
+                ConnectionString = GetConnectionString(),
+                Schema = GetSchema(testType),
+                ProvisioningMode = SchemaProvisioningMode.VerifyOnly,
+            }),
+            CreateSessionStateStore(testType));
 
     public static string GetConnectionString()
     {

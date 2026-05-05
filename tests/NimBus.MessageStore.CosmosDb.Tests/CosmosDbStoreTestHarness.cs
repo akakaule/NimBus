@@ -17,6 +17,12 @@ internal static class CosmosDbStoreTestHarness
     public static INimBusMessageStore CreateStore()
         => new CosmosDbClient(Client.Value);
 
+    public static CosmosDbSessionStateStore CreateSessionStateStore()
+        => new(Client.Value);
+
+    public static CosmosDbParkedMessageStore CreateParkedStore(CosmosDbSessionStateStore sessionStateStore)
+        => new(Client.Value, sessionStateStore);
+
     private static CosmosClient CreateClient()
     {
         var connectionString = Environment.GetEnvironmentVariable(ConnectionStringEnvironmentVariable);

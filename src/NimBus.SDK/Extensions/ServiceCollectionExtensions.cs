@@ -94,23 +94,28 @@ namespace NimBus.SDK.Extensions
             var builder = new NimBusSubscriberBuilder(services);
             configureBuilder(builder);
 
-            services.TryAddSingleton<ISubscriberClient>(sp =>
+            // Register the SDK-side EventHandlerProvider + populated handlers +
+            // the resulting StrictMessageHandler (IMessageHandler) at DI level so
+            // the Service-Bus adapter can resolve them without rebuilding the
+            // pipeline. The subscriber client wraps both the IMessageHandler and
+            // the IServiceBusAdapter for backwards-compat ASB-typed Handle calls.
+            services.TryAddSingleton<EventHandlerProvider>(sp =>
             {
-                var client = sp.GetRequiredService<ServiceBusClient>();
-                var deferredProcessor = sp.GetService<IDeferredMessageProcessor>();
+                var provider = new EventHandlerProvider();
+                foreach (var registration in builder.HandlerRegistrations)
+                {
+                    registration.Register(sp, provider);
+                }
+                return provider;
+            });
 
+            services.TryAddSingleton<IMessageHandler>(sp =>
+            {
                 var senderFactory = sp.GetRequiredService<Func<string, ISender>>();
                 var sender = senderFactory(options.Endpoint);
                 var responseService = new ResponseService(sender);
-                var eventHandlerProvider = new EventHandlerProvider();
+                var eventHandlerProvider = sp.GetRequiredService<EventHandlerProvider>();
 
-                // Register all handlers via DI
-                foreach (var registration in builder.HandlerRegistrations)
-                {
-                    registration.Register(sp, eventHandlerProvider);
-                }
-
-                // Build retry policy provider
                 IRetryPolicyProvider? retryPolicyProvider = null;
                 if (builder.RetryPolicyConfigurator != null)
                 {
@@ -123,7 +128,6 @@ namespace NimBus.SDK.Extensions
                     retryPolicyProvider = sp.GetService<IRetryPolicyProvider>();
                 }
 
-                // Resolve pipeline, lifecycle notifier, and permanent failure classifier
                 var pipeline = sp.GetService<MessagePipeline>();
                 var lifecycleNotifier = sp.GetService<MessageLifecycleNotifier>();
                 var permanentFailureClassifier = sp.GetService<IPermanentFailureClassifier>();
@@ -133,28 +137,30 @@ namespace NimBus.SDK.Extensions
 
                 var sessionStateStore = sp.GetService<NimBus.MessageStore.Abstractions.ISessionStateStore>();
 
-                // Create StrictMessageHandler with pipeline support
-                IMessageHandler strictMessageHandler;
                 if (pipeline != null || lifecycleNotifier != null)
                 {
-                    strictMessageHandler = new StrictMessageHandler(
+                    return new StrictMessageHandler(
                         eventHandlerProvider, responseService, logger,
                         retryPolicyProvider, pipeline, lifecycleNotifier, permanentFailureClassifier, sessionStateStore);
                 }
-                else if (retryPolicyProvider != null)
+                if (retryPolicyProvider != null)
                 {
-                    strictMessageHandler = new StrictMessageHandler(
+                    return new StrictMessageHandler(
                         eventHandlerProvider, responseService, logger, retryPolicyProvider, sessionStateStore);
                 }
-                else
-                {
-                    strictMessageHandler = new StrictMessageHandler(
-                        eventHandlerProvider, responseService, logger, sessionStateStore);
-                }
-
-                var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, options.EntityPath);
-                return new SubscriberClient(serviceBusAdapter, eventHandlerProvider);
+                return new StrictMessageHandler(
+                    eventHandlerProvider, responseService, logger, sessionStateStore);
             });
+
+            services.TryAddSingleton<IServiceBusAdapter>(sp => new ServiceBusAdapter(
+                sp.GetRequiredService<IMessageHandler>(),
+                sp.GetRequiredService<ServiceBusClient>(),
+                options.EntityPath));
+
+            services.TryAddSingleton<ISubscriberClient>(sp => new SubscriberClient(
+                sp.GetRequiredService<IMessageHandler>(),
+                sp.GetRequiredService<IServiceBusAdapter>(),
+                sp.GetRequiredService<EventHandlerProvider>()));
 
             return services;
         }
@@ -172,16 +178,12 @@ namespace NimBus.SDK.Extensions
                   "while NimBus.SDK is detached from Azure.Messaging.ServiceBus.", false)]
         public static IServiceCollection AddNimBusReceiver(this IServiceCollection services, Action<NimBusReceiverOptions> configure)
         {
-            // Materialise the SDK-typed options, then forward to the Service Bus
-            // transport's receiver extension. The Service Bus extension resolves
-            // IServiceBusAdapter from DI; AddNimBusSubscriber registers
-            // ISubscriberClient (an IServiceBusAdapter), so we alias it here so
-            // the new receiver can resolve it without a type-name dependency on
-            // the SDK shell.
+            // Forward to the Service Bus transport's receiver extension.
+            // AddNimBusSubscriber registers IServiceBusAdapter directly so the
+            // new receiver resolves it without any name dependency on the SDK
+            // shell.
             var options = new NimBusReceiverOptions();
             configure(options);
-
-            services.TryAddSingleton<IServiceBusAdapter>(sp => sp.GetRequiredService<ISubscriberClient>());
 
             return services.AddServiceBusReceiver(o =>
             {

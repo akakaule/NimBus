@@ -1,155 +1,178 @@
 #pragma warning disable CA1707, CA2007, CS0618
-using Azure.Messaging.ServiceBus;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-using NimBus.Core.Events;
-using NimBus.SDK;
-using NimBus.SDK.EventHandlers;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Azure.Messaging.ServiceBus;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Core.Events;
+using NimBus.Core.Messages;
+using NimBus.SDK;
+using NimBus.SDK.EventHandlers;
 
 namespace NimBus.ServiceBus.Tests;
 
 [TestClass]
 public class SubscriberClientTests
 {
-    // ── CreateAsync argument validation ─────────────────────────────────
+    // ── Constructor argument validation ─────────────────────────────────
 
     [TestMethod]
-    public void CreateAsync_NullClient_ThrowsArgumentNullException()
+    public void Constructor_NullMessageHandler_Throws()
     {
-        Assert.ThrowsException<ArgumentNullException>(() =>
-            SubscriberClient.CreateAsync(null!, "endpoint").GetAwaiter().GetResult());
+        AssertCtorThrowsArgumentNull(null, new RecordingServiceBusAdapter(), new EventHandlerProvider());
     }
 
     [TestMethod]
-    public void CreateAsync_NullEndpoint_ThrowsArgumentException()
+    public void Constructor_NullServiceBusAdapter_Throws()
     {
-        Assert.ThrowsException<ArgumentException>(() =>
-            SubscriberClient.CreateAsync(new RecordingServiceBusClient(), null!).GetAwaiter().GetResult());
+        AssertCtorThrowsArgumentNull(new RecordingMessageHandler(), null, new EventHandlerProvider());
     }
 
     [TestMethod]
-    public void CreateAsync_EmptyEndpoint_ThrowsArgumentException()
+    public void Constructor_NullEventHandlerProvider_Throws()
     {
-        Assert.ThrowsException<ArgumentException>(() =>
-            SubscriberClient.CreateAsync(new RecordingServiceBusClient(), "").GetAwaiter().GetResult());
+        AssertCtorThrowsArgumentNull(new RecordingMessageHandler(), new RecordingServiceBusAdapter(), null);
     }
 
-    // ── CreateAsync factory ─────────────────────────────────────────────
+    private static void AssertCtorThrowsArgumentNull(
+        IMessageHandler? messageHandler,
+        global::NimBus.ServiceBus.IServiceBusAdapter? serviceBusAdapter,
+        EventHandlerProvider? eventHandlerProvider)
+    {
+        var ctor = typeof(SubscriberClient).GetConstructors(
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)[0];
+        try
+        {
+            ctor.Invoke(new object?[] { messageHandler, serviceBusAdapter, eventHandlerProvider });
+            Assert.Fail("Expected ArgumentNullException, but no exception was thrown.");
+        }
+        catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is ArgumentNullException)
+        {
+            // expected
+        }
+    }
+
+    // ── IMessageHandler delegation ──────────────────────────────────────
 
     [TestMethod]
-    public async Task CreateAsync_WithoutDeferredProcessor_CreatesClient()
+    public async Task Handle_IMessageContext_DelegatesToInnerMessageHandler()
     {
-        var client = new RecordingServiceBusClient();
-        var sut = await SubscriberClient.CreateAsync(client, "orders");
+        var inner = new RecordingMessageHandler();
+        var sut = CreateSubscriber(messageHandler: inner);
 
-        Assert.IsNotNull(sut);
-        Assert.AreEqual("orders", client.LastSenderEntityPath, "Should create sender for the endpoint topic");
+        // The recording handler doesn't read the context, so a null reference
+        // is fine here — the assertion is purely on the delegation count.
+        await sut.Handle((IMessageContext)null!);
+
+        Assert.AreEqual(1, inner.HandleCalls);
+    }
+
+    // ── IServiceBusAdapter delegation (Obsolete bridges) ────────────────
+
+    [TestMethod]
+    public async Task Handle_WithSessionActions_DelegatesToServiceBusAdapter()
+    {
+        var sba = new RecordingServiceBusAdapter();
+        var sut = CreateSubscriber(serviceBusAdapter: sba);
+
+        var msg = CreateValidMessage();
+        await sut.Handle(msg, ServiceBusTestDoubles.CreateSessionActions());
+
+        Assert.AreEqual(1, sba.SessionActionsCalls);
     }
 
     [TestMethod]
-    public async Task CreateAsync_CreatesClient()
+    public async Task Handle_WithMessageAndSessionActions_DelegatesToServiceBusAdapter()
     {
-        var client = new RecordingServiceBusClient();
+        var sba = new RecordingServiceBusAdapter();
+        var sut = CreateSubscriber(serviceBusAdapter: sba);
 
-        var sut = await SubscriberClient.CreateAsync(client, "orders");
+        var msg = CreateValidMessage();
+        await sut.Handle(msg, ServiceBusTestDoubles.CreateMessageActions(), ServiceBusTestDoubles.CreateSessionActions());
 
-        Assert.IsNotNull(sut);
-    }
-
-    // ── Handle delegates to adapter ─────────────────────────────────────
-
-    [TestMethod]
-    public async Task Handle_WithSessionActions_DelegatesToAdapter()
-    {
-        var client = new RecordingServiceBusClient();
-        var sut = await SubscriberClient.CreateAsync(client, "orders");
-        var message = CreateValidMessage();
-
-        // Should not throw (adapter processes the message through the handler pipeline)
-        await sut.Handle(message, ServiceBusTestDoubles.CreateSessionActions());
+        Assert.AreEqual(1, sba.MessageActionsCalls);
     }
 
     [TestMethod]
-    public async Task Handle_WithSessionReceiver_DelegatesToAdapter()
+    public async Task Handle_WithSessionReceiver_DelegatesToServiceBusAdapter()
     {
-        var client = new RecordingServiceBusClient();
-        var sut = await SubscriberClient.CreateAsync(client, "orders");
-        var message = CreateValidMessage();
+        var sba = new RecordingServiceBusAdapter();
+        var sut = CreateSubscriber(serviceBusAdapter: sba);
 
-        await sut.Handle(message, new RecordingServiceBusSessionReceiver());
-    }
+        var msg = CreateValidMessage();
+        await sut.Handle(msg, new RecordingServiceBusSessionReceiver());
 
-    [TestMethod]
-    public async Task Handle_WithMessageAndSessionActions_DelegatesToAdapter()
-    {
-        var client = new RecordingServiceBusClient();
-        var sut = await SubscriberClient.CreateAsync(client, "orders");
-        var message = CreateValidMessage();
-
-        await sut.Handle(message, ServiceBusTestDoubles.CreateMessageActions(), ServiceBusTestDoubles.CreateSessionActions());
+        Assert.AreEqual(1, sba.SessionReceiverCalls);
     }
 
     // ── RegisterHandler ─────────────────────────────────────────────────
 
     [TestMethod]
-    public async Task RegisterHandler_ThenHandle_InvokesRegisteredHandler()
+    public void RegisterHandler_DoesNotThrow()
     {
-        var client = new RecordingServiceBusClient();
-        var sut = await SubscriberClient.CreateAsync(client, "orders");
-
-        var handler = new FakeTestEventHandler();
-        sut.RegisterHandler<TestEvent>(() => handler);
-
-        // The handler is registered but invocation is verified via the adapter pipeline.
-        // RegisterHandler should not throw.
-        Assert.IsNotNull(handler);
+        var sut = CreateSubscriber();
+        sut.RegisterHandler<TestEvent>(() => new FakeTestEventHandler());
     }
 
-    // ── Obsolete constructor ────────────────────────────────────────────
+    // ── Helpers ─────────────────────────────────────────────────────────
 
-    [TestMethod]
-    public void ObsoleteConstructor_WithoutProcessor_CreatesClient()
+    private static SubscriberClient CreateSubscriber(
+        IMessageHandler? messageHandler = null,
+        global::NimBus.ServiceBus.IServiceBusAdapter? serviceBusAdapter = null,
+        EventHandlerProvider? eventHandlerProvider = null)
     {
-        var client = new RecordingServiceBusClient();
-
-        var sut = new SubscriberClient(client, "orders");
-
-        Assert.IsNotNull(sut);
-        Assert.AreEqual("orders", client.LastSenderEntityPath);
+        var ctorType = typeof(SubscriberClient);
+        var ctor = ctorType.GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)[0];
+        return (SubscriberClient)ctor.Invoke(new object?[]
+        {
+            messageHandler ?? new RecordingMessageHandler(),
+            serviceBusAdapter ?? new RecordingServiceBusAdapter(),
+            eventHandlerProvider ?? new EventHandlerProvider(),
+        });
     }
 
-    [TestMethod]
-    public void ObsoleteConstructor_CreatesClient()
+    private sealed class RecordingMessageHandler : IMessageHandler
     {
-        var client = new RecordingServiceBusClient();
+        public int HandleCalls { get; private set; }
 
-        var sut = new SubscriberClient(client, "orders");
-
-        Assert.IsNotNull(sut);
+        public Task Handle(IMessageContext messageContext, CancellationToken cancellationToken = default)
+        {
+            HandleCalls++;
+            return Task.CompletedTask;
+        }
     }
 
-    [TestMethod]
-    public void ObsoleteConstructor_NullClient_ThrowsArgumentNullException()
+    private sealed class RecordingServiceBusAdapter : global::NimBus.ServiceBus.IServiceBusAdapter
     {
-        Assert.ThrowsException<ArgumentNullException>(() =>
-            new SubscriberClient(null!, "orders"));
-    }
+        public int SessionActionsCalls { get; private set; }
+        public int MessageActionsCalls { get; private set; }
+        public int SessionReceiverCalls { get; private set; }
+        public int ProcessSessionArgsCalls { get; private set; }
 
-    [TestMethod]
-    public void ObsoleteConstructor_EmptyEndpoint_ThrowsArgumentException()
-    {
-        Assert.ThrowsException<ArgumentException>(() =>
-            new SubscriberClient(new RecordingServiceBusClient(), ""));
-    }
+        public Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default)
+        {
+            SessionActionsCalls++;
+            return Task.CompletedTask;
+        }
 
-    // ── Fakes ────────────────────────────────────────────────────────────
+        public Task Handle(ServiceBusReceivedMessage message, ServiceBusMessageActions messageActions, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default)
+        {
+            MessageActionsCalls++;
+            return Task.CompletedTask;
+        }
 
-    private sealed class FakeDeferredMessageProcessor : NimBus.Core.Messages.IDeferredMessageProcessor
-    {
-        public Task ProcessDeferredMessagesAsync(string sessionId, string topicName, CancellationToken ct = default) =>
-            Task.CompletedTask;
+        public Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionReceiver sessionReceiver, CancellationToken cancellationToken = default)
+        {
+            SessionReceiverCalls++;
+            return Task.CompletedTask;
+        }
+
+        public Task Handle(ProcessSessionMessageEventArgs args, CancellationToken cancellationToken = default)
+        {
+            ProcessSessionArgsCalls++;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class FakeTestEventHandler : IEventHandler<TestEvent>

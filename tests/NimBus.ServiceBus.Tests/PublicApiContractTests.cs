@@ -23,9 +23,27 @@ public class PublicApiContractTests
     }
 
     [TestMethod]
-    public void ISubscriberClient_ExtendsIServiceBusAdapter()
+    public void ISubscriberClient_ExtendsIMessageHandler()
     {
-        Assert.IsTrue(typeof(IServiceBusAdapter).IsAssignableFrom(typeof(ISubscriberClient)));
+        // ISubscriberClient is transport-neutral; it inherits from
+        // IMessageHandler so consumers receive messages through the pipeline-
+        // terminus contract. The legacy IServiceBusAdapter inheritance has
+        // been removed (slice 4 of #18); the concrete SubscriberClient still
+        // implements IServiceBusAdapter as a separate [Obsolete] interface
+        // for one major version so Azure-Functions consumers can migrate to
+        // injecting IServiceBusAdapter directly.
+        Assert.IsTrue(typeof(IMessageHandler).IsAssignableFrom(typeof(ISubscriberClient)));
+        Assert.IsFalse(typeof(IServiceBusAdapter).IsAssignableFrom(typeof(ISubscriberClient)),
+            "ISubscriberClient must NOT inherit IServiceBusAdapter — that's the transport leak we removed.");
+    }
+
+    [TestMethod]
+    public void SubscriberClient_StillImplementsIServiceBusAdapter_ForObsoleteCompat()
+    {
+        // The concrete class keeps the ASB-typed Handle overloads as
+        // [Obsolete] bridges so existing Azure Functions code keeps working
+        // for one major version.
+        Assert.IsTrue(typeof(IServiceBusAdapter).IsAssignableFrom(typeof(SubscriberClient)));
     }
 
     [TestMethod]

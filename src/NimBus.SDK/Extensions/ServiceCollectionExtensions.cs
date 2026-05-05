@@ -9,6 +9,7 @@ using NimBus.Core.Outbox;
 using NimBus.SDK.EventHandlers;
 using NimBus.SDK.Hosting;
 using NimBus.ServiceBus;
+using NimBus.ServiceBus.Hosting;
 using System;
 
 namespace NimBus.SDK.Extensions
@@ -167,26 +168,29 @@ namespace NimBus.SDK.Extensions
         /// <param name="services">The service collection.</param>
         /// <param name="configure">Action to configure the receiver options.</param>
         /// <returns>The service collection for chaining.</returns>
+        [Obsolete("Use NimBus.ServiceBus.Hosting.AddServiceBusReceiver. " +
+                  "This SDK overload is a transport-leaking bridge kept for one major version " +
+                  "while NimBus.SDK is detached from Azure.Messaging.ServiceBus.", false)]
         public static IServiceCollection AddNimBusReceiver(this IServiceCollection services, Action<NimBusReceiverOptions> configure)
         {
+            // Materialise the SDK-typed options, then forward to the Service Bus
+            // transport's receiver extension. The Service Bus extension resolves
+            // IServiceBusAdapter from DI; AddNimBusSubscriber registers
+            // ISubscriberClient (an IServiceBusAdapter), so we alias it here so
+            // the new receiver can resolve it without a type-name dependency on
+            // the SDK shell.
             var options = new NimBusReceiverOptions();
             configure(options);
 
-            if (string.IsNullOrEmpty(options.TopicName))
-                throw new ArgumentException("TopicName must be specified.", nameof(configure));
-            if (string.IsNullOrEmpty(options.SubscriptionName))
-                throw new ArgumentException("SubscriptionName must be specified.", nameof(configure));
+            services.TryAddSingleton<IServiceBusAdapter>(sp => sp.GetRequiredService<ISubscriberClient>());
 
-            services.AddHostedService(sp =>
+            return services.AddServiceBusReceiver(o =>
             {
-                var client = sp.GetRequiredService<ServiceBusClient>();
-                var subscriber = sp.GetRequiredService<ISubscriberClient>();
-                var logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<NimBusReceiverHostedService>>();
-
-                return new NimBusReceiverHostedService(client, subscriber, options, logger);
+                o.TopicName = options.TopicName;
+                o.SubscriptionName = options.SubscriptionName;
+                o.MaxConcurrentSessions = options.MaxConcurrentSessions;
+                o.MaxAutoLockRenewalDuration = options.MaxAutoLockRenewalDuration;
             });
-
-            return services;
         }
 
         /// <summary>

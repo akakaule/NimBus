@@ -1,30 +1,15 @@
 using System;
+using NimBus.ServiceBus.Hosting;
 
 namespace NimBus.SDK.Hosting
 {
     /// <summary>
     /// Configuration options for the NimBus receiver hosted service.
     /// </summary>
-    public class NimBusReceiverOptions
+    [Obsolete("Use NimBus.ServiceBus.Hosting.ServiceBusReceiverOptions. " +
+              "This type is a transport-leaking bridge kept for one major version " +
+              "while NimBus.SDK is detached from Azure.Messaging.ServiceBus.", false)]
+    public class NimBusReceiverOptions : ServiceBusReceiverOptions
     {
-        /// <summary>
-        /// The Service Bus topic name to receive messages from.
-        /// </summary>
-        public string TopicName { get; set; }
-
-        /// <summary>
-        /// The subscription name within the topic.
-        /// </summary>
-        public string SubscriptionName { get; set; }
-
-        /// <summary>
-        /// Maximum number of concurrent sessions to process. Default: 1.
-        /// </summary>
-        public int MaxConcurrentSessions { get; set; } = 1;
-
-        /// <summary>
-        /// Maximum duration for automatic lock renewal. Default: 5 minutes.
-        /// </summary>
-        public TimeSpan MaxAutoLockRenewalDuration { get; set; } = TimeSpan.FromMinutes(5);
     }
 }

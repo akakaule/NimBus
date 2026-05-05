@@ -1,0 +1,14 @@
+# Pre-bakes both NimBus prerequisite plugins into the broker image so the
+# AppHost does not need to run rabbitmq-plugins enable at startup. Using the
+# 4-management base for the management UI on port 15672.
+FROM rabbitmq:4-management
+
+# Download the delayed-message-exchange plugin — it is not bundled with the
+# core RabbitMQ distribution. The consistent-hash plugin IS bundled (since
+# 3.7), so only one download is required.
+ARG DELAYED_PLUGIN_VERSION=4.0.7
+ADD https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/releases/download/v${DELAYED_PLUGIN_VERSION}/rabbitmq_delayed_message_exchange-${DELAYED_PLUGIN_VERSION}.ez \
+    /opt/rabbitmq/plugins/rabbitmq_delayed_message_exchange-${DELAYED_PLUGIN_VERSION}.ez
+
+RUN chmod 644 /opt/rabbitmq/plugins/rabbitmq_delayed_message_exchange-${DELAYED_PLUGIN_VERSION}.ez \
+    && rabbitmq-plugins enable --offline rabbitmq_consistent_hash_exchange rabbitmq_delayed_message_exchange

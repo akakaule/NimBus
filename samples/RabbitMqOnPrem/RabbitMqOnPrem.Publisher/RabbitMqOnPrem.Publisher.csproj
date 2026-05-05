@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>RabbitMqOnPrem.Publisher</RootNamespace>
+    <AssemblyName>RabbitMqOnPrem.Publisher</AssemblyName>
+    <SuppressCheckGrpcNetClientFactoryVersion>true</SuppressCheckGrpcNetClientFactoryVersion>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\NimBus.SDK\NimBus.SDK.csproj" />
+    <ProjectReference Include="..\..\..\src\NimBus.MessageStore.SqlServer\NimBus.MessageStore.SqlServer.csproj" />
+    <ProjectReference Include="..\..\..\src\NimBus.Transport.RabbitMQ\NimBus.Transport.RabbitMQ.csproj" />
+    <ProjectReference Include="..\..\..\src\NimBus.ServiceDefaults\NimBus.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\RabbitMqOnPrem.Contracts\RabbitMqOnPrem.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

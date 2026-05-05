@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>RabbitMqOnPrem.Contracts</RootNamespace>
+    <AssemblyName>RabbitMqOnPrem.Contracts</AssemblyName>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\NimBus.Abstractions\NimBus.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\src\NimBus.Core\NimBus.Core.csproj" />
+  </ItemGroup>
+
+</Project>

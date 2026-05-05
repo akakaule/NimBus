@@ -1,4 +1,5 @@
 using Azure.Messaging.ServiceBus;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using Microsoft.Azure.Functions.Worker;
 using System;

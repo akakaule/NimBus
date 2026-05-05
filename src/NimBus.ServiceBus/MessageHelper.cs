@@ -1,4 +1,5 @@
-﻿using NimBus.Core.Messages;
+﻿using NimBus.Core.Diagnostics;
+using NimBus.Core.Messages;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;

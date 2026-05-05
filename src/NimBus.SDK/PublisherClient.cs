@@ -1,12 +1,12 @@
-﻿using Azure.Messaging.ServiceBus;
+﻿using NimBus.Core.Diagnostics;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
-using NimBus.ServiceBus;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -16,7 +16,6 @@ public class PublisherClient : IPublisherClient
 {
     private readonly ISender _sender;
     private readonly IRequestSender? _requestSender;
-    private ServiceBusClient _serviceBusClient;
 
     /// <summary>
     /// Creates a new PublisherClient with the specified sender.
@@ -34,48 +33,12 @@ public class PublisherClient : IPublisherClient
     /// flows. The DI registration in
     /// <see cref="Extensions.ServiceCollectionExtensions.AddNimBusPublisher(Microsoft.Extensions.DependencyInjection.IServiceCollection, string)"/>
     /// resolves the request-sender from the active transport — for example,
-    /// <c>AddServiceBusTransport</c> registers
-    /// <see cref="ServiceBusRequestSender"/>.
+    /// <c>AddServiceBusTransport</c> registers a Service Bus implementation.
     /// </summary>
     public PublisherClient(ISender sender, IRequestSender? requestSender)
     {
         _sender = sender ?? throw new ArgumentNullException(nameof(sender));
         _requestSender = requestSender;
-    }
-
-    /// <summary>
-    /// Creates a new PublisherClient asynchronously.
-    /// </summary>
-    /// <param name="client">The ServiceBusClient to use for publishing messages.</param>
-    /// <param name="endpoint">The endpoint (topic name) to publish messages to.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A new PublisherClient instance.</returns>
-    public static Task<PublisherClient> CreateAsync(
-        ServiceBusClient client,
-        string endpoint,
-        CancellationToken cancellationToken = default)
-    {
-        if (client == null) throw new ArgumentNullException(nameof(client));
-        if (string.IsNullOrEmpty(endpoint)) throw new ArgumentException("Endpoint cannot be null or empty.", nameof(endpoint));
-
-        var serviceBusSender = client.CreateSender(endpoint);
-        var sender = new Sender(serviceBusSender);
-
-        return Task.FromResult(new PublisherClient(sender) { _serviceBusClient = client });
-    }
-
-    /// <summary>
-    /// Creates a new PublisherClient.
-    /// </summary>
-    [Obsolete("Use CreateAsync instead for async initialization.")]
-    public PublisherClient(ServiceBusClient client, string endpoint)
-    {
-        if (client == null) throw new ArgumentNullException(nameof(client));
-        if (string.IsNullOrEmpty(endpoint)) throw new ArgumentException("Endpoint cannot be null or empty.", nameof(endpoint));
-
-        var serviceBusSender = client.CreateSender(endpoint);
-        _sender = new Sender(serviceBusSender);
-        _serviceBusClient = client;
     }
 
     public async Task Publish(IEvent @event)
@@ -210,11 +173,14 @@ public class PublisherClient : IPublisherClient
             var pageSize = 0L;
             var page = events.TakeWhile(@event =>
             {
-                var messageToPublish = MessageHelper.ToServiceBusMessage(GetMessageStatic(@event));
-                if (pageSize + messageToPublish.Body.ToArray().Length > maxBatchSize)
+                // Transport-neutral body-size estimate matches the JSON-serialized
+                // MessageContent payload that every transport carries on the wire.
+                var bodyBytes = Encoding.UTF8.GetByteCount(
+                    JsonConvert.SerializeObject(GetMessageStatic(@event).MessageContent));
+                if (pageSize + bodyBytes > maxBatchSize)
                     return false;
 
-                pageSize += messageToPublish.Body.ToArray().Length;
+                pageSize += bodyBytes;
                 return true;
             }).ToList();
 

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using NimBus.ServiceBus;
 using Microsoft.VisualStudio.TestTools.UnitTesting;

@@ -8,10 +8,7 @@ namespace NimBus.SDK
     /// <summary>
     /// Transport-neutral subscriber surface. Inherits from
     /// <see cref="IMessageHandler"/> so consumers handle messages via the
-    /// pipeline-terminus contract; the Service-Bus-typed bridge lives inside
-    /// the concrete <see cref="SubscriberClient"/> as an [Obsolete] surface
-    /// kept for one major version while Azure-Functions-bound consumers
-    /// migrate to <c>IServiceBusAdapter</c> directly.
+    /// pipeline-terminus contract.
     /// </summary>
     public interface ISubscriberClient : IMessageHandler
     {

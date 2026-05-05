@@ -28,22 +28,22 @@ public class PublicApiContractTests
         // ISubscriberClient is transport-neutral; it inherits from
         // IMessageHandler so consumers receive messages through the pipeline-
         // terminus contract. The legacy IServiceBusAdapter inheritance has
-        // been removed (slice 4 of #18); the concrete SubscriberClient still
-        // implements IServiceBusAdapter as a separate [Obsolete] interface
-        // for one major version so Azure-Functions consumers can migrate to
-        // injecting IServiceBusAdapter directly.
+        // been removed (slice 4 of #18).
         Assert.IsTrue(typeof(IMessageHandler).IsAssignableFrom(typeof(ISubscriberClient)));
         Assert.IsFalse(typeof(IServiceBusAdapter).IsAssignableFrom(typeof(ISubscriberClient)),
             "ISubscriberClient must NOT inherit IServiceBusAdapter — that's the transport leak we removed.");
     }
 
     [TestMethod]
-    public void SubscriberClient_StillImplementsIServiceBusAdapter_ForObsoleteCompat()
+    public void SubscriberClient_DoesNotImplementIServiceBusAdapter_ForSC005()
     {
-        // The concrete class keeps the ASB-typed Handle overloads as
-        // [Obsolete] bridges so existing Azure Functions code keeps working
-        // for one major version.
-        Assert.IsTrue(typeof(IServiceBusAdapter).IsAssignableFrom(typeof(SubscriberClient)));
+        // SC-005: NimBus.SDK assemblies have zero compile-time references to
+        // Azure.Messaging.ServiceBus. The previously-staged [Obsolete] ASB-typed
+        // Handle overloads on the concrete SubscriberClient have been dropped;
+        // consumers that need the ASB-shaped surface inject IServiceBusAdapter
+        // (registered by AddServiceBusReceiver in NimBus.ServiceBus) directly.
+        Assert.IsFalse(typeof(IServiceBusAdapter).IsAssignableFrom(typeof(SubscriberClient)),
+            "SubscriberClient must NOT implement IServiceBusAdapter — SC-005 requires zero ASB compile-time references in NimBus.SDK.");
     }
 
     [TestMethod]

@@ -5,8 +5,8 @@ using NimBus.Core.Messages;
 using NimBus.Core.Pipeline;
 using NimBus.Events.Orders;
 using NimBus.SDK.Extensions;
-using NimBus.SDK.Hosting;
 using NimBus.ServiceBus;
+using NimBus.ServiceBus.Hosting;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -32,7 +32,7 @@ builder.Services.AddNimBusSubscriber("BillingEndpoint", sub =>
     sub.AddHandler<OrderPlaced, OrderPlacedHandler>();
 });
 
-builder.Services.AddNimBusReceiver(opts =>
+builder.Services.AddServiceBusReceiver(opts =>
 {
     opts.TopicName = "BillingEndpoint";
     opts.SubscriptionName = "BillingEndpoint";

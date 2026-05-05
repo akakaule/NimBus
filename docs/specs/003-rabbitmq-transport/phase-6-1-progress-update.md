@@ -36,10 +36,28 @@ This document captures progress made since the gate-readiness snapshot landed, p
 | Test count ≥ 386 / 0 failed | YES (386) | YES (386) | Test count steady; +8 conformance tests in #19 minus 16 deleted bridge tests in #17 |
 | **NFR-011** (deferred-by-session park-and-replay byte-identical audit) | PARTIAL | **YES** | Closed by `f9d2ef4` |
 | **SC-010** (`IMessageContext` ≤ 12 methods) | PARTIAL | **YES** | Closed by `607a115`; lands at 11 |
-| **SC-005** (zero compile-time refs to `Azure.Messaging.ServiceBus` in NimBus.SDK et al.) | PARTIAL | **PARTIAL — design decision pending** | See §3 below |
+| **SC-005** (zero compile-time refs to `Azure.Messaging.ServiceBus` in NimBus.SDK et al.) | PARTIAL | **YES (Path A taken)** | `dotnet list package --include-transitive --project src/NimBus.SDK/NimBus.SDK.csproj` reports zero ASB packages. Closes #3. |
 | CrmErpDemo manual smoke (operator-eyes verification) | PARTIAL | PARTIAL | Manual step the human owner does at gate time |
 
-## 3. The SC-005 design decision
+## 3. The SC-005 design decision — RESOLVED (Path A taken)
+
+Resolution: Path A landed in the slice that closes #3. SubscriberClient no longer
+implements `IServiceBusAdapter`; the four `[Obsolete]` Handle(...) bridges, the
+`<ProjectReference>` from `NimBus.SDK` to `NimBus.ServiceBus`, the SDK forwarder
+shells (`NimBusReceiverHostedService`, `NimBusReceiverOptions`, `AddNimBusReceiver`)
+and the SDK-side `IServiceBusAdapter` registration are all gone. The
+`IServiceBusAdapter` registration moved to `AddServiceBusReceiver` in
+`NimBus.ServiceBus.Hosting`. `OutboxDispatcherSender` moved to
+`NimBus.ServiceBus.Hosting`; the SDK's `AddNimBusOutboxDispatcher` now resolves a
+new transport-neutral marker `INimBusDispatcherSender` (in `NimBus.Core/Outbox/`).
+Sample call sites (`AspirePubSub.Subscriber`, `CrmErpDemo/Crm.Adapter`,
+`CrmErpDemo/Erp.Api`) were migrated. Test counts: 0 failed, 382 passed, 84
+env-skipped.
+
+The design rationale and constraint analysis below is preserved as historical
+context for the decision gate review:
+
+
 
 Slice 5 of #3 has surfaced a concrete tension between two design constraints written into the codebase by separate teammates over the course of #3:
 
@@ -108,12 +126,12 @@ The user is invited to pick. Auto-mode default per "prefer action over planning"
 |---|---|---|---|---|
 | 1 | #16 | Completed | disentangler | Foundation |
 | 2 | #17 | Completed | abstractions-builder | Transport.Abstractions package |
-| 3 | #18 | **In flight — design decision pending** | disentangler / team-lead direct | Slices 1-5a landed (`e8eeca3`, `3565560`, `952658a`, `742dae3`, `809e8ca`); slice 5b-g pending Path A vs B |
+| 3 | #18 | **Completed (Path A)** | disentangler / team-lead direct | Slices 1-5a landed earlier; SC-005 strict closed in the Path A slice (drop bridges + forwarder shells, relocate OutboxDispatcherSender + IServiceBusAdapter registration, introduce INimBusDispatcherSender marker) |
 | 4 | #19 | Completed | abstractions-builder | Resolver/WebApp DI cleanup |
 | 5 | #20 | Completed | deferred-designer | Park-and-replay design + design doc |
 | 6 | #21 | Completed | conformance-builder | Conformance test suite |
 | 7 | #22 | Completed | conformance-builder | NimBus__Transport knob |
-| 8 | #23 | **Pending** | — | Decision gate review; depends on #3 closure path |
+| 8 | #23 | **Ready** | — | Decision gate: all gate criteria met (SC-005, SC-010, NFR-011 all YES). Re-derive checklist + post Proceed comment. |
 | 9 | #24 | Pending | — | RabbitMQ provider (Phase 6.2) |
 | 10 | #25 | Pending | — | CrmErpDemo --Transport rabbitmq (Phase 6.3) |
 | 11 | #26 | Pending | — | RabbitMqOnPrem sample (Phase 6.3) |
@@ -132,7 +150,7 @@ The user is invited to pick. Auto-mode default per "prefer action over planning"
 | 24 | — | Completed | abstractions-builder | `ServiceBusTransportManagement` adapter |
 | 25 | — | Pending | — | Phase 6.2 design: AdminService session-ops abstraction |
 
-**Phase 6.1 progress: 21/26 tasks completed, 1 in flight (#3, awaiting design decision), 1 pending (#8 decision gate), 3 pending Phase 6.2/6.3 work.**
+**Phase 6.1 progress: 22/26 tasks completed, 1 ready for review (#8 decision gate), 3 pending Phase 6.2/6.3 work.**
 
 ## 5. Once #3 closes
 

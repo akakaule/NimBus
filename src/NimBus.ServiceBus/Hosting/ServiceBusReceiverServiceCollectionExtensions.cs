@@ -1,7 +1,9 @@
 using System;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using NimBus.Core.Messages;
 
 namespace NimBus.ServiceBus.Hosting;
 
@@ -16,8 +18,11 @@ public static class ServiceBusReceiverServiceCollectionExtensions
     /// <summary>
     /// Registers a Service Bus receiver as a hosted service that listens to the
     /// given topic/subscription. Requires <see cref="ServiceBusClient"/> and an
-    /// <see cref="IServiceBusAdapter"/> to already be registered (the latter is
-    /// satisfied by <c>AddNimBusSubscriber</c> in the SDK).
+    /// <see cref="IMessageHandler"/> to already be registered (the latter is
+    /// satisfied by <c>AddNimBusSubscriber</c> in the SDK). An
+    /// <see cref="IServiceBusAdapter"/> is registered automatically if one is
+    /// not already present, sourcing the entity path from the topic +
+    /// subscription supplied via <paramref name="configure"/>.
     /// </summary>
     public static IServiceCollection AddServiceBusReceiver(
         this IServiceCollection services,
@@ -33,6 +38,13 @@ public static class ServiceBusReceiverServiceCollectionExtensions
             throw new ArgumentException("TopicName must be specified.", nameof(configure));
         if (string.IsNullOrEmpty(options.SubscriptionName))
             throw new ArgumentException("SubscriptionName must be specified.", nameof(configure));
+
+        var entityPath = $"{options.TopicName}/Subscriptions/{options.SubscriptionName}";
+
+        services.TryAddSingleton<IServiceBusAdapter>(sp => new ServiceBusAdapter(
+            sp.GetRequiredService<IMessageHandler>(),
+            sp.GetRequiredService<ServiceBusClient>(),
+            entityPath));
 
         services.AddHostedService(sp =>
         {

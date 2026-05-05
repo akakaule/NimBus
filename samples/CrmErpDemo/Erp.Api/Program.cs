@@ -5,8 +5,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using NimBus.Outbox.SqlServer;
+using NimBus.Core.Outbox;
 using NimBus.SDK.Extensions;
-using NimBus.SDK.Hosting;
+using NimBus.ServiceBus.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,7 +35,7 @@ builder.Services.AddNimBusSqlServerOutbox(erpConnectionString);
 if (hasServiceBus)
 {
     builder.Services.AddNimBusPublisher("ErpEndpoint");
-    builder.Services.AddSingleton<OutboxDispatcherSender>(sp =>
+    builder.Services.AddSingleton<INimBusDispatcherSender>(sp =>
     {
         var client = sp.GetRequiredService<ServiceBusClient>();
         return new OutboxDispatcherSender(client.CreateSender("ErpEndpoint"));

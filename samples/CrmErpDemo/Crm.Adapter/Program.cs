@@ -7,9 +7,10 @@ using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
 using NimBus.Core.Pipeline;
 using NimBus.Outbox.SqlServer;
+using NimBus.Core.Outbox;
 using NimBus.SDK.Extensions;
-using NimBus.SDK.Hosting;
 using NimBus.ServiceBus;
+using NimBus.ServiceBus.Hosting;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -28,7 +29,7 @@ builder.Services.AddHttpClient<ICrmApiClient, CrmApiClient>(c => c.BaseAddress =
 
 // Outbox + dispatcher: adapter owns dispatch so the API stays lean.
 builder.Services.AddNimBusSqlServerOutbox(crmConnectionString);
-builder.Services.AddSingleton<OutboxDispatcherSender>(sp =>
+builder.Services.AddSingleton<INimBusDispatcherSender>(sp =>
 {
     var client = sp.GetRequiredService<ServiceBusClient>();
     return new OutboxDispatcherSender(client.CreateSender("CrmEndpoint"));
@@ -58,7 +59,7 @@ builder.Services.AddNimBusSubscriber("CrmEndpoint", sub =>
     sub.AddHandler<ErpContactUpdated, ErpContactUpdatedHandler>();
     sub.AddHandler<ErpContactDeleted, ErpContactDeletedHandler>();
 });
-builder.Services.AddNimBusReceiver(opts =>
+builder.Services.AddServiceBusReceiver(opts =>
 {
     opts.TopicName = "CrmEndpoint";
     opts.SubscriptionName = "CrmEndpoint";

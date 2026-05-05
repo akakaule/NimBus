@@ -1,4 +1,3 @@
-using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -8,8 +7,6 @@ using NimBus.Core.Messages;
 using NimBus.Core.Outbox;
 using NimBus.SDK.EventHandlers;
 using NimBus.SDK.Hosting;
-using NimBus.ServiceBus;
-using NimBus.ServiceBus.Hosting;
 using System;
 
 namespace NimBus.SDK.Extensions
@@ -21,7 +18,7 @@ namespace NimBus.SDK.Extensions
     {
         /// <summary>
         /// Registers a NimBus publisher with the DI container.
-        /// Requires a <see cref="ServiceBusClient"/> to be registered in the container.
+        /// Requires a transport provider (e.g. <c>AddServiceBusTransport</c>) to be registered.
         /// </summary>
         /// <param name="services">The service collection.</param>
         /// <param name="endpoint">The endpoint (topic name) to publish messages to.</param>
@@ -33,7 +30,7 @@ namespace NimBus.SDK.Extensions
 
         /// <summary>
         /// Registers a NimBus publisher with the DI container.
-        /// Requires a <see cref="ServiceBusClient"/> to be registered in the container.
+        /// Requires a transport provider (e.g. <c>AddServiceBusTransport</c>) to be registered.
         /// </summary>
         public static IServiceCollection AddNimBusPublisher(this IServiceCollection services, Action<NimBusPublisherOptions> configure)
         {
@@ -68,7 +65,7 @@ namespace NimBus.SDK.Extensions
 
         /// <summary>
         /// Registers a NimBus subscriber with the DI container.
-        /// Requires a <see cref="ServiceBusClient"/> to be registered in the container.
+        /// Requires a transport provider (e.g. <c>AddServiceBusTransport</c>) to be registered.
         /// </summary>
         /// <param name="services">The service collection.</param>
         /// <param name="endpoint">The endpoint (topic name) for sending responses.</param>
@@ -81,7 +78,7 @@ namespace NimBus.SDK.Extensions
 
         /// <summary>
         /// Registers a NimBus subscriber with the DI container.
-        /// Requires a <see cref="ServiceBusClient"/> to be registered in the container.
+        /// Requires a transport provider (e.g. <c>AddServiceBusTransport</c>) to be registered.
         /// </summary>
         public static IServiceCollection AddNimBusSubscriber(this IServiceCollection services, Action<NimBusSubscriberOptions> configure, Action<NimBusSubscriberBuilder> configureBuilder)
         {
@@ -95,10 +92,10 @@ namespace NimBus.SDK.Extensions
             configureBuilder(builder);
 
             // Register the SDK-side EventHandlerProvider + populated handlers +
-            // the resulting StrictMessageHandler (IMessageHandler) at DI level so
-            // the Service-Bus adapter can resolve them without rebuilding the
-            // pipeline. The subscriber client wraps both the IMessageHandler and
-            // the IServiceBusAdapter for backwards-compat ASB-typed Handle calls.
+            // the resulting StrictMessageHandler (IMessageHandler) at DI level.
+            // The transport-specific receiver (e.g. AddServiceBusReceiver in
+            // NimBus.ServiceBus) is responsible for wiring its own dispatch
+            // adapter on top of IMessageHandler.
             services.TryAddSingleton<EventHandlerProvider>(sp =>
             {
                 var provider = new EventHandlerProvider();
@@ -152,51 +149,18 @@ namespace NimBus.SDK.Extensions
                     eventHandlerProvider, responseService, logger, sessionStateStore);
             });
 
-            services.TryAddSingleton<IServiceBusAdapter>(sp => new ServiceBusAdapter(
-                sp.GetRequiredService<IMessageHandler>(),
-                sp.GetRequiredService<ServiceBusClient>(),
-                options.EntityPath));
-
             services.TryAddSingleton<ISubscriberClient>(sp => new SubscriberClient(
                 sp.GetRequiredService<IMessageHandler>(),
-                sp.GetRequiredService<IServiceBusAdapter>(),
                 sp.GetRequiredService<EventHandlerProvider>()));
 
             return services;
         }
 
         /// <summary>
-        /// Registers a NimBus receiver as a hosted service that listens to a Service Bus topic/subscription
-        /// using a <see cref="Azure.Messaging.ServiceBus.ServiceBusSessionProcessor"/>.
-        /// Requires <see cref="AddNimBusSubscriber(IServiceCollection, string, Action{NimBusSubscriberBuilder})"/> to be called first to register the message handler pipeline.
-        /// </summary>
-        /// <param name="services">The service collection.</param>
-        /// <param name="configure">Action to configure the receiver options.</param>
-        /// <returns>The service collection for chaining.</returns>
-        [Obsolete("Use NimBus.ServiceBus.Hosting.AddServiceBusReceiver. " +
-                  "This SDK overload is a transport-leaking bridge kept for one major version " +
-                  "while NimBus.SDK is detached from Azure.Messaging.ServiceBus.", false)]
-        public static IServiceCollection AddNimBusReceiver(this IServiceCollection services, Action<NimBusReceiverOptions> configure)
-        {
-            // Forward to the Service Bus transport's receiver extension.
-            // AddNimBusSubscriber registers IServiceBusAdapter directly so the
-            // new receiver resolves it without any name dependency on the SDK
-            // shell.
-            var options = new NimBusReceiverOptions();
-            configure(options);
-
-            return services.AddServiceBusReceiver(o =>
-            {
-                o.TopicName = options.TopicName;
-                o.SubscriptionName = options.SubscriptionName;
-                o.MaxConcurrentSessions = options.MaxConcurrentSessions;
-                o.MaxAutoLockRenewalDuration = options.MaxAutoLockRenewalDuration;
-            });
-        }
-
-        /// <summary>
         /// Registers the outbox background dispatcher as a hosted service.
-        /// Call this after registering an IOutbox implementation.
+        /// Call this after registering an IOutbox implementation and a transport-specific
+        /// <see cref="INimBusDispatcherSender"/> (e.g. <c>OutboxDispatcherSender</c> in
+        /// <c>NimBus.ServiceBus.Hosting</c>).
         /// </summary>
         /// <param name="services">The service collection.</param>
         /// <param name="pollingInterval">How often to poll for pending messages. Default: 1 second.</param>
@@ -207,16 +171,12 @@ namespace NimBus.SDK.Extensions
             services.AddHostedService(sp =>
             {
                 var outbox = sp.GetRequiredService<IOutbox>();
-                var client = sp.GetRequiredService<ServiceBusClient>();
 
-                // The dispatcher needs a real sender (not OutboxSender) to actually send to Service Bus
-                // We need to know the endpoint. For now, get it from the publisher options or require explicit config.
-                // The endpoint is captured via the publisher registration.
-                var sender = sp.GetService<OutboxDispatcherSender>();
+                var sender = sp.GetService<INimBusDispatcherSender>();
                 if (sender == null)
                     throw new InvalidOperationException(
-                        "OutboxDispatcherSender is not registered. Register AddNimBusPublisher before AddNimBusOutboxDispatcher, " +
-                        "or register OutboxDispatcherSender manually.");
+                        "INimBusDispatcherSender is not registered. Register a transport-specific dispatcher sender " +
+                        "(e.g. NimBus.ServiceBus.Hosting.OutboxDispatcherSender) before calling AddNimBusOutboxDispatcher.");
 
                 var dispatcherLogger = sp.GetService<ILogger<OutboxDispatcher>>();
                 var hostedLogger = sp.GetService<ILogger<OutboxDispatcherHostedService>>();

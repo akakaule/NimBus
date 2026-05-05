@@ -21,7 +21,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\NimBus.ServiceBus\NimBus.ServiceBus.csproj" />
+    <ProjectReference Include="..\NimBus.Core\NimBus.Core.csproj" />
+    <ProjectReference Include="..\NimBus.Transport.Abstractions\NimBus.Transport.Abstractions.csproj" />
+    <ProjectReference Include="..\NimBus.MessageStore.Abstractions\NimBus.MessageStore.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>

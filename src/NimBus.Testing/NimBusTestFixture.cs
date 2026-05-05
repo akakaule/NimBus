@@ -34,7 +34,8 @@ public class NimBusTestFixture
         _messageHandler = new StrictMessageHandler(
             _eventHandlerProvider,
             responseService,
-            NullLogger.Instance);
+            NullLogger.Instance,
+            new InMemorySessionStateStore());
     }
 
     public NimBusTestFixture(IRetryPolicyProvider retryPolicyProvider)
@@ -51,7 +52,8 @@ public class NimBusTestFixture
             _eventHandlerProvider,
             responseService,
             NullLogger.Instance,
-            retryPolicyProvider);
+            retryPolicyProvider,
+            new InMemorySessionStateStore());
     }
 
     public void RegisterHandler<TEvent>(Func<IEventHandler<TEvent>> handlerFactory) where TEvent : IEvent

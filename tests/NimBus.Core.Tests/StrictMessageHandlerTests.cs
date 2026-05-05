@@ -61,17 +61,17 @@ public class StrictMessageHandlerTests
     public async Task HandleEventRequest_SessionBlocked_SendsDeferralAndDefersToSubscription()
     {
         var ctx = CreateContext(messageType: MessageType.EventRequest);
-        ctx.BlockedByEventId = "other-event";
+        var store = new FakeSessionStateStore { BlockedByEventId = "other-event" };
         var handler = new FakeEventContextHandler();
         var response = new FakeResponseService();
-        var sut = CreateHandler(handler, response);
+        var sut = CreateHandler(handler, response, store);
 
         // SessionBlockedException is caught by base MessageHandler (swallowed)
         await sut.Handle(ctx);
 
         Assert.AreEqual(1, response.DeferralCalls);
         Assert.AreEqual(1, response.SendToDeferredSubscriptionCalls);
-        Assert.AreEqual(1, ctx.IncrementDeferredCountCalls);
+        Assert.AreEqual(1, store.IncrementDeferredCountCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
     }
 
@@ -79,15 +79,16 @@ public class StrictMessageHandlerTests
     public async Task HandleEventRequest_HandlerThrows_SendsErrorBlocksSessionAndCompletes()
     {
         var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var store = new FakeSessionStateStore();
         var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
         var response = new FakeResponseService();
-        var sut = CreateHandler(handler, response);
+        var sut = CreateHandler(handler, response, store);
 
         // EventContextHandlerException is caught by base MessageHandler (swallowed)
         await sut.Handle(ctx);
 
         Assert.AreEqual(1, response.ErrorCalls);
-        Assert.AreEqual(1, ctx.BlockSessionCalls);
+        Assert.AreEqual(1, store.BlockSessionCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
     }
 
@@ -162,15 +163,15 @@ public class StrictMessageHandlerTests
     public async Task HandleRetryRequest_BlockedByThis_HandlesUnblocksAndCompletes()
     {
         var ctx = CreateContext(messageType: MessageType.RetryRequest);
-        ctx.IsSessionBlockedByThisResult = true;
+        var store = new FakeSessionStateStore { IsSessionBlockedByThisResult = true };
         var handler = new FakeEventContextHandler();
         var response = new FakeResponseService();
-        var sut = CreateHandler(handler, response);
+        var sut = CreateHandler(handler, response, store);
 
         await sut.Handle(ctx);
 
         Assert.AreEqual(1, handler.HandleCalls);
-        Assert.AreEqual(1, ctx.UnblockSessionCalls);
+        Assert.AreEqual(1, store.UnblockSessionCalls);
         Assert.AreEqual(1, response.ResolutionCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
     }
@@ -180,11 +181,11 @@ public class StrictMessageHandlerTests
     {
         var deferredCtx = CreateContext(messageType: MessageType.EventRequest, eventId: "deferred-event");
         var ctx = CreateContext(messageType: MessageType.RetryRequest);
-        ctx.IsSessionBlockedByThisResult = true;
         ctx.NextDeferredResult = deferredCtx;
+        var store = new FakeSessionStateStore { IsSessionBlockedByThisResult = true };
         var handler = new FakeEventContextHandler();
         var response = new FakeResponseService();
-        var sut = CreateHandler(handler, response);
+        var sut = CreateHandler(handler, response, store);
 
         await sut.Handle(ctx);
 
@@ -196,12 +197,15 @@ public class StrictMessageHandlerTests
     public async Task HandleRetryRequest_BlockedByThis_WithNewDeferred_SendsProcessDeferredRequest()
     {
         var ctx = CreateContext(messageType: MessageType.RetryRequest);
-        ctx.IsSessionBlockedByThisResult = true;
         ctx.NextDeferredResult = null; // no legacy deferred
-        ctx.DeferredCountResult = 3;  // but new-style deferred exist
+        var store = new FakeSessionStateStore
+        {
+            IsSessionBlockedByThisResult = true,
+            DeferredCountResult = 3,  // but new-style deferred exist
+        };
         var handler = new FakeEventContextHandler();
         var response = new FakeResponseService();
-        var sut = CreateHandler(handler, response);
+        var sut = CreateHandler(handler, response, store);
 
         await sut.Handle(ctx);
 
@@ -213,11 +217,14 @@ public class StrictMessageHandlerTests
     public async Task HandleRetryRequest_NotBlockedByThis_SendsResolutionAndCompletes()
     {
         var ctx = CreateContext(messageType: MessageType.RetryRequest);
-        ctx.IsSessionBlockedByThisResult = false;
-        ctx.BlockedByEventId = "different-event";
+        var store = new FakeSessionStateStore
+        {
+            IsSessionBlockedByThisResult = false,
+            BlockedByEventId = "different-event",
+        };
         var handler = new FakeEventContextHandler();
         var response = new FakeResponseService();
-        var sut = CreateHandler(handler, response);
+        var sut = CreateHandler(handler, response, store);
 
         await sut.Handle(ctx);
 
@@ -230,16 +237,16 @@ public class StrictMessageHandlerTests
     public async Task HandleRetryRequest_HandlerThrows_SendsErrorAndCompletes()
     {
         var ctx = CreateContext(messageType: MessageType.RetryRequest);
-        ctx.IsSessionBlockedByThisResult = true;
+        var store = new FakeSessionStateStore { IsSessionBlockedByThisResult = true };
         var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
         var response = new FakeResponseService();
-        var sut = CreateHandler(handler, response);
+        var sut = CreateHandler(handler, response, store);
 
         await sut.Handle(ctx);
 
         Assert.AreEqual(1, response.ErrorCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
-        Assert.AreEqual(0, ctx.UnblockSessionCalls, "Should not unblock on failure");
+        Assert.AreEqual(0, store.UnblockSessionCalls, "Should not unblock on failure");
     }
 
     // ── HandleResubmissionRequest ───────────────────────────────────────
@@ -263,28 +270,28 @@ public class StrictMessageHandlerTests
     public async Task HandleResubmissionRequest_FromManager_BlockedByThis_Unblocks()
     {
         var ctx = CreateContext(messageType: MessageType.ResubmissionRequest, from: "Manager");
-        ctx.IsSessionBlockedByThisResult = true;
+        var store = new FakeSessionStateStore { IsSessionBlockedByThisResult = true };
         var handler = new FakeEventContextHandler();
         var response = new FakeResponseService();
-        var sut = CreateHandler(handler, response);
+        var sut = CreateHandler(handler, response, store);
 
         await sut.Handle(ctx);
 
-        Assert.AreEqual(1, ctx.UnblockSessionCalls);
+        Assert.AreEqual(1, store.UnblockSessionCalls);
     }
 
     [TestMethod]
     public async Task HandleResubmissionRequest_FromManager_NotBlockedByThis_SkipsUnblock()
     {
         var ctx = CreateContext(messageType: MessageType.ResubmissionRequest, from: "Manager");
-        ctx.IsSessionBlockedByThisResult = false;
+        var store = new FakeSessionStateStore { IsSessionBlockedByThisResult = false };
         var handler = new FakeEventContextHandler();
         var response = new FakeResponseService();
-        var sut = CreateHandler(handler, response);
+        var sut = CreateHandler(handler, response, store);
 
         await sut.Handle(ctx);
 
-        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(0, store.UnblockSessionCalls);
     }
 
     [TestMethod]
@@ -336,14 +343,14 @@ public class StrictMessageHandlerTests
     public async Task HandleSkipRequest_FromManager_BlockedByThis_UnblocksAndSendsSkip()
     {
         var ctx = CreateContext(messageType: MessageType.SkipRequest, from: "Manager");
-        ctx.IsSessionBlockedByThisResult = true;
+        var store = new FakeSessionStateStore { IsSessionBlockedByThisResult = true };
         var handler = new FakeEventContextHandler();
         var response = new FakeResponseService();
-        var sut = CreateHandler(handler, response);
+        var sut = CreateHandler(handler, response, store);
 
         await sut.Handle(ctx);
 
-        Assert.AreEqual(1, ctx.UnblockSessionCalls);
+        Assert.AreEqual(1, store.UnblockSessionCalls);
         Assert.AreEqual(1, response.SkipCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
     }
@@ -352,11 +359,14 @@ public class StrictMessageHandlerTests
     public async Task HandleSkipRequest_NotBlockedByThis_SendsSkipAndCompletes()
     {
         var ctx = CreateContext(messageType: MessageType.SkipRequest, from: "Manager");
-        ctx.IsSessionBlockedByThisResult = false;
-        ctx.BlockedByEventId = "different-event";
+        var store = new FakeSessionStateStore
+        {
+            IsSessionBlockedByThisResult = false,
+            BlockedByEventId = "different-event",
+        };
         var handler = new FakeEventContextHandler();
         var response = new FakeResponseService();
-        var sut = CreateHandler(handler, response);
+        var sut = CreateHandler(handler, response, store);
 
         await sut.Handle(ctx);
 
@@ -512,10 +522,12 @@ public class StrictMessageHandlerTests
     private static StrictMessageHandler CreateHandler(
         FakeEventContextHandler handler,
         FakeResponseService response,
+        FakeSessionStateStore sessionStateStore = null,
         FakeDeferredMessageProcessor processor = null,
         string topicName = null)
     {
-        return new StrictMessageHandler(handler, response, NullLogger.Instance);
+        sessionStateStore ??= new FakeSessionStateStore();
+        return new StrictMessageHandler(handler, response, NullLogger.Instance, sessionStateStore);
     }
 
     private static FakeMessageContext CreateContext(
@@ -640,21 +652,16 @@ public class StrictMessageHandlerTests
         public long? ProcessingTimeMs { get; set; }
         public DateTime? HandlerStartedAtUtc { get; set; }
 
-        // Configurable behavior
-        public string BlockedByEventId { get; set; }
-        public bool IsSessionBlockedByThisResult { get; set; }
+        // Configurable transport-side behaviour. Session-state knobs moved to
+        // FakeSessionStateStore now that StrictMessageHandler injects ISessionStateStore
+        // directly (the [Obsolete] IMessageContext bridges were dropped in #17).
         public IMessageContext NextDeferredResult { get; set; }
         public IMessageContext NextDeferredWithPopResult { get; set; }
-        public int DeferredCountResult { get; set; }
 
         // Call counters
         public int CompletedCalls { get; private set; }
         public int DeadLetterCalls { get; private set; }
         public int AbandonCalls { get; private set; }
-        public int BlockSessionCalls { get; private set; }
-        public int UnblockSessionCalls { get; private set; }
-        public int IncrementDeferredCountCalls { get; private set; }
-        public int ResetDeferredCountCalls { get; private set; }
 
         public Task Complete(CancellationToken ct = default) { CompletedCalls++; return Task.CompletedTask; }
         public Task Abandon(TransientException ex) { AbandonCalls++; return Task.CompletedTask; }
@@ -663,18 +670,71 @@ public class StrictMessageHandlerTests
         public Task DeferOnly(CancellationToken ct = default) => Task.CompletedTask;
         public Task<IMessageContext> ReceiveNextDeferred(CancellationToken ct = default) => Task.FromResult(NextDeferredResult);
         public Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken ct = default) => Task.FromResult(NextDeferredWithPopResult);
-        public Task BlockSession(CancellationToken ct = default) { BlockSessionCalls++; return Task.CompletedTask; }
-        public Task UnblockSession(CancellationToken ct = default) { UnblockSessionCalls++; return Task.CompletedTask; }
-        public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));
-        public Task<bool> IsSessionBlockedByThis(CancellationToken ct = default) => Task.FromResult(IsSessionBlockedByThisResult);
-        public Task<bool> IsSessionBlockedByEventId(CancellationToken ct = default) => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));
-        public Task<string> GetBlockedByEventId(CancellationToken ct = default) => Task.FromResult(BlockedByEventId);
-        public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken ct = default) => Task.FromResult(0);
-        public Task IncrementDeferredCount(CancellationToken ct = default) { IncrementDeferredCountCalls++; return Task.CompletedTask; }
-        public Task DecrementDeferredCount(CancellationToken ct = default) => Task.CompletedTask;
-        public Task<int> GetDeferredCount(CancellationToken ct = default) => Task.FromResult(DeferredCountResult);
-        public Task<bool> HasDeferredMessages(CancellationToken ct = default) => Task.FromResult(NextDeferredResult != null || DeferredCountResult > 0);
-        public Task ResetDeferredCount(CancellationToken ct = default) { ResetDeferredCountCalls++; return Task.CompletedTask; }
-        public Task ScheduleRedelivery(TimeSpan delay, int throttleRetryCount, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Fake ISessionStateStore that records each call so tests can assert that
+    /// StrictMessageHandler routes session-state operations through the store
+    /// instead of through IMessageContext (the [Obsolete] bridges were dropped
+    /// in #17). Mirrors the configurable-result + call-counter pattern the
+    /// FakeMessageContext used to carry for these methods.
+    /// </summary>
+    private sealed class FakeSessionStateStore : NimBus.MessageStore.Abstractions.ISessionStateStore
+    {
+        // Configurable behavior
+        public string BlockedByEventId { get; set; }
+        public bool IsSessionBlockedByThisResult { get; set; }
+        public int DeferredCountResult { get; set; }
+
+        // Call counters
+        public int BlockSessionCalls { get; private set; }
+        public int UnblockSessionCalls { get; private set; }
+        public int IncrementDeferredCountCalls { get; private set; }
+        public int ResetDeferredCountCalls { get; private set; }
+
+        public Task BlockSession(string endpointId, string sessionId, string eventId, CancellationToken ct = default)
+        { BlockSessionCalls++; BlockedByEventId = eventId; return Task.CompletedTask; }
+
+        public Task UnblockSession(string endpointId, string sessionId, CancellationToken ct = default)
+        { UnblockSessionCalls++; BlockedByEventId = null; return Task.CompletedTask; }
+
+        public Task<bool> IsSessionBlocked(string endpointId, string sessionId, CancellationToken ct = default)
+            => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));
+
+        public Task<bool> IsSessionBlockedByThis(string endpointId, string sessionId, string eventId, CancellationToken ct = default)
+            => Task.FromResult(IsSessionBlockedByThisResult);
+
+        public Task<bool> IsSessionBlockedByEventId(string endpointId, string sessionId, CancellationToken ct = default)
+            => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));
+
+        public Task<string> GetBlockedByEventId(string endpointId, string sessionId, CancellationToken ct = default)
+            => Task.FromResult(BlockedByEventId ?? string.Empty);
+
+        public Task<int> GetNextDeferralSequenceAndIncrement(string endpointId, string sessionId, CancellationToken ct = default)
+            => Task.FromResult(0);
+
+        public Task IncrementDeferredCount(string endpointId, string sessionId, CancellationToken ct = default)
+        { IncrementDeferredCountCalls++; return Task.CompletedTask; }
+
+        public Task DecrementDeferredCount(string endpointId, string sessionId, CancellationToken ct = default)
+            => Task.CompletedTask;
+
+        public Task<int> GetDeferredCount(string endpointId, string sessionId, CancellationToken ct = default)
+            => Task.FromResult(DeferredCountResult);
+
+        public Task<bool> HasDeferredMessages(string endpointId, string sessionId, CancellationToken ct = default)
+            => Task.FromResult(DeferredCountResult > 0);
+
+        public Task ResetDeferredCount(string endpointId, string sessionId, CancellationToken ct = default)
+        { ResetDeferredCountCalls++; return Task.CompletedTask; }
+
+        public Task<int> GetLastReplayedSequence(string endpointId, string sessionId, CancellationToken ct = default)
+            => Task.FromResult(0);
+
+        public Task<bool> TryAdvanceLastReplayedSequence(string endpointId, string sessionId, int expectedCurrent, int newValue, CancellationToken ct = default)
+            => Task.FromResult(false);
+
+        public Task<int> GetActiveParkCount(string endpointId, string sessionId, CancellationToken ct = default)
+            => Task.FromResult(0);
     }
 }

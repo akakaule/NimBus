@@ -1,6 +1,5 @@
 using Azure.Messaging.ServiceBus;
 using NimBus.Core.Messages;
-using NimBus.MessageStore.Abstractions;
 using Microsoft.Azure.Functions.Worker;
 using System;
 using System.Collections.Generic;
@@ -28,7 +27,6 @@ namespace NimBus.ServiceBus
         private readonly IMessageHandler _messageHandler;
         private readonly ServiceBusClient _serviceBusClient;
         private readonly string _entityPath;
-        private readonly ISessionStateStore _sessionStateStore;
 
         /// <summary>
         /// Creates a new ServiceBusAdapter.
@@ -37,22 +35,18 @@ namespace NimBus.ServiceBus
         /// <param name="serviceBusClient">Optional ServiceBusClient for receiving deferred messages in isolated worker model.
         /// Inject via dependency injection if you need to use ReceiveDeferredMessageAsync.</param>
         /// <param name="entityPath">Optional entity path (queue name or topic/subscription path) for receiving deferred messages.</param>
-        /// <param name="sessionStateStore">Optional ISessionStateStore. When provided, the obsolete session-state bridges on
-        /// IMessageContext (BlockSession, deferred-count helpers, …) delegate to it. When null, those bridges keep their
-        /// legacy SB-session-state behaviour. Production hosts wire this from DI; unit tests can leave it null.</param>
-        public ServiceBusAdapter(IMessageHandler messageHandler, ServiceBusClient serviceBusClient = null, string entityPath = null, ISessionStateStore sessionStateStore = null)
+        public ServiceBusAdapter(IMessageHandler messageHandler, ServiceBusClient serviceBusClient = null, string entityPath = null)
         {
             _messageHandler = messageHandler ?? throw new ArgumentNullException(nameof(messageHandler));
             _serviceBusClient = serviceBusClient;
             _entityPath = entityPath;
-            _sessionStateStore = sessionStateStore;
         }
 
         public async Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default)
         {
             var messageWrapper = new ServiceBusMessage(message);
             var sessionWrapper = new ServiceBusSession(sessionActions, _serviceBusClient, _entityPath, message.SessionId);
-            var messageContext = new MessageContext(messageWrapper, sessionWrapper, _sessionStateStore);
+            var messageContext = new MessageContext(messageWrapper, sessionWrapper);
 
             await HandleWithLatencyTracking(message, messageContext, cancellationToken);
         }
@@ -61,7 +55,7 @@ namespace NimBus.ServiceBus
         {
             var messageWrapper = new ServiceBusMessage(message);
             var sessionWrapper = new ServiceBusSession(messageActions, sessionActions, _serviceBusClient, _entityPath, message.SessionId);
-            var messageContext = new MessageContext(messageWrapper, sessionWrapper, _sessionStateStore);
+            var messageContext = new MessageContext(messageWrapper, sessionWrapper);
 
             await HandleWithLatencyTracking(message, messageContext, cancellationToken);
         }
@@ -70,7 +64,7 @@ namespace NimBus.ServiceBus
         {
             var messageWrapper = new ServiceBusMessage(message);
             var sessionWrapper = new ServiceBusSession(sessionReceiver);
-            var messageContext = new MessageContext(messageWrapper, sessionWrapper, _sessionStateStore);
+            var messageContext = new MessageContext(messageWrapper, sessionWrapper);
 
             await HandleWithLatencyTracking(message, messageContext, cancellationToken);
         }
@@ -79,7 +73,7 @@ namespace NimBus.ServiceBus
         {
             var messageWrapper = new ServiceBusMessage(args.Message);
             var sessionWrapper = new ServiceBusSession(args, _serviceBusClient, _entityPath);
-            var messageContext = new MessageContext(messageWrapper, sessionWrapper, _sessionStateStore);
+            var messageContext = new MessageContext(messageWrapper, sessionWrapper);
 
             await HandleWithLatencyTracking(args.Message, messageContext, cancellationToken);
         }

@@ -5,6 +5,7 @@ using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
 using NimBus.SDK;
 using NimBus.SDK.EventHandlers;
+using NimBus.Testing;
 
 namespace NimBus.EndToEnd.Tests.Infrastructure;
 
@@ -42,7 +43,8 @@ internal sealed class EndToEndFixture
         _messageHandler = new StrictMessageHandler(
             _eventHandlerProvider,
             responseService,
-            NullLogger.Instance);
+            NullLogger.Instance,
+            new InMemorySessionStateStore());
     }
 
     public EndToEndFixture(IRetryPolicyProvider retryPolicyProvider)
@@ -59,7 +61,8 @@ internal sealed class EndToEndFixture
             _eventHandlerProvider,
             responseService,
             NullLogger.Instance,
-            retryPolicyProvider);
+            retryPolicyProvider,
+            new InMemorySessionStateStore());
     }
 
     public EndToEndFixture(IPermanentFailureClassifier classifier, IRetryPolicyProvider? retryPolicyProvider = null)
@@ -79,7 +82,8 @@ internal sealed class EndToEndFixture
             retryPolicyProvider,
             pipeline: null,
             lifecycleNotifier: null,
-            permanentFailureClassifier: classifier);
+            permanentFailureClassifier: classifier,
+            sessionStateStore: new InMemorySessionStateStore());
     }
 
     /// <summary>

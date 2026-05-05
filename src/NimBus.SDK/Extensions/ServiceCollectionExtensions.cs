@@ -152,7 +152,7 @@ namespace NimBus.SDK.Extensions
                         eventHandlerProvider, responseService, logger, sessionStateStore);
                 }
 
-                var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, options.EntityPath, sessionStateStore);
+                var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, options.EntityPath);
                 return new SubscriberClient(serviceBusAdapter, eventHandlerProvider);
             });
 

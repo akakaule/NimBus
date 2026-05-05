@@ -252,78 +252,44 @@ namespace NimBus.Core.Messages
         private Task SendDeferralResponse(IMessageContext messageContext, SessionBlockedException exception, CancellationToken cancellationToken = default) =>
             _responseService.SendDeferralResponse(messageContext, exception, cancellationToken);
 
-        // The session-state helpers below prefer the injected ISessionStateStore so
-        // that DI-wired hosts go straight to the store instead of routing through
-        // the [Obsolete] IMessageContext bridges. When no store is wired (legacy
-        // unit-test paths that construct StrictMessageHandler directly without DI),
-        // they fall back to the IMessageContext methods, whose bridge bodies cover
-        // the same semantics.
+        // The session-state helpers below require an injected ISessionStateStore.
+        // The [Obsolete] IMessageContext bridges that earlier rounds fell back to
+        // were removed in #17 (drop the bridges to hit SC-010), so a null store
+        // now means "host registered no Add{Provider}MessageStore" — that's a
+        // configuration error for any host that hits a session-blocked /
+        // deferred-message path. Fail loud rather than silently doing nothing.
 
-        private Task BlockSession(IMessageContext messageContext, CancellationToken cancellationToken = default)
-        {
-            if (_sessionStateStore != null)
-                return _sessionStateStore.BlockSession(messageContext.To, messageContext.SessionId, messageContext.EventId, cancellationToken);
-#pragma warning disable CS0618 // Bridge fallback for hosts without DI-registered ISessionStateStore.
-            return messageContext.BlockSession(cancellationToken);
-#pragma warning restore CS0618
-        }
+        private const string SessionStateStoreNotRegisteredMessage =
+            "ISessionStateStore is not registered. Call AddSqlServerMessageStore(), " +
+            "AddCosmosDbMessageStore(), or AddInMemoryMessageStore() inside your " +
+            "AddNimBus(builder => ...) configuration so session-state operations have a backing store.";
 
-        private Task UnblockSession(IMessageContext messageContext, CancellationToken cancellationToken = default)
-        {
-            if (_sessionStateStore != null)
-                return _sessionStateStore.UnblockSession(messageContext.To, messageContext.SessionId, cancellationToken);
-#pragma warning disable CS0618
-            return messageContext.UnblockSession(cancellationToken);
-#pragma warning restore CS0618
-        }
+        private ISessionStateStore Store() =>
+            _sessionStateStore ?? throw new InvalidOperationException(SessionStateStoreNotRegisteredMessage);
 
-        private Task<bool> IsSessionBlockedByThis(IMessageContext messageContext, CancellationToken cancellationToken = default)
-        {
-            if (_sessionStateStore != null)
-                return _sessionStateStore.IsSessionBlockedByThis(messageContext.To, messageContext.SessionId, messageContext.EventId, cancellationToken);
-#pragma warning disable CS0618
-            return messageContext.IsSessionBlockedByThis(cancellationToken);
-#pragma warning restore CS0618
-        }
+        private Task BlockSession(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
+            Store().BlockSession(messageContext.To, messageContext.SessionId, messageContext.EventId, cancellationToken);
+
+        private Task UnblockSession(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
+            Store().UnblockSession(messageContext.To, messageContext.SessionId, cancellationToken);
+
+        private Task<bool> IsSessionBlockedByThis(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
+            Store().IsSessionBlockedByThis(messageContext.To, messageContext.SessionId, messageContext.EventId, cancellationToken);
 
         private async Task<string> GetBlockedByEventId(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
-            if (_sessionStateStore != null)
-            {
-                var value = await _sessionStateStore.GetBlockedByEventId(messageContext.To, messageContext.SessionId, cancellationToken);
-                return string.IsNullOrEmpty(value) ? null : value;
-            }
-#pragma warning disable CS0618
-            return await messageContext.GetBlockedByEventId(cancellationToken);
-#pragma warning restore CS0618
+            var value = await Store().GetBlockedByEventId(messageContext.To, messageContext.SessionId, cancellationToken);
+            return string.IsNullOrEmpty(value) ? null : value;
         }
 
-        private Task<int> GetNextDeferralSequenceAndIncrement(IMessageContext messageContext, CancellationToken cancellationToken = default)
-        {
-            if (_sessionStateStore != null)
-                return _sessionStateStore.GetNextDeferralSequenceAndIncrement(messageContext.To, messageContext.SessionId, cancellationToken);
-#pragma warning disable CS0618
-            return messageContext.GetNextDeferralSequenceAndIncrement(cancellationToken);
-#pragma warning restore CS0618
-        }
+        private Task<int> GetNextDeferralSequenceAndIncrement(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
+            Store().GetNextDeferralSequenceAndIncrement(messageContext.To, messageContext.SessionId, cancellationToken);
 
-        private Task IncrementDeferredCount(IMessageContext messageContext, CancellationToken cancellationToken = default)
-        {
-            if (_sessionStateStore != null)
-                return _sessionStateStore.IncrementDeferredCount(messageContext.To, messageContext.SessionId, cancellationToken);
-#pragma warning disable CS0618
-            return messageContext.IncrementDeferredCount(cancellationToken);
-#pragma warning restore CS0618
-        }
+        private Task IncrementDeferredCount(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
+            Store().IncrementDeferredCount(messageContext.To, messageContext.SessionId, cancellationToken);
 
-        private Task<int> GetDeferredCount(IMessageContext messageContext, CancellationToken cancellationToken = default)
-        {
-            if (_sessionStateStore != null)
-                return _sessionStateStore.GetDeferredCount(messageContext.To, messageContext.SessionId, cancellationToken);
-#pragma warning disable CS0618
-            return messageContext.GetDeferredCount(cancellationToken);
-#pragma warning restore CS0618
-        }
+        private Task<int> GetDeferredCount(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
+            Store().GetDeferredCount(messageContext.To, messageContext.SessionId, cancellationToken);
 
         private Task SendRetryResponse(IMessageContext messageContext, int messageDelayMinutes, CancellationToken cancellationToken = default) =>
             _responseService.SendRetryResponse(messageContext, messageDelayMinutes, cancellationToken);

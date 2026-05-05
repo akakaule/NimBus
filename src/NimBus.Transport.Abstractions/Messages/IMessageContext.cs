@@ -36,10 +36,13 @@ namespace NimBus.Core.Messages
     /// declaration in the <c>NimBus.Core</c> assembly so existing
     /// <c>using NimBus.Core.Messages;</c> directives stay source-compatible.
     ///
-    /// The <c>[Obsolete]</c> session-state bridges remain for one major version
-    /// while consumers migrate to <see cref="NimBus.MessageStore.Abstractions.ISessionStateStore"/>
-    /// injection (issue #16 follow-up D removes them; this file moves them
-    /// verbatim).
+    /// The session-state bridge methods (BlockSession, IsSessionBlocked*,
+    /// GetBlockedByEventId, deferred-count helpers) were removed in
+    /// issue #16 follow-up D. Consumers inject
+    /// <see cref="NimBus.MessageStore.Abstractions.ISessionStateStore"/> via DI
+    /// directly. Counted post-drop: 11 members (8 transport ops including
+    /// <see cref="IsDeferred"/>, plus the 3 timing properties below) — under
+    /// the SC-010 ceiling of 12.
     /// </summary>
     public interface IMessageContext : IReceivedMessage
     {
@@ -56,62 +59,6 @@ namespace NimBus.Core.Messages
 
         Task<IMessageContext> ReceiveNextDeferred(CancellationToken cancellationToken = default);
         Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken cancellationToken = default);
-
-        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
-        Task BlockSession(CancellationToken cancellationToken = default);
-
-        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
-        Task UnblockSession(CancellationToken cancellationToken = default);
-
-        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
-        Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default);
-
-        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
-        Task<bool> IsSessionBlockedByThis(CancellationToken cancellationToken = default);
-
-        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
-        Task<bool> IsSessionBlockedByEventId(CancellationToken cancellationToken = default);
-
-        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
-        Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default);
-
-        /// <summary>
-        /// Gets the next deferral sequence number and increments the counter.
-        /// Used for ordering messages in the non-session deferred subscription.
-        /// </summary>
-        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
-        Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken cancellationToken = default);
-
-        /// <summary>
-        /// Increments the deferred message count in session state.
-        /// </summary>
-        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
-        Task IncrementDeferredCount(CancellationToken cancellationToken = default);
-
-        /// <summary>
-        /// Decrements the deferred message count in session state.
-        /// </summary>
-        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
-        Task DecrementDeferredCount(CancellationToken cancellationToken = default);
-
-        /// <summary>
-        /// Gets the current deferred message count from session state.
-        /// </summary>
-        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
-        Task<int> GetDeferredCount(CancellationToken cancellationToken = default);
-
-        /// <summary>
-        /// Checks if there are any deferred messages (legacy or new approach).
-        /// </summary>
-        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
-        Task<bool> HasDeferredMessages(CancellationToken cancellationToken = default);
-
-        /// <summary>
-        /// Resets the deferred message count to zero.
-        /// Called after all deferred messages have been republished.
-        /// </summary>
-        [Obsolete("Use ISessionStateStore via DI. Will be removed in v2.")]
-        Task ResetDeferredCount(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Time the inbound message spent in Service Bus before the handler was

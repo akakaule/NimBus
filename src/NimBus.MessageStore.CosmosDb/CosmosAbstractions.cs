@@ -24,11 +24,15 @@ public interface ICosmosContainerAdapter
     FeedIterator<T> GetItemQueryIterator<T>(string queryText);
     FeedIterator<T> GetItemQueryIterator<T>(string queryText, string continuationToken = null, QueryRequestOptions requestOptions = null);
     IOrderedQueryable<T> GetItemLinqQueryable<T>(bool allowSynchronousQueryExecution = false, string continuationToken = null, QueryRequestOptions requestOptions = null);
+    Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey? partitionKey = null, ItemRequestOptions requestOptions = null);
     Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default);
+    Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey, ItemRequestOptions requestOptions);
+    Task<ItemResponse<T>> ReplaceItemAsync<T>(T item, string id, PartitionKey partitionKey, ItemRequestOptions requestOptions = null);
     Task<ItemResponse<T>> DeleteItemAsync<T>(string id, PartitionKey partitionKey);
     Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey);
     Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey, ItemRequestOptions requestOptions);
     Task<ItemResponse<T>> PatchItemAsync<T>(string id, PartitionKey partitionKey, IReadOnlyList<PatchOperation> patchOperations);
+    Task<ItemResponse<T>> PatchItemAsync<T>(string id, PartitionKey partitionKey, IReadOnlyList<PatchOperation> patchOperations, PatchItemRequestOptions requestOptions);
     Task<ContainerResponse> DeleteContainerAsync();
     Task<FeedResponse<T>> ReadManyItemsAsync<T>(IReadOnlyList<(string id, PartitionKey partitionKey)> items);
 }
@@ -87,8 +91,17 @@ public sealed class CosmosContainerAdapter : ICosmosContainerAdapter
     public IOrderedQueryable<T> GetItemLinqQueryable<T>(bool allowSynchronousQueryExecution = false, string continuationToken = null, QueryRequestOptions requestOptions = null) =>
         _container.GetItemLinqQueryable<T>(allowSynchronousQueryExecution, continuationToken, requestOptions);
 
+    public Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey? partitionKey = null, ItemRequestOptions requestOptions = null) =>
+        _container.CreateItemAsync(item, partitionKey, requestOptions);
+
     public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default) =>
         _container.UpsertItemAsync(item, partitionKey);
+
+    public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey, ItemRequestOptions requestOptions) =>
+        _container.UpsertItemAsync(item, partitionKey, requestOptions);
+
+    public Task<ItemResponse<T>> ReplaceItemAsync<T>(T item, string id, PartitionKey partitionKey, ItemRequestOptions requestOptions = null) =>
+        _container.ReplaceItemAsync(item, id, partitionKey, requestOptions);
 
     public Task<ItemResponse<T>> DeleteItemAsync<T>(string id, PartitionKey partitionKey) =>
         _container.DeleteItemAsync<T>(id, partitionKey);
@@ -101,6 +114,9 @@ public sealed class CosmosContainerAdapter : ICosmosContainerAdapter
 
     public Task<ItemResponse<T>> PatchItemAsync<T>(string id, PartitionKey partitionKey, IReadOnlyList<PatchOperation> patchOperations) =>
         _container.PatchItemAsync<T>(id, partitionKey, patchOperations);
+
+    public Task<ItemResponse<T>> PatchItemAsync<T>(string id, PartitionKey partitionKey, IReadOnlyList<PatchOperation> patchOperations, PatchItemRequestOptions requestOptions) =>
+        _container.PatchItemAsync<T>(id, partitionKey, patchOperations, requestOptions);
 
     public Task<ContainerResponse> DeleteContainerAsync() =>
         _container.DeleteContainerAsync();

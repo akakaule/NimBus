@@ -109,6 +109,127 @@ public class ResolverServiceTests
     }
 
     [TestMethod]
+    public async Task Handle_TerminalAfterHandoff_OverridesProcessingTimeWithWallClock()
+    {
+        // Simulates the lifecycle of a handoff event:
+        //   T0       — EventRequest enqueued (the wall-clock anchor)
+        //   T0+200ms — PendingHandoffResponse audit row arrives
+        //   ...long external job runs...
+        //   now()    — Final ResolutionResponse settles the event
+        // The aggregate UnresolvedEvent's ProcessingTimeMs must reflect the
+        // full wall-clock span (now − EventRequest.EnqueuedTimeUtc), not the
+        // 250ms handler duration of the final hop.
+        var cosmos = new FakeCosmosDbClient();
+        var eventRequestEnqueued = DateTime.UtcNow.AddSeconds(-30);
+
+        cosmos.StoredMessages.Add(new MessageEntity
+        {
+            EventId = "event-1",
+            MessageId = "msg-event-request",
+            MessageType = MessageType.EventRequest,
+            EnqueuedTimeUtc = eventRequestEnqueued,
+            EndpointId = "BillingEndpoint",
+        });
+        cosmos.StoredMessages.Add(new MessageEntity
+        {
+            EventId = "event-1",
+            MessageId = "msg-pending-handoff",
+            MessageType = MessageType.PendingHandoffResponse,
+            EnqueuedTimeUtc = eventRequestEnqueued.AddMilliseconds(200),
+            EndpointId = "BillingEndpoint",
+            PendingSubStatus = "Handoff",
+        });
+
+        var resolutionResponse = CreateMessageContext(
+            messageType: MessageType.ResolutionResponse,
+            to: "Resolver",
+            from: "BillingEndpoint");
+        resolutionResponse.ProcessingTimeMs = 250; // raw last-hop handler duration
+
+        var service = CreateService(cosmos);
+        await service.Handle(resolutionResponse);
+
+        Assert.AreEqual(1, cosmos.CompletedUploads.Count, "Terminal upload should have run.");
+        var completed = cosmos.CompletedUploads[0].Content;
+        Assert.IsNotNull(completed.ProcessingTimeMs, "Wall-clock value must be populated.");
+        Assert.IsTrue(completed.ProcessingTimeMs >= 30_000,
+            $"Expected wall-clock ≥ 30s; got {completed.ProcessingTimeMs}ms.");
+        Assert.IsTrue(completed.ProcessingTimeMs < 60_000,
+            $"Wall-clock should be the EventRequest→now span, not far longer; got {completed.ProcessingTimeMs}ms.");
+
+        // Per-message audit row preserves the raw last-hop duration.
+        var resolutionRow = cosmos.StoredMessages.Single(m => m.MessageType == MessageType.ResolutionResponse);
+        Assert.AreEqual(250, resolutionRow.ProcessingTimeMs);
+    }
+
+    [TestMethod]
+    public async Task Handle_TerminalWithoutHandoff_KeepsHandlerProcessingTime()
+    {
+        // Non-handoff event: history has only the EventRequest. The override
+        // must not trigger; the response's local handler duration (75ms) wins.
+        var cosmos = new FakeCosmosDbClient();
+        cosmos.StoredMessages.Add(new MessageEntity
+        {
+            EventId = "event-1",
+            MessageId = "msg-event-request",
+            MessageType = MessageType.EventRequest,
+            EnqueuedTimeUtc = DateTime.UtcNow.AddSeconds(-30),
+            EndpointId = "BillingEndpoint",
+        });
+
+        var resolutionResponse = CreateMessageContext(
+            messageType: MessageType.ResolutionResponse,
+            to: "Resolver",
+            from: "BillingEndpoint");
+        resolutionResponse.ProcessingTimeMs = 75;
+
+        var service = CreateService(cosmos);
+        await service.Handle(resolutionResponse);
+
+        Assert.AreEqual(1, cosmos.CompletedUploads.Count);
+        Assert.AreEqual(75, cosmos.CompletedUploads[0].Content.ProcessingTimeMs);
+    }
+
+    [TestMethod]
+    public async Task Handle_HandoffFailure_OverridesProcessingTimeOnErrorResponse()
+    {
+        // HandoffFailedRequest path: the terminal ErrorResponse must also use
+        // the wall-clock span. Symmetric with the success path above.
+        var cosmos = new FakeCosmosDbClient();
+        var eventRequestEnqueued = DateTime.UtcNow.AddSeconds(-30);
+
+        cosmos.StoredMessages.Add(new MessageEntity
+        {
+            EventId = "event-1",
+            MessageId = "msg-event-request",
+            MessageType = MessageType.EventRequest,
+            EnqueuedTimeUtc = eventRequestEnqueued,
+            EndpointId = "BillingEndpoint",
+        });
+        cosmos.StoredMessages.Add(new MessageEntity
+        {
+            EventId = "event-1",
+            MessageId = "msg-pending-handoff",
+            MessageType = MessageType.PendingHandoffResponse,
+            EnqueuedTimeUtc = eventRequestEnqueued.AddMilliseconds(200),
+            EndpointId = "BillingEndpoint",
+            PendingSubStatus = "Handoff",
+        });
+
+        var errorResponse = CreateMessageContext(
+            messageType: MessageType.ErrorResponse,
+            to: "Resolver",
+            from: "BillingEndpoint");
+        errorResponse.ProcessingTimeMs = 50;
+
+        var service = CreateService(cosmos);
+        await service.Handle(errorResponse);
+
+        Assert.AreEqual(1, cosmos.FailedUploads.Count);
+        Assert.IsTrue(cosmos.FailedUploads[0].Content.ProcessingTimeMs >= 30_000);
+    }
+
+    [TestMethod]
     public async Task Handle_UnexpectedException_DeadLettersMessage()
     {
         var cosmos = new FakeCosmosDbClient
@@ -334,7 +455,8 @@ public class ResolverServiceTests
         public Task<bool> SetHeartbeat(Heartbeat heartbeat, string endpointId) => throw new NotSupportedException();
         public Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount) => throw new NotSupportedException();
         public Task<MessageEntity> GetMessage(string eventId, string messageId) => throw new NotSupportedException();
-        public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId) => throw new NotSupportedException();
+        public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId) =>
+            Task.FromResult<IEnumerable<MessageEntity>>(StoredMessages.Where(m => m.EventId == eventId).ToList());
         public Task<MessageEntity> GetFailedMessage(string eventId, string endpointId) => throw new NotSupportedException();
         public Task<MessageEntity> GetDeadletteredMessage(string eventId, string endpointId) => throw new NotSupportedException();
         public Task RemoveStoredMessage(string eventId, string messageId) => throw new NotSupportedException();

@@ -5,6 +5,7 @@ using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -212,7 +213,7 @@ namespace NimBus.Broker.Services
             return (endpointId, endpointRole);
         }
 
-        private UnresolvedEvent CreateUnresolvedEvent(MessageEntity message)
+        private UnresolvedEvent CreateUnresolvedEvent(MessageEntity message, long? processingTimeMsOverride = null)
         {
             return new UnresolvedEvent
             {
@@ -243,7 +244,11 @@ namespace NimBus.Broker.Services
                 From = message.From,
                 MessageContent = message.MessageContent,
                 QueueTimeMs = message.QueueTimeMs,
-                ProcessingTimeMs = message.ProcessingTimeMs,
+                // For terminal settlement of an event that went through async
+                // handoff, override the per-hop handler duration with the
+                // wall-clock span from the original EventRequest. The raw value
+                // remains on the per-message MessageEntity row for auditing.
+                ProcessingTimeMs = processingTimeMsOverride ?? message.ProcessingTimeMs,
                 // PendingHandoff metadata: copy through from the projected
                 // MessageEntity so the UnresolvedEvent (i.e. the audit row
                 // surfaced by the WebApp) carries them too.
@@ -254,10 +259,38 @@ namespace NimBus.Broker.Services
             };
         }
 
+        // Returns the wall-clock duration since the original EventRequest's
+        // EnqueuedTimeUtc when settling a terminal response (Resolution/Error)
+        // for an event that previously emitted a PendingHandoffResponse.
+        // Returns null otherwise so the regular per-hop ProcessingTimeMs wins.
+        private async Task<long?> ComputeHandoffWallClockMsIfTerminal(MessageEntity message)
+        {
+            if (message.MessageType != MessageType.ResolutionResponse &&
+                message.MessageType != MessageType.ErrorResponse)
+            {
+                return null;
+            }
+
+            var history = (await _store.GetEventHistory(message.EventId)).ToList();
+            if (!history.Any(m => m.MessageType == MessageType.PendingHandoffResponse))
+            {
+                return null;
+            }
+
+            var eventRequest = history.FirstOrDefault(m => m.MessageType == MessageType.EventRequest);
+            if (eventRequest is null)
+            {
+                return null;
+            }
+
+            return (long)Math.Max(0, (DateTime.UtcNow - eventRequest.EnqueuedTimeUtc).TotalMilliseconds);
+        }
+
         private async Task<ResolutionStatus> UpdateState(MessageEntity message)
         {
             ResolutionStatus status = GetResultingStatus(message);
-            UnresolvedEvent unresolvedEvent = CreateUnresolvedEvent(message);
+            long? wallClockMs = await ComputeHandoffWallClockMsIfTerminal(message);
+            UnresolvedEvent unresolvedEvent = CreateUnresolvedEvent(message, wallClockMs);
 
             var statusHandlers = new Dictionary<ResolutionStatus, Func<Task>>
             {

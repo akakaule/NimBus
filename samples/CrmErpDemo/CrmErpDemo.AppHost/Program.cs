@@ -74,8 +74,7 @@ var nimbusOps = builder.AddProject<Projects.NimBus_WebApp>("nimbus-ops")
     .WithEnvironment("EnableLocalDevAuthentication", "true")
     .WithEndpoint("http", e => e.Port = 28376)
     .WithEndpoint("https", e => e.Port = 28375)
-    .WithExternalHttpEndpoints()
-    .WaitFor(provisioner);
+    .WithExternalHttpEndpoints();
 
 // Provider-specific wiring. The WebApp/Resolver pick their backend off NimBus__StorageProvider;
 // we set it explicitly so the AppHost CLI flag wins over the runtime auto-detect fallback.

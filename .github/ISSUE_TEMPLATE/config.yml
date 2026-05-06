@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Architecture Decision Records
+    url: https://github.com/akakaule/NimBus/tree/master/docs/adr
+    about: Read existing ADRs before proposing architectural changes.

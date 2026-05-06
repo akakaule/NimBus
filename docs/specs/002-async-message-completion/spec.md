@@ -2,8 +2,8 @@
 
 Feature Branch: `002-async-message-completion`
 Created: 2026-05-04
-Updated: 2026-05-04
-Status: Draft for review
+Updated: 2026-05-07
+Status: Implemented (see ADR-012; shipped via #29 / #31 / #36 / #37 / #39). Timeout sweeper (FR-050..FR-053) deferred — design recorded, build follow-up.
 Input: User description: "A NimBus subscriber adapter integrates with Microsoft Dynamics 365 F&O via the DMF API. Inserts are asynchronous: the adapter triggers an import job, and the per-entity outcome only arrives later when the status checker polls DMF. We need to settle the Service Bus message immediately, keep the session blocked so siblings on that session don't overtake the in-flight import, and have the audit trail report Pending — not Failed — until the external work reports back."
 
 ## Problem (resolved)
@@ -196,7 +196,7 @@ Acceptance Scenarios:
   - `DateTime? ExpectedBy` — optional deadline used by the timeout sweeper.
 - FR-032: All four new fields MUST be persisted by every storage provider satisfying the conformance suite (Cosmos DB, SQL Server, in-memory). Existing rows MUST continue to project with these fields as `null`.
 - FR-033: `HandoffCompletedRequest` MUST cause the Resolver (via the resulting `ResolutionResponse`) to flip the projection from Pending → Completed. The sub-status MAY be cleared on the projection.
-- FR-034: `HandoffFailedRequest` MUST cause the Resolver (via the resulting `ErrorResponse`) to flip the projection from Pending → Failed, with the supplied `errorText` / `errorType` populated on the audit row.
+- FR-034: `HandoffFailedRequest` MUST cause the Resolver (via the resulting `ErrorResponse`) to flip the projection from Pending → Failed. The supplied `errorText` MUST be preserved verbatim on the audit row (cf. NFR-004). `errorType` on the audit row reflects the synthetic `HandoffFailedException` wrapper that drives the existing `SendErrorResponse` path, not the operator-supplied value — operators read `errorText`; tightening the `errorType` round-trip is a follow-up. See ADR-012 § Negative.
 
 #### WebApp
 
@@ -205,7 +205,9 @@ Acceptance Scenarios:
 - FR-042: WebApp Resubmit / Skip buttons MUST be available on Pending+Handoff entries, taking the existing `ManagerClient.Resubmit` / `Skip` paths. Operator-initiated `CompleteHandoff` / `FailHandoff` buttons are out of scope for v1.
 - FR-043: No WebApp API contract change is required. The new fields are optional additions to existing response shapes.
 
-#### Timeout sweeper (opt-in)
+#### Timeout sweeper (opt-in, deferred — not built in v1)
+
+> **v1 status:** the sweeper design below is in scope for the spec but **deliberately not built in v1** (ADR-012 § Operational). Adapters with bounded reasonable wait times can opt in via `ExpectedBy` once the sweeper ships; the default is "no sweeper running" so adapters with unbounded reasonable wait times stay unaffected today.
 
 - FR-050: NimBus MAY implement a Resolver-side background pass that scans Pending+Handoff entries with non-null `ExpectedBy` in the past, and emits a synthetic `HandoffFailedRequest` with `errorType = "TimeoutExpired"` and a configurable `errorText`.
 - FR-051: The sweeper MUST be opt-in. The default state is "no sweeper running". Adapters that want timeout enforcement enable it via configuration.
@@ -284,13 +286,7 @@ Acceptance Scenarios:
 
 ## Open Questions
 
-- **Naming.** `MarkPendingHandoff` vs `SignalPendingHandoff` vs `DeferToExternal`. Decided in design phase.
-- **Outcome state shape on the context.** A single `HandlerOutcome` enum + optional `HandoffMetadata` value object, or a more general `HandlerResult` discriminated union. Decided in design phase.
-- **Concrete authorization for `HandoffCompletedRequest` / `HandoffFailedRequest`.** Reuse `AuthorizeManagerRequest` (require `From = ManagerId`) — safest default — or add a dedicated capability for the status checker. Recommendation: reuse existing.
-- **Behaviour when `CompleteHandoff` / `FailHandoff` is called against a non-PendingHandoff state.** Hard error vs no-op vs idempotent (already-completed → success). Decided in design phase.
-- **Sweeper hosting.** Resolver-side background pass vs separate worker vs adapter-side. Recommendation: Resolver-side, opt-in via configuration.
-- **WebApp UX.** Whether to add a dedicated "Awaiting external" filter / chip on the endpoint dashboard, beyond the per-row badge. Decided during WebApp work.
-- **Message detail page surfacing of `HandoffReason`/`ExternalJobId`.** Inline panel vs collapsible "Handoff details" section. Decided during WebApp work.
+- **Sweeper hosting.** Resolver-side background pass vs separate worker vs adapter-side. *Design decided (Resolver-side, opt-in via configuration); build deferred — not shipped in v1, see ADR-012 § Operational.*
 
 ## Resolved Questions
 
@@ -300,3 +296,9 @@ Acceptance Scenarios:
 - Settlement MUST NOT re-invoke the user handler. (Resolved — `Handle*Request` methods drive the state machine directly, like today's `HandleSkipRequest`.)
 - Adapter-side concerns (correlation store, status checker) are out of scope for the framework feature. (Resolved — ADR-002 keeps subscribers pure Service Bus consumers; the adapter owns its own state.)
 - The feature is additive only. No breaking changes to existing handlers, transports, audit rows, or APIs. (Resolved.)
+- **Naming.** Resolved as `MarkPendingHandoff` (ADR-012 § Decision).
+- **Outcome state shape on the context.** Resolved as `HandlerOutcome` enum + `HandoffMetadata` record, both in `NimBus.Core.Messages` (ADR-012 § Decision; the layering note explains why Core, not the SDK, owns the type).
+- **Concrete authorization for `HandoffCompletedRequest` / `HandoffFailedRequest`.** Resolved as reuse of `AuthorizeManagerRequest` — `From = Constants.ManagerId` (ADR-012 § Decision; implemented in `StrictMessageHandler.HandleHandoff*Request`).
+- **Behaviour when `CompleteHandoff` / `FailHandoff` is called against a non-PendingHandoff state.** Resolved as upfront validation in `ManagerClient` throwing `InvalidOperationException` if `pendingEntry.PendingSubStatus != "Handoff"` (ADR-012 § Decision).
+- **WebApp UX.** Resolved — Pending+Handoff rows count under Pending, an "Awaiting external" badge renders on the row, and a Handoff-details panel surfaces the metadata on the message detail page; no dedicated filter chip beyond the badge in v1 (FR-040..FR-042; ADR-012 § Operational).
+- **Message detail page surfacing of `HandoffReason`/`ExternalJobId`.** Resolved as a "Handoff details" section on the existing message detail page (FR-041; ADR-012 § Operational).

@@ -1,0 +1,130 @@
+name: Backlog item
+description: Propose or track a feature, extension, or pattern from the NimBus roadmap
+title: "[Backlog] "
+labels: ["backlog"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for backlog items — features, extensions, or patterns proposed for NimBus. For bug reports or general questions, pick a different template.
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: Roadmap priority band. P0 = critical, P4 = future / speculative.
+      options:
+        - P0
+        - P1
+        - P2
+        - P3
+        - P4
+    validations:
+      required: true
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase
+      description: Roadmap phase the item belongs to.
+      options:
+        - Phase 1 — Foundation & Reliability
+        - Phase 2 — Observability & Testing
+        - Phase 3 — Extensibility & Patterns
+        - Phase 4 — Platform Maturity
+        - Phase 5 — Ecosystem & Scale
+        - Cross-cutting / unscheduled
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What problem does this solve? What does the user (developer / operator / architect) gain?
+      placeholder: |
+        Today, when X happens, the user has to do Y manually. With this feature, ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-api
+    attributes:
+      label: Proposed API or design
+      description: |
+        Concrete shape: interfaces, registration, sample code. If it's a middleware, name the class. If it's an extension, name the package.
+      render: csharp
+      placeholder: |
+        // Registration
+        services.AddNimBusSubscriber("billing", b => {
+            b.AddSomething<Foo>();
+        });
+
+        // Interface
+        public interface ISomething<T> { ... }
+    validations:
+      required: true
+
+  - type: textarea
+    id: integration-points
+    attributes:
+      label: Integration points in the codebase
+      description: Where does this plug in? Which files / classes / interfaces need to be touched or extended?
+      placeholder: |
+        - `src/NimBus.Core/...`
+        - Extends `IMessagePipelineBehavior` or wraps `StrictMessageHandler`
+        - New package: `NimBus.Extensions.Foo`
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: Concrete, testable outcomes. Use checkboxes.
+      placeholder: |
+        - [ ] Public API surface defined and documented
+        - [ ] Unit tests covering happy path and error cases
+        - [ ] Integration test in `tests/NimBus.EndToEnd.Tests/`
+        - [ ] Documentation in `docs/`
+        - [ ] Sample usage added to `samples/AspirePubSub/`
+    validations:
+      required: true
+
+  - type: textarea
+    id: references
+    attributes:
+      label: Reference implementations
+      description: How do MassTransit / NServiceBus / Wolverine / Rebus / Brighter / CAP solve this? Link to docs or source.
+      placeholder: |
+        - MassTransit: https://...
+        - NServiceBus: https://...
+
+  - type: textarea
+    id: open-questions
+    attributes:
+      label: Open questions
+      description: Design decisions still to make. Anything that needs an ADR.
+      placeholder: |
+        - Should X be configurable per endpoint or globally?
+        - Does this need a Cosmos DB schema change?
+
+  - type: dropdown
+    id: effort
+    attributes:
+      label: Estimated effort
+      description: Rough size. Used for planning, not commitment.
+      options:
+        - Small (1–3 days)
+        - Medium (1–2 weeks)
+        - Large (2–4 weeks)
+        - Very large (1+ month)
+
+  - type: checkboxes
+    id: guardrails
+    attributes:
+      label: Roadmap guardrails check
+      description: Confirm this item respects the project's stated non-goals.
+      options:
+        - label: Doesn't require premature transport abstraction
+        - label: Doesn't chase NServiceBus feature parity for its own sake
+        - label: Doesn't require a WebApp rewrite
+        - label: Doesn't introduce event sourcing without a concrete use case

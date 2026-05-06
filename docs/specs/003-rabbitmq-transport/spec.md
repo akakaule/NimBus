@@ -382,7 +382,7 @@ Acceptance Scenarios:
 
 ## Phasing Reference
 
-Delivered in three gated phases per ADR-011 § *Phasing*. Sub-issue breakdown of issue #14 in `docs/specs/003-rabbitmq-transport/github-issue.md`. See `docs/roadmap.md` § *Phase 6* for the high-level summary.
+Delivered in three gated phases per ADR-011 § *Phasing*. Sub-issue breakdown of issue #14 in `docs/specs/003-rabbitmq-transport/github-issue.md`.
 
 | Phase | Scope | Decision Gate |
 |---|---|---|

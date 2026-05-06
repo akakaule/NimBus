@@ -1,7 +1,7 @@
 # Async message completion via PendingHandoff (reuse session blocking, audit as Pending, no exceptions for control flow)
 
-> Spec: [`docs/specs/002-async-message-completion/spec.md`](../docs/specs/002-async-message-completion/spec.md)
-> Companion one-pager (PDF + diagram): [`docs/specs/async-message-completion-onepager.pdf`](../async-message-completion-onepager.pdf)
+> Spec: [`spec.md`](./spec.md) ([on GitHub](https://github.com/akakaule/NimBus/blob/master/docs/specs/002-async-message-completion/spec.md))
+> Companion one-pager (PDF + diagram): [`async-message-completion-onepager.pdf`](../async-message-completion-onepager.pdf) ([on GitHub](https://github.com/akakaule/NimBus/blob/master/docs/specs/async-message-completion-onepager.pdf))
 
 ## Summary
 
@@ -130,7 +130,7 @@ public interface IManagerClient
   - `DateTime? ExpectedBy` — optional deadline used by the optional sweeper.
 - Persisted by every storage provider (Cosmos DB, SQL Server, in-memory) per the conformance suite. Existing rows project these as `null`.
 - `HandoffCompletedRequest` → resulting `ResolutionResponse` flips Pending → Completed.
-- `HandoffFailedRequest` → resulting `ErrorResponse` flips Pending → Failed with `errorText`/`errorType`.
+- `HandoffFailedRequest` → resulting `ErrorResponse` flips Pending → Failed. The supplied `errorText` is preserved verbatim; `errorType` reflects the synthetic `HandoffFailedException` wrapper rather than the operator-supplied value (v1 trade-off — operators read `errorText`; tightening the `errorType` round-trip is a follow-up). See ADR-012 § Negative.
 
 ## WebApp (FR-040..FR-043)
 
@@ -180,7 +180,7 @@ public interface IManagerClient
 | `NimBus.MessageStore.CosmosDb`, `NimBus.MessageStore.SqlServer`, in-memory | Persist + project the new fields. Conformance suite gains round-trip tests. |
 | `NimBus.Resolver.Services.ResolverService` | Map `PendingHandoffResponse` → `ResolutionStatus.Pending`. Copy new fields onto the entity. |
 | `NimBus.WebApp` | Render Pending+Handoff badge and the new fields on the message detail page. No API contract change. |
-| `NimBus.Resolver` (sweeper, opt-in) | Background pass that flips Pending+Handoff past `ExpectedBy` to Failed via `HandoffFailedRequest`. |
+| `NimBus.Resolver` (sweeper, opt-in) | **Follow-up — not built in v1.** Design captured in spec FR-050..FR-053 and ADR-012 § Operational; opt-in background pass that would flip Pending+Handoff past `ExpectedBy` to Failed via `HandoffFailedRequest`. |
 | `tests/NimBus.Core.Tests` | Handler-success path with `MarkPendingHandoff`; failure-wins-over-handoff path; middleware observing `ctx.Outcome`; the two new `Handle*Request` methods. |
 | `tests/NimBus.EndToEnd.Tests` | E2E happy path; E2E failure path; FIFO replay verification. |
 | `docs/adr/012-pending-handoff.md` | New ADR — rationale, rejected alternatives. |

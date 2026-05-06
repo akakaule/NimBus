@@ -33,6 +33,9 @@ const MESSAGE_COLORS: Record<string, { bg: string; border: string; dot: string; 
   SkipRequest:         { bg: "bg-gray-50",    border: "border-gray-300",    dot: "bg-gray-400",    label: "Skip Request" },
   ContinuationRequest: { bg: "bg-indigo-50",  border: "border-indigo-300",  dot: "bg-indigo-500",  label: "Continuation" },
   UnsupportedRequest:  { bg: "bg-orange-50",  border: "border-orange-300",  dot: "bg-orange-500",  label: "Unsupported" },
+  PendingHandoffResponse:  { bg: "bg-sky-50",     border: "border-sky-300",     dot: "bg-sky-500",     label: "Awaiting External" },
+  HandoffCompletedRequest: { bg: "bg-teal-50",    border: "border-teal-300",    dot: "bg-teal-500",    label: "Handoff Completed" },
+  HandoffFailedRequest:    { bg: "bg-orange-50",  border: "border-orange-300",  dot: "bg-orange-500",  label: "Handoff Failed" },
 };
 
 const AUDIT_COLOR = { bg: "bg-sky-50", border: "border-sky-200", dot: "bg-sky-400" };

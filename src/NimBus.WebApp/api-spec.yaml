@@ -1785,6 +1785,9 @@ components:
             - skipRequest
             - continuationRequest
             - unsupportedRequest
+            - pendingHandoffResponse
+            - handoffCompletedRequest
+            - handoffFailedRequest
         endpointRole:
           type: string
           enum:
@@ -2421,6 +2424,9 @@ components:
             - skipRequest
             - continuationRequest
             - unsupportedRequest
+            - pendingHandoffResponse
+            - handoffCompletedRequest
+            - handoffFailedRequest
         enqueuedAtFrom:
           type: string
           format: date-time

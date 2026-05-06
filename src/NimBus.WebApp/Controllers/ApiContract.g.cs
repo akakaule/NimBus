@@ -9150,6 +9150,15 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"unsupportedRequest")]
         UnsupportedRequest = 10,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"pendingHandoffResponse")]
+        PendingHandoffResponse = 11,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"handoffCompletedRequest")]
+        HandoffCompletedRequest = 12,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"handoffFailedRequest")]
+        HandoffFailedRequest = 13,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -9335,6 +9344,15 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"unsupportedRequest")]
         UnsupportedRequest = 10,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"pendingHandoffResponse")]
+        PendingHandoffResponse = 11,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"handoffCompletedRequest")]
+        HandoffCompletedRequest = 12,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"handoffFailedRequest")]
+        HandoffFailedRequest = 13,
 
     }
 

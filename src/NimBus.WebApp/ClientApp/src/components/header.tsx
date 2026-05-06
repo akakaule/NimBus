@@ -9,6 +9,32 @@ const MenuItem: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <span className="block mr-6 p-1.5 md:mt-0 mt-4">{children}</span>
 );
 
+// Inline so the ASCII glyphs inherit `currentColor` from the wrapping <a>'s
+// text-foreground — that's what makes the logo invert on dark mode without
+// shipping a second asset. Keep this in sync with public/nimbus_ascii_logo.svg.
+const NimBusLogo: React.FC<{ className?: string }> = ({ className }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 520 116"
+    role="img"
+    aria-label="NimBus"
+    className={className}
+  >
+    <text
+      fontFamily="'Courier New', Courier, monospace"
+      fontSize="15"
+      fill="currentColor"
+      xmlSpace="preserve"
+    >
+      <tspan x="18" y="30">{` _   _ _           ____             `}</tspan>
+      <tspan x="18" dy="20">{`| \\ | (_)_ __ ___ | __ ) _   _ ___  `}</tspan>
+      <tspan x="18" dy="20">{`|  \\| | | '_ \` _ \\|  _ \\| | | / __| `}</tspan>
+      <tspan x="18" dy="20">{`| |\\  | | | | | | | |_) | |_| \\__ \\ `}</tspan>
+      <tspan x="18" dy="20">{`|_| \\_|_|_| |_| |_|____/ \\__,_|___/ `}</tspan>
+    </text>
+  </svg>
+);
+
 interface HeaderProps {
   links: Navigation;
   className?: string;
@@ -29,12 +55,8 @@ const Header = (props: HeaderProps) => {
     >
       <div className="flex flex-nowrap items-center self-center justify-between w-full">
         <div className="flex items-center mr-5">
-          <a href="/Endpoints" className="text-xl hover:no-underline">
-            <img
-              src="/nimbus_ascii_logo.png"
-              className="h-12 w-auto max-w-none"
-              alt="NimBus"
-            />
+          <a href="/Endpoints" className="text-xl hover:no-underline text-foreground">
+            <NimBusLogo className="h-12 w-auto" />
           </a>
           <span className="hidden lg:inline ml-3 text-sm text-muted-foreground italic">
             A nimbus for your Azure cloud.

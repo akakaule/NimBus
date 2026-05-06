@@ -11,6 +11,18 @@ export interface Account {
   isDeleted?: boolean;
 }
 
+export interface AuditEntry {
+  id: string;
+  entityType: string;
+  entityId: string;
+  action: 'Created' | 'Updated' | 'Deleted' | string;
+  fieldName?: string | null;
+  oldValue?: string | null;
+  newValue?: string | null;
+  timestamp: string;
+  origin?: string | null;
+}
+
 export interface Contact {
   id: string;
   accountId?: string | null;
@@ -67,4 +79,7 @@ export const api = {
     }).then(json<Contact>),
   deleteContact: (id: string) =>
     fetch(`/api/contacts/${id}`, { method: 'DELETE' }).then(json<Contact>),
+
+  getAuditLog: (entityType: 'Account' | 'Contact', entityId: string) =>
+    fetch(`/api/audit/${entityType}/${entityId}`).then(json<AuditEntry[]>),
 };

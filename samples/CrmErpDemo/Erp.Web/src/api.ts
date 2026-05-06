@@ -11,6 +11,18 @@ export interface Customer {
   isDeleted?: boolean;
 }
 
+export interface AuditEntry {
+  id: string;
+  entityType: string;
+  entityId: string;
+  action: 'Created' | 'Updated' | 'Deleted' | string;
+  fieldName?: string | null;
+  oldValue?: string | null;
+  newValue?: string | null;
+  timestamp: string;
+  origin?: string | null;
+}
+
 export interface Contact {
   id: string;
   customerId?: string | null;
@@ -117,4 +129,7 @@ export const api = {
     }).then(json<Contact>),
   deleteContact: (id: string) =>
     fetch(`/api/contacts/${id}`, { method: 'DELETE' }).then(json<Contact>),
+
+  getAuditLog: (entityType: 'Customer' | 'ErpContact', entityId: string) =>
+    fetch(`/api/audit/${entityType}/${entityId}`).then(json<AuditEntry[]>),
 };

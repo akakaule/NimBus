@@ -90,7 +90,22 @@ for (var attempt = 1; attempt <= 10 && !initSucceeded; attempt++)
             IF COL_LENGTH('dbo.Accounts', 'IsDeleted') IS NULL
                 ALTER TABLE dbo.Accounts ADD IsDeleted BIT NOT NULL CONSTRAINT DF_Accounts_IsDeleted DEFAULT 0;
             IF COL_LENGTH('dbo.Contacts', 'IsDeleted') IS NULL
-                ALTER TABLE dbo.Contacts ADD IsDeleted BIT NOT NULL CONSTRAINT DF_Contacts_IsDeleted DEFAULT 0;");
+                ALTER TABLE dbo.Contacts ADD IsDeleted BIT NOT NULL CONSTRAINT DF_Contacts_IsDeleted DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Audits' AND schema_id = SCHEMA_ID('dbo'))
+            BEGIN
+                CREATE TABLE dbo.Audits (
+                    Id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_Audits PRIMARY KEY,
+                    EntityType NVARCHAR(50) NOT NULL,
+                    EntityId UNIQUEIDENTIFIER NOT NULL,
+                    Action NVARCHAR(20) NOT NULL,
+                    FieldName NVARCHAR(100) NULL,
+                    OldValue NVARCHAR(MAX) NULL,
+                    NewValue NVARCHAR(MAX) NULL,
+                    Timestamp DATETIMEOFFSET NOT NULL,
+                    Origin NVARCHAR(10) NULL
+                );
+                CREATE INDEX IX_Audits_Entity ON dbo.Audits (EntityType, EntityId, Timestamp DESC);
+            END");
 
         var outbox = (SqlServerOutbox)scope.ServiceProvider.GetRequiredService<NimBus.Core.Outbox.IOutbox>();
         await outbox.EnsureTableExistsAsync();
@@ -107,5 +122,6 @@ if (!initSucceeded)
 
 app.MapAccountEndpoints();
 app.MapContactEndpoints();
+app.MapAuditEndpoints();
 
 app.Run();

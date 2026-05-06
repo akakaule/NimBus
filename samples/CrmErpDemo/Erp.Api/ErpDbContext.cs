@@ -1,5 +1,7 @@
 using Erp.Api.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Newtonsoft.Json;
 
 namespace Erp.Api;
 
@@ -7,6 +9,13 @@ public class ErpDbContext(DbContextOptions<ErpDbContext> options) : DbContext(op
 {
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<ErpContact> Contacts => Set<ErpContact>();
+    public DbSet<Audit> Audits => Set<Audit>();
+
+    // Properties that are bookkeeping rather than user-visible state — never
+    // emit a field-diff audit row for these. IsDeleted flips become a single
+    // Deleted summary row instead (see ProjectAuditEntries).
+    private static readonly HashSet<string> IgnoredProperties =
+        new(StringComparer.Ordinal) { "Id", "CreatedAt", "UpdatedAt", "IsDeleted" };
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -30,5 +39,136 @@ public class ErpDbContext(DbContextOptions<ErpDbContext> options) : DbContext(op
             e.Property(x => x.Phone).HasMaxLength(40);
             e.HasIndex(x => x.CustomerId);
         });
+
+        modelBuilder.Entity<Audit>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.EntityType).IsRequired().HasMaxLength(50);
+            e.Property(x => x.Action).IsRequired().HasMaxLength(20);
+            e.Property(x => x.FieldName).HasMaxLength(100);
+            e.Property(x => x.Origin).HasMaxLength(10);
+            e.HasIndex(x => new { x.EntityType, x.EntityId });
+        });
+    }
+
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        ProjectAuditEntries();
+        return await base.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private void ProjectAuditEntries()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var rows = new List<Audit>();
+
+        foreach (var entry in ChangeTracker.Entries().ToList())
+        {
+            // Only audit the entity types the demo cares about; never audit
+            // Audit rows themselves (would loop and double-write on every save).
+            var (entityType, entityId, origin) = ResolveEntity(entry.Entity);
+            if (entityType is null) continue;
+
+            switch (entry.State)
+            {
+                case EntityState.Added:
+                    rows.Add(new Audit
+                    {
+                        Id = Guid.NewGuid(),
+                        EntityType = entityType,
+                        EntityId = entityId,
+                        Action = "Created",
+                        NewValue = SnapshotJson(entry),
+                        Timestamp = now,
+                        Origin = origin,
+                    });
+                    break;
+
+                case EntityState.Modified:
+                    var deletedFlagChanged = false;
+                    foreach (var prop in entry.Properties)
+                    {
+                        var name = prop.Metadata.Name;
+                        if (name == "IsDeleted" && prop.IsModified
+                            && Equals(prop.OriginalValue, false) && Equals(prop.CurrentValue, true))
+                        {
+                            deletedFlagChanged = true;
+                            continue;
+                        }
+                        if (IgnoredProperties.Contains(name)) continue;
+                        if (!prop.IsModified) continue;
+                        if (Equals(prop.OriginalValue, prop.CurrentValue)) continue;
+
+                        rows.Add(new Audit
+                        {
+                            Id = Guid.NewGuid(),
+                            EntityType = entityType,
+                            EntityId = entityId,
+                            Action = "Updated",
+                            FieldName = name,
+                            OldValue = Format(prop.OriginalValue),
+                            NewValue = Format(prop.CurrentValue),
+                            Timestamp = now,
+                            Origin = origin,
+                        });
+                    }
+                    if (deletedFlagChanged)
+                    {
+                        rows.Add(new Audit
+                        {
+                            Id = Guid.NewGuid(),
+                            EntityType = entityType,
+                            EntityId = entityId,
+                            Action = "Deleted",
+                            Timestamp = now,
+                            Origin = origin,
+                        });
+                    }
+                    break;
+
+                case EntityState.Deleted:
+                    rows.Add(new Audit
+                    {
+                        Id = Guid.NewGuid(),
+                        EntityType = entityType,
+                        EntityId = entityId,
+                        Action = "Deleted",
+                        Timestamp = now,
+                        Origin = origin,
+                    });
+                    break;
+            }
+        }
+
+        if (rows.Count > 0) Audits.AddRange(rows);
+    }
+
+    private static (string? type, Guid id, string? origin) ResolveEntity(object entity) => entity switch
+    {
+        Customer c => ("Customer", c.Id, NullIfEmpty(c.Origin)),
+        ErpContact c => ("ErpContact", c.Id, NullIfEmpty(c.Origin)),
+        _ => (null, Guid.Empty, null),
+    };
+
+    private static string? NullIfEmpty(string s) => string.IsNullOrWhiteSpace(s) ? null : s;
+
+    private static string? Format(object? value) => value switch
+    {
+        null => null,
+        DateTimeOffset dto => dto.ToString("O"),
+        DateTime dt => dt.ToString("O"),
+        _ => value.ToString(),
+    };
+
+    private static string SnapshotJson(EntityEntry entry)
+    {
+        var bag = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var prop in entry.Properties)
+        {
+            var name = prop.Metadata.Name;
+            if (IgnoredProperties.Contains(name)) continue;
+            bag[name] = prop.CurrentValue;
+        }
+        return JsonConvert.SerializeObject(bag);
     }
 }

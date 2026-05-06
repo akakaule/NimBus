@@ -65,16 +65,19 @@ export default function HandoffModePanel() {
             Erp.Api settles the message after the configured delay.
           </p>
         </div>
-        <label className="inline-flex items-center gap-2 cursor-pointer">
-          <span className="text-xs text-slate-600">{enabled ? 'ON' : 'OFF'}</span>
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => setEnabled(e.target.checked)}
-            disabled={!loaded}
-            className="h-4 w-4 accent-indigo-600"
-          />
-        </label>
+        <button
+          type="button"
+          onClick={() => setEnabled((v) => !v)}
+          disabled={!loaded}
+          className={`px-3 py-1.5 rounded-md text-xs font-medium disabled:opacity-50 ${
+            enabled
+              ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+              : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+          }`}
+          title="When ON, CrmAccountCreated returns PendingHandoff and Erp.Api settles the message after the configured delay."
+        >
+          {`Pending-handoff mode: ${enabled ? 'ON' : 'OFF'}`}
+        </button>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -37,7 +37,7 @@ const ACTIONABLE_STATUSES = [
 ];
 
 // URL sentinel meaning "user explicitly wants no status filter". We need this
-// because an absent `status` param falls back to defaults (Failed/DeadLettered/Unsupported) — so without
+// because an absent `status` param falls back to defaults (Failed/DeadLettered/Unsupported/Pending) — so without
 // the sentinel, "show all statuses" would silently revert to the default after
 // any navigation. Pressing "All statuses" or removing the last chip writes
 // `?status=*`; buildEventFilterFromParams translates it back to no filter
@@ -51,9 +51,11 @@ function isAllStatusesSentinel(status: string[]): boolean {
 // URL-driven filter shape. Only the most-visible fields are persisted; advanced
 // filters (payload, enqueued, updated) live in the FilterContext as draft state
 // only and are picked up at Search-time. The default `status` set of
-// "Failed + DeadLettered + Unsupported" matches the operator UX where the page
-// opens pre-filtered to the most common failed-message states (also the Reset
-// target). Declared as a closed `type` so it
+// "Failed + DeadLettered + Unsupported + Pending" matches the operator UX where
+// the page opens pre-filtered to messages that need attention (failed states)
+// plus in-flight Pending entries — most importantly Pending+Handoff rows, which
+// stay Pending until an external system settles them and are exactly what
+// operators want to see at a glance. Declared as a closed `type` so it
 // satisfies the index-signature constraint of `useUrlFilters<T>`.
 type EndpointFilterParams = {
   status: string[];
@@ -69,6 +71,7 @@ const DEFAULT_ENDPOINT_FILTER_PARAMS: EndpointFilterParams = {
     api.ResolutionStatus.Failed,
     api.ResolutionStatus.DeadLettered,
     api.ResolutionStatus.Unsupported,
+    api.ResolutionStatus.Pending,
   ],
   eventTypeId: [],
   eventId: "",

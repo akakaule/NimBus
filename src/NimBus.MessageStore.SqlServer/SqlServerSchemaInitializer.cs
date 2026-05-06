@@ -79,28 +79,47 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
         // don't race on `CREATE SCHEMA` or on the IF-OBJECT_ID/CREATE TABLE pair.
         // The second runner waits, finds the schema already created and the
         // journal populated, and exits without applying anything.
-        await using (var lockConn = new SqlConnection(_options.ConnectionString))
+        //
+        // Disable connection pooling for the lock connection: the @LockOwner=Session
+        // applock is released only when the SQL session ends, and a pooled
+        // SqlConnection.Dispose() returns the physical session to the pool instead
+        // of closing it. Without `Pooling=False`, the lock stays held for as long
+        // as the pool keeps the session alive — which can far exceed the second
+        // runner's 60 s wait — and they all time out. We also explicitly call
+        // sp_releaseapplock as belt-and-braces before disposing.
+        var lockConnString = new SqlConnectionStringBuilder(_options.ConnectionString)
+        {
+            Pooling = false,
+        }.ConnectionString;
+        await using (var lockConn = new SqlConnection(lockConnString))
         {
             await lockConn.OpenAsync(cancellationToken).ConfigureAwait(false);
             await AcquireSchemaUpgradeLock(lockConn, cancellationToken).ConfigureAwait(false);
 
-            // DbUp's journal table lives in the configured schema, and journal setup
-            // runs before any DbUp script. Bootstrap the schema directly so journal
-            // creation has somewhere to land; 0001_Schema.sql remains idempotent.
-            await EnsureSchemaExists(cancellationToken).ConfigureAwait(false);
-
-            var assembly = typeof(SqlServerSchemaInitializer).Assembly;
-            var upgrader = BuildUpgrader(assembly);
-
-            var result = upgrader.PerformUpgrade();
-            if (!result.Successful)
+            try
             {
-                throw new InvalidOperationException(
-                    $"DbUp failed to apply NimBus message-store schema: {result.Error?.Message}", result.Error);
-            }
+                // DbUp's journal table lives in the configured schema, and journal setup
+                // runs before any DbUp script. Bootstrap the schema directly so journal
+                // creation has somewhere to land; 0001_Schema.sql remains idempotent.
+                await EnsureSchemaExists(cancellationToken).ConfigureAwait(false);
 
-            _logger.LogInformation("SQL Server message-store schema upgrade applied {Count} script(s).",
-                result.Scripts.Count());
+                var assembly = typeof(SqlServerSchemaInitializer).Assembly;
+                var upgrader = BuildUpgrader(assembly);
+
+                var result = upgrader.PerformUpgrade();
+                if (!result.Successful)
+                {
+                    throw new InvalidOperationException(
+                        $"DbUp failed to apply NimBus message-store schema: {result.Error?.Message}", result.Error);
+                }
+
+                _logger.LogInformation("SQL Server message-store schema upgrade applied {Count} script(s).",
+                    result.Scripts.Count());
+            }
+            finally
+            {
+                await ReleaseSchemaUpgradeLock(lockConn, cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 
@@ -138,6 +157,24 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
             throw new InvalidOperationException(
                 $"Could not acquire schema-upgrade lock for '{resource}' on the SQL Server (sp_getapplock returned {status}). " +
                 "Another NimBus instance may be holding the lock; retry once it finishes, or extend the lockTimeout.");
+        }
+    }
+
+    private async Task ReleaseSchemaUpgradeLock(SqlConnection conn, CancellationToken cancellationToken)
+    {
+        var resource = $"NimBus.Schema.{_options.Schema}";
+        try
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = "EXEC sp_releaseapplock @Resource = @res, @LockOwner = N'Session'";
+            cmd.Parameters.AddWithValue("@res", resource);
+            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Don't let release failures mask the real error from DbUp; we already
+            // disable pooling on this connection so the session ends on Dispose.
+            _logger.LogWarning(ex, "Failed to release schema-upgrade lock '{Resource}'; relying on session close.", resource);
         }
     }
 

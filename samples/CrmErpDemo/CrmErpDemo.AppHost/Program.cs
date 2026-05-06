@@ -56,8 +56,7 @@ var provisioner = builder.AddProject<Projects.CrmErpDemo_Provisioner>("provision
 var resolver = builder.AddAzureFunctionsProject<Projects.NimBus_Resolver>("resolver")
     .WithReference(servicebus)
     .WithEnvironment("ResolverId", "Resolver")
-    .WithEnvironment("AzureWebJobsServiceBus", builder.Configuration["ConnectionStrings:servicebus"]!)
-    .WaitFor(provisioner);
+    .WithEnvironment("AzureWebJobsServiceBus", builder.Configuration["ConnectionStrings:servicebus"]!);
 
 // Point nimbus-ops at the CRM/ERP platform catalog instead of the default
 // Storefront/Billing/Warehouse one, so Endpoints/EventTypes show Crm & Erp.

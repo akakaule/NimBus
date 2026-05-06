@@ -48,8 +48,8 @@ export default function ConfirmDestructiveAction({
       <ModalBody>
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">{description}</p>
-          <div className="bg-red-50 border border-red-200 rounded-md p-3">
-            <p className="text-sm text-red-800 font-medium">
+          <div className="bg-red-50 border border-red-200 dark:bg-red-950/30 dark:border-red-900/60 rounded-md p-3">
+            <p className="text-sm text-red-800 dark:text-red-200 font-medium">
               This action cannot be undone.
             </p>
           </div>

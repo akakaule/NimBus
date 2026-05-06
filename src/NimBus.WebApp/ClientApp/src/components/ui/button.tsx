@@ -33,34 +33,34 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       solid: {
         primary:
           "bg-primary text-white hover:bg-primary-600 focus:ring-primary-500",
-        gray: "bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-500",
-        red: "bg-red-600 text-white hover:bg-red-700 focus:ring-red-500",
+        gray: "bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-500 dark:bg-zinc-700 dark:hover:bg-zinc-600",
+        red: "bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 dark:bg-red-700 dark:hover:bg-red-600",
         green:
-          "bg-green-600 text-white hover:bg-green-700 focus:ring-green-500",
-        blue: "bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500",
+          "bg-green-600 text-white hover:bg-green-700 focus:ring-green-500 dark:bg-green-700 dark:hover:bg-green-600",
+        blue: "bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500 dark:bg-blue-700 dark:hover:bg-blue-600",
       },
       outline: {
         primary:
-          "border-2 border-primary text-primary hover:bg-primary hover:text-white focus:ring-primary-500",
+          "border-2 border-primary text-primary hover:bg-primary hover:text-white focus:ring-primary-500 dark:text-primary-400 dark:border-primary-500 dark:hover:bg-primary-900/40 dark:hover:text-primary-200",
         gray: "border-2 border-input text-foreground hover:bg-accent focus:ring-gray-500",
-        red: "border-2 border-red-500 text-red-500 hover:bg-red-50 focus:ring-red-500",
+        red: "border-2 border-red-500 text-red-500 hover:bg-red-50 focus:ring-red-500 dark:text-red-400 dark:border-red-600 dark:hover:bg-red-950/40",
         green:
-          "border-2 border-green-500 text-green-500 hover:bg-green-50 focus:ring-green-500",
-        blue: "border-2 border-blue-500 text-blue-500 hover:bg-blue-50 focus:ring-blue-500",
+          "border-2 border-green-500 text-green-500 hover:bg-green-50 focus:ring-green-500 dark:text-green-400 dark:border-green-600 dark:hover:bg-green-950/40",
+        blue: "border-2 border-blue-500 text-blue-500 hover:bg-blue-50 focus:ring-blue-500 dark:text-blue-400 dark:border-blue-600 dark:hover:bg-blue-950/40",
       },
       ghost: {
-        primary: "text-primary hover:bg-primary-50 focus:ring-primary-500",
+        primary: "text-primary hover:bg-primary-50 focus:ring-primary-500 dark:text-primary-400 dark:hover:bg-primary-900/40",
         gray: "text-muted-foreground hover:bg-accent hover:text-accent-foreground focus:ring-gray-500",
-        red: "text-red-500 hover:bg-red-50 focus:ring-red-500",
-        green: "text-green-500 hover:bg-green-50 focus:ring-green-500",
-        blue: "text-blue-500 hover:bg-blue-50 focus:ring-blue-500",
+        red: "text-red-500 hover:bg-red-50 focus:ring-red-500 dark:text-red-400 dark:hover:bg-red-950/40",
+        green: "text-green-500 hover:bg-green-50 focus:ring-green-500 dark:text-green-400 dark:hover:bg-green-950/40",
+        blue: "text-blue-500 hover:bg-blue-50 focus:ring-blue-500 dark:text-blue-400 dark:hover:bg-blue-950/40",
       },
       link: {
-        primary: "text-primary underline-offset-4 hover:underline",
+        primary: "text-primary underline-offset-4 hover:underline dark:text-primary-400",
         gray: "text-muted-foreground underline-offset-4 hover:underline",
-        red: "text-red-500 underline-offset-4 hover:underline",
-        green: "text-green-500 underline-offset-4 hover:underline",
-        blue: "text-blue-500 underline-offset-4 hover:underline",
+        red: "text-red-500 underline-offset-4 hover:underline dark:text-red-400",
+        green: "text-green-500 underline-offset-4 hover:underline dark:text-green-400",
+        blue: "text-blue-500 underline-offset-4 hover:underline dark:text-blue-400",
       },
     };
 

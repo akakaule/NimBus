@@ -411,7 +411,7 @@ export default function MessageListing(props: IMessageListingProps) {
           {props.eventDetails?.messageContent?.errorContent && (
             !isDeadletteredMessage(props.eventDetails?.resolutionStatus) ? (
               <>
-                <div className="bg-red-100 border border-red-400 text-red-800 dark:bg-red-950 dark:border-red-800 dark:text-red-300 p-4 rounded text-sm">
+                <div className="bg-red-100 border border-red-400 text-red-800 dark:bg-red-950/40 dark:border-red-900/60 dark:text-red-200 p-4 rounded text-sm">
                   {props.eventDetails?.messageContent?.errorContent?.errorText}
                 </div>
                 <table className="text-sm">
@@ -535,7 +535,7 @@ export default function MessageListing(props: IMessageListingProps) {
         <ModalBody>
           <p className="text-sm">
             This will permanently delete the event from storage.{" "}
-            <span className="font-semibold text-red-600">This action cannot be undone.</span>
+            <span className="font-semibold text-red-600 dark:text-red-400">This action cannot be undone.</span>
           </p>
         </ModalBody>
         <ModalFooter>
@@ -598,7 +598,7 @@ function CommentSection({ eventId, onCommentAdded }: { eventId?: string; onComme
         <Button size="sm" colorScheme="primary" onClick={submit} disabled={saving || !comment.trim()}>
           {saving ? "Saving..." : "Save"}
         </Button>
-        {saved && <span className="text-sm text-green-600">Saved</span>}
+        {saved && <span className="text-sm text-green-600 dark:text-green-400">Saved</span>}
       </div>
     </div>
   );

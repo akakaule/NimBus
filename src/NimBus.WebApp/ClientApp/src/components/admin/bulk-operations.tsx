@@ -125,7 +125,7 @@ export function BulkResubmitCard({ endpoints }: { endpoints: EndpointOption[] })
           </div>
 
           {preview && (
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-4 space-y-2">
+            <div className="bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/60 rounded-md p-4 space-y-2">
               <p className="text-sm">
                 Total failed:{" "}
                 <span className="font-bold">{preview.totalFailedCount}</span>
@@ -254,7 +254,7 @@ export function DeleteDeadLetteredCard({
           </div>
 
           {count !== null && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 space-y-2">
+            <div className="bg-yellow-50 border border-yellow-200 dark:bg-yellow-950/30 dark:border-yellow-900/60 rounded-md p-4 space-y-2">
               <p className="text-sm">
                 Dead-lettered messages:{" "}
                 <span className="font-bold">{count}</span>
@@ -376,12 +376,12 @@ export function DeleteEventCard({ endpoints }: { endpoints: EndpointOption[] }) 
           </div>
 
           {deleteResult === "success" && (
-            <div className="bg-green-50 border border-green-200 rounded-md p-3 text-green-800 text-sm">
+            <div className="bg-green-50 border border-green-200 dark:bg-green-950/30 dark:border-green-900/60 rounded-md p-3 text-green-800 dark:text-green-200 text-sm">
               Event deleted successfully.
             </div>
           )}
           {deleteResult === "not-found" && (
-            <div className="bg-red-50 border border-red-200 rounded-md p-3 text-red-800 text-sm">
+            <div className="bg-red-50 border border-red-200 dark:bg-red-950/30 dark:border-red-900/60 rounded-md p-3 text-red-800 dark:text-red-200 text-sm">
               Event not found.
             </div>
           )}

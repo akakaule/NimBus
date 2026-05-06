@@ -142,13 +142,13 @@ export function SessionPurgeCard({ endpoints }: { endpoints: EndpointOption[] })
             </Button>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-md p-3 text-red-800 text-sm">
+              <div className="bg-red-50 border border-red-200 dark:bg-red-950/30 dark:border-red-900/60 rounded-md p-3 text-red-800 dark:text-red-200 text-sm">
                 {error}
               </div>
             )}
 
             {preview && (
-              <div className="bg-blue-50 border border-blue-200 rounded-md p-4 space-y-3">
+              <div className="bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/60 rounded-md p-4 space-y-3">
                 <h4 className="font-medium text-sm">
                   Session: {preview.sessionId}
                 </h4>
@@ -193,7 +193,7 @@ export function SessionPurgeCard({ endpoints }: { endpoints: EndpointOption[] })
             )}
 
             {result && (
-              <div className="bg-green-50 border border-green-200 rounded-md p-4 space-y-2 text-sm">
+              <div className="bg-green-50 border border-green-200 dark:bg-green-950/30 dark:border-green-900/60 rounded-md p-4 space-y-2 text-sm">
                 <h4 className="font-medium">
                   Purge Complete: {result.sessionId}
                 </h4>
@@ -202,7 +202,7 @@ export function SessionPurgeCard({ endpoints }: { endpoints: EndpointOption[] })
                     <span
                       className={
                         result.activeMessagesRemoved! > 0
-                          ? "text-green-700"
+                          ? "text-green-700 dark:text-green-400"
                           : "text-muted-foreground"
                       }
                     >
@@ -213,7 +213,7 @@ export function SessionPurgeCard({ endpoints }: { endpoints: EndpointOption[] })
                     <span
                       className={
                         result.deferredMessagesRemoved! > 0
-                          ? "text-green-700"
+                          ? "text-green-700 dark:text-green-400"
                           : "text-muted-foreground"
                       }
                     >
@@ -225,7 +225,7 @@ export function SessionPurgeCard({ endpoints }: { endpoints: EndpointOption[] })
                     <span
                       className={
                         result.deferredSubscriptionMessagesRemoved! > 0
-                          ? "text-green-700"
+                          ? "text-green-700 dark:text-green-400"
                           : "text-muted-foreground"
                       }
                     >
@@ -237,7 +237,7 @@ export function SessionPurgeCard({ endpoints }: { endpoints: EndpointOption[] })
                     <span
                       className={
                         result.cosmosEventsRemoved! > 0
-                          ? "text-green-700"
+                          ? "text-green-700 dark:text-green-400"
                           : "text-muted-foreground"
                       }
                     >
@@ -248,8 +248,8 @@ export function SessionPurgeCard({ endpoints }: { endpoints: EndpointOption[] })
                     <span
                       className={
                         result.sessionStateCleared
-                          ? "text-green-700"
-                          : "text-red-600"
+                          ? "text-green-700 dark:text-green-400"
+                          : "text-red-600 dark:text-red-400"
                       }
                     >
                       Session state cleared:{" "}
@@ -259,8 +259,8 @@ export function SessionPurgeCard({ endpoints }: { endpoints: EndpointOption[] })
                 </div>
                 {(result.errors?.length ?? 0) > 0 && (
                   <div className="mt-2">
-                    <p className="text-xs font-medium text-red-700">Errors:</p>
-                    <ul className="text-xs text-red-600 space-y-0.5">
+                    <p className="text-xs font-medium text-red-700 dark:text-red-300">Errors:</p>
+                    <ul className="text-xs text-red-600 dark:text-red-400 space-y-0.5">
                       {result.errors!.map((err, i) => (
                         <li key={i} className="font-mono">
                           {err}

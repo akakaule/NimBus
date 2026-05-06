@@ -23,22 +23,22 @@ interface TimelineEntry {
 }
 
 const MESSAGE_COLORS: Record<string, { bg: string; border: string; dot: string; label: string }> = {
-  EventRequest:        { bg: "bg-blue-50",    border: "border-blue-300",    dot: "bg-blue-500",    label: "Event Request" },
-  ResolutionResponse:  { bg: "bg-green-50",   border: "border-green-300",   dot: "bg-green-500",   label: "Completed" },
-  ErrorResponse:       { bg: "bg-red-50",     border: "border-red-300",     dot: "bg-red-500",     label: "Error" },
-  RetryRequest:        { bg: "bg-amber-50",   border: "border-amber-300",   dot: "bg-amber-500",   label: "Retry" },
-  DeferralResponse:    { bg: "bg-purple-50",  border: "border-purple-300",  dot: "bg-purple-500",  label: "Deferred" },
-  ResubmissionRequest: { bg: "bg-emerald-50", border: "border-emerald-300", dot: "bg-emerald-500", label: "Resubmission" },
-  SkipResponse:        { bg: "bg-gray-50",    border: "border-gray-300",    dot: "bg-gray-400",    label: "Skipped" },
-  SkipRequest:         { bg: "bg-gray-50",    border: "border-gray-300",    dot: "bg-gray-400",    label: "Skip Request" },
-  ContinuationRequest: { bg: "bg-indigo-50",  border: "border-indigo-300",  dot: "bg-indigo-500",  label: "Continuation" },
-  UnsupportedRequest:  { bg: "bg-orange-50",  border: "border-orange-300",  dot: "bg-orange-500",  label: "Unsupported" },
-  PendingHandoffResponse:  { bg: "bg-sky-50",     border: "border-sky-300",     dot: "bg-sky-500",     label: "Awaiting External" },
-  HandoffCompletedRequest: { bg: "bg-teal-50",    border: "border-teal-300",    dot: "bg-teal-500",    label: "Handoff Completed" },
-  HandoffFailedRequest:    { bg: "bg-orange-50",  border: "border-orange-300",  dot: "bg-orange-500",  label: "Handoff Failed" },
+  EventRequest:            { bg: "bg-blue-50 dark:bg-blue-950/30",       border: "border-blue-300 dark:border-blue-900/60",       dot: "bg-blue-500",    label: "Event Request" },
+  ResolutionResponse:      { bg: "bg-green-50 dark:bg-green-950/30",     border: "border-green-300 dark:border-green-900/60",     dot: "bg-green-500",   label: "Completed" },
+  ErrorResponse:           { bg: "bg-red-50 dark:bg-red-950/30",         border: "border-red-300 dark:border-red-900/60",         dot: "bg-red-500",     label: "Error" },
+  RetryRequest:            { bg: "bg-amber-50 dark:bg-amber-950/30",     border: "border-amber-300 dark:border-amber-900/60",     dot: "bg-amber-500",   label: "Retry" },
+  DeferralResponse:        { bg: "bg-purple-50 dark:bg-purple-950/30",   border: "border-purple-300 dark:border-purple-900/60",   dot: "bg-purple-500",  label: "Deferred" },
+  ResubmissionRequest:     { bg: "bg-emerald-50 dark:bg-emerald-950/30", border: "border-emerald-300 dark:border-emerald-900/60", dot: "bg-emerald-500", label: "Resubmission" },
+  SkipResponse:            { bg: "bg-gray-50 dark:bg-zinc-900/40",       border: "border-gray-300 dark:border-zinc-700",          dot: "bg-gray-400",    label: "Skipped" },
+  SkipRequest:             { bg: "bg-gray-50 dark:bg-zinc-900/40",       border: "border-gray-300 dark:border-zinc-700",          dot: "bg-gray-400",    label: "Skip Request" },
+  ContinuationRequest:     { bg: "bg-indigo-50 dark:bg-indigo-950/30",   border: "border-indigo-300 dark:border-indigo-900/60",   dot: "bg-indigo-500",  label: "Continuation" },
+  UnsupportedRequest:      { bg: "bg-orange-50 dark:bg-orange-950/30",   border: "border-orange-300 dark:border-orange-900/60",   dot: "bg-orange-500",  label: "Unsupported" },
+  PendingHandoffResponse:  { bg: "bg-sky-50 dark:bg-sky-950/30",         border: "border-sky-300 dark:border-sky-900/60",         dot: "bg-sky-500",     label: "Awaiting External" },
+  HandoffCompletedRequest: { bg: "bg-teal-50 dark:bg-teal-950/30",       border: "border-teal-300 dark:border-teal-900/60",       dot: "bg-teal-500",    label: "Handoff Completed" },
+  HandoffFailedRequest:    { bg: "bg-orange-50 dark:bg-orange-950/30",   border: "border-orange-300 dark:border-orange-900/60",   dot: "bg-orange-500",  label: "Handoff Failed" },
 };
 
-const AUDIT_COLOR = { bg: "bg-sky-50", border: "border-sky-200", dot: "bg-sky-400" };
+const AUDIT_COLOR = { bg: "bg-sky-50 dark:bg-sky-950/30", border: "border-sky-200 dark:border-sky-900/60", dot: "bg-sky-400" };
 
 function formatJson(raw: string | undefined): string {
   if (!raw) return "";
@@ -50,7 +50,7 @@ function formatJson(raw: string | undefined): string {
 }
 
 function getMessageColor(messageType: string | undefined) {
-  return MESSAGE_COLORS[messageType ?? ""] ?? { bg: "bg-gray-50", border: "border-gray-200", dot: "bg-gray-400", label: messageType ?? "Unknown" };
+  return MESSAGE_COLORS[messageType ?? ""] ?? { bg: "bg-gray-50 dark:bg-zinc-900/40", border: "border-gray-200 dark:border-zinc-700", dot: "bg-gray-400", label: messageType ?? "Unknown" };
 }
 
 export default function FlowTimeline({ messages, audits }: FlowTimelineProps) {
@@ -145,14 +145,14 @@ export default function FlowTimeline({ messages, audits }: FlowTimelineProps) {
                 </span>
               </div>
               {entry.errorText && (
-                <p className="text-xs mt-2 text-red-700 bg-red-100 rounded px-2 py-1 font-mono break-all">
+                <p className="text-xs mt-2 text-red-700 bg-red-100 dark:text-red-200 dark:bg-red-950/40 rounded px-2 py-1 font-mono break-all">
                   {entry.errorText}
                 </p>
               )}
               {entry.exceptionStackTrace && (
                 <details className="mt-2">
-                  <summary className="text-[10px] text-red-600 cursor-pointer hover:underline">Exception details</summary>
-                  <pre className="text-[10px] mt-1 text-red-800 bg-red-50 rounded px-2 py-1 overflow-x-auto max-h-40 whitespace-pre-wrap break-all">
+                  <summary className="text-[10px] text-red-600 dark:text-red-400 cursor-pointer hover:underline">Exception details</summary>
+                  <pre className="text-[10px] mt-1 text-red-800 bg-red-50 dark:text-red-200 dark:bg-red-950/30 rounded px-2 py-1 overflow-x-auto max-h-40 whitespace-pre-wrap break-all">
                     {entry.exceptionStackTrace}
                   </pre>
                 </details>

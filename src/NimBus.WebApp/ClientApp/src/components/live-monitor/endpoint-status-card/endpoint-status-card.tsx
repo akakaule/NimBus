@@ -20,17 +20,17 @@ const EndpointStatusCard = (props: EndpointStatusCardProps) => {
     const color = mapStatusToColor(status);
     switch (color) {
       case "green":
-        return "bg-green-500";
+        return "bg-green-500 dark:bg-green-700";
       case "red":
-        return "bg-red-500";
+        return "bg-red-500 dark:bg-red-700";
       case "yellow":
-        return "bg-yellow-500";
+        return "bg-yellow-500 dark:bg-yellow-600";
       case "teal":
-        return "bg-teal-500";
+        return "bg-teal-500 dark:bg-teal-700";
       case "purple":
-        return "bg-purple-500";
+        return "bg-purple-500 dark:bg-purple-700";
       default:
-        return "bg-gray-500";
+        return "bg-gray-500 dark:bg-zinc-600";
     }
   };
 
@@ -38,31 +38,31 @@ const EndpointStatusCard = (props: EndpointStatusCardProps) => {
     const color = mapStatusToColor(status);
     switch (color) {
       case "green":
-        return "bg-green-100 text-green-800";
+        return "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200";
       case "red":
-        return "bg-red-100 text-red-800";
+        return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200";
       case "yellow":
-        return "bg-yellow-100 text-yellow-800";
+        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200";
       case "teal":
-        return "bg-teal-100 text-teal-800";
+        return "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200";
       case "purple":
-        return "bg-purple-100 text-purple-800";
+        return "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "bg-gray-100 text-gray-800 dark:bg-zinc-800 dark:text-zinc-200";
     }
   };
 
   const getHeartbeatBadgeClass = (heartbeatStatus: string): string => {
     switch (heartbeatStatus?.toLowerCase()) {
       case "on":
-        return "bg-green-100 text-green-800";
+        return "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200";
       case "off":
-        return "bg-red-100 text-red-800";
+        return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200";
       case "pending":
-        return "bg-teal-100 text-teal-800";
+        return "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200";
       case "unknown":
       default:
-        return "bg-purple-100 text-purple-800";
+        return "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200";
     }
   };
 

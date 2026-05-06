@@ -51,7 +51,7 @@ export default function PlatformConfig() {
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-md p-4 text-red-800">
+      <div className="bg-red-50 border border-red-200 dark:bg-red-950/30 dark:border-red-900/60 rounded-md p-4 text-red-800 dark:text-red-200">
         {error}
       </div>
     );

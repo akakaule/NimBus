@@ -23,7 +23,7 @@ export default function OperationProgress({
       <div className="flex items-center gap-3">
         <div className="flex-1 bg-muted rounded-full h-2.5">
           <div
-            className="bg-green-600 h-2.5 rounded-full transition-all duration-300"
+            className="bg-green-600 dark:bg-green-500 h-2.5 rounded-full transition-all duration-300"
             style={{ width: `${progressPercent}%` }}
           />
         </div>
@@ -54,8 +54,8 @@ export default function OperationProgress({
 
       {errors.length > 0 && (
         <div className="mt-2 max-h-32 overflow-y-auto">
-          <p className="text-xs font-medium text-red-700 mb-1">Errors:</p>
-          <ul className="text-xs text-red-600 space-y-0.5">
+          <p className="text-xs font-medium text-red-700 dark:text-red-300 mb-1">Errors:</p>
+          <ul className="text-xs text-red-600 dark:text-red-400 space-y-0.5">
             {errors.map((err, i) => (
               <li key={i} className="font-mono break-all">
                 {err}

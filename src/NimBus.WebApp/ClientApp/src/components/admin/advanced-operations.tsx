@@ -133,7 +133,7 @@ export function SubscriptionPurgeCard({ endpoints }: { endpoints: EndpointOption
           <Button onClick={handlePreview} disabled={selected.length === 0 || loading} isLoading={loading} variant="outline">Preview</Button>
 
           {preview && (
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-4 space-y-2">
+            <div className="bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/60 rounded-md p-4 space-y-2">
               <p className="text-sm">Scanned: <span className="font-bold">{preview.totalScanned}</span></p>
               <p className="text-sm">Matching: <span className="font-bold">{preview.totalMatching}</span></p>
               <p className="text-sm">Sessions: <span className="font-bold">{preview.sessionCount}</span></p>
@@ -229,7 +229,7 @@ export function DeleteByStatusCard({ endpoints }: { endpoints: EndpointOption[] 
           <Button onClick={handlePreview} disabled={selected.length === 0 || statuses.size === 0 || loading} isLoading={loading} variant="outline">Preview</Button>
 
           {previewCount !== null && (
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-4 space-y-2">
+            <div className="bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/60 rounded-md p-4 space-y-2">
               <p className="text-sm">Events matching: <span className="font-bold">{previewCount}</span></p>
               {previewCount > 0 && (
                 <Button colorScheme="red" onClick={() => setShowConfirm(true)} disabled={executing} isLoading={executing} size="sm">
@@ -331,7 +331,7 @@ export function SkipMessagesCard({ endpoints }: { endpoints: EndpointOption[] })
           <Button onClick={handlePreview} disabled={selected.length === 0 || statuses.size === 0 || loading} isLoading={loading} variant="outline">Preview</Button>
 
           {previewCount !== null && (
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-4 space-y-2">
+            <div className="bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/60 rounded-md p-4 space-y-2">
               <p className="text-sm">Eligible to skip: <span className="font-bold">{previewCount}</span></p>
               {previewCount > 0 && (
                 <Button colorScheme="blue" onClick={() => setShowConfirm(true)} disabled={executing} isLoading={executing} size="sm">
@@ -407,7 +407,7 @@ export function DeleteMessagesByToCard() {
           </div>
 
           {previewCount !== null && (
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-4 space-y-2">
+            <div className="bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/60 rounded-md p-4 space-y-2">
               <p className="text-sm">Messages matching: <span className="font-bold">{previewCount}</span></p>
               {previewCount > 0 && (
                 <Button colorScheme="red" onClick={() => setShowConfirm(true)} disabled={executing} isLoading={executing} size="sm">
@@ -508,7 +508,7 @@ export function CopyEndpointCard({ endpoints }: { endpoints: EndpointOption[] })
           </Button>
 
           {result && (
-            <div className="bg-green-50 border border-green-200 rounded-md p-4 space-y-1">
+            <div className="bg-green-50 border border-green-200 dark:bg-green-950/30 dark:border-green-900/60 rounded-md p-4 space-y-1">
               <p className="text-sm">Events copied: <span className="font-bold">{result.eventsCopied}</span></p>
               <p className="text-sm">Messages copied: <span className="font-bold">{result.messagesCopied}</span></p>
             </div>

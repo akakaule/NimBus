@@ -102,7 +102,7 @@ const Combobox = ({
               {selectedLabels.map((label, idx) => (
                 <span
                   key={idx}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-100 text-primary-800 text-xs rounded"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-100 text-primary-800 dark:bg-primary-900/40 dark:text-primary-200 text-xs rounded"
                 >
                   {label}
                   <button
@@ -111,7 +111,7 @@ const Combobox = ({
                       e.stopPropagation();
                       handleSelect(value[idx]);
                     }}
-                    className="hover:text-primary-600"
+                    className="hover:text-primary-600 dark:hover:text-primary-300"
                   >
                     <svg
                       className="w-3 h-3"
@@ -185,7 +185,7 @@ const Combobox = ({
                   key={option.value}
                   className={cn(
                     "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-accent",
-                    isSelected && "bg-primary-50",
+                    isSelected && "bg-primary-50 dark:bg-primary-900/30",
                   )}
                   onClick={() => handleSelect(option.value)}
                 >

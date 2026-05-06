@@ -105,8 +105,8 @@ const Tab = ({
         "border border-b-0 rounded-t-md -mb-px",
         "focus:outline-none focus:ring-2 focus:ring-primary focus:ring-inset",
         isActive
-          ? "bg-primary text-white border-primary"
-          : "bg-background text-muted-foreground border-border hover:bg-accent",
+          ? "bg-primary/10 text-primary border-primary dark:bg-primary/15 dark:text-primary-300"
+          : "bg-background text-muted-foreground border-border hover:bg-accent hover:text-foreground",
         isDisabled && "opacity-50 cursor-not-allowed hover:bg-background",
         className,
       )}

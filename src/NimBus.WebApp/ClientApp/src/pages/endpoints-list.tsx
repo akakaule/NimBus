@@ -325,7 +325,7 @@ export default class EndpointsList extends React.Component<
           ITableData.name,
           {
             value: (
-              <span className="text-blue-600 font-bold">{endpointId}</span>
+              <span className="text-delegate-blue-600 dark:text-delegate-blue-400 font-bold hover:underline">{endpointId}</span>
             ),
             searchValue: endpointId,
           },

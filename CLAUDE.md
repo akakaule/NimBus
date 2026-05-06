@@ -63,8 +63,6 @@ samples/
 
 docs/
   architecture.md          # System architecture
-  roadmap.md               # Feature roadmap with phases
-  backlog.md               # Actionable work items by priority
   adr/                     # 8 Architecture Decision Records
   sdk-api-reference.md     # SDK API guide
   getting-started.md       # Quick start

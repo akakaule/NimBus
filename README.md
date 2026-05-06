@@ -48,14 +48,11 @@ The Aspire AppHost and the CRM/ERP demo both default to SQL Server and accept `-
 
 ## Transport
 
-Azure Service Bus is the primary, recommended transport for NimBus deployments. RabbitMQ is committed as a second, production-grade transport for on-premise / cloud-agnostic deployments — see [ADR-011](docs/adr/011-rabbitmq-as-second-transport.md) for the design and Phase 6 in the [roadmap](docs/roadmap.md) for delivery sequencing.
+Azure Service Bus is NimBus's transport. The platform leans on Service Bus's native primitives (sessions, deferred messages, scheduled enqueue, forwarding subscriptions, dead-letter queues) rather than abstracting them away.
 
 | Provider | Project | Registration | Notes |
 |----------|---------|--------------|-------|
-| Azure Service Bus | `NimBus.ServiceBus` | `services.AddNimBus(b => b.AddServiceBusTransport(...))` | Native sessions, deferred messages, scheduled enqueue, forwarding subscriptions, dead-letter queue. The default and recommended transport for Azure deployments. |
-| RabbitMQ *(Phase 6)* | `NimBus.Transport.RabbitMQ` | `services.AddNimBus(b => b.AddRabbitMqTransport(...))` | Sessions emulated via `rabbitmq_consistent_hash_exchange` plugin + single-active-consumer queues (default 16 partitions per endpoint). Scheduled enqueue requires `rabbitmq_delayed_message_exchange` plugin. DLX per endpoint. Targets full on-premise deployments with no Azure dependency. |
-
-When Phase 6 ships, the Aspire AppHost and CRM/ERP demo will default to `--Transport servicebus` and accept `--Transport rabbitmq` to switch, mirroring the storage-provider knob.
+| Azure Service Bus | `NimBus.ServiceBus` | `services.AddNimBus(b => b.AddServiceBusTransport(...))` | Native sessions, deferred messages, scheduled enqueue, forwarding subscriptions, dead-letter queue. |
 
 ## Extensions
 
@@ -342,7 +339,6 @@ The pipeline uses `nb setup` to run all deployment steps (`infra apply` → `top
 | [SDK API Reference](docs/sdk-api-reference.md) | Interfaces: IPublisherClient, IEventHandler, RetryPolicy, IOutbox |
 | [Extensions](docs/extensions.md) | Extension framework guide |
 | [Architecture](docs/architecture.md) | System design and component overview |
-| [Roadmap](docs/roadmap.md) | Feature roadmap through H2 2027 |
 
 ## Acknowledgments
 

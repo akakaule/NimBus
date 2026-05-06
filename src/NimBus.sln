@@ -56,12 +56,10 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{96CF8BDA-D0C8-4990-A151-CE368A2062CD}"
 	ProjectSection(SolutionItems) = preProject
 		..\docs\architecture.md = ..\docs\architecture.md
-		..\docs\backlog.md = ..\docs\backlog.md
 		..\docs\deferred-messages.md = ..\docs\deferred-messages.md
 		..\docs\extensions.md = ..\docs\extensions.md
 		..\docs\message-flows.md = ..\docs\message-flows.md
 		..\docs\pipeline-middleware.md = ..\docs\pipeline-middleware.md
-		..\docs\roadmap.md = ..\docs\roadmap.md
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Core", "Core", "{15B38AEB-EBAB-44C1-A30F-67A9387C329E}"

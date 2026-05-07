@@ -13,6 +13,7 @@
     <PackageReference Include="Aspire.Hosting.SqlServer" Version="13.2.4" />
     <PackageReference Include="Aspire.Hosting.JavaScript" Version="13.2.4" />
     <PackageReference Include="Aspire.Hosting.Azure.Functions" Version="13.2.4" />
+    <PackageReference Include="Aspire.Hosting.Azure.ServiceBus" Version="13.2.4" />
     <PackageReference Include="CommunityToolkit.Aspire.Hosting.DbGate" Version="9.7.0" />
   </ItemGroup>
 

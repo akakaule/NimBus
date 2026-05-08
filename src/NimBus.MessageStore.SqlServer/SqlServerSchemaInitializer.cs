@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using DbUp;
@@ -19,6 +20,14 @@ namespace NimBus.MessageStore.SqlServer;
 /// </summary>
 internal sealed class SqlServerSchemaInitializer : IHostedService
 {
+    // Regular SQL Server identifier — letter or underscore start, then letters,
+    // digits or underscores. We deliberately exclude `]`, brackets, dots and
+    // every other character that could break out of `[ ... ]` quoting in the
+    // T-SQL the message store emits. The 128-char cap matches sysname.
+    private static readonly Regex SchemaNameRegex = new(
+        @"^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     private static readonly string[] RequiredTables =
     {
         "DbUpJournal",
@@ -54,6 +63,11 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
 
         if (string.IsNullOrWhiteSpace(_options.Schema))
             throw new InvalidOperationException("SqlServerMessageStoreOptions.Schema is required.");
+
+        if (!SchemaNameRegex.IsMatch(_options.Schema))
+            throw new InvalidOperationException(
+                $"SqlServerMessageStoreOptions.Schema '{_options.Schema}' is not a valid SQL identifier. " +
+                "Schema names must start with a letter or underscore and contain only letters, digits or underscores (max 128 chars).");
 
         if (_options.ProvisioningMode == SchemaProvisioningMode.VerifyOnly)
         {

@@ -48,7 +48,10 @@ public sealed class SqlServerMessageStore : INimBusMessageStore
         return conn;
     }
 
-    private string T(string table) => $"[{_schema}].[{table}]";
+    // Defensive bracket-quoting: SqlServerSchemaInitializer is the primary gate
+    // for schema-name validation, but escape `]` here too so a misuse outside
+    // the hosted service can't break out of the quoted identifier.
+    private string T(string table) => $"[{_schema.Replace("]", "]]", StringComparison.Ordinal)}].[{table.Replace("]", "]]", StringComparison.Ordinal)}]";
 
     // ───────── Resolver state writes (status transitions) ─────────
 

@@ -356,8 +356,14 @@ namespace NimBus.WebApp
 
             app.UseSpaStaticFiles();
 
-            app.UseOpenApi();
-            app.UseSwaggerUi();
+            // OpenAPI / Swagger UI publishes the management API surface, so keep
+            // it gated to Development. Production hosts should not expose the
+            // schema (or the "try it out" UI) anonymously.
+            if (env.IsDevelopment())
+            {
+                app.UseOpenApi();
+                app.UseSwaggerUi();
+            }
 
             app.UseAuthentication();
             app.UseAuthorization();

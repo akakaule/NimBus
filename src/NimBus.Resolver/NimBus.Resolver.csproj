@@ -11,9 +11,6 @@
     <InternalsVisibleTo Include="NimBus.Resolver.Tests" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="local.settings.json" />
-  </ItemGroup>
-  <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.17.1" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.51.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.OpenTelemetry" Version="1.1.0" />

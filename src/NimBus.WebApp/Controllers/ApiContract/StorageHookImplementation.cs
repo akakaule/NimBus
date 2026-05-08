@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using NimBus.WebApp.Hubs;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NimBus.Core;
 using NimBus.WebApp.Services;
@@ -30,6 +31,7 @@ namespace NimBus.WebApp.Controllers
         private readonly INimBusMessageStore _cosmosClient;
         private readonly IPlatform _platform;
         private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly IHostEnvironment _hostEnvironment;
         private readonly string _webhookKey;
 
         public StorageHookImplementation(
@@ -38,6 +40,7 @@ namespace NimBus.WebApp.Controllers
             INimBusMessageStore cosmosClient,
             IPlatform platform,
             IHttpContextAccessor httpContextAccessor,
+            IHostEnvironment hostEnvironment,
             IConfiguration configuration)
         {
             _hubContext = gridEventsHubContext;
@@ -45,6 +48,7 @@ namespace NimBus.WebApp.Controllers
             _cosmosClient = cosmosClient;
             _platform = platform;
             _httpContextAccessor = httpContextAccessor;
+            _hostEnvironment = hostEnvironment;
             _webhookKey = configuration.GetValue<string>("EventGrid:WebhookKey") ?? string.Empty;
         }
 
@@ -93,14 +97,22 @@ namespace NimBus.WebApp.Controllers
 
         /// <summary>
         /// Validates the webhook key from the request query string against the configured key.
-        /// When no key is configured, requests are allowed with a warning to preserve backward compatibility.
+        /// In Development, missing config falls back to a warning + allow so a local
+        /// dashboard can run without Event Grid wiring; in any other environment a
+        /// missing key fails closed to avoid leaving an anonymous endpoint open.
         /// </summary>
         private bool ValidateWebhookKey()
         {
             if (string.IsNullOrEmpty(_webhookKey))
             {
-                _logger.LogWarning("EventGrid:WebhookKey is not configured. Webhook endpoints are unprotected. Configure a webhook key for production security.");
-                return true;
+                if (_hostEnvironment.IsDevelopment())
+                {
+                    _logger.LogWarning("EventGrid:WebhookKey is not configured. Webhook endpoints are unprotected. Configure a webhook key before deploying.");
+                    return true;
+                }
+
+                _logger.LogError("EventGrid:WebhookKey is not configured. Webhook request rejected — set EventGrid:WebhookKey to enable storage hooks in non-Development environments.");
+                return false;
             }
 
             var requestKey = _httpContextAccessor.HttpContext?.Request.Query["key"].ToString();

@@ -3,6 +3,12 @@
 ################################################################################
 
 *.suo
+
+# Azure Functions local settings — may contain secrets (Service Bus / Cosmos
+# keys, app insights instrumentation keys). Use local.settings.template.json
+# as the checked-in starter; copy + populate locally.
+**/local.settings.json
+
 /src/IoTGateway/.vs/IoTGateway/FileContentIndex
 /src/IoTGateway/.vs/IoTGateway/config
 /src/IoTGateway/.vs/IoTGateway/DesignTimeBuild

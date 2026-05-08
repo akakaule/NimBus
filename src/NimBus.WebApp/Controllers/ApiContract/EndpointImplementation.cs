@@ -422,10 +422,12 @@ public class EndpointImplementation : IEndpointApiController
         return new NotFoundObjectResult($"{endpointName} couldn't be found");
     }
 
+    // Restrict the match to the "groups" claim type so non-group claims cannot
+    // elevate privileges. Mirrors EndpointAuthorizationService.IsUserInGroup.
     private bool IsUserInSecurityGroup(string securityGrp)
     {
         var userClaims = _context.User.Identities.First().Claims;
-        return userClaims.Any(c => c.Value == securityGrp);
+        return userClaims.Any(c => c.Type == "groups" && c.Value == securityGrp);
     }
 
     public async Task<IActionResult> PostEndpointSubscribeAsync(EndpointSubscription body, string endpointId)

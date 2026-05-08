@@ -242,9 +242,12 @@ public class AdminImplementation : IAdminApiController
         return new OkObjectResult(result);
     }
 
+    // Restrict the match to the "groups" claim type so non-group claims (e.g. scp,
+    // preferred_username) whose value happens to contain the group name cannot
+    // elevate privileges. Mirrors EndpointAuthorizationService.IsUserInGroup.
     private bool IsUserInSecurityGroup(string securityGrp)
     {
         var userClaims = _context.User.Identities.FirstOrDefault()?.Claims;
-        return userClaims?.Any(c => c.Value == securityGrp) ?? false;
+        return userClaims?.Any(c => c.Type == "groups" && c.Value == securityGrp) ?? false;
     }
 }

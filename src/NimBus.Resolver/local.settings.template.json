@@ -1,0 +1,11 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "ResolverId": "Resolver",
+    "GlobalTraceLogInstrKey": "<application-insights-instrumentation-key>",
+    "AzureWebJobsServiceBus": "<service-bus-connection-string>",
+    "CosmosConnection": "<cosmos-connection-string>"
+  }
+}

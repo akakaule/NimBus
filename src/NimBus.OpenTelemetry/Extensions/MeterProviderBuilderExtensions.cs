@@ -1,3 +1,4 @@
+using NimBus.Core.Diagnostics;
 using OpenTelemetry.Metrics;
 
 namespace NimBus.OpenTelemetry;

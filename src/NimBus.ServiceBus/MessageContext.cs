@@ -161,6 +161,8 @@ namespace NimBus.ServiceBus
 
         public HandoffMetadata HandoffMetadata { get; set; }
 
+        public System.Diagnostics.ActivityContext ParentTraceContext { get; set; }
+
         private long? TryReadLong(UserPropertyName name)
         {
             try

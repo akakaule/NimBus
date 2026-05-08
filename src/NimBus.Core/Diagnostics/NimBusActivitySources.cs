@@ -1,13 +1,15 @@
 using System.Diagnostics;
 
-namespace NimBus.OpenTelemetry;
+namespace NimBus.Core.Diagnostics;
 
 /// <summary>
 /// Holds the framework-level <see cref="ActivitySource"/> instances used by every
-/// NimBus instrumentation site. Internal — call sites use these directly; external
-/// consumers should subscribe via the names exposed on <see cref="NimBusInstrumentation"/>.
+/// NimBus instrumentation site. Public so transport providers and the
+/// <c>NimBus.OpenTelemetry</c> package can emit spans on the canonical sources;
+/// external consumers should normally subscribe via the names exposed on
+/// <see cref="NimBusInstrumentation"/> rather than referencing these instances.
 /// </summary>
-internal static class NimBusActivitySources
+public static class NimBusActivitySources
 {
     public static readonly ActivitySource Publisher = new(NimBusInstrumentation.PublisherActivitySourceName);
 

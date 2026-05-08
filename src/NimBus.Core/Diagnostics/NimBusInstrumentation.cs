@@ -1,4 +1,4 @@
-namespace NimBus.OpenTelemetry;
+namespace NimBus.Core.Diagnostics;
 
 /// <summary>
 /// Canonical names for every <see cref="System.Diagnostics.ActivitySource"/> and
@@ -69,16 +69,4 @@ public static class NimBusInstrumentation
         StoreMeterName,
     ];
 
-    /// <summary>
-    /// Wraps an inner <see cref="NimBus.Core.Messages.ISender"/> with the publisher
-    /// instrumentation decorator. Transport providers call this when registering
-    /// the publisher pipeline so the publish span and publish counters are
-    /// emitted automatically. The <paramref name="messagingSystem"/> argument
-    /// determines the value of the <c>messaging.system</c> attribute on the
-    /// resulting span (e.g. <see cref="Semantics.MessagingSystem.ServiceBus"/>).
-    /// </summary>
-    public static NimBus.Core.Messages.ISender InstrumentSender(
-        NimBus.Core.Messages.ISender inner,
-        string messagingSystem)
-        => new Instrumentation.InstrumentingSenderDecorator(inner, messagingSystem);
 }

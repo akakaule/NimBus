@@ -1,11 +1,12 @@
-namespace NimBus.OpenTelemetry.Semantics;
+namespace NimBus.Core.Diagnostics;
 
 /// <summary>
 /// Interned attribute key constants. Aligned with OpenTelemetry messaging
 /// semantic conventions v1.41 (general spans + Azure messaging). NimBus-specific
-/// concepts use the <c>nimbus.*</c> namespace.
+/// concepts use the <c>nimbus.*</c> namespace. Public so transport providers can
+/// add transport-specific attributes on the canonical span surface.
 /// </summary>
-internal static class MessagingAttributes
+public static class MessagingAttributes
 {
     // OTel messaging.* semconv 1.41 — general
     public const string System = "messaging.system";

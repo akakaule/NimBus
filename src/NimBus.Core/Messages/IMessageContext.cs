@@ -1,5 +1,6 @@
 ﻿using NimBus.Core.Messages.Exceptions;
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -130,5 +131,15 @@ namespace NimBus.Core.Messages
         /// <see cref="HandlerOutcome"/> is <see cref="HandlerOutcome.Default"/>.
         /// </summary>
         HandoffMetadata HandoffMetadata { get; set; }
+
+        /// <summary>
+        /// W3C trace context extracted from the inbound message's <c>traceparent</c> /
+        /// <c>tracestate</c> headers. Populated by the transport adapter at the receive
+        /// boundary; consumed by the consumer-side instrumentation (which owns the
+        /// <c>NimBus.Process</c> span) so that the span is parented to the publisher's
+        /// trace. <c>default(ActivityContext)</c> means no parent — the consumer span
+        /// is a root span and <c>nimbus.has_parent_trace</c> is set to <c>false</c>.
+        /// </summary>
+        ActivityContext ParentTraceContext { get => default; }
     }
 }

@@ -1,7 +1,6 @@
 using System.Diagnostics;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
-using NimBus.OpenTelemetry.Propagation;
-using NimBus.OpenTelemetry.Semantics;
 
 namespace NimBus.OpenTelemetry.Instrumentation;
 

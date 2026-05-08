@@ -3,10 +3,9 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using NimBus.OpenTelemetry;
-using NimBus.OpenTelemetry.Instrumentation;
-using NimBus.OpenTelemetry.Semantics;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -86,7 +85,7 @@ public class InstrumentingSenderDecoratorTests
             .Build()!;
 
         var inner = new RecordingSender();
-        var sut = new InstrumentingSenderDecorator(inner, MessagingSystem.InMemory);
+        var sut = NimBusOpenTelemetryDecorators.InstrumentSender(inner, MessagingSystem.InMemory);
 
         var message = new Message
         {
@@ -133,7 +132,7 @@ public class InstrumentingSenderDecoratorTests
             .Build()!;
 
         var inner = new RecordingSender { Throw = new InvalidOperationException("boom") };
-        var sut = new InstrumentingSenderDecorator(inner, MessagingSystem.InMemory);
+        var sut = NimBusOpenTelemetryDecorators.InstrumentSender(inner, MessagingSystem.InMemory);
 
         var message = new Message { EventId = "e", MessageId = "m", To = "t", EventTypeId = "T" };
         await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => sut.Send(message));
@@ -167,7 +166,7 @@ public class InstrumentingSenderDecoratorTests
         using var outer = outerSource.StartActivity("incoming-request");
 
         var inner = new RecordingSender();
-        var sut = new InstrumentingSenderDecorator(inner, MessagingSystem.InMemory);
+        var sut = NimBusOpenTelemetryDecorators.InstrumentSender(inner, MessagingSystem.InMemory);
         await sut.Send(new Message { To = "queue", EventTypeId = "evt", EventId = "e", MessageId = "m" });
 
         provider.ForceFlush();

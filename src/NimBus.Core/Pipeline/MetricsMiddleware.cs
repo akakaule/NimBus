@@ -1,59 +1,93 @@
 using System;
 using System.Diagnostics;
-using System.Diagnostics.Metrics;
 using System.Threading;
 using System.Threading.Tasks;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
 
 namespace NimBus.Core.Pipeline;
 
 /// <summary>
-/// Middleware that records message processing metrics: duration histogram, success/failure counters.
-/// Metrics are published via System.Diagnostics.Metrics and collected by OpenTelemetry.
+/// Outermost pipeline behavior. Owns the consumer-side <c>NimBus.Process</c>
+/// activity and emits the consumer counters and histograms (via
+/// <see cref="NimBusMeters.Consumer"/>). The span lifetime covers the entire
+/// pipeline run, including broker-settle calls that happen inside
+/// <see cref="IMessageContext.Complete"/> / <see cref="IMessageContext.DeadLetter"/> /
+/// <see cref="IMessageContext.Defer"/>, so this middleware MUST be registered
+/// first (outermost) — registering anything before it truncates the span.
 /// </summary>
 public sealed class MetricsMiddleware : IMessagePipelineBehavior
 {
-    private static readonly Meter s_meter = new("NimBus.Pipeline");
-
-    private static readonly Histogram<double> s_duration = s_meter.CreateHistogram<double>(
-        "nimbus.pipeline.duration", "ms", "Time spent processing a message through the pipeline");
-
-    private static readonly Counter<long> s_processed = s_meter.CreateCounter<long>(
-        "nimbus.pipeline.processed", "messages", "Total messages processed");
-
-    private static readonly Counter<long> s_failed = s_meter.CreateCounter<long>(
-        "nimbus.pipeline.failed", "messages", "Total messages that failed processing");
-
     public async Task Handle(IMessageContext context, MessagePipelineDelegate next, CancellationToken cancellationToken = default)
     {
-        var sw = Stopwatch.StartNew();
-        var tags = new TagList
-        {
-            { "messaging.event_type", context.EventTypeId ?? "unknown" },
-            { "messaging.message_type", context.MessageType.ToString() },
-        };
+        var destination = context.To ?? "unknown";
+        var eventType = context.EventTypeId ?? "unknown";
 
+        using var activity = NimBusActivitySources.Consumer.StartActivity(
+            "process " + destination,
+            ActivityKind.Consumer,
+            context.ParentTraceContext);
+
+        var hasParent = context.ParentTraceContext != default;
+
+        if (activity is { IsAllDataRequested: true })
+        {
+            activity.SetTag(MessagingAttributes.OperationType, "process");
+            activity.SetTag(MessagingAttributes.DestinationName, destination);
+            activity.SetTag(MessagingAttributes.NimBusEventType, eventType);
+            if (!string.IsNullOrEmpty(context.MessageId))
+                activity.SetTag(MessagingAttributes.MessageId, context.MessageId);
+            if (!string.IsNullOrEmpty(context.CorrelationId))
+                activity.SetTag(MessagingAttributes.MessageConversationId, context.CorrelationId);
+            if (!string.IsNullOrEmpty(context.SessionId))
+                activity.SetTag(MessagingAttributes.NimBusSessionKey, context.SessionId);
+            activity.SetTag(MessagingAttributes.NimBusHasParentTrace, hasParent);
+        }
+
+        var receivedTags = new TagList
+        {
+            { MessagingAttributes.DestinationName, destination },
+            { MessagingAttributes.NimBusEventType, eventType },
+        };
+        NimBusMeters.MessagesReceived.Add(1, receivedTags);
+
+        var sw = Stopwatch.StartNew();
         try
         {
-            await next(context, cancellationToken);
+            await next(context, cancellationToken).ConfigureAwait(false);
             sw.Stop();
-
-            s_duration.Record(sw.Elapsed.TotalMilliseconds, tags);
-            s_processed.Add(1, tags);
-            // Stash on the context so ResponseService can carry it onto the
-            // outgoing response and the Resolver can persist per-message timings.
+            RecordOutcome(activity, receivedTags, sw, outcome: "completed");
             context.ProcessingTimeMs = sw.ElapsedMilliseconds;
+            activity?.SetStatus(ActivityStatusCode.Ok);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             sw.Stop();
-
-            s_duration.Record(sw.Elapsed.TotalMilliseconds, tags);
-            s_failed.Add(1, tags);
+            RecordOutcome(activity, receivedTags, sw, outcome: "failed", ex);
             context.ProcessingTimeMs = sw.ElapsedMilliseconds;
-
             throw;
+        }
+    }
+
+    private static void RecordOutcome(Activity? activity, TagList baseTags, Stopwatch sw, string outcome, Exception? ex = null)
+    {
+        var processedTags = baseTags;
+        processedTags.Add(MessagingAttributes.NimBusOutcome, outcome);
+
+        NimBusMeters.MessagesProcessed.Add(1, processedTags);
+        NimBusMeters.ProcessDuration.Record(sw.Elapsed.TotalMilliseconds, processedTags);
+
+        if (ex is not null && activity is { IsAllDataRequested: true })
+        {
+            activity.SetTag(MessagingAttributes.ErrorType, ex.GetType().FullName);
+            activity.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity.AddEvent(new ActivityEvent("exception", default, new ActivityTagsCollection
+            {
+                { "exception.type", ex.GetType().FullName },
+                { "exception.message", ex.Message },
+                { "exception.stacktrace", ex.ToString() },
+            }));
         }
     }
 }

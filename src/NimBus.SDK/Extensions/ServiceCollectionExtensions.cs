@@ -3,11 +3,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
 using NimBus.Core.Outbox;
 using NimBus.OpenTelemetry;
-using NimBus.OpenTelemetry.Semantics;
 using NimBus.SDK.EventHandlers;
 using NimBus.SDK.Hosting;
 using NimBus.ServiceBus;
@@ -57,7 +57,7 @@ namespace NimBus.SDK.Extensions
                     : new Sender(serviceBusSender);       // direct publish
 
                 // Decorator order outermost → inner: instrumenting → outbox → transport.
-                return NimBusInstrumentation.InstrumentSender(inner, MessagingSystem.ServiceBus);
+                return NimBusOpenTelemetryDecorators.InstrumentSender(inner, MessagingSystem.ServiceBus);
             });
 
             services.TryAddSingleton<IPublisherClient>(sp => new PublisherClient(sp.GetRequiredService<ISender>()));

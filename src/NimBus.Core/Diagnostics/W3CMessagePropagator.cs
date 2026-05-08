@@ -1,13 +1,14 @@
 using System.Diagnostics;
 
-namespace NimBus.OpenTelemetry.Propagation;
+namespace NimBus.Core.Diagnostics;
 
 /// <summary>
 /// Reads / writes the W3C <c>traceparent</c> and <c>tracestate</c> properties on
 /// transport message headers. Both transports use the same header names — there
-/// is no transport-specific propagation format.
+/// is no transport-specific propagation format. Public so transport providers
+/// can use the same propagation contract.
 /// </summary>
-internal static class W3CMessagePropagator
+public static class W3CMessagePropagator
 {
     public const string TraceParentHeader = "traceparent";
     public const string TraceStateHeader = "tracestate";

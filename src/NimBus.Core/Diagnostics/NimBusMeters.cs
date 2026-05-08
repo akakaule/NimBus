@@ -1,13 +1,15 @@
 using System.Diagnostics.Metrics;
 
-namespace NimBus.OpenTelemetry;
+namespace NimBus.Core.Diagnostics;
 
 /// <summary>
 /// Holds the framework-level <see cref="Meter"/> instances and pre-created instruments used by
-/// every NimBus instrumentation site. Internal — call sites use these directly. External
-/// consumers should subscribe via the names exposed on <see cref="NimBusInstrumentation"/>.
+/// every NimBus instrumentation site. Public so transport providers and the
+/// <c>NimBus.OpenTelemetry</c> package can record measurements on the canonical meters;
+/// external consumers should normally subscribe via the names exposed on
+/// <see cref="NimBusInstrumentation"/> rather than referencing these instances.
 /// </summary>
-internal static class NimBusMeters
+public static class NimBusMeters
 {
     public static readonly Meter Publisher = new(NimBusInstrumentation.PublisherMeterName);
 

@@ -77,10 +77,10 @@ namespace NimBus.WebApp.Services.ApplicationInsights
             // and lets KQL compute percentiles for each in a single round-trip.
             var query =
                 "customMetrics" +
-                $" | where name in ('nimbus.message.queue_wait', 'nimbus.pipeline.duration', 'nimbus.message.e2e_latency')" +
+                $" | where name in ('nimbus.message.queue_wait', 'nimbus.message.process.duration', 'nimbus.message.e2e_latency')" +
                 $" | where timestamp >= ago({periodKql})" +
-                " | extend eventType = tostring(customDimensions['messaging.event_type'])," +
-                "          destination = tostring(customDimensions['messaging.destination'])" +
+                " | extend eventType = tostring(customDimensions['nimbus.event_type'])," +
+                "          destination = tostring(customDimensions['messaging.destination.name'])" +
                 " | summarize" +
                 "     count_ = count()," +
                 "     avg_ = avg(value)," +

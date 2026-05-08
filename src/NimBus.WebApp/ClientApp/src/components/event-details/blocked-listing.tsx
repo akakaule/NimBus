@@ -11,7 +11,8 @@ import DataTable, {
 export interface IBlockedListing {
   events: BlockedEvent[];
   onPageChange?: () => void;
-  fetchBlockedEvents: (startIndex: number, endIndex: number) => void;
+  // skip/take match the server-side pagination contract on /api/event/blocked/{endpointId}/{sessionId}.
+  fetchBlockedEvents: (skip: number, take: number) => void;
   totalItems: number;
 }
 

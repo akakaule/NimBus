@@ -1,4 +1,5 @@
-﻿using NimBus.WebApp.ManagementApi;
+﻿using NimBus.MessageStore.Abstractions;
+using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -25,11 +26,16 @@ namespace NimBus.WebApp.Controllers.ApiContract
     {
         private readonly IConfiguration _config;
         private readonly IEndpointAuthorizationService _authService;
+        private readonly IStorageProviderRegistration _storageProvider;
 
-        public ApplicationImplementation(IConfiguration config, IEndpointAuthorizationService authService)
+        public ApplicationImplementation(
+            IConfiguration config,
+            IEndpointAuthorizationService authService,
+            IStorageProviderRegistration storageProvider)
         {
             _config = config;
             _authService = authService;
+            _storageProvider = storageProvider;
         }
 
         public async Task<ActionResult<ApplicationStatus>> GetApiAppStatsAsync()
@@ -42,12 +48,12 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 var productVersion = fileVersionInfo.ProductVersion;
                 platformVersion = productVersion?.Split("+")[0];
             }
-            
+
             var statusResponse = new ApplicationStatus()
             {
                 Env = _config.GetValue<string>("Environment"),
-                
-                PlatformVersion = platformVersion
+                PlatformVersion = platformVersion,
+                StorageProvider = _storageProvider.ProviderName,
             };
 
             return new OkObjectResult(statusResponse);

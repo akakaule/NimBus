@@ -433,7 +433,7 @@ public class ResolverServiceTests
         public Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds) => throw new NotSupportedException();
         public Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId) => throw new NotSupportedException();
         public Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken) => throw new NotSupportedException();
-        public Task<IEnumerable<BlockedMessageEvent>> GetBlockedEventsOnSession(string endpointId, string sessionId) => throw new NotSupportedException();
+        public Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take) => throw new NotSupportedException();
         public Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId) => throw new NotSupportedException();
         public Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId) => throw new NotSupportedException();
         public Task<EndpointSubscription> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency) => throw new NotSupportedException();

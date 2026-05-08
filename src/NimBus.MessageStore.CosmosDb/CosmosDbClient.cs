@@ -48,7 +48,7 @@ public interface ICosmosDbClient
     Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId);
     Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken);
 
-    Task<IEnumerable<BlockedMessageEvent>> GetBlockedEventsOnSession(string endpointId, string sessionId);
+    Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take);
     Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId);
     Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId);
 
@@ -704,24 +704,29 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         return unresolvedEvents;
     }
 
-    public async Task<IEnumerable<BlockedMessageEvent>> GetBlockedEventsOnSession(string endpointId,
-        string sessionId)
+    public async Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId,
+        string sessionId, int skip, int take)
     {
+        var safeSkip = skip < 0 ? 0 : skip;
+        var safeTake = take <= 0 ? int.MaxValue : take;
+
         var container = await GetEndpointContainer(endpointId);
-        var queryDefinition = new QueryDefinition(
-            "SELECT * FROM c WHERE c.sessionId = @sessionId AND c.status IN (@pendingStatus, @deferredStatus) AND (NOT IS_DEFINED(c.deleted) or c.deleted != true)")
+
+        var pageQuery = new QueryDefinition(
+            "SELECT * FROM c WHERE c.sessionId = @sessionId AND c.status IN (@pendingStatus, @deferredStatus) AND (NOT IS_DEFINED(c.deleted) or c.deleted != true) ORDER BY c.event.UpdatedAt DESC OFFSET @skip LIMIT @take")
             .WithParameter("@sessionId", sessionId)
             .WithParameter("@pendingStatus", PendingStatus)
-            .WithParameter("@deferredStatus", DeferredStatus);
-        var result = container.GetItemQueryIterator<EventDbo>(queryDefinition, null, new QueryRequestOptions { });
-        var blockedMessageEvents = new List<BlockedMessageEvent>();
-
-        while (result.HasMoreResults)
+            .WithParameter("@deferredStatus", DeferredStatus)
+            .WithParameter("@skip", safeSkip)
+            .WithParameter("@take", safeTake);
+        var pageIterator = container.GetItemQueryIterator<EventDbo>(pageQuery);
+        var items = new List<BlockedMessageEvent>();
+        while (pageIterator.HasMoreResults)
         {
-            var eventDbo = await result.ReadNextAsync();
+            var eventDbo = await pageIterator.ReadNextAsync();
             foreach (var queryResult in eventDbo)
             {
-                blockedMessageEvents.Add(new BlockedMessageEvent
+                items.Add(new BlockedMessageEvent
                 {
                     EventId = queryResult.Event.EventId,
                     OriginatingId =
@@ -733,7 +738,24 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             }
         }
 
-        return blockedMessageEvents;
+        var countQuery = new QueryDefinition(
+            "SELECT VALUE COUNT(1) FROM c WHERE c.sessionId = @sessionId AND c.status IN (@pendingStatus, @deferredStatus) AND (NOT IS_DEFINED(c.deleted) or c.deleted != true)")
+            .WithParameter("@sessionId", sessionId)
+            .WithParameter("@pendingStatus", PendingStatus)
+            .WithParameter("@deferredStatus", DeferredStatus);
+        var countIterator = container.GetItemQueryIterator<int>(countQuery);
+        var total = 0;
+        while (countIterator.HasMoreResults)
+        {
+            var countResponse = await countIterator.ReadNextAsync();
+            foreach (var c in countResponse) total += c;
+        }
+
+        return new BlockedMessageEventPage
+        {
+            Items = items,
+            Total = total,
+        };
     }
 
     public async Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId)

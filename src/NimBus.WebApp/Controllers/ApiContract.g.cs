@@ -490,8 +490,13 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<EventDetails>> GetEventDetailsIdAsync(string id, string endpoint);
 
         /// <summary>
-        /// Your GET endpoint
+        /// Get a single event by endpoint and event id
         /// </summary>
+
+        /// <remarks>
+        /// Returns the unresolved event document for the given endpoint and event id, regardless of the active storage provider.
+        /// </remarks>
+
 
 
         /// <returns>OK</returns>
@@ -556,13 +561,19 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostComposeNewEventAsync(ResubmitWithChanges body);
 
         /// <summary>
-        /// Your GET endpoint
+        /// Get blocked events on a session (paginated)
         /// </summary>
+
+        /// <remarks>
+        /// Returns the page of pending and deferred events that are blocking the given session. Server clamps `take` to [1, 200] with a default of 50.
+        /// </remarks>
+
+
 
 
         /// <returns>OK</returns>
 
-        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<BlockedEvent>>> GetEventBlockedIdAsync(string endpointId, string sessionId);
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BlockedEventsPage>> GetEventBlockedIdAsync(int skip, int take, string endpointId, string sessionId);
 
         /// <summary>
         /// Your GET endpoint
@@ -670,10 +681,13 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// Your GET endpoint
+        /// Get a single event by endpoint and event id
         /// </summary>
+        /// <remarks>
+        /// Returns the unresolved event document for the given endpoint and event id, regardless of the active storage provider.
+        /// </remarks>
         /// <returns>OK</returns>
-        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/event/cosmos-details/{endpoint}/{id}")]
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/event/data/{endpoint}/{id}")]
         public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<Event>> GetEventId(string id, string endpoint)
         {
 
@@ -752,14 +766,17 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// Your GET endpoint
+        /// Get blocked events on a session (paginated)
         /// </summary>
+        /// <remarks>
+        /// Returns the page of pending and deferred events that are blocking the given session. Server clamps `take` to [1, 200] with a default of 50.
+        /// </remarks>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/event/blocked/{endpointId}/{sessionId}")]
-        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<BlockedEvent>>> GetEventBlockedId(string endpointId, string sessionId)
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BlockedEventsPage>> GetEventBlockedId([Microsoft.AspNetCore.Mvc.FromQuery] int? skip, [Microsoft.AspNetCore.Mvc.FromQuery] int? take, string endpointId, string sessionId)
         {
 
-            return _implementation.GetEventBlockedIdAsync(endpointId, sessionId);
+            return _implementation.GetEventBlockedIdAsync(skip ?? 0, take ?? 50, endpointId, sessionId);
         }
 
         /// <summary>
@@ -3219,6 +3236,7 @@ namespace NimBus.WebApp.ManagementApi
     {
         private string _env;
         private string _platformVersion;
+        private string _storageProvider;
 
         [Newtonsoft.Json.JsonProperty("env", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string Env    {
@@ -3241,6 +3259,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_platformVersion != value)
                 {
                     _platformVersion = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Human-readable name of the active NimBus message-store provider (e.g. "Cosmos DB", "SQL Server", "InMemory").
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("storageProvider", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string StorageProvider    {
+            get { return _storageProvider; }
+            set
+            {
+                if (_storageProvider != value)
+                {
+                    _storageProvider = value;
                     RaisePropertyChanged();
                 }
             }
@@ -3707,6 +3741,69 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return Newtonsoft.Json.JsonConvert.DeserializeObject<BlockedEvent>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class BlockedEventsPage : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.Collections.Generic.List<BlockedEvent> _items;
+        private int _total;
+
+        [Newtonsoft.Json.JsonProperty("items", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<BlockedEvent> Items    {
+            get { return _items; }
+            set
+            {
+                if (_items != value)
+                {
+                    _items = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("total", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Total    {
+            get { return _total; }
+            set
+            {
+                if (_total != value)
+                {
+                    _total = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static BlockedEventsPage FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<BlockedEventsPage>(data, new Newtonsoft.Json.JsonSerializerSettings());
 
         }
         public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
@@ -5699,7 +5796,7 @@ namespace NimBus.WebApp.ManagementApi
     {
         private MessageSearchFilter _filter;
         private string _continuationToken;
-        private int _maxItemCount;
+        private int _maxItemCount = 50;
 
         [Newtonsoft.Json.JsonProperty("filter", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public MessageSearchFilter Filter    {
@@ -5727,7 +5824,11 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        /// <summary>
+        /// Page size. Server clamps to [1, 200] and defaults to 50 when omitted or &lt;= 0.
+        /// </summary>
         [Newtonsoft.Json.JsonProperty("maxItemCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [System.ComponentModel.DataAnnotations.Range(1, 200)]
         public int MaxItemCount    {
             get { return _maxItemCount; }
             set
@@ -7880,7 +7981,7 @@ namespace NimBus.WebApp.ManagementApi
     {
         private AuditSearchFilter _filter;
         private string _continuationToken;
-        private int _maxItemCount;
+        private int _maxItemCount = 50;
 
         [Newtonsoft.Json.JsonProperty("filter", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public AuditSearchFilter Filter    {
@@ -7908,7 +8009,11 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
+        /// <summary>
+        /// Page size. Server clamps to [1, 200] and defaults to 50 when omitted or &lt;= 0.
+        /// </summary>
         [Newtonsoft.Json.JsonProperty("maxItemCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [System.ComponentModel.DataAnnotations.Range(1, 200)]
         public int MaxItemCount    {
             get { return _maxItemCount; }
             set

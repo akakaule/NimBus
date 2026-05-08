@@ -463,7 +463,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             return new OkResult();
         }
 
-        public async Task<ActionResult<IEnumerable<BlockedEvent>>> GetEventBlockedIdAsync(string endpointId, string sessionId)
+        public async Task<ActionResult<BlockedEventsPage>> GetEventBlockedIdAsync(int skip, int take, string endpointId, string sessionId)
         {
             var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);
             if (!endpointIdValid)
@@ -471,13 +471,21 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new NotFoundObjectResult("Endpoint not found");
             }
 
+            // Server-side bounds: skip is non-negative; take clamps to [1, 200] with a default of 50.
+            // NSwag binds the route's optional query params with their schema defaults (skip=0, take=50);
+            // the clamping below is belt-and-braces against external callers passing negatives or huge values.
+            var safeSkip = skip < 0 ? 0 : skip;
+            var safeTake = take <= 0 ? 50 : Math.Min(take, 200);
+
             try
             {
-                var blockedEvents = (await cosmosClient.GetBlockedEventsOnSession(endpointId, sessionId))
-                        .Select(Mapper.BlockedEventFromBlockedMessageEvent)
-                        .ToList();
+                var page = await cosmosClient.GetBlockedEventsOnSession(endpointId, sessionId, safeSkip, safeTake);
 
-                return blockedEvents;
+                return new BlockedEventsPage
+                {
+                    Items = page.Items.Select(Mapper.BlockedEventFromBlockedMessageEvent).ToList(),
+                    Total = page.Total,
+                };
             }
             catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
             {

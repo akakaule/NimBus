@@ -107,6 +107,10 @@ function mapAuditToRow(entry: api.AuditEntry): ITableRow {
   };
 }
 
+// Page-size options for the Audit Log search. Server clamps to [1, 200].
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
+const DEFAULT_PAGE_SIZE = 50;
+
 export default function AuditsList() {
   // URL is the source of truth for the applied filter; browser Back/forward restores it for free.
   const { applied, applyFilters, resetFilters } =
@@ -117,18 +121,24 @@ export default function AuditsList() {
   const [continuationToken, setContinuationToken] = useState<
     string | undefined
   >(undefined);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
 
   const apiFilter = useMemo(() => toAuditSearchFilter(applied), [applied]);
 
   const fetchAudits = useCallback(
-    async (filter: api.AuditSearchFilter, token?: string, append = false) => {
+    async (
+      filter: api.AuditSearchFilter,
+      size: number,
+      token?: string,
+      append = false,
+    ) => {
       setLoading(true);
       try {
         const client = new api.Client(api.CookieAuth());
         const request = new api.AuditSearchRequest();
         request.filter = filter;
         request.continuationToken = token;
-        request.maxItemCount = 50;
+        request.maxItemCount = size;
 
         const response = await client.postAuditsSearch(request);
         const newAudits = response.audits ?? [];
@@ -150,12 +160,12 @@ export default function AuditsList() {
 
   useEffect(() => {
     setContinuationToken(undefined);
-    fetchAudits(apiFilter);
-  }, [apiFilter, fetchAudits]);
+    fetchAudits(apiFilter, pageSize);
+  }, [apiFilter, pageSize, fetchAudits]);
 
   const handlePageChange = () => {
     if (continuationToken) {
-      fetchAudits(apiFilter, continuationToken, true);
+      fetchAudits(apiFilter, pageSize, continuationToken, true);
     }
   };
 
@@ -170,6 +180,22 @@ export default function AuditsList() {
           onReset={resetFilters}
           isLoading={loading}
         />
+        <div className="flex justify-end items-center gap-2 px-2 py-1 text-sm text-muted-foreground">
+          <label htmlFor="audits-page-size">Rows per page:</label>
+          <select
+            id="audits-page-size"
+            className="bg-card text-foreground border border-border rounded px-2 py-1"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+            disabled={loading}
+          >
+            {PAGE_SIZE_OPTIONS.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </div>
         <DataTable
           headCells={headCells}
           rows={rows}
@@ -177,7 +203,7 @@ export default function AuditsList() {
           isLoading={loading}
           orderBy={Column.createdAt}
           order="desc"
-          dataRowsPerPage={50}
+          dataRowsPerPage={pageSize}
           count={rows.length}
           onPageChange={handlePageChange}
         />

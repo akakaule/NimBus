@@ -597,11 +597,11 @@ export class Client extends ApiClientBase {
     }
 
     /**
-     * Your GET endpoint
+     * Get a single event by endpoint and event id
      * @return OK
      */
     getEventId(id: string, endpoint: string): Promise<Event> {
-        let url_ = this.baseUrl + "/api/event/cosmos-details/{endpoint}/{id}";
+        let url_ = this.baseUrl + "/api/event/data/{endpoint}/{id}";
         if (id === undefined || id === null)
             throw new globalThis.Error("The parameter 'id' must be defined.");
         url_ = url_.replace("{id}", encodeURIComponent("" + id));
@@ -1391,17 +1391,27 @@ export class Client extends ApiClientBase {
     }
 
     /**
-     * Your GET endpoint
+     * Get blocked events on a session (paginated)
+     * @param skip (optional) 
+     * @param take (optional) 
      * @return OK
      */
-    getEventBlockedId(endpointId: string, sessionId: string): Promise<BlockedEvent[]> {
-        let url_ = this.baseUrl + "/api/event/blocked/{endpointId}/{sessionId}";
+    getEventBlockedId(endpointId: string, sessionId: string, skip?: number | undefined, take?: number | undefined): Promise<BlockedEventsPage> {
+        let url_ = this.baseUrl + "/api/event/blocked/{endpointId}/{sessionId}?";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
         url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
         if (sessionId === undefined || sessionId === null)
             throw new globalThis.Error("The parameter 'sessionId' must be defined.");
         url_ = url_.replace("{sessionId}", encodeURIComponent("" + sessionId));
+        if (skip === null)
+            throw new globalThis.Error("The parameter 'skip' cannot be null.");
+        else if (skip !== undefined)
+            url_ += "skip=" + encodeURIComponent("" + skip) + "&";
+        if (take === null)
+            throw new globalThis.Error("The parameter 'take' cannot be null.");
+        else if (take !== undefined)
+            url_ += "take=" + encodeURIComponent("" + take) + "&";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -1418,21 +1428,14 @@ export class Client extends ApiClientBase {
         });
     }
 
-    protected processGetEventBlockedId(response: Response): Promise<BlockedEvent[]> {
+    protected processGetEventBlockedId(response: Response): Promise<BlockedEventsPage> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {
             return response.text().then((_responseText) => {
             let result200: any = null;
             let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
-            if (Array.isArray(resultData200)) {
-                result200 = [] as any;
-                for (let item of resultData200)
-                    result200!.push(BlockedEvent.fromJS(item));
-            }
-            else {
-                result200 = null as any;
-            }
+            result200 = BlockedEventsPage.fromJS(resultData200);
             return result200;
             });
         } else if (status === 404) {
@@ -1444,7 +1447,7 @@ export class Client extends ApiClientBase {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
             });
         }
-        return Promise.resolve<BlockedEvent[]>(null as any);
+        return Promise.resolve<BlockedEventsPage>(null as any);
     }
 
     /**
@@ -4612,6 +4615,8 @@ export interface IEventTypeGrouping {
 export class ApplicationStatus implements IApplicationStatus {
     env?: string;
     platformVersion?: string;
+    /** Human-readable name of the active NimBus message-store provider (e.g. "Cosmos DB", "SQL Server", "InMemory"). */
+    storageProvider?: string;
 
     [key: string]: any;
 
@@ -4632,6 +4637,7 @@ export class ApplicationStatus implements IApplicationStatus {
             }
             this.env = _data["env"];
             this.platformVersion = _data["platformVersion"];
+            this.storageProvider = _data["storageProvider"];
         }
     }
 
@@ -4650,6 +4656,7 @@ export class ApplicationStatus implements IApplicationStatus {
         }
         data["env"] = this.env;
         data["platformVersion"] = this.platformVersion;
+        data["storageProvider"] = this.storageProvider;
         return data;
     }
 
@@ -4664,6 +4671,8 @@ export class ApplicationStatus implements IApplicationStatus {
 export interface IApplicationStatus {
     env?: string;
     platformVersion?: string;
+    /** Human-readable name of the active NimBus message-store provider (e.g. "Cosmos DB", "SQL Server", "InMemory"). */
+    storageProvider?: string;
 
     [key: string]: any;
 }
@@ -5011,6 +5020,73 @@ export interface IBlockedEvent {
     originatingId?: string;
     eventId?: string;
     status?: string;
+
+    [key: string]: any;
+}
+
+export class BlockedEventsPage implements IBlockedEventsPage {
+    items?: BlockedEvent[];
+    total?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IBlockedEventsPage) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["items"])) {
+                this.items = [] as any;
+                for (let item of _data["items"])
+                    this.items!.push(BlockedEvent.fromJS(item));
+            }
+            this.total = _data["total"];
+        }
+    }
+
+    static fromJS(data: any): BlockedEventsPage {
+        data = typeof data === 'object' ? data : {};
+        let result = new BlockedEventsPage();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.items)) {
+            data["items"] = [];
+            for (let item of this.items)
+                data["items"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["total"] = this.total;
+        return data;
+    }
+
+    clone(): BlockedEventsPage {
+        const json = this.toJSON();
+        let result = new BlockedEventsPage();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IBlockedEventsPage {
+    items?: BlockedEvent[];
+    total?: number;
 
     [key: string]: any;
 }
@@ -6286,6 +6362,7 @@ export interface ISendMessageRequest {
 export class MessageSearchRequest implements IMessageSearchRequest {
     filter?: MessageSearchFilter;
     continuationToken?: string | undefined;
+    /** Page size. Server clamps to [1, 200] and defaults to 50 when omitted or <= 0. */
     maxItemCount?: number;
 
     [key: string]: any;
@@ -6341,6 +6418,7 @@ export class MessageSearchRequest implements IMessageSearchRequest {
 export interface IMessageSearchRequest {
     filter?: MessageSearchFilter;
     continuationToken?: string | undefined;
+    /** Page size. Server clamps to [1, 200] and defaults to 50 when omitted or <= 0. */
     maxItemCount?: number;
 
     [key: string]: any;
@@ -8079,6 +8157,7 @@ export interface ITimeSeriesDataPoint {
 export class AuditSearchRequest implements IAuditSearchRequest {
     filter?: AuditSearchFilter;
     continuationToken?: string | undefined;
+    /** Page size. Server clamps to [1, 200] and defaults to 50 when omitted or <= 0. */
     maxItemCount?: number;
 
     [key: string]: any;
@@ -8134,6 +8213,7 @@ export class AuditSearchRequest implements IAuditSearchRequest {
 export interface IAuditSearchRequest {
     filter?: AuditSearchFilter;
     continuationToken?: string | undefined;
+    /** Page size. Server clamps to [1, 200] and defaults to 50 when omitted or <= 0. */
     maxItemCount?: number;
 
     [key: string]: any;

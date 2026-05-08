@@ -24,6 +24,9 @@ type EventDetailsProps = {
   backIndex?: number;
 };
 
+// Initial blocked-events page size. Server clamps `take` to [1, 200] so this fits comfortably.
+const BLOCKED_PAGE_SIZE = 20;
+
 const EventDetails = (props: EventDetailsProps) => {
   const client = new api.Client(api.CookieAuth());
   const params = useParams();
@@ -34,9 +37,21 @@ const EventDetails = (props: EventDetailsProps) => {
   const [histories, setHistories] = useState<api.Message[]>([]);
   const [audits, setAudits] = useState<api.MessageAudit[]>([]);
   const [blockedEvents, setBlockedEvents] = useState<BlockedEvent[]>([]);
-  const [blockedEventIds, setBlockedEventIds] = useState<api.BlockedEvent[]>(
-    [],
-  );
+  const [blockedTotal, setBlockedTotal] = useState<number>(0);
+
+  // Resolve the BlockedEvent ID list into displayable rows (one detail fetch per ID).
+  // The server now returns only the requested page, so this loop's bound is the page size,
+  // not the full set of blocked siblings on the session.
+  const enrichBlockedItems = async (items: api.BlockedEvent[]): Promise<BlockedEvent[]> => {
+    const enriched: BlockedEvent[] = [];
+    for (const event of items) {
+      const message = await client.getEventIds(event.eventId!, event.originatingId!);
+      if (message) {
+        enriched.push({ message, status: event.status! });
+      }
+    }
+    return enriched;
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -56,22 +71,13 @@ const EventDetails = (props: EventDetailsProps) => {
           .getEventBlockedId(
             tempCosmosEvent.endpointId!,
             tempCosmosEvent.sessionId!,
+            0,
+            BLOCKED_PAGE_SIZE,
           )
-          .then(async (res) => {
-            const tempBlockedEvents = [];
-
-            for (const event of res.slice(0, 6)) {
-              const eventIds = await client.getEventIds(
-                event.eventId!,
-                event.originatingId!,
-              );
-              tempBlockedEvents.push({
-                message: eventIds,
-                status: event.status!,
-              });
-            }
-            setBlockedEvents(tempBlockedEvents);
-            setBlockedEventIds(res);
+          .then(async (page) => {
+            const enriched = await enrichBlockedItems(page.items ?? []);
+            setBlockedEvents(enriched);
+            setBlockedTotal(page.total ?? enriched.length);
           });
 
       client
@@ -91,19 +97,17 @@ const EventDetails = (props: EventDetailsProps) => {
     fetchData();
   }, []);
 
-  const fetchBlockedEvents = async (startIndex: number, endIndex: number) => {
-    const tempBlockedEvents = [];
-
-    for (const event of blockedEventIds.slice(startIndex, endIndex)) {
-      const res = await client.getEventIds(
-        event.eventId!,
-        event.originatingId!,
-      );
-      if (res) {
-        tempBlockedEvents.push({ message: res, status: event.status! });
-        setBlockedEvents(tempBlockedEvents);
-      }
-    }
+  const fetchBlockedEvents = async (skip: number, take: number) => {
+    if (!cosmosEvent?.endpointId || !cosmosEvent?.sessionId) return;
+    const page = await client.getEventBlockedId(
+      cosmosEvent.endpointId,
+      cosmosEvent.sessionId,
+      skip,
+      take,
+    );
+    const enriched = await enrichBlockedItems(page.items ?? []);
+    setBlockedEvents(enriched);
+    setBlockedTotal(page.total ?? enriched.length);
   };
 
   const reloadEvent = async () => {
@@ -156,11 +160,7 @@ const EventDetails = (props: EventDetailsProps) => {
   };
 
   const tabs = () => {
-    let blockedCount;
-    if (blockedEventIds.length != null) {
-      blockedCount =
-        blockedEventIds?.length > 99 ? "99+" : blockedEventIds?.length;
-    }
+    const blockedCount = blockedTotal > 99 ? "99+" : blockedTotal;
 
     return [
       {
@@ -187,10 +187,10 @@ const EventDetails = (props: EventDetailsProps) => {
       },
       {
         name: `Blocked (${blockedCount})`,
-        isEnabled: blockedEventIds.length > 0,
+        isEnabled: blockedTotal > 0,
         content: (
           <BlockedListing
-            totalItems={blockedEventIds.length}
+            totalItems={blockedTotal}
             fetchBlockedEvents={fetchBlockedEvents}
             events={blockedEvents}
             key="Blocked"

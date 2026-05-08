@@ -151,12 +151,24 @@ public class InMemoryMessageStore : INimBusMessageStore
         });
     }
 
-    public Task<IEnumerable<BlockedMessageEvent>> GetBlockedEventsOnSession(string endpointId, string sessionId)
-        => Task.FromResult<IEnumerable<BlockedMessageEvent>>(_events.Values
+    public Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take)
+    {
+        var safeSkip = skip < 0 ? 0 : skip;
+        var safeTake = take <= 0 ? int.MaxValue : take;
+
+        var matches = _events.Values
             .Where(e => e.EndpointId == endpointId && (e.SessionId ?? string.Empty) == (sessionId ?? string.Empty))
             .Where(e => e.ResolutionStatus is ResolutionStatus.Pending or ResolutionStatus.Deferred)
-            .Select(ToBlockedMessageEvent)
-            .ToList());
+            .ToList();
+
+        var page = matches.Skip(safeSkip).Take(safeTake).Select(ToBlockedMessageEvent).ToList();
+
+        return Task.FromResult(new BlockedMessageEventPage
+        {
+            Items = page,
+            Total = matches.Count,
+        });
+    }
 
     public Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId)
         => Task.FromResult<IEnumerable<UnresolvedEvent>>(_events.Values.Where(e => e.EndpointId == endpointId && e.ResolutionStatus == ResolutionStatus.Pending).ToList());

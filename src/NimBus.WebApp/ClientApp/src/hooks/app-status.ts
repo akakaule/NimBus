@@ -58,3 +58,15 @@ export const getPlatformVersion = () => {
   }, []);
   return result;
 };
+
+export const getStorageProvider = () => {
+  const [result, setResult] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const fetchData = async () => {
+      const data = await getApplicationStatus();
+      setResult(data?.storageProvider);
+    };
+    fetchData().catch(console.error);
+  }, []);
+  return result;
+};

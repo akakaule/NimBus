@@ -245,7 +245,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EventDetails'
       operationId: get-event-details-id
-  '/api/event/cosmos-details/{endpoint}/{id}':
+  '/api/event/data/{endpoint}/{id}':
     parameters:
       - schema:
           type: string
@@ -258,7 +258,8 @@ paths:
         in: path
         required: true
     get:
-      summary: Your GET endpoint
+      summary: Get a single event by endpoint and event id
+      description: Returns the unresolved event document for the given endpoint and event id, regardless of the active storage provider.
       tags:
         - Event
       responses:
@@ -625,18 +626,33 @@ paths:
         in: path
         required: true
     get:
-      summary: Your GET endpoint
+      summary: Get blocked events on a session (paginated)
+      description: Returns the page of pending and deferred events that are blocking the given session. Server clamps `take` to [1, 200] with a default of 50.
       tags:
         - Event
+      parameters:
+        - name: skip
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+        - name: take
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/BlockedEvent'
+                $ref: '#/components/schemas/BlockedEventsPage'
         '404':
           description: Not Found
       operationId: get-event-blocked-id
@@ -1934,6 +1950,9 @@ components:
           type: string
         platformVersion:
           type: string
+        storageProvider:
+          type: string
+          description: Human-readable name of the active NimBus message-store provider (e.g. "Cosmos DB", "SQL Server", "InMemory").
     EndpointStatusCount:
       title: EndpointStatusCount
       type: object
@@ -2005,6 +2024,16 @@ components:
           type: string
         status:
           type: string
+    BlockedEventsPage:
+      title: BlockedEventsPage
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/BlockedEvent'
+        total:
+          type: integer
     PendingEvent:
       title: PendingEvent
       type: object
@@ -2382,6 +2411,10 @@ components:
           nullable: true
         maxItemCount:
           type: integer
+          description: Page size. Server clamps to [1, 200] and defaults to 50 when omitted or <= 0.
+          default: 50
+          minimum: 1
+          maximum: 200
     MessageSearchFilter:
       title: MessageSearchFilter
       type: object
@@ -2756,6 +2789,10 @@ components:
           nullable: true
         maxItemCount:
           type: integer
+          description: Page size. Server clamps to [1, 200] and defaults to 50 when omitted or <= 0.
+          default: 50
+          minimum: 1
+          maximum: 200
     AuditSearchFilter:
       title: AuditSearchFilter
       type: object

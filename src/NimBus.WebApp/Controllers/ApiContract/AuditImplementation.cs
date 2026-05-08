@@ -23,7 +23,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
         public async Task<ActionResult<AuditSearchResponse>> PostAuditsSearchAsync(AuditSearchRequest body)
         {
             var filter = MapFilter(body.Filter);
-            var maxItems = body.MaxItemCount > 0 ? body.MaxItemCount : 50;
+            // Clamp page size to [1, 200] with a default of 50. The upper bound prevents
+            // unbounded scans against Cosmos / SQL when an external caller forgets a sensible value.
+            var maxItems = body.MaxItemCount <= 0 ? 50 : Math.Min(body.MaxItemCount, 200);
 
             var result = await _cosmosClient.SearchAudits(filter, body.ContinuationToken, maxItems);
 

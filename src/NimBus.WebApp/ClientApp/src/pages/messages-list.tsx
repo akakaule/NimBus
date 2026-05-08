@@ -100,6 +100,10 @@ function mapMessageToRow(msg: api.Message): ITableRow {
   };
 }
 
+// Page-size options for the Messages search. Server clamps to [1, 200].
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
+const DEFAULT_PAGE_SIZE = 50;
+
 export default function MessagesList() {
   // URL is the source of truth for the applied filter — useUrlFilters reads from
   // and writes to query params, so browser Back/forward restores the filter for free.
@@ -111,18 +115,24 @@ export default function MessagesList() {
   const [continuationToken, setContinuationToken] = useState<
     string | undefined
   >(undefined);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
 
   const apiFilter = useMemo(() => toMessageSearchFilter(applied), [applied]);
 
   const fetchMessages = useCallback(
-    async (filter: api.MessageSearchFilter, token?: string, append = false) => {
+    async (
+      filter: api.MessageSearchFilter,
+      size: number,
+      token?: string,
+      append = false,
+    ) => {
       setLoading(true);
       try {
         const client = new api.Client(api.CookieAuth());
         const request = new api.MessageSearchRequest();
         request.filter = filter;
         request.continuationToken = token;
-        request.maxItemCount = 50;
+        request.maxItemCount = size;
 
         const response = await client.postMessagesSearch(request);
         const newMessages = response.messages ?? [];
@@ -142,16 +152,16 @@ export default function MessagesList() {
     [],
   );
 
-  // Re-fetch whenever the applied filter changes — covers initial mount, Search,
+  // Re-fetch whenever the applied filter or page size changes — covers initial mount, Search,
   // Reset, browser Back/forward, and direct URL-bookmark loads.
   useEffect(() => {
     setContinuationToken(undefined);
-    fetchMessages(apiFilter);
-  }, [apiFilter, fetchMessages]);
+    fetchMessages(apiFilter, pageSize);
+  }, [apiFilter, pageSize, fetchMessages]);
 
   const handlePageChange = () => {
     if (continuationToken && !loading) {
-      fetchMessages(apiFilter, continuationToken, true);
+      fetchMessages(apiFilter, pageSize, continuationToken, true);
     }
   };
 
@@ -166,6 +176,22 @@ export default function MessagesList() {
           onReset={resetFilters}
           isLoading={loading}
         />
+        <div className="flex justify-end items-center gap-2 px-2 py-1 text-sm text-muted-foreground">
+          <label htmlFor="messages-page-size">Rows per page:</label>
+          <select
+            id="messages-page-size"
+            className="bg-card text-foreground border border-border rounded px-2 py-1"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+            disabled={loading}
+          >
+            {PAGE_SIZE_OPTIONS.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </div>
         <DataTable
           headCells={headCells}
           rows={rows}
@@ -173,7 +199,7 @@ export default function MessagesList() {
           isLoading={loading}
           orderBy={Column.timestamp}
           order="desc"
-          dataRowsPerPage={50}
+          dataRowsPerPage={pageSize}
           count={rows.length}
           onPageChange={handlePageChange}
         />

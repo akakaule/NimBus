@@ -599,27 +599,45 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         return rows.Select(MapUnresolvedEventRow).ToList();
     }
 
-    public Task<IEnumerable<BlockedMessageEvent>> GetBlockedEventsOnSession(string endpointId, string sessionId)
-        => GetBlockedEventsOnSessionCore(endpointId, sessionId);
+    public Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take)
+        => GetBlockedEventsOnSessionCore(endpointId, sessionId, skip, take);
 
     public Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId)
         => GetInvalidEventsOnSessionCore(endpointId);
 
-    private async Task<IEnumerable<BlockedMessageEvent>> GetBlockedEventsOnSessionCore(string endpointId, string sessionId)
+    private async Task<BlockedMessageEventPage> GetBlockedEventsOnSessionCore(string endpointId, string sessionId, int skip, int take)
     {
+        var safeSkip = skip < 0 ? 0 : skip;
+        var safeTake = take <= 0 ? int.MaxValue : take;
+
         await using var conn = Open();
-        var rows = await conn.QueryAsync(
+        using var multi = await conn.QueryMultipleAsync(
             $@"SELECT EventId, LastMessageId, OriginatingMessageId, Status
                FROM {T("UnresolvedEvents")}
                WHERE EndpointId = @EndpointId
                  AND SessionId = @SessionId
                  AND Status IN ('Pending','Deferred')
                  AND Deleted = 0
-               ORDER BY UpdatedAtUtc DESC, Id DESC",
-            new { EndpointId = endpointId, SessionId = sessionId },
+               ORDER BY UpdatedAtUtc DESC, Id DESC
+               OFFSET @Skip ROWS FETCH NEXT @Take ROWS ONLY;
+
+               SELECT COUNT(*)
+               FROM {T("UnresolvedEvents")}
+               WHERE EndpointId = @EndpointId
+                 AND SessionId = @SessionId
+                 AND Status IN ('Pending','Deferred')
+                 AND Deleted = 0;",
+            new { EndpointId = endpointId, SessionId = sessionId, Skip = safeSkip, Take = safeTake },
             commandTimeout: _commandTimeout);
 
-        return rows.Select(MapBlockedMessageEvent).Cast<BlockedMessageEvent>().ToList();
+        var rows = (await multi.ReadAsync()).ToList();
+        var total = await multi.ReadFirstAsync<int>();
+
+        return new BlockedMessageEventPage
+        {
+            Items = rows.Select(MapBlockedMessageEvent).Cast<BlockedMessageEvent>().ToList(),
+            Total = total,
+        };
     }
 
     private async Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSessionCore(string endpointId)

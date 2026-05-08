@@ -42,7 +42,7 @@ public interface IMessageTrackingStore
     Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken);
 
     // Session views
-    Task<IEnumerable<BlockedMessageEvent>> GetBlockedEventsOnSession(string endpointId, string sessionId);
+    Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take);
     Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId);
     Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId);
 

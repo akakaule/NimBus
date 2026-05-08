@@ -298,12 +298,49 @@ public abstract class MessageTrackingStoreConformanceTests
         await store.UploadDeferredMessage(deferredId, "session-1", endpointId, SampleEvent(endpointId, deferredId, "session-1"));
         await store.UploadFailedMessage(failedId, "session-1", endpointId, SampleEvent(endpointId, failedId, "session-1"));
 
-        var blocked = (await store.GetBlockedEventsOnSession(endpointId, "session-1")).ToList();
+        var page = await store.GetBlockedEventsOnSession(endpointId, "session-1", 0, 100);
 
-        Assert.AreEqual(2, blocked.Count);
-        Assert.IsTrue(blocked.Any(e => e.EventId == pendingId && e.Status == ResolutionStatus.Pending.ToString()));
-        Assert.IsTrue(blocked.Any(e => e.EventId == deferredId && e.Status == ResolutionStatus.Deferred.ToString()));
-        Assert.IsFalse(blocked.Any(e => e.EventId == failedId));
+        Assert.AreEqual(2, page.Total);
+        Assert.AreEqual(2, page.Items.Count);
+        Assert.IsTrue(page.Items.Any(e => e.EventId == pendingId && e.Status == ResolutionStatus.Pending.ToString()));
+        Assert.IsTrue(page.Items.Any(e => e.EventId == deferredId && e.Status == ResolutionStatus.Deferred.ToString()));
+        Assert.IsFalse(page.Items.Any(e => e.EventId == failedId));
+    }
+
+    [TestMethod]
+    public async Task GetBlockedEventsOnSession_pages_results_and_reports_total()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-blocked-paged");
+
+        // Seed 5 blocked siblings on the same session (3 pending + 2 deferred).
+        for (var i = 0; i < 3; i++)
+        {
+            var id = Id($"paged-pending-{i}");
+            await store.UploadPendingMessage(id, "session-paged", endpointId, SampleEvent(endpointId, id, "session-paged"));
+        }
+        for (var i = 0; i < 2; i++)
+        {
+            var id = Id($"paged-deferred-{i}");
+            await store.UploadDeferredMessage(id, "session-paged", endpointId, SampleEvent(endpointId, id, "session-paged"));
+        }
+
+        var firstPage = await store.GetBlockedEventsOnSession(endpointId, "session-paged", 0, 2);
+        Assert.AreEqual(5, firstPage.Total);
+        Assert.AreEqual(2, firstPage.Items.Count);
+
+        var secondPage = await store.GetBlockedEventsOnSession(endpointId, "session-paged", 2, 2);
+        Assert.AreEqual(5, secondPage.Total);
+        Assert.AreEqual(2, secondPage.Items.Count);
+
+        var thirdPage = await store.GetBlockedEventsOnSession(endpointId, "session-paged", 4, 2);
+        Assert.AreEqual(5, thirdPage.Total);
+        Assert.AreEqual(1, thirdPage.Items.Count);
+
+        // No overlap across pages.
+        var combined = firstPage.Items.Concat(secondPage.Items).Concat(thirdPage.Items)
+            .Select(e => e.EventId).Distinct().Count();
+        Assert.AreEqual(5, combined);
     }
 
     [TestMethod]

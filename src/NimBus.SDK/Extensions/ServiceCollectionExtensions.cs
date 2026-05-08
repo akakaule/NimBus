@@ -6,6 +6,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
 using NimBus.Core.Outbox;
+using NimBus.OpenTelemetry;
+using NimBus.OpenTelemetry.Semantics;
 using NimBus.SDK.EventHandlers;
 using NimBus.SDK.Hosting;
 using NimBus.ServiceBus;
@@ -42,26 +44,23 @@ namespace NimBus.SDK.Extensions
             if (string.IsNullOrEmpty(options.Endpoint))
                 throw new ArgumentException("Endpoint must be specified.", nameof(configure));
 
-            services.TryAddSingleton<IPublisherClient>(sp =>
+            services.AddNimBusInstrumentation();
+
+            services.TryAddSingleton<ISender>(sp =>
             {
                 var client = sp.GetRequiredService<ServiceBusClient>();
                 var outbox = sp.GetService<IOutbox>();
 
                 var serviceBusSender = client.CreateSender(options.Endpoint);
-                ISender sender;
+                ISender inner = outbox is not null
+                    ? new OutboxSender(outbox)            // transactional outbox — write the row, dispatcher publishes later
+                    : new Sender(serviceBusSender);       // direct publish
 
-                if (outbox != null)
-                {
-                    // When outbox is configured, use OutboxSender for transactional safety
-                    sender = new OutboxSender(outbox);
-                }
-                else
-                {
-                    sender = new Sender(serviceBusSender);
-                }
-
-                return new PublisherClient(sender);
+                // Decorator order outermost → inner: instrumenting → outbox → transport.
+                return NimBusInstrumentation.InstrumentSender(inner, MessagingSystem.ServiceBus);
             });
+
+            services.TryAddSingleton<IPublisherClient>(sp => new PublisherClient(sp.GetRequiredService<ISender>()));
 
             return services;
         }

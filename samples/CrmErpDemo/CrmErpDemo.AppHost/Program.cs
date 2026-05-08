@@ -21,7 +21,9 @@ var servicebus = builder.AddConnectionString("servicebus");
 
 // SQL Server — Aspire spins up a container; CRM and ERP always get their own databases.
 // NimBus's message store also lives on this server when sqlserver is selected.
-var sql = builder.AddSqlServer("sql");
+var sql = builder.AddSqlServer("sql")
+    .WithLifetime(ContainerLifetime.Persistent)
+    .WithDataVolume();
 var crmDb = sql.AddDatabase("crm");
 var erpDb = sql.AddDatabase("erp");
 var nimbusDb = storageProvider == "sqlserver" ? sql.AddDatabase("nimbus") : null;

@@ -4,6 +4,19 @@
 >
 > Spec 003 (RabbitMQ) is cancelled, so the FR-085 transport-conformance category becomes a single-transport assertion (in-memory + Service Bus only) rather than a cross-transport parity gate.
 
+## Status
+
+| | Component | Commit |
+|---|---|---|
+| ✅ | §1 Outbox W3C trace-context capture + ActivityLink restore + enqueue/dispatch spans + metrics + `IOutboxMetricsQuery` contract | `698e68e` |
+| ✅ | §2 Deferred-processor park + replay spans + counters + duration histogram | `dcdac60` |
+| ✅ | §3 Resolver outcome + audit spans + counters + write.duration histogram | `21cf905` |
+| ❌ | §4 `IMessageTrackingStore` decorator (FR-055) | — |
+| ❌ | §5 Gauge background service (FR-044) — runtime side of `IOutboxMetricsQuery`, plus deferred-pending / blocked-sessions gauges | — |
+| ❌ | §6 Single-transport conformance harness (FR-085 scoped down) | — |
+
+**Phase 4.1 follow-up (carry-over):** FR-056 says `NimBus.Resolver` Function host must depend on `NimBus.OpenTelemetry` and use the canonical three-call wiring. WebApp + ServiceDefaults are done; Resolver host is not. Fold into the §5 turn (the Resolver Function is one of the hosts that benefits from the gauge service) or close out separately.
+
 ## Context
 
 Phase 4.1 already declared every Phase 4.2 instrument in `NimBus.Core.Diagnostics.NimBusMeters` (`OutboxEnqueued`, `OutboxDispatched`, `OutboxDispatchDuration`, `DeferredParked`, `DeferredReplayed`, `DeferredReplayDuration`, `ResolverOutcomeWritten`, `ResolverAuditWritten`, `ResolverWriteDuration`, `StoreOperationDuration`, `StoreOperationFailed`) and every activity source (`NimBusActivitySources.Outbox`, `.DeferredProcessor`, `.Resolver`, `.Store`). Phase 4.2 wires call-sites and adds the gauge service, the store decorator, the outbox metrics-query interface, and the W3C plumbing.
@@ -12,7 +25,9 @@ The plan is grouped by component. Each component lists production edits and the 
 
 ## Components
 
-### 1. Outbox — capture and restore W3C trace context (FR-032)
+### 1. Outbox — capture and restore W3C trace context (FR-032) [DONE — `698e68e`]
+
+> **Note (post-implementation):** the `IOutboxMetricsQuery` interface and its `SqlServerOutbox` implementation shipped in this commit. The runtime side — the gauge background service that *uses* the contract — is deferred to §5. So §1 covers FR-032 + FR-014 + the contract slice of FR-052.
 
 The current outbox row carries `CorrelationId` only; that is insufficient for W3C propagation. Without this work, every message that goes through the outbox starts a new trace at the dispatcher with no link to the original publisher.
 
@@ -53,24 +68,23 @@ The current outbox row carries `CorrelationId` only; that is insufficient for W3
 
 **SQL Server schema test** in `tests/NimBus.MessageStore.SqlServer.Tests/` already runs the schema initializer; add a `SqlServerOutboxSchemaTests` (new file in a new project `tests/NimBus.Outbox.SqlServer.Tests/` per the test-debt P0 from the analysis plan — this test fits there) asserting both columns exist after `EnsureTableExistsAsync` and that the migration is idempotent on a pre-migration table.
 
-### 2. DeferredMessageProcessor — park and replay spans (FR-053)
+### 2. DeferredMessageProcessor — park and replay spans (FR-053) [DONE — `dcdac60`]
 
-**Production edits:**
+> **Plan correction (post-implementation):** an earlier draft of this section claimed the parking call site was `MessageContext.BlockSession`. That was wrong. `BlockSession` only flips a session-state flag — it does not write to the deferred subscription. The actual park site is `ResponseService.SendToDeferredSubscription` in `NimBus.Core.Messages`, called from `StrictMessageHandler.DeferMessageToSubscription`. The instrumentation lives there. Tag set was kept (`nimbus.endpoint`, `nimbus.session.key`, `nimbus.event_type`); the planned `messaging.system=servicebus` tag was dropped because `ResponseService` is in `NimBus.Core` and does not know the transport.
 
-- `src/NimBus.ServiceBus/MessageContext.cs` — the parking call site is in `BlockSession` (line ~185). When `SendToDeferredSubscription` writes a message into the deferred subscription, open a `NimBus.DeferredProcessor.Park` span (`ActivityKind.Internal`, source `NimBusActivitySources.DeferredProcessor`) with attributes `nimbus.endpoint`, `nimbus.session.key`, `messaging.system=servicebus`. Increment `NimBusMeters.DeferredParked` with `nimbus.endpoint` only (sessions are bounded but high-cardinality — keep them off metrics per FR-045).
-- `src/NimBus.ServiceBus/DeferredMessageProcessor.cs` — wrap `ProcessDeferredMessagesAsync` in a `NimBus.DeferredProcessor.Replay` span per session. Per FR-010 the replay span is one-per-batch with `nimbus.deferred.batch_size`. Implementation:
-  - Open the span at the top of the method.
-  - For each batch loop iteration, increment `NimBusMeters.DeferredReplayed` by `orderedMessages.Count` and record `NimBusMeters.DeferredReplayDuration` with the batch elapsed time.
-  - Set the span's `nimbus.deferred.batch_size` to the cumulative count when the span ends.
+**Production edits (as shipped):**
 
-**Tests** (`tests/NimBus.OpenTelemetry.Tests/DeferredProcessorInstrumentationTests.cs`):
+- `src/NimBus.Core/Messages/ResponseService.cs::SendToDeferredSubscription` — opens `NimBus.DeferredProcessor.Park` (`ActivityKind.Internal`, source `NimBusActivitySources.DeferredProcessor`). Tags: `nimbus.endpoint = messageContext.To`, `nimbus.session.key = messageContext.SessionId`, `nimbus.event_type = messageContext.EventTypeId`. On success: increments `NimBusMeters.DeferredParked` with `nimbus.endpoint` only (sessions stay off metrics per FR-045). On failure: sets `ActivityStatusCode.Error` + `error.type` and re-throws — counter does not increment.
+- `src/NimBus.ServiceBus/DeferredMessageProcessor.cs::ProcessDeferredMessagesAsync` — wraps the entire session-scoped replay in a single `NimBus.DeferredProcessor.Replay` span. Tags: `nimbus.endpoint = topicName`, `nimbus.session.key = sessionId`. Per batch: `NimBusMeters.DeferredReplayed += orderedMessages.Count`, `NimBusMeters.DeferredReplayDuration` records batch elapsed ms (both tagged with `nimbus.endpoint` only). Span's `nimbus.deferred.batch_size` is set in `finally` to the cumulative count, so SessionCannotBeLocked / empty-batch / transient-failure paths all carry the correct value (the early-return SessionCannotBeLocked branch also sets `Ok` status so it ends as a graceful no-op rather than `Unset`).
 
-- `Park_emits_span_and_increments_parked_counter` — drive the in-memory transport into a session-block scenario; assert one `NimBus.DeferredProcessor.Park` span and a +1 `nimbus.deferred.parked` increment.
-- `Replay_emits_span_and_increments_replayed_counter` — set up a fake `ServiceBusClient` returning N deferred messages; call `ProcessDeferredMessagesAsync`; assert one replay span with `nimbus.deferred.batch_size=N` and `nimbus.deferred.replayed=N`.
+**Tests (as shipped):** stdlib `ActivityListener` / `MeterListener` (no OTel SDK package needed in either test project).
 
-For the replay test, the existing `tests/NimBus.ServiceBus.Tests/` already has a `RecordingServiceBusClient` test double — extend it rather than building a new one.
+- `tests/NimBus.Core.Tests/ResponseServiceTests.cs` — added `SendToDeferredSubscription_emits_park_span_and_increments_counter`, `SendToDeferredSubscription_failure_records_error_status_and_error_type_tag`. Park lives in Core, so tests live next to `ResponseServiceTests` and reuse the existing `RecordingSender`/`FakeMessageContext` doubles.
+- `tests/NimBus.ServiceBus.Tests/DeferredMessageProcessorTests.cs` — added `ProcessDeferredMessagesAsync_emits_replay_span_and_increments_counter`, `..._no_messages_records_zero_batch_size`, `..._session_cannot_be_locked_records_zero_batch_size`, `..._transient_failure_records_error_status`. Reuses the existing `RecordingServiceBusClient` double from `ServiceBusTestDoubles.cs`.
 
-### 3. ResolverService — outcome and audit instrumentation (FR-054)
+### 3. ResolverService — outcome and audit instrumentation (FR-054) [DONE — `21cf905`]
+
+> **Plan correction (post-implementation):** an earlier draft put tests in `tests/NimBus.OpenTelemetry.Tests/ResolverInstrumentationTests.cs`. They actually shipped at `tests/NimBus.Resolver.Tests/ResolverInstrumentationTests.cs` so they could reuse the existing `FakeCosmosDbClient` harness (~40 method stubs would have to be duplicated otherwise). The harness gained optional `UploadException` and `StoreAuditException` hooks for the failure paths; visibility on `FakeMessageContext`, `FakeCosmosDbClient`, `UploadCall` was lifted from `private` to `internal` so the new test class could see them. Stdlib `ActivityListener` / `MeterListener` is used so `NimBus.Resolver.Tests` does not need OpenTelemetry SDK packages.
 
 **Production edits to `src/NimBus.Resolver/Services/ResolverService.cs`:**
 

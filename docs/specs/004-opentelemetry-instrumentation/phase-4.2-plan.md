@@ -47,10 +47,10 @@ The current outbox row carries `CorrelationId` only; that is insufficient for W3
   - Update every `INSERT` (`StoreAsync`, both branches of `StoreBatchAsync`) to bind `@TraceParent` and `@TraceState`. Update every `SELECT` (in `GetPendingAsync`) to read them into `OutboxMessage`.
   - Update `AddOutboxMessageParameters` to bind the two new columns.
 - `src/NimBus.Core/Outbox/OutboxDispatcher.cs` — for each pending row:
-  - Open a `NimBus.Outbox.Dispatch` span (`ActivityKind.Producer`, source `NimBusActivitySources.Outbox`) as a **root span** so it does not nest under whatever activity the dispatcher poll loop is currently in.
-  - When `outboxMessage.TraceParent` is non-null, parse it (`ActivityContext.TryParse`) and pass the parsed context as an **`ActivityLink`** when starting the dispatch span. This is the "causal-but-not-temporal" wiring from FR-014 and acceptance scenario 2.4 of User Story 2.
+  - Open a `NimBus.Outbox.Dispatch` span (`ActivityKind.Producer`, source `NimBusActivitySources.Outbox`) as a **root span** so it does not nest under whatever activity the dispatcher poll loop is currently in. The shipped implementation saves and clears `Activity.Current` around `StartActivity` so the new span has no parent — restoring `Activity.Current` in `finally`.
+  - When `outboxMessage.TraceParent` is non-null, parse it (`ActivityContext.TryParse`) and pass the parsed context as an **`ActivityLink`** when starting the dispatch span. This is the "causal-but-not-temporal" wiring from FR-014 and acceptance scenario 2.4 of User Story 2 — the dispatch span links to the original publisher's context without nesting under it.
   - When `TraceParent` is null (pre-migration row), emit `activity?.AddEvent(new ActivityEvent("nimbus.outbox.orphan_row"))` and proceed without a link. This is FR-032's pre-existing-rows clause.
-  - Set `Activity.Current` (the dispatch span) as the active activity for the duration of the inner `_sender.Send` / `ScheduleMessage` call so the publisher span (already added in 4.1 by `InstrumentingSenderDecorator`) becomes a child of the dispatch span. The publisher span's `traceparent` propagation flows from there.
+  - The inner `_sender.Send` / `ScheduleMessage` call runs while the dispatch span is `Activity.Current` (StartActivity sets it for us), so the publisher span emitted by `InstrumentingSenderDecorator` from Phase 4.1 becomes a **child of the dispatch span** within the dispatch span's own trace. The original publisher's context is reachable only through the link.
   - On success: increment `NimBusMeters.OutboxDispatched` (with `nimbus.endpoint` and `nimbus.outcome=dispatched`) and record `NimBusMeters.OutboxDispatchDuration`. Set `ActivityStatusCode.Ok`.
   - On exception: record the exception per OTel convention (existing pattern from `InstrumentingSenderDecorator.RecordFailure`), increment `OutboxDispatched` with `nimbus.outcome=failed` and `error.type`, **then** the existing `break`-on-error logic continues unchanged.
 - `src/NimBus.Core/Outbox/IOutbox.cs` — **add a separate interface** (do not pollute `IOutbox`):
@@ -207,7 +207,7 @@ Spec 003 is cancelled, so FR-085's "transport-conformance instrumentation catego
 - `src/NimBus.Core/Outbox/IOutbox.cs` — add `IOutboxMetricsQuery` interface in same file or sibling.
 - `src/NimBus.Outbox.SqlServer/SqlServerOutbox.cs` — schema migration, parameter binding, `IOutboxMetricsQuery` impl.
 - `src/NimBus.Outbox.SqlServer/ServiceCollectionExtensions.cs` — register `IOutboxMetricsQuery`.
-- `src/NimBus.ServiceBus/MessageContext.cs` — park span + counter in `BlockSession`.
+- `src/NimBus.Core/Messages/ResponseService.cs` — park span + counter in `SendToDeferredSubscription` (the actual call site that writes to the deferred subscription, called from `StrictMessageHandler.DeferMessageToSubscription`; an earlier draft of this plan misidentified it as `MessageContext.BlockSession`).
 - `src/NimBus.ServiceBus/DeferredMessageProcessor.cs` — replay span + counter + duration histogram.
 - `src/NimBus.Resolver/Services/ResolverService.cs` — outcome + audit spans, counters, duration histograms.
 - `src/NimBus.OpenTelemetry/Instrumentation/InstrumentingMessageTrackingStoreDecorator.cs` — new file.
@@ -227,18 +227,16 @@ Spec 003 is cancelled, so FR-085's "transport-conformance instrumentation catego
 - `tests/NimBus.ServiceBus.Tests/ServiceBusInstrumentationConformanceTests.cs` — new.
 - `src/NimBus.Testing/Conformance/InstrumentationConformanceTests.cs` — new abstract base.
 
-## Sequencing
+## Sequencing — as shipped
 
-Suggested order of attack — each step is independently shippable and tests a discrete acceptance scenario:
+Each step is independently shippable and tests a discrete acceptance scenario. The original draft proposed shipping the gauge service immediately after the outbox work; in practice the `IOutboxMetricsQuery` *contract* shipped with §1 and the gauge background service that consumes it landed in §5 once the resolver, deferred, and store work was already in place — that ordering kept each commit reviewer-friendly without losing coverage.
 
-1. **Outbox row schema + trace-context capture/restore** (User Story 4 acceptance #1; User Story 2 acceptance #4). Largest blast radius; needs SQL migration. Land first.
-2. **Outbox enqueue/dispatch metrics + spans.**
-3. **`IOutboxMetricsQuery` + gauge background service for outbox pending / lag.**
-4. **Resolver outcome + audit instrumentation** (User Story 4 acceptance #4–#6).
-5. **Deferred processor park + replay instrumentation** (User Story 4 acceptance #2–#3).
-6. **`InstrumentingMessageTrackingStoreDecorator` + storage extension wiring.**
-7. **Deferred-pending / blocked-sessions gauges.**
-8. **Instrumentation conformance harness + concrete subclasses.**
+1. **§1 Outbox schema + trace-context capture/restore + enqueue/dispatch metrics + spans + `IOutboxMetricsQuery` contract** (User Story 4 acceptance #1; User Story 2 acceptance #4). Commit `698e68e`.
+2. **§3 Resolver outcome + audit instrumentation** (User Story 4 acceptance #4–#6). Commit `21cf905`.
+3. **§2 Deferred processor park + replay instrumentation** (User Story 4 acceptance #2–#3). Commit `dcdac60`.
+4. **§4 `InstrumentingMessageTrackingStoreDecorator` + storage extension wiring** (FR-055). Commit `668eb4b`.
+5. **§5 `NimBusGaugeBackgroundService` — outbox pending/lag + deferred pending/blocked-sessions gauges** (FR-044, FR-052 runtime side). Commit `931968b`.
+6. **§6 Instrumentation conformance harness + in-memory and Service Bus concrete subclasses** (FR-085, scoped down). Commit `f5eaf06`.
 
 ## Verification
 

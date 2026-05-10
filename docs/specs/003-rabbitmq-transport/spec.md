@@ -2,8 +2,8 @@
 
 Feature Branch: `003-rabbitmq-transport`
 Created: 2026-05-04
-Updated: 2026-05-04
-Status: Draft
+Updated: 2026-05-09
+Status: **Cancelled (2026-05-09).** Phase 6.1–6.3 are dropped. NimBus stays single-transport (Azure Service Bus) for the foreseeable future. Spec retained as historical reference; downstream specs that reference it (e.g. spec 004 §*Provider Scope* mentioning RabbitMQ, FR-031, FR-085, SC-009) read as forward-looking and are not blockers. Re-open by changing Status and creating a fresh tracking issue if the on-premise/RabbitMQ path is reinstated.
 Tracking issue: [#14](https://github.com/akakaule/NimBus/issues/14)
 Driving ADR: [ADR-011](../../adr/011-rabbitmq-as-second-transport.md)
 Input: User description: *"NimBus can use different storage providers, e.g. SQL Server and Cosmos DB. I'm looking into having NimBus have support for RabbitMQ for those users that would like to run it locally on-premise and not rely on cloud infrastructure."*

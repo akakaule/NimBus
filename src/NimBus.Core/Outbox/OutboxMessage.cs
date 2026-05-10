@@ -57,5 +57,19 @@ namespace NimBus.Core.Outbox
         /// When this outbox entry was dispatched to Service Bus. Null if pending.
         /// </summary>
         public DateTime? DispatchedAtUtc { get; set; }
+
+        /// <summary>
+        /// W3C <c>traceparent</c> captured from <see cref="System.Diagnostics.Activity.Current"/>
+        /// at the moment this row was persisted. Used by the dispatcher to attach the original
+        /// publish context as an <see cref="System.Diagnostics.ActivityLink"/> on the dispatch
+        /// span. Null on rows persisted before W3C capture was wired in.
+        /// </summary>
+        public string TraceParent { get; set; }
+
+        /// <summary>
+        /// W3C <c>tracestate</c> captured alongside <see cref="TraceParent"/>. Null if the
+        /// originating activity carried no tracestate.
+        /// </summary>
+        public string TraceState { get; set; }
     }
 }

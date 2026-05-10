@@ -1,7 +1,9 @@
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -25,20 +27,30 @@ namespace NimBus.Core.Outbox
         public async Task Send(IMessage message, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default)
         {
             var outboxMessage = ToOutboxMessage(message, messageEnqueueDelay);
+            using var activity = StartEnqueueSpan(outboxMessage.EventTypeId, count: 1);
             await _outbox.StoreAsync(outboxMessage, cancellationToken);
+            NimBusMeters.OutboxEnqueued.Add(1, BuildEnqueueTags(outboxMessage.EventTypeId));
         }
 
         public async Task Send(IEnumerable<IMessage> messages, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default)
         {
             var outboxMessages = messages.Select(m => ToOutboxMessage(m, messageEnqueueDelay)).ToList();
+            var representativeEventType = outboxMessages.FirstOrDefault()?.EventTypeId;
+            using var activity = StartEnqueueSpan(representativeEventType, count: outboxMessages.Count);
             await _outbox.StoreBatchAsync(outboxMessages, cancellationToken);
+            foreach (var grouped in outboxMessages.GroupBy(m => m.EventTypeId))
+            {
+                NimBusMeters.OutboxEnqueued.Add(grouped.Count(), BuildEnqueueTags(grouped.Key));
+            }
         }
 
         public async Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
         {
             var outboxMessage = ToOutboxMessage(message, 0);
             outboxMessage.ScheduledEnqueueTimeUtc = scheduledEnqueueTime.UtcDateTime;
+            using var activity = StartEnqueueSpan(outboxMessage.EventTypeId, count: 1);
             await _outbox.StoreAsync(outboxMessage, cancellationToken);
+            NimBusMeters.OutboxEnqueued.Add(1, BuildEnqueueTags(outboxMessage.EventTypeId));
             // Outbox returns 0 because the real sequence number is only assigned by
             // Service Bus when OutboxDispatcher forwards the message. This means
             // CancelScheduledMessage cannot work in outbox mode.
@@ -54,6 +66,7 @@ namespace NimBus.Core.Outbox
 
         private static OutboxMessage ToOutboxMessage(IMessage message, int messageEnqueueDelay)
         {
+            var (traceParent, traceState) = W3CMessagePropagator.CaptureCurrent();
             return new OutboxMessage
             {
                 Id = Guid.NewGuid().ToString(),
@@ -64,8 +77,28 @@ namespace NimBus.Core.Outbox
                 Payload = JsonConvert.SerializeObject(message),
                 EnqueueDelayMinutes = messageEnqueueDelay,
                 CreatedAtUtc = DateTime.UtcNow,
-                DispatchedAtUtc = null
+                DispatchedAtUtc = null,
+                TraceParent = traceParent,
+                TraceState = traceState
             };
+        }
+
+        private static Activity StartEnqueueSpan(string eventTypeId, int count)
+        {
+            var activity = NimBusActivitySources.Outbox.StartActivity("NimBus.Outbox.Enqueue", ActivityKind.Internal);
+            if (activity is null) return null;
+            if (!string.IsNullOrEmpty(eventTypeId))
+                activity.SetTag(MessagingAttributes.NimBusEventType, eventTypeId);
+            if (count > 1)
+                activity.SetTag("nimbus.outbox.batch_size", count);
+            return activity;
+        }
+
+        private static KeyValuePair<string, object?>[] BuildEnqueueTags(string? eventTypeId)
+        {
+            if (string.IsNullOrEmpty(eventTypeId))
+                return Array.Empty<KeyValuePair<string, object?>>();
+            return new[] { new KeyValuePair<string, object?>(MessagingAttributes.NimBusEventType, eventTypeId) };
         }
     }
 }

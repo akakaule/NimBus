@@ -1,9 +1,32 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace NimBus.Core.Outbox
 {
+    /// <summary>
+    /// Optional companion to <see cref="IOutbox"/> that exposes the cheap aggregate
+    /// queries the gauge background service uses to publish
+    /// <c>nimbus.outbox.pending</c> and <c>nimbus.outbox.dispatch_lag</c>. Implemented
+    /// by outbox providers that can answer them without a full table scan; when no
+    /// implementation is registered, the gauge service skips the corresponding
+    /// observations (FR-052).
+    /// </summary>
+    public interface IOutboxMetricsQuery
+    {
+        /// <summary>
+        /// Returns the number of outbox rows that have not yet been dispatched.
+        /// </summary>
+        Task<long> GetPendingCountAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Returns the <see cref="OutboxMessage.CreatedAtUtc"/> of the oldest pending
+        /// row, or <c>null</c> when there is nothing pending.
+        /// </summary>
+        Task<DateTimeOffset?> GetOldestPendingEnqueuedAtUtcAsync(CancellationToken cancellationToken = default);
+    }
+
     /// <summary>
     /// Abstraction for a transactional outbox store.
     /// Messages are written to the outbox within the same transaction as business data,

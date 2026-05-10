@@ -28,6 +28,36 @@ namespace NimBus.Core.Outbox
     }
 
     /// <summary>
+    /// Optional companion that exposes deferred-subscription depth metrics for the
+    /// gauge background service. Backed by the Service Bus administration client in
+    /// production deployments (<c>ActiveMessageCount</c> on the deferred subscription)
+    /// and by tests-shaped fakes elsewhere. When no implementation is registered,
+    /// <c>nimbus.deferred.pending</c> and <c>nimbus.deferred.blocked_sessions</c> are
+    /// not observed (FR-052).
+    /// </summary>
+    public interface IDeferredMessageMetricsQuery
+    {
+        /// <summary>
+        /// Returns the number of messages currently parked on the deferred
+        /// subscription for <paramref name="endpointId"/>.
+        /// </summary>
+        Task<long> GetDeferredPendingCountAsync(string endpointId, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Returns the number of distinct sessions currently blocked on
+        /// <paramref name="endpointId"/>. Optional — implementers that cannot answer
+        /// cheaply may return <c>null</c> and the corresponding gauge is skipped.
+        /// </summary>
+        Task<long?> GetBlockedSessionCountAsync(string endpointId, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Lists every endpoint the gauge service should poll. Empty when nothing
+        /// is registered.
+        /// </summary>
+        IReadOnlyCollection<string> GetEndpointIds();
+    }
+
+    /// <summary>
     /// Abstraction for a transactional outbox store.
     /// Messages are written to the outbox within the same transaction as business data,
     /// then dispatched to Service Bus by a background process.

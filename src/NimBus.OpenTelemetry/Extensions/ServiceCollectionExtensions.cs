@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using NimBus.OpenTelemetry.Instrumentation;
 
 namespace NimBus.OpenTelemetry;
 
@@ -42,6 +44,11 @@ public static class NimBusOpenTelemetryServiceCollectionExtensions
 
         if (configure is not null)
             services.Configure(configure);
+
+        // Gauge background service polls IOutboxMetricsQuery /
+        // IDeferredMessageMetricsQuery (when registered) and caches the results
+        // so the OTel observable-gauge callbacks are non-blocking.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, NimBusGaugeBackgroundService>());
 
         return services;
     }

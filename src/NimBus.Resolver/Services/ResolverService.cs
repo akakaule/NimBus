@@ -1,10 +1,12 @@
 ﻿using Serilog;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -139,7 +141,7 @@ namespace NimBus.Broker.Services
             if (message.MessageType == MessageType.RetryRequest)
             {
                 var messageAudit = new MessageAuditEntity() { AuditorName = Constants.ManagerId, AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Retry };
-                await _store.StoreMessageAudit(message.EventId, messageAudit);
+                await InstrumentAuditWrite(message, messageAudit);
             }
 
             var (endpointId, endpointRole) = DetermineEndpoint(message);
@@ -305,10 +307,115 @@ namespace NimBus.Broker.Services
 
             if (statusHandlers.TryGetValue(status, out var handler))
             {
-                await handler();
+                await InstrumentOutcomeWrite(message.EndpointId, status, handler);
             }
 
             return status;
+        }
+
+        private async Task InstrumentAuditWrite(IReceivedMessage message, MessageAuditEntity audit)
+        {
+            var auditType = audit.AuditType.ToString().ToLowerInvariant();
+            // RetryRequest is a request type, so DetermineEndpoint resolves to message.To.
+            // We use that directly to avoid recomputing.
+            var endpoint = message.To;
+            var startTimestamp = Stopwatch.GetTimestamp();
+            using var activity = NimBusActivitySources.Resolver.StartActivity(
+                "NimBus.Resolver.RecordAudit", ActivityKind.Internal);
+            if (activity is not null)
+            {
+                if (!string.IsNullOrEmpty(endpoint))
+                    activity.SetTag(MessagingAttributes.NimBusEndpoint, endpoint);
+                activity.SetTag(MessagingAttributes.NimBusAuditType, auditType);
+            }
+
+            string? errorType = null;
+            try
+            {
+                await _store.StoreMessageAudit(message.EventId, audit);
+                activity?.SetStatus(ActivityStatusCode.Ok);
+            }
+            catch (Exception ex)
+            {
+                errorType = ex.GetType().FullName;
+                if (activity is not null)
+                {
+                    activity.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    activity.SetTag(MessagingAttributes.ErrorType, errorType);
+                }
+                throw;
+            }
+            finally
+            {
+                var elapsed = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+                var tags = BuildAuditTags(endpoint, auditType, errorType);
+                NimBusMeters.ResolverWriteDuration.Record(elapsed, tags);
+                NimBusMeters.ResolverAuditWritten.Add(1, tags);
+            }
+        }
+
+        private async Task InstrumentOutcomeWrite(string endpointId, ResolutionStatus status, Func<Task> handler)
+        {
+            var outcome = status.ToString().ToLowerInvariant();
+            var startTimestamp = Stopwatch.GetTimestamp();
+            using var activity = NimBusActivitySources.Resolver.StartActivity(
+                "NimBus.Resolver.RecordOutcome", ActivityKind.Internal);
+            if (activity is not null)
+            {
+                if (!string.IsNullOrEmpty(endpointId))
+                    activity.SetTag(MessagingAttributes.NimBusEndpoint, endpointId);
+                activity.SetTag(MessagingAttributes.NimBusOutcome, outcome);
+            }
+
+            string? errorType = null;
+            try
+            {
+                await handler();
+                activity?.SetStatus(ActivityStatusCode.Ok);
+            }
+            catch (Exception ex)
+            {
+                errorType = ex.GetType().FullName;
+                if (activity is not null)
+                {
+                    activity.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    activity.SetTag(MessagingAttributes.ErrorType, errorType);
+                }
+                throw;
+            }
+            finally
+            {
+                var elapsed = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+                var tags = BuildOutcomeTags(endpointId, outcome, errorType);
+                NimBusMeters.ResolverWriteDuration.Record(elapsed, tags);
+                NimBusMeters.ResolverOutcomeWritten.Add(1, tags);
+            }
+        }
+
+        private static KeyValuePair<string, object?>[] BuildOutcomeTags(string? endpoint, string outcome, string? errorType)
+        {
+            var tags = new List<KeyValuePair<string, object?>>(3)
+            {
+                new(MessagingAttributes.NimBusOutcome, outcome),
+            };
+            if (!string.IsNullOrEmpty(endpoint))
+                tags.Add(new KeyValuePair<string, object?>(MessagingAttributes.NimBusEndpoint, endpoint));
+            if (!string.IsNullOrEmpty(errorType))
+                tags.Add(new KeyValuePair<string, object?>(MessagingAttributes.ErrorType, errorType));
+            return tags.ToArray();
+        }
+
+        private static KeyValuePair<string, object?>[] BuildAuditTags(string? endpoint, string auditType, string? errorType)
+        {
+            var tags = new List<KeyValuePair<string, object?>>(3)
+            {
+                new(MessagingAttributes.NimBusAuditType, auditType),
+            };
+            if (!string.IsNullOrEmpty(endpoint))
+                tags.Add(new KeyValuePair<string, object?>(MessagingAttributes.NimBusEndpoint, endpoint));
+            if (!string.IsNullOrEmpty(errorType))
+                tags.Add(new KeyValuePair<string, object?>(MessagingAttributes.ErrorType, errorType));
+            return tags.ToArray();
         }
 
         private ResolutionStatus GetResultingStatus(MessageEntity message)

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using NimBus.Core.Extensions;
 using NimBus.MessageStore.Abstractions;
+using NimBus.OpenTelemetry;
 
 namespace NimBus.MessageStore.SqlServer;
 
@@ -53,7 +54,11 @@ public static class SqlServerMessageStoreBuilderExtensions
                 "SqlServerMessageStoreOptions.Schema is required.");
 
         services.AddSingleton<INimBusMessageStore, SqlServerMessageStore>();
-        services.AddSingleton<IMessageTrackingStore>(sp => sp.GetRequiredService<INimBusMessageStore>());
+        services.AddSingleton<IMessageTrackingStore>(sp =>
+            NimBusOpenTelemetryDecorators.InstrumentMessageTrackingStore(
+                sp.GetRequiredService<INimBusMessageStore>(),
+                "sqlserver",
+                sp.GetService<IOptionsMonitor<NimBusOpenTelemetryOptions>>()));
         services.AddSingleton<ISubscriptionStore>(sp => sp.GetRequiredService<INimBusMessageStore>());
         services.AddSingleton<IEndpointMetadataStore>(sp => sp.GetRequiredService<INimBusMessageStore>());
         services.AddSingleton<IMetricsStore>(sp => sp.GetRequiredService<INimBusMessageStore>());

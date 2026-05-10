@@ -4,18 +4,24 @@
 >
 > Spec 003 (RabbitMQ) is cancelled, so the FR-085 transport-conformance category becomes a single-transport assertion (in-memory + Service Bus only) rather than a cross-transport parity gate.
 
-## Status
+## Status — Phase 4.2 complete
 
 | | Component | Commit |
 |---|---|---|
 | ✅ | §1 Outbox W3C trace-context capture + ActivityLink restore + enqueue/dispatch spans + metrics + `IOutboxMetricsQuery` contract | `698e68e` |
 | ✅ | §2 Deferred-processor park + replay spans + counters + duration histogram | `dcdac60` |
 | ✅ | §3 Resolver outcome + audit spans + counters + write.duration histogram | `21cf905` |
-| ❌ | §4 `IMessageTrackingStore` decorator (FR-055) | — |
-| ❌ | §5 Gauge background service (FR-044) — runtime side of `IOutboxMetricsQuery`, plus deferred-pending / blocked-sessions gauges | — |
-| ❌ | §6 Single-transport conformance harness (FR-085 scoped down) | — |
+| ✅ | §4 `IMessageTrackingStore` decorator (FR-055) | `668eb4b` |
+| ✅ | §5 `NimBusGaugeBackgroundService` + outbox/deferred gauges (FR-044, FR-052) | `931968b` |
+| ✅ | §6 Single-transport conformance harness — in-memory + Service Bus (Inconclusive) (FR-085 scoped down) | `f5eaf06` |
 
-**Phase 4.1 follow-up (carry-over):** FR-056 says `NimBus.Resolver` Function host must depend on `NimBus.OpenTelemetry` and use the canonical three-call wiring. WebApp + ServiceDefaults are done; Resolver host is not. Fold into the §5 turn (the Resolver Function is one of the hosts that benefits from the gauge service) or close out separately.
+**Phase 4.1 follow-up resolved:** FR-056 (`NimBus.Resolver` Function host depends on `NimBus.OpenTelemetry`) is satisfied transitively via `NimBus.Resolver` → `NimBus.ServiceDefaults` → `NimBus.OpenTelemetry`, with `AddServiceDefaults()` calling the canonical three-call wiring. No code change was needed.
+
+**Known gaps deferred to Phase 4.3 / follow-ups:**
+
+- **FR-020 consumer-side `messaging.system`** — `MetricsMiddleware` does not currently set `messaging.system` on the process span because it has no transport-identity injected. Closing requires either a constructor parameter on `MetricsMiddleware` (transport pipelines pass through) or a per-context transport identity property. Conformance harness asserts the attribute on publish only.
+- **Service Bus live-broker conformance run** — the `ServiceBusInstrumentationConformanceTests` skeleton gates correctly on `NIMBUS_SERVICEBUS_TEST_CONNECTION` but the live publish leg is `Assert.Inconclusive` even when the env var is set. Wiring up a real `ServiceBusClient` round-trip is a separate task.
+- **Per-endpoint outbox gauges** — `IOutboxMetricsQuery` is endpoint-agnostic by design (the SQL Server outbox is one table across all endpoints), so the `nimbus.outbox.pending` gauge is currently a single global series. If per-endpoint breakdowns become a requirement, the contract needs an `endpointId` parameter and the SQL Server schema needs a denormalised `EndpointId` column.
 
 ## Context
 
@@ -100,7 +106,7 @@ The existing wall-clock dependency in `ResolverServiceTests.cs:155–158` (flagg
 - `Resolver_records_audit_span_for_RetryRequest` — feed a `RetryRequest`; assert one `NimBus.Resolver.RecordAudit` span with `audit_type=retry` and a +1 audit counter.
 - `Resolver_throttle_failure_records_span_error_status` — make the fake store throw `StorageProviderTransientException`; assert the outcome span ends with `ActivityStatusCode.Error` and the counter still increments with `error.type` (failure attribution per FR-022).
 
-### 4. Message-store decorator (FR-055)
+### 4. Message-store decorator (FR-055) [DONE — `668eb4b`]
 
 **Production edits — new file `src/NimBus.OpenTelemetry/Instrumentation/InstrumentingMessageTrackingStoreDecorator.cs`:**
 
@@ -148,7 +154,7 @@ public static IMessageTrackingStore InstrumentMessageTrackingStore(
 - `Store_decorator_does_not_open_span_when_Verbose_false` — default options; call any method; assert zero `NimBus.Store` spans.
 - `Store_decorator_opens_span_when_Verbose_true` — set `options.Verbose = true`; assert one span per call. (Verbose-mode wiring lands in 4.3; this test exercises the option flag now so the 4.3 turn-on is a config change, not a code change.)
 
-### 5. Gauge background service (FR-044)
+### 5. Gauge background service (FR-044) [DONE — `931968b`]
 
 **New file `src/NimBus.OpenTelemetry/Instrumentation/NimBusGaugeBackgroundService.cs`:**
 
@@ -178,7 +184,7 @@ services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, NimBusGaug
 - `Gauges_skipped_when_query_unregistered` — no `IOutboxMetricsQuery`; assert no `nimbus.outbox.pending` observations and one INFO log line.
 - `Gauges_use_cached_value_between_polls` — fake's call count after 1s with `GaugePollInterval = 5s` is 1 (initial poll only); the gauge callback may have fired multiple times.
 
-### 6. Conformance category (FR-085, scoped down)
+### 6. Conformance category (FR-085, scoped down) [DONE — `f5eaf06`]
 
 Spec 003 is cancelled, so FR-085's "transport-conformance instrumentation category" reduces to: a single set of assertions that runs against the in-memory transport (always available in CI) and Service Bus (when `NIMBUS_SERVICEBUS_TEST_CONNECTION` is set).
 

@@ -1,6 +1,9 @@
 using Azure.Messaging.ServiceBus;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -34,56 +37,93 @@ namespace NimBus.ServiceBus
             if (string.IsNullOrEmpty(topicName))
                 throw new ArgumentException("Topic name is required", nameof(topicName));
 
-            ServiceBusSessionReceiver receiver;
+            using var replaySpan = NimBusActivitySources.DeferredProcessor.StartActivity(
+                "NimBus.DeferredProcessor.Replay", ActivityKind.Internal);
+            if (replaySpan is not null)
+            {
+                replaySpan.SetTag(MessagingAttributes.NimBusEndpoint, topicName);
+                replaySpan.SetTag(MessagingAttributes.NimBusSessionKey, sessionId);
+            }
+
+            int totalReplayed = 0;
             try
             {
-                // Accept the specific session - only receives messages for this sessionId
-                receiver = await _serviceBusClient.AcceptSessionAsync(topicName, _deferredSubscriptionName, sessionId, cancellationToken: cancellationToken);
-            }
-            catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.SessionCannotBeLocked)
-            {
-                // No messages for this session - nothing to process
-                return;
-            }
-
-            await using (receiver)
-            await using (var sender = _serviceBusClient.CreateSender(topicName))
-            {
+                ServiceBusSessionReceiver receiver;
                 try
                 {
-                    // Receive messages in batches until we've processed all messages for this session
-                    while (!cancellationToken.IsCancellationRequested)
+                    // Accept the specific session - only receives messages for this sessionId
+                    receiver = await _serviceBusClient.AcceptSessionAsync(topicName, _deferredSubscriptionName, sessionId, cancellationToken: cancellationToken);
+                }
+                catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.SessionCannotBeLocked)
+                {
+                    // No messages for this session - nothing to process. Graceful no-op:
+                    // the span ends as Ok with batch_size=0 in the finally block below.
+                    replaySpan?.SetStatus(ActivityStatusCode.Ok);
+                    return;
+                }
+
+                await using (receiver)
+                await using (var sender = _serviceBusClient.CreateSender(topicName))
+                {
+                    try
                     {
-                        var messages = await receiver.ReceiveMessagesAsync(BatchSize, TimeSpan.FromSeconds(5), cancellationToken);
-                        if (messages == null || messages.Count == 0)
-                            break;
-
-                        // Sort by DeferralSequence to ensure FIFO ordering
-                        var orderedMessages = messages.OrderBy(m => GetDeferralSequence(m)).ToList();
-
-                        foreach (var message in orderedMessages)
+                        // Receive messages in batches until we've processed all messages for this session
+                        while (!cancellationToken.IsCancellationRequested)
                         {
-                            cancellationToken.ThrowIfCancellationRequested();
+                            var messages = await receiver.ReceiveMessagesAsync(BatchSize, TimeSpan.FromSeconds(5), cancellationToken);
+                            if (messages == null || messages.Count == 0)
+                                break;
 
-                            // Re-publish to main topic for normal processing
-                            var republishedMessage = CreateRepublishedMessage(message, sessionId, topicName);
-                            await sender.SendMessageAsync(republishedMessage, cancellationToken);
+                            // Sort by DeferralSequence to ensure FIFO ordering
+                            var orderedMessages = messages.OrderBy(m => GetDeferralSequence(m)).ToList();
 
-                            // Complete the deferred message
-                            await receiver.CompleteMessageAsync(message, cancellationToken);
+                            var batchTimestamp = Stopwatch.GetTimestamp();
+
+                            foreach (var message in orderedMessages)
+                            {
+                                cancellationToken.ThrowIfCancellationRequested();
+
+                                // Re-publish to main topic for normal processing
+                                var republishedMessage = CreateRepublishedMessage(message, sessionId, topicName);
+                                await sender.SendMessageAsync(republishedMessage, cancellationToken);
+
+                                // Complete the deferred message
+                                await receiver.CompleteMessageAsync(message, cancellationToken);
+                            }
+
+                            var batchElapsedMs = Stopwatch.GetElapsedTime(batchTimestamp).TotalMilliseconds;
+                            var endpointTag = BuildEndpointTag(topicName);
+                            NimBusMeters.DeferredReplayed.Add(orderedMessages.Count, endpointTag);
+                            NimBusMeters.DeferredReplayDuration.Record(batchElapsedMs, endpointTag);
+                            totalReplayed += orderedMessages.Count;
+
+                            // If we received fewer messages than BatchSize, we've processed all available
+                            if (messages.Count < BatchSize)
+                                break;
                         }
-
-                        // If we received fewer messages than BatchSize, we've processed all available
-                        if (messages.Count < BatchSize)
-                            break;
+                    }
+                    catch (ServiceBusException ex) when (ex.IsTransient)
+                    {
+                        throw new Core.Messages.Exceptions.TransientException("Transient error processing deferred messages", ex);
                     }
                 }
-                catch (ServiceBusException ex) when (ex.IsTransient)
-                {
-                    throw new Core.Messages.Exceptions.TransientException("Transient error processing deferred messages", ex);
-                }
+
+                replaySpan?.SetStatus(ActivityStatusCode.Ok);
+            }
+            catch (Exception ex) when (replaySpan is not null)
+            {
+                replaySpan.SetStatus(ActivityStatusCode.Error, ex.Message);
+                replaySpan.SetTag(MessagingAttributes.ErrorType, ex.GetType().FullName);
+                throw;
+            }
+            finally
+            {
+                replaySpan?.SetTag(MessagingAttributes.NimBusDeferredBatchSize, totalReplayed);
             }
         }
+
+        private static KeyValuePair<string, object?>[] BuildEndpointTag(string endpoint) =>
+            new[] { new KeyValuePair<string, object?>(MessagingAttributes.NimBusEndpoint, endpoint) };
 
         private static int GetDeferralSequence(ServiceBusReceivedMessage message)
         {

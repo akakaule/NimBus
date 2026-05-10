@@ -358,6 +358,52 @@ public class ResponseServiceTests
         Assert.ThrowsException<ArgumentNullException>(() => new ResponseService(null!));
     }
 
+    // ── Park instrumentation (Phase 4.2 §2) ─────────────────────────────
+
+    [TestMethod]
+    public async Task SendToDeferredSubscription_emits_park_span_and_increments_counter()
+    {
+        using var capture = DeferredTelemetryCapture.Start();
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var ctx = CreateContext(sessionId: "session-42");
+        ctx.To = "BillingEndpoint";
+
+        await sut.SendToDeferredSubscription(ctx, deferralSequence: 3);
+
+        var span = capture.Activities.Single(a => a.OperationName == "NimBus.DeferredProcessor.Park");
+        Assert.AreEqual(System.Diagnostics.ActivityKind.Internal, span.Kind);
+        Assert.AreEqual("BillingEndpoint", span.GetTagItem(NimBus.Core.Diagnostics.MessagingAttributes.NimBusEndpoint));
+        Assert.AreEqual("session-42", span.GetTagItem(NimBus.Core.Diagnostics.MessagingAttributes.NimBusSessionKey));
+        Assert.AreEqual(System.Diagnostics.ActivityStatusCode.Ok, span.Status);
+
+        var counter = capture.Measurements.Single(m => m.Name == "nimbus.deferred.parked");
+        Assert.AreEqual(1, counter.Value);
+        Assert.AreEqual("BillingEndpoint", counter.Tags[NimBus.Core.Diagnostics.MessagingAttributes.NimBusEndpoint]);
+        Assert.IsFalse(counter.Tags.ContainsKey(NimBus.Core.Diagnostics.MessagingAttributes.NimBusSessionKey),
+            "Session key must stay off the parked counter (FR-045 high-cardinality guard)");
+    }
+
+    [TestMethod]
+    public async Task SendToDeferredSubscription_failure_records_error_status_and_error_type_tag()
+    {
+        using var capture = DeferredTelemetryCapture.Start();
+        var sender = new ThrowingSender(new InvalidOperationException("park blew up"));
+        var sut = new ResponseService(sender);
+        var ctx = CreateContext();
+        ctx.To = "BillingEndpoint";
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => sut.SendToDeferredSubscription(ctx, deferralSequence: 1));
+
+        var span = capture.Activities.Single(a => a.OperationName == "NimBus.DeferredProcessor.Park");
+        Assert.AreEqual(System.Diagnostics.ActivityStatusCode.Error, span.Status);
+        Assert.AreEqual(typeof(InvalidOperationException).FullName,
+            span.GetTagItem(NimBus.Core.Diagnostics.MessagingAttributes.ErrorType));
+        Assert.AreEqual(0, capture.Measurements.Count(m => m.Name == "nimbus.deferred.parked"),
+            "Counter must not increment when the parking send threw");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private static FakeMessageContext CreateContext(
@@ -475,4 +521,67 @@ public class ResponseServiceTests
         public Task ResetDeferredCount(CancellationToken ct = default) => Task.CompletedTask;
         public Task ScheduleRedelivery(TimeSpan delay, int throttleRetryCount, CancellationToken ct = default) => Task.CompletedTask;
     }
+
+    private sealed class ThrowingSender : ISender
+    {
+        private readonly Exception _exception;
+        public ThrowingSender(Exception exception) => _exception = exception;
+        public Task Send(IMessage message, int messageEnqueueDelay = 0, CancellationToken ct = default) => throw _exception;
+        public Task Send(IEnumerable<IMessage> messages, int messageEnqueueDelay = 0, CancellationToken ct = default) => throw _exception;
+        public Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken ct = default) => throw _exception;
+        public Task CancelScheduledMessage(long sequenceNumber, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    private sealed class DeferredTelemetryCapture : IDisposable
+    {
+        public List<System.Diagnostics.Activity> Activities { get; } = new();
+        public List<DeferredMeasurement> Measurements { get; } = new();
+        public List<DeferredMeasurement> HistogramObservations { get; } = new();
+
+        private readonly System.Diagnostics.ActivityListener _activityListener;
+        private readonly System.Diagnostics.Metrics.MeterListener _meterListener;
+
+        private DeferredTelemetryCapture()
+        {
+            _activityListener = new System.Diagnostics.ActivityListener
+            {
+                ShouldListenTo = src => src.Name == NimBus.Core.Diagnostics.NimBusInstrumentation.DeferredProcessorActivitySourceName,
+                Sample = (ref System.Diagnostics.ActivityCreationOptions<System.Diagnostics.ActivityContext> _) =>
+                    System.Diagnostics.ActivitySamplingResult.AllDataAndRecorded,
+                ActivityStopped = a => Activities.Add(a),
+            };
+            System.Diagnostics.ActivitySource.AddActivityListener(_activityListener);
+
+            _meterListener = new System.Diagnostics.Metrics.MeterListener
+            {
+                InstrumentPublished = (instrument, listener) =>
+                {
+                    if (instrument.Meter.Name == NimBus.Core.Diagnostics.NimBusInstrumentation.DeferredProcessorMeterName)
+                        listener.EnableMeasurementEvents(instrument);
+                },
+            };
+            _meterListener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
+                Measurements.Add(new DeferredMeasurement(instrument.Name, value, ToDictionary(tags))));
+            _meterListener.SetMeasurementEventCallback<double>((instrument, value, tags, _) =>
+                HistogramObservations.Add(new DeferredMeasurement(instrument.Name, (long)value, ToDictionary(tags))));
+            _meterListener.Start();
+        }
+
+        public static DeferredTelemetryCapture Start() => new();
+
+        private static IReadOnlyDictionary<string, object?> ToDictionary(ReadOnlySpan<KeyValuePair<string, object?>> tags)
+        {
+            var dict = new Dictionary<string, object?>(tags.Length);
+            foreach (var t in tags) dict[t.Key] = t.Value;
+            return dict;
+        }
+
+        public void Dispose()
+        {
+            _activityListener.Dispose();
+            _meterListener.Dispose();
+        }
+    }
+
+    private sealed record DeferredMeasurement(string Name, long Value, IReadOnlyDictionary<string, object?> Tags);
 }

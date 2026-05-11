@@ -37,6 +37,7 @@ public static class MessagingAttributes
     public const string NimBusStoreProvider = "nimbus.store.provider";
     public const string NimBusAuditType = "audit_type";
     public const string NimBusDeferredBatchSize = "nimbus.deferred.batch_size";
+    public const string NimBusOutboxBatchSize = "nimbus.outbox.batch_size";
 
     // OTel error attribution
     public const string ErrorType = "error.type";

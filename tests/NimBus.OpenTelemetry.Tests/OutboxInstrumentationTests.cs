@@ -167,7 +167,7 @@ public sealed class OutboxDispatcherInstrumentationTests
 
         var dispatchSpan = activities.Single(a =>
             a.Source.Name == NimBusInstrumentation.OutboxActivitySourceName &&
-            a.OperationName == "NimBus.Outbox.Dispatch");
+            a.OperationName == "publish endpoint-1");
         Assert.AreEqual(ActivityKind.Producer, dispatchSpan.Kind);
         Assert.AreEqual(default, dispatchSpan.ParentSpanId, "Dispatch span must be a root span");
 
@@ -202,7 +202,7 @@ public sealed class OutboxDispatcherInstrumentationTests
 
         var dispatchSpan = activities.Single(a =>
             a.Source.Name == NimBusInstrumentation.OutboxActivitySourceName &&
-            a.OperationName == "NimBus.Outbox.Dispatch");
+            a.OperationName == "publish endpoint-1");
         Assert.AreEqual(0, dispatchSpan.Links.Count());
         Assert.IsTrue(dispatchSpan.Events.Any(e => e.Name == "nimbus.outbox.orphan_row"));
     }
@@ -236,7 +236,7 @@ public sealed class OutboxDispatcherInstrumentationTests
 
         var dispatchSpan = activities.Single(a =>
             a.Source.Name == NimBusInstrumentation.OutboxActivitySourceName &&
-            a.OperationName == "NimBus.Outbox.Dispatch");
+            a.OperationName == "publish endpoint-1");
         Assert.AreEqual(ActivityStatusCode.Error, dispatchSpan.Status);
         Assert.AreEqual(typeof(InvalidOperationException).FullName, dispatchSpan.GetTagItem(MessagingAttributes.ErrorType));
         Assert.IsTrue(dispatchSpan.Events.Any(e => e.Name == "exception"));
@@ -279,6 +279,7 @@ public sealed class OutboxDispatcherInstrumentationTests
     {
         Id = id,
         MessageId = $"msg-{id}",
+        To = "endpoint-1",
         EventTypeId = "OrderPlaced",
         SessionId = "session-1",
         CorrelationId = "corr-1",

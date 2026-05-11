@@ -18,6 +18,15 @@ namespace NimBus.Core.Outbox
         public string MessageId { get; set; }
 
         /// <summary>
+        /// The destination endpoint (topic name). Surfaced as the
+        /// <c>nimbus.endpoint</c> tag on outbox enqueue/dispatch metrics and as
+        /// the <c>messaging.destination.name</c> attribute on the dispatch span.
+        /// Captured at enqueue time so the dispatcher does not have to
+        /// deserialize the payload to read it.
+        /// </summary>
+        public string To { get; set; }
+
+        /// <summary>
         /// The event type identifier.
         /// </summary>
         public string EventTypeId { get; set; }

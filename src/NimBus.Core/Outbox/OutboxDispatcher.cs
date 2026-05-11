@@ -71,33 +71,46 @@ namespace NimBus.Core.Outbox
 
             var startTimestamp = Stopwatch.GetTimestamp();
             Message message = null;
-            string endpoint = null;
+            // Endpoint comes from the persisted column so dispatch metrics are
+            // tagged even when payload deserialization fails on a malformed row.
+            var endpoint = outboxMessage.To;
             Activity activity = null;
 
             try
             {
                 ActivityLink? link = TryBuildLink(outboxMessage.TraceParent, outboxMessage.TraceState);
+                // FR-015: messaging spans use "{operation.type} {destination.name}".
+                var spanName = string.IsNullOrEmpty(endpoint) ? "publish" : $"publish {endpoint}";
                 activity = NimBusActivitySources.Outbox.StartActivity(
-                    "NimBus.Outbox.Dispatch",
+                    spanName,
                     ActivityKind.Producer,
                     parentContext: default,
                     tags: null,
                     links: link.HasValue ? new[] { link.Value } : null);
 
-                message = JsonConvert.DeserializeObject<Message>(outboxMessage.Payload, Constants.SafeJsonSettings);
-                endpoint = message?.To;
-
                 if (activity is not null)
                 {
                     if (!link.HasValue)
                         activity.AddEvent(new ActivityEvent("nimbus.outbox.orphan_row"));
+                    // FR-020: messaging spans MUST set messaging.system /
+                    // messaging.operation.type / messaging.destination.name.
+                    // System is unknown at this layer (NimBus.Core is transport-
+                    // agnostic) — set what we know; transport wrappers may add it.
+                    activity.SetTag(MessagingAttributes.OperationType, "publish");
                     if (!string.IsNullOrEmpty(endpoint))
+                    {
+                        activity.SetTag(MessagingAttributes.DestinationName, endpoint);
                         activity.SetTag(MessagingAttributes.NimBusEndpoint, endpoint);
+                    }
                     if (!string.IsNullOrEmpty(outboxMessage.EventTypeId))
                         activity.SetTag(MessagingAttributes.NimBusEventType, outboxMessage.EventTypeId);
                     if (!string.IsNullOrEmpty(outboxMessage.MessageId))
                         activity.SetTag(MessagingAttributes.MessageId, outboxMessage.MessageId);
+                    if (!string.IsNullOrEmpty(outboxMessage.CorrelationId))
+                        activity.SetTag(MessagingAttributes.MessageConversationId, outboxMessage.CorrelationId);
                 }
+
+                message = JsonConvert.DeserializeObject<Message>(outboxMessage.Payload, Constants.SafeJsonSettings);
 
                 if (outboxMessage.ScheduledEnqueueTimeUtc.HasValue)
                 {

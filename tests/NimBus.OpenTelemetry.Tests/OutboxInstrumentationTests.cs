@@ -180,6 +180,39 @@ public sealed class OutboxDispatcherInstrumentationTests
     }
 
     [TestMethod]
+    public async Task Dispatch_span_carries_messaging_attributes()
+    {
+        // Covers the P1.4 fix from the PR #42 review: messaging.operation.type,
+        // messaging.destination.name, messaging.message.id, and
+        // messaging.message.conversation_id must be set on the dispatch span.
+        // messaging.system is intentionally not asserted — the dispatcher is
+        // transport-agnostic and the spec gap is tracked in phase-4.2-plan.md.
+        var activities = new List<Activity>();
+        using var tracer = Sdk.CreateTracerProviderBuilder()
+            .AddNimBusInstrumentation()
+            .AddInMemoryExporter(activities)
+            .Build()!;
+
+        var outbox = new InMemoryRecordingOutbox();
+        outbox.AddPending(BuildOutboxRow("out-1", traceParent: null, traceState: null));
+
+        var sender = new RecordingDispatchSender();
+        var dispatcher = new OutboxDispatcher(outbox, sender);
+
+        await dispatcher.DispatchPendingAsync();
+        tracer.ForceFlush();
+
+        var dispatchSpan = activities.Single(a =>
+            a.Source.Name == NimBusInstrumentation.OutboxActivitySourceName &&
+            a.OperationName == "publish endpoint-1");
+
+        Assert.AreEqual("publish", dispatchSpan.GetTagItem(MessagingAttributes.OperationType));
+        Assert.AreEqual("endpoint-1", dispatchSpan.GetTagItem(MessagingAttributes.DestinationName));
+        Assert.AreEqual("msg-out-1", dispatchSpan.GetTagItem(MessagingAttributes.MessageId));
+        Assert.AreEqual("corr-1", dispatchSpan.GetTagItem(MessagingAttributes.MessageConversationId));
+    }
+
+    [TestMethod]
     public async Task Dispatch_orphan_row_emits_event_and_succeeds()
     {
         var activities = new List<Activity>();

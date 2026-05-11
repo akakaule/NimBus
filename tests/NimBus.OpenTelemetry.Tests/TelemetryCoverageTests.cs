@@ -289,6 +289,15 @@ public sealed class SenderDecoratorCoverageTests
         var published = metrics.Single(m => m.Name == "nimbus.message.published");
         Assert.AreEqual(2, SumLong(published));
         AssertNoHighCardinalityMetricTags(metrics);
+
+        // P1.9 from the PR #42 review: assert the duration histogram by name.
+        // Without this assertion a future regression deleting the
+        // PublishDuration.Record call would pass CI silently.
+        var publishDuration = metrics.Single(m => m.Name == "nimbus.message.publish.duration");
+        long observations = 0;
+        foreach (ref readonly var point in publishDuration.GetMetricPoints())
+            observations += point.GetHistogramCount();
+        Assert.IsTrue(observations >= 1, "nimbus.message.publish.duration must record at least one observation per Send");
     }
 
     [TestMethod]

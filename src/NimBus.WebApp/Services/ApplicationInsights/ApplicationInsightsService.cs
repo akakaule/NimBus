@@ -128,7 +128,7 @@ namespace NimBus.WebApp.Services.ApplicationInsights
                     case "nimbus.message.queue_wait":
                         metric.Queue = stats;
                         break;
-                    case "nimbus.pipeline.duration":
+                    case "nimbus.message.process.duration":
                         metric.Processing = stats;
                         break;
                     case "nimbus.message.e2e_latency":

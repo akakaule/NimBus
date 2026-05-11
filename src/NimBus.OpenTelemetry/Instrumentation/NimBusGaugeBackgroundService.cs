@@ -224,21 +224,42 @@ internal sealed class NimBusGaugeBackgroundService : BackgroundService
             return;
         }
 
+        // Track which keys this poll cycle observed so we can prune the cache
+        // of endpoints / metrics that have stopped being reported. Without
+        // pruning, a removed endpoint (or a blocked-sessions value that flips
+        // from non-null to null) leaves stale measurements exporting forever.
+        var observed = new HashSet<(string Endpoint, string Metric)>();
+
         foreach (var endpoint in endpoints)
         {
             try
             {
                 var pending = await _deferredQuery.GetDeferredPendingCountAsync(endpoint, cancellationToken).ConfigureAwait(false);
                 _deferredCache[(endpoint, "pending")] = pending;
+                observed.Add((endpoint, "pending"));
 
                 var blocked = await _deferredQuery.GetBlockedSessionCountAsync(endpoint, cancellationToken).ConfigureAwait(false);
                 if (blocked.HasValue)
+                {
                     _deferredCache[(endpoint, "blocked_sessions")] = blocked.Value;
+                    observed.Add((endpoint, "blocked_sessions"));
+                }
             }
             catch (Exception ex)
             {
+                // Preserve the previous cache entries for this endpoint on transient
+                // failure — but also mark them observed so we don't prune them as
+                // if the endpoint had gone away.
+                observed.Add((endpoint, "pending"));
+                observed.Add((endpoint, "blocked_sessions"));
                 _logger.LogWarning(ex, "Deferred gauge poll failed for endpoint {Endpoint}; previous cached values retained.", endpoint);
             }
+        }
+
+        // Prune anything in the cache that wasn't observed this cycle.
+        foreach (var stale in _deferredCache.Keys.Where(k => !observed.Contains(k)).ToList())
+        {
+            _deferredCache.TryRemove(stale, out _);
         }
     }
 

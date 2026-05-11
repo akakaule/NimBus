@@ -269,7 +269,7 @@ public sealed class ErpCustomerCreatedHandler(
         // ERP-originated customer — upsert into CRM.
         await crm.UpsertFromErpAsync(
             message.ErpCustomerId,
-            new AccountUpsertPayload(message.CrmAccountId ?? message.AccountId, message.LegalName, message.TaxId, message.CountryCode, message.CustomerNumber),
+            new AccountUpsertPayload(null, message.LegalName, message.TaxId, message.CountryCode, message.CustomerNumber),
             cancellationToken);
     }
 }

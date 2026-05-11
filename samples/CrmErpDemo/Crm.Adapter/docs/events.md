@@ -78,6 +78,7 @@ classDiagram
     }
     class CrmAccountUpdated {
         +AccountId: Guid
+        +ErpCustomerId: Guid?
         +LegalName: string
         +TaxId: string?
         +CountryCode: string
@@ -186,6 +187,7 @@ classDiagram
 | Field | Type | Nullable | PII | Example | Description |
 |---|---|:---:|:---:|---|---|
 | `AccountId` | Guid | no | no | `4f1a...` | CRM account identifier. |
+| `ErpCustomerId` | Guid | yes | no | `7b3e...` | ERP customer id when this CRM account is linked to (or originated from) an ERP customer. Null for CRM-only accounts. |
 | `LegalName` | string | no | yes | `Contoso A/S` | Legal name of the account. |
 | `TaxId` | string | yes | yes | `DK12345678` | VAT / EIN / etc. |
 | `CountryCode` | string | no | no | `DE` | ISO 3166-1 alpha-2. |
@@ -334,13 +336,14 @@ These mappings live in `Crm.Api/Mapping/`, not in `Crm.Adapter`. They are docume
 | Source field (`Account`) | Source type | → | Event field | Event type | Resolution |
 |---|---|---|---|---|---|
 | `Id` | Guid | → | `AccountId` | Guid | Direct copy |
+| `ErpCustomerId` | Guid? | → | `CrmAccountUpdated.ErpCustomerId` | Guid? | Direct copy (Updated only — not mapped on Created, since a new CRM account has no ERP link yet) |
 | `LegalName` | string | → | `LegalName` | string | Direct copy |
 | `TaxId` | string? | → | `TaxId` | string? | Direct copy |
 | `CountryCode` | string | → | `CountryCode` | string | Direct copy |
 | `CreatedAt` | DateTimeOffset | → | `CrmAccountCreated.CreatedAt` | DateTimeOffset | Direct copy |
 | `UpdatedAt ?? DateTimeOffset.UtcNow` | DateTimeOffset | → | `CrmAccountUpdated.UpdatedAt` | DateTimeOffset | Coalesce-then-copy |
 
-**Fields not mapped:** `ErpCustomerId`, `ErpCustomerNumber` — the back-fill columns. Intentional: the events are about the CRM-side state, not the link to ERP.
+**Fields not mapped:** `ErpCustomerNumber` — back-fill column kept on the row but not surfaced in events.
 
 #### 3.1.2 `Contact` → `CrmContactCreated` / `CrmContactUpdated`
 

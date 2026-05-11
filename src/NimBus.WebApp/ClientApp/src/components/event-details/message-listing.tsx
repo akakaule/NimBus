@@ -306,12 +306,12 @@ export default function MessageListing(props: IMessageListingProps) {
                 <b>Source Endpoint</b>
               </td>
               <td className="py-2">
-                {(props.eventDetails?.originatingFrom ?? props.eventDetails?.from) && (
+                {(props.eventDetails?.originatingFrom || props.eventDetails?.from) && (
                   <Link
-                    to={`/Endpoints/Details/${props.eventDetails?.originatingFrom ?? props.eventDetails?.from}`}
+                    to={`/Endpoints/Details/${props.eventDetails?.originatingFrom || props.eventDetails?.from}`}
                     className="text-primary hover:underline"
                   >
-                    {props.eventDetails?.originatingFrom ?? props.eventDetails?.from}
+                    {props.eventDetails?.originatingFrom || props.eventDetails?.from}
                   </Link>
                 )}
               </td>

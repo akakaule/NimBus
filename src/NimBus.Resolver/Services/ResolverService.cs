@@ -194,6 +194,7 @@ namespace NimBus.Broker.Services
                 ParentMessageId = message.ParentMessageId,
                 From = message.From,
                 To = message.To,
+                OriginatingFrom = message.OriginatingFrom,
                 SessionId = message.SessionId,
                 CorrelationId = message.CorrelationId,
                 EnqueuedTimeUtc = message.EnqueuedTimeUtc,

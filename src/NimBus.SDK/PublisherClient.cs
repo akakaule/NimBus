@@ -15,6 +15,7 @@ namespace NimBus.SDK;
 public class PublisherClient : IPublisherClient
 {
     private readonly ISender _sender;
+    private readonly string _publisherEndpoint;
     private ServiceBusClient _serviceBusClient;
 
     /// <summary>
@@ -22,9 +23,16 @@ public class PublisherClient : IPublisherClient
     /// Preferred for DI registration via <see cref="Extensions.ServiceCollectionExtensions.AddNimBusPublisher(Microsoft.Extensions.DependencyInjection.IServiceCollection, string)"/>.
     /// </summary>
     /// <param name="sender">The sender to use for publishing messages.</param>
-    public PublisherClient(ISender sender)
+    /// <param name="publisherEndpoint">
+    /// The publisher's own endpoint name (the value passed to <c>AddNimBusPublisher</c>).
+    /// Stamped onto every outgoing message as <c>OriginatingFrom</c> so audit rows
+    /// carry the publishing endpoint identity through the Resolver. When null, the
+    /// wire default <c>"self"</c> applies.
+    /// </param>
+    public PublisherClient(ISender sender, string publisherEndpoint = null)
     {
         _sender = sender ?? throw new ArgumentNullException(nameof(sender));
+        _publisherEndpoint = publisherEndpoint;
     }
 
     /// <summary>
@@ -223,7 +231,10 @@ public class PublisherClient : IPublisherClient
 
     private IMessage GetMessage(IEvent @event, string correlationId = null, string messageId = null, string sessionId = null)
     {
-        return GetMessageStatic(@event, correlationId, messageId, sessionId);
+        var message = (Message)GetMessageStatic(@event, correlationId, messageId, sessionId);
+        if (!string.IsNullOrEmpty(_publisherEndpoint))
+            message.OriginatingFrom = _publisherEndpoint;
+        return message;
     }
 
     private static IMessage GetMessageStatic(IEvent @event, string correlationId = null, string messageId = null, string sessionId = null)

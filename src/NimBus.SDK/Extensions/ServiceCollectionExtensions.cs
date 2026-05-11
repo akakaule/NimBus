@@ -66,7 +66,7 @@ namespace NimBus.SDK.Extensions
             }
 
             services.TryAddSingleton<ISender>(BuildPublisherSender);
-            services.TryAddSingleton<IPublisherClient>(sp => new PublisherClient(BuildPublisherSender(sp)));
+            services.TryAddSingleton<IPublisherClient>(sp => new PublisherClient(BuildPublisherSender(sp), options.Endpoint));
 
             return services;
         }

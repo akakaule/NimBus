@@ -126,17 +126,33 @@ internal sealed class NimBusGaugeBackgroundService : BackgroundService
         // don't return empty for an entire export interval.
         await PollAsync(stoppingToken).ConfigureAwait(false);
 
-        using var timer = new PeriodicTimer(_options.CurrentValue.GaugePollInterval);
+        // The poll interval is read from IOptionsMonitor on every tick so a
+        // reload via `IOptionsMonitor.OnChange` retunes the cadence — the timer
+        // is recreated whenever the configured interval changes.
+        var currentInterval = _options.CurrentValue.GaugePollInterval;
+        PeriodicTimer timer = new(currentInterval);
         try
         {
             while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
             {
                 await PollAsync(stoppingToken).ConfigureAwait(false);
+
+                var nextInterval = _options.CurrentValue.GaugePollInterval;
+                if (nextInterval != currentInterval)
+                {
+                    timer.Dispose();
+                    currentInterval = nextInterval;
+                    timer = new PeriodicTimer(currentInterval);
+                }
             }
         }
         catch (OperationCanceledException)
         {
             // Shutdown — expected.
+        }
+        finally
+        {
+            timer.Dispose();
         }
     }
 
@@ -194,7 +210,20 @@ internal sealed class NimBusGaugeBackgroundService : BackgroundService
             return;
         }
 
-        var endpoints = _deferredQuery.GetEndpointIds();
+        IReadOnlyCollection<string> endpoints;
+        try
+        {
+            endpoints = _deferredQuery.GetEndpointIds();
+        }
+        catch (Exception ex)
+        {
+            // Endpoint discovery itself failed — retain previous cache and log.
+            // Without this guard the exception faults ExecuteAsync, which (depending
+            // on host settings) can stop the entire background service permanently.
+            _logger.LogWarning(ex, "Deferred gauge endpoint discovery failed; previous cached values retained.");
+            return;
+        }
+
         foreach (var endpoint in endpoints)
         {
             try

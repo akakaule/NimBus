@@ -46,7 +46,12 @@ namespace NimBus.SDK.Extensions
 
             services.AddNimBusInstrumentation();
 
-            services.TryAddSingleton<ISender>(sp =>
+            // Build the publisher's sender via a private factory so a pre-existing
+            // ISender registration cannot shadow it. The TryAddSingleton<ISender>
+            // below preserves the public ISender resolution path for callers that
+            // want it, but IPublisherClient is bound to OUR sender — not to
+            // whatever ambient ISender the container happens to resolve.
+            ISender BuildPublisherSender(IServiceProvider sp)
             {
                 var client = sp.GetRequiredService<ServiceBusClient>();
                 var outbox = sp.GetService<IOutbox>();
@@ -58,9 +63,10 @@ namespace NimBus.SDK.Extensions
 
                 // Decorator order outermost → inner: instrumenting → outbox → transport.
                 return NimBusOpenTelemetryDecorators.InstrumentSender(inner, MessagingSystem.ServiceBus);
-            });
+            }
 
-            services.TryAddSingleton<IPublisherClient>(sp => new PublisherClient(sp.GetRequiredService<ISender>()));
+            services.TryAddSingleton<ISender>(BuildPublisherSender);
+            services.TryAddSingleton<IPublisherClient>(sp => new PublisherClient(BuildPublisherSender(sp)));
 
             return services;
         }

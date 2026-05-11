@@ -100,9 +100,9 @@ namespace NimBus.Outbox.SqlServer
                 {
                     var ambientSql = $@"
                         INSERT INTO {_options.FullTableName}
-                            ([Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [CreatedAtUtc], [TraceParent], [TraceState])
+                            ([Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [ScheduledEnqueueTimeUtc], [CreatedAtUtc], [TraceParent], [TraceState])
                         VALUES
-                            (@Id, @MessageId, @To, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @CreatedAtUtc, @TraceParent, @TraceState)";
+                            (@Id, @MessageId, @To, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @ScheduledEnqueueTimeUtc, @CreatedAtUtc, @TraceParent, @TraceState)";
 
                     await using var ambientCommand = new SqlCommand(ambientSql, ambient.Value.Connection, ambient.Value.Transaction);
                     AddOutboxMessageParameters(ambientCommand, message);
@@ -121,9 +121,9 @@ namespace NimBus.Outbox.SqlServer
                 {
                     var sql = $@"
                         INSERT INTO {_options.FullTableName}
-                            ([Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [CreatedAtUtc], [TraceParent], [TraceState])
+                            ([Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [ScheduledEnqueueTimeUtc], [CreatedAtUtc], [TraceParent], [TraceState])
                         VALUES
-                            (@Id, @MessageId, @To, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @CreatedAtUtc, @TraceParent, @TraceState)";
+                            (@Id, @MessageId, @To, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @ScheduledEnqueueTimeUtc, @CreatedAtUtc, @TraceParent, @TraceState)";
 
                     await using var command = new SqlCommand(sql, connection, transaction);
                     AddOutboxMessageParameters(command, message);

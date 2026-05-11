@@ -16,7 +16,7 @@ public static class NimBusOpenTelemetryDecorators
     /// Wraps an inner <see cref="ISender"/> with the publisher instrumentation
     /// decorator. The <paramref name="messagingSystem"/> argument determines the
     /// value of the <c>messaging.system</c> attribute on the resulting span
-    /// (e.g. <c>servicebus</c>, <c>rabbitmq</c>, <c>nimbus.inmemory</c> from
+    /// (e.g. <c>servicebus</c>, <c>nimbus.inmemory</c> from
     /// <see cref="NimBus.Core.Diagnostics.MessagingSystem"/>).
     /// </summary>
     public static ISender InstrumentSender(ISender inner, string messagingSystem)

@@ -2,7 +2,7 @@
 
 > Companion to `spec.md`. Phase 4.1 shipped in commit `d40bb44` (`NimBus.OpenTelemetry` package, `AddNimBusInstrumentation`, publisher-side `InstrumentingSenderDecorator`, `messaging.*` semantic-convention alignment, deletion of legacy diagnostics). Phase 4.2 covers the **internal NimBus components** — outbox, deferred-message processor, resolver, message store — plus W3C trace-context restoration through the outbox and the gauge background service.
 >
-> Spec 003 (RabbitMQ) is cancelled, so the FR-085 transport-conformance category becomes a single-transport assertion (in-memory + Service Bus only) rather than a cross-transport parity gate.
+> The FR-085 transport-conformance category is a single-transport assertion against in-memory + Service Bus rather than a cross-transport parity gate.
 
 ## Status — Phase 4.2 complete
 
@@ -264,6 +264,3 @@ Each step is independently shippable and tests a discrete acceptance scenario. T
 - Aspire / Grafana sample dashboards.
 - Migration documentation (`docs/observability.md`).
 
-## Out of scope by cancellation
-
-- Anything that depended on spec 003 (RabbitMQ): cross-transport conformance, `messaging.system=rabbitmq` assertions, on-prem dual-transport samples. The conformance harness is single-transport per the §6 note above.

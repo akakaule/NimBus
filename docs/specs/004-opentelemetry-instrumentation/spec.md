@@ -14,7 +14,7 @@ NimBus today has *partial* instrumentation: a single `NimBus.Process` consumer s
 
 ## Provider Scope (resolved)
 
-The package is **transport-agnostic and storage-agnostic**. It registers the meter and tracer names that all NimBus components emit. Both Service Bus (today) and the future RabbitMQ transport (spec 003) use identical instrumentation surface — `messaging.system` is the only attribute that differentiates them. Both the Cosmos DB and SQL Server storage providers emit the same `nimbus.store.*` instruments via `IMessageTrackingStore` interception.
+The package is **transport-agnostic and storage-agnostic** by construction. It registers the meter and tracer names that all NimBus components emit, with `messaging.system` carrying the transport identity (today: Service Bus and the in-memory test transport). Both the Cosmos DB and SQL Server storage providers emit the same `nimbus.store.*` instruments via `IMessageTrackingStore` interception.
 
 ## Critical Design Insight (resolved)
 
@@ -77,7 +77,7 @@ Acceptance Scenarios:
 
 1. Given a `NimBus.Process` span, When it is exported, Then it has `messaging.system`, `messaging.operation.type` (`receive` or `process`), `messaging.destination.name`, `messaging.message.id`, `messaging.message.conversation_id`, and `messaging.message.body.size`. `messaging.destination.kind` is not emitted.
 2. Given a `NimBus.Publish` span, When it is exported, Then it has `messaging.operation.type` = `publish`, plus the same set as above.
-3. Given Service Bus is the transport, Then `messaging.system` = `servicebus`. Given RabbitMQ is the transport, Then `messaging.system` = `rabbitmq`. Given the in-memory transport is used, Then `messaging.system` = `nimbus.inmemory`.
+3. Given Service Bus is the transport, Then `messaging.system` = `servicebus`. Given the in-memory transport is used, Then `messaging.system` = `nimbus.inmemory`.
 4. Given the message has a `[SessionKey]` value, Then `messaging.servicebus.message.session.id` (Service Bus only) and the NimBus-specific `nimbus.session.key` (transport-agnostic) are both set.
 5. Given a NimBus-specific concept that is not in the OTel spec (e.g., `event_type_id`, `permanent_failure`), Then it is exposed under the `nimbus.*` attribute namespace, never under `messaging.*` (which is reserved for the OTel spec).
 
@@ -136,17 +136,17 @@ Acceptance Scenarios:
 
 ---
 
-### User Story 7 — Trace propagation across both transports identically (Priority: P2)
+### User Story 7 — Trace propagation across transports identically (Priority: P2)
 
-As an operator running a hybrid deployment (Service Bus in production, RabbitMQ in dev), I want trace context to propagate identically — same header / property name, same wire format, same attributes — so that traces from the dev environment look the same as from production.
+As an operator running NimBus across environments (Service Bus in production, the in-memory transport in dev / tests), I want trace context to propagate identically — same header / property name, same wire format, same attributes — so that traces from dev look the same as from production and any future transport adapter inherits the same contract.
 
-Why this priority: ADR-011 / spec 003 already commits to identical OTel behaviour across transports (NFR-012). This spec owns the contract and the tests that prove it.
+Why this priority: the contract has to live in one place so that any current or future transport can be conformance-tested against it without re-deriving the rules.
 
 Independent Test: With the in-memory transport, run a publish-then-consume round-trip. With the Service Bus transport, run the same. Compare the resulting trace JSON. The only attributes that differ are `messaging.system` and the transport-specific message-id values.
 
 Acceptance Scenarios:
 
-1. Given any transport, When a message is published, Then the W3C `traceparent` header / property is set on the outgoing message via the broker's native header mechanism (Service Bus `ApplicationProperties`, RabbitMQ basic-properties headers).
+1. Given any transport, When a message is published, Then the W3C `traceparent` header / property is set on the outgoing message via the broker's native header mechanism (Service Bus: `ApplicationProperties`).
 2. Given any transport, When a message is consumed, Then the receiver extracts `traceparent` from the same header / property and starts the consumer activity with that as the parent.
 3. Given the W3C `tracestate` header is present, Then it is propagated through the broker untouched.
 4. Given the transport assigns a native message id, Then it is exposed under `messaging.message.id`. The transport-specific id (e.g., `messaging.servicebus.message.id`) MAY also be set.
@@ -245,7 +245,7 @@ Provider-builder extensions are deliberately narrow: they cannot register `IOpti
 The canonical reference is the OpenTelemetry messaging semantic conventions ([general spans](https://opentelemetry.io/docs/specs/semconv/messaging/messaging-spans/), [Azure messaging](https://opentelemetry.io/docs/specs/semconv/messaging/azure-messaging/)) at version **1.41** or later — whichever is the latest stable version at the time this feature ships. Attribute names below match 1.41.
 
 - **FR-020**: All messaging spans MUST set the following OTel `messaging.*` attributes:
-  - `messaging.system` — required values: `servicebus` (Azure Service Bus), `rabbitmq` (RabbitMQ), `nimbus.inmemory` (in-memory transport — the `nimbus.*` system value is permitted by the OTel spec for non-standardized systems).
+  - `messaging.system` — required values: `servicebus` (Azure Service Bus), `nimbus.inmemory` (in-memory transport — the `nimbus.*` system value is permitted by the OTel spec for non-standardized systems).
   - `messaging.operation.type` — required values: `publish`, `receive`, `process`, `settle`. This is the OTel-defined *operation type* taxonomy.
   - `messaging.operation.name` (optional) — system-specific operation name when distinct from the type (e.g., `complete`, `abandon`, `defer` for settle operations on Service Bus).
   - `messaging.destination.name` — queue or topic name.
@@ -268,9 +268,8 @@ The canonical reference is the OpenTelemetry messaging semantic conventions ([ge
 
 - **FR-022**: Errors MUST be recorded per OTel exception convention: `ActivityStatusCode.Error`, an `ActivityEvent` named `exception` with `exception.type`, `exception.message`, `exception.stacktrace` attributes, and `error.type` set on the span.
 
-- **FR-023**: Transport-specific attribute namespaces from the OTel Azure-messaging and RabbitMQ semconv MAY be set in addition to the generic ones. They MUST NOT replace the generic ones. Examples:
+- **FR-023**: Transport-specific attribute namespaces from the OTel Azure-messaging semconv MAY be set in addition to the generic ones. They MUST NOT replace the generic ones. Examples:
   - Service Bus: `messaging.servicebus.message.delivery_count`, `messaging.servicebus.message.enqueued_time`, `messaging.servicebus.destination.subscription_name`.
-  - RabbitMQ: `messaging.rabbitmq.destination.routing_key`, `messaging.rabbitmq.message.delivery_tag`.
 
 - **FR-024**: The `[SessionKey]` attribute value, when present, MUST be exposed as:
   - `nimbus.session.key` — canonical NimBus attribute, transport-agnostic.
@@ -284,7 +283,7 @@ The canonical reference is the OpenTelemetry messaging semantic conventions ([ge
 
 - **FR-030**: The W3C `traceparent` header MUST be the canonical propagation format. NimBus MUST NOT write or read the legacy `Diagnostic-Id` property in any code path. In-flight messages produced by older NimBus builds at upgrade time lose parent-trace linkage; this is the documented upgrade impact (FR-101).
 
-- **FR-031**: Both transports MUST carry `traceparent` and `tracestate` via their native header / property mechanism. The Service Bus implementation lives in `MessageHelper`; the RabbitMQ implementation will live in the new `NimBus.Transport.RabbitMQ` package per spec 003. Both MUST use the same property name (`traceparent`, `tracestate`) — no transport-prefixed names.
+- **FR-031**: Every transport MUST carry `traceparent` and `tracestate` via its native header / property mechanism. The Service Bus implementation lives in `MessageHelper`. Future transport adapters MUST use the same property name (`traceparent`, `tracestate`) — no transport-prefixed names.
 
 - **FR-032**: Trace propagation MUST also work for messages sent through the outbox. The outbox row MUST persist `traceparent` and `tracestate`. The dispatcher MUST set them on the outgoing message, so that a publisher's HTTP-request trace flows through the outbox into the eventual consumer span. Concrete requirements:
 
@@ -456,7 +455,7 @@ The canonical reference is the OpenTelemetry messaging semantic conventions ([ge
 - **SC-006**: The legacy meter names (`NimBus.ServiceBus`, `NimBus.Pipeline`), the legacy activity source (`NimBus`), and the legacy `Diagnostic-Id` property name are absent from the codebase after this feature lands. Verified by repository-wide `grep` returning no matches outside the migration documentation.
 - **SC-007**: Per-message instrumentation overhead is ≤ 5% of the median handler runtime at the 99th percentile when `Verbose = false`. Benchmarked via the conformance suite with `BenchmarkDotNet`.
 - **SC-008**: Every metric attribute set is bounded — no per-message identifier ever lands on a metric series. Verified by FR-084.
-- **SC-009**: The transport conformance suite *Instrumentation* category passes for both the in-memory transport and the Service Bus transport. After spec 003 lands, RabbitMQ joins this set with no source changes to `NimBus.OpenTelemetry`.
+- **SC-009**: The transport conformance suite *Instrumentation* category passes for both the in-memory transport and the Service Bus transport. Any future transport adapter joins this set with no source changes to `NimBus.OpenTelemetry`.
 - **SC-010**: The W3C propagation contract is verified in CI: a publish through `OutboxSender` followed by a delayed dispatch produces a single trace id; the original HTTP-request span is captured as an `ActivityLink` on the dispatcher span.
 
 ## Assumptions
@@ -504,7 +503,7 @@ The canonical reference is the OpenTelemetry messaging semantic conventions ([ge
 - The publish path gets first-class instrumentation via an `ISender` decorator, not by adding instrumentation to each transport's `Sender` implementation.
 - `IMessageTrackingStore` is instrumented by decorator, not by edits to each provider implementation.
 - Verbose mode is opt-in via configuration, not a build-time switch.
-- Both transports (Service Bus today, RabbitMQ via spec 003) emit identical instrumentation surface; only `messaging.system` differentiates.
+- Every transport emits an identical instrumentation surface; only `messaging.system` differentiates. Today that means Service Bus and the in-memory transport.
 - `NimBus.ServiceDefaults` migrates to call `AddNimBusInstrumentation()` and contains zero hard-coded meter / source names afterwards.
 - The legacy meters (`NimBus.ServiceBus`, `NimBus.Pipeline`), the legacy activity source (`NimBus`), and the `NimBusDiagnostics` static class are deleted outright, not aliased. There are no shipped consumers and no published dashboards keyed off the old surface, so there is nothing to bridge.
 - Conformance tests live in `NimBus.Testing.Conformance` and run against every transport via the existing harness.

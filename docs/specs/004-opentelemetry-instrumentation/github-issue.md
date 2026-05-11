@@ -70,7 +70,7 @@ Canonical reference: OpenTelemetry messaging semantic conventions ([general span
 
 OTel `messaging.*` (canonical):
 
-- `messaging.system` — `servicebus` (Azure Service Bus), `rabbitmq`, `nimbus.inmemory`. **Note:** `servicebus`, not `azureservicebus`.
+- `messaging.system` — `servicebus` (Azure Service Bus), `nimbus.inmemory`. **Note:** `servicebus`, not `azureservicebus`.
 - `messaging.operation.type` — `publish | receive | process | settle`. **Note:** `messaging.operation.type`, not `messaging.operation`.
 - `messaging.operation.name` (optional, system-specific) — e.g., `complete`, `abandon`, `defer` for settle ops on Service Bus.
 - `messaging.destination.name`
@@ -80,10 +80,9 @@ OTel `messaging.*` (canonical):
 
 Span name pattern (FR-015): messaging spans use `{operation.type} {destination.name}` (e.g., `publish my-queue`, `process my-queue`). Internal-only spans (Resolver, DeferredProcessor, Outbox.Cleanup, Store) use stable identifiers without destination embedding.
 
-Transport-specific namespaces (`messaging.servicebus.*`, `messaging.rabbitmq.*`) MAY be set in addition to the generic ones (FR-023). Examples:
+Transport-specific namespaces (`messaging.servicebus.*`) MAY be set in addition to the generic ones (FR-023). Examples:
 
 - `messaging.servicebus.message.delivery_count`, `messaging.servicebus.message.enqueued_time`, `messaging.servicebus.destination.subscription_name`
-- `messaging.rabbitmq.destination.routing_key`, `messaging.rabbitmq.message.delivery_tag`
 
 Session key exposure (FR-024): both `nimbus.session.key` and `messaging.servicebus.message.session.id` (Service Bus only).
 
@@ -153,7 +152,7 @@ Bound from `NimBus:Otel` configuration section (`NimBus__Otel__Verbose=true`).
 
 - New project `tests/NimBus.OpenTelemetry.Tests/` using `InMemoryExporter` for metrics and traces.
 - Asserts: per-handler emission, propagation round-trip, error attribution, cardinality (deny-list of per-message attributes).
-- *Instrumentation* category added to `NimBus.Testing.Conformance` and run against every registered transport (in-memory + Service Bus today, RabbitMQ once spec 003 lands).
+- *Instrumentation* category added to `NimBus.Testing.Conformance` and run against every registered transport (in-memory + Service Bus today).
 
 ## Documentation (FR-090..FR-092)
 
@@ -187,7 +186,7 @@ Upgrade impact (must be in `docs/observability.md` and release notes):
 - [ ] **SC-006** — Repository-wide `grep` returns no matches for the legacy meter / source / property names (`NimBus.ServiceBus`, `NimBus.Pipeline`, the `"NimBus"` source string, `Diagnostic-Id`) outside the upgrade-impact documentation.
 - [ ] **SC-007** — Per-message instrumentation overhead ≤ 5% of median handler runtime at p99 when `Verbose = false` (BenchmarkDotNet).
 - [ ] **SC-008** — No metric attribute set contains a per-message identifier (verified by deny-list assertion).
-- [ ] **SC-009** — Transport conformance *Instrumentation* category passes for in-memory + Service Bus; passes for RabbitMQ once spec 003 lands, with no source changes to `NimBus.OpenTelemetry`.
+- [ ] **SC-009** — Transport conformance *Instrumentation* category passes for in-memory + Service Bus; any future transport adapter joins this set with no source changes to `NimBus.OpenTelemetry`.
 - [ ] **SC-010** — Outbox-style propagation: HTTP-request span → outbox row → dispatcher span shows up as a single trace id, with the original span as an `ActivityLink` on the dispatcher.
 
 ## Sub-issue breakdown

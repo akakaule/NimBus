@@ -159,7 +159,7 @@ The class accepts `IOptionsMonitor<NimBusOpenTelemetryOptions>` (implying live r
 ActivityContext ParentTraceContext { get => default; }
 ```
 
-Concrete implementations add a setter, but a future transport (spec 003 RabbitMQ when reinstated, or any third-party transport) cannot populate it via the interface contract — it must downcast.
+Concrete implementations add a setter, but a future transport (or any third-party transport) cannot populate it via the interface contract — it must downcast.
 
 **Fix:** Make the interface `{ get; set; }` with the default getter retained for backward compatibility, or remove the default and force implementers.
 

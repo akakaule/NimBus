@@ -9,6 +9,5 @@ namespace NimBus.Core.Diagnostics;
 public static class MessagingSystem
 {
     public const string ServiceBus = "servicebus";
-    public const string RabbitMq = "rabbitmq";
     public const string InMemory = "nimbus.inmemory";
 }

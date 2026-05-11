@@ -140,6 +140,12 @@ namespace NimBus.Core.Messages
         /// trace. <c>default(ActivityContext)</c> means no parent — the consumer span
         /// is a root span and <c>nimbus.has_parent_trace</c> is set to <c>false</c>.
         /// </summary>
-        ActivityContext ParentTraceContext { get => default; }
+        /// <remarks>
+        /// The setter is part of the interface so transport adapters can populate the
+        /// value through the contract rather than downcasting to a concrete context
+        /// type. The default getter returns <c>default</c> so existing implementers
+        /// that do not yet override it are forward-compatible.
+        /// </remarks>
+        ActivityContext ParentTraceContext { get => default; set { } }
     }
 }

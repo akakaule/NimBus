@@ -18,7 +18,7 @@ public sealed class ErpCustomerUpdatedHandler(ICrmApiClient crm, ILogger<ErpCust
         // the CRM API endpoint either updates the matching Account or upserts one.
         await crm.UpsertFromErpAsync(
             message.ErpCustomerId,
-            new AccountUpsertPayload(message.LegalName, message.TaxId, message.CountryCode, message.CustomerNumber),
+            new AccountUpsertPayload(message.CrmAccountId ?? message.AccountId, message.LegalName, message.TaxId, message.CountryCode, message.CustomerNumber),
             cancellationToken);
     }
 }

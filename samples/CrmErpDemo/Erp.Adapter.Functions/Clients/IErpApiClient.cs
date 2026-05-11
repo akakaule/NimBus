@@ -8,7 +8,7 @@ public interface IErpApiClient
     Task MarkContactDeletedAsync(Guid contactId, CancellationToken ct);
 }
 
-public record CustomerUpsertPayload(string LegalName, string? TaxId, string CountryCode);
+public record CustomerUpsertPayload(Guid? ErpCustomerId, string LegalName, string? TaxId, string CountryCode);
 // CrmAccountId carries the CRM account id from the inbound event. The ERP API
 // resolves it to a local Customer.Id via Customers.CrmAccountId before storing
 // the contact, so the contact ends up linked to the correct ERP customer.

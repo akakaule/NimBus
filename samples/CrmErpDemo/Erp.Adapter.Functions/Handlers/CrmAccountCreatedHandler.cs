@@ -52,7 +52,7 @@ public sealed class CrmAccountCreatedHandler(
 
         await erp.UpsertCustomerAsync(
             message.AccountId,
-            new CustomerUpsertPayload(message.LegalName, message.TaxId, message.CountryCode),
+            new CustomerUpsertPayload(null, message.LegalName, message.TaxId, message.CountryCode),
             cancellationToken);
     }
 }

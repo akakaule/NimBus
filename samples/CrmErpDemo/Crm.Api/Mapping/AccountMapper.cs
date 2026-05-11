@@ -17,6 +17,7 @@ public static class AccountMapper
     public static CrmAccountUpdated ToUpdatedEvent(Account a) => new()
     {
         AccountId = a.Id,
+        ErpCustomerId = a.ErpCustomerId,
         LegalName = a.LegalName,
         TaxId = a.TaxId,
         CountryCode = a.CountryCode,

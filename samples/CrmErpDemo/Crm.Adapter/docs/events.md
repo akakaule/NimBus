@@ -57,6 +57,7 @@ public class CrmEndpoint : Endpoint
 | Event | Handler (`IEventHandler<T>`) | Session key | Anchor |
 |---|---|---|---|
 | `ErpCustomerCreated` | `Crm.Adapter.Handlers.ErpCustomerCreatedHandler` | `AccountId` | [↓](#erpcustomercreated) |
+| `ErpCustomerUpdated` | `Crm.Adapter.Handlers.ErpCustomerUpdatedHandler` | `AccountId` | [↓](#erpcustomerupdated) |
 | `ErpContactCreated` | `Crm.Adapter.Handlers.ErpContactCreatedHandler` | `ContactId` | [↓](#erpcontactcreated) |
 | `ErpContactUpdated` | `Crm.Adapter.Handlers.ErpContactUpdatedHandler` | `ContactId` | [↓](#erpcontactupdated) |
 
@@ -87,6 +88,15 @@ classDiagram
     class ErpCustomerCreated {
         +Origin: CustomerOrigin
         +AccountId: Guid
+        +ErpCustomerId: Guid
+        +CustomerNumber: string
+        +LegalName: string
+        +TaxId: string?
+        +CountryCode: string
+    }
+    class ErpCustomerUpdated {
+        +AccountId: Guid
+        +CrmAccountId: Guid?
         +ErpCustomerId: Guid
         +CustomerNumber: string
         +LegalName: string
@@ -128,6 +138,7 @@ classDiagram
     Event <|-- CrmAccountCreated
     Event <|-- CrmAccountUpdated
     Event <|-- ErpCustomerCreated
+    Event <|-- ErpCustomerUpdated
     Event <|-- CrmContactCreated
     Event <|-- CrmContactUpdated
     Event <|-- ErpContactCreated
@@ -242,6 +253,38 @@ public enum CustomerOrigin { Erp = 0, Crm = 1 }
 | Field | Allowed values | Meaning |
 |---|---|---|
 | `Origin` | `Erp`, `Crm` | Round-trip-ack discriminator — see TDD §4.2 |
+
+> **`CrmAccountId` is not on this event.** At create time the CRM-side row may not yet exist (for ERP-originated customers) so the field would always be null. The link is established *after* the create — subsequent `ErpCustomerUpdated` events carry the resolved `CrmAccountId`. See TDD §4.9 (bidirectional id linkage).
+
+---
+
+### `ErpCustomerUpdated`
+
+**Purpose.** Published by ERP when an existing customer is updated. Carries both linkage ids so the CRM side can locate the matching account whether or not the back-fill link has been written yet (see TDD §4.9).
+
+**Direction.** Consumed by adapter (`ErpCustomerUpdatedHandler`).
+
+**Trigger (in ERP).** `PUT /api/customers/by-crm/{crmAccountId}` in `Erp.Api`, dispatched via outbox.
+
+**Delivery semantics.** At-least-once. Handler is idempotent — the CRM `external/{erpCustomerId}` upsert endpoint either updates an existing account (matched first by `ErpCustomerId`, then by the supplied `CrmAccountId`) or inserts a new one.
+
+**Echo-loop note.** Structurally impossible — `ErpCustomerUpdated` is only published by ERP; CRM publishes `CrmAccountUpdated` (a different type).
+
+**Session key.** `[SessionKey(nameof(AccountId))]` — the CRM account id when the customer is linked; falls back to `ErpCustomerId` for unlinked ERP-originated customers, so the field is always populated.
+
+**Schema (code):** `CrmErpDemo.Contracts.Events.ErpCustomerUpdated` — `samples/CrmErpDemo/CrmErpDemo.Contracts/Events/ErpCustomerUpdated.cs`.
+
+#### Fields
+
+| Field | Type | Nullable | PII | Example | Description |
+|---|---|:---:|:---:|---|---|
+| `AccountId` | Guid | no | no | `4f1a...` | Session key. CRM account id when linked; otherwise the ERP customer id. |
+| `CrmAccountId` | Guid | yes | no | `4f1a...` | CRM account id when the customer is linked to CRM; null only for an unlinked ERP-originated customer that has not yet been mirrored back. |
+| `ErpCustomerId` | Guid | no | no | `9b3e...` | The ERP-side customer identifier. |
+| `CustomerNumber` | string | no | no | `C-00042` | Human-readable ERP customer number. |
+| `LegalName` | string | no | yes | `Contoso A/S` | Legal name of the customer. |
+| `TaxId` | string | yes | yes | `DK12345678` | VAT / EIN / etc. |
+| `CountryCode` | string | no | no | `DE` | ISO 3166-1 alpha-2. |
 
 ---
 
@@ -388,9 +431,30 @@ These mappings live in the adapter's handlers and clients (`Crm.Adapter/Handlers
 | `CountryCode` | string | → | body `CountryCode` | string | Direct copy |
 | `CustomerNumber` | string | → | body `CustomerNumber` | string? | Direct copy |
 
+**Body `CrmAccountId`:** always `null` on this path. The Create flow has no resolved CRM account id to thread through yet — the link is established by the downstream `CrmAccountUpdated` round-trip (see TDD §4.9).
+
 **Unmapped event fields:** `AccountId`, `Origin` — already used to dispatch.
 
-#### 3.2.3 `ErpContactCreated` / `ErpContactUpdated` → `PUT /api/contacts/upsert/{contactId}`
+#### 3.2.3 `ErpCustomerUpdated` → `PUT /api/accounts/external/{erpCustomerId}`
+
+`Crm.Adapter/Handlers/ErpCustomerUpdatedHandler.cs` + `Crm.Adapter/Clients/CrmApiClient.cs:UpsertFromErpAsync`.
+
+Same idempotent upsert endpoint as 3.2.2, but the handler always threads the resolved CRM account id through so the CRM API can locate the row even when the back-fill column has not been written yet — see TDD §4.9 (bidirectional id linkage).
+
+| Event field | Event type | → | HTTP target | Target type | Resolution |
+|---|---|---|---|---|---|
+| `ErpCustomerId` | Guid | → | URL path `/api/accounts/external/{externalId}` | Guid | Direct copy |
+| `CrmAccountId ?? AccountId` | Guid | → | body `CrmAccountId` | Guid? | `CrmAccountId` when present; falls back to `AccountId` (session key) for unlinked ERP-originated customers. |
+| `LegalName` | string | → | body `LegalName` | string | Direct copy |
+| `TaxId` | string? | → | body `TaxId` | string? | Direct copy |
+| `CountryCode` | string | → | body `CountryCode` | string | Direct copy |
+| `CustomerNumber` | string | → | body `CustomerNumber` | string? | Direct copy |
+
+**Lookups (CRM API side):** the endpoint first searches `Accounts` by `ErpCustomerId = {externalId}`; if no row matches and the body's `CrmAccountId` is non-empty, it falls back to `Accounts.FindAsync(crmAccountId)`. Both branches converge on the same upsert. See `Crm.Api/Endpoints/AccountEndpoints.cs:109+`.
+
+**Unmapped event fields:** `AccountId` — used by `CrmAccountId ?? AccountId` only, never copied verbatim.
+
+#### 3.2.4 `ErpContactCreated` / `ErpContactUpdated` → `PUT /api/contacts/upsert/{contactId}`
 
 `Crm.Adapter/Handlers/ErpContactCreatedHandler.cs`, `Crm.Adapter/Handlers/ErpContactUpdatedHandler.cs` + `Crm.Adapter/Clients/CrmApiClient.cs:UpsertContactAsync`. Both handlers use the same idempotent upsert endpoint.
 

@@ -1,9 +1,11 @@
 import { useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Button } from "components/ui/button";
+import { cn } from "lib/utils";
 
 interface IPage {
   title: string;
+  subtitle?: string;
+  actions?: React.ReactNode;
   offsetDimensionsHandler?: (height: number, width: number) => void;
   children: React.ReactNode;
   backbutton?: boolean;
@@ -11,15 +13,21 @@ interface IPage {
   backIndex?: string;
 }
 
-// Arrow back icon SVG
-const ArrowBackIcon = () => (
+const BackArrow = () => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
-    viewBox="0 0 24 24"
-    fill="currentColor"
-    className="w-8 h-8"
+    viewBox="0 0 16 16"
+    fill="none"
+    className="w-4 h-4"
+    aria-hidden="true"
   >
-    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+    <path
+      d="M10 3l-5 5 5 5"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
   </svg>
 );
 
@@ -51,22 +59,39 @@ const Page: React.FC<IPage> = (props) => {
   }, [ref.current, ref.current?.clientHeight]);
 
   return (
-    <div className="flex flex-col mx-[10%] min-h-0 flex-1">
-      <h1 className="text-3xl font-bold my-8 flex items-center gap-2">
-        {props.backbutton ? (
-          <Button
-            onClick={handleBack}
-            aria-label="Go back"
-            variant="ghost"
-            size="sm"
-            className="p-0"
-          >
-            <ArrowBackIcon />
-          </Button>
-        ) : null}
-        {props.title}
-      </h1>
-      <div ref={ref} className="flex min-h-0 flex-1">
+    <div className="flex flex-col flex-1 min-h-0 px-7 py-7 gap-6">
+      <header className="flex items-end justify-between gap-6">
+        <div className="flex items-center gap-3.5 min-w-0">
+          {props.backbutton && (
+            <button
+              type="button"
+              onClick={handleBack}
+              aria-label="Go back"
+              className={cn(
+                "shrink-0 inline-flex items-center justify-center",
+                "w-8 h-8 rounded-nb-md bg-card border border-border",
+                "text-primary hover:bg-muted transition-colors",
+              )}
+            >
+              <BackArrow />
+            </button>
+          )}
+          <div className="min-w-0">
+            <h1 className="text-[28px] font-bold tracking-tight m-0 truncate">
+              {props.title}
+            </h1>
+            {props.subtitle && (
+              <p className="mt-1 text-sm text-muted-foreground m-0 truncate">
+                {props.subtitle}
+              </p>
+            )}
+          </div>
+        </div>
+        {props.actions && (
+          <div className="flex gap-2 items-center shrink-0">{props.actions}</div>
+        )}
+      </header>
+      <div ref={ref} className="flex flex-1 min-h-0">
         {props.children}
       </div>
     </div>

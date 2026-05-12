@@ -5,36 +5,40 @@
 @layer base {
   :root {
     color-scheme: light;
-    --background: #ffffff;
-    --foreground: #111827;
-    --card: #ffffff;
-    --card-foreground: #111827;
-    --muted: #f3f4f6;
-    --muted-foreground: #6b7280;
-    --accent: #f3f4f6;
-    --accent-foreground: #111827;
-    --popover: #ffffff;
-    --popover-foreground: #111827;
-    --border: #e5e7eb;
-    --input: #d1d5db;
-    --ring: #ee721a;
+    /* NimBus light — cream / warm neutrals */
+    --background: #F4F2EA;       /* canvas */
+    --foreground: #1A1814;       /* ink */
+    --card: #FAF8F2;             /* surface */
+    --card-foreground: #1A1814;
+    --muted: #ECE7DA;            /* surface-2 / table header */
+    --muted-foreground: #4A463D; /* ink-2 */
+    --accent: #ECE7DA;
+    --accent-foreground: #1A1814;
+    --popover: #FAF8F2;
+    --popover-foreground: #1A1814;
+    --border: #E5DFCE;           /* hairline */
+    --border-strong: #C9C1AB;
+    --input: #C9C1AB;
+    --ring: #E8743C;             /* primary focus ring */
   }
 
   .dark {
     color-scheme: dark;
-    --background: #0d0d0f;
-    --foreground: #fafafa;
-    --card: #18181b;
-    --card-foreground: #fafafa;
-    --muted: #1f1f23;
-    --muted-foreground: #a1a1aa;
-    --accent: #27272a;
-    --accent-foreground: #fafafa;
-    --popover: #18181b;
-    --popover-foreground: #fafafa;
-    --border: #2a2a2e;
-    --input: #27272a;
-    --ring: #ee721a;
+    /* NimBus dark — warm black, primary coral preserved */
+    --background: #0F0E0B;
+    --foreground: #F4F2EA;
+    --card: #1A1814;
+    --card-foreground: #F4F2EA;
+    --muted: #2A2620;
+    --muted-foreground: #A8A293;
+    --accent: #2A2620;
+    --accent-foreground: #F4F2EA;
+    --popover: #1A1814;
+    --popover-foreground: #F4F2EA;
+    --border: #2A2620;
+    --border-strong: #3D3830;
+    --input: #2A2620;
+    --ring: #E8743C;
   }
 
   * {
@@ -43,6 +47,8 @@
 
   body {
     @apply m-0 p-0 font-sans antialiased bg-background text-foreground;
+    text-rendering: optimizeLegibility;
+    line-height: 1.5;
   }
 
   /* Native form-control dark styling — Chromium uses UA colors for <option>
@@ -83,32 +89,24 @@
 }
 
 @layer components {
-  /* Status badges */
-  .badge-failed {
-    @apply bg-status-failed text-white dark:bg-red-700;
+  /* Status badges — pill + dot pattern.
+     Color = meaning. Reserve primary coral for action / focus only. */
+  .badge-failed,
+  .badge-deadlettered {
+    @apply bg-status-danger-50 text-status-danger-ink dark:bg-red-950/40 dark:text-red-200;
   }
 
-  .badge-pending {
-    @apply bg-status-pending text-gray-900 dark:bg-yellow-600 dark:text-yellow-50;
+  .badge-pending,
+  .badge-deferred {
+    @apply bg-status-warning-50 text-status-warning-ink dark:bg-yellow-950/40 dark:text-yellow-200;
   }
 
   .badge-completed {
-    @apply bg-status-completed text-white dark:bg-green-700;
+    @apply bg-status-success-50 text-status-success-ink dark:bg-green-950/40 dark:text-green-200;
   }
 
-  .badge-deferred {
-    @apply bg-status-deferred text-white dark:bg-orange-700;
-  }
-
-  .badge-deadlettered {
-    @apply bg-status-deadlettered text-white dark:bg-red-900;
-  }
-
-  .badge-skipped {
-    @apply bg-status-skipped text-white dark:bg-zinc-600;
-  }
-
+  .badge-skipped,
   .badge-unsupported {
-    @apply bg-status-unsupported text-white dark:bg-zinc-500;
+    @apply bg-muted text-muted-foreground;
   }
 }

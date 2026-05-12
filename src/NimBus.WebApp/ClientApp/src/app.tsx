@@ -1,5 +1,6 @@
-import { Route, Routes, useLocation } from "react-router-dom";
-import Header from "components/header";
+import { Route, Routes } from "react-router-dom";
+import Sidebar from "components/sidebar";
+import Topbar from "components/topbar";
 import EndpointDetails from "pages/endpoint-details";
 import EventDetails from "pages/event-details";
 import EndpointsList from "pages/endpoints-list";
@@ -14,8 +15,6 @@ import Footer from "components/footer";
 import { Navigation } from "models/navigation";
 import { ToastProvider } from "components/ui/toast";
 import { ThemeProvider } from "hooks/use-theme";
-
-const EVENT_TYPES_ROUTE = "/EventTypes";
 
 const navigation: Navigation = [
   {
@@ -93,28 +92,28 @@ const navigation: Navigation = [
 ];
 
 function App() {
-  const location = useLocation();
-  const isEventTypes = location.pathname === EVENT_TYPES_ROUTE;
-
   return (
     <ThemeProvider>
       <ToastProvider>
-        <div className="flex flex-col min-h-screen">
-          <Header links={navigation.filter((x) => x.header)} />
-
-          <Routes>
-            {navigation
-              .filter((x) => x.render)
-              .map((route) => (
-                <Route
-                  key={route.path}
-                  path={route.path}
-                  element={route.render!()}
-                />
-              ))}
-          </Routes>
-
-          {!isEventTypes && <Footer />}
+        <div className="flex min-h-screen bg-background">
+          <Sidebar />
+          <div className="flex flex-col flex-1 min-w-0">
+            <Topbar />
+            <main className="flex-1 flex flex-col min-w-0">
+              <Routes>
+                {navigation
+                  .filter((x) => x.render)
+                  .map((route) => (
+                    <Route
+                      key={route.path}
+                      path={route.path}
+                      element={route.render!()}
+                    />
+                  ))}
+              </Routes>
+            </main>
+            <Footer />
+          </div>
         </div>
       </ToastProvider>
     </ThemeProvider>

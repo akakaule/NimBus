@@ -6,14 +6,9 @@ const Footer = () => {
   const storageProvider = getStorageProvider();
 
   return (
-    <div className="flex flex-row justify-between flex-nowrap mx-[10%] mt-8 mb-4 border-t border-border box-border text-base text-left pt-2">
-      <div className="flex gap-2">
-        <Badge
-          variant="secondary"
-          className="bg-transparent text-muted-foreground"
-        >
-          {platformVersion ?? ""}
-        </Badge>
+    <div className="flex flex-row justify-between flex-nowrap px-7 py-3 border-t border-border text-xs font-mono text-muted-foreground uppercase tracking-wider">
+      <div className="flex gap-3">
+        {platformVersion && <span>{platformVersion}</span>}
         {storageProvider && (
           <Badge
             variant="secondary"
@@ -24,12 +19,7 @@ const Footer = () => {
           </Badge>
         )}
       </div>
-      <Badge
-        variant="secondary"
-        className="bg-transparent text-muted-foreground"
-      >
-        @ 2026 - Nimbus
-      </Badge>
+      <span>@ 2026 · NimBus</span>
     </div>
   );
 };

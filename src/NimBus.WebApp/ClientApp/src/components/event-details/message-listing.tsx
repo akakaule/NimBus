@@ -10,9 +10,52 @@ import {
 } from "components/ui/modal";
 import { Select } from "components/ui/select";
 import { Textarea } from "components/ui/textarea";
+import { CodeBlock } from "components/ui/code-block";
+import { TimingBar } from "components/ui/timing-bar";
+import {
+  PropertyList,
+  PropertySection,
+  PropertyRow,
+} from "components/ui/property-list";
 import { formatMoment } from "functions/endpoint.functions";
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
+
+// Threshold above which we surface an "Above P95" callout next to the timing
+// bar. The number is a UI heuristic, not a server-supplied value — the design
+// flags slow events so the operator can investigate (rec §09 event-details).
+const SLOW_PROCESSING_MS = 1000;
+
+function statusToBadgeVariant(
+  status: string | undefined,
+):
+  | "completed"
+  | "failed"
+  | "deferred"
+  | "deadlettered"
+  | "skipped"
+  | "unsupported"
+  | "pending"
+  | "default" {
+  switch (status?.toLowerCase()) {
+    case "completed":
+      return "completed";
+    case "failed":
+      return "failed";
+    case "deferred":
+      return "deferred";
+    case "deadlettered":
+      return "deadlettered";
+    case "skipped":
+      return "skipped";
+    case "unsupported":
+      return "unsupported";
+    case "pending":
+      return "pending";
+    default:
+      return "default";
+  }
+}
 
 // Format a millisecond duration for display: "—" when null, "Xms" under 1s,
 // "X.Ys" otherwise. Used for Queue Time / Processing Time on the detail page.
@@ -20,6 +63,16 @@ function formatDurationMs(ms: number | null | undefined): string {
   if (ms === null || ms === undefined) return "—";
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(2)}s`;
+}
+
+// Pretty-print JSON when valid; pass through verbatim otherwise so we never
+// hide bad payloads from operators.
+function safeFormatJson(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
 }
 
 interface IMessageListingProps {
@@ -256,153 +309,194 @@ export default function MessageListing(props: IMessageListingProps) {
         )}
       </h4>
       <br />
-      <div className="flex flex-col gap-6">
-        <div>
-          <h5 className="text-base font-semibold mb-3">Identifiers</h5>
-          <table className="w-full flex-1 text-sm mr-4">
-            <tbody>
-              <tr className="hover:bg-accent">
-                <td className="py-2 pr-4">
-                  <b>EventId</b>
-                </td>
-                <td className="py-2">{props.eventDetails?.eventId}</td>
-              </tr>
-              <tr className="hover:bg-accent">
-                <td className="py-2 pr-4">
-                  <b>SessionId</b>
-                </td>
-                <td className="py-2">{props.eventDetails?.sessionId}</td>
-              </tr>
-              <tr className="hover:bg-accent">
-                <td className="py-2 pr-4">
-                  <b>MessageId</b>
-                </td>
-                <td className="py-2">{props.eventDetails?.lastMessageId}</td>
-              </tr>
-              <tr className="hover:bg-accent">
-                <td className="py-2 pr-4">
-                  <b>OriginatingMessageId</b>
-                </td>
-                <td className="py-2">
-                  {props.eventDetails?.originatingMessageId}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+      {/* Timing bar — queue · processing · ack as a stacked horizontal bar.
+          Operators glance once instead of scanning three KV rows (rec §09). */}
+      {(props.eventDetails?.queueTimeMs !== undefined ||
+        props.eventDetails?.processingTimeMs !== undefined) && (
+        <TimingBar
+          className="mb-4"
+          segments={[
+            {
+              label: "Queue",
+              display: formatDurationMs(props.eventDetails?.queueTimeMs),
+              weight: Math.max(props.eventDetails?.queueTimeMs ?? 0, 0),
+              colorClass: "bg-[#BFD8F2]",
+            },
+            {
+              label: "Processing",
+              display: formatDurationMs(
+                props.eventDetails?.processingTimeMs,
+              ),
+              weight: Math.max(props.eventDetails?.processingTimeMs ?? 0, 0),
+              colorClass: "bg-status-warning",
+            },
+            {
+              label: "Ack",
+              display: "< 1 ms",
+              weight: 0.05 *
+                ((props.eventDetails?.queueTimeMs ?? 0) +
+                  (props.eventDetails?.processingTimeMs ?? 0) || 1),
+              colorClass: "bg-status-success",
+            },
+          ]}
+          total={
+            <span>
+              {formatDurationMs(
+                (props.eventDetails?.queueTimeMs ?? 0) +
+                  (props.eventDetails?.processingTimeMs ?? 0),
+              )}{" "}
+              ·{" "}
+              <span
+                className={
+                  isFailedMessage(props.eventDetails?.resolutionStatus)
+                    ? "text-status-danger"
+                    : "text-status-success"
+                }
+              >
+                {props.eventDetails?.resolutionStatus}
+              </span>
+            </span>
+          }
+          trailing={
+            (props.eventDetails?.processingTimeMs ?? 0) >= SLOW_PROCESSING_MS
+              ? `Above ${SLOW_PROCESSING_MS} ms — check downstream sink`
+              : undefined
+          }
+        />
+      )}
 
-        <div>
-          <h5 className="text-base font-semibold mb-3">Details</h5>
-          <table className="w-full flex-1 text-sm mr-4">
-          <tbody>
-            <tr className="hover:bg-accent">
-              <td className="py-2 pr-4">
-                <b>EventTypeId</b>
-              </td>
-              <td className="py-2">{props.eventDetails?.eventTypeId}</td>
-            </tr>
-            <tr className="hover:bg-accent">
-              <td className="py-2 pr-4">
-                <b>Source Endpoint</b>
-              </td>
-              <td className="py-2">
-                {(props.eventDetails?.originatingFrom || props.eventDetails?.from) && (
-                  <Link
-                    to={`/Endpoints/Details/${props.eventDetails?.originatingFrom || props.eventDetails?.from}`}
-                    className="text-primary hover:underline"
-                  >
-                    {props.eventDetails?.originatingFrom || props.eventDetails?.from}
-                  </Link>
-                )}
-              </td>
-            </tr>
-            <tr className="hover:bg-accent">
-              <td className="py-2 pr-4">
-                <b>Status</b>
-              </td>
-              <td className="py-2">
-                <span className="inline-flex items-center gap-2">
-                  {props.eventDetails?.resolutionStatus}
-                  {isPendingHandoff(
+      <PropertyList>
+        <PropertySection title="Identifiers">
+          <PropertyRow
+            label="EventId"
+            value={props.eventDetails?.eventId}
+            mono
+          />
+          <PropertyRow
+            label="SessionId"
+            value={props.eventDetails?.sessionId}
+            mono
+          />
+          <PropertyRow
+            label="MessageId"
+            value={props.eventDetails?.lastMessageId}
+            mono
+          />
+          {props.eventDetails?.originatingMessageId && (
+            <PropertyRow
+              label="OriginatingMessageId"
+              value={props.eventDetails.originatingMessageId}
+              mono
+            />
+          )}
+        </PropertySection>
+
+        <PropertySection title="Details">
+          <PropertyRow
+            label="EventTypeId"
+            value={
+              props.eventDetails?.eventTypeId && (
+                <Link
+                  to={`/EventTypes/Details/${props.eventDetails.eventTypeId}`}
+                  className="text-status-info font-semibold no-underline hover:underline"
+                >
+                  {props.eventDetails.eventTypeId}
+                </Link>
+              )
+            }
+          />
+          <PropertyRow
+            label="Source Endpoint"
+            value={
+              (props.eventDetails?.originatingFrom ||
+                props.eventDetails?.from) && (
+                <Link
+                  to={`/Endpoints/Details/${props.eventDetails?.originatingFrom || props.eventDetails?.from}`}
+                  className="text-status-info font-semibold no-underline hover:underline"
+                >
+                  {props.eventDetails?.originatingFrom ||
+                    props.eventDetails?.from}
+                </Link>
+              )
+            }
+          />
+          <PropertyRow
+            label="Status"
+            value={
+              <span className="inline-flex items-center gap-2">
+                <Badge
+                  variant={statusToBadgeVariant(
                     props.eventDetails?.resolutionStatus,
-                    props.eventDetails?.pendingSubStatus,
-                  ) && (
-                    <Badge variant="info" size="sm">
-                      Awaiting external
-                    </Badge>
                   )}
+                  size="sm"
+                >
+                  {props.eventDetails?.resolutionStatus ?? "—"}
+                </Badge>
+                {isPendingHandoff(
+                  props.eventDetails?.resolutionStatus,
+                  props.eventDetails?.pendingSubStatus,
+                ) && (
+                  <Badge variant="info" size="sm">
+                    Awaiting external
+                  </Badge>
+                )}
+              </span>
+            }
+          />
+          <PropertyRow
+            label="Enqueued (UTC)"
+            value={formatMoment(props.eventDetails?.enqueuedTimeUtc)}
+            mono
+          />
+          <PropertyRow
+            label="Queue Time"
+            value={formatDurationMs(props.eventDetails?.queueTimeMs)}
+            mono
+          />
+          <PropertyRow
+            label="Processing Time"
+            value={
+              (props.eventDetails?.processingTimeMs ?? 0) >=
+              SLOW_PROCESSING_MS ? (
+                <Badge variant="warning" size="sm">
+                  {formatDurationMs(props.eventDetails?.processingTimeMs)}
+                </Badge>
+              ) : (
+                <span className="font-mono text-[12px] tabular-nums">
+                  {formatDurationMs(props.eventDetails?.processingTimeMs)}
                 </span>
-              </td>
-            </tr>
-            <tr className="hover:bg-accent">
-              <td className="py-2 pr-4">
-                <b>Enqueued Time (UTC)</b>
-              </td>
-              <td className="py-2">
-                {formatMoment(props.eventDetails?.enqueuedTimeUtc)}
-              </td>
-            </tr>
-            <tr className="hover:bg-accent">
-              <td className="py-2 pr-4">
-                <b>Queue Time</b>
-              </td>
-              <td className="py-2">
-                {formatDurationMs(props.eventDetails?.queueTimeMs)}
-              </td>
-            </tr>
-            <tr className="hover:bg-accent">
-              <td className="py-2 pr-4">
-                <b>Processing Time</b>
-              </td>
-              <td className="py-2">
-                {formatDurationMs(props.eventDetails?.processingTimeMs)}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        </div>
+              )
+            }
+          />
+        </PropertySection>
+
         {(props.eventDetails?.handoffReason ||
           props.eventDetails?.externalJobId ||
           props.eventDetails?.expectedBy) && (
-          <div>
-            <h5 className="text-base font-semibold mb-3">Handoff details</h5>
-            <table className="w-full flex-1 text-sm mr-4">
-              <tbody>
-                {props.eventDetails?.handoffReason && (
-                  <tr className="hover:bg-accent">
-                    <td className="py-2 pr-4">
-                      <b>Reason</b>
-                    </td>
-                    <td className="py-2">
-                      {props.eventDetails?.handoffReason}
-                    </td>
-                  </tr>
-                )}
-                {props.eventDetails?.externalJobId && (
-                  <tr className="hover:bg-accent">
-                    <td className="py-2 pr-4">
-                      <b>External Job Id</b>
-                    </td>
-                    <td className="py-2">
-                      {props.eventDetails?.externalJobId}
-                    </td>
-                  </tr>
-                )}
-                {props.eventDetails?.expectedBy && (
-                  <tr className="hover:bg-accent">
-                    <td className="py-2 pr-4">
-                      <b>Expected By</b>
-                    </td>
-                    <td className="py-2">
-                      {formatMoment(props.eventDetails?.expectedBy)}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <PropertySection title="Handoff details">
+            {props.eventDetails?.handoffReason && (
+              <PropertyRow
+                label="Reason"
+                value={props.eventDetails.handoffReason}
+              />
+            )}
+            {props.eventDetails?.externalJobId && (
+              <PropertyRow
+                label="External Job Id"
+                value={props.eventDetails.externalJobId}
+                mono
+              />
+            )}
+            {props.eventDetails?.expectedBy && (
+              <PropertyRow
+                label="Expected By"
+                value={formatMoment(props.eventDetails.expectedBy)}
+                mono
+              />
+            )}
+          </PropertySection>
         )}
-      </div>
+      </PropertyList>
       <br />
       {isFailedMessage(props.eventDetails?.resolutionStatus) && (
         <>
@@ -458,19 +552,22 @@ export default function MessageListing(props: IMessageListingProps) {
       )}
 
       {props.eventDetails?.messageContent?.eventContent?.eventJson && (
-        <>
-          <h4 className="text-lg font-semibold mt-4">Payload</h4>
-          <br />
-          <pre className="bg-muted p-4 rounded text-sm overflow-x-auto w-full">
-            {JSON.stringify(
-              JSON.parse(
-                props.eventDetails.messageContent.eventContent.eventJson,
-              ),
-              null,
-              2,
+        <div className="mt-4">
+          <CodeBlock
+            title="Payload"
+            subtitle="application/json"
+            linkifyGuid={(_guid) =>
+              // Clicking a GUID in the payload jumps to the Messages search
+              // pre-filtered to that ID — IDs become first-class navigation
+              // bridges between pages (design rec §09 code).
+              `/Messages?eventId=${_guid}`
+            }
+          >
+            {safeFormatJson(
+              props.eventDetails.messageContent.eventContent.eventJson,
             )}
-          </pre>
-        </>
+          </CodeBlock>
+        </div>
       )}
 
       <Modal isOpen={isOpen} onClose={onClose} size="2xl">
@@ -482,13 +579,8 @@ export default function MessageListing(props: IMessageListingProps) {
             </label>
             <pre className="bg-muted p-4 rounded text-sm overflow-x-auto max-h-96">
               {props.eventDetails?.messageContent?.eventContent?.eventJson
-                ? JSON.stringify(
-                    JSON.parse(
-                      props.eventDetails?.messageContent?.eventContent
-                        ?.eventJson,
-                    ),
-                    null,
-                    2,
+                ? safeFormatJson(
+                    props.eventDetails.messageContent.eventContent.eventJson,
                   )
                 : ""}
             </pre>

@@ -481,16 +481,21 @@ const ZoomButton: React.FC<ZoomButtonProps> = ({
 );
 
 const ArrowMarker: React.FC<{ id: string; color: string }> = ({ id, color }) => (
+  // `userSpaceOnUse` decouples marker size from stroke-width, so even thin
+  // 1.5px lines get a confidently sized arrowhead. The triangle has a slight
+  // back-notch so the direction reads as a chevron rather than a dot at the
+  // end of a line — much more legible at small viewport sizes.
   <marker
     id={id}
-    viewBox="0 0 10 10"
-    refX={9}
-    refY={5}
-    markerWidth={6}
-    markerHeight={6}
+    viewBox="0 0 12 12"
+    refX={11}
+    refY={6}
+    markerUnits="userSpaceOnUse"
+    markerWidth={12}
+    markerHeight={12}
     orient="auto-start-reverse"
   >
-    <path d="M 0 0 L 10 5 L 0 10 z" fill={color} />
+    <path d="M 0 0 L 12 6 L 0 12 L 3 6 Z" fill={color} />
   </marker>
 );
 
@@ -526,14 +531,17 @@ const EdgePath: React.FC<EdgePathProps> = ({ d, edge }) => {
     <path
       d={d}
       data-tag={tooltip}
-      strokeWidth={1.6}
+      strokeWidth={1.8}
       fill="none"
       className={cn(
-        "transition-opacity",
+        // `stroke-opacity` (not the catch-all `opacity`) so the marker's
+        // fill stays fully saturated and the arrowhead remains readable
+        // even when the line itself is dimmed for idle edges.
+        "transition-[stroke-opacity]",
         finalColorClass,
         edge.health === "idle"
-          ? "opacity-40 [stroke-dasharray:2_4]"
-          : "opacity-75 hover:opacity-100",
+          ? "[stroke-opacity:0.55] [stroke-dasharray:3_5]"
+          : "[stroke-opacity:0.85] hover:[stroke-opacity:1]",
         edge.health !== "idle" && "nb-flow-anim",
         edge.health === "warn" && "[stroke-dasharray:4_3]",
       )}

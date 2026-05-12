@@ -9,6 +9,7 @@ import EventTypeDetails from "pages/event-type-details";
 import MessagesList from "pages/messages-list";
 import Admin from "pages/admin";
 import Metrics from "pages/metrics";
+import Topology from "pages/topology";
 import Insights from "pages/insights";
 import AuditsList from "pages/audits-list";
 import Footer from "components/footer";
@@ -64,6 +65,12 @@ const navigation: Navigation = [
     path: "/Metrics",
     header: true,
     render: () => <Metrics />,
+  },
+  {
+    name: "Topology",
+    path: "/Topology",
+    header: true,
+    render: () => <Topology />,
   },
   {
     name: "Insights",

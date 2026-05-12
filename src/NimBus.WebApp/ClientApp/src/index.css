@@ -109,4 +109,18 @@
   .badge-unsupported {
     @apply bg-muted text-muted-foreground;
   }
+
+  /* Topology edge flow animation — dashed stroke that scrolls toward the
+     arrowhead, signalling direction of message flow on the SVG canvas.
+     Matches the prototype's `.flow-anim` keyframes verbatim. */
+  .nb-flow-anim {
+    stroke-dasharray: 5 7;
+    animation: nb-flow 4s linear infinite;
+  }
+}
+
+@keyframes nb-flow {
+  to {
+    stroke-dashoffset: -200;
+  }
 }

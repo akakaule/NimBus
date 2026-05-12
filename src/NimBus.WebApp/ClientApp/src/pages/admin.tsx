@@ -8,7 +8,10 @@ import useDevMode from "hooks/use-dev-mode";
 export default function Admin() {
   const isDev = useDevMode();
   return (
-    <Page title="Admin">
+    <Page
+      title="Admin"
+      subtitle="Topology, bulk operations, and developer tools. Some actions are irreversible."
+    >
       <Tabs defaultIndex={0} isLazy={true} className="w-full">
         <TabList>
           <Tab index={0}>Topology</Tab>

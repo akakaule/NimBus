@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import * as api from "api-client";
 import {
   Accordion,
@@ -6,6 +6,7 @@ import {
   AccordionTrigger,
   AccordionContent,
 } from "components/ui/accordion";
+import { cn } from "lib/utils";
 import {
   BulkResubmitCard,
   DeleteDeadLetteredCard,
@@ -26,13 +27,130 @@ interface EndpointOption {
   label: string;
 }
 
-function SectionBadge({ count, color }: { count: number; color: string }) {
+// Blast-radius tone — design rec §09 admin grouping rec: group by what the
+// operation does to state, not by name. Tone drives the rail colour, the
+// icon badge background, and the count-chip palette.
+type Tone = "success" | "warning" | "info" | "danger";
+
+const toneStyles: Record<
+  Tone,
+  {
+    rail: string;
+    ico: string;
+    countChip: string;
+    captionColor: string;
+  }
+> = {
+  success: {
+    rail: "bg-status-success",
+    ico: "bg-status-success text-white",
+    countChip:
+      "bg-status-success-50 text-status-success-ink dark:bg-green-950/40 dark:text-green-200",
+    captionColor: "text-status-success",
+  },
+  warning: {
+    rail: "bg-status-warning",
+    ico: "bg-status-warning text-white",
+    countChip:
+      "bg-status-warning-50 text-status-warning-ink dark:bg-yellow-950/40 dark:text-yellow-200",
+    captionColor: "text-status-warning-ink dark:text-yellow-300",
+  },
+  info: {
+    rail: "bg-status-info",
+    ico: "bg-status-info text-white",
+    countChip:
+      "bg-status-info-50 text-status-info-ink dark:bg-blue-950/40 dark:text-blue-200",
+    captionColor: "text-status-info",
+  },
+  danger: {
+    rail: "bg-status-danger",
+    ico: "bg-status-danger text-white",
+    countChip:
+      "bg-status-danger-50 text-status-danger-ink dark:bg-red-950/40 dark:text-red-200",
+    captionColor: "text-status-danger",
+  },
+};
+
+interface OperationGroupProps {
+  id: string;
+  tone: Tone;
+  icon: ReactNode;
+  title: string;
+  count: number;
+  /** Right-aligned blast-radius caption (e.g. "Safe · reversible"). */
+  caption?: string;
+  description: string;
+  children: ReactNode;
+}
+
+/**
+ * Visual wrapper around AccordionItem that picks up the design's
+ * `.accordion` + `.acc-rail` + `.acc-ico` + `.acc-count` pattern.
+ *
+ * The coloured rail on the left + status-tinted icon badge + blast-radius
+ * caption give operators a glance-level read on what each group can do.
+ */
+function OperationGroup({
+  id,
+  tone,
+  icon,
+  title,
+  count,
+  caption,
+  description,
+  children,
+}: OperationGroupProps) {
+  const styles = toneStyles[tone];
   return (
-    <span
-      className={`inline-flex items-center justify-center text-xs font-medium rounded-full px-2 py-0.5 ${color}`}
-    >
-      {count} {count === 1 ? "operation" : "operations"}
-    </span>
+    <AccordionItem id={id} className="mb-3">
+      <div className="flex bg-card border border-border rounded-nb-md overflow-hidden">
+        <div className={cn("w-1 shrink-0", styles.rail)} aria-hidden="true" />
+        <div className="flex-1 min-w-0">
+          <AccordionTrigger
+            itemId={id}
+            className="border-0 hover:bg-transparent data-[expanded]:bg-transparent py-4 px-5"
+          >
+            <div className="flex items-center gap-2.5 flex-1 min-w-0">
+              <span
+                className={cn(
+                  "w-6 h-6 inline-flex items-center justify-center rounded-full text-[13px] font-bold shrink-0",
+                  styles.ico,
+                )}
+                aria-hidden="true"
+              >
+                {icon}
+              </span>
+              <span className="text-base font-bold">{title}</span>
+              <span
+                className={cn(
+                  "inline-flex items-center justify-center font-mono text-[11px] font-semibold",
+                  "px-2 py-0.5 rounded-full",
+                  styles.countChip,
+                )}
+              >
+                {count} {count === 1 ? "operation" : "operations"}
+              </span>
+              {caption && (
+                <span
+                  className={cn(
+                    "ml-auto font-mono text-[11px] hidden sm:inline pr-2",
+                    styles.captionColor,
+                  )}
+                >
+                  {caption}
+                </span>
+              )}
+            </div>
+          </AccordionTrigger>
+          <AccordionContent itemId={id} className="px-5 pb-5 pt-0">
+            <p className="text-[13px] text-muted-foreground mb-4 mt-0">
+              {description}
+            </p>
+            {children}
+          </AccordionContent>
+        </div>
+      </div>
+    </AccordionItem>
   );
 }
 
@@ -57,113 +175,75 @@ export default function Operations() {
     }
   }
 
+  // Design recommendation §09: group operations by *blast radius*, not by
+  // name. Operators at 2 a.m. care about "is this safe?" — make that the
+  // primary axis. Rails graduate success → warning → info → danger.
   return (
     <div className="w-full">
       <Accordion allowMultiple={true} defaultExpandedItems={["recovery"]}>
-        {/* ── Recovery (green) ── */}
-        <AccordionItem id="recovery">
-          <AccordionTrigger
-            itemId="recovery"
-            className="rounded-t-lg border-l-4 border-l-green-500"
-          >
-            <div className="flex items-center gap-3">
-              <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              <span className="text-base font-semibold">Recovery</span>
-              <SectionBadge count={3} color="bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200" />
-            </div>
-          </AccordionTrigger>
-          <AccordionContent itemId="recovery">
-            <p className="text-sm text-muted-foreground mb-4">
-              Recover from failures by resubmitting, skipping, or reprocessing messages.
-            </p>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <BulkResubmitCard endpoints={endpoints} />
-              <SkipMessagesCard endpoints={endpoints} />
-              <SessionPurgeCard endpoints={endpoints} />
-            </div>
-          </AccordionContent>
-        </AccordionItem>
+        <OperationGroup
+          id="recovery"
+          tone="success"
+          icon="↻"
+          title="Recovery"
+          count={3}
+          caption="Safe · reversible"
+          description="Recover from failures by resubmitting, skipping, or reprocessing messages. Idempotent handlers absorb safely."
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <BulkResubmitCard endpoints={endpoints} />
+            <SkipMessagesCard endpoints={endpoints} />
+            <SessionPurgeCard endpoints={endpoints} />
+          </div>
+        </OperationGroup>
 
-        {/* ── Cleanup (amber) ── */}
-        <AccordionItem id="cleanup">
-          <AccordionTrigger
-            itemId="cleanup"
-            className="border-l-4 border-l-amber-500"
-          >
-            <div className="flex items-center gap-3">
-              <svg className="w-5 h-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              <span className="text-base font-semibold">Cleanup</span>
-              <SectionBadge count={4} color="bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" />
-            </div>
-          </AccordionTrigger>
-          <AccordionContent itemId="cleanup">
-            <p className="text-sm text-muted-foreground mb-4">
-              Remove resolved, dead-lettered, or specific messages.
-            </p>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <DeleteDeadLetteredCard endpoints={endpoints} />
-              <DeleteByStatusCard endpoints={endpoints} />
-              <DeleteMessagesByToCard />
-              <DeleteEventCard endpoints={endpoints} />
-            </div>
-          </AccordionContent>
-        </AccordionItem>
+        <OperationGroup
+          id="cleanup"
+          tone="warning"
+          icon="→"
+          title="Cleanup"
+          count={4}
+          caption="Changes state · not re-played"
+          description="Remove resolved, dead-lettered, or specific messages without re-processing."
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <DeleteDeadLetteredCard endpoints={endpoints} />
+            <DeleteByStatusCard endpoints={endpoints} />
+            <DeleteMessagesByToCard />
+            <DeleteEventCard endpoints={endpoints} />
+          </div>
+        </OperationGroup>
 
-        {/* ── Infrastructure (blue) ── */}
-        <AccordionItem id="infrastructure">
-          <AccordionTrigger
-            itemId="infrastructure"
-            className="border-l-4 border-l-blue-500"
-          >
-            <div className="flex items-center gap-3">
-              <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              <span className="text-base font-semibold">Infrastructure</span>
-              <SectionBadge count={2} color="bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200" />
-            </div>
-          </AccordionTrigger>
-          <AccordionContent itemId="infrastructure">
-            <p className="text-sm text-muted-foreground mb-4">
-              Service Bus subscription management and cross-environment data operations.
-            </p>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <SubscriptionPurgeCard endpoints={endpoints} />
-              <CopyEndpointCard endpoints={endpoints} />
-            </div>
-          </AccordionContent>
-        </AccordionItem>
+        <OperationGroup
+          id="infrastructure"
+          tone="info"
+          icon="◇"
+          title="Infrastructure"
+          count={2}
+          caption="Topology · subscriptions"
+          description="Service Bus subscription management and cross-environment data operations."
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <SubscriptionPurgeCard endpoints={endpoints} />
+            <CopyEndpointCard endpoints={endpoints} />
+          </div>
+        </OperationGroup>
 
-        {/* ── Danger Zone (red, collapsed by default) ── */}
-        <AccordionItem id="danger">
-          <AccordionTrigger
-            itemId="danger"
-            className="rounded-b-lg border-l-4 border-l-red-500"
-          >
-            <div className="flex items-center gap-3">
-              <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-              </svg>
-              <span className="text-base font-semibold text-red-700 dark:text-red-300">Danger Zone</span>
-              <SectionBadge count={1} color="bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200" />
+        <OperationGroup
+          id="danger"
+          tone="danger"
+          icon="⚠"
+          title="Danger Zone"
+          count={1}
+          caption="Irreversible · audit-logged"
+          description="These operations are irreversible and will permanently delete data. Each requires typing the endpoint name to confirm."
+        >
+          <div className="border border-status-danger-50 bg-status-danger-50/40 dark:border-red-900/60 dark:bg-red-950/20 rounded-nb-md p-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <DeleteAllEventsCard endpoints={endpoints} />
             </div>
-          </AccordionTrigger>
-          <AccordionContent itemId="danger">
-            <div className="border border-red-200 bg-red-50 dark:border-red-900/60 dark:bg-red-950/30 rounded-lg p-4">
-              <p className="text-sm text-red-700 dark:text-red-300 mb-4">
-                These operations are irreversible and will permanently delete data. Use with extreme caution.
-              </p>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <DeleteAllEventsCard endpoints={endpoints} />
-              </div>
-            </div>
-          </AccordionContent>
-        </AccordionItem>
+          </div>
+        </OperationGroup>
       </Accordion>
     </div>
   );

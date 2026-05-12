@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "lib/utils";
 import type { EventPill, TopologyEdge, TopologyNode } from "./types";
 
@@ -10,6 +10,14 @@ const HUB_W = 120;
 const HUB_H = 60;
 const HUB_CX = VIEWBOX_W / 2;
 const HUB_CY = VIEWBOX_H / 2;
+
+const MIN_ZOOM = 0.4;
+const MAX_ZOOM = 4;
+const WHEEL_ZOOM_FACTOR = 1.15;
+const BUTTON_ZOOM_FACTOR = 1.25;
+// Drag threshold (screen pixels) below which we treat a release as a click,
+// so panning the canvas doesn't swallow card selection.
+const DRAG_CLICK_THRESHOLD = 4;
 
 interface TopologyGraphProps {
   nodes: TopologyNode[];
@@ -36,7 +44,28 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
   className,
 }) => {
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
   const tagRef = useRef<HTMLSpanElement | null>(null);
+
+  // Pan/zoom state. `pan` is the top-left corner of the visible viewBox in
+  // base coordinates; `zoom` shrinks the visible viewBox (zoom > 1 = closer).
+  // Together they drive the SVG `viewBox` attribute — text and strokes stay
+  // crisp at any zoom level because we never CSS-transform the SVG.
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  // Tracks an in-progress drag so a release with negligible movement still
+  // counts as a click (otherwise panning would steal card selection).
+  const dragRef = useRef<{
+    startX: number;
+    startY: number;
+    panX: number;
+    panY: number;
+    moved: number;
+  } | null>(null);
+
+  const viewBoxW = VIEWBOX_W / zoom;
+  const viewBoxH = VIEWBOX_H / zoom;
+  const viewBoxStr = `${pan.x} ${pan.y} ${viewBoxW} ${viewBoxH}`;
 
   // Radial layout — angle each endpoint around the hub. Radius shrinks
   // slightly as N grows so cards stay inside the viewbox; clamped so the
@@ -120,6 +149,12 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
     if (!wrap || !tag) return;
 
     const handleMove = (e: MouseEvent) => {
+      // While the user is actively dragging the canvas, suppress tooltips —
+      // they distract from the pan and follow the cursor jitterily.
+      if (dragRef.current) {
+        tag.classList.remove("show");
+        return;
+      }
       const target = (e.target as HTMLElement | null)?.closest?.("[data-tag]");
       if (!target) {
         tag.classList.remove("show");
@@ -141,6 +176,129 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
       wrap.removeEventListener("mouseleave", handleLeave);
     };
   }, []);
+
+  // Wheel-to-zoom. React's onWheel is passive by default in recent versions,
+  // so preventDefault() inside the JSX handler doesn't stop the page from
+  // scrolling. Wire it imperatively with `{ passive: false }` so the zoom
+  // wholly consumes wheel events over the canvas.
+  useEffect(() => {
+    const svg = svgRef.current;
+    const wrap = wrapRef.current;
+    if (!svg || !wrap) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = wrap.getBoundingClientRect();
+      const cx = e.clientX - r.left;
+      const cy = e.clientY - r.top;
+      // Cursor position in current viewBox coordinates — we keep this stable
+      // across the zoom so the operator can drill into a node naturally.
+      const vx = pan.x + (cx / r.width) * viewBoxW;
+      const vy = pan.y + (cy / r.height) * viewBoxH;
+      const factor = e.deltaY < 0 ? WHEEL_ZOOM_FACTOR : 1 / WHEEL_ZOOM_FACTOR;
+      const nextZoom = clamp(zoom * factor, MIN_ZOOM, MAX_ZOOM);
+      if (nextZoom === zoom) return;
+      const newW = VIEWBOX_W / nextZoom;
+      const newH = VIEWBOX_H / nextZoom;
+      setZoom(nextZoom);
+      setPan({
+        x: vx - (cx / r.width) * newW,
+        y: vy - (cy / r.height) * newH,
+      });
+    };
+
+    svg.addEventListener("wheel", handleWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", handleWheel);
+  }, [pan.x, pan.y, viewBoxW, viewBoxH, zoom]);
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent<SVGSVGElement>) => {
+      // Don't start a pan on interactive elements — let click handlers run.
+      const target = e.target as Element | null;
+      if (target && target.closest("[data-tag]")) return;
+      if (e.button !== 0) return; // left-button only
+      dragRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        panX: pan.x,
+        panY: pan.y,
+        moved: 0,
+      };
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        // Some browsers throw if the element is detaching — safe to ignore.
+      }
+    },
+    [pan.x, pan.y],
+  );
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent<SVGSVGElement>) => {
+      const drag = dragRef.current;
+      const wrap = wrapRef.current;
+      if (!drag || !wrap) return;
+      const r = wrap.getBoundingClientRect();
+      const dxScreen = e.clientX - drag.startX;
+      const dyScreen = e.clientY - drag.startY;
+      drag.moved = Math.max(drag.moved, Math.hypot(dxScreen, dyScreen));
+      setPan({
+        x: drag.panX - dxScreen * (viewBoxW / r.width),
+        y: drag.panY - dyScreen * (viewBoxH / r.height),
+      });
+    },
+    [viewBoxW, viewBoxH],
+  );
+
+  // Last gesture's total movement (screen px). Read by EndpointCard's onClick
+  // wrapper so a click that happened at the end of a pan is suppressed —
+  // otherwise releasing a drag over a card would silently switch selection.
+  const lastMovedRef = useRef(0);
+
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent<SVGSVGElement>) => {
+      const drag = dragRef.current;
+      lastMovedRef.current = drag?.moved ?? 0;
+      dragRef.current = null;
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        // Pointer-capture release is best-effort.
+      }
+    },
+    [],
+  );
+
+  // Returns true if the immediately preceding pointer gesture counts as a drag,
+  // i.e. moved beyond the click threshold. Cards use this to swallow clicks
+  // synthesised at the end of a pan.
+  const wasDragging = () => lastMovedRef.current > DRAG_CLICK_THRESHOLD;
+
+  const zoomBy = (factor: number) => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    // Zoom around the geometric center of the visible viewBox so the
+    // graph stays balanced.
+    const r = wrap.getBoundingClientRect();
+    const cx = r.width / 2;
+    const cy = r.height / 2;
+    const vx = pan.x + (cx / r.width) * viewBoxW;
+    const vy = pan.y + (cy / r.height) * viewBoxH;
+    const nextZoom = clamp(zoom * factor, MIN_ZOOM, MAX_ZOOM);
+    if (nextZoom === zoom) return;
+    const newW = VIEWBOX_W / nextZoom;
+    const newH = VIEWBOX_H / nextZoom;
+    setZoom(nextZoom);
+    setPan({
+      x: vx - (cx / r.width) * newW,
+      y: vy - (cy / r.height) * newH,
+    });
+  };
+
+  const resetView = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
 
   return (
     <div
@@ -165,9 +323,20 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
         )}
       />
       <svg
-        viewBox={`0 0 ${VIEWBOX_W} ${VIEWBOX_H}`}
+        ref={svgRef}
+        viewBox={viewBoxStr}
         preserveAspectRatio="xMidYMid meet"
-        className="block w-full h-auto"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        // touch-none kills the browser's pinch/scroll defaults so our gestures win.
+        // The cursor swap signals "draggable" when the operator is over background.
+        style={{ touchAction: "none" }}
+        className={cn(
+          "block w-full h-auto select-none",
+          dragRef.current ? "cursor-grabbing" : "cursor-grab",
+        )}
       >
         <defs>
           <ArrowMarker id="nb-arrow-green" color="var(--nb-success, #2E8F5E)" />
@@ -202,9 +371,10 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
               x={pos.x}
               y={pos.y}
               selected={selectedNodeId === node.id}
-              onClick={() =>
-                onSelectNode(selectedNodeId === node.id ? undefined : node.id)
-              }
+              onClick={() => {
+                if (wasDragging()) return;
+                onSelectNode(selectedNodeId === node.id ? undefined : node.id);
+              }}
             />
           );
         })}
@@ -236,9 +406,79 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
           </text>
         </g>
       </svg>
+
+      {/* Zoom controls overlay — bottom-right. Trackpad users (or anyone
+          without a wheel) need a non-gesture way to navigate. The percentage
+          chip mirrors the design system's caps-mono micro-label style. */}
+      <div
+        className={cn(
+          "absolute bottom-3 right-3 z-10",
+          "flex flex-col items-stretch gap-1",
+          "bg-card border border-border rounded-nb-md shadow-nb-sm",
+          "p-1",
+        )}
+        // Keep clicks here from starting a pan.
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <ZoomButton
+          label="+"
+          onClick={() => zoomBy(BUTTON_ZOOM_FACTOR)}
+          disabled={zoom >= MAX_ZOOM}
+          title="Zoom in"
+        />
+        <div className="text-center font-mono text-[10px] text-muted-foreground tabular-nums py-0.5">
+          {Math.round(zoom * 100)}%
+        </div>
+        <ZoomButton
+          label="−"
+          onClick={() => zoomBy(1 / BUTTON_ZOOM_FACTOR)}
+          disabled={zoom <= MIN_ZOOM}
+          title="Zoom out"
+        />
+        <ZoomButton
+          label="⤧"
+          onClick={resetView}
+          disabled={zoom === 1 && pan.x === 0 && pan.y === 0}
+          title="Reset view"
+        />
+      </div>
     </div>
   );
 };
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+interface ZoomButtonProps {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  title: string;
+}
+
+const ZoomButton: React.FC<ZoomButtonProps> = ({
+  label,
+  onClick,
+  disabled,
+  title,
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    title={title}
+    aria-label={title}
+    className={cn(
+      "w-7 h-7 inline-flex items-center justify-center rounded-md",
+      "text-[14px] font-semibold leading-none select-none",
+      "text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed",
+      "transition-colors",
+    )}
+  >
+    {label}
+  </button>
+);
 
 const ArrowMarker: React.FC<{ id: string; color: string }> = ({ id, color }) => (
   <marker

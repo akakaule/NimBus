@@ -54,6 +54,15 @@ const EventDetails = (props: EventDetailsProps) => {
   };
 
   useEffect(() => {
+    // Reset before re-fetch so clicking a blocked row doesn't render the
+    // previous event's data while the new fetch is in flight. The Loading
+    // splash below keys off `cosmosEvent === undefined`.
+    setCosmosEvent(undefined);
+    setHistories([]);
+    setAudits([]);
+    setBlockedEvents([]);
+    setBlockedTotal(0);
+
     const fetchData = async () => {
       const tempCosmosEvent = await client.getEventId(
         params.id!,
@@ -95,7 +104,12 @@ const EventDetails = (props: EventDetailsProps) => {
       });
     };
     fetchData();
-  }, []);
+    // Re-run when the route params change (e.g. clicking a row in the Blocked
+    // tab navigates to /Message/Index/{endpointId}/{eventId}/0 while keeping
+    // the same EventDetails component instance mounted — without these deps
+    // the page would keep showing the previous event).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.id, params.endpointId]);
 
   const fetchBlockedEvents = async (skip: number, take: number) => {
     if (!cosmosEvent?.endpointId || !cosmosEvent?.sessionId) return;

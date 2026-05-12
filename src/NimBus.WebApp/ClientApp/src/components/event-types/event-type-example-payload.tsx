@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "components/ui/button";
 import { Textarea } from "components/ui/textarea";
+import { CodeBlock } from "components/ui/code-block";
 import {
   Modal,
   ModalHeader,
@@ -10,35 +11,34 @@ import {
 import { useToast } from "components/ui/toast";
 import * as api from "api-client";
 
-// Copy icon
 const CopyIcon = () => (
-  <svg
-    className="w-4 h-4"
-    fill="none"
-    stroke="currentColor"
-    viewBox="0 0 24 24"
-  >
+  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
-      strokeWidth={2}
+      strokeWidth={1.6}
       d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
     />
   </svg>
 );
 
-// Edit icon
-const EditIcon = () => (
-  <svg
-    className="w-4 h-4"
-    fill="none"
-    stroke="currentColor"
-    viewBox="0 0 24 24"
-  >
+const DownloadIcon = () => (
+  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
-      strokeWidth={2}
+      strokeWidth={1.6}
+      d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"
+    />
+  </svg>
+);
+
+const EditIcon = () => (
+  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.6}
       d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
     />
   </svg>
@@ -89,6 +89,16 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
     }
   };
 
+  const handleDownload = () => {
+    const blob = new Blob([exampleJson], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${eventType.name || "payload"}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleComposeOpen = () => {
     setEditedJson(exampleJson);
     setResponseMessage({ hasError: false, text: "" });
@@ -124,32 +134,25 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
 
   return (
     <>
-      <div className="p-4 border rounded-md bg-card text-card-foreground">
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="text-sm font-semibold">Example Payload</h3>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleCopy}
-              leftIcon={<CopyIcon />}
-            >
+      <CodeBlock
+        title="Example Payload"
+        subtitle="application/json"
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={handleCopy} leftIcon={<CopyIcon />}>
               Copy
             </Button>
-            <Button
-              size="sm"
-              colorScheme="blue"
-              onClick={handleComposeOpen}
-              leftIcon={<EditIcon />}
-            >
+            <Button variant="ghost" size="sm" onClick={handleDownload} leftIcon={<DownloadIcon />}>
+              Download
+            </Button>
+            <Button variant="solid" size="sm" onClick={handleComposeOpen} leftIcon={<EditIcon />}>
               Compose Event
             </Button>
-          </div>
-        </div>
-        <pre className="p-4 bg-muted rounded-md text-sm font-mono overflow-x-auto whitespace-pre-wrap break-words">
-          {exampleJson}
-        </pre>
-      </div>
+          </>
+        }
+      >
+        {exampleJson}
+      </CodeBlock>
 
       <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} size="xl">
         <ModalHeader onClose={() => setIsOpen(false)}>
@@ -164,7 +167,7 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
           />
           {responseMessage.text && (
             <p
-              className={`mt-2 ${responseMessage.hasError ? "text-red-500" : "text-green-500"}`}
+              className={`mt-2 ${responseMessage.hasError ? "text-status-danger" : "text-status-success"}`}
             >
               {responseMessage.text}
             </p>
@@ -175,7 +178,7 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
             Close
           </Button>
           <Button
-            colorScheme="blue"
+            variant="solid"
             onClick={handleSendEvent}
             disabled={responseMessage.hasError}
           >

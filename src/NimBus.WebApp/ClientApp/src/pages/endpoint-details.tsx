@@ -46,7 +46,7 @@ const EndpointDetails = (props: EndpointDetailsProps) => {
   return (
     <>
       {!endpointIsInvalid ? (
-        <Page title={`${params.id} details`}>
+        <Page title={params.id!} subtitle="Endpoint details">
           <EventsPanel endpointId={params.id!} />
         </Page>
       ) : (

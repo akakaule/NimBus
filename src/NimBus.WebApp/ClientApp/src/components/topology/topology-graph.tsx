@@ -351,12 +351,17 @@ const EndpointCard: React.FC<EndpointCardProps> = ({
   const stats = formatNodeStats(node);
 
   return (
-    <g
-      transform={`translate(${x}, ${y})`}
-      onClick={onClick}
-      data-tag={tooltip}
-      className="cursor-pointer transition-transform hover:-translate-y-px"
-    >
+    // Position transform lives on the outer <g> as an SVG attribute so it
+    // can never be clobbered by a CSS `transform` rule on hover. Interactive
+    // styling (cursor, lift) lives on the inner <g> via CSS; the two layers
+    // compose instead of fighting (the bug that snapped cards to (0,0) on
+    // hover before this split).
+    <g transform={`translate(${x}, ${y})`}>
+      <g
+        onClick={onClick}
+        data-tag={tooltip}
+        className="cursor-pointer"
+      >
       <rect
         x={0}
         y={0}
@@ -408,6 +413,7 @@ const EndpointCard: React.FC<EndpointCardProps> = ({
       >
         {stats}
       </text>
+      </g>
     </g>
   );
 };

@@ -1,5 +1,6 @@
 import { Link, useLocation, useParams } from "react-router-dom";
 import { useTheme } from "hooks/use-theme";
+import { useCommandPalette } from "components/command-palette";
 import { cn } from "lib/utils";
 
 interface Crumb {
@@ -66,9 +67,15 @@ function useBreadcrumbs(): Crumb[] {
 const Topbar = () => {
   const crumbs = useBreadcrumbs();
   const { resolvedTheme, setTheme } = useTheme();
+  const { open: openCommandPalette } = useCommandPalette();
 
   const toggleTheme = () =>
     setTheme(resolvedTheme === "dark" ? "light" : "dark");
+
+  const isMac =
+    typeof navigator !== "undefined" &&
+    /Mac|iPhone|iPad/.test(navigator.platform);
+  const shortcutLabel = isMac ? "⌘K" : "Ctrl K";
 
   return (
     <header
@@ -105,18 +112,23 @@ const Topbar = () => {
 
       <div className="flex-1" />
 
-      {/* ⌘K command-palette placeholder (recommendation §10). Not wired —
-          renders as a static search affordance for now. */}
-      <div
+      {/* ⌘K command-palette trigger — recommendation §10 from the design
+          handoff. Keyboard users invoke via Cmd+K / Ctrl+K from anywhere
+          (wired in CommandPaletteProvider); this button is the same gesture
+          for mouse-first users. */}
+      <button
+        type="button"
+        onClick={openCommandPalette}
         className={cn(
           "hidden md:flex items-center gap-2",
           "bg-card border border-border rounded-nb-md",
           "px-3 py-1.5 min-w-[280px] text-muted-foreground text-[13px]",
-          "cursor-not-allowed opacity-75",
+          "hover:border-border-strong hover:text-foreground transition-colors",
+          "cursor-pointer",
         )}
-        title="Command palette (not yet wired)"
+        title={`Open command palette (${shortcutLabel})`}
       >
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
           <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5" />
           <path
             d="M10.5 10.5L13 13"
@@ -127,9 +139,9 @@ const Topbar = () => {
         </svg>
         <span>Jump to endpoint, event, or session…</span>
         <kbd className="ml-auto font-mono text-[10.5px] bg-muted border border-border px-1.5 py-px rounded text-muted-foreground">
-          ⌘K
+          {shortcutLabel}
         </kbd>
-      </div>
+      </button>
 
       <button
         onClick={toggleTheme}

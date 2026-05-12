@@ -4,6 +4,9 @@ import Page from "components/page";
 import { Card, CardHeader, CardTitle, CardContent } from "components/ui/card";
 import { Spinner } from "components/ui/spinner";
 import { Badge } from "components/ui/badge";
+import { StatRow, StatTile } from "components/ui/stat-tile";
+import { EmptyState } from "components/ui/empty-state";
+import { cn } from "lib/utils";
 import {
   BarChart,
   Bar,
@@ -17,6 +20,16 @@ import {
   CartesianGrid,
 } from "recharts";
 
+// Design-system palette (replaces ad-hoc tailwind hex colours)
+const CHART = {
+  published: "#3A6FB0", // status-info
+  handled: "#2E8F5E",   // status-success
+  failed: "#C2412E",    // status-danger
+  warning: "#C98A1B",   // status-warning
+  purple: "#6B3FA3",    // nimbus-purple
+  grid: "#E5DFCE",      // hairline / border
+};
+
 const PERIODS: { label: string; value: api.Period }[] = [
   { label: "1h", value: api.Period._1h },
   { label: "12h", value: api.Period._12h },
@@ -26,15 +39,17 @@ const PERIODS: { label: string; value: api.Period }[] = [
   { label: "30d", value: api.Period._30d },
 ];
 
+// Distinct fills for stacked bars (endpoint × event type). Drawn from the
+// design palette plus a few neutral hues so adjacent stacks stay readable.
 const COLORS = [
-  "#3b82f6",
-  "#10b981",
-  "#f59e0b",
-  "#ef4444",
-  "#8b5cf6",
-  "#ec4899",
-  "#06b6d4",
-  "#84cc16",
+  CHART.published,
+  CHART.handled,
+  CHART.warning,
+  CHART.failed,
+  CHART.purple,
+  "#3D5A80",
+  "#7A9E9F",
+  "#A78A6B",
 ];
 
 function formatMs(ms: number | undefined): string {
@@ -165,58 +180,63 @@ export default function Metrics() {
     Processing: pickStat(l.processing, latencyAgg),
   }));
 
+  const failureRateTone =
+    failureRate > 5 ? "danger" : failureRate >= 1 ? "warning" : "default";
+  const periodLabel =
+    PERIODS.find((p) => p.value === period)?.label ?? "";
+
   return (
-    <Page title="Metrics">
-      <div className="flex flex-col w-full gap-6 pb-8">
-        {/* Period selector */}
-        <div className="flex gap-2">
+    <Page
+      title="Metrics"
+      subtitle="Bus-wide throughput, latency, and failure rates"
+      actions={
+        // Segmented time-range control — matches design's `.seg` look (rec §08).
+        <div className="inline-flex items-center bg-card border border-border rounded-nb-md p-[3px] gap-[2px]">
           {PERIODS.map((p) => (
             <button
               key={p.value}
               onClick={() => setPeriod(p.value)}
-              className={`px-4 py-2 text-sm font-semibold rounded-md border transition-colors ${
+              className={cn(
+                "px-3 py-1.5 rounded-md text-xs font-semibold transition-colors",
                 period === p.value
-                  ? "bg-primary text-white border-primary"
-                  : "bg-card text-foreground border-border hover:bg-accent"
-              }`}
+                  ? "bg-primary text-white"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
             >
               {p.label}
             </button>
           ))}
         </div>
-
-        {/* KPI Summary Cards */}
-        <div className="grid grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <p className="text-sm text-muted-foreground">Total Messages</p>
-              <p className="text-3xl font-bold mt-1">
-                {loading ? "-" : totalMessages.toLocaleString()}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <p className="text-sm text-muted-foreground">Total Failed</p>
-              <p className={`text-3xl font-bold mt-1 ${totalFailed > 0 && !loading ? "text-red-600" : ""}`}>
-                {loading ? "-" : totalFailed.toLocaleString()}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <p className="text-sm text-muted-foreground">Failure Rate</p>
-              <p className={`text-3xl font-bold mt-1 ${
-                loading ? "" :
-                failureRate > 5 ? "text-red-600" :
-                failureRate >= 1 ? "text-yellow-600" :
-                "text-green-600"
-              }`}>
-                {loading ? "-" : `${failureRate.toFixed(2)}%`}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+      }
+    >
+      <div className="flex flex-col w-full gap-5 pb-8">
+        {/* KPI tiles — design rec §03. Coloured by tone, not by hue swap. */}
+        <StatRow columns={3}>
+          <StatTile
+            label="Total Messages"
+            value={loading ? "—" : totalMessages.toLocaleString()}
+            delta={loading ? undefined : `${periodLabel} window`}
+            tone="muted"
+          />
+          <StatTile
+            label="Total Failed"
+            value={loading ? "—" : totalFailed.toLocaleString()}
+            delta={
+              loading
+                ? undefined
+                : totalFailed === 0
+                  ? "All clear"
+                  : `needs attention · ${periodLabel}`
+            }
+            tone={totalFailed === 0 ? "default" : "danger"}
+          />
+          <StatTile
+            label="Failure Rate"
+            value={loading ? "—" : `${failureRate.toFixed(2)}%`}
+            delta={loading ? undefined : `over ${totalMessages.toLocaleString()} msgs`}
+            tone={failureRateTone}
+          />
+        </StatRow>
 
         {loading ? (
           <div className="flex justify-center items-center py-20">
@@ -245,7 +265,7 @@ export default function Metrics() {
                       }))}
                       margin={{ left: 10, right: 20, top: 5, bottom: 5 }}
                     >
-                      <CartesianGrid strokeDasharray="3 3" />
+                      <CartesianGrid stroke={CHART.grid} strokeDasharray="3 3" />
                       <XAxis
                         dataKey="timestamp"
                         tick={{ fontSize: 11 }}
@@ -257,22 +277,22 @@ export default function Metrics() {
                       <Area
                         type="monotone"
                         dataKey="Published"
-                        stroke="#3b82f6"
-                        fill="#3b82f6"
+                        stroke={CHART.published}
+                        fill={CHART.published}
                         fillOpacity={0.3}
                       />
                       <Area
                         type="monotone"
                         dataKey="Handled"
-                        stroke="#10b981"
-                        fill="#10b981"
+                        stroke={CHART.handled}
+                        fill={CHART.handled}
                         fillOpacity={0.3}
                       />
                       <Area
                         type="monotone"
                         dataKey="Failed"
-                        stroke="#ef4444"
-                        fill="#ef4444"
+                        stroke={CHART.failed}
+                        fill={CHART.failed}
                         fillOpacity={0.3}
                       />
                     </AreaChart>
@@ -350,7 +370,9 @@ export default function Metrics() {
                               <td className="py-2 px-3">{p.endpointId}</td>
                               <td className="py-2 px-3">{p.eventTypeId}</td>
                               <td className="text-right py-2 px-3">
-                                <Badge variant="info">{p.count}</Badge>
+                                <Badge variant="info" size="sm">
+                                  {p.count}
+                                </Badge>
                               </td>
                             </tr>
                           ))}
@@ -430,7 +452,9 @@ export default function Metrics() {
                               <td className="py-2 px-3">{h.endpointId}</td>
                               <td className="py-2 px-3">{h.eventTypeId}</td>
                               <td className="text-right py-2 px-3">
-                                <Badge variant="success">{h.count}</Badge>
+                                <Badge variant="success" size="sm">
+                                  {h.count}
+                                </Badge>
                               </td>
                             </tr>
                           ))}
@@ -441,16 +465,20 @@ export default function Metrics() {
               </CardContent>
             </Card>
 
-            {/* Failed Messages */}
+            {/* Failed Messages — happy path renders an EmptyState so negative
+                space feels intentional (design rec §09 metrics empty rec). */}
             <Card>
               <CardHeader>
                 <CardTitle>Failed Messages</CardTitle>
               </CardHeader>
               <CardContent>
                 {failed.rows.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">
-                    No failed messages in this period.
-                  </p>
+                  <EmptyState
+                    icon="✓"
+                    tone="success"
+                    title={`All clear in the last ${periodLabel}`}
+                    description="No failed messages in the selected window. Expand the time range to see prior incidents."
+                  />
                 ) : (
                   <>
                     <ResponsiveContainer
@@ -508,15 +536,20 @@ export default function Metrics() {
                           .map((f, i) => (
                             <tr
                               key={i}
-                              className={`border-b ${(f.count ?? 0) > 0 ? "bg-red-50" : ""}`}
+                              className={cn(
+                                "border-b",
+                                (f.count ?? 0) > 0 &&
+                                  "bg-status-danger-50 dark:bg-red-950/30",
+                              )}
                             >
                               <td className="py-2 px-3">{f.endpointId}</td>
                               <td className="py-2 px-3">{f.eventTypeId}</td>
                               <td className="text-right py-2 px-3">
                                 <Badge
                                   variant={
-                                    (f.count ?? 0) > 0 ? "error" : "default"
+                                    (f.count ?? 0) > 0 ? "failed" : "default"
                                   }
+                                  size="sm"
                                 >
                                   {f.count}
                                 </Badge>
@@ -540,16 +573,17 @@ export default function Metrics() {
                       Queue (enqueue → handler) + Processing (handler → done). Aggregated from per-message timings; tail-latency lives in the OpenTelemetry histograms.
                     </p>
                   </div>
-                  <div className="flex gap-1">
+                  <div className="inline-flex items-center bg-card border border-border rounded-nb-md p-[3px] gap-[2px]">
                     {(["avg", "min", "max"] as LatencyAggKind[]).map((p) => (
                       <button
                         key={p}
                         onClick={() => setLatencyAgg(p)}
-                        className={`px-3 py-1 text-xs font-semibold rounded-md border transition-colors ${
+                        className={cn(
+                          "px-3 py-1.5 rounded-md text-xs font-semibold transition-colors",
                           latencyAgg === p
-                            ? "bg-primary text-white border-primary"
-                            : "bg-card text-foreground border-border hover:bg-accent"
-                        }`}
+                            ? "bg-primary text-white"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
                       >
                         {p.toUpperCase()}
                       </button>
@@ -593,8 +627,8 @@ export default function Metrics() {
                           }
                         />
                         <Legend />
-                        <Bar dataKey="Queue" fill="#3b82f6" name="Queue" />
-                        <Bar dataKey="Processing" fill="#10b981" name="Processing" />
+                        <Bar dataKey="Queue" fill={CHART.published} name="Queue" />
+                        <Bar dataKey="Processing" fill={CHART.handled} name="Processing" />
                       </BarChart>
                     </ResponsiveContainer>
                     <table className="w-full mt-4 text-sm">
@@ -635,7 +669,13 @@ export default function Metrics() {
                                 <td className="py-1 px-3 text-muted-foreground">{s.name}</td>
                                 <td className="text-right py-1 px-3">{s.data?.count ?? 0}</td>
                                 <td className="text-right py-1 px-3">
-                                  <span className={s.warn && (s.data?.avgMs ?? 0) > 30000 ? "text-red-600 font-semibold" : ""}>
+                                  <span
+                                    className={cn(
+                                      s.warn &&
+                                        (s.data?.avgMs ?? 0) > 30000 &&
+                                        "text-status-danger font-semibold",
+                                    )}
+                                  >
                                     {formatMs(s.data?.avgMs)}
                                   </span>
                                 </td>

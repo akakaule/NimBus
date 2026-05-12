@@ -176,8 +176,8 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
 
     // ── Session views ───────────────────────────────────────────────────
 
-    public Task<IEnumerable<BlockedMessageEvent>> GetBlockedEventsOnSession(string endpointId, string sessionId) =>
-        InstrumentAsync(nameof(GetBlockedEventsOnSession), () => _inner.GetBlockedEventsOnSession(endpointId, sessionId));
+    public Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take) =>
+        InstrumentAsync(nameof(GetBlockedEventsOnSession), () => _inner.GetBlockedEventsOnSession(endpointId, sessionId, skip, take));
 
     public Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId) =>
         InstrumentAsync(nameof(GetPendingEventsOnSession), () => _inner.GetPendingEventsOnSession(endpointId));

@@ -199,7 +199,7 @@ internal sealed class ThrowingStore : IMessageTrackingStore
     public Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId) => _passthrough.DownloadEndpointSessionStateCount(endpointId, sessionId);
     public Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds) => _passthrough.DownloadEndpointSessionStateCountBatch(endpointId, sessionIds);
     public Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken) => _passthrough.DownloadEndpointStatePaging(endpointId, pageSize, continuationToken);
-    public Task<IEnumerable<BlockedMessageEvent>> GetBlockedEventsOnSession(string endpointId, string sessionId) => _passthrough.GetBlockedEventsOnSession(endpointId, sessionId);
+    public Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take) => _passthrough.GetBlockedEventsOnSession(endpointId, sessionId, skip, take);
     public Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId) => _passthrough.GetPendingEventsOnSession(endpointId);
     public Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId) => _passthrough.GetInvalidEventsOnSession(endpointId);
     public Task<bool> RemoveMessage(string eventId, string sessionId, string endpointId) => _passthrough.RemoveMessage(eventId, sessionId, endpointId);

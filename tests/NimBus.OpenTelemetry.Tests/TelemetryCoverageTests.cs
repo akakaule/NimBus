@@ -134,7 +134,7 @@ public sealed class MessageHelperTracePropagationTests
 }
 
 [TestClass]
-public sealed class MetricsMiddlewareInstrumentationTests
+public sealed class ConsumerInstrumentationTests
 {
     [TestMethod]
     public async Task Handle_Success_EmitsProcessSpanMetricsAndCurrentActivity()
@@ -158,10 +158,9 @@ public sealed class MetricsMiddlewareInstrumentationTests
         {
             ParentTraceContext = parent,
         };
-        var middleware = new MetricsMiddleware();
         Activity? activityDuringHandler = null;
 
-        await middleware.Handle(context, (ctx, ct) =>
+        await NimBusConsumerInstrumentation.RunAsync(context, MessagingSystem.ServiceBus, _ =>
         {
             activityDuringHandler = Activity.Current;
             Activity.Current?.SetTag("tenant.id", "tenant-1");
@@ -207,9 +206,10 @@ public sealed class MetricsMiddlewareInstrumentationTests
             .AddInMemoryExporter(metrics)
             .Build()!;
 
-        var middleware = new MetricsMiddleware();
         var exception = await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
-            middleware.Handle(new TestMessageContext(), (ctx, ct) => throw new InvalidOperationException("boom")));
+            NimBusConsumerInstrumentation.RunAsync(
+                new TestMessageContext(), MessagingSystem.ServiceBus,
+                _ => throw new InvalidOperationException("boom")));
         meterProvider.ForceFlush();
         tracer.ForceFlush();
 
@@ -518,8 +518,10 @@ public sealed class PublishConsumeTraceIntegrationTests
             sent.ApplicationProperties[W3CMessagePropagator.TraceParentHeader]?.ToString(),
             sent.ApplicationProperties.TryGetValue(W3CMessagePropagator.TraceStateHeader, out var state) ? state?.ToString() : null);
 
-        var middleware = new MetricsMiddleware();
-        await middleware.Handle(new TestMessageContext { ParentTraceContext = parentContext }, (ctx, ct) => Task.CompletedTask);
+        await NimBusConsumerInstrumentation.RunAsync(
+            new TestMessageContext { ParentTraceContext = parentContext },
+            MessagingSystem.ServiceBus,
+            _ => Task.CompletedTask);
         meterProvider.ForceFlush();
         tracer.ForceFlush();
 

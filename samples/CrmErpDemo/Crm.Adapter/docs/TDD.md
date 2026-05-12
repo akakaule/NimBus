@@ -43,7 +43,7 @@ Bridge between the CRM SQL database (written by `Crm.Api`) and the NimBus messag
 ### 1.3 Responsibilities  <!-- [AUTO] — derived from `Program.cs` and `Handlers/*` -->
 
 1. **Outbox dispatch.** Run `OutboxDispatcherHostedService` (registered via `AddNimBusOutboxDispatcher(TimeSpan.FromSeconds(1))`) that polls the `OutboxMessages` table in the `crm` SQL database and forwards rows to `OutboxDispatcherSender`, which wraps a `ServiceBusSender` for the `CrmEndpoint` topic.
-2. **Subscribe to `CrmEndpoint`.** Run `NimBusReceiverHostedService` (registered via `AddNimBusReceiver`) bound to topic/subscription `CrmEndpoint` / `CrmEndpoint`. Dispatch inbound messages through the NimBus pipeline (`LoggingMiddleware`, `MetricsMiddleware`, `ValidationMiddleware`) into registered `IEventHandler<T>` implementations.
+2. **Subscribe to `CrmEndpoint`.** Run `NimBusReceiverHostedService` (registered via `AddNimBusReceiver`) bound to topic/subscription `CrmEndpoint` / `CrmEndpoint`. Dispatch inbound messages through the NimBus pipeline (`LoggingMiddleware`, `ValidationMiddleware`) into registered `IEventHandler<T>` implementations. Consumer-side telemetry (`NimBus.Process` span + processed/duration counters) is emitted by `ServiceBusAdapter` automatically — no pipeline behavior to register.
 3. **Apply inbound events.** Use `HttpClient`-typed `ICrmApiClient` to call back into `Crm.Api`:
    - `ErpCustomerCreated` (from ERP) → `ErpCustomerCreatedHandler`. If `Origin=Crm`: `POST /api/accounts/{id}/link-erp`. If `Origin=Erp`: `PUT /api/accounts/external/{erpCustomerId}`.
    - `ErpContactCreated` (from ERP) → `ErpContactCreatedHandler` → `PUT /api/contacts/upsert/{contactId}`.
@@ -320,8 +320,9 @@ The Crm.Adapter does not own outbound mapping (that lives in `Crm.Api/Mapping/Ac
 Registered (in order) via `services.AddNimBus(n => ...)` in `Program.cs`:
 
 1. `LoggingMiddleware`
-2. `MetricsMiddleware`
-3. `ValidationMiddleware`
+2. `ValidationMiddleware`
+
+Consumer span + counters (`nimbus.message.received`, `processed`, `process.duration`) are owned by `ServiceBusAdapter` via `NimBusConsumerInstrumentation` — not a pipeline behavior.
 
 Behaviours run in registration order on inbound dispatch. `ValidationMiddleware` calls `IEvent.Validate()` — events with `[Required]` / `[EmailAddress]` annotations get checked here. Validation failures surface as permanent.
 
@@ -606,7 +607,7 @@ Design-level risks that affect how the adapter behaves under load, drift, or ope
 
 | Metric | Source | Alert threshold |
 |---|---|---|
-| Handler duration p95 | App Insights custom metric (via `MetricsMiddleware`) | {TBD} |
+| Handler duration p95 | App Insights / OTel histogram `nimbus.message.process.duration` (via `NimBusConsumerInstrumentation` in `ServiceBusAdapter`) | {TBD} |
 | Outbox pending count | `SqlServerOutbox` (queryable) | {TBD} |
 | Service Bus dead-letter count | Azure Monitor on `CrmEndpoint` | > 0 |
 | Resolver unresolved count | `nimbus-ops` Resolver dashboard | {TBD} |

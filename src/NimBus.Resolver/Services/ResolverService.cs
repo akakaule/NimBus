@@ -56,30 +56,14 @@ namespace NimBus.Broker.Services
             _logger?.Verbose("Resolver: Handle {EventTypeId} EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
                 messageContext.MessageContent.EventContent?.EventTypeId, messageContext.EventId, messageContext.MessageId, messageContext.SessionId);
 
-            // The resolver runs as an Azure Function, not through the SDK pipeline,
-            // so MetricsMiddleware (which owns the consumer span in the SDK path)
-            // never runs here. Open the consumer span ourselves so the resolver's
-            // downstream RecordOutcome / RecordAudit spans nest under it, and so
-            // the trace continues from the publisher (when ParentTraceContext is
-            // populated by the Service Bus adapter).
-            var destination = messageContext.To ?? "resolver";
-            using var consumerActivity = NimBusActivitySources.Consumer.StartActivity(
-                "process " + destination,
-                ActivityKind.Consumer,
-                messageContext.ParentTraceContext);
-            if (consumerActivity is { IsAllDataRequested: true })
-            {
-                consumerActivity.SetTag(MessagingAttributes.OperationType, "process");
-                consumerActivity.SetTag(MessagingAttributes.DestinationName, destination);
-                if (!string.IsNullOrEmpty(messageContext.EventTypeId))
-                    consumerActivity.SetTag(MessagingAttributes.NimBusEventType, messageContext.EventTypeId);
-                if (!string.IsNullOrEmpty(messageContext.MessageId))
-                    consumerActivity.SetTag(MessagingAttributes.MessageId, messageContext.MessageId);
-                if (!string.IsNullOrEmpty(messageContext.CorrelationId))
-                    consumerActivity.SetTag(MessagingAttributes.MessageConversationId, messageContext.CorrelationId);
-                consumerActivity.SetTag(MessagingAttributes.NimBusHasParentTrace, messageContext.ParentTraceContext != default);
-            }
-
+            // The consumer span is owned by the transport boundary
+            // (ServiceBusAdapter → NimBusConsumerInstrumentation). When invoked
+            // through ServiceBusAdapter (the Azure Function `Functions.cs` path),
+            // Activity.Current is the consumer span and the resolver's downstream
+            // RecordOutcome / RecordAudit spans nest under it automatically. When
+            // invoked directly (tests / non-adapter hosts) those resolver-side
+            // spans become roots — that's expected, the resolver doesn't fabricate
+            // a transport span when there isn't one.
             try
             {
                 MessageEntity messageEntity = await CreateMessageEntity(messageContext);
@@ -98,34 +82,18 @@ namespace NimBus.Broker.Services
                 catch (Exception notifyEx) { _logger?.Warning(notifyEx, "Resolver: state-change notification failed (non-fatal)"); }
 
                 await messageContext.Complete(cancellationToken);
-                consumerActivity?.SetStatus(ActivityStatusCode.Ok);
             }
             catch (StorageProviderTransientException ex) when (ex.RetryAfter.HasValue)
             {
-                if (consumerActivity is not null)
-                {
-                    consumerActivity.SetStatus(ActivityStatusCode.Error, ex.Message);
-                    consumerActivity.SetTag(MessagingAttributes.ErrorType, ex.GetType().FullName);
-                }
                 await HandleThrottling(messageContext, ex.RetryAfter, cancellationToken);
             }
             catch (TransientException transientException)
             {
-                if (consumerActivity is not null)
-                {
-                    consumerActivity.SetStatus(ActivityStatusCode.Error, transientException.Message);
-                    consumerActivity.SetTag(MessagingAttributes.ErrorType, transientException.GetType().FullName);
-                }
                 _logger?.Error(transientException, "Resolver: Transient exception EventId:{EventId}", messageContext.EventId);
                 await messageContext.Abandon(transientException);
             }
             catch (Exception unexpectedException)
             {
-                if (consumerActivity is not null)
-                {
-                    consumerActivity.SetStatus(ActivityStatusCode.Error, unexpectedException.Message);
-                    consumerActivity.SetTag(MessagingAttributes.ErrorType, unexpectedException.GetType().FullName);
-                }
                 _logger?.Error(unexpectedException, "Resolver: Failed to handle message, add to DeadLetter. EventId:{EventId}", messageContext.EventId);
                 await messageContext.DeadLetter("Failed to handle message.", unexpectedException, cancellationToken);
             }

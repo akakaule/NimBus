@@ -109,7 +109,7 @@ namespace NimBus.Core.Messages
         /// pipeline runs). ResponseService uses this to compute processing
         /// time when the outgoing response is built — needed because the
         /// terminal handler sends the response INSIDE the pipeline, before
-        /// any post-await middleware (e.g. MetricsMiddleware) can finalise
+        /// any post-await consumer instrumentation can finalise
         /// <see cref="ProcessingTimeMs"/>.
         /// </summary>
         DateTime? HandlerStartedAtUtc { get; set; }

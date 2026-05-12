@@ -79,8 +79,8 @@ namespace NimBus.ServiceBus
             var destination = message.ApplicationProperties.TryGetValue("To", out var to) ? to?.ToString() ?? "unknown" : "unknown";
 
             // Extract W3C trace context from inbound message and stash it on the
-            // context. MetricsMiddleware (the outermost pipeline behavior) reads this
-            // and starts the consumer span with it as the parent.
+            // context. NimBusConsumerInstrumentation reads this and starts the
+            // consumer span with it as the parent.
             var traceParent = message.ApplicationProperties.TryGetValue(W3CMessagePropagator.TraceParentHeader, out var tp)
                 ? tp?.ToString()
                 : null;
@@ -110,7 +110,16 @@ namespace NimBus.ServiceBus
 
             try
             {
-                await _messageHandler.Handle(messageContext, cancellationToken);
+                // Consumer span + received/processed counters + duration histogram
+                // are owned at the transport boundary so every subscriber path is
+                // covered, regardless of whether a host has registered a pipeline.
+                // The span lifetime covers any broker-settle calls the handler
+                // makes (FR-012) because the handler runs inside the helper.
+                await NimBusConsumerInstrumentation.RunAsync(
+                    messageContext,
+                    MessagingSystem.ServiceBus,
+                    ct => _messageHandler.Handle(messageContext, ct),
+                    cancellationToken).ConfigureAwait(false);
             }
             finally
             {

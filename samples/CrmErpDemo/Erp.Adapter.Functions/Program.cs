@@ -62,7 +62,6 @@ builder.Services.AddNimBus(n =>
     // Pure subscriber/dispatcher Functions worker — no NimBus message store needed.
     n.WithoutStorageProvider();
     n.AddPipelineBehavior<LoggingMiddleware>();
-    n.AddPipelineBehavior<MetricsMiddleware>();
     n.AddPipelineBehavior<ValidationMiddleware>();
     n.AddPipelineBehavior<ServiceModeMiddleware>();
 });

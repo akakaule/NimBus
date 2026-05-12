@@ -20,7 +20,6 @@ builder.Services.AddNimBus(nimbus =>
 {
     nimbus.WithoutStorageProvider();
     nimbus.AddPipelineBehavior<LoggingMiddleware>();
-    nimbus.AddPipelineBehavior<MetricsMiddleware>();
     nimbus.AddPipelineBehavior<ValidationMiddleware>();
 });
 

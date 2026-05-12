@@ -4,7 +4,6 @@ using System.Diagnostics.Metrics;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
-using NimBus.Core.Pipeline;
 
 namespace NimBus.Testing.Conformance;
 
@@ -45,10 +44,13 @@ public abstract class InstrumentationConformanceTests
         var parentContext = await PublishAsync(message);
         Assert.AreNotEqual(default, parentContext, "PublishAsync must return a real ActivityContext.");
 
-        // Consumer leg: drive MetricsMiddleware with the extracted parent trace context.
-        var middleware = new MetricsMiddleware();
+        // Consumer leg: drive NimBusConsumerInstrumentation directly — same helper
+        // the transport adapters call. This keeps the conformance harness
+        // transport-neutral while still exercising the real consumer span +
+        // counter surface.
         var consumerContext = new ConformanceMessageContext(message, parentContext);
-        await middleware.Handle(consumerContext, (_, _) => Task.CompletedTask);
+        await NimBusConsumerInstrumentation.RunAsync(
+            consumerContext, MessagingSystem, _ => Task.CompletedTask);
 
         var publishSpan = activities.Single(a => a.Source.Name == NimBusInstrumentation.PublisherActivitySourceName);
         var processSpan = activities.Single(a => a.Source.Name == NimBusInstrumentation.ConsumerActivitySourceName);
@@ -70,9 +72,9 @@ public abstract class InstrumentationConformanceTests
         var message = NewMessage("event-2");
         var parentContext = await PublishAsync(message);
 
-        var middleware = new MetricsMiddleware();
         var consumerContext = new ConformanceMessageContext(message, parentContext);
-        await middleware.Handle(consumerContext, (_, _) => Task.CompletedTask);
+        await NimBusConsumerInstrumentation.RunAsync(
+            consumerContext, MessagingSystem, _ => Task.CompletedTask);
 
         var publishSpan = activities.Single(a => a.Source.Name == NimBusInstrumentation.PublisherActivitySourceName);
         var processSpan = activities.Single(a => a.Source.Name == NimBusInstrumentation.ConsumerActivitySourceName);
@@ -84,10 +86,11 @@ public abstract class InstrumentationConformanceTests
             $"Publish span must carry messaging.system={MessagingSystem}.");
         AssertCommonMessagingAttributes(publishSpan, "publish");
 
-        // Consumer leg: messaging.system is currently NOT set on the process span
-        // (FR-020 gap — MetricsMiddleware has no transport identity injected).
-        // Tracked as a 4.2 follow-up; for now the conformance harness asserts the
-        // attributes we DO emit.
+        // Consumer leg: NimBusConsumerInstrumentation now stamps messaging.system
+        // from the caller-supplied value. Assert both legs.
+        var processTags = processSpan.TagObjects.ToDictionary(t => t.Key, t => t.Value?.ToString());
+        Assert.AreEqual(MessagingSystem, processTags[MessagingAttributes.System],
+            $"Process span must carry messaging.system={MessagingSystem}.");
         AssertCommonMessagingAttributes(processSpan, "process");
     }
 

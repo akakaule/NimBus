@@ -680,8 +680,24 @@ public class EndpointImplementation : IEndpointApiController
 
     private async Task SetSubscriptionStatusMetadata(EndpointMetadata metadata)
     {
-        var endpointManagement = new EndpointManagement(serviceBusManagement);
-        var subscriptionState = await endpointManagement.GetEndpointSubscriptionState(metadata.EndpointId);
+        // Querying the Service Bus admin REST endpoint can fail in two known
+        // scenarios: (1) running against the emulator, whose admin REST port
+        // (5300) isn't reachable through the standard connection string the
+        // SDK uses, and (2) transient real-Azure outages during page loads.
+        // Either way, a single subscription-status probe failing should not
+        // 500 the entire endpoints list — leave SubscriptionStatus null
+        // ("unknown") and let the page still render.
+        SubscriptionState? subscriptionState = null;
+        try
+        {
+            var endpointManagement = new EndpointManagement(serviceBusManagement);
+            subscriptionState = await endpointManagement.GetEndpointSubscriptionState(metadata.EndpointId);
+        }
+        catch (Exception)
+        {
+            // Swallow — SubscriptionStatus stays null, surfaced in UI as "unknown".
+        }
+
         metadata.SubscriptionStatus = subscriptionState switch
         {
             SubscriptionState.Active => true,

@@ -130,7 +130,6 @@ builder.AddAzureServiceBusClient("servicebus");
 builder.Services.AddNimBus(nimbus =>
 {
     nimbus.AddPipelineBehavior<LoggingMiddleware>();
-    nimbus.AddPipelineBehavior<MetricsMiddleware>();
     nimbus.AddPipelineBehavior<ValidationMiddleware>();
 });
 
@@ -153,18 +152,17 @@ host.Run();
 
 ## 4. Add Middleware (Optional)
 
-NimBus includes three built-in middleware behaviors. Register them via `AddNimBus()` before `AddNimBusSubscriber()`:
+NimBus includes two built-in middleware behaviors. Register them via `AddNimBus()` before `AddNimBusSubscriber()`:
 
 ```csharp
 builder.Services.AddNimBus(nimbus =>
 {
     nimbus.AddPipelineBehavior<LoggingMiddleware>();     // Logs timing + metadata
-    nimbus.AddPipelineBehavior<MetricsMiddleware>();     // OpenTelemetry counters
     nimbus.AddPipelineBehavior<ValidationMiddleware>();  // Dead-letters invalid messages
 });
 ```
 
-See [Pipeline Middleware](pipeline-middleware.md) for writing custom middleware.
+Consumer-side OpenTelemetry counters and the `NimBus.Process` span are emitted by the transport adapter automatically — no behavior to register. See [Pipeline Middleware](pipeline-middleware.md) for the contract and for writing custom middleware.
 
 ## 5. Configure Retry Policies (Optional)
 

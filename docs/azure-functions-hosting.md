@@ -102,7 +102,6 @@ builder.Services
 builder.Services.AddNimBus(nimbus =>
 {
     nimbus.AddPipelineBehavior<LoggingMiddleware>();
-    nimbus.AddPipelineBehavior<MetricsMiddleware>();
     nimbus.AddPipelineBehavior<ValidationMiddleware>();
 });
 

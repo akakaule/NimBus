@@ -64,7 +64,7 @@ export default function FlowTimeline({ messages, audits }: FlowTimelineProps) {
         timestamp: typeof ts.toDate === "function" ? ts.toDate() : new Date(ts as any),
         type: "message",
         messageType: msg.messageType,
-        from: msg.originatingFrom ?? msg.from,
+        from: msg.originatingFrom || msg.from,
         to: msg.to,
         errorText: msg.errorContent?.errorText,
         exceptionStackTrace: msg.errorContent?.exceptionStackTrace,

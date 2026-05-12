@@ -20,6 +20,18 @@ public sealed class ServiceBusTopologyProvisioner
         _platformFactory = platformFactory ?? throw new ArgumentNullException(nameof(platformFactory));
     }
 
+    // The official Azure Service Bus emulator advertises itself in the
+    // connection string via UseDevelopmentEmulator=true. NimBus's defaults
+    // (5 GB topic size, 14-day deferred-subscription TTL) exceed the
+    // emulator's hard caps (100 MB topics, conservative TTL upper bound),
+    // so when we detect the emulator we drop those down to values the
+    // emulator accepts. Production / real-Azure paths are untouched.
+    private static bool IsEmulator(string? connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString)) return false;
+        return connectionString.IndexOf("UseDevelopmentEmulator=true", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
     internal ServiceBusTopologyProvisioner(AzureCliRunner az)
         : this(
             az,
@@ -49,7 +61,7 @@ public sealed class ServiceBusTopologyProvisioner
         var platform = _platformFactory();
         var client = _clientFactory(_connectionString);
 
-        await ApplyCoreAsync(client, platform, cancellationToken).ConfigureAwait(false);
+        await ApplyCoreAsync(client, platform, IsEmulator(_connectionString), cancellationToken).ConfigureAwait(false);
     }
 
     internal async Task ApplyAsync(TopologyOptions options, CancellationToken cancellationToken)
@@ -62,23 +74,23 @@ public sealed class ServiceBusTopologyProvisioner
         var platform = _platformFactory();
         var client = _clientFactory(connectionString);
 
-        await ApplyCoreAsync(client, platform, cancellationToken).ConfigureAwait(false);
+        await ApplyCoreAsync(client, platform, IsEmulator(connectionString), cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task ApplyCoreAsync(ServiceBusAdministrationClient client, IPlatform platform, CancellationToken cancellationToken)
+    private static async Task ApplyCoreAsync(ServiceBusAdministrationClient client, IPlatform platform, bool isEmulator, CancellationToken cancellationToken)
     {
-        await EnsureTopicAsync(client, Constants.ResolverId, cancellationToken).ConfigureAwait(false);
+        await EnsureTopicAsync(client, Constants.ResolverId, isEmulator, cancellationToken).ConfigureAwait(false);
 
         foreach (var endpoint in platform.Endpoints.OrderBy(endpoint => endpoint.Id, StringComparer.Ordinal))
         {
-            await EnsureTopicAsync(client, endpoint.Id, cancellationToken).ConfigureAwait(false);
+            await EnsureTopicAsync(client, endpoint.Id, isEmulator, cancellationToken).ConfigureAwait(false);
         }
 
         await EnsureSessionSubscriptionAsync(client, Constants.ResolverId, Constants.ResolverId, forwardTo: null, keepDefaultRule: true, cancellationToken).ConfigureAwait(false);
 
         foreach (var endpoint in platform.Endpoints.OrderBy(endpoint => endpoint.Id, StringComparer.Ordinal))
         {
-            await EnsureEndpointTopologyAsync(client, platform, endpoint, cancellationToken).ConfigureAwait(false);
+            await EnsureEndpointTopologyAsync(client, platform, endpoint, isEmulator, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -86,6 +98,7 @@ public sealed class ServiceBusTopologyProvisioner
         ServiceBusAdministrationClient client,
         IPlatform platform,
         IEndpoint endpoint,
+        bool isEmulator,
         CancellationToken cancellationToken)
     {
         await EnsureSessionSubscriptionAsync(client, endpoint.Id, endpoint.Id, forwardTo: null, keepDefaultRule: false, cancellationToken).ConfigureAwait(false);
@@ -98,7 +111,7 @@ public sealed class ServiceBusTopologyProvisioner
         await EnsureRuleAsync(client, endpoint.Id, endpoint.Id, "continuation", $"user.To = '{Constants.ContinuationId}'", $"SET user.To = '{endpoint.Id}'; SET user.From = '{Constants.ContinuationId}'", cancellationToken).ConfigureAwait(false);
         await EnsureRuleAsync(client, endpoint.Id, endpoint.Id, "retry", $"user.To = '{Constants.RetryId}'", $"SET user.To = '{endpoint.Id}'; SET user.From = '{Constants.RetryId}'", cancellationToken).ConfigureAwait(false);
 
-        await EnsureDeferredSubscriptionAsync(client, endpoint.Id, cancellationToken).ConfigureAwait(false);
+        await EnsureDeferredSubscriptionAsync(client, endpoint.Id, isEmulator, cancellationToken).ConfigureAwait(false);
         await EnsureDeferredProcessorSubscriptionAsync(client, endpoint.Id, cancellationToken).ConfigureAwait(false);
 
         foreach (var eventType in endpoint.EventTypesProduced.OrderBy(eventType => eventType.Id, StringComparer.Ordinal))
@@ -154,7 +167,7 @@ public sealed class ServiceBusTopologyProvisioner
             $"Failed to read the Service Bus connection string for '{names.ServiceBusNamespace}'.").ConfigureAwait(false);
     }
 
-    private static async Task EnsureTopicAsync(ServiceBusAdministrationClient client, string topicName, CancellationToken cancellationToken)
+    private static async Task EnsureTopicAsync(ServiceBusAdministrationClient client, string topicName, bool isEmulator, CancellationToken cancellationToken)
     {
         if (await client.TopicExistsAsync(topicName, cancellationToken).ConfigureAwait(false))
         {
@@ -166,8 +179,16 @@ public sealed class ServiceBusTopologyProvisioner
             SupportOrdering = true,
             DuplicateDetectionHistoryTimeWindow = TimeSpan.FromMinutes(10),
             EnableBatchedOperations = true,
-            MaxSizeInMegabytes = 5120,
         };
+
+        // Real Azure namespaces accept up to 5 GB per topic; the emulator caps
+        // at 100 MB and rejects anything larger. Setting the cap explicitly on
+        // production matches the historical default; omitting it on the emulator
+        // lets the server pick its own (100 MB) ceiling without a 400 response.
+        if (!isEmulator)
+        {
+            options.MaxSizeInMegabytes = 5120;
+        }
 
         await client.CreateTopicAsync(options, cancellationToken).ConfigureAwait(false);
         CliOutput.WriteLine($"Created topic '{topicName}'.");
@@ -255,7 +276,7 @@ public sealed class ServiceBusTopologyProvisioner
         return lastSlash < 0 ? path : path.Substring(lastSlash + 1);
     }
 
-    private static async Task EnsureDeferredSubscriptionAsync(ServiceBusAdministrationClient client, string topicName, CancellationToken cancellationToken)
+    private static async Task EnsureDeferredSubscriptionAsync(ServiceBusAdministrationClient client, string topicName, bool isEmulator, CancellationToken cancellationToken)
     {
         const string subscriptionName = "Deferred";
         var existing = await TryGetSubscriptionAsync(client, topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
@@ -269,7 +290,12 @@ public sealed class ServiceBusTopologyProvisioner
             }
 
             var options = CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: true, forwardTo: null);
-            options.DefaultMessageTimeToLive = TimeSpan.FromDays(14);
+            // 14 days matches what real Azure accepts and what operator workflows
+            // assume for parking deferred messages. The emulator's documented TTL
+            // upper bound is conservative and not pinned in the public docs, so
+            // for emulator runs we drop to 1 hour — long enough for sample/CI
+            // smoke runs, well inside any plausible upper limit.
+            options.DefaultMessageTimeToLive = isEmulator ? TimeSpan.FromHours(1) : TimeSpan.FromDays(14);
             await client.CreateSubscriptionAsync(options, cancellationToken).ConfigureAwait(false);
             CliOutput.WriteLine($"Ensured deferred subscription '{subscriptionName}' on topic '{topicName}'.");
         }

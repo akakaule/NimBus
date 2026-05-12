@@ -1,4 +1,5 @@
-﻿using NimBus.Core.Messages;
+﻿using NimBus.Core.Diagnostics;
+using NimBus.Core.Messages;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -73,9 +74,14 @@ namespace NimBus.ServiceBus
                     message.ExpectedBy.Value.ToUniversalTime().ToString("o", System.Globalization.CultureInfo.InvariantCulture);
             }
 
-            var diagnosticId = message.DiagnosticId ?? Activity.Current?.Id;
-            if (!string.IsNullOrEmpty(diagnosticId))
-                result.ApplicationProperties[NimBusDiagnostics.DiagnosticIdProperty] = diagnosticId;
+            // W3C trace propagation: traceparent (and optional tracestate) is the
+            // canonical format on every transport (FR-030). Legacy Diagnostic-Id is
+            // not written or read by NimBus.
+            var (traceParent, traceState) = W3CMessagePropagator.CaptureCurrent();
+            if (!string.IsNullOrEmpty(traceParent))
+                result.ApplicationProperties[W3CMessagePropagator.TraceParentHeader] = traceParent;
+            if (!string.IsNullOrEmpty(traceState))
+                result.ApplicationProperties[W3CMessagePropagator.TraceStateHeader] = traceState;
 
             result.ScheduledEnqueueTime = DateTime.UtcNow.AddMinutes(messageEnqueueDelay);
             var messageContentSerialized = JsonConvert.SerializeObject(message.MessageContent);
@@ -113,9 +119,11 @@ namespace NimBus.ServiceBus
             result.ApplicationProperties[UserPropertyName.OriginalSessionId.ToString()] = originalSessionId;
             result.ApplicationProperties[UserPropertyName.DeferralSequence.ToString()] = deferralSequence;
 
-            var diagnosticId = message.DiagnosticId ?? Activity.Current?.Id;
-            if (!string.IsNullOrEmpty(diagnosticId))
-                result.ApplicationProperties[NimBusDiagnostics.DiagnosticIdProperty] = diagnosticId;
+            var (traceParent, traceState) = W3CMessagePropagator.CaptureCurrent();
+            if (!string.IsNullOrEmpty(traceParent))
+                result.ApplicationProperties[W3CMessagePropagator.TraceParentHeader] = traceParent;
+            if (!string.IsNullOrEmpty(traceState))
+                result.ApplicationProperties[W3CMessagePropagator.TraceStateHeader] = traceState;
 
             var messageContentSerialized = JsonConvert.SerializeObject(message.MessageContent);
             result.Body = new BinaryData(Encoding.UTF8.GetBytes(messageContentSerialized));

@@ -1,6 +1,8 @@
 ﻿using Azure.Messaging.ServiceBus;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
+using NimBus.OpenTelemetry;
 using NimBus.ServiceBus;
 using Newtonsoft.Json;
 using System;
@@ -15,6 +17,7 @@ namespace NimBus.SDK;
 public class PublisherClient : IPublisherClient
 {
     private readonly ISender _sender;
+    private readonly string _publisherEndpoint;
     private ServiceBusClient _serviceBusClient;
 
     /// <summary>
@@ -22,9 +25,16 @@ public class PublisherClient : IPublisherClient
     /// Preferred for DI registration via <see cref="Extensions.ServiceCollectionExtensions.AddNimBusPublisher(Microsoft.Extensions.DependencyInjection.IServiceCollection, string)"/>.
     /// </summary>
     /// <param name="sender">The sender to use for publishing messages.</param>
-    public PublisherClient(ISender sender)
+    /// <param name="publisherEndpoint">
+    /// The publisher's own endpoint name (the value passed to <c>AddNimBusPublisher</c>).
+    /// Stamped onto every outgoing message as <c>OriginatingFrom</c> so audit rows
+    /// carry the publishing endpoint identity through the Resolver. When null, the
+    /// wire default <c>"self"</c> applies.
+    /// </param>
+    public PublisherClient(ISender sender, string publisherEndpoint = null)
     {
         _sender = sender ?? throw new ArgumentNullException(nameof(sender));
+        _publisherEndpoint = publisherEndpoint;
     }
 
     /// <summary>
@@ -42,10 +52,15 @@ public class PublisherClient : IPublisherClient
         if (client == null) throw new ArgumentNullException(nameof(client));
         if (string.IsNullOrEmpty(endpoint)) throw new ArgumentException("Endpoint cannot be null or empty.", nameof(endpoint));
 
+        // Wrap with the publisher instrumentation decorator so callers using
+        // the manual factory get the same NimBus.Publish span / metric surface
+        // as the DI-registered AddNimBusPublisher path. The endpoint name
+        // doubles as the publisher's identity for OriginatingFrom stamping.
         var serviceBusSender = client.CreateSender(endpoint);
-        var sender = new Sender(serviceBusSender);
+        ISender sender = NimBusOpenTelemetryDecorators.InstrumentSender(
+            new Sender(serviceBusSender), MessagingSystem.ServiceBus);
 
-        return Task.FromResult(new PublisherClient(sender) { _serviceBusClient = client });
+        return Task.FromResult(new PublisherClient(sender, endpoint) { _serviceBusClient = client });
     }
 
     /// <summary>
@@ -57,8 +72,12 @@ public class PublisherClient : IPublisherClient
         if (client == null) throw new ArgumentNullException(nameof(client));
         if (string.IsNullOrEmpty(endpoint)) throw new ArgumentException("Endpoint cannot be null or empty.", nameof(endpoint));
 
+        // Same instrumentation wrapping as CreateAsync above — the obsolete
+        // ctor stays a backward-compat bridge but MUST emit the same telemetry.
         var serviceBusSender = client.CreateSender(endpoint);
-        _sender = new Sender(serviceBusSender);
+        _sender = NimBusOpenTelemetryDecorators.InstrumentSender(
+            new Sender(serviceBusSender), MessagingSystem.ServiceBus);
+        _publisherEndpoint = endpoint;
         _serviceBusClient = client;
     }
 
@@ -78,25 +97,12 @@ public class PublisherClient : IPublisherClient
 
     public async Task Publish(IEvent @event, string sessionId, string correlationId, string messageId)
     {
-        var eventType = @event.GetEventType().Id;
-        using var activity = NimBusDiagnostics.Source.StartActivity("NimBus.Publish", ActivityKind.Producer);
-        activity?.SetTag("messaging.system", "servicebus");
-        activity?.SetTag("messaging.destination", eventType);
-        activity?.SetTag("messaging.event_type", eventType);
-
+        // The publisher span is emitted by the InstrumentingSenderDecorator that
+        // wraps ISender (registered via AddNimBusInstrumentation). PublisherClient
+        // no longer opens its own activity — the decorator's span carries the
+        // canonical messaging.* attributes and parents to Activity.Current.
         var message = GetMessage(@event, correlationId, messageId, sessionId);
-        activity?.SetTag("messaging.message_id", message.MessageId);
-        activity?.SetTag("messaging.session_id", message.SessionId);
-
-        try
-        {
-            await _sender.Send(message);
-        }
-        catch (Exception ex)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            throw;
-        }
+        await _sender.Send(message);
     }
 
     /// <summary>
@@ -108,26 +114,14 @@ public class PublisherClient : IPublisherClient
     /// <returns></returns>
     public async Task PublishBatch(IEnumerable<IEvent> events, string correlationId = null)
     {
-        using var activity = NimBusDiagnostics.Source.StartActivity("NimBus.PublishBatch", ActivityKind.Producer);
-        activity?.SetTag("messaging.system", "servicebus");
-
+        // Span emission happens in InstrumentingSenderDecorator (see Publish above).
         if (correlationId == null)
         {
             correlationId = Guid.NewGuid().ToString();
         }
 
         var messages = events.Select(@event => GetMessage(@event, correlationId)).ToList();
-        activity?.SetTag("messaging.batch.message_count", messages.Count);
-
-        try
-        {
-            await _sender.Send(messages);
-        }
-        catch (Exception ex)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            throw;
-        }
+        await _sender.Send(messages);
     }
 
     /// <summary>
@@ -248,7 +242,10 @@ public class PublisherClient : IPublisherClient
 
     private IMessage GetMessage(IEvent @event, string correlationId = null, string messageId = null, string sessionId = null)
     {
-        return GetMessageStatic(@event, correlationId, messageId, sessionId);
+        var message = (Message)GetMessageStatic(@event, correlationId, messageId, sessionId);
+        if (!string.IsNullOrEmpty(_publisherEndpoint))
+            message.OriginatingFrom = _publisherEndpoint;
+        return message;
     }
 
     private static IMessage GetMessageStatic(IEvent @event, string correlationId = null, string messageId = null, string sessionId = null)
@@ -278,7 +275,9 @@ public class PublisherClient : IPublisherClient
                 }
             }
         };
-        message.DiagnosticId = Activity.Current?.Id;
+        // Trace context is captured by MessageHelper.ToServiceBusMessage at send
+        // time via W3CMessagePropagator (traceparent / tracestate). The legacy
+        // IMessage.DiagnosticId property is no longer populated or read.
         return message;
     }
 

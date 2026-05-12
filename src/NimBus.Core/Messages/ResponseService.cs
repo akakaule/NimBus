@@ -1,6 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using NimBus.Core.Diagnostics;
 
 namespace NimBus.Core.Messages
 {
@@ -182,7 +185,42 @@ namespace NimBus.Core.Messages
                 OriginalSessionId = messageContext.SessionId,   // Kept for backward compatibility
                 DeferralSequence = deferralSequence,
             };
-            await _sender.Send(deferredMessage, cancellationToken: cancellationToken);
+
+            var endpoint = messageContext.To;
+            using var activity = NimBusActivitySources.DeferredProcessor.StartActivity(
+                "NimBus.DeferredProcessor.Park", ActivityKind.Internal);
+            if (activity is not null)
+            {
+                if (!string.IsNullOrEmpty(endpoint))
+                    activity.SetTag(MessagingAttributes.NimBusEndpoint, endpoint);
+                if (!string.IsNullOrEmpty(messageContext.SessionId))
+                    activity.SetTag(MessagingAttributes.NimBusSessionKey, messageContext.SessionId);
+                if (!string.IsNullOrEmpty(messageContext.EventTypeId))
+                    activity.SetTag(MessagingAttributes.NimBusEventType, messageContext.EventTypeId);
+            }
+
+            try
+            {
+                await _sender.Send(deferredMessage, cancellationToken: cancellationToken);
+                activity?.SetStatus(ActivityStatusCode.Ok);
+                NimBusMeters.DeferredParked.Add(1, BuildEndpointTag(endpoint));
+            }
+            catch (Exception ex)
+            {
+                if (activity is not null)
+                {
+                    activity.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    activity.SetTag(MessagingAttributes.ErrorType, ex.GetType().FullName);
+                }
+                throw;
+            }
+        }
+
+        private static KeyValuePair<string, object?>[] BuildEndpointTag(string? endpoint)
+        {
+            if (string.IsNullOrEmpty(endpoint))
+                return Array.Empty<KeyValuePair<string, object?>>();
+            return new[] { new KeyValuePair<string, object?>(MessagingAttributes.NimBusEndpoint, endpoint) };
         }
 
         public async Task SendProcessDeferredRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)

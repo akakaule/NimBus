@@ -1,6 +1,8 @@
 using Azure.Messaging.ServiceBus;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
+using NimBus.OpenTelemetry;
 using NimBus.SDK.EventHandlers;
 using NimBus.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
@@ -46,8 +48,14 @@ namespace NimBus.SDK
             if (client == null) throw new ArgumentNullException(nameof(client));
             if (string.IsNullOrEmpty(endpoint)) throw new ArgumentException("Endpoint cannot be null or empty.", nameof(endpoint));
 
+            // Wrap with the publisher instrumentation decorator so responses
+            // sent by ResponseService (ResolutionResponse, ErrorResponse, etc.)
+            // emit NimBus.Publish spans and the publisher metric surface.
+            // Without this wrapper the response leg of every consumer would
+            // be invisible to OTel even when the consumer span is open.
             var serviceBusSender = client.CreateSender(endpoint);
-            var sender = new Sender(serviceBusSender);
+            ISender sender = NimBusOpenTelemetryDecorators.InstrumentSender(
+                new Sender(serviceBusSender), MessagingSystem.ServiceBus);
             var responseService = new ResponseService(sender);
             var eventHandlerProvider = new EventHandlerProvider();
 
@@ -71,9 +79,12 @@ namespace NimBus.SDK
             if (client == null) throw new ArgumentNullException(nameof(client));
             if (string.IsNullOrEmpty(endpoint)) throw new ArgumentException("Endpoint cannot be null or empty.", nameof(endpoint));
 
+            // Same instrumentation wrapping as CreateAsync above — the obsolete
+            // ctor stays a backward-compat bridge but MUST emit the same telemetry.
             var serviceBusSender = client.CreateSender(endpoint);
 
-            ISender sender = new Sender(serviceBusSender);
+            ISender sender = NimBusOpenTelemetryDecorators.InstrumentSender(
+                new Sender(serviceBusSender), MessagingSystem.ServiceBus);
             IResponseService responseService = new ResponseService(sender);
 
             _eventHandlerProvider = new EventHandlerProvider();

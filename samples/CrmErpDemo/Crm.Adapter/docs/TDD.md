@@ -43,7 +43,7 @@ Bridge between the CRM SQL database (written by `Crm.Api`) and the NimBus messag
 ### 1.3 Responsibilities  <!-- [AUTO] — derived from `Program.cs` and `Handlers/*` -->
 
 1. **Outbox dispatch.** Run `OutboxDispatcherHostedService` (registered via `AddNimBusOutboxDispatcher(TimeSpan.FromSeconds(1))`) that polls the `OutboxMessages` table in the `crm` SQL database and forwards rows to `OutboxDispatcherSender`, which wraps a `ServiceBusSender` for the `CrmEndpoint` topic.
-2. **Subscribe to `CrmEndpoint`.** Run `NimBusReceiverHostedService` (registered via `AddNimBusReceiver`) bound to topic/subscription `CrmEndpoint` / `CrmEndpoint`. Dispatch inbound messages through the NimBus pipeline (`LoggingMiddleware`, `MetricsMiddleware`, `ValidationMiddleware`) into registered `IEventHandler<T>` implementations.
+2. **Subscribe to `CrmEndpoint`.** Run `NimBusReceiverHostedService` (registered via `AddNimBusReceiver`) bound to topic/subscription `CrmEndpoint` / `CrmEndpoint`. Dispatch inbound messages through the NimBus pipeline (`LoggingMiddleware`, `ValidationMiddleware`) into registered `IEventHandler<T>` implementations. Consumer-side telemetry (`NimBus.Process` span + processed/duration counters) is emitted by `ServiceBusAdapter` automatically — no pipeline behavior to register.
 3. **Apply inbound events.** Use `HttpClient`-typed `ICrmApiClient` to call back into `Crm.Api`:
    - `ErpCustomerCreated` (from ERP) → `ErpCustomerCreatedHandler`. If `Origin=Crm`: `POST /api/accounts/{id}/link-erp`. If `Origin=Erp`: `PUT /api/accounts/external/{erpCustomerId}`.
    - `ErpContactCreated` (from ERP) → `ErpContactCreatedHandler` → `PUT /api/contacts/upsert/{contactId}`.
@@ -269,7 +269,7 @@ public sealed class ErpCustomerCreatedHandler(
         // ERP-originated customer — upsert into CRM.
         await crm.UpsertFromErpAsync(
             message.ErpCustomerId,
-            new AccountUpsertPayload(message.LegalName, message.TaxId, message.CountryCode, message.CustomerNumber),
+            new AccountUpsertPayload(null, message.LegalName, message.TaxId, message.CountryCode, message.CustomerNumber),
             cancellationToken);
     }
 }
@@ -320,14 +320,55 @@ The Crm.Adapter does not own outbound mapping (that lives in `Crm.Api/Mapping/Ac
 Registered (in order) via `services.AddNimBus(n => ...)` in `Program.cs`:
 
 1. `LoggingMiddleware`
-2. `MetricsMiddleware`
-3. `ValidationMiddleware`
+2. `ValidationMiddleware`
+
+Consumer span + counters (`nimbus.message.received`, `processed`, `process.duration`) are owned by `ServiceBusAdapter` via `NimBusConsumerInstrumentation` — not a pipeline behavior.
 
 Behaviours run in registration order on inbound dispatch. `ValidationMiddleware` calls `IEvent.Validate()` — events with `[Required]` / `[EmailAddress]` annotations get checked here. Validation failures surface as permanent.
 
 ### 4.8 Logging context  <!-- [AUTO] -->
 
 All log records emitted via `Microsoft.Extensions.Logging` (per ADR-006). `LoggingMiddleware` enriches with `MessageId`, `SessionId`, `EventType`, `HandlerName`, `CorrelationId`. Aspire OTLP exporters route to the dashboard locally and to App Insights when wired.
+
+### 4.9 Bidirectional id linkage  <!-- [HUMAN] -->
+
+CRM accounts and ERP customers each carry a back-fill column for their counterparty's id (`Account.ErpCustomerId`, `Customer.CrmAccountId`). The columns are nullable: an ERP-originated customer has no `CrmAccountId` until the CRM round-trip lands, and a CRM-originated account has no `ErpCustomerId` until ERP's ack arrives. Both `*Updated` events carry the counterparty id so the receiver can locate the right row regardless of which back-fill has been written yet.
+
+#### Contract
+
+| Event | Counterparty id field | When `null` |
+|---|---|---|
+| `CrmAccountUpdated.ErpCustomerId` | ERP customer id when the CRM account is linked. | CRM-only accounts that have never been mirrored to ERP. |
+| `ErpCustomerUpdated.CrmAccountId` | CRM account id when the ERP customer is linked. | ERP-originated customers that have not yet been mirrored back to CRM. |
+
+`*Created` events deliberately omit the counterparty id — at create time the partner row does not exist yet, so the field would always be null. Linkage is established by the *first* `*Updated` round-trip, after which every subsequent update carries both ids.
+
+#### Upsert endpoint lookup order
+
+Both API upsert endpoints follow the same two-step lookup so the inbound handler doesn't have to know which back-fill column has been written:
+
+- `Crm.Api/Endpoints/AccountEndpoints.cs:109+` (`PUT /api/accounts/external/{externalId}`)
+  1. `Accounts` row where `ErpCustomerId == externalId`?
+  2. Otherwise, when the request body's `CrmAccountId` is non-empty, `Accounts.FindAsync(crmAccountId)`.
+  3. Otherwise, insert a new row.
+- `Erp.Api/Endpoints/CustomerEndpoints.cs:45+` (`PUT /api/customers/by-crm/{crmAccountId}`)
+  1. `Customers` row where `CrmAccountId == crmAccountId`?
+  2. Otherwise, when the request body's `ErpCustomerId` is non-empty, `Customers.FindAsync(erpCustomerId)`.
+  3. Otherwise, insert a new row.
+
+Either branch sets both ids on the resolved row before returning, so the next `*Updated` cycle sees the link populated regardless of which side learned first.
+
+#### Why this matters
+
+Without the counterparty id on `*Updated`, a second-hop update that arrived *before* the first-hop back-fill committed would create a duplicate row instead of updating the existing one. The fallback makes the upsert robust to:
+
+- **Out-of-order arrival.** `ErpCustomerUpdated` reaching the CRM adapter before the `CrmAccountUpdated` that filled in `Account.ErpCustomerId`.
+- **Lost back-fill writes.** A crash between writing the partner row and writing the back-fill column on the local row.
+- **Replay / dead-letter resubmit.** A long-delayed redelivery whose lookup-by-natural-id no longer matches because the natural id was rewritten in between.
+
+#### What it doesn't fix
+
+The mirror-id fallback only helps when *either* id resolves to an existing row. The first `*Updated` after a fresh `*Created` still depends on the create-side handler having committed the partner row. The `*Created` round-trip (`ErpCustomerCreated` Origin=Crm → `LinkErpAsync`) remains the source of truth for the initial link.
 
 ---
 
@@ -566,7 +607,7 @@ Design-level risks that affect how the adapter behaves under load, drift, or ope
 
 | Metric | Source | Alert threshold |
 |---|---|---|
-| Handler duration p95 | App Insights custom metric (via `MetricsMiddleware`) | {TBD} |
+| Handler duration p95 | App Insights / OTel histogram `nimbus.message.process.duration` (via `NimBusConsumerInstrumentation` in `ServiceBusAdapter`) | {TBD} |
 | Outbox pending count | `SqlServerOutbox` (queryable) | {TBD} |
 | Service Bus dead-letter count | Azure Monitor on `CrmEndpoint` | > 0 |
 | Resolver unresolved count | `nimbus-ops` Resolver dashboard | {TBD} |

@@ -2,7 +2,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
+using NimBus.OpenTelemetry;
 using NimBus.SDK;
 using NimBus.SDK.EventHandlers;
 using NimBus.SDK.Extensions;
@@ -16,14 +18,16 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         Action<NimBusSubscriberBuilder> configureBuilder)
     {
+        services.AddNimBusInstrumentation();
+
         var bus = new InMemoryMessageBus();
         services.AddSingleton(bus);
-        services.AddSingleton<ISender>(bus);
+        // Wrap with the instrumenting decorator so the in-memory transport emits
+        // the same publisher span as the production transports — required for the
+        // cross-transport instrumentation conformance category.
+        services.AddSingleton<ISender>(NimBusOpenTelemetryDecorators.InstrumentSender(bus, MessagingSystem.InMemory));
 
-        services.TryAddSingleton<IPublisherClient>(sp =>
-        {
-            return new PublisherClient(bus);
-        });
+        services.TryAddSingleton<IPublisherClient>(sp => new PublisherClient(sp.GetRequiredService<ISender>()));
 
         var builder = new NimBusSubscriberBuilder(services);
         configureBuilder(builder);

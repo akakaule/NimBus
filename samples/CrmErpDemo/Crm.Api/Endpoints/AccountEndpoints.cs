@@ -109,11 +109,17 @@ public static class AccountEndpoints
         group.MapPut("/external/{externalId:guid}", async (Guid externalId, AccountUpsertRequest req, CrmDbContext db, IPublisherClient publisher) =>
         {
             var existing = await db.Accounts.FirstOrDefaultAsync(a => a.ErpCustomerId == externalId);
+            var requestedCrmAccountId = req.CrmAccountId.GetValueOrDefault();
+            if (existing is null && requestedCrmAccountId != Guid.Empty)
+                existing = await db.Accounts.FindAsync(requestedCrmAccountId);
+
             if (existing is null)
             {
                 existing = new Account
                 {
-                    Id = Guid.NewGuid(),
+                    Id = requestedCrmAccountId != Guid.Empty
+                        ? requestedCrmAccountId
+                        : Guid.NewGuid(),
                     LegalName = req.LegalName,
                     TaxId = req.TaxId,
                     CountryCode = req.CountryCode,
@@ -129,6 +135,7 @@ public static class AccountEndpoints
                 existing.LegalName = req.LegalName;
                 existing.TaxId = req.TaxId;
                 existing.CountryCode = req.CountryCode;
+                existing.ErpCustomerId = externalId;
                 existing.ErpCustomerNumber = req.CustomerNumber;
                 existing.UpdatedAt = DateTimeOffset.UtcNow;
             }
@@ -139,4 +146,4 @@ public static class AccountEndpoints
 }
 
 public record LinkErpRequest(Guid ErpCustomerId, string CustomerNumber);
-public record AccountUpsertRequest(string LegalName, string? TaxId, string CountryCode, string? CustomerNumber);
+public record AccountUpsertRequest(Guid? CrmAccountId, string LegalName, string? TaxId, string CountryCode, string? CustomerNumber);

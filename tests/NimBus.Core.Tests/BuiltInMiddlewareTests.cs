@@ -147,50 +147,6 @@ public class LoggingMiddlewareTests
     }
 }
 
-// ── MetricsMiddleware Tests ────────────────────────────────────────
-
-[TestClass]
-public class MetricsMiddlewareTests
-{
-    [TestMethod]
-    public async Task Handle_CallsNextAndCompletes()
-    {
-        var middleware = new MetricsMiddleware();
-        var context = new TestMessageContext();
-        var called = false;
-
-        await middleware.Handle(context, (ctx, ct) => { called = true; return Task.CompletedTask; });
-
-        Assert.IsTrue(called);
-    }
-
-    [TestMethod]
-    public async Task Handle_RethrowsOnFailure()
-    {
-        var middleware = new MetricsMiddleware();
-        var context = new TestMessageContext();
-
-        var ex = await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
-            middleware.Handle(context, (ctx, ct) => throw new InvalidOperationException("metric fail")));
-
-        Assert.AreEqual("metric fail", ex.Message);
-    }
-
-    [TestMethod]
-    public async Task Handle_MultipleMessages_DoesNotThrow()
-    {
-        var middleware = new MetricsMiddleware();
-
-        for (int i = 0; i < 10; i++)
-        {
-            var context = new TestMessageContext { EventId = $"evt-{i}" };
-            await middleware.Handle(context, (ctx, ct) => Task.CompletedTask);
-        }
-
-        // No assertion needed — verifies no internal state corruption across calls
-    }
-}
-
 // ── ValidationMiddleware Tests ─────────────────────────────────────
 
 [TestClass]
@@ -322,7 +278,6 @@ public class PipelineWiringTests
         {
             builder.AddInMemoryMessageStore();
             builder.AddPipelineBehavior<LoggingMiddleware>();
-            builder.AddPipelineBehavior<MetricsMiddleware>();
             builder.AddPipelineBehavior<ValidationMiddleware>();
         });
 

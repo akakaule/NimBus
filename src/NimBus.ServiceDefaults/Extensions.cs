@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
+using NimBus.OpenTelemetry;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -41,13 +42,14 @@ public static class ServiceDefaultsExtensions
             logging.IncludeScopes = true;
         });
 
+        builder.Services.AddNimBusInstrumentation();
         builder.Services.AddOpenTelemetry()
             .WithMetrics(metrics =>
             {
                 metrics.AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation()
-                    .AddMeter("NimBus.ServiceBus");
+                    .AddNimBusInstrumentation();
             })
             .WithTracing(tracing =>
             {
@@ -55,7 +57,7 @@ public static class ServiceDefaultsExtensions
                     .AddHttpClientInstrumentation()
                     .AddSource("Azure.Cosmos.Operation")
                     .AddSource("Azure.Messaging.ServiceBus")
-                    .AddSource("NimBus");
+                    .AddNimBusInstrumentation();
             });
 
         AddOpenTelemetryExporters(builder);

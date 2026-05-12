@@ -266,8 +266,9 @@ Call `await next(context, ct)` to continue the pipeline. Skip it to short-circui
 | Middleware | Description |
 |---|---|
 | `LoggingMiddleware` | Logs message processing with timing, event metadata, and outcome |
-| `MetricsMiddleware` | Records `nimbus.pipeline.duration`, `nimbus.pipeline.processed`, `nimbus.pipeline.failed` |
 | `ValidationMiddleware` | Dead-letters messages with missing EventId or EventTypeId |
+
+Consumer-side metrics (`nimbus.message.received`, `nimbus.message.processed`, `nimbus.message.process.duration`) and the `NimBus.Process` span are emitted by `NimBusConsumerInstrumentation` from the transport adapter, not by a pipeline behavior — every subscriber path gets them regardless of pipeline registration.
 
 ### IMessageLifecycleObserver
 

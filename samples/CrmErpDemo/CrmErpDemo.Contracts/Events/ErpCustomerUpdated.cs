@@ -12,6 +12,9 @@ public class ErpCustomerUpdated : Event
     [Description("Session key. CRM account id when the customer is linked to a CRM account; falls back to ErpCustomerId so the field is always populated.")]
     public Guid AccountId { get; set; }
 
+    [Description("CRM account id when the customer is linked to CRM; null only for an unlinked ERP-originated customer.")]
+    public Guid? CrmAccountId { get; set; }
+
     [Required]
     public Guid ErpCustomerId { get; set; }
 

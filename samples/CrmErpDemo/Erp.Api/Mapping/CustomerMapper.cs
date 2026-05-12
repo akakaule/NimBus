@@ -39,6 +39,7 @@ public static class CustomerMapper
     public static ErpCustomerUpdated ToUpdatedEvent(Customer c) => new()
     {
         AccountId = c.CrmAccountId ?? c.Id,
+        CrmAccountId = c.CrmAccountId,
         ErpCustomerId = c.Id,
         CustomerNumber = c.CustomerNumber,
         LegalName = c.LegalName,

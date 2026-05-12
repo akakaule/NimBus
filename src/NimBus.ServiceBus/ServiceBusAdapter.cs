@@ -1,10 +1,9 @@
 using Azure.Messaging.ServiceBus;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using Microsoft.Azure.Functions.Worker;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Diagnostics.Metrics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -20,10 +19,6 @@ namespace NimBus.ServiceBus
 
     public class ServiceBusAdapter : IServiceBusAdapter
     {
-        private static readonly Meter s_meter = new("NimBus.ServiceBus");
-        private static readonly Histogram<double> s_e2eLatency = s_meter.CreateHistogram<double>("nimbus.message.e2e_latency", "ms", "End-to-end message latency");
-        private static readonly Histogram<double> s_queueWait = s_meter.CreateHistogram<double>("nimbus.message.queue_wait", "ms", "Queue wait time before processing");
-
         private readonly IMessageHandler _messageHandler;
         private readonly ServiceBusClient _serviceBusClient;
         private readonly string _entityPath;
@@ -83,30 +78,25 @@ namespace NimBus.ServiceBus
             var eventType = message.ApplicationProperties.TryGetValue("EventTypeId", out var et) ? et?.ToString() ?? "unknown" : "unknown";
             var destination = message.ApplicationProperties.TryGetValue("To", out var to) ? to?.ToString() ?? "unknown" : "unknown";
 
-            // Extract W3C trace context from incoming message
-            ActivityContext parentContext = default;
-            if (message.ApplicationProperties.TryGetValue(NimBusDiagnostics.DiagnosticIdProperty, out var diagnosticId)
-                && diagnosticId is string traceParent)
-            {
-                ActivityContext.TryParse(traceParent, null, out parentContext);
-            }
-
-            using var activity = NimBusDiagnostics.Source.StartActivity(
-                "NimBus.Process",
-                ActivityKind.Consumer,
-                parentContext);
-
-            activity?.SetTag("messaging.system", "servicebus");
-            activity?.SetTag("messaging.destination", destination);
-            activity?.SetTag("messaging.event_type", eventType);
-            activity?.SetTag("messaging.operation", "process");
-            activity?.SetTag("messaging.message_id", message.MessageId);
-            activity?.SetTag("messaging.session_id", message.SessionId);
+            // Extract W3C trace context from inbound message and stash it on the
+            // context. NimBusConsumerInstrumentation reads this and starts the
+            // consumer span with it as the parent.
+            var traceParent = message.ApplicationProperties.TryGetValue(W3CMessagePropagator.TraceParentHeader, out var tp)
+                ? tp?.ToString()
+                : null;
+            var traceState = message.ApplicationProperties.TryGetValue(W3CMessagePropagator.TraceStateHeader, out var ts)
+                ? ts?.ToString()
+                : null;
+            messageContext.ParentTraceContext = W3CMessagePropagator.TryParse(traceParent, traceState);
 
             var queueWaitMs = Math.Max(0, (DateTime.UtcNow - message.EnqueuedTime.UtcDateTime).TotalMilliseconds);
-            s_queueWait.Record(queueWaitMs,
-                new KeyValuePair<string, object>("messaging.event_type", eventType),
-                new KeyValuePair<string, object>("messaging.destination", destination));
+            var transportTags = new System.Diagnostics.TagList
+            {
+                { MessagingAttributes.System, MessagingSystem.ServiceBus },
+                { MessagingAttributes.DestinationName, destination },
+                { MessagingAttributes.NimBusEventType, eventType },
+            };
+            NimBusMeters.QueueWait.Record(queueWaitMs, transportTags);
 
             // Stash on the context so ResponseService can copy it onto the
             // outgoing response message and the Resolver can persist it.
@@ -120,19 +110,21 @@ namespace NimBus.ServiceBus
 
             try
             {
-                await _messageHandler.Handle(messageContext, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                throw;
+                // Consumer span + received/processed counters + duration histogram
+                // are owned at the transport boundary so every subscriber path is
+                // covered, regardless of whether a host has registered a pipeline.
+                // The span lifetime covers any broker-settle calls the handler
+                // makes (FR-012) because the handler runs inside the helper.
+                await NimBusConsumerInstrumentation.RunAsync(
+                    messageContext,
+                    MessagingSystem.ServiceBus,
+                    ct => _messageHandler.Handle(messageContext, ct),
+                    cancellationToken).ConfigureAwait(false);
             }
             finally
             {
                 var e2eMs = Math.Max(0, (DateTime.UtcNow - message.EnqueuedTime.UtcDateTime).TotalMilliseconds);
-                s_e2eLatency.Record(e2eMs,
-                    new KeyValuePair<string, object>("messaging.event_type", eventType),
-                    new KeyValuePair<string, object>("messaging.destination", destination));
+                NimBusMeters.EndToEndLatency.Record(e2eMs, transportTags);
             }
         }
     }

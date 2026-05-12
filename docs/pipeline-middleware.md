@@ -9,12 +9,10 @@ Middleware behaviors implement `IMessagePipelineBehavior` and execute in registr
 ```mermaid
 flowchart TD
     Req[Request enters] --> L1[LoggingMiddleware - before]
-    L1 --> M1[MetricsMiddleware - before]
-    M1 --> V1[ValidationMiddleware - check]
+    L1 --> V1[ValidationMiddleware - check]
     V1 --> H[StrictMessageHandler → EventHandler]
     H --> V2[ValidationMiddleware - done]
-    V2 --> M2[MetricsMiddleware - record duration]
-    M2 --> L2[LoggingMiddleware - log result]
+    V2 --> L2[LoggingMiddleware - log result]
     L2 --> Res[Response exits]
 ```
 
@@ -28,7 +26,6 @@ Register middleware via `AddNimBus()` before `AddNimBusSubscriber()`:
 builder.Services.AddNimBus(nimbus =>
 {
     nimbus.AddPipelineBehavior<LoggingMiddleware>();
-    nimbus.AddPipelineBehavior<MetricsMiddleware>();
     nimbus.AddPipelineBehavior<ValidationMiddleware>();
 });
 
@@ -39,6 +36,8 @@ builder.Services.AddNimBusSubscriber("BillingEndpoint", sub =>
 ```
 
 Behaviors execute in registration order — first registered is outermost (executes first on the way in, last on the way out).
+
+> **Consumer span + metrics are not a pipeline behavior.** The `NimBus.Process` span and the `nimbus.message.received` / `processed` / `process.duration` instruments are owned by the transport adapter (`ServiceBusAdapter` → `NimBusConsumerInstrumentation`). Every subscriber path gets them — including direct `SubscriberClient.CreateAsync` callers and hosts that never registered `AddNimBus(...)` at all — so there is no `MetricsMiddleware` to register. See `src/NimBus.Core/Diagnostics/NimBusConsumerInstrumentation.cs`.
 
 ## Built-in Middleware
 
@@ -60,27 +59,24 @@ fail: Failed EventRequest after 3ms | EventType=OrderPlaced EventId=abc-123
 
 **Source:** `src/NimBus.Core/Pipeline/LoggingMiddleware.cs`
 
-### MetricsMiddleware
+### Consumer instrumentation (not a middleware)
 
-Records message processing metrics via `System.Diagnostics.Metrics`, collected by OpenTelemetry:
+Message processing metrics and the `NimBus.Process` span are emitted by the transport adapter, not by a pipeline behavior. The relevant instruments are on the `NimBus.Consumer` meter:
 
 | Metric | Type | Unit | Tags |
 |--------|------|------|------|
-| `nimbus.pipeline.duration` | Histogram | ms | `messaging.event_type`, `messaging.message_type` |
-| `nimbus.pipeline.processed` | Counter | messages | `messaging.event_type`, `messaging.message_type` |
-| `nimbus.pipeline.failed` | Counter | messages | `messaging.event_type`, `messaging.message_type` |
+| `nimbus.message.received` | Counter | messages | `messaging.system`, `messaging.destination.name`, `nimbus.event_type` |
+| `nimbus.message.processed` | Counter | messages | `messaging.system`, `messaging.destination.name`, `nimbus.event_type`, `nimbus.outcome` |
+| `nimbus.message.process.duration` | Histogram | ms | same as `processed`, with `error.type` on failure |
 
-To collect these metrics, register the meter in OpenTelemetry configuration:
+Wire these via `AddNimBusInstrumentation()` (see `docs/observability.md` — pending) or directly:
 
 ```csharp
 builder.Services.AddOpenTelemetry()
-    .WithMetrics(metrics =>
-    {
-        metrics.AddMeter("NimBus.Pipeline");
-    });
+    .WithMetrics(metrics => metrics.AddMeter("NimBus.Consumer"));
 ```
 
-**Source:** `src/NimBus.Core/Pipeline/MetricsMiddleware.cs`
+**Source:** `src/NimBus.Core/Diagnostics/NimBusConsumerInstrumentation.cs`
 
 ### ValidationMiddleware
 
@@ -276,7 +272,7 @@ Control methods: `Complete()`, `Abandon()`, `DeadLetter()`, `Defer()`, `BlockSes
 | `IMessageLifecycleObserver` | `src/NimBus.Core/Extensions/IMessageLifecycleObserver.cs` |
 | `NimBusBuilder` | `src/NimBus.Core/Extensions/NimBusBuilder.cs` |
 | `LoggingMiddleware` | `src/NimBus.Core/Pipeline/LoggingMiddleware.cs` |
-| `MetricsMiddleware` | `src/NimBus.Core/Pipeline/MetricsMiddleware.cs` |
+| Consumer instrumentation (transport adapter) | `src/NimBus.Core/Diagnostics/NimBusConsumerInstrumentation.cs` |
 | `ValidationMiddleware` | `src/NimBus.Core/Pipeline/ValidationMiddleware.cs` |
 | Pipeline wiring in SDK | `src/NimBus.SDK/Extensions/ServiceCollectionExtensions.cs` |
 
@@ -285,5 +281,5 @@ Control methods: `Complete()`, `Abandon()`, `DeadLetter()`, `Defer()`, `BlockSes
 | Test File | Tests | What's Covered |
 |-----------|-------|---------------|
 | `NimBus.Core.Tests/ExtensionFrameworkTests.cs` | 10 | Pipeline execution order, short-circuit, no-behaviors, lifecycle notifier, NimBusBuilder registration |
-| `NimBus.Core.Tests/BuiltInMiddlewareTests.cs` | 15 | LoggingMiddleware (4), MetricsMiddleware (3), ValidationMiddleware (5), Pipeline wiring (3) |
+| `NimBus.Core.Tests/BuiltInMiddlewareTests.cs` | LoggingMiddleware, ValidationMiddleware, Pipeline wiring |
 | `NimBus.EndToEnd.Tests/PipelineAndLifecycleTests.cs` | 9 | Full pipeline E2E: behavior wrapping, multi-behavior order, short-circuit, lifecycle events, dead-letter, exception swallowing |

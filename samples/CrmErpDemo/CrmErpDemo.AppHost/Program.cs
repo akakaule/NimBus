@@ -16,8 +16,47 @@ if (storageProvider is not ("sqlserver" or "cosmos"))
         $"Unknown StorageProvider '{storageProvider}'. Use 'sqlserver' (default) or 'cosmos'.");
 }
 
-// External resources — Service Bus is the only always-non-local dependency.
-var servicebus = builder.AddConnectionString("servicebus");
+// Service Bus source. Default is a real Azure namespace via AddConnectionString
+// (connection string supplied by the AppHost's user-secrets). Setting
+// `UseEmulator=true` (CLI flag) or `NIMBUS_SB_EMULATOR=true` (env var) instead
+// spins up Microsoft's official emulator container under Aspire — no Azure
+// dependency required for local/CI demos.
+//
+// Emulator mode also pre-declares topology via a generated config.json (see
+// EmulatorTopologyConfigBuilder), because the SDK's ServiceBusAdministrationClient
+// can't reach the emulator's REST admin endpoint over the connection string
+// alone — the emulator exposes admin on container port 5300, which the SDK's
+// connection-string-driven URL synthesis doesn't know about. Pre-declaring
+// the topology at boot makes the runtime provisioner unnecessary in this
+// mode; production keeps using ServiceBusTopologyProvisioner unchanged.
+var useEmulator = string.Equals(
+    builder.Configuration["UseEmulator"]
+        ?? Environment.GetEnvironmentVariable("NIMBUS_SB_EMULATOR")
+        ?? "false",
+    "true",
+    StringComparison.OrdinalIgnoreCase);
+
+IResourceBuilder<IResourceWithConnectionString> servicebus;
+if (useEmulator)
+{
+    var emulatorConfigPath = Path.Combine(
+        AppContext.BaseDirectory,
+        "servicebus-emulator-config.generated.json");
+    File.WriteAllText(
+        emulatorConfigPath,
+        CrmErpDemo.AppHost.EmulatorTopologyConfigBuilder.Build(
+            new CrmErpDemo.Contracts.CrmErpPlatformConfiguration()));
+
+    servicebus = builder
+        .AddAzureServiceBus("servicebus")
+        .RunAsEmulator(emulator => emulator
+            .WithImageTag("2.0.0")
+            .WithConfigurationFile(emulatorConfigPath));
+}
+else
+{
+    servicebus = builder.AddConnectionString("servicebus");
+}
 
 // SQL Server — Aspire spins up a container; CRM and ERP always get their own databases.
 // NimBus's message store also lives on this server when sqlserver is selected.
@@ -45,9 +84,13 @@ builder.AddDbGate("dbgate")
         ctx.EnvironmentVariables["PASSWORD_sql"] = sql.Resource.PasswordParameter;
     });
 
-// Provision topics/subscriptions for CrmEndpoint + ErpEndpoint.
-var provisioner = builder.AddProject<Projects.CrmErpDemo_Provisioner>("provisioner")
-    .WithReference(servicebus);
+// Provision topics/subscriptions for CrmEndpoint + ErpEndpoint at runtime
+// against a real Azure namespace. Skipped in emulator mode — topology is
+// pre-declared via the emulator's UserConfig (see EmulatorTopologyConfigBuilder).
+IResourceBuilder<ProjectResource>? provisioner = useEmulator
+    ? null
+    : builder.AddProject<Projects.CrmErpDemo_Provisioner>("provisioner")
+        .WithReference(servicebus);
 
 // Reused operator surface — the same Resolver + WebApp used in the main NimBus.AppHost.
 //
@@ -58,7 +101,11 @@ var provisioner = builder.AddProject<Projects.CrmErpDemo_Provisioner>("provision
 var resolver = builder.AddAzureFunctionsProject<Projects.NimBus_Resolver>("resolver")
     .WithReference(servicebus)
     .WithEnvironment("ResolverId", "Resolver")
-    .WithEnvironment("AzureWebJobsServiceBus", builder.Configuration["ConnectionStrings:servicebus"]!);
+    // Functions uses AzureWebJobsServiceBus, not ConnectionStrings:servicebus.
+    // Bind from the resource's runtime expression so both AddConnectionString
+    // (string in user-secrets) and RunAsEmulator (string materialised by the
+    // container at start) flow through the same path.
+    .WithEnvironment("AzureWebJobsServiceBus", servicebus.Resource.ConnectionStringExpression);
 
 // Point nimbus-ops at the CRM/ERP platform catalog instead of the default
 // Storefront/Billing/Warehouse one, so Endpoints/EventTypes show Crm & Erp.
@@ -108,15 +155,15 @@ var crmApi = builder.AddProject<Projects.Crm_Api>("crm-api")
     .WithReference(crmDb)
     .WithEndpoint("http", e => e.Port = 5080)
     .WithExternalHttpEndpoints()
-    .WaitFor(crmDb)
-    .WaitFor(provisioner);
+    .WaitFor(crmDb);
+if (provisioner is not null) crmApi = crmApi.WaitFor(provisioner);
 
-builder.AddProject<Projects.Crm_Adapter>("crm-adapter")
+var crmAdapter = builder.AddProject<Projects.Crm_Adapter>("crm-adapter")
     .WithReference(servicebus)
     .WithReference(crmDb)
     .WithReference(crmApi)
-    .WaitFor(crmApi)
-    .WaitFor(provisioner);
+    .WaitFor(crmApi);
+if (provisioner is not null) crmAdapter.WaitFor(provisioner);
 
 builder.AddViteApp("crm-web", "../Crm.Web")
     .WithReference(crmApi)
@@ -129,17 +176,17 @@ var erpApi = builder.AddProject<Projects.Erp_Api>("erp-api")
     .WithReference(erpDb)
     .WithEndpoint("http", e => e.Port = 5090)
     .WithExternalHttpEndpoints()
-    .WaitFor(erpDb)
-    .WaitFor(provisioner);
+    .WaitFor(erpDb);
+if (provisioner is not null) erpApi = erpApi.WaitFor(provisioner);
 
-builder.AddAzureFunctionsProject<Projects.Erp_Adapter_Functions>("erp-adapter")
+var erpAdapter = builder.AddAzureFunctionsProject<Projects.Erp_Adapter_Functions>("erp-adapter")
     .WithReference(servicebus)
     .WithReference(erpApi)
-    .WithEnvironment("AzureWebJobsServiceBus", builder.Configuration["ConnectionStrings:servicebus"]!)
+    .WithEnvironment("AzureWebJobsServiceBus", servicebus.Resource.ConnectionStringExpression)
     .WithEnvironment("TopicName", "ErpEndpoint")
     .WithEnvironment("SubscriptionName", "ErpEndpoint")
-    .WaitFor(erpApi)
-    .WaitFor(provisioner);
+    .WaitFor(erpApi);
+if (provisioner is not null) erpAdapter.WaitFor(provisioner);
 
 builder.AddViteApp("erp-web", "../Erp.Web")
     .WithReference(erpApi)

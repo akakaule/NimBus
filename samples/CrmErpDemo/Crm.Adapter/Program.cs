@@ -42,7 +42,6 @@ builder.Services.AddNimBus(n =>
 {
     n.WithoutStorageProvider();
     n.AddPipelineBehavior<LoggingMiddleware>();
-    n.AddPipelineBehavior<MetricsMiddleware>();
     n.AddPipelineBehavior<ValidationMiddleware>();
 });
 

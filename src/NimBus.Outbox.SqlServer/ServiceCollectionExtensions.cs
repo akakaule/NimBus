@@ -33,6 +33,7 @@ namespace NimBus.Outbox.SqlServer
 
             services.TryAddSingleton<IOutbox>(outbox);
             services.TryAddSingleton<IOutboxCleanup>(outbox);
+            services.TryAddSingleton<IOutboxMetricsQuery>(outbox);
 
             return services;
         }

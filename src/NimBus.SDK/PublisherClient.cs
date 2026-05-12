@@ -1,6 +1,8 @@
 ﻿using Azure.Messaging.ServiceBus;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
+using NimBus.OpenTelemetry;
 using NimBus.ServiceBus;
 using Newtonsoft.Json;
 using System;
@@ -50,10 +52,15 @@ public class PublisherClient : IPublisherClient
         if (client == null) throw new ArgumentNullException(nameof(client));
         if (string.IsNullOrEmpty(endpoint)) throw new ArgumentException("Endpoint cannot be null or empty.", nameof(endpoint));
 
+        // Wrap with the publisher instrumentation decorator so callers using
+        // the manual factory get the same NimBus.Publish span / metric surface
+        // as the DI-registered AddNimBusPublisher path. The endpoint name
+        // doubles as the publisher's identity for OriginatingFrom stamping.
         var serviceBusSender = client.CreateSender(endpoint);
-        var sender = new Sender(serviceBusSender);
+        ISender sender = NimBusOpenTelemetryDecorators.InstrumentSender(
+            new Sender(serviceBusSender), MessagingSystem.ServiceBus);
 
-        return Task.FromResult(new PublisherClient(sender) { _serviceBusClient = client });
+        return Task.FromResult(new PublisherClient(sender, endpoint) { _serviceBusClient = client });
     }
 
     /// <summary>
@@ -65,8 +72,12 @@ public class PublisherClient : IPublisherClient
         if (client == null) throw new ArgumentNullException(nameof(client));
         if (string.IsNullOrEmpty(endpoint)) throw new ArgumentException("Endpoint cannot be null or empty.", nameof(endpoint));
 
+        // Same instrumentation wrapping as CreateAsync above — the obsolete
+        // ctor stays a backward-compat bridge but MUST emit the same telemetry.
         var serviceBusSender = client.CreateSender(endpoint);
-        _sender = new Sender(serviceBusSender);
+        _sender = NimBusOpenTelemetryDecorators.InstrumentSender(
+            new Sender(serviceBusSender), MessagingSystem.ServiceBus);
+        _publisherEndpoint = endpoint;
         _serviceBusClient = client;
     }
 

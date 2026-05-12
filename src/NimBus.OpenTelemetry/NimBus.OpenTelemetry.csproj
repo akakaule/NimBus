@@ -11,9 +11,22 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- API-only OpenTelemetry surface — FR-002 / NFR-003 says the package MUST NOT
+         depend on the OpenTelemetry SDK or any exporter. ProviderBuilderExtensions
+         gives us the MeterProviderBuilder / TracerProviderBuilder abstractions
+         without dragging the SDK in transitively (unlike
+         OpenTelemetry.Extensions.Hosting). -->
     <PackageReference Include="OpenTelemetry.Api" Version="1.15.3" />
     <PackageReference Include="OpenTelemetry.Api.ProviderBuilderExtensions" Version="1.15.3" />
-    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
+    <!-- Microsoft.Extensions.* abstractions for DI options binding + the gauge
+         BackgroundService. These were previously pulled in transitively via
+         OpenTelemetry.Extensions.Hosting; they are unrelated to the OTel SDK. -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup>

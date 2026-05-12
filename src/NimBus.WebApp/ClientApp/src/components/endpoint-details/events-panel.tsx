@@ -14,10 +14,46 @@ import TruncatedGuid from "components/common/truncated-guid";
 import ErrorGroupedView from "./error-grouped-view";
 import { useUrlFilters } from "hooks/use-url-filters";
 import { Badge } from "components/ui/badge";
+import { StatTile, StatRow } from "components/ui/stat-tile";
+import { EmptyState } from "components/ui/empty-state";
+import { cn } from "lib/utils";
 
 const isHandoffEvent = (event: api.Event): boolean =>
   event.resolutionStatus === api.ResolutionStatus.Pending &&
   (event.pendingSubStatus ?? "").toLowerCase() === "handoff";
+
+// Map a ResolutionStatus onto the design system's badge variant set.
+// Status-only — coral is reserved for action / focus (design rec §02).
+function statusToBadgeVariant(
+  status: string | api.ResolutionStatus | undefined,
+):
+  | "completed"
+  | "failed"
+  | "deferred"
+  | "deadlettered"
+  | "skipped"
+  | "unsupported"
+  | "pending"
+  | "default" {
+  switch (status) {
+    case api.ResolutionStatus.Completed:
+      return "completed";
+    case api.ResolutionStatus.Failed:
+      return "failed";
+    case api.ResolutionStatus.Deferred:
+      return "deferred";
+    case api.ResolutionStatus.DeadLettered:
+      return "deadlettered";
+    case api.ResolutionStatus.Skipped:
+      return "skipped";
+    case api.ResolutionStatus.Unsupported:
+      return "unsupported";
+    case api.ResolutionStatus.Pending:
+      return "pending";
+    default:
+      return "default";
+  }
+}
 
 interface EventsPanelProps {
   endpointId: string;
@@ -443,15 +479,20 @@ const EventsPanel = (props: EventsPanelProps) => {
           [
             "status",
             {
-              value: isHandoffEvent(item) ? (
+              value: (
                 <span className="inline-flex items-center gap-2">
-                  {item.resolutionStatus}
-                  <Badge variant="info" size="sm">
-                    Awaiting external
+                  <Badge
+                    variant={statusToBadgeVariant(item.resolutionStatus)}
+                    size="sm"
+                  >
+                    {item.resolutionStatus ?? "—"}
                   </Badge>
+                  {isHandoffEvent(item) && (
+                    <Badge variant="info" size="sm">
+                      Awaiting external
+                    </Badge>
+                  )}
                 </span>
-              ) : (
-                item.resolutionStatus
               ),
               searchValue: item.resolutionStatus ?? "",
             },
@@ -589,9 +630,82 @@ const EventsPanel = (props: EventsPanelProps) => {
   // from `initialValue` props whenever the URL changes (e.g. browser Back/forward).
   const filterRemountKey = `${applied.status.join(",")}|${applied.eventTypeId.join(",")}|${applied.eventId}|${applied.sessionId}`;
 
+  // Counts derived from the currently-loaded page. Server-wide totals would
+  // need a dedicated stats endpoint — this gives an honest "what's on screen"
+  // summary that matches the operator's mental model of the result set.
+  const counts = React.useMemo(() => {
+    let completed = 0;
+    let failed = 0;
+    let deferred = 0;
+    let pending = 0;
+    for (const e of events) {
+      switch (e.resolutionStatus) {
+        case api.ResolutionStatus.Completed:
+          completed += 1;
+          break;
+        case api.ResolutionStatus.Failed:
+        case api.ResolutionStatus.DeadLettered:
+        case api.ResolutionStatus.Unsupported:
+          failed += 1;
+          break;
+        case api.ResolutionStatus.Deferred:
+          deferred += 1;
+          break;
+        case api.ResolutionStatus.Pending:
+          pending += 1;
+          break;
+      }
+    }
+    return { completed, failed, deferred, pending };
+  }, [events]);
+
+  const hasActiveFilters =
+    !isAllStatusesSentinel(applied.status) ||
+    applied.eventTypeId.length > 0 ||
+    applied.eventId.length > 0 ||
+    applied.sessionId.length > 0;
+
+  const segBtn = (active: boolean) =>
+    cn(
+      "px-3 py-1.5 rounded-md text-xs font-semibold transition-colors",
+      active
+        ? "bg-primary text-white"
+        : "text-muted-foreground hover:text-foreground",
+    );
+
   return (
     <FilterContext.Provider value={context}>
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4 w-full">
+        {/* Promote summary metrics above the table — design rec §03.
+            Status-coloured tiles answer "how is this endpoint doing?"
+            before the operator scans rows. */}
+        <StatRow>
+          <StatTile
+            label="Completed"
+            value={counts.completed.toLocaleString()}
+            delta="on screen"
+            tone="muted"
+          />
+          <StatTile
+            label="Deferred"
+            value={counts.deferred.toLocaleString()}
+            delta={counts.deferred ? "needs attention" : "—"}
+            tone={counts.deferred ? "warning" : "muted"}
+          />
+          <StatTile
+            label="Failed"
+            value={counts.failed.toLocaleString()}
+            delta={counts.failed ? "needs attention" : "—"}
+            tone={counts.failed ? "danger" : "muted"}
+          />
+          <StatTile
+            label="Pending"
+            value={counts.pending.toLocaleString()}
+            delta="in-flight"
+            tone="muted"
+          />
+        </StatRow>
+
         <EventFiltering
           key={filterRemountKey}
           handleFilterClicked={handleFilterClicked}
@@ -605,20 +719,29 @@ const EventsPanel = (props: EventsPanelProps) => {
           maxResults={maxResults}
           onMaxResultsChange={setMaxResults}
         />
+
+        {/* View-mode segmented control — matches design `.seg` button group.
+            Single role per hue: coral is "active selection", not a status. */}
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">View:</span>
-          <button
-            className={`px-3 py-1 rounded-md border text-xs font-medium ${viewMode === "list" ? "bg-primary text-white border-primary" : "bg-card text-foreground border-border"}`}
-            onClick={() => setViewMode("list")}
-          >
-            List
-          </button>
-          <button
-            className={`px-3 py-1 rounded-md border text-xs font-medium ${viewMode === "grouped" ? "bg-primary text-white border-primary" : "bg-card text-foreground border-border"}`}
-            onClick={() => setViewMode("grouped")}
-          >
-            Grouped by Error
-          </button>
+          <span className="text-muted-foreground font-semibold text-[13px]">
+            View:
+          </span>
+          <div className="inline-flex items-center bg-card border border-border rounded-nb-md p-[3px] gap-[2px]">
+            <button
+              type="button"
+              className={segBtn(viewMode === "list")}
+              onClick={() => setViewMode("list")}
+            >
+              List
+            </button>
+            <button
+              type="button"
+              className={segBtn(viewMode === "grouped")}
+              onClick={() => setViewMode("grouped")}
+            >
+              Grouped by Error
+            </button>
+          </div>
         </div>
 
         {viewMode === "grouped" ? (
@@ -627,6 +750,31 @@ const EventsPanel = (props: EventsPanelProps) => {
             onResubmitEvent={resubmitSingleEvent}
             onSkipEvent={skipSingleEvent}
             isActionableStatus={isActionableStatus}
+          />
+        ) : !isLoading && events.length === 0 ? (
+          <EmptyState
+            icon="◌"
+            title={
+              hasActiveFilters
+                ? "No events match your filters"
+                : "No events yet"
+            }
+            description={
+              hasActiveFilters
+                ? "Try removing a filter or expanding the time window."
+                : "Messages will appear here as this endpoint receives traffic."
+            }
+            action={
+              hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="text-primary-600 hover:text-primary text-[13px] font-semibold underline-offset-2 hover:underline"
+                >
+                  Clear all filters
+                </button>
+              )
+            }
           />
         ) : (
           <DataTable

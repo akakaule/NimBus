@@ -275,24 +275,25 @@ export function DataTable({
       )}
 
       {/* Table */}
-      <div className="overflow-auto">
+      <div className="overflow-auto bg-card border border-border rounded-nb-md">
         <table
-          className="w-full text-sm"
+          className="w-full text-[13px]"
           style={
             fixedWidth ? { tableLayout: "fixed", width: fixedWidth } : undefined
           }
         >
-          <thead className="bg-background sticky top-0 z-10 border-b border-border">
+          <thead className="bg-muted sticky top-0 z-10 border-b border-border">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
                     className={cn(
-                      "px-4 py-3 text-left font-semibold text-foreground",
-                      "bg-background shadow-[inset_0_-1px_0_rgba(224,224,224,1)]",
+                      "px-3.5 py-3 text-left font-semibold text-muted-foreground",
+                      "text-[11px] uppercase tracking-[0.06em] whitespace-nowrap",
+                      "bg-muted border-b border-border",
                       header.column.getCanSort() &&
-                        "cursor-pointer select-none hover:bg-accent",
+                        "cursor-pointer select-none hover:text-foreground",
                     )}
                     style={{
                       width:
@@ -437,8 +438,8 @@ function TableRow({ row, rowData }: { row: any; rowData: ITableRow }) {
   return (
     <tr
       className={cn(
-        "hover:bg-accent transition-colors",
-        row.getIsSelected() && "bg-primary-50",
+        "group hover:bg-primary-tint dark:hover:bg-primary/15 transition-colors",
+        row.getIsSelected() && "bg-primary-50 dark:bg-primary/10",
         rowData.route && "cursor-pointer",
       )}
       onClick={
@@ -462,7 +463,11 @@ function TableRow({ row, rowData }: { row: any; rowData: ITableRow }) {
       {row.getVisibleCells().map((cell: any) => (
         <td
           key={cell.id}
-          className={cn("px-4 py-3", cell.column.id === "select" && "w-9")}
+          className={cn(
+            "px-3.5 py-2.5 border-b border-border",
+            "text-foreground tabular-nums",
+            cell.column.id === "select" && "w-9",
+          )}
         >
           {flexRender(cell.column.columnDef.cell, cell.getContext())}
         </td>

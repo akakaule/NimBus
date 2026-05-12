@@ -3,9 +3,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
 using NimBus.Core.Outbox;
+using NimBus.OpenTelemetry;
 using NimBus.SDK.EventHandlers;
 using NimBus.SDK.Hosting;
 using NimBus.ServiceBus;
@@ -42,26 +44,29 @@ namespace NimBus.SDK.Extensions
             if (string.IsNullOrEmpty(options.Endpoint))
                 throw new ArgumentException("Endpoint must be specified.", nameof(configure));
 
-            services.TryAddSingleton<IPublisherClient>(sp =>
+            services.AddNimBusInstrumentation();
+
+            // Build the publisher's sender via a private factory so a pre-existing
+            // ISender registration cannot shadow it. The TryAddSingleton<ISender>
+            // below preserves the public ISender resolution path for callers that
+            // want it, but IPublisherClient is bound to OUR sender — not to
+            // whatever ambient ISender the container happens to resolve.
+            ISender BuildPublisherSender(IServiceProvider sp)
             {
                 var client = sp.GetRequiredService<ServiceBusClient>();
                 var outbox = sp.GetService<IOutbox>();
 
                 var serviceBusSender = client.CreateSender(options.Endpoint);
-                ISender sender;
+                ISender inner = outbox is not null
+                    ? new OutboxSender(outbox)            // transactional outbox — write the row, dispatcher publishes later
+                    : new Sender(serviceBusSender);       // direct publish
 
-                if (outbox != null)
-                {
-                    // When outbox is configured, use OutboxSender for transactional safety
-                    sender = new OutboxSender(outbox);
-                }
-                else
-                {
-                    sender = new Sender(serviceBusSender);
-                }
+                // Decorator order outermost → inner: instrumenting → outbox → transport.
+                return NimBusOpenTelemetryDecorators.InstrumentSender(inner, MessagingSystem.ServiceBus);
+            }
 
-                return new PublisherClient(sender);
-            });
+            services.TryAddSingleton<ISender>(BuildPublisherSender);
+            services.TryAddSingleton<IPublisherClient>(sp => new PublisherClient(BuildPublisherSender(sp), options.Endpoint));
 
             return services;
         }

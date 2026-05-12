@@ -18,6 +18,7 @@ using Microsoft.AspNetCore.Http;
 using NSwag.AspNetCore;
 using NimBus.Core;
 using NimBus.Core.Messages;
+using NimBus.OpenTelemetry;
 using NimBus.Manager;
 using NimBus.MessageStore;
 using NimBus.ServiceBus;
@@ -276,13 +277,14 @@ namespace NimBus.WebApp
 
             services.AddApplicationInsightsTelemetry();
 
+            services.AddNimBusInstrumentation();
             services.AddOpenTelemetry()
                 .WithMetrics(metrics =>
                 {
                     metrics.AddAspNetCoreInstrumentation()
                         .AddHttpClientInstrumentation()
                         .AddRuntimeInstrumentation()
-                        .AddMeter("NimBus.ServiceBus");
+                        .AddNimBusInstrumentation();
                 })
                 .WithTracing(tracing =>
                 {
@@ -290,7 +292,7 @@ namespace NimBus.WebApp
                         .AddHttpClientInstrumentation()
                         .AddSource("Azure.Cosmos.Operation")
                         .AddSource("Azure.Messaging.ServiceBus")
-                        .AddSource("NimBus");
+                        .AddNimBusInstrumentation();
                 });
 
             var useOtlpExporter = !string.IsNullOrWhiteSpace(Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);

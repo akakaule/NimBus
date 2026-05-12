@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <Description>OpenTelemetry instrumentation for the NimBus messaging platform. Registers every NimBus meter and tracer source with the OpenTelemetry SDK and emits messaging.* semantic-convention attributes.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- API-only OpenTelemetry surface — FR-002 / NFR-003 says the package MUST NOT
+         depend on the OpenTelemetry SDK or any exporter. ProviderBuilderExtensions
+         gives us the MeterProviderBuilder / TracerProviderBuilder abstractions
+         without dragging the SDK in transitively (unlike
+         OpenTelemetry.Extensions.Hosting). -->
+    <PackageReference Include="OpenTelemetry.Api" Version="1.15.3" />
+    <PackageReference Include="OpenTelemetry.Api.ProviderBuilderExtensions" Version="1.15.3" />
+    <!-- Microsoft.Extensions.* abstractions for DI options binding + the gauge
+         BackgroundService. These were previously pulled in transitively via
+         OpenTelemetry.Extensions.Hosting; they are unrelated to the OTel SDK. -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NimBus.Abstractions\NimBus.Abstractions.csproj" />
+    <ProjectReference Include="..\NimBus.Core\NimBus.Core.csproj" />
+    <ProjectReference Include="..\NimBus.MessageStore.Abstractions\NimBus.MessageStore.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="NimBus.OpenTelemetry.Tests" />
+  </ItemGroup>
+
+</Project>

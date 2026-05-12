@@ -20,4 +20,8 @@
     <PackageReference Include="Azure.Monitor.OpenTelemetry.AspNetCore" Version="1.4.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\NimBus.OpenTelemetry\NimBus.OpenTelemetry.csproj" />
+  </ItemGroup>
+
 </Project>

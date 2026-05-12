@@ -26,7 +26,7 @@ public sealed class ErpCustomerCreatedHandler(ICrmApiClient crm, ILogger<ErpCust
 
         await crm.UpsertFromErpAsync(
             message.ErpCustomerId,
-            new AccountUpsertPayload(message.LegalName, message.TaxId, message.CountryCode, message.CustomerNumber),
+            new AccountUpsertPayload(null, message.LegalName, message.TaxId, message.CountryCode, message.CustomerNumber),
             cancellationToken);
     }
 }

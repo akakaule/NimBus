@@ -18,6 +18,15 @@ namespace NimBus.Core.Outbox
         public string MessageId { get; set; }
 
         /// <summary>
+        /// The destination endpoint (topic name). Surfaced as the
+        /// <c>nimbus.endpoint</c> tag on outbox enqueue/dispatch metrics and as
+        /// the <c>messaging.destination.name</c> attribute on the dispatch span.
+        /// Captured at enqueue time so the dispatcher does not have to
+        /// deserialize the payload to read it.
+        /// </summary>
+        public string To { get; set; }
+
+        /// <summary>
         /// The event type identifier.
         /// </summary>
         public string EventTypeId { get; set; }
@@ -57,5 +66,19 @@ namespace NimBus.Core.Outbox
         /// When this outbox entry was dispatched to Service Bus. Null if pending.
         /// </summary>
         public DateTime? DispatchedAtUtc { get; set; }
+
+        /// <summary>
+        /// W3C <c>traceparent</c> captured from <see cref="System.Diagnostics.Activity.Current"/>
+        /// at the moment this row was persisted. Used by the dispatcher to attach the original
+        /// publish context as an <see cref="System.Diagnostics.ActivityLink"/> on the dispatch
+        /// span. Null on rows persisted before W3C capture was wired in.
+        /// </summary>
+        public string TraceParent { get; set; }
+
+        /// <summary>
+        /// W3C <c>tracestate</c> captured alongside <see cref="TraceParent"/>. Null if the
+        /// originating activity carried no tracestate.
+        /// </summary>
+        public string TraceState { get; set; }
     }
 }

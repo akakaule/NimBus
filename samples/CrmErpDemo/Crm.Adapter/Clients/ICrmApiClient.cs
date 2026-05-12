@@ -13,4 +13,4 @@ public interface ICrmApiClient
 // resolves it to a local Account.Id via Accounts.ErpCustomerId before storing
 // the contact, so the contact ends up linked to the correct CRM account.
 public record ContactPayload(Guid? ErpCustomerId, string FirstName, string LastName, string? Email, string? Phone);
-public record AccountUpsertPayload(string LegalName, string? TaxId, string CountryCode, string? CustomerNumber);
+public record AccountUpsertPayload(Guid? CrmAccountId, string LegalName, string? TaxId, string CountryCode, string? CustomerNumber);

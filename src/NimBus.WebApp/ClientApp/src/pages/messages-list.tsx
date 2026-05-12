@@ -92,8 +92,8 @@ function mapMessageToRow(msg: api.Message): ITableRow {
       [
         Column.from,
         {
-          value: msg.originatingFrom ?? msg.from ?? "-",
-          searchValue: msg.originatingFrom ?? msg.from ?? "",
+          value: msg.originatingFrom || msg.from || "-",
+          searchValue: msg.originatingFrom || msg.from || "",
         },
       ],
     ]),

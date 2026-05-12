@@ -18,7 +18,7 @@ public sealed class CrmAccountUpdatedHandler(
 
         await erp.UpsertCustomerAsync(
             message.AccountId,
-            new CustomerUpsertPayload(message.LegalName, message.TaxId, message.CountryCode),
+            new CustomerUpsertPayload(message.ErpCustomerId, message.LegalName, message.TaxId, message.CountryCode),
             cancellationToken);
     }
 }

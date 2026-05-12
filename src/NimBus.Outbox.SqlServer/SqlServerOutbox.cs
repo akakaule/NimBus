@@ -10,7 +10,7 @@ namespace NimBus.Outbox.SqlServer
     /// <summary>
     /// SQL Server implementation of the transactional outbox.
     /// </summary>
-    public class SqlServerOutbox : IOutbox, IOutboxCleanup
+    public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery
     {
         private readonly SqlServerOutboxOptions _options;
 
@@ -23,6 +23,8 @@ namespace NimBus.Outbox.SqlServer
 
         /// <summary>
         /// Ensures the outbox table exists. Call on startup if AutoCreateTable is enabled.
+        /// Also runs an idempotent column migration so deployments that pre-date the
+        /// W3C trace-context columns gain them on next startup.
         /// </summary>
         public async Task EnsureTableExistsAsync(CancellationToken cancellationToken = default)
         {
@@ -34,6 +36,7 @@ namespace NimBus.Outbox.SqlServer
                 CREATE TABLE {_options.FullTableName} (
                     [Id]                  NVARCHAR(128) NOT NULL PRIMARY KEY,
                     [MessageId]           NVARCHAR(512) NOT NULL,
+                    [To]                  NVARCHAR(256) NULL,
                     [EventTypeId]         NVARCHAR(256) NULL,
                     [SessionId]           NVARCHAR(256) NULL,
                     [CorrelationId]       NVARCHAR(256) NULL,
@@ -42,8 +45,19 @@ namespace NimBus.Outbox.SqlServer
                     [ScheduledEnqueueTimeUtc] DATETIME2 NULL,
                     [CreatedAtUtc]        DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
                     [DispatchedAtUtc]     DATETIME2 NULL,
+                    [TraceParent]         NVARCHAR(55) NULL,
+                    [TraceState]          NVARCHAR(256) NULL,
                     INDEX IX_OutboxMessages_Pending NONCLUSTERED ([DispatchedAtUtc], [CreatedAtUtc]) WHERE [DispatchedAtUtc] IS NULL
-                );";
+                );
+
+                IF COL_LENGTH('{_options.FullTableName}', 'TraceParent') IS NULL
+                    ALTER TABLE {_options.FullTableName} ADD [TraceParent] NVARCHAR(55) NULL;
+
+                IF COL_LENGTH('{_options.FullTableName}', 'TraceState') IS NULL
+                    ALTER TABLE {_options.FullTableName} ADD [TraceState] NVARCHAR(256) NULL;
+
+                IF COL_LENGTH('{_options.FullTableName}', 'To') IS NULL
+                    ALTER TABLE {_options.FullTableName} ADD [To] NVARCHAR(256) NULL;";
 
             await using var connection = new SqlConnection(_options.ConnectionString);
             await connection.OpenAsync(cancellationToken);
@@ -57,9 +71,9 @@ namespace NimBus.Outbox.SqlServer
         {
             var sql = $@"
                 INSERT INTO {_options.FullTableName}
-                    ([Id], [MessageId], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [ScheduledEnqueueTimeUtc], [CreatedAtUtc])
+                    ([Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [ScheduledEnqueueTimeUtc], [CreatedAtUtc], [TraceParent], [TraceState])
                 VALUES
-                    (@Id, @MessageId, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @ScheduledEnqueueTimeUtc, @CreatedAtUtc)";
+                    (@Id, @MessageId, @To, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @ScheduledEnqueueTimeUtc, @CreatedAtUtc, @TraceParent, @TraceState)";
 
             var ambient = SqlServerOutboxAmbientTransaction.Current;
             if (ambient.HasValue)
@@ -86,9 +100,9 @@ namespace NimBus.Outbox.SqlServer
                 {
                     var ambientSql = $@"
                         INSERT INTO {_options.FullTableName}
-                            ([Id], [MessageId], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [CreatedAtUtc])
+                            ([Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [ScheduledEnqueueTimeUtc], [CreatedAtUtc], [TraceParent], [TraceState])
                         VALUES
-                            (@Id, @MessageId, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @CreatedAtUtc)";
+                            (@Id, @MessageId, @To, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @ScheduledEnqueueTimeUtc, @CreatedAtUtc, @TraceParent, @TraceState)";
 
                     await using var ambientCommand = new SqlCommand(ambientSql, ambient.Value.Connection, ambient.Value.Transaction);
                     AddOutboxMessageParameters(ambientCommand, message);
@@ -107,9 +121,9 @@ namespace NimBus.Outbox.SqlServer
                 {
                     var sql = $@"
                         INSERT INTO {_options.FullTableName}
-                            ([Id], [MessageId], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [CreatedAtUtc])
+                            ([Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [ScheduledEnqueueTimeUtc], [CreatedAtUtc], [TraceParent], [TraceState])
                         VALUES
-                            (@Id, @MessageId, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @CreatedAtUtc)";
+                            (@Id, @MessageId, @To, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @ScheduledEnqueueTimeUtc, @CreatedAtUtc, @TraceParent, @TraceState)";
 
                     await using var command = new SqlCommand(sql, connection, transaction);
                     AddOutboxMessageParameters(command, message);
@@ -128,7 +142,7 @@ namespace NimBus.Outbox.SqlServer
         public async Task<IReadOnlyList<OutboxMessage>> GetPendingAsync(int batchSize, CancellationToken cancellationToken = default)
         {
             var sql = $@"
-                SELECT TOP (@BatchSize) [Id], [MessageId], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [CreatedAtUtc], [ScheduledEnqueueTimeUtc]
+                SELECT TOP (@BatchSize) [Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [CreatedAtUtc], [ScheduledEnqueueTimeUtc], [TraceParent], [TraceState]
                 FROM {_options.FullTableName} WITH (UPDLOCK, READPAST)
                 WHERE [DispatchedAtUtc] IS NULL
                 ORDER BY [CreatedAtUtc] ASC";
@@ -147,14 +161,17 @@ namespace NimBus.Outbox.SqlServer
                 {
                     Id = reader.GetString(0),
                     MessageId = reader.GetString(1),
-                    EventTypeId = reader.IsDBNull(2) ? null : reader.GetString(2),
-                    SessionId = reader.IsDBNull(3) ? null : reader.GetString(3),
-                    CorrelationId = reader.IsDBNull(4) ? null : reader.GetString(4),
-                    Payload = reader.GetString(5),
-                    EnqueueDelayMinutes = reader.GetInt32(6),
-                    CreatedAtUtc = reader.GetDateTime(7),
-                    ScheduledEnqueueTimeUtc = reader.IsDBNull(8) ? null : reader.GetDateTime(8),
-                    DispatchedAtUtc = null
+                    To = reader.IsDBNull(2) ? null : reader.GetString(2),
+                    EventTypeId = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    SessionId = reader.IsDBNull(4) ? null : reader.GetString(4),
+                    CorrelationId = reader.IsDBNull(5) ? null : reader.GetString(5),
+                    Payload = reader.GetString(6),
+                    EnqueueDelayMinutes = reader.GetInt32(7),
+                    CreatedAtUtc = reader.GetDateTime(8),
+                    ScheduledEnqueueTimeUtc = reader.IsDBNull(9) ? null : reader.GetDateTime(9),
+                    DispatchedAtUtc = null,
+                    TraceParent = reader.IsDBNull(10) ? null : reader.GetString(10),
+                    TraceState = reader.IsDBNull(11) ? null : reader.GetString(11)
                 });
             }
 
@@ -210,6 +227,30 @@ namespace NimBus.Outbox.SqlServer
             return await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        public async Task<long> GetPendingCountAsync(CancellationToken cancellationToken = default)
+        {
+            var sql = $@"SELECT COUNT_BIG(*) FROM {_options.FullTableName} WHERE [DispatchedAtUtc] IS NULL";
+
+            await using var connection = new SqlConnection(_options.ConnectionString);
+            await connection.OpenAsync(cancellationToken);
+            await using var command = new SqlCommand(sql, connection);
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            return result is long count ? count : 0;
+        }
+
+        public async Task<DateTimeOffset?> GetOldestPendingEnqueuedAtUtcAsync(CancellationToken cancellationToken = default)
+        {
+            var sql = $@"SELECT TOP 1 [CreatedAtUtc] FROM {_options.FullTableName} WHERE [DispatchedAtUtc] IS NULL ORDER BY [CreatedAtUtc] ASC";
+
+            await using var connection = new SqlConnection(_options.ConnectionString);
+            await connection.OpenAsync(cancellationToken);
+            await using var command = new SqlCommand(sql, connection);
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            if (result is null || result is DBNull)
+                return null;
+            return new DateTimeOffset((DateTime)result, TimeSpan.Zero);
+        }
+
         private static void ValidateSqlIdentifier(string value, string parameterName)
         {
             if (string.IsNullOrWhiteSpace(value))
@@ -224,6 +265,7 @@ namespace NimBus.Outbox.SqlServer
         {
             command.Parameters.AddWithValue("@Id", message.Id);
             command.Parameters.AddWithValue("@MessageId", message.MessageId);
+            command.Parameters.AddWithValue("@To", (object)message.To ?? DBNull.Value);
             command.Parameters.AddWithValue("@EventTypeId", (object)message.EventTypeId ?? DBNull.Value);
             command.Parameters.AddWithValue("@SessionId", (object)message.SessionId ?? DBNull.Value);
             command.Parameters.AddWithValue("@CorrelationId", (object)message.CorrelationId ?? DBNull.Value);
@@ -231,6 +273,8 @@ namespace NimBus.Outbox.SqlServer
             command.Parameters.AddWithValue("@EnqueueDelayMinutes", message.EnqueueDelayMinutes);
             command.Parameters.AddWithValue("@ScheduledEnqueueTimeUtc", (object?)message.ScheduledEnqueueTimeUtc ?? DBNull.Value);
             command.Parameters.AddWithValue("@CreatedAtUtc", message.CreatedAtUtc);
+            command.Parameters.AddWithValue("@TraceParent", (object)message.TraceParent ?? DBNull.Value);
+            command.Parameters.AddWithValue("@TraceState", (object)message.TraceState ?? DBNull.Value);
         }
     }
 }

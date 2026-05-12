@@ -284,7 +284,7 @@ public class ResolverServiceTests
         };
     }
 
-    private sealed class FakeMessageContext : IMessageContext
+    internal sealed class FakeMessageContext : IMessageContext
     {
         public string EventId { get; set; } = string.Empty;
         public string To { get; set; } = string.Empty;
@@ -363,9 +363,11 @@ public class ResolverServiceTests
         }
     }
 
-    private sealed class FakeCosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.INimBusMessageStore
+    internal sealed class FakeCosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.INimBusMessageStore
     {
         public Exception? StoreMessageException { get; set; }
+        public Exception? UploadException { get; set; }
+        public Exception? StoreAuditException { get; set; }
         public List<MessageEntity> StoredMessages { get; } = new();
         public List<(string EventId, MessageAuditEntity Audit)> StoredAudits { get; } = new();
         public List<UploadCall> PendingUploads { get; } = new();
@@ -378,42 +380,49 @@ public class ResolverServiceTests
 
         public Task<bool> UploadPendingMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content)
         {
+            if (UploadException is not null) return Task.FromException<bool>(UploadException);
             PendingUploads.Add(new UploadCall(eventId, sessionId, endpointId, content));
             return Task.FromResult(true);
         }
 
         public Task<bool> UploadDeferredMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content)
         {
+            if (UploadException is not null) return Task.FromException<bool>(UploadException);
             DeferredUploads.Add(new UploadCall(eventId, sessionId, endpointId, content));
             return Task.FromResult(true);
         }
 
         public Task<bool> UploadFailedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content)
         {
+            if (UploadException is not null) return Task.FromException<bool>(UploadException);
             FailedUploads.Add(new UploadCall(eventId, sessionId, endpointId, content));
             return Task.FromResult(true);
         }
 
         public Task<bool> UploadDeadletteredMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content)
         {
+            if (UploadException is not null) return Task.FromException<bool>(UploadException);
             DeadLetteredUploads.Add(new UploadCall(eventId, sessionId, endpointId, content));
             return Task.FromResult(true);
         }
 
         public Task<bool> UploadUnsupportedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content)
         {
+            if (UploadException is not null) return Task.FromException<bool>(UploadException);
             UnsupportedUploads.Add(new UploadCall(eventId, sessionId, endpointId, content));
             return Task.FromResult(true);
         }
 
         public Task<bool> UploadSkippedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content)
         {
+            if (UploadException is not null) return Task.FromException<bool>(UploadException);
             SkippedUploads.Add(new UploadCall(eventId, sessionId, endpointId, content));
             return Task.FromResult(true);
         }
 
         public Task<bool> UploadCompletedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content)
         {
+            if (UploadException is not null) return Task.FromException<bool>(UploadException);
             CompletedUploads.Add(new UploadCall(eventId, sessionId, endpointId, content));
             return Task.FromResult(true);
         }
@@ -480,6 +489,7 @@ public class ResolverServiceTests
 
         public Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity, string? endpointId = null, string? eventTypeId = null)
         {
+            if (StoreAuditException is not null) return Task.FromException(StoreAuditException);
             StoredAudits.Add((eventId, auditEntity));
             return Task.CompletedTask;
         }
@@ -487,7 +497,7 @@ public class ResolverServiceTests
         public Task<AuditSearchResult> SearchAudits(AuditFilter filter, string? continuationToken, int maxItemCount) => throw new NotSupportedException();
     }
 
-    private sealed record UploadCall(string EventId, string SessionId, string EndpointId, UnresolvedEvent Content);
+    internal sealed record UploadCall(string EventId, string SessionId, string EndpointId, UnresolvedEvent Content);
 }
 
 

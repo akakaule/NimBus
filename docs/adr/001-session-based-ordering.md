@@ -1,7 +1,7 @@
 # ADR-001: Use Service Bus Sessions for Ordered Delivery
 
 ## Status
-Accepted. Superseded in part by [ADR-011](011-rabbitmq-as-second-transport.md) (2026-05) — the *"transport abstraction is explicitly out of scope"* framing in the *Design Choice* section no longer holds. RabbitMQ is now a committed second transport. The session-based ordering decision itself stands; how it is realized on a non-Service-Bus transport is documented in ADR-011.
+Accepted.
 
 ## Context
 NimBus needs guaranteed FIFO ordering per logical entity (e.g., all messages for a single order must be processed sequentially). Without ordering, a payment confirmation could be processed before the order creation, or a retry could execute while the original is still being handled.

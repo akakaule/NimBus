@@ -45,6 +45,9 @@ public static class CustomerEndpoints
         group.MapPut("/by-crm/{crmAccountId:guid}", async (Guid crmAccountId, CustomerUpsertRequest req, ErpDbContext db, IPublisherClient publisher) =>
         {
             var existing = await db.Customers.FirstOrDefaultAsync(c => c.CrmAccountId == crmAccountId);
+            if (existing is null && req.ErpCustomerId is { } erpCustomerId && erpCustomerId != Guid.Empty)
+                existing = await db.Customers.FindAsync(erpCustomerId);
+
             var isNew = existing is null;
             Customer entity = existing!;
 
@@ -67,6 +70,7 @@ public static class CustomerEndpoints
                 }
                 else
                 {
+                    entity.CrmAccountId = crmAccountId;
                     entity.LegalName = req.LegalName;
                     entity.TaxId = req.TaxId;
                     entity.CountryCode = req.CountryCode;
@@ -130,4 +134,4 @@ public static class CustomerEndpoints
     }
 }
 
-public record CustomerUpsertRequest(string LegalName, string? TaxId, string CountryCode);
+public record CustomerUpsertRequest(Guid? ErpCustomerId, string LegalName, string? TaxId, string CountryCode);

@@ -3,8 +3,11 @@ using Azure.Identity;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Extensions;
 using NimBus.MessageStore.Abstractions;
+using NimBus.OpenTelemetry;
 
 namespace NimBus.MessageStore;
 
@@ -58,7 +61,11 @@ public static class CosmosDbMessageStoreBuilderExtensions
     private static void RegisterContracts(IServiceCollection services)
     {
         services.AddSingleton<INimBusMessageStore>(sp => (CosmosDbClient)sp.GetRequiredService<ICosmosDbClient>());
-        services.AddSingleton<IMessageTrackingStore>(sp => sp.GetRequiredService<INimBusMessageStore>());
+        services.AddSingleton<IMessageTrackingStore>(sp =>
+            NimBusOpenTelemetryDecorators.InstrumentMessageTrackingStore(
+                sp.GetRequiredService<INimBusMessageStore>(),
+                StoreProvider.Cosmos,
+                sp.GetService<IOptionsMonitor<NimBusOpenTelemetryOptions>>()));
         services.AddSingleton<ISubscriptionStore>(sp => sp.GetRequiredService<INimBusMessageStore>());
         services.AddSingleton<IEndpointMetadataStore>(sp => sp.GetRequiredService<INimBusMessageStore>());
         services.AddSingleton<IMetricsStore>(sp => sp.GetRequiredService<INimBusMessageStore>());

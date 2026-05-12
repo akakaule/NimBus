@@ -11,6 +11,9 @@ public class CrmAccountUpdated : Event
     [Required]
     public Guid AccountId { get; set; }
 
+    [Description("ERP customer id if this CRM account was previously linked to an ERP-originated or mirrored customer.")]
+    public Guid? ErpCustomerId { get; set; }
+
     [Required]
     public string LegalName { get; set; } = string.Empty;
 

@@ -48,8 +48,11 @@ export default function ConfirmDestructiveAction({
       <ModalBody>
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">{description}</p>
-          <div className="bg-red-50 border border-red-200 dark:bg-red-950/30 dark:border-red-900/60 rounded-md p-3">
-            <p className="text-sm text-red-800 dark:text-red-200 font-medium">
+          <div className="bg-status-danger-50 border border-status-danger/30 dark:bg-red-950/30 dark:border-red-900/60 rounded-nb-md p-3 flex items-start gap-2">
+            <span aria-hidden="true" className="text-status-danger font-bold leading-tight">
+              ⚠
+            </span>
+            <p className="text-sm text-status-danger-ink dark:text-red-200 font-semibold m-0">
               This action cannot be undone.
             </p>
           </div>
@@ -69,7 +72,7 @@ export default function ConfirmDestructiveAction({
       </ModalBody>
       <ModalFooter>
         <Button
-          variant="outline"
+          variant="ghost"
           colorScheme="gray"
           onClick={handleClose}
           disabled={isLoading}
@@ -77,12 +80,13 @@ export default function ConfirmDestructiveAction({
           Cancel
         </Button>
         <Button
+          variant="solid"
           colorScheme="red"
           onClick={handleConfirm}
           disabled={!isMatch || isLoading}
           isLoading={isLoading}
         >
-          Confirm
+          Permanently {title.toLowerCase().replace(/^.*\s/, "")}
         </Button>
       </ModalFooter>
     </Modal>

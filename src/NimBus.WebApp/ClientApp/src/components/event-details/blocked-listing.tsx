@@ -14,6 +14,10 @@ export interface IBlockedListing {
   // skip/take match the server-side pagination contract on /api/event/blocked/{endpointId}/{sessionId}.
   fetchBlockedEvents: (skip: number, take: number) => void;
   totalItems: number;
+  // Fallback endpointId — blocked events are siblings on the same session, so
+  // they share the parent event's endpoint even when their per-message
+  // endpointId/to fields are not projected onto the enriched Message.
+  endpointId?: string;
 }
 
 export default function BlockedListing(props: IBlockedListing) {
@@ -37,7 +41,8 @@ export default function BlockedListing(props: IBlockedListing) {
 
   const mapEvents = () => {
     const iRows = props.events.map((item) => {
-      const endpointId = item.message.endpointId ?? item.message.to;
+      const endpointId =
+        item.message.endpointId || item.message.to || props.endpointId;
       const row: ITableRow = {
         id: item.message.eventId!,
         bodyActions: [],

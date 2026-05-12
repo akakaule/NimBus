@@ -193,6 +193,7 @@ const EventDetails = (props: EventDetailsProps) => {
             totalItems={blockedTotal}
             fetchBlockedEvents={fetchBlockedEvents}
             events={blockedEvents}
+            endpointId={cosmosEvent?.endpointId ?? params.endpointId}
             key="Blocked"
           />
         ),

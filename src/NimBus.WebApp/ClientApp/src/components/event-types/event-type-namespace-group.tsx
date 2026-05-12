@@ -1,11 +1,12 @@
 import * as api from "api-client";
-import { Badge } from "components/ui/badge";
 import {
   Accordion,
   AccordionItem,
   AccordionTrigger,
   AccordionContent,
 } from "components/ui/accordion";
+import { NamespacePill } from "components/ui/namespace-pill";
+import { cn } from "lib/utils";
 import EventTypeCard from "./event-type-card";
 
 interface EventTypeWithCounts {
@@ -24,6 +25,10 @@ interface IEventTypeNamespaceGroupProps {
   defaultExpandedNamespaces?: string[];
 }
 
+/**
+ * Renders event-type cards grouped by namespace. Each group sits inside a
+ * surface-2 panel with a NamespacePill heading + count chip — design system §08.
+ */
 const EventTypeNamespaceGroup: React.FC<IEventTypeNamespaceGroupProps> = ({
   groups,
   defaultExpandedNamespaces,
@@ -40,28 +45,34 @@ const EventTypeNamespaceGroup: React.FC<IEventTypeNamespaceGroupProps> = ({
         <AccordionItem
           key={group.namespace}
           id={group.namespace}
-          className="mb-2"
+          className="mb-3"
         >
           <AccordionTrigger
             itemId={group.namespace}
-            className="bg-muted rounded-md data-[expanded]:rounded-b-none"
+            className={cn(
+              "bg-muted rounded-nb-md data-[expanded]:rounded-b-none",
+              "px-4 py-3 hover:bg-muted",
+            )}
           >
-            <span className="flex-1 text-left font-semibold">
-              {group.namespace}
-              <Badge
-                variant="primary"
-                size="sm"
-                className="ml-2 bg-purple-100 text-purple-800"
+            <span className="flex-1 text-left flex items-center gap-2.5">
+              <NamespacePill>{group.namespace}</NamespacePill>
+              <span
+                className={cn(
+                  "inline-flex items-center justify-center font-mono",
+                  "text-[11px] font-bold px-2 py-0.5 rounded-full",
+                  "bg-nimbus-purple-50 text-nimbus-purple",
+                  "dark:bg-purple-950/40 dark:text-purple-300",
+                )}
               >
                 {group.eventTypes.length}
-              </Badge>
+              </span>
             </span>
           </AccordionTrigger>
           <AccordionContent
             itemId={group.namespace}
-            className="bg-muted rounded-b-md"
+            className="bg-muted rounded-b-nb-md px-4 pb-4 pt-1"
           >
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
               {group.eventTypes.map((item) => (
                 <EventTypeCard
                   key={item.eventType.id}

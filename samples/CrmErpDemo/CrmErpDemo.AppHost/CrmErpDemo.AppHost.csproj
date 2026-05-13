@@ -24,6 +24,7 @@
     <ProjectReference Include="..\Crm.Adapter\Crm.Adapter.csproj" />
     <ProjectReference Include="..\Erp.Api\Erp.Api.csproj" />
     <ProjectReference Include="..\Erp.Adapter.Functions\Erp.Adapter.Functions.csproj" />
+    <ProjectReference Include="..\DataPlatform.Adapter.Functions\DataPlatform.Adapter.Functions.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.Resolver\NimBus.Resolver.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.WebApp\NimBus.WebApp.csproj" />
   </ItemGroup>

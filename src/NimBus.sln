@@ -130,6 +130,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.OpenTelemetry", "Nim
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.OpenTelemetry.Tests", "..\tests\NimBus.OpenTelemetry.Tests\NimBus.OpenTelemetry.Tests.csproj", "{F79BA0B6-0638-4097-862C-7214653F4EC7}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "CrmErpDemo", "CrmErpDemo", "{D14C0353-EC22-5820-ED53-5D23171DF4D5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DataPlatform.Adapter.Functions", "..\samples\CrmErpDemo\DataPlatform.Adapter.Functions\DataPlatform.Adapter.Functions.csproj", "{360CA61D-591F-46BA-8369-5C2DF645761D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -620,6 +624,18 @@ Global
 		{F79BA0B6-0638-4097-862C-7214653F4EC7}.Release|x64.Build.0 = Release|Any CPU
 		{F79BA0B6-0638-4097-862C-7214653F4EC7}.Release|x86.ActiveCfg = Release|Any CPU
 		{F79BA0B6-0638-4097-862C-7214653F4EC7}.Release|x86.Build.0 = Release|Any CPU
+		{360CA61D-591F-46BA-8369-5C2DF645761D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{360CA61D-591F-46BA-8369-5C2DF645761D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{360CA61D-591F-46BA-8369-5C2DF645761D}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{360CA61D-591F-46BA-8369-5C2DF645761D}.Debug|x64.Build.0 = Debug|Any CPU
+		{360CA61D-591F-46BA-8369-5C2DF645761D}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{360CA61D-591F-46BA-8369-5C2DF645761D}.Debug|x86.Build.0 = Debug|Any CPU
+		{360CA61D-591F-46BA-8369-5C2DF645761D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{360CA61D-591F-46BA-8369-5C2DF645761D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{360CA61D-591F-46BA-8369-5C2DF645761D}.Release|x64.ActiveCfg = Release|Any CPU
+		{360CA61D-591F-46BA-8369-5C2DF645761D}.Release|x64.Build.0 = Release|Any CPU
+		{360CA61D-591F-46BA-8369-5C2DF645761D}.Release|x86.ActiveCfg = Release|Any CPU
+		{360CA61D-591F-46BA-8369-5C2DF645761D}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -671,6 +687,7 @@ Global
 		{D81E4A63-B7DE-4DBE-8058-7DD22E9BC24E} = {A49DBB53-46ED-4FC5-9654-D341671BE016}
 		{F5FB0651-AFDB-4514-8E96-19919E9381DC} = {A49DBB53-46ED-4FC5-9654-D341671BE016}
 		{15D12563-6551-4E81-9C8C-B8DC5AD8C52D} = {A49DBB53-46ED-4FC5-9654-D341671BE016}
+		{360CA61D-591F-46BA-8369-5C2DF645761D} = {D14C0353-EC22-5820-ED53-5D23171DF4D5}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {58272779-594B-49E5-BA62-CBA32A55D9BA}

@@ -53,15 +53,38 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
   // crisp at any zoom level because we never CSS-transform the SVG.
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  // Tracks an in-progress drag so a release with negligible movement still
-  // counts as a click (otherwise panning would steal card selection).
-  const dragRef = useRef<{
-    startX: number;
-    startY: number;
-    panX: number;
-    panY: number;
-    moved: number;
-  } | null>(null);
+
+  // Per-node position overrides — populated when the operator drags a card.
+  // The radial-layout `useMemo` consults this map first and falls back to the
+  // computed angle/radius for un-dragged nodes, so edges + pills track the
+  // new spot automatically. Cleared by the "reset layout" zoom-overlay button.
+  const [nodePositions, setNodePositions] = useState<
+    Record<string, { x: number; y: number }>
+  >({});
+
+  // Tracks an in-progress drag. Two shapes: a `pan` drag moves the SVG
+  // viewBox; a `node` drag moves a single endpoint card. Both record `moved`
+  // so the eventual click can be suppressed when the gesture was actually
+  // a drag, keeping selection-on-tap intact.
+  type DragState =
+    | {
+        kind: "pan";
+        startX: number;
+        startY: number;
+        panX: number;
+        panY: number;
+        moved: number;
+      }
+    | {
+        kind: "node";
+        nodeId: string;
+        startX: number;
+        startY: number;
+        originX: number;
+        originY: number;
+        moved: number;
+      };
+  const dragRef = useRef<DragState | null>(null);
 
   const viewBoxW = VIEWBOX_W / zoom;
   const viewBoxH = VIEWBOX_H / zoom;
@@ -69,7 +92,9 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
 
   // Radial layout — angle each endpoint around the hub. Radius shrinks
   // slightly as N grows so cards stay inside the viewbox; clamped so the
-  // graph doesn't visually compress at small N.
+  // graph doesn't visually compress at small N. Operator-set positions
+  // (via dragging a card) win over the computed radial position so the
+  // graph remembers manual placements across re-renders / data refreshes.
   const layout = useMemo(() => {
     const n = Math.max(nodes.length, 1);
     const radius = Math.min(220, Math.max(160, 60 + n * 18));
@@ -78,44 +103,66 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
       // Start from -π/2 (top) and walk clockwise so the first node lands
       // straight above the hub.
       const angle = -Math.PI / 2 + (i / n) * Math.PI * 2;
-      positions[node.id] = {
+      const radial = {
         x: HUB_CX + radius * Math.cos(angle) - CARD_W / 2,
         y: HUB_CY + radius * Math.sin(angle) - CARD_H / 2,
+      };
+      const override = nodePositions[node.id];
+      positions[node.id] = {
+        x: override?.x ?? radial.x,
+        y: override?.y ?? radial.y,
         angle,
       };
     });
     return positions;
-  }, [nodes]);
+  }, [nodes, nodePositions]);
 
   // Curve from a card's edge to the hub's edge. We pick the side of the card
   // closest to the hub and the side of the hub closest to the card so the
   // line never visually crosses node bodies.
+  //
+  // Path *direction* depends on `kind` — publishes flow endpoint → hub,
+  // subscribes flow hub → endpoint — so the arrowhead (always painted at
+  // `markerEnd`, the path's last point) lands at the destination of the
+  // message flow rather than always at the hub.
   const drawCurve = (endpointId: string, kind: "publish" | "subscribe") => {
     const pos = layout[endpointId];
     if (!pos) return "";
     // Card center
     const cx = pos.x + CARD_W / 2;
     const cy = pos.y + CARD_H / 2;
-    // Pick exit point on the card facing the hub
+    // Unit vector card → hub; used to pick exit/entry points on each shape.
     const dx = HUB_CX - cx;
     const dy = HUB_CY - cy;
     const len = Math.hypot(dx, dy) || 1;
     const ux = dx / len;
     const uy = dy / len;
-    const startX = cx + ux * (CARD_W / 2 - 6);
-    const startY = cy + uy * (CARD_H / 2 - 6);
-    const endX = HUB_CX - ux * (HUB_W / 2 - 6);
-    const endY = HUB_CY - uy * (HUB_H / 2 - 6);
-    // Control points bend the curve outward so two opposite edges between
-    // the same pair don't visually overlap. We offset perpendicular to the
-    // straight line by ~40px, flipped for publish vs subscribe.
-    const perpX = -uy;
-    const perpY = ux;
-    const sign = kind === "publish" ? 1 : -1;
-    const c1x = startX + ux * 50 + perpX * 36 * sign;
-    const c1y = startY + uy * 50 + perpY * 36 * sign;
-    const c2x = endX - ux * 50 + perpX * 36 * sign;
-    const c2y = endY - uy * 50 + perpY * 36 * sign;
+    const cardAnchorX = cx + ux * (CARD_W / 2 - 6);
+    const cardAnchorY = cy + uy * (CARD_H / 2 - 6);
+    const hubAnchorX = HUB_CX - ux * (HUB_W / 2 - 6);
+    const hubAnchorY = HUB_CY - uy * (HUB_H / 2 - 6);
+
+    // Pick path direction so the arrowhead lands at the flow destination.
+    const isPublish = kind === "publish";
+    const startX = isPublish ? cardAnchorX : hubAnchorX;
+    const startY = isPublish ? cardAnchorY : hubAnchorY;
+    const endX = isPublish ? hubAnchorX : cardAnchorX;
+    const endY = isPublish ? hubAnchorY : cardAnchorY;
+
+    // Re-derive direction unit vector and perpendicular against the chosen
+    // start → end. Always biasing the curve to +perp of the travel direction
+    // means publish and subscribe edges between the same pair bow to
+    // opposite sides automatically (because their travel directions are
+    // opposite), so we keep the no-overlap arrangement without an explicit
+    // sign flip.
+    const tx = (endX - startX) / len;
+    const ty = (endY - startY) / len;
+    const perpX = -ty;
+    const perpY = tx;
+    const c1x = startX + tx * 50 + perpX * 36;
+    const c1y = startY + ty * 50 + perpY * 36;
+    const c2x = endX - tx * 50 + perpX * 36;
+    const c2y = endY - ty * 50 + perpY * 36;
     return `M ${startX} ${startY} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${endX} ${endY}`;
   };
 
@@ -213,11 +260,40 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<SVGSVGElement>) => {
-      // Don't start a pan on interactive elements — let click handlers run.
-      const target = e.target as Element | null;
-      if (target && target.closest("[data-tag]")) return;
       if (e.button !== 0) return; // left-button only
+      const target = e.target as Element | null;
+      if (!target) return;
+
+      // Node drag takes precedence: if the pointer-down landed on a card
+      // (any descendant of `[data-node]`), start a node-drag for that id.
+      const nodeEl = target.closest<SVGElement>("[data-node]");
+      if (nodeEl) {
+        const nodeId = nodeEl.getAttribute("data-node");
+        const pos = nodeId ? layout[nodeId] : undefined;
+        if (nodeId && pos) {
+          dragRef.current = {
+            kind: "node",
+            nodeId,
+            startX: e.clientX,
+            startY: e.clientY,
+            originX: pos.x,
+            originY: pos.y,
+            moved: 0,
+          };
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            // Pointer-capture is best-effort.
+          }
+          return;
+        }
+      }
+
+      // Otherwise: skip pan on interactive elements (edges/pills carry
+      // `data-tag` for their tooltips), and start a canvas pan on the rest.
+      if (target.closest("[data-tag]")) return;
       dragRef.current = {
+        kind: "pan",
         startX: e.clientX,
         startY: e.clientY,
         panX: pan.x,
@@ -230,7 +306,7 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
         // Some browsers throw if the element is detaching — safe to ignore.
       }
     },
-    [pan.x, pan.y],
+    [pan.x, pan.y, layout],
   );
 
   const handlePointerMove = useCallback(
@@ -242,10 +318,24 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
       const dxScreen = e.clientX - drag.startX;
       const dyScreen = e.clientY - drag.startY;
       drag.moved = Math.max(drag.moved, Math.hypot(dxScreen, dyScreen));
-      setPan({
-        x: drag.panX - dxScreen * (viewBoxW / r.width),
-        y: drag.panY - dyScreen * (viewBoxH / r.height),
-      });
+      const dxView = dxScreen * (viewBoxW / r.width);
+      const dyView = dyScreen * (viewBoxH / r.height);
+
+      if (drag.kind === "pan") {
+        setPan({
+          x: drag.panX - dxView,
+          y: drag.panY - dyView,
+        });
+      } else {
+        // Node drag — the card follows the cursor in viewBox space.
+        setNodePositions((prev) => ({
+          ...prev,
+          [drag.nodeId]: {
+            x: drag.originX + dxView,
+            y: drag.originY + dyView,
+          },
+        }));
+      }
     },
     [viewBoxW, viewBoxH],
   );
@@ -300,6 +390,13 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
     setPan({ x: 0, y: 0 });
   };
 
+  // Clears every manually-dragged node back to its computed radial position.
+  // Kept separate from `resetView` because zoom/pan and node placement are
+  // different gestures the operator may want to undo independently.
+  const resetLayout = () => {
+    setNodePositions({});
+  };
+
   return (
     <div
       ref={wrapRef}
@@ -343,7 +440,7 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
           <ArrowMarker id="nb-arrow-blue" color="var(--nb-info, #3A6FB0)" />
           <ArrowMarker id="nb-arrow-amber" color="var(--nb-warning, #C98A1B)" />
           <ArrowMarker id="nb-arrow-red" color="var(--nb-danger, #C2412E)" />
-          <ArrowMarker id="nb-arrow-mute" color="var(--nb-ink-3, #8A8473)" />
+          <ArrowMarker id="nb-arrow-mute" color="var(--nb-ink-2, #4A463D)" />
         </defs>
 
         {/* Edges first so nodes paint over them */}
@@ -439,7 +536,13 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
           label="⤧"
           onClick={resetView}
           disabled={zoom === 1 && pan.x === 0 && pan.y === 0}
-          title="Reset view"
+          title="Reset view (zoom + pan)"
+        />
+        <ZoomButton
+          label="⌂"
+          onClick={resetLayout}
+          disabled={Object.keys(nodePositions).length === 0}
+          title="Reset node positions"
         />
       </div>
     </div>
@@ -515,9 +618,7 @@ const EdgePath: React.FC<EdgePathProps> = ({ d, edge }) => {
     healthy: "url(#nb-arrow-green)",
     warn: "url(#nb-arrow-amber)",
     fail: "url(#nb-arrow-red)",
-    idle: edge.kind === "subscribe"
-      ? "url(#nb-arrow-mute)"
-      : "url(#nb-arrow-mute)",
+    idle: "url(#nb-arrow-mute)",
   }[edge.health];
   // Subscribe edges paint blue when healthy (matches design legend: blue = subscribes).
   const isSubscribeHealthy = edge.kind === "subscribe" && edge.health === "healthy";
@@ -536,11 +637,14 @@ const EdgePath: React.FC<EdgePathProps> = ({ d, edge }) => {
       className={cn(
         // `stroke-opacity` (not the catch-all `opacity`) so the marker's
         // fill stays fully saturated and the arrowhead remains readable
-        // even when the line itself is dimmed for idle edges.
+        // even when the line itself is dimmed for idle edges. Idle is the
+        // demo's default state so we lean toward visibility here: chunkier
+        // 4-4 dashes + 0.7 opacity reads as "alive but quiet" without
+        // disappearing into the dotted-grid background.
         "transition-[stroke-opacity]",
         finalColorClass,
         edge.health === "idle"
-          ? "[stroke-opacity:0.55] [stroke-dasharray:3_5]"
+          ? "[stroke-opacity:0.7] [stroke-dasharray:4_4]"
           : "[stroke-opacity:0.85] hover:[stroke-opacity:1]",
         edge.health !== "idle" && "nb-flow-anim",
         edge.health === "warn" && "[stroke-dasharray:4_3]",
@@ -608,7 +712,8 @@ const EndpointCard: React.FC<EndpointCardProps> = ({
       <g
         onClick={onClick}
         data-tag={tooltip}
-        className="cursor-pointer"
+        data-node={node.id}
+        className="cursor-grab active:cursor-grabbing"
       >
       <rect
         x={0}

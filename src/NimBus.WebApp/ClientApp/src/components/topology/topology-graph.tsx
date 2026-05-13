@@ -90,32 +90,49 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
   // Curve from a card's edge to the hub's edge. We pick the side of the card
   // closest to the hub and the side of the hub closest to the card so the
   // line never visually crosses node bodies.
+  //
+  // Path *direction* depends on `kind` — publishes flow endpoint → hub,
+  // subscribes flow hub → endpoint — so the arrowhead (always painted at
+  // `markerEnd`, the path's last point) lands at the destination of the
+  // message flow rather than always at the hub.
   const drawCurve = (endpointId: string, kind: "publish" | "subscribe") => {
     const pos = layout[endpointId];
     if (!pos) return "";
     // Card center
     const cx = pos.x + CARD_W / 2;
     const cy = pos.y + CARD_H / 2;
-    // Pick exit point on the card facing the hub
+    // Unit vector card → hub; used to pick exit/entry points on each shape.
     const dx = HUB_CX - cx;
     const dy = HUB_CY - cy;
     const len = Math.hypot(dx, dy) || 1;
     const ux = dx / len;
     const uy = dy / len;
-    const startX = cx + ux * (CARD_W / 2 - 6);
-    const startY = cy + uy * (CARD_H / 2 - 6);
-    const endX = HUB_CX - ux * (HUB_W / 2 - 6);
-    const endY = HUB_CY - uy * (HUB_H / 2 - 6);
-    // Control points bend the curve outward so two opposite edges between
-    // the same pair don't visually overlap. We offset perpendicular to the
-    // straight line by ~40px, flipped for publish vs subscribe.
-    const perpX = -uy;
-    const perpY = ux;
-    const sign = kind === "publish" ? 1 : -1;
-    const c1x = startX + ux * 50 + perpX * 36 * sign;
-    const c1y = startY + uy * 50 + perpY * 36 * sign;
-    const c2x = endX - ux * 50 + perpX * 36 * sign;
-    const c2y = endY - uy * 50 + perpY * 36 * sign;
+    const cardAnchorX = cx + ux * (CARD_W / 2 - 6);
+    const cardAnchorY = cy + uy * (CARD_H / 2 - 6);
+    const hubAnchorX = HUB_CX - ux * (HUB_W / 2 - 6);
+    const hubAnchorY = HUB_CY - uy * (HUB_H / 2 - 6);
+
+    // Pick path direction so the arrowhead lands at the flow destination.
+    const isPublish = kind === "publish";
+    const startX = isPublish ? cardAnchorX : hubAnchorX;
+    const startY = isPublish ? cardAnchorY : hubAnchorY;
+    const endX = isPublish ? hubAnchorX : cardAnchorX;
+    const endY = isPublish ? hubAnchorY : cardAnchorY;
+
+    // Re-derive direction unit vector and perpendicular against the chosen
+    // start → end. Always biasing the curve to +perp of the travel direction
+    // means publish and subscribe edges between the same pair bow to
+    // opposite sides automatically (because their travel directions are
+    // opposite), so we keep the no-overlap arrangement without an explicit
+    // sign flip.
+    const tx = (endX - startX) / len;
+    const ty = (endY - startY) / len;
+    const perpX = -ty;
+    const perpY = tx;
+    const c1x = startX + tx * 50 + perpX * 36;
+    const c1y = startY + ty * 50 + perpY * 36;
+    const c2x = endX - tx * 50 + perpX * 36;
+    const c2y = endY - ty * 50 + perpY * 36;
     return `M ${startX} ${startY} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${endX} ${endY}`;
   };
 

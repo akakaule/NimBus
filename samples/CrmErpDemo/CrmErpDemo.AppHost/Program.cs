@@ -193,4 +193,16 @@ builder.AddViteApp("erp-web", "../Erp.Web")
     .WithExternalHttpEndpoints()
     .WaitFor(erpApi);
 
+// DataPlatform sink. Pure terminal subscriber for ErpCustomerCreated —
+// mirrors the Erp adapter's Functions hosting model. No Api / Web companion
+// projects (the handler logs the inbound event; a real sink would write to
+// a lake / warehouse here).
+var dataPlatformAdapter = builder
+    .AddAzureFunctionsProject<Projects.DataPlatform_Adapter_Functions>("dataplatform-adapter")
+    .WithReference(servicebus)
+    .WithEnvironment("AzureWebJobsServiceBus", servicebus.Resource.ConnectionStringExpression)
+    .WithEnvironment("TopicName", "DataPlatformEndpoint")
+    .WithEnvironment("SubscriptionName", "DataPlatformEndpoint");
+if (provisioner is not null) dataPlatformAdapter.WaitFor(provisioner);
+
 builder.Build().Run();

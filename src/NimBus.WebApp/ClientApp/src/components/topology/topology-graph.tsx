@@ -137,10 +137,16 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
     const len = Math.hypot(dx, dy) || 1;
     const ux = dx / len;
     const uy = dy / len;
-    const cardAnchorX = cx + ux * (CARD_W / 2 - 6);
-    const cardAnchorY = cy + uy * (CARD_H / 2 - 6);
-    const hubAnchorX = HUB_CX - ux * (HUB_W / 2 - 6);
-    const hubAnchorY = HUB_CY - uy * (HUB_H / 2 - 6);
+    // Anchor a few units OUTSIDE each rect so the 12-unit marker fully clears
+    // the box body. Without this gap, refX=11 leaves most of the arrowhead
+    // tucked under the destination card (the bug the user spotted).
+    const ANCHOR_GAP = 4;
+    const cardT = rectExitDistance(ux, uy, CARD_W / 2, CARD_H / 2);
+    const hubT = rectExitDistance(ux, uy, HUB_W / 2, HUB_H / 2);
+    const cardAnchorX = cx + ux * (cardT + ANCHOR_GAP);
+    const cardAnchorY = cy + uy * (cardT + ANCHOR_GAP);
+    const hubAnchorX = HUB_CX - ux * (hubT + ANCHOR_GAP);
+    const hubAnchorY = HUB_CY - uy * (hubT + ANCHOR_GAP);
 
     // Pick path direction so the arrowhead lands at the flow destination.
     const isPublish = kind === "publish";
@@ -551,6 +557,23 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+// Distance from a rect centre to where the ray (ux, uy) exits the rect.
+// Used to anchor edges at the actual rect boundary regardless of which
+// side faces the hub — corner rays hit the side they cross first, axis-
+// aligned rays hit cleanly. Tiny epsilon dodges the 0/0 case at the centre.
+function rectExitDistance(
+  ux: number,
+  uy: number,
+  halfW: number,
+  halfH: number,
+): number {
+  const ax = Math.abs(ux);
+  const ay = Math.abs(uy);
+  const tx = ax > 1e-6 ? halfW / ax : Number.POSITIVE_INFINITY;
+  const ty = ay > 1e-6 ? halfH / ay : Number.POSITIVE_INFINITY;
+  return Math.min(tx, ty);
 }
 
 interface ZoomButtonProps {

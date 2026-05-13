@@ -9,11 +9,13 @@ import EventTypeDetails from "pages/event-type-details";
 import MessagesList from "pages/messages-list";
 import Admin from "pages/admin";
 import Metrics from "pages/metrics";
+import Topology from "pages/topology";
 import Insights from "pages/insights";
 import AuditsList from "pages/audits-list";
 import Footer from "components/footer";
 import { Navigation } from "models/navigation";
 import { ToastProvider } from "components/ui/toast";
+import { CommandPaletteProvider } from "components/command-palette";
 import { ThemeProvider } from "hooks/use-theme";
 
 const navigation: Navigation = [
@@ -66,6 +68,12 @@ const navigation: Navigation = [
     render: () => <Metrics />,
   },
   {
+    name: "Topology",
+    path: "/Topology",
+    header: true,
+    render: () => <Topology />,
+  },
+  {
     name: "Insights",
     path: "/Insights",
     header: true,
@@ -95,26 +103,28 @@ function App() {
   return (
     <ThemeProvider>
       <ToastProvider>
-        <div className="flex min-h-screen bg-background">
-          <Sidebar />
-          <div className="flex flex-col flex-1 min-w-0">
-            <Topbar />
-            <main className="flex-1 flex flex-col min-w-0">
-              <Routes>
-                {navigation
-                  .filter((x) => x.render)
-                  .map((route) => (
-                    <Route
-                      key={route.path}
-                      path={route.path}
-                      element={route.render!()}
-                    />
-                  ))}
-              </Routes>
-            </main>
-            <Footer />
+        <CommandPaletteProvider>
+          <div className="flex min-h-screen bg-background">
+            <Sidebar />
+            <div className="flex flex-col flex-1 min-w-0">
+              <Topbar />
+              <main className="flex-1 flex flex-col min-w-0">
+                <Routes>
+                  {navigation
+                    .filter((x) => x.render)
+                    .map((route) => (
+                      <Route
+                        key={route.path}
+                        path={route.path}
+                        element={route.render!()}
+                      />
+                    ))}
+                </Routes>
+              </main>
+              <Footer />
+            </div>
           </div>
-        </div>
+        </CommandPaletteProvider>
       </ToastProvider>
     </ThemeProvider>
   );

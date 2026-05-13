@@ -8,6 +8,8 @@ interface NavItem {
   /** Match path prefixes so /Endpoints/Details/X keeps Endpoints highlighted. */
   matchPrefix?: string;
   icon: React.ReactNode;
+  /** Optional trailing badge (e.g. "new") — rendered in the muted pill slot. */
+  badge?: string;
 }
 
 interface NavGroup {
@@ -105,6 +107,19 @@ const Icon = {
       />
     </svg>
   ),
+  topology: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
+      <circle cx="4" cy="4" r="2" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="12" cy="4" r="2" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="8" cy="12" r="2" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M5.6 5.4l1.5 5M10.4 5.4L8.9 10.4M6 4h4"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  ),
 };
 
 const NAV: NavGroup[] = [
@@ -130,6 +145,12 @@ const NAV: NavGroup[] = [
         icon: Icon.messages,
       },
       { name: "Metrics", path: "/Metrics", icon: Icon.metrics },
+      {
+        name: "Topology",
+        path: "/Topology",
+        icon: Icon.topology,
+        badge: "new",
+      },
     ],
   },
   {
@@ -218,7 +239,17 @@ const Sidebar = () => {
                 }}
               >
                 <span className="opacity-90 shrink-0">{item.icon}</span>
-                {item.name}
+                <span className="flex-1 truncate">{item.name}</span>
+                {item.badge && (
+                  <span
+                    className={cn(
+                      "ml-auto font-mono text-[10px] uppercase tracking-wider px-1.5 py-px rounded-full font-bold",
+                      "bg-primary/[0.22] text-primary",
+                    )}
+                  >
+                    {item.badge}
+                  </span>
+                )}
               </NavLink>
             ))}
           </div>

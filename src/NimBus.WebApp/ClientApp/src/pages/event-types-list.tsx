@@ -3,6 +3,8 @@ import * as api from "api-client";
 import Page from "components/page";
 import { Spinner } from "components/ui/spinner";
 import { Badge } from "components/ui/badge";
+import { NamespacePill } from "components/ui/namespace-pill";
+import { EmptyState } from "components/ui/empty-state";
 import DataTable, { ITableRow, ITableHeadCell } from "components/data-table";
 import EventTypeSearchToolbar, {
   ViewMode,
@@ -133,7 +135,11 @@ const EventTypesList: React.FC = () => {
         [
           TableColumns.name,
           {
-            value: <span className="text-blue-600 font-bold">{et.name}</span>,
+            value: (
+              <span className="text-status-info dark:text-blue-300 font-bold">
+                {et.name}
+              </span>
+            ),
             searchValue: et.name || "",
           },
         ],
@@ -141,12 +147,9 @@ const EventTypesList: React.FC = () => {
           TableColumns.namespace,
           {
             value: (
-              <Badge
-                variant={et.namespace ? "primary" : "default"}
-                className={et.namespace ? "bg-purple-100 text-purple-800" : ""}
-              >
+              <NamespacePill size="sm">
                 {et.namespace || UNCATEGORIZED}
-              </Badge>
+              </NamespacePill>
             ),
             searchValue: et.namespace || UNCATEGORIZED,
           },
@@ -188,9 +191,15 @@ const EventTypesList: React.FC = () => {
     { id: TableColumns.consumers, label: "Consumers", numeric: true },
   ];
 
+  const eventTypeCount = eventTypes.length;
+  const namespaceCount = namespaces.length;
+
   if (loading) {
     return (
-      <Page title="Event Types">
+      <Page
+        title="Event Types"
+        subtitle="Contracts published across the bus"
+      >
         <div className="flex items-center justify-center w-full h-[200px]">
           <Spinner size="xl" color="primary" />
         </div>
@@ -209,8 +218,11 @@ const EventTypesList: React.FC = () => {
   const setViewMode = (next: ViewMode) =>
     setFiltersWithoutHistory({ ...applied, viewMode: next });
 
+  const hasActiveFilters = searchTerm.length > 0 || selectedNamespace.length > 0;
+  const subtitle = `${eventTypeCount} contract${eventTypeCount === 1 ? "" : "s"} across ${namespaceCount} namespace${namespaceCount === 1 ? "" : "s"}`;
+
   return (
-    <Page title="Event Types">
+    <Page title="Event Types" subtitle={subtitle}>
       <div className="w-full">
         <EventTypeSearchToolbar
           searchTerm={searchTerm}
@@ -223,11 +235,33 @@ const EventTypesList: React.FC = () => {
         />
 
         {filteredEventTypes.length === 0 ? (
-          <div className="flex items-center justify-center h-[200px]">
-            <p className="text-muted-foreground">
-              No event types found matching your criteria.
-            </p>
-          </div>
+          <EmptyState
+            icon="◌"
+            title={
+              hasActiveFilters
+                ? "No event types match your filters"
+                : "No event types registered yet"
+            }
+            description={
+              hasActiveFilters
+                ? "Try a different search term or clear the namespace filter."
+                : "Event types will appear here once endpoints declare their published and consumed contracts."
+            }
+            action={
+              hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm("");
+                    setSelectedNamespace("");
+                  }}
+                  className="text-primary-600 hover:text-primary text-[13px] font-semibold underline-offset-2 hover:underline"
+                >
+                  Clear all filters
+                </button>
+              )
+            }
+          />
         ) : viewMode === "cards" ? (
           <EventTypeNamespaceGroup groups={groupedEventTypes} />
         ) : (

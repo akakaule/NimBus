@@ -3,15 +3,15 @@ import { useParams } from "react-router-dom";
 import * as api from "api-client";
 import Page from "components/page";
 import { Spinner } from "components/ui/spinner";
-import { Badge } from "components/ui/badge";
-import EventTypeEndpointsList from "components/event-types/event-type-endpoints-list";
+import { NamespacePill } from "components/ui/namespace-pill";
+import { TopologyMiniMap } from "components/ui/topology-mini-map";
+import { Button } from "components/ui/button";
 import EventTypePropertiesTable from "components/event-types/event-type-properties-table";
 import EventTypeExamplePayload from "components/event-types/event-type-example-payload";
 
-// External link icon
 const ExternalLinkIcon = () => (
   <svg
-    className="w-4 h-4 inline-block ml-0.5"
+    className="w-3.5 h-3.5 inline-block ml-0.5"
     fill="none"
     stroke="currentColor"
     viewBox="0 0 24 24"
@@ -19,7 +19,7 @@ const ExternalLinkIcon = () => (
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
-      strokeWidth={2}
+      strokeWidth={1.6}
       d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
     />
   </svg>
@@ -61,74 +61,77 @@ const EventTypeDetails: React.FC = () => {
     return (
       <Page title="Event Type Details" backbutton backUrl="/EventTypes">
         <div className="flex items-center justify-center w-full h-[200px]">
-          <p className="text-red-500">{error || "Event type not found"}</p>
+          <p className="text-status-danger">{error || "Event type not found"}</p>
         </div>
       </Page>
     );
   }
 
   const eventType = details.eventType;
+  const producers = details.producers ?? [];
+  const consumers = details.consumers ?? [];
+  const fieldCount = (eventType?.properties ?? []).filter(
+    (p) => p.name !== "MessageMetadata",
+  ).length;
 
   return (
     <Page
       title={eventType?.name || "Event Type Details"}
+      subtitle={eventType?.description || undefined}
       backbutton
       backUrl="/EventTypes"
+      actions={
+        details.codeRepoLink && (
+          <a
+            href={details.codeRepoLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="no-underline"
+          >
+            <Button variant="ghost" size="sm">
+              View Source <ExternalLinkIcon />
+            </Button>
+          </a>
+        )
+      }
     >
-      <div className="w-full">
-        <div className="flex flex-col gap-6">
-          {/* Header Section */}
+      <div className="w-full flex flex-col gap-5">
+        {eventType?.namespace && (
           <div>
-            <div className="flex gap-2 mb-3">
-              <Badge
-                variant="primary"
-                className="bg-purple-100 text-purple-800"
-              >
-                {eventType?.namespace}
-              </Badge>
-            </div>
-
-            <p className="text-muted-foreground mb-3">
-              {eventType?.description || "No description available"}
-            </p>
-
-            {details.codeRepoLink && (
-              <a
-                href={details.codeRepoLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-500 text-sm hover:underline"
-              >
-                View Source Code <ExternalLinkIcon />
-              </a>
-            )}
+            <NamespacePill>{eventType.namespace}</NamespacePill>
           </div>
+        )}
 
-          <hr className="border-border" />
+        <section>
+          <SectionTitle>Topology</SectionTitle>
+          <TopologyMiniMap
+            producers={producers}
+            consumers={consumers}
+            centerLabel={eventType?.name || params.id!}
+            centerMeta={`${fieldCount} field${fieldCount === 1 ? "" : "s"}`}
+          />
+        </section>
 
-          {/* Producers and Consumers */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <EventTypeEndpointsList
-              title="Producers"
-              endpoints={details.producers || []}
-              colorScheme="green"
-            />
-            <EventTypeEndpointsList
-              title="Consumers"
-              endpoints={details.consumers || []}
-              colorScheme="blue"
-            />
-          </div>
-
-          {/* Properties Table */}
+        <section>
+          <SectionTitle>Properties</SectionTitle>
           <EventTypePropertiesTable properties={eventType?.properties || []} />
+        </section>
 
-          {/* Example Payload */}
-          {eventType && <EventTypeExamplePayload eventType={eventType} />}
-        </div>
+        {eventType && (
+          <section>
+            <SectionTitle>Example Payload</SectionTitle>
+            <EventTypeExamplePayload eventType={eventType} />
+          </section>
+        )}
       </div>
     </Page>
   );
 };
+
+const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <h2 className="m-0 mb-2.5 font-bold text-[11px] text-muted-foreground tracking-[0.12em] uppercase">
+    {children}
+  </h2>
+);
 
 export default EventTypeDetails;

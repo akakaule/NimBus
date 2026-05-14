@@ -90,14 +90,18 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
   const viewBoxH = VIEWBOX_H / zoom;
   const viewBoxStr = `${pan.x} ${pan.y} ${viewBoxW} ${viewBoxH}`;
 
-  // Radial layout — angle each endpoint around the hub. Radius shrinks
-  // slightly as N grows so cards stay inside the viewbox; clamped so the
-  // graph doesn't visually compress at small N. Operator-set positions
-  // (via dragging a card) win over the computed radial position so the
-  // graph remembers manual placements across re-renders / data refreshes.
+  // Radial layout — angle each endpoint around the hub. Radius scales mildly
+  // with N so cards stay angularly separated; clamped wide on the low end
+  // so small graphs (N=2-4, the common demo case) feel airy instead of
+  // crowded against the bus pill. 250 is the practical ceiling — much
+  // larger and top/bottom cards clip the 580-tall viewBox.
+  //
+  // Operator-set positions (via dragging a card) win over the computed
+  // radial position so the graph remembers manual placements across
+  // re-renders / data refreshes.
   const layout = useMemo(() => {
     const n = Math.max(nodes.length, 1);
-    const radius = Math.min(220, Math.max(160, 60 + n * 18));
+    const radius = Math.min(250, Math.max(210, 60 + n * 20));
     const positions: Record<string, { x: number; y: number; angle: number }> = {};
     nodes.forEach((node, i) => {
       // Start from -π/2 (top) and walk clockwise so the first node lands

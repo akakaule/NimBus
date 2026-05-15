@@ -299,40 +299,18 @@ public class NimBusBuilderTests
     }
 
     [TestMethod]
-    public void AddNimBus_WithoutStorageProvider_ThrowsClearError()
+    public void AddNimBus_WithoutMessageStore_RegistersCoreServices()
     {
+        // Adapters and lightweight hosts can use AddNimBus without ever registering
+        // a message-store provider. The pipeline + lifecycle notifier should still
+        // be wired up so middleware and observers work.
         var services = new ServiceCollection();
-        var ex = Assert.ThrowsException<InvalidOperationException>(() => services.AddNimBus());
-        StringAssert.Contains(ex.Message, "AddCosmosDbMessageStore");
-        StringAssert.Contains(ex.Message, "AddSqlServerMessageStore");
-    }
+        services.AddNimBus();
 
-    [TestMethod]
-    public void AddNimBus_WithMultipleStorageProviders_ThrowsClearError()
-    {
-        var services = new ServiceCollection();
-        var ex = Assert.ThrowsException<InvalidOperationException>(() => services.AddNimBus(b =>
-        {
-            b.AddInMemoryMessageStore();
-            b.AddInMemoryMessageStore();
-        }));
-        StringAssert.Contains(ex.Message, "More than one");
-    }
+        var sp = services.BuildServiceProvider();
 
-    [TestMethod]
-    public void AddNimBus_ValidatesAfterConfigureCallback_NotInBuilderConstructor()
-    {
-        // Regression for Codex feedback: validation must run after the configure
-        // callback has had a chance to register a provider, not in the builder ctor.
-        var services = new ServiceCollection();
-        services.AddNimBus(b =>
-        {
-            // If validation ran in the builder ctor, this call would never execute
-            // because construction would have already thrown.
-            b.AddInMemoryMessageStore();
-        });
-        // Reaching this line without an exception proves the ordering is correct.
-        Assert.IsNotNull(services.BuildServiceProvider().GetService<MessagePipeline>());
+        Assert.IsNotNull(sp.GetService<MessagePipeline>());
+        Assert.IsNotNull(sp.GetService<MessageLifecycleNotifier>());
     }
 
     [TestMethod]

@@ -80,8 +80,6 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.AddServiceDefaults();
 builder.AddAzureServiceBusClient("servicebus");
 
-builder.Services.AddNimBus(n => n.WithoutStorageProvider());
-
 builder.Services.AddNimBusSubscriber("BillingEndpoint", sub =>
 {
     sub.AddHandler<OrderPlaced, OrderPlacedHandler>();
@@ -95,6 +93,8 @@ builder.Services.AddNimBusReceiver(opts =>
 
 builder.Build().Run();
 ```
+
+Add `builder.Services.AddNimBus(n => n.AddPipelineBehavior<LoggingMiddleware>())` when you want middleware in the pipeline.
 
 Next steps:
 

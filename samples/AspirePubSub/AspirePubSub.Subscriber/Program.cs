@@ -14,10 +14,8 @@ builder.AddServiceDefaults();
 builder.AddAzureServiceBusClient("servicebus");
 
 // Register middleware pipeline — behaviors execute in registration order.
-// This sample is a pure subscriber, no message store needed.
 builder.Services.AddNimBus(nimbus =>
 {
-    nimbus.WithoutStorageProvider();
     nimbus.AddPipelineBehavior<LoggingMiddleware>();
     nimbus.AddPipelineBehavior<ValidationMiddleware>();
 });

@@ -186,22 +186,21 @@ A subscriber needs three pieces:
 
 ### Register the NimBus pipeline
 
-Adapters that only publish can omit `AddNimBus(...)` unless they need NimBus
-pipeline or lifecycle services. Subscriber adapters should call it once:
+`AddNimBus(...)` is optional. Call it when you want to register pipeline
+behaviors or lifecycle observers; skip it entirely for a no-middleware
+subscriber:
 
 ```csharp
 builder.Services.AddNimBus(n =>
 {
-    n.WithoutStorageProvider();
     n.AddPipelineBehavior<LoggingMiddleware>();
     n.AddPipelineBehavior<ValidationMiddleware>();
 });
 ```
 
-`WithoutStorageProvider()` is the normal choice for adapters. It tells NimBus
-that this host does not use the platform message store. Without it, builder
-validation expects one of the message-store providers such as
-`AddCosmosDbMessageStore()` or `AddSqlServerMessageStore()`.
+Adapters do not register a NimBus message-store provider. Storage providers
+(`AddCosmosDbMessageStore`, `AddSqlServerMessageStore`) are for platform hosts
+such as the Resolver and WebApp; they are not part of normal adapter wiring.
 
 ### Write handlers
 
@@ -417,7 +416,6 @@ Register middleware in the order you want it to wrap the handler:
 ```csharp
 builder.Services.AddNimBus(n =>
 {
-    n.WithoutStorageProvider();
     n.AddPipelineBehavior<LoggingMiddleware>();
     n.AddPipelineBehavior<ValidationMiddleware>();
 });
@@ -472,7 +470,6 @@ builder.Services.AddHttpClient<ICrmApiClient, CrmApiClient>();
 
 builder.Services.AddNimBus(n =>
 {
-    n.WithoutStorageProvider();
     n.AddPipelineBehavior<LoggingMiddleware>();
     n.AddPipelineBehavior<ValidationMiddleware>();
 });
@@ -539,9 +536,6 @@ session settings, retry counts, and routing rules.
   created with `EnsureTableExistsAsync()`.
 - **Every message is dead-lettered by validation**: required event metadata such
   as `EventId` or `EventTypeId` is missing. Fix the publisher side.
-- **`WithoutStorageProvider()` throws**: the host registered both
-  `WithoutStorageProvider()` and a message-store provider. Pick one model for
-  the process.
 
 ## Where to go next
 

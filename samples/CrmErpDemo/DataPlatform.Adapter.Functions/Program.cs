@@ -28,12 +28,6 @@ builder.Services.AddSingleton<ServiceBusClient>(sp =>
     return new ServiceBusClient(connection);
 });
 
-builder.Services.AddNimBus(n =>
-{
-    // Pure terminal subscriber — no outbox, no message-store, no publisher.
-    n.WithoutStorageProvider();
-});
-
 builder.Services.AddNimBusSubscriber("DataPlatformEndpoint", sub =>
 {
     sub.AddHandler<ErpCustomerCreated, ErpCustomerCreatedHandler>();

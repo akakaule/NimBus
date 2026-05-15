@@ -33,7 +33,12 @@ const headCells: ITableHeadCell[] = [
   { id: Column.to, label: "To", numeric: false },
 ];
 
-function mapMessageToRow(msg: api.Message): ITableRow {
+type IdFilterField = "eventId" | "messageId" | "sessionId";
+
+function mapMessageToRow(
+  msg: api.Message,
+  onFilterById: (field: IdFilterField, value: string) => void,
+): ITableRow {
   const enqueuedSortValue = msg.enqueuedTimeUtc?.valueOf() ?? 0;
 
   return {
@@ -43,21 +48,36 @@ function mapMessageToRow(msg: api.Message): ITableRow {
       [
         Column.eventId,
         {
-          value: <TruncatedGuid guid={msg.eventId} />,
+          value: (
+            <TruncatedGuid
+              guid={msg.eventId}
+              onClick={(g) => onFilterById("eventId", g)}
+            />
+          ),
           searchValue: msg.eventId ?? "",
         },
       ],
       [
         Column.messageId,
         {
-          value: <TruncatedGuid guid={msg.messageId} />,
+          value: (
+            <TruncatedGuid
+              guid={msg.messageId}
+              onClick={(g) => onFilterById("messageId", g)}
+            />
+          ),
           searchValue: msg.messageId ?? "",
         },
       ],
       [
         Column.sessionId,
         {
-          value: <TruncatedGuid guid={msg.sessionId} />,
+          value: (
+            <TruncatedGuid
+              guid={msg.sessionId}
+              onClick={(g) => onFilterById("sessionId", g)}
+            />
+          ),
           searchValue: msg.sessionId ?? "",
         },
       ],
@@ -165,7 +185,16 @@ export default function MessagesList() {
     }
   };
 
-  const rows = messages.map(mapMessageToRow);
+  // Clicking an ID cell narrows the current filter set by setting just that
+  // field; other fields stay as the user left them (URL-driven merge behavior).
+  const filterByField = useCallback(
+    (field: IdFilterField, value: string) => {
+      applyFilters({ ...applied, [field]: value });
+    },
+    [applied, applyFilters],
+  );
+
+  const rows = messages.map((m) => mapMessageToRow(m, filterByField));
 
   return (
     <Page title="Messages">

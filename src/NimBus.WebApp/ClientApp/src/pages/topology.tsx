@@ -124,35 +124,6 @@ export default function Topology() {
               + Add filter
             </Button>
           }
-          trailing={
-            <div className="inline-flex items-center bg-card border border-border rounded-nb-md p-[3px] gap-[2px]">
-              <button
-                type="button"
-                className={cn(
-                  "px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors",
-                  "bg-primary text-white",
-                )}
-              >
-                Graph
-              </button>
-              <button
-                type="button"
-                disabled
-                title="Coming soon"
-                className="px-2.5 py-1.5 rounded-md text-xs font-semibold text-muted-foreground/60 cursor-not-allowed"
-              >
-                Matrix
-              </button>
-              <button
-                type="button"
-                disabled
-                title="Coming soon"
-                className="px-2.5 py-1.5 rounded-md text-xs font-semibold text-muted-foreground/60 cursor-not-allowed"
-              >
-                List
-              </button>
-            </div>
-          }
         />
 
         {data ? (

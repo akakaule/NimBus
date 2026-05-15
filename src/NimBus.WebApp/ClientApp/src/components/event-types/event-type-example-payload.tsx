@@ -9,6 +9,7 @@ import {
   ModalFooter,
 } from "components/ui/modal";
 import { useToast } from "components/ui/toast";
+import { generateFakeEventPayload } from "lib/fake-event-data";
 import * as api from "api-client";
 
 const CopyIcon = () => (
@@ -40,6 +41,17 @@ const EditIcon = () => (
       strokeLinejoin="round"
       strokeWidth={1.6}
       d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+    />
+  </svg>
+);
+
+const SparklesIcon = () => (
+  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.6}
+      d="M9.5 3l1.4 3.6L14.5 8l-3.6 1.4L9.5 13 8.1 9.4 4.5 8l3.6-1.4L9.5 3zm9 7l.9 2.3 2.3.9-2.3.9-.9 2.3-.9-2.3-2.3-.9 2.3-.9.9-2.3zm-4 6l.7 1.7 1.7.7-1.7.7-.7 1.7-.7-1.7-1.7-.7 1.7-.7.7-1.7z"
     />
   </svg>
 );
@@ -103,6 +115,10 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
     setEditedJson(exampleJson);
     setResponseMessage({ hasError: false, text: "" });
     setIsOpen(true);
+  };
+
+  const handleGenerateFakeData = () => {
+    setEditedJson(generateFakeEventPayload(eventType.properties));
   };
 
   const handleSendEvent = async () => {
@@ -176,6 +192,13 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
         <ModalFooter>
           <Button variant="outline" onClick={() => setIsOpen(false)}>
             Close
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={handleGenerateFakeData}
+            leftIcon={<SparklesIcon />}
+          >
+            Generate fake data
           </Button>
           <Button
             variant="solid"

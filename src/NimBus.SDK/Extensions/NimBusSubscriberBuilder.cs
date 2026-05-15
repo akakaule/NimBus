@@ -110,9 +110,27 @@ namespace NimBus.SDK.Extensions
                     $"Handler type '{handlerType.FullName}' must implement IEventHandler<{eventType.Name}>.",
                     nameof(handlerType));
 
-            var existing = HandlerRegistrations.SingleOrDefault(r => r.EventType == eventType);
+            // Dedupe on the wire EventTypeId, not on CLR-type identity: that's
+            // what EventContextHandler keys its dispatch table on, so two
+            // different CLR types sharing a name (e.g. A.OrderPlaced +
+            // B.OrderPlaced) collide at runtime even though the CLR-type
+            // equality check would treat them as distinct registrations.
+            var eventTypeId = new EventType(eventType).Id;
+            var existing = HandlerRegistrations.SingleOrDefault(r => r.EventTypeId == eventTypeId);
             if (existing != null)
             {
+                if (existing.EventType != eventType)
+                {
+                    // Distinct CLR types collapsing onto the same wire id —
+                    // unsupportable because the bus dispatches on EventTypeId.
+                    // Fail loudly at startup instead of letting one handler
+                    // silently overwrite the other.
+                    throw new InvalidOperationException(
+                        $"Two distinct event types map to the same EventTypeId '{eventTypeId}': " +
+                        $"'{existing.EventType.FullName}' and '{eventType.FullName}'. " +
+                        "EventTypeId is derived from the unqualified type name and must be unique across the subscriber. " +
+                        "Rename one of the events to disambiguate.");
+                }
                 if (explicitRegistration)
                 {
                     HandlerRegistrations.Remove(existing);
@@ -134,7 +152,7 @@ namespace NimBus.SDK.Extensions
 
             HandlerRegistrations.Add(new HandlerRegistration
             {
-                EventTypeId = new EventType(eventType).Id,
+                EventTypeId = eventTypeId,
                 EventType = eventType,
                 HandlerType = handlerType,
                 IsExplicit = explicitRegistration,

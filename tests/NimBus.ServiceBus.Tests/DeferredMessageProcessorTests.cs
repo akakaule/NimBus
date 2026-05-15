@@ -222,6 +222,52 @@ public class DeferredMessageProcessorTests
         Assert.AreEqual("billing", client.LastSenderEntityPath);
     }
 
+    // ── Multi-batch loop ────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task ProcessDeferredMessagesAsync_MultipleBatches_ProcessesAllBatchesUntilFinalShortBatch()
+    {
+        // Production loop receives in chunks of BatchSize (100) and exits when a
+        // batch returns fewer than BatchSize messages. Feed a full first batch
+        // (forces the loop to continue) plus a short second batch (forces the
+        // terminating break at `messages.Count < BatchSize`).
+        const int batchSize = 100;
+        var client = new RecordingServiceBusClient();
+        var firstBatch = Enumerable.Range(1, batchSize)
+            .Select(i => CreateReceivedMessage($"corr-{i:D3}", deferralSequence: i))
+            .Cast<ServiceBusReceivedMessage>()
+            .ToList();
+        var secondBatch = Enumerable.Range(batchSize + 1, 5)
+            .Select(i => CreateReceivedMessage($"corr-{i:D3}", deferralSequence: i))
+            .Cast<ServiceBusReceivedMessage>()
+            .ToList();
+        client.SessionReceiver.ReceiveBatches.Add(firstBatch);
+        client.SessionReceiver.ReceiveBatches.Add(secondBatch);
+
+        using var capture = ReplayTelemetryCapture.Start();
+        var sut = new DeferredMessageProcessor(client);
+        await sut.ProcessDeferredMessagesAsync("session-1", "billing");
+
+        Assert.AreEqual(105, client.Sender.SentMessages.Count, "All messages from both batches should be republished");
+        Assert.AreEqual(105, client.SessionReceiver.CompletedMessages.Count, "All messages from both batches should be completed");
+        // Cross-batch ordering: first batch precedes second.
+        Assert.AreEqual("corr-001", client.Sender.SentMessages[0].CorrelationId);
+        Assert.AreEqual("corr-100", client.Sender.SentMessages[99].CorrelationId);
+        Assert.AreEqual("corr-101", client.Sender.SentMessages[100].CorrelationId);
+        Assert.AreEqual("corr-105", client.Sender.SentMessages[104].CorrelationId);
+
+        // Counter fires once per inner batch, with each batch's size.
+        var replayed = capture.LongMeasurements.Where(m => m.Name == "nimbus.deferred.replayed").ToList();
+        Assert.AreEqual(2, replayed.Count, "Two batches should record two counter increments");
+        Assert.AreEqual(100, replayed[0].Value);
+        Assert.AreEqual(5, replayed[1].Value);
+
+        // Span carries the cumulative total across both batches.
+        var span = capture.Activities.Single(a => a.OperationName == "NimBus.DeferredProcessor.Replay");
+        Assert.AreEqual(105, span.GetTagItem(MessagingAttributes.NimBusDeferredBatchSize));
+        Assert.AreEqual(ActivityStatusCode.Ok, span.Status);
+    }
+
     // ── GetDeferralSequence behavior (tested via sort order) ────────────
 
     [TestMethod]
@@ -293,6 +339,90 @@ public class DeferredMessageProcessorTests
             () => sut.ProcessDeferredMessagesAsync("session-1", "my-topic"));
 
         Assert.IsInstanceOfType(ex.InnerException, typeof(ServiceBusException));
+    }
+
+    // ── Cancellation ────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task ProcessDeferredMessagesAsync_CancellationDuringBatch_StopsAndRecordsErrorSpan()
+    {
+        // Inner foreach calls ThrowIfCancellationRequested at the top of each
+        // iteration. Cancelling after the first send (which the fake completes
+        // synchronously) means the second iteration's check throws, so only the
+        // first message is sent and completed.
+        using var cts = new CancellationTokenSource();
+        var client = new RecordingServiceBusClient();
+        client.Sender.OnSent = _ =>
+        {
+            if (client.Sender.SentMessages.Count == 1) cts.Cancel();
+        };
+
+        var batch = Enumerable.Range(1, 5)
+            .Select(i => CreateReceivedMessage($"corr-{i}", deferralSequence: i))
+            .Cast<ServiceBusReceivedMessage>()
+            .ToList();
+        client.SessionReceiver.ReceiveBatches.Add(batch);
+
+        using var capture = ReplayTelemetryCapture.Start();
+        var sut = new DeferredMessageProcessor(client);
+
+        await Assert.ThrowsExceptionAsync<OperationCanceledException>(
+            () => sut.ProcessDeferredMessagesAsync("session-1", "billing", cts.Token));
+
+        Assert.AreEqual(1, client.Sender.SentMessages.Count, "Only the first message should have been republished");
+        Assert.AreEqual(1, client.SessionReceiver.CompletedMessages.Count, "Only the first message should have been completed");
+
+        // OperationCanceledException is not a ServiceBusException, so the inner
+        // transient catch doesn't match — the outer catch records the span as
+        // Error with the actual exception type.
+        var span = capture.Activities.Single(a => a.OperationName == "NimBus.DeferredProcessor.Replay");
+        Assert.AreEqual(ActivityStatusCode.Error, span.Status);
+        var errorType = (string?)span.GetTagItem(MessagingAttributes.ErrorType);
+        Assert.IsTrue(
+            errorType is not null && typeof(OperationCanceledException).IsAssignableFrom(Type.GetType(errorType)!),
+            $"Expected an OperationCanceledException-derived error_type, got '{errorType}'");
+    }
+
+    [TestMethod]
+    public async Task ProcessDeferredMessagesAsync_CancellationBetweenBatches_ExitsCleanlyWithoutThrowing()
+    {
+        // Different cancellation path: a full batch finishes processing, then
+        // the outer `while (!cancellationToken.IsCancellationRequested)` check
+        // exits the loop without throwing. Span ends Ok.
+        const int batchSize = 100;
+        using var cts = new CancellationTokenSource();
+        var client = new RecordingServiceBusClient();
+        client.Sender.OnSent = _ =>
+        {
+            // Cancel only after the entire first batch has been republished.
+            if (client.Sender.SentMessages.Count == batchSize) cts.Cancel();
+        };
+
+        var firstBatch = Enumerable.Range(1, batchSize)
+            .Select(i => CreateReceivedMessage($"corr-{i:D3}", deferralSequence: i))
+            .Cast<ServiceBusReceivedMessage>()
+            .ToList();
+        var secondBatch = new List<ServiceBusReceivedMessage>
+        {
+            CreateReceivedMessage("corr-should-not-process", deferralSequence: 999),
+        };
+        client.SessionReceiver.ReceiveBatches.Add(firstBatch);
+        client.SessionReceiver.ReceiveBatches.Add(secondBatch);
+
+        using var capture = ReplayTelemetryCapture.Start();
+        var sut = new DeferredMessageProcessor(client);
+
+        // No exception — cancellation between batches is a graceful shutdown.
+        await sut.ProcessDeferredMessagesAsync("session-1", "billing", cts.Token);
+
+        Assert.AreEqual(batchSize, client.Sender.SentMessages.Count, "Only the first batch should have been republished");
+        Assert.AreEqual(batchSize, client.SessionReceiver.CompletedMessages.Count, "Only the first batch should have been completed");
+        Assert.IsFalse(client.Sender.SentMessages.Any(m => m.CorrelationId == "corr-should-not-process"),
+            "The second batch must not be republished after cancellation");
+
+        var span = capture.Activities.Single(a => a.OperationName == "NimBus.DeferredProcessor.Replay");
+        Assert.AreEqual(ActivityStatusCode.Ok, span.Status);
+        Assert.AreEqual(batchSize, span.GetTagItem(MessagingAttributes.NimBusDeferredBatchSize));
     }
 
     // ── Body preservation ───────────────────────────────────────────────

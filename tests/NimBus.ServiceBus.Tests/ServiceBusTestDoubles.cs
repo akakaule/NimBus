@@ -89,9 +89,16 @@ internal sealed class RecordingServiceBusSender : ServiceBusSender
     public List<Azure.Messaging.ServiceBus.ServiceBusMessage> SentMessages { get; } = new();
     public List<(Azure.Messaging.ServiceBus.ServiceBusMessage Message, DateTimeOffset ScheduledEnqueueTime)> ScheduledMessages { get; } = new();
 
+    /// <summary>
+    /// Test hook invoked after a message is recorded as sent. Useful for triggering
+    /// side effects (e.g. cancelling a CancellationTokenSource) mid-stream.
+    /// </summary>
+    public Action<Azure.Messaging.ServiceBus.ServiceBusMessage>? OnSent { get; set; }
+
     public override Task SendMessageAsync(Azure.Messaging.ServiceBus.ServiceBusMessage message, CancellationToken cancellationToken = default)
     {
         SentMessages.Add(message);
+        OnSent?.Invoke(message);
         return Task.CompletedTask;
     }
 

@@ -136,7 +136,7 @@ builder.Services.AddNimBus(nimbus =>
 // Register the subscriber and handler
 builder.Services.AddNimBusSubscriber("BillingEndpoint", sub =>
 {
-    sub.AddHandler<OrderPlaced, OrderPlacedHandler>();
+    sub.AddHandlersFromAssemblyContaining<OrderPlacedHandler>();
 });
 
 // Start listening on the Service Bus subscription

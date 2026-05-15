@@ -82,7 +82,7 @@ builder.AddAzureServiceBusClient("servicebus");
 
 builder.Services.AddNimBusSubscriber("BillingEndpoint", sub =>
 {
-    sub.AddHandler<OrderPlaced, OrderPlacedHandler>();
+    sub.AddHandlersFromAssemblyContaining<OrderPlacedHandler>();
 });
 
 builder.Services.AddNimBusReceiver(opts =>
@@ -95,6 +95,7 @@ builder.Build().Run();
 ```
 
 Add `builder.Services.AddNimBus(n => n.AddPipelineBehavior<LoggingMiddleware>())` when you want middleware in the pipeline.
+Use `sub.AddHandler<OrderPlaced, OrderPlacedHandler>()` when you want to register or override a handler explicitly.
 
 Next steps:
 

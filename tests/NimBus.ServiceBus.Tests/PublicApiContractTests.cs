@@ -4,8 +4,10 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Messages;
 using NimBus.SDK;
+using NimBus.SDK.Extensions;
 using NimBus.ServiceBus;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 
 namespace NimBus.ServiceBus.Tests;
@@ -56,5 +58,13 @@ public class PublicApiContractTests
 
         Assert.IsTrue(method.IsGenericMethodDefinition);
         Assert.AreEqual(1, method.GetGenericArguments().Length);
+    }
+
+    [TestMethod]
+    public void NimBusSubscriberBuilder_ExposesAssemblyScanningRegistrationMethods()
+    {
+        Assert.IsNotNull(typeof(NimBusSubscriberBuilder).GetMethod(nameof(NimBusSubscriberBuilder.AddHandlersFromAssemblyContaining)));
+        Assert.IsNotNull(typeof(NimBusSubscriberBuilder).GetMethod(nameof(NimBusSubscriberBuilder.AddHandlersFromAssembly), [typeof(Assembly)]));
+        Assert.IsNotNull(typeof(NimBusSubscriberBuilder).GetMethod(nameof(NimBusSubscriberBuilder.AddHandlersFromAssemblies), [typeof(Assembly[])]));
     }
 }

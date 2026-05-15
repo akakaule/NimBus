@@ -17,12 +17,16 @@ Registers `IPublisherClient` as a singleton. The endpoint name determines the Se
 ```csharp
 services.AddNimBusSubscriber("EndpointName", sub =>
 {
-    sub.AddHandler<OrderPlaced, OrderPlacedHandler>();
+    sub.AddHandlersFromAssemblyContaining<OrderPlacedHandler>();
     sub.ConfigureRetryPolicies(policies => { ... });
 });
 ```
 
 Registers `ISubscriberClient` with handler mappings and optional retry policies.
+`AddHandlersFromAssemblyContaining<TMarker>()` scans the marker type's assembly
+for concrete `IEventHandler<TEvent>` implementations. Use
+`AddHandler<TEvent,THandler>()` when you want to register or override a handler
+explicitly.
 
 ### AddNimBusReceiver
 
@@ -542,7 +546,7 @@ services.AddSingleton<IPermanentFailureClassifier, DefaultPermanentFailureClassi
 // Option 2: Configure via subscriber builder
 services.AddNimBusSubscriber("BillingEndpoint", sub =>
 {
-    sub.AddHandler<OrderPlaced, OrderPlacedHandler>();
+    sub.AddHandlersFromAssemblyContaining<OrderPlacedHandler>();
     sub.ConfigurePermanentFailureClassifier(classifier =>
     {
         classifier.AddPermanentExceptionType<MyBusinessRuleException>();

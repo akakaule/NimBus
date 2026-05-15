@@ -1,5 +1,4 @@
 using Azure.Messaging.ServiceBus;
-using CrmErpDemo.Contracts.Events;
 using Erp.Adapter.Functions.Clients;
 using Erp.Adapter.Functions.HandoffMode;
 using Erp.Adapter.Functions.Handlers;
@@ -64,12 +63,7 @@ builder.Services.AddNimBus(n =>
 
 builder.Services.AddNimBusSubscriber("ErpEndpoint", sub =>
 {
-    sub.AddHandler<CrmAccountCreated, CrmAccountCreatedHandler>();
-    sub.AddHandler<CrmAccountUpdated, CrmAccountUpdatedHandler>();
-    sub.AddHandler<CrmAccountDeleted, CrmAccountDeletedHandler>();
-    sub.AddHandler<CrmContactCreated, CrmContactCreatedHandler>();
-    sub.AddHandler<CrmContactUpdated, CrmContactUpdatedHandler>();
-    sub.AddHandler<CrmContactDeleted, CrmContactDeletedHandler>();
+    sub.AddHandlersFromAssemblyContaining<CrmAccountCreatedHandler>();
 });
 
 builder.Build().Run();

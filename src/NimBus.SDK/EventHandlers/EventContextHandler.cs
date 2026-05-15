@@ -33,14 +33,25 @@ namespace NimBus.SDK.EventHandlers
         public void RegisterHandler<T_Event>(Func<IEventHandler<T_Event>> eventHandlerFactory)
             where T_Event : IEvent
         {
+            RegisterHandler(typeof(T_Event), eventHandlerFactory);
+        }
+
+        public void RegisterHandler(Type eventType, Func<object> eventHandlerFactory)
+        {
+            if (eventType == null) throw new ArgumentNullException(nameof(eventType));
+            if (eventHandlerFactory == null) throw new ArgumentNullException(nameof(eventHandlerFactory));
+            if (!typeof(IEvent).IsAssignableFrom(eventType))
+                throw new ArgumentException($"Event type '{eventType.FullName}' must implement {nameof(IEvent)}.", nameof(eventType));
+
             IEventJsonHandler buildEventJsonHandler()
             {
-                // Build event handler, and adapt it to handle json.
-                IEventHandler<T_Event> eventHandler = eventHandlerFactory.Invoke();
-                return new EventJsonHandler<T_Event>(eventHandler);
+                var eventHandler = eventHandlerFactory.Invoke();
+                var adapterType = typeof(EventJsonHandler<>).MakeGenericType(eventType);
+                return (IEventJsonHandler)(Activator.CreateInstance(adapterType, eventHandler)
+                    ?? throw new InvalidOperationException($"Could not create handler adapter for event type '{eventType.FullName}'."));
             }
 
-            var eventTypeId = new EventType<T_Event>().Id;
+            var eventTypeId = new EventType(eventType).Id;
             _handlerBuilders[eventTypeId] = buildEventJsonHandler;
         }
 

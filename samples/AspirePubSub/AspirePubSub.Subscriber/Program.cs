@@ -3,7 +3,6 @@ using AspirePubSub.Subscriber.Handlers;
 using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
 using NimBus.Core.Pipeline;
-using NimBus.Events.Orders;
 using NimBus.SDK.Extensions;
 using NimBus.SDK.Hosting;
 
@@ -23,7 +22,7 @@ builder.Services.AddNimBus(nimbus =>
 // Register the main subscriber (handles EventRequest messages on session-enabled subscription)
 builder.Services.AddNimBusSubscriber("BillingEndpoint", sub =>
 {
-    sub.AddHandler<OrderPlaced, OrderPlacedHandler>();
+    sub.AddHandlersFromAssemblyContaining<OrderPlacedHandler>();
 });
 
 builder.Services.AddNimBusReceiver(opts =>

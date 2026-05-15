@@ -234,11 +234,31 @@ than failed. See [error-handling.md](error-handling.md) and the pending handoff
 ```csharp
 builder.Services.AddNimBusSubscriber("CrmEndpoint", sub =>
 {
-    sub.AddHandler<AccountCreated, AccountCreatedHandler>();
-    sub.AddHandler<AccountUpdated, AccountUpdatedHandler>();
-    sub.AddHandler<AccountDeleted, AccountDeletedHandler>();
+    sub.AddHandlersFromAssemblyContaining<AccountCreatedHandler>();
 });
 ```
+
+`AddHandlersFromAssemblyContaining<TMarker>()` scans the marker type's assembly
+for concrete `IEventHandler<TEvent>` implementations and registers them with the
+same transient lifetime as explicit handler registrations. The implemented
+interface is the source of truth; handler class names do not need to follow a
+specific convention.
+
+Use explicit registration when you want narrow control or need to override a
+scanned handler. Put explicit overrides before the scan when the override type
+lives in the scanned assembly:
+
+```csharp
+builder.Services.AddNimBusSubscriber("CrmEndpoint", sub =>
+{
+    sub.AddHandler<AccountCreated, SpecialAccountCreatedHandler>();
+    sub.AddHandlersFromAssemblyContaining<AccountCreatedHandler>();
+});
+```
+
+If scanning finds more than one handler for the same event type, NimBus fails
+fast with a clear error. Register the intended handler explicitly to resolve the
+ambiguity.
 
 `AddNimBusSubscriber` registers:
 
@@ -476,7 +496,7 @@ builder.Services.AddNimBus(n =>
 
 builder.Services.AddNimBusSubscriber("CrmEndpoint", sub =>
 {
-    sub.AddHandler<AccountCreated, AccountCreatedHandler>();
+    sub.AddHandlersFromAssemblyContaining<AccountCreatedHandler>();
 });
 
 builder.Services.AddNimBusReceiver(opts =>

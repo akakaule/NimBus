@@ -6,9 +6,7 @@ using Microsoft.Azure.Functions.Worker.OpenTelemetry;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using NimBus.Core.Extensions;
 using NimBus.SDK.Extensions;
-using NimBus.ServiceBus;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 

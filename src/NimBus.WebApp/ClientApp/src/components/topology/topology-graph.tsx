@@ -65,7 +65,9 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
   // Tracks an in-progress drag. Two shapes: a `pan` drag moves the SVG
   // viewBox; a `node` drag moves a single endpoint card. Both record `moved`
   // so the eventual click can be suppressed when the gesture was actually
-  // a drag, keeping selection-on-tap intact.
+  // a drag, keeping selection-on-tap intact. `captured` flips true once we
+  // call `setPointerCapture` — deferred to the first move past the click
+  // threshold so a tap doesn't capture and steal its own click.
   type DragState =
     | {
         kind: "pan";
@@ -74,6 +76,7 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
         panX: number;
         panY: number;
         moved: number;
+        captured: boolean;
       }
     | {
         kind: "node";
@@ -83,6 +86,7 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
         originX: number;
         originY: number;
         moved: number;
+        captured: boolean;
       };
   const dragRef = useRef<DragState | null>(null);
 
@@ -276,6 +280,14 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
 
       // Node drag takes precedence: if the pointer-down landed on a card
       // (any descendant of `[data-node]`), start a node-drag for that id.
+      //
+      // We deliberately do NOT call `setPointerCapture` here. Capturing on
+      // pointerdown re-targets the synthesised click event off the inner
+      // <g> we listen on, so a quick tap on a card silently never fires
+      // its `onClick` and the inspector stays empty. Capture is deferred
+      // to `handlePointerMove` once movement passes the click threshold —
+      // by then we know it's a real drag and the click is being suppressed
+      // anyway.
       const nodeEl = target.closest<SVGElement>("[data-node]");
       if (nodeEl) {
         const nodeId = nodeEl.getAttribute("data-node");
@@ -289,18 +301,16 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
             originX: pos.x,
             originY: pos.y,
             moved: 0,
+            captured: false,
           };
-          try {
-            e.currentTarget.setPointerCapture(e.pointerId);
-          } catch {
-            // Pointer-capture is best-effort.
-          }
           return;
         }
       }
 
       // Otherwise: skip pan on interactive elements (edges/pills carry
       // `data-tag` for their tooltips), and start a canvas pan on the rest.
+      // Same deferred-capture trick — we don't capture until the gesture
+      // is genuinely a drag, for symmetry with node-drag handling.
       if (target.closest("[data-tag]")) return;
       dragRef.current = {
         kind: "pan",
@@ -309,12 +319,8 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
         panX: pan.x,
         panY: pan.y,
         moved: 0,
+        captured: false,
       };
-      try {
-        e.currentTarget.setPointerCapture(e.pointerId);
-      } catch {
-        // Some browsers throw if the element is detaching — safe to ignore.
-      }
     },
     [pan.x, pan.y, layout],
   );
@@ -328,6 +334,21 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
       const dxScreen = e.clientX - drag.startX;
       const dyScreen = e.clientY - drag.startY;
       drag.moved = Math.max(drag.moved, Math.hypot(dxScreen, dyScreen));
+
+      // Lazy capture: once the gesture has clearly become a drag (movement
+      // past the click threshold), grab the pointer so further moves keep
+      // streaming even if the cursor leaves the SVG. Doing this *here* —
+      // rather than on pointerdown — means a tap-with-no-movement never
+      // captures, so its synthesised click stays on the card's inner <g>.
+      if (!drag.captured && drag.moved > DRAG_CLICK_THRESHOLD) {
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          drag.captured = true;
+        } catch {
+          // Pointer-capture is best-effort.
+        }
+      }
+
       const dxView = dxScreen * (viewBoxW / r.width);
       const dyView = dyScreen * (viewBoxH / r.height);
 

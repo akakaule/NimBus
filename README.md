@@ -62,6 +62,46 @@ NimBus uses an extension framework to separate core messaging from optional feat
 
 See [docs/extensions.md](docs/extensions.md) for the full guide on using and creating extensions.
 
+## Building an Adapter
+
+A NimBus **adapter** is a worker process that sits between an external system and the event bus — it subscribes to events from other systems, publishes events when its own backing system changes, or both. Most consumers of NimBus are writing adapters.
+
+Four questions decide how the wiring looks:
+
+1. **Subscribe, publish, or both?** Subscribers register handlers via `AddNimBusSubscriber` + `AddNimBusReceiver`. Publishers register `AddNimBusPublisher`.
+2. **Long-running Worker or Azure Functions?** Worker = simple, in-process, easy to debug ([`samples/CrmErpDemo/Crm.Adapter`](samples/CrmErpDemo/Crm.Adapter)). Functions = serverless, native session triggers ([`samples/CrmErpDemo/Erp.Adapter.Functions`](samples/CrmErpDemo/Erp.Adapter.Functions)).
+3. **Direct publish or SQL Server outbox?** Direct = stateless. Outbox = atomic with local DB writes via `AddNimBusSqlServerOutbox`.
+4. **Aspire or manual `ServiceBusClient`?** `builder.AddAzureServiceBusClient("servicebus")` for Aspire; manual `AddSingleton<ServiceBusClient>` for Functions and other hosts.
+
+The minimum viable subscriber is small — `IDeferredMessageProcessor` is auto-registered by `AddNimBusSubscriber`, so the floor really is this:
+
+```csharp
+var builder = Host.CreateApplicationBuilder(args);
+builder.AddServiceDefaults();
+builder.AddAzureServiceBusClient("servicebus");
+
+builder.Services.AddNimBus(n => n.WithoutStorageProvider());
+
+builder.Services.AddNimBusSubscriber("BillingEndpoint", sub =>
+{
+    sub.AddHandler<OrderPlaced, OrderPlacedHandler>();
+});
+
+builder.Services.AddNimBusReceiver(opts =>
+{
+    opts.TopicName = "BillingEndpoint";
+    opts.SubscriptionName = "BillingEndpoint";
+});
+
+builder.Build().Run();
+```
+
+Next steps:
+
+- [Building Adapters](docs/building-adapters.md) — full guide: publisher, subscriber, middleware (built-in + custom), retry policies, outbox, hosting choice
+- [Getting Started](docs/getting-started.md) — end-to-end tutorial including Aspire local dev
+- [SDK API Reference](docs/sdk-api-reference.md) — `IPublisherClient`, `IEventHandler<T>`, `RetryPolicy`, `IOutbox`, request/response
+
 ## NuGet Packages
 
 | Package | Description |
@@ -330,6 +370,7 @@ The pipeline uses `nb setup` to run all deployment steps (`infra apply` → `top
 | Guide | Description |
 |-------|-------------|
 | [Getting Started](docs/getting-started.md) | Step-by-step tutorial: create a publisher, subscriber, and run with Aspire |
+| [Building Adapters](docs/building-adapters.md) | Detailed guide for adapter authors — publisher, subscriber, middleware, hosting choice |
 | [Azure Functions Hosting](docs/azure-functions-hosting.md) | Production hosting with Service Bus session triggers and DeferredProcessor |
 | [Message Flows](docs/message-flows.md) | All 12 message flow patterns with mermaid diagrams |
 | [Error Handling](docs/error-handling.md) | Adapter error-handling reference (transient, retry, dead-letter, classification) |

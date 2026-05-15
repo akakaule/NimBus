@@ -6,7 +6,6 @@ using NimBus.Core.Pipeline;
 using NimBus.Events.Orders;
 using NimBus.SDK.Extensions;
 using NimBus.SDK.Hosting;
-using NimBus.ServiceBus;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -35,13 +34,8 @@ builder.Services.AddNimBusReceiver(opts =>
     opts.SubscriptionName = "BillingEndpoint";
 });
 
-// Register the separated DeferredProcessor (handles ProcessDeferredRequest on non-session subscription)
-builder.Services.AddSingleton<IDeferredMessageProcessor>(sp =>
-{
-    var sbClient = sp.GetRequiredService<Azure.Messaging.ServiceBus.ServiceBusClient>();
-    return new DeferredMessageProcessor(sbClient);
-});
-
+// Hosted service that drives the deferred replay loop. The IDeferredMessageProcessor
+// itself is registered by AddNimBusSubscriber above.
 builder.Services.AddHostedService(sp =>
 {
     var sbClient = sp.GetRequiredService<Azure.Messaging.ServiceBus.ServiceBusClient>();

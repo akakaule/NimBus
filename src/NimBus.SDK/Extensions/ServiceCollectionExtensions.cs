@@ -99,6 +99,13 @@ namespace NimBus.SDK.Extensions
             var builder = new NimBusSubscriberBuilder(services);
             configureBuilder(builder);
 
+            // The deferred replay path is part of the subscriber contract: any session-enabled
+            // endpoint may park messages on the Deferred subscription and needs this processor
+            // to drain them. Register a default so adapters don't have to repeat the wiring.
+            // TryAddSingleton preserves the ability to override (e.g., a custom subscription name).
+            services.TryAddSingleton<IDeferredMessageProcessor>(sp =>
+                new DeferredMessageProcessor(sp.GetRequiredService<ServiceBusClient>()));
+
             services.TryAddSingleton<ISubscriberClient>(sp =>
             {
                 var client = sp.GetRequiredService<ServiceBusClient>();

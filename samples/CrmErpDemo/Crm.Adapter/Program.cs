@@ -9,7 +9,6 @@ using NimBus.Core.Pipeline;
 using NimBus.Outbox.SqlServer;
 using NimBus.SDK.Extensions;
 using NimBus.SDK.Hosting;
-using NimBus.ServiceBus;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -67,12 +66,8 @@ builder.Services.AddNimBusReceiver(opts =>
     opts.MaxConcurrentSessions = 32;
 });
 
-// Deferred processor.
-builder.Services.AddSingleton<IDeferredMessageProcessor>(sp =>
-{
-    var sbClient = sp.GetRequiredService<ServiceBusClient>();
-    return new DeferredMessageProcessor(sbClient);
-});
+// Deferred replay hosted service. The IDeferredMessageProcessor itself is registered
+// by AddNimBusSubscriber above.
 builder.Services.AddHostedService(sp =>
 {
     var sbClient = sp.GetRequiredService<ServiceBusClient>();

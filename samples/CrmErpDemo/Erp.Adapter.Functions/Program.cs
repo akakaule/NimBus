@@ -10,10 +10,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NimBus.Core.Extensions;
-using NimBus.Core.Messages;
 using NimBus.Core.Pipeline;
 using NimBus.SDK.Extensions;
-using NimBus.ServiceBus;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 
@@ -75,9 +73,5 @@ builder.Services.AddNimBusSubscriber("ErpEndpoint", sub =>
     sub.AddHandler<CrmContactUpdated, CrmContactUpdatedHandler>();
     sub.AddHandler<CrmContactDeleted, CrmContactDeletedHandler>();
 });
-
-// DeferredMessageProcessor is used by the deferred-processor function.
-builder.Services.AddSingleton<IDeferredMessageProcessor>(sp =>
-    new DeferredMessageProcessor(sp.GetRequiredService<ServiceBusClient>()));
 
 builder.Build().Run();

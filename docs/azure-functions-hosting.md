@@ -223,15 +223,9 @@ public class BillingDeferredProcessorFunction
 }
 ```
 
-Register `IDeferredMessageProcessor` in Program.cs:
-
-```csharp
-builder.Services.AddSingleton<IDeferredMessageProcessor>(sp =>
-{
-    var sbClient = sp.GetRequiredService<ServiceBusClient>();
-    return new DeferredMessageProcessor(sbClient);
-});
-```
+`IDeferredMessageProcessor` is registered for you by `AddNimBusSubscriber` (using the
+default Deferred subscription name). Override with your own `TryAddSingleton`/`AddSingleton`
+only if you need a non-default subscription name.
 
 Key difference from the main function:
 - **`IsSessionsEnabled = false`** — The DeferredProcessor subscription is NOT session-enabled

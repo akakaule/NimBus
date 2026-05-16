@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useLocation } from "react-router-dom";
 import Sidebar from "components/sidebar";
 import Topbar from "components/topbar";
 import EndpointDetails from "pages/endpoint-details";
@@ -11,6 +11,7 @@ import Admin from "pages/admin";
 import Metrics from "pages/metrics";
 import Topology from "pages/topology";
 import Insights from "pages/insights";
+import Monitor from "pages/monitor";
 import AuditsList from "pages/audits-list";
 import Footer from "components/footer";
 import { Navigation } from "models/navigation";
@@ -74,6 +75,12 @@ const navigation: Navigation = [
     render: () => <Topology />,
   },
   {
+    name: "Monitor",
+    path: "/Monitor",
+    header: true,
+    render: () => <Monitor />,
+  },
+  {
     name: "Insights",
     path: "/Insights",
     header: true,
@@ -99,34 +106,58 @@ const navigation: Navigation = [
   },
 ];
 
+// Routes that should render full-bleed without the sidebar/topbar/footer.
+// The wall display is meant to be opened on a kiosk PC and read from across
+// a room — every pixel of chrome would just be lost real estate.
+const FULLSCREEN_ROUTES = ["/Monitor"];
+
 function App() {
   return (
     <ThemeProvider>
       <ToastProvider>
         <CommandPaletteProvider>
-          <div className="flex min-h-screen bg-background">
-            <Sidebar />
-            <div className="flex flex-col flex-1 min-w-0">
-              <Topbar />
-              <main className="flex-1 flex flex-col min-w-0">
-                <Routes>
-                  {navigation
-                    .filter((x) => x.render)
-                    .map((route) => (
-                      <Route
-                        key={route.path}
-                        path={route.path}
-                        element={route.render!()}
-                      />
-                    ))}
-                </Routes>
-              </main>
-              <Footer />
-            </div>
-          </div>
+          <AppShell />
         </CommandPaletteProvider>
       </ToastProvider>
     </ThemeProvider>
+  );
+}
+
+function AppShell() {
+  const location = useLocation();
+  const isFullscreen = FULLSCREEN_ROUTES.some(
+    (r) =>
+      location.pathname === r ||
+      location.pathname.toLowerCase() === r.toLowerCase(),
+  );
+
+  const routes = (
+    <Routes>
+      {navigation
+        .filter((x) => x.render)
+        .map((route) => (
+          <Route
+            key={route.path}
+            path={route.path}
+            element={route.render!()}
+          />
+        ))}
+    </Routes>
+  );
+
+  if (isFullscreen) {
+    return <div className="min-h-screen">{routes}</div>;
+  }
+
+  return (
+    <div className="flex min-h-screen bg-background">
+      <Sidebar />
+      <div className="flex flex-col flex-1 min-w-0">
+        <Topbar />
+        <main className="flex-1 flex flex-col min-w-0">{routes}</main>
+        <Footer />
+      </div>
+    </div>
   );
 }
 

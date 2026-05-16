@@ -120,6 +120,25 @@ const Icon = {
       />
     </svg>
   ),
+  monitor: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
+      <rect
+        x="1.5"
+        y="3"
+        width="13"
+        height="9"
+        rx="1.4"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+      <path
+        d="M6 14h4M8 12v2"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  ),
 };
 
 const NAV: NavGroup[] = [
@@ -149,7 +168,12 @@ const NAV: NavGroup[] = [
         name: "Topology",
         path: "/Topology",
         icon: Icon.topology,
-        badge: "new",
+      },
+      {
+        name: "Monitor",
+        path: "/Monitor",
+        icon: Icon.monitor,
+        badge: "wall",
       },
     ],
   },

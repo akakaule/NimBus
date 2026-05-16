@@ -117,10 +117,86 @@
     stroke-dasharray: 5 7;
     animation: nb-flow 4s linear infinite;
   }
+
+  /* Monitor wall — pulsing red dot used in the hero pill, failing-band
+     header, and stale-data banner. Tuned slow enough that it reads as a
+     heartbeat from across a room rather than a flicker. */
+  .nb-monitor-pulser {
+    animation: nb-monitor-pulse 1.6s ease-in-out infinite;
+  }
+
+  /* Healthy-chip "live" dot — a pulsing ring that grows out and fades. The
+     dot itself stays a solid green; only the box-shadow ring animates. */
+  .nb-monitor-pulseg {
+    box-shadow: 0 0 0 0 rgba(46, 143, 94, 0.6);
+    animation: nb-monitor-pulseg 2.4s ease-in-out infinite;
+  }
+
+  /* Fresh-failure card pulse — the card border glows red for the first 60 s
+     after a new failure appears, asking the room to look up. Triggered from
+     React by toggling the class on/off based on `firstFailureAt`. */
+  .nb-monitor-pulse-card {
+    animation: nb-monitor-pulse-card 1.6s ease-in-out infinite;
+  }
+
+  /* Slow-scrolling marquee for the ticker. The track is duplicated in JSX
+     so the loop is seamless — translateX(-50%) lands at the start of the
+     duplicate, then snaps back to 0 on iteration. Pause on hover so an
+     operator can actually read a line. */
+  .nb-monitor-ticker {
+    animation: nb-monitor-marquee 80s linear infinite;
+    will-change: transform;
+  }
+  .nb-monitor-ticker:hover {
+    animation-play-state: paused;
+  }
 }
 
 @keyframes nb-flow {
   to {
     stroke-dashoffset: -200;
+  }
+}
+
+@keyframes nb-monitor-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes nb-monitor-pulseg {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(46, 143, 94, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(46, 143, 94, 0);
+  }
+}
+
+@keyframes nb-monitor-pulse-card {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(194, 65, 46, 0.4),
+      0 0 24px rgba(194, 65, 46, 0.1);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(194, 65, 46, 0.75),
+      0 0 32px rgba(194, 65, 46, 0.28);
+  }
+}
+
+@keyframes nb-monitor-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
   }
 }

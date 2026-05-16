@@ -18,9 +18,9 @@ namespace NimBus.SDK.Hosting
         public string SubscriptionName { get; set; }
 
         /// <summary>
-        /// Maximum number of concurrent sessions to process. Default: 1.
+        /// Maximum number of concurrent sessions to process. Default: 8.
         /// </summary>
-        public int MaxConcurrentSessions { get; set; } = 1;
+        public int MaxConcurrentSessions { get; set; } = 8;
 
         /// <summary>
         /// Maximum duration for automatic lock renewal. Default: 5 minutes.

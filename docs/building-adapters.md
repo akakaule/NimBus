@@ -285,7 +285,7 @@ builder.Services.AddNimBusReceiver(opts =>
 | --- | --- | --- |
 | `TopicName` | Required | Service Bus topic to receive from |
 | `SubscriptionName` | Required | Subscription within the topic |
-| `MaxConcurrentSessions` | `1` | Number of sessions processed concurrently. Increase this for busy endpoints. |
+| `MaxConcurrentSessions` | `8` | Number of sessions processed concurrently. Increase this for busy endpoints. |
 | `MaxAutoLockRenewalDuration` | `5 min` | Maximum lock renewal duration for long-running handlers |
 
 Per-session ordering is preserved. `MaxConcurrentSessions` only increases
@@ -527,8 +527,9 @@ session settings, retry counts, and routing rules.
 
 ## Production checklist
 
-- Set `MaxConcurrentSessions` deliberately. The Worker default is `1`, which
-  serializes the whole endpoint.
+- Set `MaxConcurrentSessions` deliberately. The Worker default is `8`; raise it
+  for high-throughput endpoints or lower it to `1` if you need to serialize the
+  endpoint.
 - Keep handlers idempotent. NimBus gives ordered, at-least-once processing, not
   exactly-once side effects.
 - Use a stable `MessageId` when the source event has a natural unique key.
@@ -545,8 +546,8 @@ session settings, retry counts, and routing rules.
 - **Messages stay pending**: the handler is not registered, the receiver/trigger
   is missing, or the trigger's topic/subscription settings point to the wrong
   entity.
-- **A Worker processes one message at a time**: `MaxConcurrentSessions` was left
-  at the default `1`.
+- **A Worker processes one message at a time**: `MaxConcurrentSessions` was set
+  to `1` (or the endpoint only ever has a single session).
 - **Functions app starts but nothing is consumed**: `AddNimBusSubscriber(...)`
   exists, but there is no `[ServiceBusTrigger]` function, or
   `IsSessionsEnabled = true` is missing on the main subscription trigger.

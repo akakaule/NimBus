@@ -11,10 +11,13 @@ const HUB_H = 60;
 const HUB_CX = VIEWBOX_W / 2;
 const HUB_CY = VIEWBOX_H / 2;
 
-const MIN_ZOOM = 0.4;
+const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 4;
 const WHEEL_ZOOM_FACTOR = 1.15;
 const BUTTON_ZOOM_FACTOR = 1.25;
+// Margin (base-coord units) kept between the outermost card edge and the
+// viewBox edge when auto-fitting. Stops cards / labels grazing the canvas.
+const FIT_MARGIN = 32;
 // Drag threshold (screen pixels) below which we treat a release as a click,
 // so panning the canvas doesn't swallow card selection.
 const DRAG_CLICK_THRESHOLD = 4;
@@ -51,8 +54,18 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
   // base coordinates; `zoom` shrinks the visible viewBox (zoom > 1 = closer).
   // Together they drive the SVG `viewBox` attribute — text and strokes stay
   // crisp at any zoom level because we never CSS-transform the SVG.
-  const [zoom, setZoom] = useState(1);
+  //
+  // Lazy initializer picks the fit zoom up front so the first paint already
+  // shows every endpoint — otherwise a graph with many nodes flashes at 100%
+  // and immediately snaps to the auto-fitted value.
+  const [zoom, setZoom] = useState(() => computeFitZoom(nodes.length));
   const [pan, setPan] = useState({ x: 0, y: 0 });
+
+  // Flips true the first time the operator zooms or pans manually. Until then,
+  // we treat the viewport as auto-fit and follow `fitZoom` whenever the node
+  // count changes; once the user takes control, we stop second-guessing them.
+  // The "reset view" button explicitly clears this back to `false`.
+  const userZoomedRef = useRef(false);
 
   // Per-node position overrides — populated when the operator drags a card.
   // The radial-layout `useMemo` consults this map first and falls back to the
@@ -94,18 +107,22 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
   const viewBoxH = VIEWBOX_H / zoom;
   const viewBoxStr = `${pan.x} ${pan.y} ${viewBoxW} ${viewBoxH}`;
 
-  // Radial layout — angle each endpoint around the hub. Radius scales mildly
-  // with N so cards stay angularly separated; clamped wide on the low end
-  // so small graphs (N=2-4, the common demo case) feel airy instead of
-  // crowded against the bus pill. 250 is the practical ceiling — much
-  // larger and top/bottom cards clip the 580-tall viewBox.
+  // Radial layout — angle each endpoint around the hub. Radius scales so
+  // each card gets ~CARD_W of arc length plus breathing room for the pill
+  // that floats on its edge to the hub, otherwise neighbouring pills crash
+  // into adjacent cards (the bug operators see at 6+ endpoints). Floor at
+  // 200 so a tiny graph still feels airy instead of crowded against the bus.
+  //
+  // No upper cap — when the layout outgrows the base viewBox we compensate
+  // by zooming out via `fitZoom` below, so all endpoints stay on-screen.
   //
   // Operator-set positions (via dragging a card) win over the computed
   // radial position so the graph remembers manual placements across
   // re-renders / data refreshes.
+  const radius = useMemo(() => computeRadius(nodes.length), [nodes.length]);
+
   const layout = useMemo(() => {
     const n = Math.max(nodes.length, 1);
-    const radius = Math.min(250, Math.max(210, 60 + n * 20));
     const positions: Record<string, { x: number; y: number; angle: number }> = {};
     nodes.forEach((node, i) => {
       // Start from -π/2 (top) and walk clockwise so the first node lands
@@ -123,7 +140,13 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
       };
     });
     return positions;
-  }, [nodes, nodePositions]);
+  }, [nodes, nodePositions, radius]);
+
+  // Auto-fit zoom — shrinks the visible viewBox just enough that every
+  // computed-radial card fits with FIT_MARGIN to spare. Only the radial
+  // extent is considered; manually-dragged cards can land anywhere and
+  // the operator can pan/zoom to chase them.
+  const fitZoom = useMemo(() => computeFitZoom(nodes.length), [nodes.length]);
 
   // Curve from a card's edge to the hub's edge. We pick the side of the card
   // closest to the hub and the side of the hub closest to the card so the
@@ -191,16 +214,28 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
       const dx = HUB_CX - cx;
       const dy = HUB_CY - cy;
       const sign = pill.kind === "publish" ? 1 : -1;
-      // Approximate midpoint with a small perpendicular bias matching the
-      // curve's control offset, so labels track the curve's apex.
+      // Approximate midpoint with a perpendicular bias matching the curve's
+      // control offset, so labels track the curve's apex. The bias is large
+      // enough (36 base units) that the pill clears the adjacent card body
+      // even on a tightly-packed ring — anything smaller and neighbouring
+      // pills collide with the next endpoint over.
       const midX = cx + dx * 0.5;
       const midY = cy + dy * 0.5;
       const len = Math.hypot(dx, dy) || 1;
-      const perpX = (-dy / len) * 22 * sign;
-      const perpY = (dx / len) * 22 * sign;
+      const perpX = (-dy / len) * 36 * sign;
+      const perpY = (dx / len) * 36 * sign;
       return { pill, x: midX + perpX, y: midY + perpY };
     });
   }, [pills, layout]);
+
+  // Auto-fit zoom on first mount AND whenever node count changes (which moves
+  // fitZoom). Stays out of the way once the operator has manually zoomed —
+  // they're driving from there on, until they click "Reset view".
+  useEffect(() => {
+    if (userZoomedRef.current) return;
+    setZoom(fitZoom);
+    setPan({ x: 0, y: 0 });
+  }, [fitZoom]);
 
   // Tooltip plumbing — one floating <span> outside the SVG. Any node/pill/edge
   // emits `data-tag` and we render that text on mousemove.
@@ -261,6 +296,7 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
       if (nextZoom === zoom) return;
       const newW = VIEWBOX_W / nextZoom;
       const newH = VIEWBOX_H / nextZoom;
+      userZoomedRef.current = true;
       setZoom(nextZoom);
       setPan({
         x: vx - (cx / r.width) * newW,
@@ -353,6 +389,7 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
       const dyView = dyScreen * (viewBoxH / r.height);
 
       if (drag.kind === "pan") {
+        userZoomedRef.current = true;
         setPan({
           x: drag.panX - dxView,
           y: drag.panY - dyView,
@@ -409,6 +446,7 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
     if (nextZoom === zoom) return;
     const newW = VIEWBOX_W / nextZoom;
     const newH = VIEWBOX_H / nextZoom;
+    userZoomedRef.current = true;
     setZoom(nextZoom);
     setPan({
       x: vx - (cx / r.width) * newW,
@@ -417,7 +455,8 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
   };
 
   const resetView = () => {
-    setZoom(1);
+    userZoomedRef.current = false;
+    setZoom(fitZoom);
     setPan({ x: 0, y: 0 });
   };
 
@@ -566,7 +605,7 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
         <ZoomButton
           label="⤧"
           onClick={resetView}
-          disabled={zoom === 1 && pan.x === 0 && pan.y === 0}
+          disabled={!userZoomedRef.current && zoom === fitZoom && pan.x === 0 && pan.y === 0}
           title="Reset view (zoom + pan)"
         />
         <ZoomButton
@@ -582,6 +621,29 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+// Radius the radial layout uses for `n` endpoints. Picked so each card gets
+// ~CARD_W + label-gap of arc length around the ring; arc length per slot is
+// 2π·r/n, so r = n·(CARD_W + gap)/(2π). Floor at 200 so a 2-node graph still
+// has room for its pills.
+function computeRadius(n: number): number {
+  const safe = Math.max(n, 1);
+  const minByArc = (safe * (CARD_W + 80)) / (2 * Math.PI);
+  return Math.max(200, minByArc);
+}
+
+// Zoom level that keeps every computed-radial card visible with FIT_MARGIN to
+// spare. Clamped at 1 (never zoom *in* beyond 100%) and at MIN_ZOOM so very
+// large graphs degrade gracefully instead of zooming out infinitely.
+function computeFitZoom(n: number): number {
+  const extent = computeRadius(n) + CARD_W / 2 + FIT_MARGIN;
+  const needed = extent * 2;
+  return clamp(
+    Math.min(VIEWBOX_W / needed, VIEWBOX_H / needed),
+    MIN_ZOOM,
+    1,
+  );
 }
 
 // Distance from a rect centre to where the ray (ux, uy) exits the rect.

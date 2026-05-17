@@ -52,10 +52,10 @@ public sealed class ServiceBusTopologyProvisionerTests
         Assert.Contains(client.DeletedSubscriptions, x => x.TopicName == "orders" && x.SubscriptionName == Constants.DeferredSubscriptionName);
         Assert.Contains(client.DeletedSubscriptions, x => x.TopicName == "orders" && x.SubscriptionName == Constants.DeferredProcessorId);
 
-        var recreatedDeferred = Assert.Single(client.CreatedSubscriptions.Where(x =>
-            x.TopicName == "orders" && x.SubscriptionName == Constants.DeferredSubscriptionName));
-        var recreatedProcessor = Assert.Single(client.CreatedSubscriptions.Where(x =>
-            x.TopicName == "orders" && x.SubscriptionName == Constants.DeferredProcessorId));
+        var recreatedDeferred = Assert.Single(client.CreatedSubscriptions, x =>
+            x.TopicName == "orders" && x.SubscriptionName == Constants.DeferredSubscriptionName);
+        var recreatedProcessor = Assert.Single(client.CreatedSubscriptions, x =>
+            x.TopicName == "orders" && x.SubscriptionName == Constants.DeferredProcessorId);
 
         Assert.True(recreatedDeferred.RequiresSession);
         Assert.False(recreatedProcessor.RequiresSession);
@@ -128,8 +128,8 @@ public sealed class ServiceBusTopologyProvisionerTests
         await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
 
         // The cross-topic forward subscription should be created exactly once and never deleted.
-        Assert.Single(client.CreatedSubscriptions.Where(s =>
-            s.TopicName == "CrmEndpoint" && s.SubscriptionName == "ErpEndpoint"));
+        Assert.Single(client.CreatedSubscriptions, s =>
+            s.TopicName == "CrmEndpoint" && s.SubscriptionName == "ErpEndpoint");
         Assert.DoesNotContain(client.DeletedSubscriptions, x =>
             x.TopicName == "CrmEndpoint" && x.SubscriptionName == "ErpEndpoint");
 
@@ -419,6 +419,5 @@ public sealed class ServiceBusTopologyProvisionerTests
         public override int GetHashCode() => Id.GetHashCode(StringComparison.Ordinal);
     }
 }
-
 
 

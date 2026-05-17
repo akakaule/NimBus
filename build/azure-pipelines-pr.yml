@@ -26,16 +26,7 @@ stages:
       displayName: 'dotnet restore'
       inputs:
         command: restore
-        projects: |
-          src/**/EET.DIS.csproj      
-          src/**/EET.DIS.Core.csproj
-          src/**/EET.DIS.EventPublisher.csproj
-          src/**/EET.DIS.Manager.csproj
-          src/**/EET.DIS.MessageStore.csproj
-          src/**/EET.DIS.Resolver.csproj
-          src/**/EET.DIS.SDK.csproj
-          src/**/EET.DIS.ServiceBus.csproj
-          src/**/EET.DIS.Management.ServiceBus.csproj
+        projects: 'src/NimBus.sln'
         feedsToUse: 'select'
         vstsFeed: 'c7db3f6c-752a-4e27-b4cb-a0bab3e47bdf/10890a77-d6d5-40b0-bc45-2d291668d6ee'
         includeNuGetOrg: true
@@ -44,21 +35,12 @@ stages:
       displayName: 'dotnet build'
       inputs:
         command: build
-        projects: |
-          src/**/EET.DIS.csproj      
-          src/**/EET.DIS.Core.csproj
-          src/**/EET.DIS.EventPublisher.csproj
-          src/**/EET.DIS.Manager.csproj
-          src/**/EET.DIS.MessageStore.csproj
-          src/**/EET.DIS.Resolver.csproj
-          src/**/EET.DIS.SDK.csproj
-          src/**/EET.DIS.ServiceBus.csproj
-          src/**/EET.DIS.Management.ServiceBus.csproj
+        projects: 'src/NimBus.sln'
         arguments: '--no-restore --configuration $(BuildConfiguration)'
 
     - task: DotNetCoreCLI@2
       displayName: 'dotnet test (all in /tests)'
       inputs:
         command: test
-        projects: 'tests/**/*.csproj'
+        projects: 'src/NimBus.sln'
         arguments: '--no-build --configuration $(BuildConfiguration)'

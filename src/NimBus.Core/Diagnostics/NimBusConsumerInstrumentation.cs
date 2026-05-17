@@ -22,9 +22,8 @@ public static class NimBusConsumerInstrumentation
     /// Wraps an inbound message handler invocation with the canonical consumer
     /// span + counters + duration histogram. <paramref name="messagingSystem"/> is
     /// the value from <see cref="MessagingSystem"/> (e.g. <c>"servicebus"</c>,
-    /// <c>"nimbus.inmemory"</c>). Set <paramref name="messageId"/> /
-    /// <paramref name="correlationId"/> via the context — this method reads them
-    /// off <paramref name="context"/>.
+    /// <c>"nimbus.inmemory"</c>). Message and correlation identifiers are read from
+    /// <paramref name="context"/>.
     /// </summary>
     public static async Task RunAsync(
         IMessageContext context,

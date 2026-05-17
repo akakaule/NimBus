@@ -9,8 +9,6 @@ NimBus is an Azure Service Bus based integration platform with a shared SDK, man
 ## Repository Layout
 
 - `src/NimBus.sln` builds the full platform, including the web app, resolver, app host, and shared libraries.
-- `src/NimBus.WebApp.sln` builds the management web application and the projects it depends on.
-- `src/NimBus.SDK.slnx` builds the SDK-focused subset used for library development.
 
 Key projects:
 
@@ -143,8 +141,6 @@ From the repository root:
 
 ```powershell
 dotnet build .\src\NimBus.CommandLine\NimBus.CommandLine.csproj
-dotnet build .\src\NimBus.SDK.slnx
-dotnet build .\src\NimBus.WebApp.sln
 dotnet build .\src\NimBus.sln
 ```
 

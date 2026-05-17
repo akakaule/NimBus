@@ -14,7 +14,7 @@ public class RuleDto
             return co.Name.GetHashCode();
         }
 
-        public bool Equals(RuleDto x1, RuleDto x2)
+        public bool Equals(RuleDto? x1, RuleDto? x2)
         {
             if (ReferenceEquals(x1, x2)) return true;
             if (x1 is null || x2 is null) return false;

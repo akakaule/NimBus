@@ -15,7 +15,7 @@ public class SubscriptionDto
             return co.Name.GetHashCode();
         }
 
-        public bool Equals(SubscriptionDto x1, SubscriptionDto x2)
+        public bool Equals(SubscriptionDto? x1, SubscriptionDto? x2)
         {
             if (ReferenceEquals(x1, x2)) return true;
             if (x1 is null || x2 is null) return false;

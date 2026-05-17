@@ -1,8 +1,30 @@
-import { describe, it, expect } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import App from "./app";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-describe("Dummy", () => {
-  it("Dummy it", () => {
-    expect(1 + 2).toEqual(3);
-    expect(2 + 2).toEqual(4);
+describe("App", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
+  });
+
+  it("renders the application shell", () => {
+    render(
+      <MemoryRouter initialEntries={["/not-found"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("navigation")).toBeTruthy();
+    expect(screen.getByText("NimBus")).toBeTruthy();
   });
 });

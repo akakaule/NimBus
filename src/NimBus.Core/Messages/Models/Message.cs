@@ -99,7 +99,7 @@ namespace NimBus.Core.Messages
         string HandoffReason => null;
 
         /// <summary>
-        /// Optional external-system identifier (e.g. a D365 F&O DMF job id)
+        /// Optional external-system identifier (e.g. a D365 F&amp;O DMF job id)
         /// for messages awaiting completion of long-running external work.
         /// Carried alongside <see cref="HandoffReason"/>.
         /// </summary>

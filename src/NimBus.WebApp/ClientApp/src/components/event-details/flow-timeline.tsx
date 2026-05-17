@@ -64,7 +64,10 @@ export default function FlowTimeline({ messages, audits }: FlowTimelineProps) {
         timestamp: typeof ts.toDate === "function" ? ts.toDate() : new Date(ts as any),
         type: "message",
         messageType: msg.messageType,
-        from: msg.originatingFrom || msg.from,
+        // Show the endpoint that actually sent this message — for a
+        // ResolutionResponse that's the handling subscriber, not the
+        // original publisher. originatingFrom is only the fallback.
+        from: msg.from || msg.originatingFrom,
         to: msg.to,
         errorText: msg.errorContent?.errorText,
         exceptionStackTrace: msg.errorContent?.exceptionStackTrace,

@@ -112,8 +112,14 @@ function mapMessageToRow(
       [
         Column.from,
         {
-          value: msg.originatingFrom || msg.from || "-",
-          searchValue: msg.originatingFrom || msg.from || "",
+          // Prefer the immediate sender of *this* message. For an EventRequest
+          // that's the publishing endpoint; for a ResolutionResponse it's the
+          // subscriber that handled the request (e.g. CrmEndpoint, not the
+          // original ErpEndpoint that published the event). Fall back to
+          // originatingFrom only when the immediate sender isn't stamped —
+          // some response paths that bypass the Resolver forwarding rule.
+          value: msg.from || msg.originatingFrom || "-",
+          searchValue: msg.from || msg.originatingFrom || "",
         },
       ],
     ]),

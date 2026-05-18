@@ -21,11 +21,19 @@ param locationParam string = 'westeurope'
 // present so we don't try to migrate it to a different region.
 param webAppLocation string = ''
 
+// The management App Service Plan location, supplied by the CLI. The WebApp
+// MUST live in the same region as its plan (Azure rejects cross-region
+// references with a NotFound error on the serverFarm), so when no explicit
+// webAppLocation is supplied, we fall back to the plan's location instead of
+// the global default.
+param managementAppServicePlanLocation string = ''
+
 //##############################################
 // Define names Azure resource names
 //##############################################
 var location = locationParam
-var effectiveWebAppLocation = empty(webAppLocation) ? location : webAppLocation
+var effectivePlanLocation = empty(managementAppServicePlanLocation) ? location : managementAppServicePlanLocation
+var effectiveWebAppLocation = empty(webAppLocation) ? effectivePlanLocation : webAppLocation
 
 var sbNamespace = 'sb-${toLower(solutionId)}-${toLower(environment)}'
 

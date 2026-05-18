@@ -250,6 +250,7 @@ internal sealed class InfrastructureDeployer
 
         var pinned = new List<(string Name, string Location)>();
         AddPinnedLocation(arguments, existingLocations, names.WebAppName, "webAppLocation", pinned);
+        AddPinnedLocation(arguments, existingLocations, names.ManagementAppServicePlanName, "managementAppServicePlanLocation", pinned);
 
         await _az.EnsureSuccessAsync(
             arguments,

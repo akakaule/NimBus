@@ -57,6 +57,10 @@ param resolverPlan string = 'ElasticPremium'
 var location = locationParam
 
 // Resolve a per-resource location, falling back to the global locationParam.
+// The resolver Function App MUST live in the same region as its App Service
+// Plan (Azure rejects cross-region plan-to-app references with a NotFound
+// error on the serverFarm). So its fallback is the core plan's location, not
+// the global default.
 var effectiveServiceBusLocation = empty(serviceBusLocation) ? location : serviceBusLocation
 var effectiveAppInsightsLocation = empty(appInsightsLocation) ? location : appInsightsLocation
 var effectiveCosmosLocation = empty(cosmosLocation) ? location : cosmosLocation
@@ -64,7 +68,7 @@ var effectiveSqlLocation = empty(sqlLocation) ? location : sqlLocation
 var effectiveFuncStorageLocation = empty(funcStorageLocation) ? location : funcStorageLocation
 var effectiveManagementAppServicePlanLocation = empty(managementAppServicePlanLocation) ? location : managementAppServicePlanLocation
 var effectiveCoreAppServicePlanLocation = empty(coreAppServicePlanLocation) ? location : coreAppServicePlanLocation
-var effectiveResolverFunctionAppLocation = empty(resolverFunctionAppLocation) ? location : resolverFunctionAppLocation
+var effectiveResolverFunctionAppLocation = empty(resolverFunctionAppLocation) ? effectiveCoreAppServicePlanLocation : resolverFunctionAppLocation
 
 var sbNamespace = 'sb-${toLower(solutionId)}-${toLower(environment)}'
 

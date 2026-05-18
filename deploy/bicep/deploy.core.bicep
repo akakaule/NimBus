@@ -4,6 +4,19 @@ param locationParam string = 'westeurope'
 param resolverId string
 param uniqueDeploy string
 
+// Per-resource location overrides. Empty means "use the global locationParam".
+// The CLI populates these when it finds an existing resource in the resource
+// group so we never try to move a resource into a different region — Azure
+// refuses to recreate a named resource in a new location.
+param serviceBusLocation string = ''
+param appInsightsLocation string = ''
+param cosmosLocation string = ''
+param sqlLocation string = ''
+param funcStorageLocation string = ''
+param managementAppServicePlanLocation string = ''
+param coreAppServicePlanLocation string = ''
+param resolverFunctionAppLocation string = ''
+
 // Storage provider selection. 'cosmos' (default, backwards-compatible) provisions a
 // Cosmos DB account. 'sqlserver' skips Cosmos and may optionally provision Azure SQL
 // when sqlMode is 'provision'; 'external' expects a customer-supplied connection string.
@@ -37,6 +50,16 @@ param resolverPlan string = 'ElasticPremium'
 //##############################################
 var location = locationParam
 
+// Resolve a per-resource location, falling back to the global locationParam.
+var effectiveServiceBusLocation = empty(serviceBusLocation) ? location : serviceBusLocation
+var effectiveAppInsightsLocation = empty(appInsightsLocation) ? location : appInsightsLocation
+var effectiveCosmosLocation = empty(cosmosLocation) ? location : cosmosLocation
+var effectiveSqlLocation = empty(sqlLocation) ? location : sqlLocation
+var effectiveFuncStorageLocation = empty(funcStorageLocation) ? location : funcStorageLocation
+var effectiveManagementAppServicePlanLocation = empty(managementAppServicePlanLocation) ? location : managementAppServicePlanLocation
+var effectiveCoreAppServicePlanLocation = empty(coreAppServicePlanLocation) ? location : coreAppServicePlanLocation
+var effectiveResolverFunctionAppLocation = empty(resolverFunctionAppLocation) ? location : resolverFunctionAppLocation
+
 var sbNamespace = 'sb-${toLower(solutionId)}-${toLower(environment)}'
 
 var managementAppServicePlanName = 'asp-${toLower(solutionId)}-${toLower(environment)}-management'
@@ -65,7 +88,7 @@ module serviceBusNamespace 'templates/servicebusNamespace.bicep' = {
   name : 'ServicebusNamespaceDeploy'
   params : {
     name: sbNamespace
-    location: location
+    location: effectiveServiceBusLocation
   }
 }
 
@@ -79,7 +102,7 @@ module applicationinsights 'templates/applicationInsights.bicep' = {
   name: 'AppinsightsDeploy'
   params: {
     name: appInsightsName
-    location: location
+    location: effectiveAppInsightsLocation
   }
 }
 
@@ -92,7 +115,7 @@ module cosmosAccount 'templates/cosmosDB.bicep' = if (storageProvider == 'cosmos
   params: {
     name: cosmosAccountName
     dbname: cosmosDbName
-    location: location
+    location: effectiveCosmosLocation
   }
 }
 
@@ -105,7 +128,7 @@ module azureSql 'templates/azureSql.bicep' = if (storageProvider == 'sqlserver' 
   params: {
     serverName: sqlServerName
     databaseName: sqlDbName
-    location: location
+    location: effectiveSqlLocation
     administratorLogin: sqlAdminLogin
     administratorPassword: sqlAdminPassword
   }
@@ -119,7 +142,7 @@ module funcstorageaccount 'templates/storageaccount.bicep' = {
   name : 'FuncStorageAccountDeploy'
   params : {
     name: funcStorageAccountName
-    location: location
+    location: effectiveFuncStorageLocation
     // Flex Consumption needs a blob container holding the app package, referenced
     // from the Function App via SystemAssignedIdentity. Provision it inline so
     // the container exists before resolverFunctionFlex tries to bind to it.
@@ -136,7 +159,7 @@ module appserviceplan 'templates/appServicePlan.bicep' = {
   params: {
     name: managementAppServicePlanName
     skuName: 'S1'
-    location: location
+    location: effectiveManagementAppServicePlanLocation
   }
 }
 
@@ -202,7 +225,7 @@ module functionappplanElastic 'templates/functionAppPlan.bicep' = if (resolverPl
   params: {
     name: coreAppServicePlanName
     skuName: 'EP1'
-    location: location
+    location: effectiveCoreAppServicePlanLocation
   }
 }
 
@@ -214,7 +237,7 @@ module resolverFunctionElastic 'templates/functionApp.bicep' = if (resolverPlan 
     appServicePlanId: functionappplanElastic.outputs.id
     functionAppVersion: '4'
     storageConnectionString: funcstorageaccount.outputs.connectionString
-    location: location
+    location: effectiveResolverFunctionAppLocation
     settings: resolverappsettings
   }
 }
@@ -227,7 +250,7 @@ module functionappplanFlex 'templates/flexConsumptionPlan.bicep' = if (resolverP
   name: 'functionAppplanFlexDeploy'
   params: {
     name: coreAppServicePlanName
-    location: location
+    location: effectiveCoreAppServicePlanLocation
   }
 }
 
@@ -238,7 +261,7 @@ module resolverFunctionFlex 'templates/flexConsumptionFunctionApp.bicep' = if (r
     appServicePlanId: functionappplanFlex.outputs.id
     storageAccountName: funcstorageaccount.outputs.storageName
     deploymentStorageBlobUri: '${funcstorageaccount.outputs.blobEndpoint}app-package-resolver'
-    location: location
+    location: effectiveResolverFunctionAppLocation
     settings: resolverappsettings
   }
 }

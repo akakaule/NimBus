@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace NimBus.CommandLine;
 
 internal sealed class InfrastructureDeployer
@@ -23,8 +25,10 @@ internal sealed class InfrastructureDeployer
             CliOutput.WriteLine($"Ignoring --resource-name-postfix '{options.ResourceNamePostFix}' because the current bicep templates do not consume it.");
         }
 
+        var existingLocations = await DiscoverExistingLocationsAsync(options.ResourceGroupName, cancellationToken).ConfigureAwait(false);
+
         CliOutput.WriteLine("Deploying core infrastructure...");
-        await DeployCoreInfrastructureAsync(options, names, cancellationToken).ConfigureAwait(false);
+        await DeployCoreInfrastructureAsync(options, names, existingLocations, cancellationToken).ConfigureAwait(false);
 
         CliOutput.WriteLine("Preparing web app infrastructure inputs...");
         await _az.EnsureExtensionAsync("application-insights", cancellationToken).ConfigureAwait(false);
@@ -69,7 +73,63 @@ internal sealed class InfrastructureDeployer
             cosmosAccountEndpoint,
             sqlConnectionString,
             serviceBusFullyQualifiedNamespace,
+            existingLocations,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<Dictionary<string, string>> DiscoverExistingLocationsAsync(string resourceGroupName, CancellationToken cancellationToken)
+    {
+        var locations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var result = await _az.TryRunAsync(
+            new[]
+            {
+                "resource", "list",
+                "--resource-group", resourceGroupName,
+                "--query", "[].{name:name, location:location}",
+                "--output", "json",
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        if (!result.Succeeded || string.IsNullOrWhiteSpace(result.StandardOutput))
+        {
+            return locations;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(result.StandardOutput);
+            foreach (var element in doc.RootElement.EnumerateArray())
+            {
+                if (!element.TryGetProperty("name", out var nameElement) || !element.TryGetProperty("location", out var locationElement))
+                {
+                    continue;
+                }
+
+                var name = nameElement.GetString();
+                var location = locationElement.GetString();
+                if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(location))
+                {
+                    continue;
+                }
+
+                locations[name] = location;
+            }
+        }
+        catch (JsonException)
+        {
+            // Resource group is empty or the response isn't JSON-shaped — proceed with no pins.
+        }
+
+        return locations;
+    }
+
+    private static void AddPinnedLocation(List<string> arguments, IReadOnlyDictionary<string, string> existingLocations, string resourceName, string bicepParamName, List<(string Name, string Location)> pinned)
+    {
+        if (existingLocations.TryGetValue(resourceName, out var location) && !string.IsNullOrWhiteSpace(location))
+        {
+            arguments.Add($"{bicepParamName}={location}");
+            pinned.Add((resourceName, location));
+        }
     }
 
     private async Task<string> ResolveSqlConnectionStringAsync(InfrastructureOptions options, DeploymentNames names, CancellationToken cancellationToken)
@@ -86,7 +146,7 @@ internal sealed class InfrastructureDeployer
         return $"Server=tcp:{sqlServerName}.database.windows.net,1433;Initial Catalog=MessageDatabase;Authentication=Active Directory Default;Encrypt=true;";
     }
 
-    private async Task DeployCoreInfrastructureAsync(InfrastructureOptions options, DeploymentNames names, CancellationToken cancellationToken)
+    private async Task DeployCoreInfrastructureAsync(InfrastructureOptions options, DeploymentNames names, IReadOnlyDictionary<string, string> existingLocations, CancellationToken cancellationToken)
     {
         var storageProviderParam = options.StorageProvider == StorageProviderChoice.SqlServer ? "sqlserver" : "cosmos";
         var sqlModeParam = options.SqlMode == SqlProvisioningMode.External ? "external" : "provision";
@@ -118,6 +178,25 @@ internal sealed class InfrastructureDeployer
             arguments.Add($"locationParam={options.Location}");
         }
 
+        var pinned = new List<(string Name, string Location)>();
+        AddPinnedLocation(arguments, existingLocations, names.ServiceBusNamespace, "serviceBusLocation", pinned);
+        AddPinnedLocation(arguments, existingLocations, names.AppInsightsName, "appInsightsLocation", pinned);
+        AddPinnedLocation(arguments, existingLocations, names.CosmosAccountName, "cosmosLocation", pinned);
+        AddPinnedLocation(arguments, existingLocations, names.SqlServerName, "sqlLocation", pinned);
+        AddPinnedLocation(arguments, existingLocations, names.FuncStorageAccountName, "funcStorageLocation", pinned);
+        AddPinnedLocation(arguments, existingLocations, names.ManagementAppServicePlanName, "managementAppServicePlanLocation", pinned);
+        AddPinnedLocation(arguments, existingLocations, names.CoreAppServicePlanName, "coreAppServicePlanLocation", pinned);
+        AddPinnedLocation(arguments, existingLocations, names.ResolverFunctionAppName, "resolverFunctionAppLocation", pinned);
+
+        if (pinned.Count > 0)
+        {
+            CliOutput.WriteLine($"Pinning {pinned.Count} existing resource(s) to their current location:");
+            foreach (var (name, location) in pinned)
+            {
+                CliOutput.WriteLine($"  {name} → {location}");
+            }
+        }
+
         await _az.EnsureSuccessAsync(
             arguments,
             _context.DeployDirectory,
@@ -134,6 +213,7 @@ internal sealed class InfrastructureDeployer
         string cosmosAccountEndpoint,
         string sqlConnectionString,
         string serviceBusFullyQualifiedNamespace,
+        IReadOnlyDictionary<string, string> existingLocations,
         CancellationToken cancellationToken)
     {
         var arguments = new List<string>
@@ -157,6 +237,9 @@ internal sealed class InfrastructureDeployer
         {
             arguments.Add($"locationParam={options.Location}");
         }
+
+        var pinned = new List<(string Name, string Location)>();
+        AddPinnedLocation(arguments, existingLocations, names.WebAppName, "webAppLocation", pinned);
 
         await _az.EnsureSuccessAsync(
             arguments,

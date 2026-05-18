@@ -60,6 +60,8 @@ nb infra apply --solution-id nimbus --environment dev --resource-group rg-nimbus
 
 Deploys core infrastructure (Service Bus, App Insights, and either Cosmos DB or Azure SQL depending on `--storage-provider`) and the web app infrastructure via bicep. The provisioned SQL path uses AAD managed-identity auth (`Authentication=Active Directory Default`); the external path uses the supplied connection string verbatim. Automatically creates an Application Insights API key and resolves required resource endpoints/namespace settings.
 
+**Existing-resource location pinning.** Before deploying, the CLI lists the resources already in the target resource group and pins each known NimBus resource (Service Bus, App Insights, Cosmos, SQL Server, function storage, app service plans, function app, web app) to its current location. This avoids the `InvalidResourceLocation` error Azure raises when a same-named resource already exists in another region. Net-new resources still use `--location` (or `westeurope` if unset). To actually move a resource between regions, delete it first.
+
 ---
 
 ### `nb topology export`

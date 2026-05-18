@@ -86,6 +86,10 @@ internal static class NamingConventions
             $"sb-{normalizedSolutionId}-{normalizedEnvironment}",
             $"ai-{normalizedSolutionId}-{normalizedEnvironment}-global-tracelog",
             $"cosmos-{normalizedSolutionId}-{normalizedEnvironment}",
+            $"sql-{normalizedSolutionId}-{normalizedEnvironment}",
+            $"st{normalizedSolutionId}{normalizedEnvironment}func",
+            $"asp-{normalizedSolutionId}-{normalizedEnvironment}-management",
+            $"asp-{normalizedSolutionId}-{normalizedEnvironment}-core",
             $"func-{normalizedSolutionId}-{normalizedEnvironment}-resolver",
             $"webapp-{normalizedSolutionId}-{normalizedEnvironment}-management");
     }
@@ -97,6 +101,10 @@ internal sealed record DeploymentNames(
     string ServiceBusNamespace,
     string AppInsightsName,
     string CosmosAccountName,
+    string SqlServerName,
+    string FuncStorageAccountName,
+    string ManagementAppServicePlanName,
+    string CoreAppServicePlanName,
     string ResolverFunctionAppName,
     string WebAppName);
 

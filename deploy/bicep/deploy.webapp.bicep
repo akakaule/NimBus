@@ -16,10 +16,16 @@ param sqlConnectionString string = ''
 param serviceBusFullyQualifiedNamespace string
 param locationParam string = 'westeurope'
 
+// Per-resource location override. Empty means "use the global locationParam".
+// The CLI pins this to the existing web app's location when one is already
+// present so we don't try to migrate it to a different region.
+param webAppLocation string = ''
+
 //##############################################
 // Define names Azure resource names
 //##############################################
 var location = locationParam
+var effectiveWebAppLocation = empty(webAppLocation) ? location : webAppLocation
 
 var sbNamespace = 'sb-${toLower(solutionId)}-${toLower(environment)}'
 
@@ -116,7 +122,7 @@ module webAppModule 'templates/webApp.bicep' = {
   params: {
     appName:managementWebAppName
     appServicePlanId:'/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Web/serverfarms/${appServicePlanName}'
-    location:location
+    location:effectiveWebAppLocation
     alwaysOn: true
     settings:webappsettings
   }

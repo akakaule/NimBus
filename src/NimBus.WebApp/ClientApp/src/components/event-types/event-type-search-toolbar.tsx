@@ -22,6 +22,9 @@ interface IEventTypeSearchToolbarProps {
   selectedNamespace: string;
   onNamespaceChange: (value: string) => void;
   namespaces: string[];
+  selectedEndpoint: string;
+  onEndpointChange: (value: string) => void;
+  endpoints: string[];
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
 }
@@ -41,6 +44,9 @@ const EventTypeSearchToolbar: React.FC<IEventTypeSearchToolbarProps> = ({
   selectedNamespace,
   onNamespaceChange,
   namespaces,
+  selectedEndpoint,
+  onEndpointChange,
+  endpoints,
   viewMode,
   onViewModeChange,
 }) => {
@@ -55,18 +61,32 @@ const EventTypeSearchToolbar: React.FC<IEventTypeSearchToolbarProps> = ({
         />
       }
       actions={
-        <Select
-          value={selectedNamespace}
-          onChange={(e) => onNamespaceChange(e.target.value)}
-          className="min-w-[200px] max-w-[300px]"
-        >
-          <option value="">All Namespaces</option>
-          {namespaces.map((ns) => (
-            <option key={ns} value={ns}>
-              {ns}
-            </option>
-          ))}
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select
+            value={selectedNamespace}
+            onChange={(e) => onNamespaceChange(e.target.value)}
+            className="min-w-[200px] max-w-[300px]"
+          >
+            <option value="">All Namespaces</option>
+            {namespaces.map((ns) => (
+              <option key={ns} value={ns}>
+                {ns}
+              </option>
+            ))}
+          </Select>
+          <Select
+            value={selectedEndpoint}
+            onChange={(e) => onEndpointChange(e.target.value)}
+            className="min-w-[200px] max-w-[300px]"
+          >
+            <option value="">All Endpoints</option>
+            {endpoints.map((ep) => (
+              <option key={ep} value={ep}>
+                {ep}
+              </option>
+            ))}
+          </Select>
+        </div>
       }
       trailing={
         <div

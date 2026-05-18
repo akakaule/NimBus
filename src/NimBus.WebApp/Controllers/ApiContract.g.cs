@@ -2814,6 +2814,8 @@ namespace NimBus.WebApp.ManagementApi
         private System.Collections.Generic.List<EventTypeProperty> _properties;
         private int _producerCount;
         private int _consumerCount;
+        private System.Collections.Generic.List<string> _producers;
+        private System.Collections.Generic.List<string> _consumers;
 
         [Newtonsoft.Json.JsonProperty("id", Required = Newtonsoft.Json.Required.Always)]
         [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
@@ -2902,6 +2904,32 @@ namespace NimBus.WebApp.ManagementApi
                 if (_consumerCount != value)
                 {
                     _consumerCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("producers", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Producers    {
+            get { return _producers; }
+            set
+            {
+                if (_producers != value)
+                {
+                    _producers = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("consumers", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Consumers    {
+            get { return _consumers; }
+            set
+            {
+                if (_consumers != value)
+                {
+                    _consumers = value;
                     RaisePropertyChanged();
                 }
             }

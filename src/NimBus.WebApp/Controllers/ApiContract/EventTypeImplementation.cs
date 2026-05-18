@@ -26,9 +26,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
         {
             var eventTypes = platform.EventTypes.Select(e =>
             {
-                var producerCount = platform.GetProducers(e).Count();
-                var consumerCount = platform.GetConsumers(e).Count();
-                return Mapper.EventTypeFromIEventType(e, producerCount, consumerCount);
+                var producers = platform.GetProducers(e).Select(p => p.Name).ToList();
+                var consumers = platform.GetConsumers(e).Select(c => c.Name).ToList();
+                return Mapper.EventTypeFromIEventType(e, producers.Count, consumers.Count, producers, consumers);
             });
             return new OkObjectResult(eventTypes);
         }

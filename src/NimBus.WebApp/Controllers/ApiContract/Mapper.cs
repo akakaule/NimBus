@@ -133,7 +133,12 @@ public static class Mapper
         };
     }
 
-    public static ManagementApi.EventType EventTypeFromIEventType(IEventType eventType, int producerCount, int consumerCount)
+    public static ManagementApi.EventType EventTypeFromIEventType(
+        IEventType eventType,
+        int producerCount,
+        int consumerCount,
+        IEnumerable<string>? producers = null,
+        IEnumerable<string>? consumers = null)
     {
         return new ManagementApi.EventType()
         {
@@ -145,7 +150,9 @@ public static class Mapper
                 .Select(x => EventPropertyFromEventTypeProperty(x))
                 .ToList(),
             ProducerCount = producerCount,
-            ConsumerCount = consumerCount
+            ConsumerCount = consumerCount,
+            Producers = (producers ?? Enumerable.Empty<string>()).ToList(),
+            Consumers = (consumers ?? Enumerable.Empty<string>()).ToList(),
         };
     }
 

@@ -1861,6 +1861,14 @@ components:
           type: integer
         consumerCount:
           type: integer
+        producers:
+          type: array
+          items:
+            type: string
+        consumers:
+          type: array
+          items:
+            type: string
     EventTypeProperty:
       title: EventTypeProperty
       type: object

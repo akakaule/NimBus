@@ -23,19 +23,21 @@ enum TableColumns {
   consumers = "consumers",
 }
 
-// URL-driven filter shape. searchTerm + selectedNamespace + viewMode are all stored
-// in query params so that pressing Back (e.g. after drilling into an event type)
-// restores the same filter state. Declared as a closed `type` so it satisfies the
-// index-signature constraint of `useUrlFilters<T>`.
+// URL-driven filter shape. searchTerm + selectedNamespace + selectedEndpoint +
+// viewMode are all stored in query params so that pressing Back (e.g. after
+// drilling into an event type) restores the same filter state. Declared as a
+// closed `type` so it satisfies the index-signature constraint of `useUrlFilters<T>`.
 type EventTypesFilter = {
   searchTerm: string;
   selectedNamespace: string;
+  selectedEndpoint: string;
   viewMode: string;
 };
 
 const DEFAULT_EVENT_TYPES_FILTER: EventTypesFilter = {
   searchTerm: "",
   selectedNamespace: "",
+  selectedEndpoint: "",
   viewMode: "cards",
 };
 
@@ -45,6 +47,7 @@ const EventTypesList: React.FC = () => {
 
   const searchTerm = applied.searchTerm;
   const selectedNamespace = applied.selectedNamespace;
+  const selectedEndpoint = applied.selectedEndpoint;
   const viewMode = (applied.viewMode === "table" ? "table" : "cards") as ViewMode;
 
   const [eventTypes, setEventTypes] = useState<api.EventType[]>([]);
@@ -84,6 +87,15 @@ const EventTypesList: React.FC = () => {
     return sorted;
   }, [eventTypes]);
 
+  const endpoints = useMemo(() => {
+    const epSet = new Set<string>();
+    eventTypes.forEach((et) => {
+      et.producers?.forEach((p) => epSet.add(p));
+      et.consumers?.forEach((c) => epSet.add(c));
+    });
+    return Array.from(epSet).sort();
+  }, [eventTypes]);
+
   const filteredEventTypes = useMemo(() => {
     return eventTypes.filter((et) => {
       const matchesSearch =
@@ -97,9 +109,14 @@ const EventTypesList: React.FC = () => {
         et.namespace === selectedNamespace ||
         (selectedNamespace === UNCATEGORIZED && !et.namespace);
 
-      return matchesSearch && matchesNamespace;
+      const matchesEndpoint =
+        !selectedEndpoint ||
+        et.producers?.includes(selectedEndpoint) ||
+        et.consumers?.includes(selectedEndpoint);
+
+      return matchesSearch && matchesNamespace && matchesEndpoint;
     });
-  }, [eventTypes, searchTerm, selectedNamespace]);
+  }, [eventTypes, searchTerm, selectedNamespace, selectedEndpoint]);
 
   const groupedEventTypes = useMemo((): INamespaceGroup[] => {
     const groups: { [ns: string]: EventTypeWithCounts[] } = {};
@@ -215,10 +232,15 @@ const EventTypesList: React.FC = () => {
     setFiltersWithoutHistory({ ...applied, searchTerm: next });
   const setSelectedNamespace = (next: string) =>
     setFiltersWithoutHistory({ ...applied, selectedNamespace: next });
+  const setSelectedEndpoint = (next: string) =>
+    setFiltersWithoutHistory({ ...applied, selectedEndpoint: next });
   const setViewMode = (next: ViewMode) =>
     setFiltersWithoutHistory({ ...applied, viewMode: next });
 
-  const hasActiveFilters = searchTerm.length > 0 || selectedNamespace.length > 0;
+  const hasActiveFilters =
+    searchTerm.length > 0 ||
+    selectedNamespace.length > 0 ||
+    selectedEndpoint.length > 0;
   const subtitle = `${eventTypeCount} contract${eventTypeCount === 1 ? "" : "s"} across ${namespaceCount} namespace${namespaceCount === 1 ? "" : "s"}`;
 
   return (
@@ -230,6 +252,9 @@ const EventTypesList: React.FC = () => {
           selectedNamespace={selectedNamespace}
           onNamespaceChange={setSelectedNamespace}
           namespaces={namespaces}
+          selectedEndpoint={selectedEndpoint}
+          onEndpointChange={setSelectedEndpoint}
+          endpoints={endpoints}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
         />
@@ -244,7 +269,7 @@ const EventTypesList: React.FC = () => {
             }
             description={
               hasActiveFilters
-                ? "Try a different search term or clear the namespace filter."
+                ? "Try a different search term or clear the namespace/endpoint filter."
                 : "Event types will appear here once endpoints declare their published and consumed contracts."
             }
             action={
@@ -254,6 +279,7 @@ const EventTypesList: React.FC = () => {
                   onClick={() => {
                     setSearchTerm("");
                     setSelectedNamespace("");
+                    setSelectedEndpoint("");
                   }}
                   className="text-primary-600 hover:text-primary text-[13px] font-semibold underline-offset-2 hover:underline"
                 >

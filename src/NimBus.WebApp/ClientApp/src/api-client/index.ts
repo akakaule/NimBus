@@ -4226,6 +4226,8 @@ export class EventType implements IEventType {
     properties?: EventTypeProperty[];
     producerCount?: number;
     consumerCount?: number;
+    producers?: string[];
+    consumers?: string[];
 
     [key: string]: any;
 
@@ -4255,6 +4257,16 @@ export class EventType implements IEventType {
             }
             this.producerCount = _data["producerCount"];
             this.consumerCount = _data["consumerCount"];
+            if (Array.isArray(_data["producers"])) {
+                this.producers = [] as any;
+                for (let item of _data["producers"])
+                    this.producers!.push(item);
+            }
+            if (Array.isArray(_data["consumers"])) {
+                this.consumers = [] as any;
+                for (let item of _data["consumers"])
+                    this.consumers!.push(item);
+            }
         }
     }
 
@@ -4282,6 +4294,16 @@ export class EventType implements IEventType {
         }
         data["producerCount"] = this.producerCount;
         data["consumerCount"] = this.consumerCount;
+        if (Array.isArray(this.producers)) {
+            data["producers"] = [];
+            for (let item of this.producers)
+                data["producers"].push(item);
+        }
+        if (Array.isArray(this.consumers)) {
+            data["consumers"] = [];
+            for (let item of this.consumers)
+                data["consumers"].push(item);
+        }
         return data;
     }
 
@@ -4301,6 +4323,8 @@ export interface IEventType {
     properties?: EventTypeProperty[];
     producerCount?: number;
     consumerCount?: number;
+    producers?: string[];
+    consumers?: string[];
 
     [key: string]: any;
 }

@@ -458,10 +458,7 @@ public class ResolverServiceTests
         public Task<EndpointMetadata> GetEndpointMetadata(string endpointId) => throw new NotSupportedException();
         public Task<List<EndpointMetadata>> GetMetadatas() => throw new NotSupportedException();
         public Task<List<EndpointMetadata>?> GetMetadatas(IEnumerable<string> endpointIds) => throw new NotSupportedException();
-        public Task<List<EndpointMetadata>> GetMetadatasWithEnabledHeartbeat() => throw new NotSupportedException();
         public Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata) => throw new NotSupportedException();
-        public Task EnableHeartbeatOnEndpoint(string endpointId, bool enable) => throw new NotSupportedException();
-        public Task<bool> SetHeartbeat(Heartbeat heartbeat, string endpointId) => throw new NotSupportedException();
         public Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount) => throw new NotSupportedException();
         public Task<MessageEntity> GetMessage(string eventId, string messageId) => throw new NotSupportedException();
         public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId) =>

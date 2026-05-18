@@ -12,23 +12,4 @@ public static class HealthCheckExtensions
             failureStatus: HealthStatus.Unhealthy,
             tags: new[] { "ready" });
     }
-
-    public static IHealthChecksBuilder AddResolverLagCheck(
-        this IHealthChecksBuilder builder,
-        Action<ResolverLagHealthCheckOptions> configure = null)
-    {
-        if (configure != null)
-        {
-            builder.Services.Configure(configure);
-        }
-        else
-        {
-            builder.Services.AddOptions<ResolverLagHealthCheckOptions>();
-        }
-
-        return builder.AddCheck<ResolverLagHealthCheck>(
-            "resolver-lag",
-            failureStatus: HealthStatus.Unhealthy,
-            tags: new[] { "ready" });
-    }
 }

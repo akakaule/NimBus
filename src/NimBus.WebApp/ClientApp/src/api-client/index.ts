@@ -1788,53 +1788,6 @@ export class Client extends ApiClientBase {
     }
 
     /**
-     * @param body (optional) 
-     * @return OK
-     */
-    endpointEnableHeartbeat(endpointId: string, body?: boolean | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/endpoint/{endpointId}/enableheartbeat";
-        if (endpointId === undefined || endpointId === null)
-            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
-        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
-        url_ = url_.replace(/[?&]$/, "");
-
-        const content_ = JSON.stringify(body);
-
-        let options_: RequestInit = {
-            body: content_,
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            }
-        };
-
-        return this.transformOptions(options_).then(transformedOptions_ => {
-            return this.http.fetch(url_, transformedOptions_);
-        }).then((_response: Response) => {
-            return this.processEndpointEnableHeartbeat(_response);
-        });
-    }
-
-    protected processEndpointEnableHeartbeat(response: Response): Promise<void> {
-        const status = response.status;
-        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
-        if (status === 200) {
-            return response.text().then((_responseText) => {
-            return;
-            });
-        } else if (status === 400) {
-            return response.text().then((_responseText) => {
-            return throwException("Bad Request", status, _responseText, _headers);
-            });
-        } else if (status !== 200 && status !== 204) {
-            return response.text().then((_responseText) => {
-            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
-            });
-        }
-        return Promise.resolve<void>(null as any);
-    }
-
-    /**
      * @return OK
      */
     deleteEventInvalidId(endpointId: string, eventId: string, sessionId: string): Promise<void> {
@@ -3453,45 +3406,6 @@ export class Client extends ApiClientBase {
         } else if (status === 404) {
             return response.text().then((_responseText) => {
             return throwException("Not available (non-development environment)", status, _responseText, _headers);
-            });
-        } else if (status !== 200 && status !== 204) {
-            return response.text().then((_responseText) => {
-            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
-            });
-        }
-        return Promise.resolve<void>(null as any);
-    }
-
-    /**
-     * Heartbeat storagehook
-     * @return OK
-     */
-    postApiStoragehookHeartbeatEndpointId(endpointId: string): Promise<void> {
-        let url_ = this.baseUrl + "/api/storagehook/heartbeat/{endpointId}";
-        if (endpointId === undefined || endpointId === null)
-            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
-        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
-        url_ = url_.replace(/[?&]$/, "");
-
-        let options_: RequestInit = {
-            method: "POST",
-            headers: {
-            }
-        };
-
-        return this.transformOptions(options_).then(transformedOptions_ => {
-            return this.http.fetch(url_, transformedOptions_);
-        }).then((_response: Response) => {
-            return this.processPostApiStoragehookHeartbeatEndpointId(_response);
-        });
-    }
-
-    protected processPostApiStoragehookHeartbeatEndpointId(response: Response): Promise<void> {
-        const status = response.status;
-        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
-        if (status === 200) {
-            return response.text().then((_responseText) => {
-            return;
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -5855,10 +5769,7 @@ export class Metadata implements IMetadata {
     endpointOwner?: string;
     endpointOwnerTeam?: string;
     endpointOwnerEmail?: string;
-    endpointHeartbeatStatus?: string;
     technicalContacts?: TechnicalContact[];
-    heartBeats?: Heartbeat[];
-    isHeartbeatEnabled?: boolean | undefined;
     subscriptionStatus?: string;
 
     [key: string]: any;
@@ -5882,18 +5793,11 @@ export class Metadata implements IMetadata {
             this.endpointOwner = _data["endpointOwner"];
             this.endpointOwnerTeam = _data["endpointOwnerTeam"];
             this.endpointOwnerEmail = _data["endpointOwnerEmail"];
-            this.endpointHeartbeatStatus = _data["endpointHeartbeatStatus"];
             if (Array.isArray(_data["technicalContacts"])) {
                 this.technicalContacts = [] as any;
                 for (let item of _data["technicalContacts"])
                     this.technicalContacts!.push(TechnicalContact.fromJS(item));
             }
-            if (Array.isArray(_data["heartBeats"])) {
-                this.heartBeats = [] as any;
-                for (let item of _data["heartBeats"])
-                    this.heartBeats!.push(Heartbeat.fromJS(item));
-            }
-            this.isHeartbeatEnabled = _data["isHeartbeatEnabled"];
             this.subscriptionStatus = _data["subscriptionStatus"];
         }
     }
@@ -5915,18 +5819,11 @@ export class Metadata implements IMetadata {
         data["endpointOwner"] = this.endpointOwner;
         data["endpointOwnerTeam"] = this.endpointOwnerTeam;
         data["endpointOwnerEmail"] = this.endpointOwnerEmail;
-        data["endpointHeartbeatStatus"] = this.endpointHeartbeatStatus;
         if (Array.isArray(this.technicalContacts)) {
             data["technicalContacts"] = [];
             for (let item of this.technicalContacts)
                 data["technicalContacts"].push(item ? item.toJSON() : undefined as any);
         }
-        if (Array.isArray(this.heartBeats)) {
-            data["heartBeats"] = [];
-            for (let item of this.heartBeats)
-                data["heartBeats"].push(item ? item.toJSON() : undefined as any);
-        }
-        data["isHeartbeatEnabled"] = this.isHeartbeatEnabled;
         data["subscriptionStatus"] = this.subscriptionStatus;
         return data;
     }
@@ -5944,10 +5841,7 @@ export interface IMetadata {
     endpointOwner?: string;
     endpointOwnerTeam?: string;
     endpointOwnerEmail?: string;
-    endpointHeartbeatStatus?: string;
     technicalContacts?: TechnicalContact[];
-    heartBeats?: Heartbeat[];
-    isHeartbeatEnabled?: boolean | undefined;
     subscriptionStatus?: string;
 
     [key: string]: any;
@@ -6012,85 +5906,8 @@ export interface ITechnicalContact {
     [key: string]: any;
 }
 
-export class Heartbeat implements IHeartbeat {
-    id?: string;
-    startTime?: moment.Moment;
-    endTime?: moment.Moment;
-    receivedTime?: moment.Moment;
-    endpointHeartbeatStatus?: string;
-    endpointSubscriptionStatus?: string;
-
-    [key: string]: any;
-
-    constructor(data?: IHeartbeat) {
-        if (data) {
-            for (var property in data) {
-                if (data.hasOwnProperty(property))
-                    (this as any)[property] = (data as any)[property];
-            }
-        }
-    }
-
-    init(_data?: any) {
-        if (_data) {
-            for (var property in _data) {
-                if (_data.hasOwnProperty(property))
-                    this[property] = _data[property];
-            }
-            this.id = _data["id"];
-            this.startTime = _data["startTime"] ? moment(_data["startTime"].toString()) : undefined as any;
-            this.endTime = _data["endTime"] ? moment(_data["endTime"].toString()) : undefined as any;
-            this.receivedTime = _data["receivedTime"] ? moment(_data["receivedTime"].toString()) : undefined as any;
-            this.endpointHeartbeatStatus = _data["endpointHeartbeatStatus"];
-            this.endpointSubscriptionStatus = _data["endpointSubscriptionStatus"];
-        }
-    }
-
-    static fromJS(data: any): Heartbeat {
-        data = typeof data === 'object' ? data : {};
-        let result = new Heartbeat();
-        result.init(data);
-        return result;
-    }
-
-    toJSON(data?: any) {
-        data = typeof data === 'object' ? data : {};
-        for (var property in this) {
-            if (this.hasOwnProperty(property))
-                data[property] = this[property];
-        }
-        data["id"] = this.id;
-        data["startTime"] = this.startTime ? this.startTime.toISOString() : undefined as any;
-        data["endTime"] = this.endTime ? this.endTime.toISOString() : undefined as any;
-        data["receivedTime"] = this.receivedTime ? this.receivedTime.toISOString() : undefined as any;
-        data["endpointHeartbeatStatus"] = this.endpointHeartbeatStatus;
-        data["endpointSubscriptionStatus"] = this.endpointSubscriptionStatus;
-        return data;
-    }
-
-    clone(): Heartbeat {
-        const json = this.toJSON();
-        let result = new Heartbeat();
-        result.init(json);
-        return result;
-    }
-}
-
-export interface IHeartbeat {
-    id?: string;
-    startTime?: moment.Moment;
-    endTime?: moment.Moment;
-    receivedTime?: moment.Moment;
-    endpointHeartbeatStatus?: string;
-    endpointSubscriptionStatus?: string;
-
-    [key: string]: any;
-}
-
 export class MetadataShort implements IMetadataShort {
     endpointId?: string;
-    heartbeatStatus?: string;
-    isHeartbeatEnabled?: boolean | undefined;
     subscriptionStatus?: string;
 
     [key: string]: any;
@@ -6111,8 +5928,6 @@ export class MetadataShort implements IMetadataShort {
                     this[property] = _data[property];
             }
             this.endpointId = _data["endpointId"];
-            this.heartbeatStatus = _data["heartbeatStatus"];
-            this.isHeartbeatEnabled = _data["isHeartbeatEnabled"];
             this.subscriptionStatus = _data["subscriptionStatus"];
         }
     }
@@ -6131,8 +5946,6 @@ export class MetadataShort implements IMetadataShort {
                 data[property] = this[property];
         }
         data["endpointId"] = this.endpointId;
-        data["heartbeatStatus"] = this.heartbeatStatus;
-        data["isHeartbeatEnabled"] = this.isHeartbeatEnabled;
         data["subscriptionStatus"] = this.subscriptionStatus;
         return data;
     }
@@ -6147,8 +5960,6 @@ export class MetadataShort implements IMetadataShort {
 
 export interface IMetadataShort {
     endpointId?: string;
-    heartbeatStatus?: string;
-    isHeartbeatEnabled?: boolean | undefined;
     subscriptionStatus?: string;
 
     [key: string]: any;

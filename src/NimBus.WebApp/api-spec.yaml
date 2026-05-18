@@ -800,32 +800,6 @@ paths:
       tags:
         - Endpoint
       description: Get status for given subscription on endpoint
-  '/api/endpoint/{endpointId}/enableheartbeat':
-    parameters:
-      - schema:
-          type: string
-        name: endpointId
-        in: path
-        required: true
-    post:
-      summary: ''
-      operationId: endpoint-enable-heartbeat
-      responses:
-        '200':
-          description: OK
-        '400':
-          description: Bad Request
-      tags:
-        - Endpoint
-      description: ''
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: boolean
-            examples:
-              example-12:
-                value: string
   '/api/event/invalid/{endpointId}/{eventId}/{sessionId}':
     parameters:
       - schema:
@@ -1016,7 +990,7 @@ paths:
                 example-1:
                   value:
                     - endpointId: string
-                      heartbeatStatus: string
+                      subscriptionStatus: string
         '404':
           description: Not Found
       requestBody:
@@ -1586,21 +1560,6 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/SendMessageRequest'
-  '/api/storagehook/heartbeat/{endpointId}':
-    parameters:
-      - schema:
-          type: string
-        name: endpointId
-        in: path
-        required: true
-    post:
-      summary: Heartbeat storagehook
-      operationId: post-api-storagehook-heartbeat-endpointId
-      responses:
-        '200':
-          description: OK
-      tags:
-        - StorageHook
   /api/metrics/overview:
     get:
       summary: Get metrics overview for all endpoints
@@ -2294,19 +2253,10 @@ components:
           type: string
         endpointOwnerEmail:
           type: string
-        endpointHeartbeatStatus:
-          type: string
         technicalContacts:
           type: array
           items:
             $ref: '#/components/schemas/TechnicalContact'
-        heartBeats:
-          type: array
-          items:
-            $ref: '#/components/schemas/Heartbeat'
-        isHeartbeatEnabled:
-          type: boolean
-          nullable: true
         subscriptionStatus:
           type: string
     TechnicalContact:
@@ -2319,27 +2269,6 @@ components:
           type: string
         email:
           type: string
-    Heartbeat:
-      title: heartbeat
-      x-stoplight:
-        id: b4fostd4dmvwn
-      type: object
-      properties:
-        id:
-          type: string
-        startTime:
-          type: string
-          format: date-time
-        endTime:
-          type: string
-          format: date-time
-        receivedTime:
-          type: string
-          format: date-time
-        endpointHeartbeatStatus:
-          type: string
-        endpointSubscriptionStatus:
-          type: string
     MetadataShort:
       title: MetadataShort
       x-stoplight:
@@ -2349,11 +2278,6 @@ components:
       properties:
         endpointId:
           type: string
-        heartbeatStatus:
-          type: string
-        isHeartbeatEnabled:
-          type: boolean
-          nullable: true
         subscriptionStatus:
           type: string
     SeedResult:

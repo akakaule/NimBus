@@ -312,9 +312,7 @@ namespace NimBus.WebApp
             }
             else
             {
-                healthChecks
-                    .AddCosmosDbHealthCheck()
-                    .AddResolverLagCheck();
+                healthChecks.AddCosmosDbHealthCheck();
             }
             services.AddScoped<IEndpointAuthorizationService, EndpointAuthorizationService>();
             services.AddTransient<IEndpointApiController, EndpointImplementation>();

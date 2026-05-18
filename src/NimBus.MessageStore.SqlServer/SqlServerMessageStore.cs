@@ -924,7 +924,7 @@ WHERE Id = @Id";
         Frequency = row.Frequency,
     };
 
-    // ───────── Endpoint metadata + heartbeat ─────────
+    // ───────── Endpoint metadata ─────────
 
     public async Task<EndpointMetadata> GetEndpointMetadata(string endpointId)
     {
@@ -933,9 +933,7 @@ WHERE Id = @Id";
             $"SELECT * FROM {T("EndpointMetadata")} WHERE EndpointId = @E",
             new { E = endpointId }, commandTimeout: _commandTimeout);
         if (row == null) throw new EndpointNotFoundException(endpointId);
-        var metadata = MapMetadataRow(row);
-        metadata.Heartbeats = await GetHeartbeats(conn, endpointId);
-        return metadata;
+        return MapMetadataRow(row);
     }
 
     public async Task<List<EndpointMetadata>> GetMetadatas()
@@ -956,15 +954,6 @@ WHERE Id = @Id";
         return rows.Select(MapMetadataRow).Cast<EndpointMetadata>().ToList();
     }
 
-    public async Task<List<EndpointMetadata>> GetMetadatasWithEnabledHeartbeat()
-    {
-        await using var conn = Open();
-        var rows = await conn.QueryAsync(
-            $"SELECT * FROM {T("EndpointMetadata")} WHERE IsHeartbeatEnabled = 1",
-            commandTimeout: _commandTimeout);
-        return rows.Select(MapMetadataRow).Cast<EndpointMetadata>().ToList();
-    }
-
     public async Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata)
     {
         var sql = $@"
@@ -975,16 +964,14 @@ WHEN MATCHED THEN UPDATE SET
     EndpointOwner = @EndpointOwner,
     EndpointOwnerTeam = @EndpointOwnerTeam,
     EndpointOwnerEmail = @EndpointOwnerEmail,
-    IsHeartbeatEnabled = @IsHeartbeatEnabled,
-    EndpointHeartbeatStatus = @Status,
     TechnicalContactsJson = @TechnicalContactsJson,
     SubscriptionStatus = @SubscriptionStatus,
     UpdatedAtUtc = SYSUTCDATETIME()
 WHEN NOT MATCHED THEN INSERT (
-    EndpointId, EndpointOwner, EndpointOwnerTeam, EndpointOwnerEmail, IsHeartbeatEnabled,
-    EndpointHeartbeatStatus, TechnicalContactsJson, SubscriptionStatus)
-VALUES (@EndpointId, @EndpointOwner, @EndpointOwnerTeam, @EndpointOwnerEmail, @IsHeartbeatEnabled,
-    @Status, @TechnicalContactsJson, @SubscriptionStatus);";
+    EndpointId, EndpointOwner, EndpointOwnerTeam, EndpointOwnerEmail,
+    TechnicalContactsJson, SubscriptionStatus)
+VALUES (@EndpointId, @EndpointOwner, @EndpointOwnerTeam, @EndpointOwnerEmail,
+    @TechnicalContactsJson, @SubscriptionStatus);";
         await using var conn = Open();
         var rows = await conn.ExecuteAsync(sql, new
         {
@@ -992,48 +979,8 @@ VALUES (@EndpointId, @EndpointOwner, @EndpointOwnerTeam, @EndpointOwnerEmail, @I
             endpointMetadata.EndpointOwner,
             endpointMetadata.EndpointOwnerTeam,
             endpointMetadata.EndpointOwnerEmail,
-            endpointMetadata.IsHeartbeatEnabled,
-            Status = endpointMetadata.EndpointHeartbeatStatus.ToString(),
             TechnicalContactsJson = JsonConvert.SerializeObject(endpointMetadata.TechnicalContacts ?? new List<TechnicalContact>()),
             endpointMetadata.SubscriptionStatus,
-        }, commandTimeout: _commandTimeout);
-        return rows > 0;
-    }
-
-    public async Task EnableHeartbeatOnEndpoint(string endpointId, bool enable)
-    {
-        await using var conn = Open();
-        await conn.ExecuteAsync(
-            $@"MERGE {T("EndpointMetadata")} AS target
-               USING (SELECT @EndpointId AS EndpointId) AS source ON target.EndpointId = source.EndpointId
-               WHEN MATCHED THEN UPDATE SET IsHeartbeatEnabled = @Enable, UpdatedAtUtc = SYSUTCDATETIME()
-               WHEN NOT MATCHED THEN INSERT (EndpointId, IsHeartbeatEnabled) VALUES (@EndpointId, @Enable);",
-            new { EndpointId = endpointId, Enable = enable }, commandTimeout: _commandTimeout);
-    }
-
-    public async Task<bool> SetHeartbeat(Heartbeat heartbeat, string endpointId)
-    {
-        var sql = $@"
-INSERT INTO {T("Heartbeats")} (EndpointId, MessageId, StartTimeUtc, ReceivedTimeUtc, EndTimeUtc, EndpointHeartbeatStatus)
-VALUES (@EndpointId, @MessageId, @StartTime, @ReceivedTime, @EndTime, @Status);
-
-MERGE {T("EndpointMetadata")} AS target
-USING (SELECT @EndpointId AS EndpointId) AS source
-ON target.EndpointId = source.EndpointId
-WHEN MATCHED THEN UPDATE SET
-    EndpointHeartbeatStatus = @Status,
-    UpdatedAtUtc = SYSUTCDATETIME()
-WHEN NOT MATCHED THEN INSERT (EndpointId, EndpointHeartbeatStatus)
-VALUES (@EndpointId, @Status);";
-        await using var conn = Open();
-        var rows = await conn.ExecuteAsync(sql, new
-        {
-            EndpointId = endpointId,
-            heartbeat.MessageId,
-            StartTime = heartbeat.StartTime,
-            ReceivedTime = heartbeat.ReceivedTime,
-            EndTime = heartbeat.EndTime,
-            Status = heartbeat.EndpointHeartbeatStatus.ToString(),
         }, commandTimeout: _commandTimeout);
         return rows > 0;
     }
@@ -1044,36 +991,11 @@ VALUES (@EndpointId, @Status);";
         EndpointOwner = row.EndpointOwner ?? string.Empty,
         EndpointOwnerTeam = row.EndpointOwnerTeam ?? string.Empty,
         EndpointOwnerEmail = row.EndpointOwnerEmail ?? string.Empty,
-        IsHeartbeatEnabled = row.IsHeartbeatEnabled,
-        EndpointHeartbeatStatus = Enum.TryParse((string?)row.EndpointHeartbeatStatus, out HeartbeatStatus hs) ? hs : HeartbeatStatus.Unknown,
         TechnicalContacts = string.IsNullOrEmpty((string?)row.TechnicalContactsJson)
             ? new List<TechnicalContact>()
             : JsonConvert.DeserializeObject<List<TechnicalContact>>((string)row.TechnicalContactsJson) ?? new List<TechnicalContact>(),
-        Heartbeats = new List<Heartbeat>(),
         SubscriptionStatus = row.SubscriptionStatus,
     };
-
-    private async Task<List<Heartbeat>> GetHeartbeats(SqlConnection conn, string endpointId)
-    {
-        var rows = await conn.QueryAsync(
-            $@"SELECT MessageId, StartTimeUtc, ReceivedTimeUtc, EndTimeUtc, EndpointHeartbeatStatus
-               FROM {T("Heartbeats")}
-               WHERE EndpointId = @EndpointId
-               ORDER BY ReceivedTimeUtc DESC",
-            new { EndpointId = endpointId },
-            commandTimeout: _commandTimeout);
-
-        return rows.Select(row => new Heartbeat
-        {
-            MessageId = row.MessageId ?? string.Empty,
-            StartTime = row.StartTimeUtc,
-            ReceivedTime = row.ReceivedTimeUtc,
-            EndTime = row.EndTimeUtc,
-            EndpointHeartbeatStatus = Enum.TryParse((string?)row.EndpointHeartbeatStatus, out HeartbeatStatus status)
-                ? status
-                : HeartbeatStatus.Unknown,
-        }).ToList();
-    }
 
     // ───────── Metrics ─────────
 

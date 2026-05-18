@@ -48,7 +48,6 @@ public class SeedDataService
                 EndpointOwnerTeam = "Platform",
                 EndpointOwnerEmail = "integration@eet.dk",
                 SubscriptionStatus = true,
-                IsHeartbeatEnabled = true
             });
             result.EndpointsCreated++;
         }

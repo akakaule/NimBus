@@ -5,7 +5,6 @@ namespace NimBus.WebApp.Constants
     {
         public const string GridUpdate = "gridupdate";
         public const string EndpointUpdate = "endpointupdate";
-        public const string HeartbeatUpdate = "heartbeatupdate";
     }
 
     public static class AppEndpoints

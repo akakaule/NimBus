@@ -9,7 +9,6 @@ using NimBus.MessageStore.States;
 using System.Collections;
 using System.Collections.Generic;
 using TechnicalContact = NimBus.WebApp.ManagementApi.TechnicalContact;
-using Heartbeat = NimBus.WebApp.ManagementApi.Heartbeat;
 using ResolutionStatus = NimBus.MessageStore.ResolutionStatus;
 
 namespace NimBus.WebApp.Controllers;
@@ -366,20 +365,6 @@ public static class Mapper
                     { Name = technicalContact.Name, Email = technicalContact.Email }).ToList();
         }
 
-        var heartbeats = new List<Heartbeat>();
-        if (endpointMetadata.Heartbeats != null)
-        {
-            heartbeats = endpointMetadata.Heartbeats.Select(hb => new Heartbeat()
-            {
-                Id = hb.MessageId,
-                StartTime = hb.StartTime,
-                ReceivedTime = hb.ReceivedTime,
-                EndTime = hb.EndTime,
-                EndpointHeartbeatStatus = hb.EndpointHeartbeatStatus.ToString()
-            }).ToList();
-        }
-
-
         return new Metadata
         {
             Id = endpointMetadata.EndpointId,
@@ -387,10 +372,6 @@ public static class Mapper
             EndpointOwnerTeam = endpointMetadata.EndpointOwnerTeam,
             EndpointOwnerEmail = endpointMetadata.EndpointOwnerEmail,
             TechnicalContacts = technicalContacts,
-            EndpointHeartbeatStatus = endpointMetadata.EndpointHeartbeatStatus.ToString(),
-            HeartBeats = heartbeats,
-            IsHeartbeatEnabled = endpointMetadata.IsHeartbeatEnabled,
-
         };
     }
 
@@ -399,9 +380,7 @@ public static class Mapper
         return (endpointMetadatas ?? Enumerable.Empty<EndpointMetadata>()).Select(metadata => new MetadataShort()
         {
             EndpointId = metadata.EndpointId,
-            HeartbeatStatus = metadata.EndpointHeartbeatStatus.ToString(),
             SubscriptionStatus = SubscriptionStatusFromMetadata(metadata),
-            IsHeartbeatEnabled = metadata.IsHeartbeatEnabled,
         });
     }
 
@@ -410,9 +389,7 @@ public static class Mapper
         return new MetadataShort()
         {
             EndpointId = metadata.EndpointId,
-            HeartbeatStatus = metadata.EndpointHeartbeatStatus.ToString(),
             SubscriptionStatus = SubscriptionStatusFromMetadata(metadata),
-            IsHeartbeatEnabled = metadata.IsHeartbeatEnabled,
         };
     }
 

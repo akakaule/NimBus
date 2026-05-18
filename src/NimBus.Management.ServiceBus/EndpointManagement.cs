@@ -64,26 +64,4 @@ public class EndpointManagement
 
         return await _serviceBusManagement.GetSubscriptionState(topicName, subscriptionName);
     }
-
-    public async Task EnableHeartbeatOnEndpoint(string endpointName, bool enable)
-    {
-        string topicName = "heartbeat";
-
-        if (enable)
-        {
-            await _serviceBusManagement.CreateForwardSubscription(topicName, endpointName, endpointName);
-            await _serviceBusManagement.CreateCustomRule(
-                topicName,
-                endpointName,
-                "messageType",
-                "user.MessageType = 'EventRequest'",
-                $"SET user.From = 'Heartbeat'; SET user.EventId = newid(); SET user.To = '{endpointName}';");
-            await _serviceBusManagement.DeleteRule(topicName, endpointName, "$Default");
-        }
-        else
-        {
-            await _serviceBusManagement.DeleteSubscription(topicName, endpointName);
-        }
-        _logger?.Information($"Enabled/Disabled heartbeat for endpoint({endpointName}) succesfully");
-    }
 }

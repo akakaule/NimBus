@@ -36,9 +36,6 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
         "MessageAudits",
         "EndpointSubscriptions",
         "EndpointMetadata",
-        "Heartbeats",
-        "BlockedMessages",
-        "InvalidMessages",
     };
 
     private static readonly string[] RequiredViews =

@@ -163,12 +163,6 @@ namespace NimBus.WebApp.ManagementApi
 
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<string>> GetEndpointSubscriptionstatusAsync(string endpointId);
 
-
-
-        /// <returns>OK</returns>
-
-        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> EndpointEnableHeartbeatAsync(bool? body, string endpointId);
-
         /// <summary>
         /// Your GET endpoint
         /// </summary>
@@ -386,14 +380,6 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.GetEndpointSubscriptionstatusAsync(endpointId);
-        }
-
-        /// <returns>OK</returns>
-        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/endpoint/{endpointId}/enableheartbeat")]
-        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> EndpointEnableHeartbeat([Microsoft.AspNetCore.Mvc.FromBody] bool? body, string endpointId)
-        {
-
-            return _implementation.EndpointEnableHeartbeatAsync(body, endpointId);
         }
 
         /// <summary>
@@ -976,15 +962,6 @@ namespace NimBus.WebApp.ManagementApi
 
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> StoragehookReceiveCosmosAsync(string endpointId);
 
-        /// <summary>
-        /// Heartbeat storagehook
-        /// </summary>
-
-
-        /// <returns>OK</returns>
-
-        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostApiStoragehookHeartbeatEndpointIdAsync(string endpointId);
-
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -1004,17 +981,6 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.StoragehookReceiveCosmosAsync(endpointId);
-        }
-
-        /// <summary>
-        /// Heartbeat storagehook
-        /// </summary>
-        /// <returns>OK</returns>
-        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/storagehook/heartbeat/{endpointId}")]
-        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostApiStoragehookHeartbeatEndpointId(string endpointId)
-        {
-
-            return _implementation.PostApiStoragehookHeartbeatEndpointIdAsync(endpointId);
         }
 
     }
@@ -5076,10 +5042,7 @@ namespace NimBus.WebApp.ManagementApi
         private string _endpointOwner;
         private string _endpointOwnerTeam;
         private string _endpointOwnerEmail;
-        private string _endpointHeartbeatStatus;
         private System.Collections.Generic.List<TechnicalContact> _technicalContacts;
-        private System.Collections.Generic.List<Heartbeat> _heartBeats;
-        private bool? _isHeartbeatEnabled;
         private string _subscriptionStatus;
 
         [Newtonsoft.Json.JsonProperty("id", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
@@ -5134,19 +5097,6 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
-        [Newtonsoft.Json.JsonProperty("endpointHeartbeatStatus", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public string EndpointHeartbeatStatus    {
-            get { return _endpointHeartbeatStatus; }
-            set
-            {
-                if (_endpointHeartbeatStatus != value)
-                {
-                    _endpointHeartbeatStatus = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
         [Newtonsoft.Json.JsonProperty("technicalContacts", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public System.Collections.Generic.List<TechnicalContact> TechnicalContacts    {
             get { return _technicalContacts; }
@@ -5155,32 +5105,6 @@ namespace NimBus.WebApp.ManagementApi
                 if (_technicalContacts != value)
                 {
                     _technicalContacts = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
-        [Newtonsoft.Json.JsonProperty("heartBeats", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public System.Collections.Generic.List<Heartbeat> HeartBeats    {
-            get { return _heartBeats; }
-            set
-            {
-                if (_heartBeats != value)
-                {
-                    _heartBeats = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
-        [Newtonsoft.Json.JsonProperty("isHeartbeatEnabled", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public bool? IsHeartbeatEnabled    {
-            get { return _isHeartbeatEnabled; }
-            set
-            {
-                if (_isHeartbeatEnabled != value)
-                {
-                    _isHeartbeatEnabled = value;
                     RaisePropertyChanged();
                 }
             }
@@ -5294,130 +5218,9 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
-    public partial class Heartbeat : System.ComponentModel.INotifyPropertyChanged
-    {
-        private string _id;
-        private System.DateTime _startTime;
-        private System.DateTime _endTime;
-        private System.DateTime _receivedTime;
-        private string _endpointHeartbeatStatus;
-        private string _endpointSubscriptionStatus;
-
-        [Newtonsoft.Json.JsonProperty("id", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public string Id    {
-            get { return _id; }
-            set
-            {
-                if (_id != value)
-                {
-                    _id = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
-        [Newtonsoft.Json.JsonProperty("startTime", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public System.DateTime StartTime    {
-            get { return _startTime; }
-            set
-            {
-                if (_startTime != value)
-                {
-                    _startTime = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
-        [Newtonsoft.Json.JsonProperty("endTime", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public System.DateTime EndTime    {
-            get { return _endTime; }
-            set
-            {
-                if (_endTime != value)
-                {
-                    _endTime = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
-        [Newtonsoft.Json.JsonProperty("receivedTime", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public System.DateTime ReceivedTime    {
-            get { return _receivedTime; }
-            set
-            {
-                if (_receivedTime != value)
-                {
-                    _receivedTime = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
-        [Newtonsoft.Json.JsonProperty("endpointHeartbeatStatus", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public string EndpointHeartbeatStatus    {
-            get { return _endpointHeartbeatStatus; }
-            set
-            {
-                if (_endpointHeartbeatStatus != value)
-                {
-                    _endpointHeartbeatStatus = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
-        [Newtonsoft.Json.JsonProperty("endpointSubscriptionStatus", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public string EndpointSubscriptionStatus    {
-            get { return _endpointSubscriptionStatus; }
-            set
-            {
-                if (_endpointSubscriptionStatus != value)
-                {
-                    _endpointSubscriptionStatus = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
-        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
-
-        [Newtonsoft.Json.JsonExtensionData]
-        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
-        {
-            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
-            set { _additionalProperties = value; }
-        }
-
-        public string ToJson()
-        {
-
-            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
-
-        }
-        public static Heartbeat FromJson(string data)
-        {
-
-            return Newtonsoft.Json.JsonConvert.DeserializeObject<Heartbeat>(data, new Newtonsoft.Json.JsonSerializerSettings());
-
-        }
-        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
-
-        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
-        {
-            var handler = PropertyChanged;
-            if (handler != null)
-                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
-        }
-    }
-
-    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class MetadataShort : System.ComponentModel.INotifyPropertyChanged
     {
         private string _endpointId;
-        private string _heartbeatStatus;
-        private bool? _isHeartbeatEnabled;
         private string _subscriptionStatus;
 
         [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
@@ -5428,32 +5231,6 @@ namespace NimBus.WebApp.ManagementApi
                 if (_endpointId != value)
                 {
                     _endpointId = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
-        [Newtonsoft.Json.JsonProperty("heartbeatStatus", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public string HeartbeatStatus    {
-            get { return _heartbeatStatus; }
-            set
-            {
-                if (_heartbeatStatus != value)
-                {
-                    _heartbeatStatus = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
-        [Newtonsoft.Json.JsonProperty("isHeartbeatEnabled", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public bool? IsHeartbeatEnabled    {
-            get { return _isHeartbeatEnabled; }
-            set
-            {
-                if (_isHeartbeatEnabled != value)
-                {
-                    _isHeartbeatEnabled = value;
                     RaisePropertyChanged();
                 }
             }

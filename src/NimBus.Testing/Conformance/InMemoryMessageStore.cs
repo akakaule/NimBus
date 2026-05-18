@@ -27,8 +27,6 @@ public class InMemoryMessageStore : INimBusMessageStore
     private readonly ConcurrentDictionary<string, List<MessageAuditEntity>> _audits = new();
     private readonly ConcurrentDictionary<string, EndpointSubscription> _subscriptions = new();
     private readonly ConcurrentDictionary<string, EndpointMetadata> _metadata = new();
-    private readonly List<Heartbeat> _heartbeats = new();
-    private readonly object _heartbeatLock = new();
 
     private (string, string, string) Key(string endpoint, string eventId, string session) => (endpoint, eventId, session ?? string.Empty);
 
@@ -327,51 +325,10 @@ public class InMemoryMessageStore : INimBusMessageStore
         return Task.FromResult<List<EndpointMetadata>?>(_metadata.Values.Where(m => set.Contains(m.EndpointId)).ToList());
     }
 
-    public Task<List<EndpointMetadata>> GetMetadatasWithEnabledHeartbeat()
-        => Task.FromResult(_metadata.Values.Where(m => m.IsHeartbeatEnabled == true).ToList());
-
     public Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata)
     {
         endpointMetadata.TechnicalContacts ??= new List<TechnicalContact>();
-        endpointMetadata.Heartbeats ??= new List<Heartbeat>();
         _metadata[endpointMetadata.EndpointId] = endpointMetadata;
-        return Task.FromResult(true);
-    }
-
-    public Task EnableHeartbeatOnEndpoint(string endpointId, bool enable)
-    {
-        if (!_metadata.TryGetValue(endpointId, out var meta))
-            meta = _metadata[endpointId] = new EndpointMetadata { EndpointId = endpointId };
-        meta.IsHeartbeatEnabled = enable;
-        return Task.CompletedTask;
-    }
-
-    public Task<bool> SetHeartbeat(Heartbeat heartbeat, string endpointId)
-    {
-        lock (_heartbeatLock)
-        {
-            _heartbeats.Add(heartbeat);
-            if (!_metadata.TryGetValue(endpointId, out var metadata))
-            {
-                metadata = new EndpointMetadata { EndpointId = endpointId };
-                _metadata[endpointId] = metadata;
-            }
-
-            metadata.EndpointHeartbeatStatus = heartbeat.EndpointHeartbeatStatus;
-            metadata.Heartbeats ??= new List<Heartbeat>();
-            var existing = metadata.Heartbeats.FirstOrDefault(h => h.MessageId == heartbeat.MessageId);
-            if (existing == null)
-            {
-                metadata.Heartbeats.Add(heartbeat);
-            }
-            else
-            {
-                existing.StartTime = heartbeat.StartTime;
-                existing.ReceivedTime = heartbeat.ReceivedTime;
-                existing.EndTime = heartbeat.EndTime;
-                existing.EndpointHeartbeatStatus = heartbeat.EndpointHeartbeatStatus;
-            }
-        }
         return Task.FromResult(true);
     }
 

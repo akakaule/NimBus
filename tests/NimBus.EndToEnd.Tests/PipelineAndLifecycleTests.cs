@@ -204,7 +204,7 @@ public class PipelineAndLifecycleTests
             CorrelationId = Guid.NewGuid().ToString(),
             MessageId = Guid.NewGuid().ToString(),
             EventTypeId = "test",
-            MessageType = MessageType.HeartbeatResponse,
+            MessageType = MessageType.Unknown,
             OriginatingMessageId = Constants.Self,
             ParentMessageId = Constants.Self,
             MessageContent = new MessageContent

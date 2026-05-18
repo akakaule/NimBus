@@ -58,31 +58,24 @@ namespace NimBus.Core.Messages
             {
                 LogInfo(messageContext, "Handle");
 
-                if (messageContext.EventTypeId == "Heartbeat" && messageContext.MessageType == MessageType.EventRequest)
-                {
-                    await SendResolutionResponse(messageContext, cancellationToken);
-                }
-                else
-                {
-                    await VerifySessionIsNotBlocked(messageContext, cancellationToken);
-                    await HandleEventContent(messageContext, cancellationToken);
+                await VerifySessionIsNotBlocked(messageContext, cancellationToken);
+                await HandleEventContent(messageContext, cancellationToken);
 
-                    // PendingHandoff branch — handler handed off to an external system.
-                    // Send PendingHandoffResponse, block the session so siblings defer
-                    // until the Manager settles via CompleteHandoff / FailHandoff, and
-                    // skip the usual ResolutionResponse. If HandleEventContent threw,
-                    // execution never reaches here — the catch branches below own it.
-                    if (messageContext.HandlerOutcome == HandlerOutcome.PendingHandoff)
-                    {
-                        await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata, cancellationToken);
-                        await BlockSession(messageContext, cancellationToken);
-                        await CompleteMessage(messageContext, cancellationToken);
-                        LogInfo(messageContext, "Successfully processed (PendingHandoff)");
-                        return;
-                    }
-
-                    await SendResolutionResponse(messageContext, cancellationToken);
+                // PendingHandoff branch — handler handed off to an external system.
+                // Send PendingHandoffResponse, block the session so siblings defer
+                // until the Manager settles via CompleteHandoff / FailHandoff, and
+                // skip the usual ResolutionResponse. If HandleEventContent threw,
+                // execution never reaches here — the catch branches below own it.
+                if (messageContext.HandlerOutcome == HandlerOutcome.PendingHandoff)
+                {
+                    await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata, cancellationToken);
+                    await BlockSession(messageContext, cancellationToken);
+                    await CompleteMessage(messageContext, cancellationToken);
+                    LogInfo(messageContext, "Successfully processed (PendingHandoff)");
+                    return;
                 }
+
+                await SendResolutionResponse(messageContext, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
                 LogInfo(messageContext, "Successfully processed");
             }

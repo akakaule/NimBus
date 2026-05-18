@@ -1,6 +1,5 @@
 using System.Threading;
 using System.Threading.Tasks;
-using NimBus.MessageStore.States;
 
 namespace NimBus.MessageStore.Abstractions;
 
@@ -15,8 +14,6 @@ namespace NimBus.MessageStore.Abstractions;
 public interface IMessageStateChangeNotifier
 {
     Task NotifyEndpointStateChangedAsync(string endpointId, CancellationToken cancellationToken = default);
-
-    Task NotifyHeartbeatChangedAsync(string endpointId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -26,8 +23,5 @@ public interface IMessageStateChangeNotifier
 public sealed class NoopMessageStateChangeNotifier : IMessageStateChangeNotifier
 {
     public Task NotifyEndpointStateChangedAsync(string endpointId, CancellationToken cancellationToken = default)
-        => Task.CompletedTask;
-
-    public Task NotifyHeartbeatChangedAsync(string endpointId, CancellationToken cancellationToken = default)
         => Task.CompletedTask;
 }

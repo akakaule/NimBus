@@ -78,23 +78,6 @@ namespace NimBus.WebApp.Controllers
             return new BadRequestResult();
         }
 
-        public async Task<IActionResult> PostApiStoragehookHeartbeatEndpointIdAsync(string endpointId)
-        {
-            if (!ValidateWebhookKey())
-                return new UnauthorizedResult();
-
-            var endpointIdValid = EndpointVerificationService.EndpointExists(_platform, endpointId);
-            if (endpointIdValid)
-            {
-                var metadata = await _cosmosClient.GetEndpointMetadata(endpointId);
-                var metadataShort = Mapper.MetadataShortFromMetadata(metadata);
-                await _hubContext.Clients.All.SendAsync(Constants.EventSignalNames.HeartbeatUpdate, metadataShort);
-                return new OkResult();
-            }
-
-            return new BadRequestResult();
-        }
-
         /// <summary>
         /// Validates the webhook key from the request query string against the configured key.
         /// In Development, missing config falls back to a warning + allow so a local

@@ -586,24 +586,6 @@ public class EndpointImplementation : IEndpointApiController
         return new OkObjectResult("disabled");
     }
 
-    public async Task<IActionResult> EndpointEnableHeartbeatAsync(bool? body, string endpointId)
-    {
-        var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);
-        if (!endpointIdValid)
-        {
-            return new NotFoundObjectResult("Endpoint not found");
-        }
-
-        if (!body.HasValue)
-            return new BadRequestResult();
-
-        var endpointManagement = new EndpointManagement(serviceBusManagement);
-        await endpointManagement.EnableHeartbeatOnEndpoint(endpointId, body.Value);
-        await cosmosClient.EnableHeartbeatOnEndpoint(endpointId, body.Value);
-
-        return new OkObjectResult(body);
-    }
-
     public async Task<ActionResult<Metadata>> GetMetadataEndpointAsync(string endpointId)
     {
         var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);

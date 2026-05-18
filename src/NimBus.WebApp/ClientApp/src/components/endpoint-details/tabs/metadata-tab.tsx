@@ -1,12 +1,9 @@
 import * as api from "api-client";
 import * as React from "react";
 import { useParams } from "react-router-dom";
-import HeartbeatColumn from "../metadata/heartbeat-column";
 import MetadataColumn from "../metadata/metadata-column";
 
-interface IMetadataTabProps {}
-
-const MetadataTab = (props: IMetadataTabProps) => {
+const MetadataTab = () => {
   const client = new api.Client(api.CookieAuth());
   const params = useParams();
 
@@ -29,12 +26,9 @@ const MetadataTab = (props: IMetadataTabProps) => {
   }, []);
 
   return (
-    <div className="grid grid-cols-2 gap-6 w-full">
+    <div className="grid grid-cols-1 gap-6 w-full">
       <div className="w-full border border-input rounded">
         {fetchDone && <MetadataColumn metadata={endpointMetadata} />}
-      </div>
-      <div className="w-full border border-input p-3 rounded">
-        {fetchDone && <HeartbeatColumn metadata={endpointMetadata} />}
       </div>
     </div>
   );

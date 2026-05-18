@@ -28,21 +28,6 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
-    public async Task HandleEventRequest_Heartbeat_SkipsHandlerAndCompletes()
-    {
-        var ctx = CreateContext(messageType: MessageType.EventRequest, eventTypeId: "Heartbeat");
-        var handler = new FakeEventContextHandler();
-        var response = new FakeResponseService();
-        var sut = CreateHandler(handler, response);
-
-        await sut.Handle(ctx);
-
-        Assert.AreEqual(0, handler.HandleCalls, "Should skip event handler for Heartbeat");
-        Assert.AreEqual(1, response.ResolutionCalls);
-        Assert.AreEqual(1, ctx.CompletedCalls);
-    }
-
-    [TestMethod]
     public async Task HandleEventRequest_EventHandlerNotFound_SendsUnsupportedAndCompletes()
     {
         var ctx = CreateContext(messageType: MessageType.EventRequest);

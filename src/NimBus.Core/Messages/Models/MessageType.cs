@@ -18,8 +18,6 @@
         ContinuationRequest,
         UnsupportedResponse,
 
-        HeartbeatResponse,
-
         ProcessDeferredRequest,
 
         // Async-completion / PendingHandoff control flow.

@@ -72,11 +72,7 @@ public interface ICosmosDbClient
     Task<EndpointMetadata> GetEndpointMetadata(string endpointId);
     Task<List<EndpointMetadata>> GetMetadatas();
     Task<List<EndpointMetadata>?> GetMetadatas(IEnumerable<string> endpointIds);
-    Task<List<EndpointMetadata>> GetMetadatasWithEnabledHeartbeat();
     Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata);
-    Task EnableHeartbeatOnEndpoint(string endpointId, bool enable);
-
-    Task<bool> SetHeartbeat(Heartbeat heartbeat, string endpointId);
 
     // Message search (cross-partition query on messages container)
     Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount);
@@ -119,7 +115,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     private const string UnsupportedStatus = "Unsupported";
     private const string CompletedStatus = "Completed";
     private const string SkippedStatus = "Skipped";
-    private const int Maxheartbeats = 10;
 
     private const string PublisherRole = "Publisher";
     private const string SubscriptionsContainer = "subscriptions";
@@ -1528,14 +1523,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         return metadatas;
     }
 
-    public async Task<List<EndpointMetadata>> GetMetadatasWithEnabledHeartbeat()
-    {
-        var sqlQuery = $"SELECT * FROM c WHERE c.IsHeartbeatEnabled = true";
-        var metadatas = await GetMetadatasByFilter(sqlQuery);
-
-        return metadatas;
-    }
-
     private async Task<List<EndpointMetadata>> GetMetadatasByFilter(string sqlQuery)
     {
         var container = await GetEndpointContainer("Metadata");
@@ -1551,30 +1538,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             }
         }
         return metadatas;
-    }
-
-    public async Task EnableHeartbeatOnEndpoint(string endpointId, bool enable)
-    {
-        var container = await GetEndpointContainer("Metadata");
-        List<PatchOperation> patchOperations = new List<PatchOperation>()
-        {
-            PatchOperation.Replace("/IsHeartbeatEnabled", enable),
-        };
-
-        try
-        {
-            await container.PatchItemAsync<EndpointMetadata>(endpointId, new PartitionKey(endpointId), patchOperations);
-        }
-        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
-        {
-            await SetEndpointMetadata(new EndpointMetadata
-            {
-                EndpointId = endpointId,
-                IsHeartbeatEnabled = enable,
-                Heartbeats = new List<Heartbeat>(),
-                TechnicalContacts = new List<TechnicalContact>(),
-            });
-        }
     }
 
     public async Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata)
@@ -1593,59 +1556,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         {
             _logger?.Error(e,
                 $"COSMOS UPSERT-ERROR: Metadata upsert. Id: {endpointMetadata.EndpointId}, HttpStatusCode: {e.StatusCode}");
-
-            if (e.StatusCode == HttpStatusCode.TooManyRequests)
-            {
-                throw new RequestLimitException(e.RetryAfter);
-            }
-
-            throw;
-        }
-    }
-
-    public async Task<bool> SetHeartbeat(Heartbeat heartbeat, string endpointId)
-    {
-        var container = await GetEndpointContainer("Metadata");
-
-        try
-        {
-            var metadata = await GetEndpointMetadata(endpointId);
-            metadata.EndpointHeartbeatStatus = heartbeat.EndpointHeartbeatStatus;
-
-            // Check if heartbeat exists
-            if (metadata.Heartbeats == null)
-                metadata.Heartbeats = new List<Heartbeat>();
-            // Check if id exists
-            var existingHeartbeat = metadata.Heartbeats.FirstOrDefault(h => h.MessageId == heartbeat.MessageId);
-            if (existingHeartbeat != null)
-            {
-                existingHeartbeat.ReceivedTime = heartbeat.ReceivedTime;
-                existingHeartbeat.EndTime = heartbeat.EndTime;
-                existingHeartbeat.EndpointHeartbeatStatus = heartbeat.EndpointHeartbeatStatus;
-            }
-            else
-            {
-                if (metadata.Heartbeats.Count >= Maxheartbeats)
-                {
-                    metadata.Heartbeats = metadata.Heartbeats.OrderBy(h => h.StartTime).Skip(1).ToList();
-                    metadata.Heartbeats.Add(heartbeat);
-                }
-                else
-                {
-                    metadata.Heartbeats.Add(heartbeat);
-                }
-            }
-
-            var response =
-                await container.UpsertItemAsync(metadata, new PartitionKey(endpointId));
-            _logger?.Verbose(
-                $"COSMOS UPSERT-RESPONSE: Metadata upsert. Id: {endpointId}, HttpStatusCode: {response.StatusCode}");
-            return true;
-        }
-        catch (CosmosException e)
-        {
-            _logger?.Error(e,
-                $"COSMOS UPSERT-ERROR: Metadata upsert. Id: {endpointId}, HttpStatusCode: {e.StatusCode}");
 
             if (e.StatusCode == HttpStatusCode.TooManyRequests)
             {

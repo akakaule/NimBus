@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.MessageStore.Abstractions;
@@ -34,8 +33,6 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.AreEqual(endpointId, fetched.EndpointId);
         Assert.AreEqual("Team Blue", fetched.EndpointOwnerTeam);
         Assert.AreEqual("owner@example.com", fetched.EndpointOwnerEmail);
-        Assert.AreEqual(HeartbeatStatus.On, fetched.EndpointHeartbeatStatus);
-        Assert.AreEqual(true, fetched.IsHeartbeatEnabled);
         Assert.AreEqual(true, fetched.SubscriptionStatus);
         Assert.AreEqual(1, fetched.TechnicalContacts.Count);
         Assert.AreEqual("Ops", fetched.TechnicalContacts[0].Name);
@@ -59,59 +56,16 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.AreEqual(endpointTwo, filtered[0].EndpointId);
     }
 
-    [TestMethod]
-    public async Task EnableHeartbeatOnEndpoint_updates_enabled_heartbeat_listing()
-    {
-        var store = CreateStore();
-        var endpointId = Id("ep-heartbeat");
-
-        await store.EnableHeartbeatOnEndpoint(endpointId, enable: true);
-
-        var metadata = await store.GetEndpointMetadata(endpointId);
-        Assert.AreEqual(true, metadata.IsHeartbeatEnabled);
-
-        var heartbeatEnabled = await store.GetMetadatasWithEnabledHeartbeat();
-        Assert.IsTrue(heartbeatEnabled.Any(m => m.EndpointId == endpointId));
-    }
-
-    [TestMethod]
-    public async Task SetHeartbeat_updates_endpoint_status_and_history()
-    {
-        var store = CreateStore();
-        var endpointId = Id("ep-heartbeat-status");
-        await store.SetEndpointMetadata(SampleMetadata(endpointId));
-
-        var heartbeat = new Heartbeat
-        {
-            MessageId = "hb-1",
-            StartTime = DateTime.UtcNow.AddSeconds(-3),
-            ReceivedTime = DateTime.UtcNow.AddSeconds(-2),
-            EndTime = DateTime.UtcNow.AddSeconds(-1),
-            EndpointHeartbeatStatus = HeartbeatStatus.Off,
-        };
-
-        var saved = await store.SetHeartbeat(heartbeat, endpointId);
-        Assert.IsTrue(saved);
-
-        var metadata = await store.GetEndpointMetadata(endpointId);
-        Assert.AreEqual(HeartbeatStatus.Off, metadata.EndpointHeartbeatStatus);
-        Assert.IsNotNull(metadata.Heartbeats);
-        Assert.IsTrue(metadata.Heartbeats.Any(h => h.MessageId == "hb-1" && h.EndpointHeartbeatStatus == HeartbeatStatus.Off));
-    }
-
     private static EndpointMetadata SampleMetadata(string endpointId) => new()
     {
         EndpointId = endpointId,
         EndpointOwner = "Alice",
         EndpointOwnerTeam = "Team Blue",
         EndpointOwnerEmail = "owner@example.com",
-        IsHeartbeatEnabled = true,
-        EndpointHeartbeatStatus = HeartbeatStatus.On,
         TechnicalContacts = new List<TechnicalContact>
         {
             new() { Name = "Ops", Email = "ops@example.com" },
         },
-        Heartbeats = new List<Heartbeat>(),
         SubscriptionStatus = true,
     };
 }

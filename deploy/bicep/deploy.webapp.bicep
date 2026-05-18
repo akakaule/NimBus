@@ -144,7 +144,8 @@ module webAppRoleAssignments 'templates/roleAssignments.bicep' = {
   name: 'webAppRoleAssignmentsDeploy'
   params: {
     serviceBusNamespaceName: sbNamespace
-    cosmosAccountName: cosmosAccountName
+    cosmosAccountName: hasCosmos ? cosmosAccountName : ''
     principalId: webAppModule.outputs.identity
+    storageProvider: hasCosmos ? 'cosmos' : 'sqlserver'
   }
 }

@@ -222,7 +222,23 @@ namespace NimBus.WebApp
                 return (IPlatform)Activator.CreateInstance(type)!;
             });
 
-            string serviceBusFqns = Configuration.GetValue<string>("AzureWebJobsServiceBus__fullyQualifiedNamespace");
+            // Env-var providers replace `__` with `:`, so the canonical config key
+            // for `AzureWebJobsServiceBus__fullyQualifiedNamespace` is read with a colon.
+            // We also accept the literal-double-underscore form (for any appsettings.json
+            // that uses it as a flat key) and a bare `ServiceBusNamespace` (sb-nimbus-dev)
+            // which we expand to its FQDN.
+            string serviceBusFqns = Configuration["AzureWebJobsServiceBus:fullyQualifiedNamespace"]
+                ?? Configuration["AzureWebJobsServiceBus__fullyQualifiedNamespace"];
+            if (string.IsNullOrWhiteSpace(serviceBusFqns))
+            {
+                var ns = Configuration["ServiceBusNamespace"];
+                if (!string.IsNullOrWhiteSpace(ns))
+                {
+                    serviceBusFqns = ns.Contains('.', StringComparison.Ordinal)
+                        ? ns
+                        : $"{ns}.servicebus.windows.net";
+                }
+            }
             string serviceBusConnection = Configuration.GetConnectionString("servicebus")
                 ?? Configuration.GetValue<string>("AzureWebJobsServiceBus");
             if (!string.IsNullOrEmpty(serviceBusFqns) && !serviceBusFqns.Contains("SharedAccessKey="))

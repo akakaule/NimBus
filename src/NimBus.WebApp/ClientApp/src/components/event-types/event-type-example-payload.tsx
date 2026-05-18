@@ -137,7 +137,14 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
         setResponseMessage({ hasError: false, text: "" });
       }, 4000);
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
+      // SwaggerException carries the server's response body on .response,
+      // which is far more useful than the bare "Bad Request" reason phrase.
+      const swaggerResponse =
+        api.SwaggerException.isSwaggerException(err) && err.response
+          ? err.response
+          : null;
+      const errorMessage =
+        swaggerResponse ?? (err instanceof Error ? err.message : String(err));
       setResponseMessage({
         hasError: true,
         text: `Failed to compose event: ${errorMessage}`,

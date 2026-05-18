@@ -1,22 +1,21 @@
-﻿using NimBus.Core;
+﻿using Azure.Messaging.ServiceBus;
+using NimBus.Core;
 using NimBus.Manager;
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
+using NimBus.SDK;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
 using NimBus.WebApp.Services.ApplicationInsights;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Cosmos;
 using Microsoft.CodeAnalysis;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
-using System.Net.Http;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace NimBus.WebApp.Controllers.ApiContract
@@ -28,9 +27,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
         private readonly INimBusMessageStore cosmosClient;
         private readonly IManagerClient managerClient;
         private readonly IApplicationInsightsService applicationInsightsService;
-        private readonly IConfiguration configuration;
         private readonly IEndpointAuthorizationService authorizationService;
         private readonly IAdminService adminService;
+        private readonly ServiceBusClient serviceBusClient;
 
         public EventImplementation(
             IApplicationInsightsService applicationInsightsService,
@@ -38,18 +37,18 @@ namespace NimBus.WebApp.Controllers.ApiContract
             IManagerClient managerClient,
             ILogger<EventImplementation> logger,
             INimBusMessageStore cosmosClient,
-            IConfiguration config,
             IEndpointAuthorizationService authorizationService,
-            IAdminService adminService)
+            IAdminService adminService,
+            ServiceBusClient serviceBusClient)
         {
             this.platform = platform;
             this.logger = logger;
             this.cosmosClient = cosmosClient;
             this.managerClient = managerClient;
             this.applicationInsightsService = applicationInsightsService;
-            configuration = config;
             this.authorizationService = authorizationService;
             this.adminService = adminService;
+            this.serviceBusClient = serviceBusClient;
         }
         public async Task<ActionResult<Message>> GetEventIdsAsync(string eventId, string messageId)
         {
@@ -355,9 +354,15 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
         public async Task<IActionResult> PostComposeNewEventAsync(ResubmitWithChanges body)
         {
-            logger.LogInformation("Compose new event. Body:{Body}", JsonConvert.SerializeObject(body));
+            logger.LogInformation("Compose new event. EventTypeId:{EventTypeId}", body?.EventTypeId);
 
             var eventType = platform.EventTypes.FirstOrDefault(x => x.Id.Equals(body.EventTypeId, StringComparison.OrdinalIgnoreCase));
+            if (eventType == null)
+            {
+                logger.LogError("Could not find event type: {EventTypeId}", body.EventTypeId);
+                return new BadRequestObjectResult("Could not find event type: " + body.EventTypeId);
+            }
+
             var producingEndpoint = platform.GetProducers(eventType).FirstOrDefault();
             if (producingEndpoint == null)
             {
@@ -365,55 +370,39 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new BadRequestObjectResult("Could not find any producers for the given event");
             }
 
-            if (eventType == null)
-            {
-                logger.LogError("Could not find event type: {EventTypeId}", body.EventTypeId);
-                return new BadRequestObjectResult("Could not find event type: " + body.EventTypeId);
-            }
-
             if (string.IsNullOrWhiteSpace(body.EventContent))
             {
                 logger.LogError("Event content is empty");
-                return new BadRequestObjectResult("Event content is empty" + body.EventContent);
+                return new BadRequestObjectResult("Event content is empty");
             }
+
             var type = eventType.GetEventClassType();
             try
             {
-                var @event = (Core.Events.IEvent)JsonConvert.DeserializeObject(Convert.ToString(body.EventContent), type);
+                var @event = (Core.Events.IEvent)JsonConvert.DeserializeObject(body.EventContent, type);
                 var validationResult = @event.TryValidate();
-                if (validationResult.IsValid)
+                if (!validationResult.IsValid)
                 {
-                    object data = new
-                    {
-                        TopicName = producingEndpoint.Id,
-                        EventType = eventType.Id,
-                        EventMessage = body.EventContent,
-                        SessionId = @event.GetSessionId(),
-                        CorrelationId = Guid.NewGuid().ToString()
-                    };
-                    var json = JsonConvert.SerializeObject(data);
-                    var stringContent = new StringContent(json, UnicodeEncoding.UTF8, "application/json");
-                    var client = new HttpClient();
-                    var response = await client.PostAsync(
-                        new Uri(configuration.GetValue<string>("EventPublisherUri")), stringContent);
-
-                    if (!response.IsSuccessStatusCode)
-                        return new BadRequestObjectResult($"Could not publish the event on the Event Publisher");
-
-                    return new OkResult();
+                    string errorMessage = string.Join(", ", validationResult.ValidationResults.Select(x => x.ErrorMessage));
+                    return new BadRequestObjectResult($"Validation failed. Event does not fulfill the scheme '{type.Name}' Error: '{errorMessage}'");
                 }
-                string errorMessage = validationResult.ValidationResults.Select(x => x.ErrorMessage).Aggregate("", (current, next) => current + ", " + next);
-                return new BadRequestObjectResult($"\"Validation failed. Event does not fullfill the scheme '{type.Name}' Error: '{errorMessage}'\"");
+
+                // Publish directly to the producing endpoint's topic via the SDK PublisherClient,
+                // so the message envelope (sessionId, correlationId, EventRequest type, EventContent)
+                // matches what every other producer in the platform sends.
+                var publisher = await PublisherClient.CreateAsync(serviceBusClient, producingEndpoint.Id);
+                await publisher.Publish(@event);
+                return new OkResult();
             }
             catch (JsonReaderException e)
             {
                 logger.LogError("Could not parse the event content. Exception: {ExceptionMessage}", e.Message);
-                return new BadRequestObjectResult($"\"Could not parse the value '{e.Path}'\"");
+                return new BadRequestObjectResult($"Could not parse the value '{e.Path}'");
             }
             catch (Exception e)
             {
-                logger.LogError("Could not compose event. Exception: {ExceptionMessage}", e.Message);
-                return new BadRequestObjectResult("Could not compose event.");
+                logger.LogError(e, "Could not compose event.");
+                return new BadRequestObjectResult($"Could not compose event: {e.Message}");
             }
         }
 

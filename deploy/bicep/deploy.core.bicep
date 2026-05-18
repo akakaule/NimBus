@@ -221,7 +221,7 @@ var cosmosResolverSetting = storageProvider == 'cosmos' ? [
 var sqlResolverSetting = storageProvider == 'sqlserver' && sqlMode == 'provision' ? [
   {
     name: 'SqlConnection'
-    value: 'Server=tcp:${azureSql.outputs.serverFqdn},1433;Initial Catalog=${sqlDbName};Authentication=Active Directory Default;Encrypt=true;'
+    value: 'Server=tcp:${azureSql.outputs.serverFqdn},1433;Initial Catalog=${sqlDbName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=true;'
   }
 ] : []
 

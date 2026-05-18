@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Text.Json;
 
 namespace NimBus.CommandLine;
@@ -37,7 +38,7 @@ internal sealed class InfrastructureDeployer
         var cosmosAccountEndpoint = options.StorageProvider == StorageProviderChoice.Cosmos
             ? await GetCosmosAccountEndpointAsync(options.ResourceGroupName, names.CosmosAccountName, cancellationToken).ConfigureAwait(false)
             : string.Empty;
-        var sqlConnectionString = await ResolveSqlConnectionStringAsync(options, names, cancellationToken).ConfigureAwait(false);
+        var sqlConnectionString = ResolveSqlConnectionString(options, names);
         var serviceBusFullyQualifiedNamespace = GetServiceBusFullyQualifiedNamespace(names.ServiceBusNamespace);
         var appInsightsAppId = await _az.CaptureValueAsync(
             new[]
@@ -132,18 +133,25 @@ internal sealed class InfrastructureDeployer
         }
     }
 
-    private async Task<string> ResolveSqlConnectionStringAsync(InfrastructureOptions options, DeploymentNames names, CancellationToken cancellationToken)
+    private static string ResolveSqlConnectionString(InfrastructureOptions options, DeploymentNames names)
     {
         if (options.StorageProvider != StorageProviderChoice.SqlServer) return string.Empty;
         if (options.SqlMode == SqlProvisioningMode.External)
         {
             return options.SqlConnectionString ?? string.Empty;
         }
-        // Provisioned: assemble a connection string for the AAD-managed identity wiring; the
-        // bicep template emits the FQDN. We return a placeholder format the WebApp resolves
-        // against its managed identity at runtime.
+
         var sqlServerName = EffectiveSqlServerName(options, names);
-        return $"Server=tcp:{sqlServerName}.database.windows.net,1433;Initial Catalog=MessageDatabase;Authentication=Active Directory Default;Encrypt=true;";
+        var builder = new DbConnectionStringBuilder
+        {
+            ["Server"] = $"tcp:{sqlServerName}.database.windows.net,1433",
+            ["Initial Catalog"] = "MessageDatabase",
+            ["User ID"] = options.SqlAdminLogin ?? string.Empty,
+            ["Password"] = options.SqlAdminPassword ?? string.Empty,
+            ["Encrypt"] = true,
+        };
+
+        return builder.ConnectionString;
     }
 
     private static string EffectiveSqlServerName(InfrastructureOptions options, DeploymentNames names) =>

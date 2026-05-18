@@ -38,8 +38,8 @@ resource serviceBusRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-
 
 // ----------------------------------------------------------------------------
 // Cosmos DB Built-in Data Contributor — only when the active provider is Cosmos.
-// SQL Server identity grants are issued by the database itself (CREATE USER FROM
-// EXTERNAL PROVIDER + role membership) outside of this Bicep template.
+// Provisioned SQL Server deployments use the SQL login created with the server;
+// no Azure RBAC data-plane role assignment is available here.
 // ----------------------------------------------------------------------------
 
 var cosmosDataContributorRoleId = '00000000-0000-0000-0000-000000000002'

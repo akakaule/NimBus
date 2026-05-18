@@ -51,8 +51,14 @@ nb infra apply --solution-id nimbus --environment dev --resource-group rg-nimbus
 | `--repo-root` | No | Repository root (auto-detected) |
 | `--location` | No | Azure region override |
 | `--webapp-version` | No | Version string for web app settings |
+| `--storage-provider` | No | Storage backend: `cosmos` (default) or `sqlserver` |
+| `--sql-mode` | No | When `--storage-provider sqlserver`: `provision` (default, creates a new Azure SQL server + DB) or `external` (use an existing SQL Server) |
+| `--sql-connection-string` | Conditional | Required when `--sql-mode external` |
+| `--sql-admin-login` | Conditional | Required when `--sql-mode provision` |
+| `--sql-admin-password` | Conditional | Required when `--sql-mode provision` |
+| `--resolver-plan` | No | Resolver Function App hosting plan: `ElasticPremium` (default, EP1 Windows) or `FlexConsumption` (scale-to-zero Linux, cheaper for dev/test) |
 
-Deploys core infrastructure (Service Bus, Cosmos DB, App Insights) and web app infrastructure via bicep. Automatically creates an Application Insights API key and resolves required resource endpoints/namespace settings.
+Deploys core infrastructure (Service Bus, App Insights, and either Cosmos DB or Azure SQL depending on `--storage-provider`) and the web app infrastructure via bicep. The provisioned SQL path uses AAD managed-identity auth (`Authentication=Active Directory Default`); the external path uses the supplied connection string verbatim. Automatically creates an Application Insights API key and resolves required resource endpoints/namespace settings.
 
 ---
 
@@ -124,7 +130,7 @@ Run infrastructure, topology, and app deployment in sequence.
 nb setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
-Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands.
+Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-connection-string`, `--sql-admin-login`, `--sql-admin-password`, and `--resolver-plan`.
 
 ---
 
@@ -318,8 +324,34 @@ The spec can be used with:
 ### Full environment setup
 
 ```bash
+# Default — Cosmos DB backend
 nb setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
+
+### Deploy with SQL Server as the storage provider
+
+Provision a fresh Azure SQL server + database (managed-identity auth from the WebApp / Resolver):
+
+```bash
+nb setup `
+  --solution-id nimbus --environment dev --resource-group rg-nimbus-dev `
+  --storage-provider sqlserver `
+  --sql-mode provision `
+  --sql-admin-login nimbusadmin `
+  --sql-admin-password '<strong-password>'
+```
+
+Reuse an existing SQL Server:
+
+```bash
+nb setup `
+  --solution-id nimbus --environment dev --resource-group rg-nimbus-dev `
+  --storage-provider sqlserver `
+  --sql-mode external `
+  --sql-connection-string 'Server=tcp:my-existing.database.windows.net,1433;Initial Catalog=MessageDatabase;Authentication=Active Directory Default;Encrypt=true;'
+```
+
+The same flags work on `nb infra apply` if you prefer running infrastructure, topology, and app deployment as separate steps.
 
 ### Operational maintenance
 

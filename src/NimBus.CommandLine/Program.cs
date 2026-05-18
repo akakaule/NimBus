@@ -254,6 +254,11 @@ internal static class Program
             var webAppVersion = setupCommand.Option("--webapp-version <VALUE>", "Version string stored in the web app settings.", CommandOptionType.SingleValue);
             var configuration = setupCommand.Option("--configuration <NAME>", "Build configuration passed to dotnet publish.", CommandOptionType.SingleValue);
             var setupResolverPlan = setupCommand.Option("--resolver-plan <PLAN>", "Hosting plan for the resolver Function App: ElasticPremium | FlexConsumption. Defaults to 'ElasticPremium'. Use 'FlexConsumption' for cheaper dev/test.", CommandOptionType.SingleValue);
+            var setupStorageProvider = setupCommand.Option("--storage-provider <PROVIDER>", "Storage provider for NimBus message persistence: cosmos | sqlserver. Defaults to 'cosmos' for backwards compatibility.", CommandOptionType.SingleValue);
+            var setupSqlMode = setupCommand.Option("--sql-mode <MODE>", "When --storage-provider is sqlserver: 'provision' deploys a new Azure SQL resource; 'external' uses --sql-connection-string.", CommandOptionType.SingleValue);
+            var setupSqlConnectionString = setupCommand.Option("--sql-connection-string <VALUE>", "Pre-existing SQL Server connection string. Required when --sql-mode is 'external'.", CommandOptionType.SingleValue);
+            var setupSqlAdminLogin = setupCommand.Option("--sql-admin-login <VALUE>", "SQL admin login when --sql-mode is 'provision'.", CommandOptionType.SingleValue);
+            var setupSqlAdminPassword = setupCommand.Option("--sql-admin-password <VALUE>", "SQL admin password when --sql-mode is 'provision'.", CommandOptionType.SingleValue);
 
             setupCommand.OnExecuteAsync(async cancellationToken =>
             {
@@ -263,6 +268,18 @@ internal static class Program
                 var topology = new ServiceBusTopologyProvisioner(az);
                 var apps = new AppDeploymentService(context, az);
 
+                var providerChoice = ParseStorageProvider(setupStorageProvider.Value());
+                var sqlProvisioningMode = ParseSqlMode(setupSqlMode.Value());
+
+                if (providerChoice == StorageProviderChoice.SqlServer)
+                {
+                    if (sqlProvisioningMode == SqlProvisioningMode.External && string.IsNullOrWhiteSpace(setupSqlConnectionString.Value()))
+                        throw new InvalidOperationException("--sql-connection-string is required when --sql-mode is 'external'.");
+                    if (sqlProvisioningMode == SqlProvisioningMode.Provision &&
+                        (string.IsNullOrWhiteSpace(setupSqlAdminLogin.Value()) || string.IsNullOrWhiteSpace(setupSqlAdminPassword.Value())))
+                        throw new InvalidOperationException("--sql-admin-login and --sql-admin-password are required when --sql-mode is 'provision'.");
+                }
+
                 var infraOptions = new InfrastructureOptions(
                     solutionId.Value(),
                     environment.Value(),
@@ -270,7 +287,12 @@ internal static class Program
                     resourceNamePostfix.Value(),
                     location.Value(),
                     webAppVersion.HasValue() ? webAppVersion.Value()! : $"local-{DateTime.UtcNow:yyyyMMddHHmmss}",
-                    ResolverPlan: ParseResolverPlan(setupResolverPlan.Value()));
+                    providerChoice,
+                    sqlProvisioningMode,
+                    setupSqlConnectionString.Value(),
+                    setupSqlAdminLogin.Value(),
+                    setupSqlAdminPassword.Value(),
+                    ParseResolverPlan(setupResolverPlan.Value()));
 
                 var topologyOptions = new TopologyOptions(solutionId.Value(), environment.Value(), resourceGroup.Value());
                 var appOptions = new AppDeploymentOptions(

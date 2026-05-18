@@ -17,12 +17,19 @@ interface UseTopologyDataOptions {
   /** Optional namespace filter — when set, only event types matching are included. */
   namespace?: string;
   /**
-   * Optional endpoint filter — when set, only event types produced or consumed
-   * by this endpoint are included. The graph collapses to that endpoint and
-   * its directly-connected peers.
+   * Optional endpoint focus — when set, the graph narrows to `endpoint` and
+   * its pub-sub counterparties (anyone that consumes from `endpoint` or
+   * produces something `endpoint` consumes). Co-producers / co-consumers
+   * with no pub-sub link to `endpoint` are excluded.
    */
   endpoint?: string;
-  /** When true, edges with zero traffic are removed from the rendered graph. */
+  /**
+   * Optional search query — hides nodes and event types that neither match
+   * the text themselves nor participate in a matching event type. Trimmed
+   * empty string is treated as "no filter".
+   */
+  searchText?: string;
+  /** When true, edges with zero traffic — and the nodes they leave behind — are removed. */
   hideIdleEdges?: boolean;
 }
 
@@ -59,6 +66,7 @@ export function useTopologyData({
   period,
   namespace,
   endpoint,
+  searchText,
   hideIdleEdges,
 }: UseTopologyDataOptions): UseTopologyDataResult {
   const [eventTypes, setEventTypes] = useState<api.EventType[]>([]);
@@ -70,9 +78,10 @@ export function useTopologyData({
   const [error, setError] = useState<string | undefined>();
   const [lastUpdated, setLastUpdated] = useState<Date | undefined>();
 
-  // Lock subsequent renders from clobbering an in-flight refresh — the user
-  // can spam the Refresh button or rapidly flip time ranges.
-  const inFlight = useRef(0);
+  // Separate tickets per fetch path so a metrics-only refetch (period flip)
+  // doesn't invalidate an in-flight refresh's epilogue, and vice versa.
+  const refreshTicket = useRef(0);
+  const metricsTicket = useRef(0);
 
   const fetchCatalogAndDetails = useCallback(async () => {
     const client = new api.Client(api.CookieAuth());
@@ -100,32 +109,36 @@ export function useTopologyData({
   }, []);
 
   const fetchMetrics = useCallback(async (p: api.Period) => {
+    const ticket = ++metricsTicket.current;
     const client = new api.Client(api.CookieAuth());
     try {
       const m = await client.getMetricsOverview(p);
-      setMetrics(m);
+      if (ticket === metricsTicket.current) {
+        setMetrics(m);
+      }
     } catch {
-      // Metrics overlay is a nice-to-have — graph still renders without it.
-      setMetrics(undefined);
+      if (ticket === metricsTicket.current) {
+        setMetrics(undefined);
+      }
     }
   }, []);
 
   const refresh = useCallback(async () => {
-    const ticket = ++inFlight.current;
+    const ticket = ++refreshTicket.current;
     setLoading(true);
     setError(undefined);
     try {
       await Promise.all([fetchCatalogAndDetails(), fetchMetrics(period)]);
-      if (ticket === inFlight.current) {
+      if (ticket === refreshTicket.current) {
         setLastUpdated(new Date());
       }
     } catch (err) {
       console.error("Failed to refresh topology", err);
-      if (ticket === inFlight.current) {
+      if (ticket === refreshTicket.current) {
         setError("Failed to load topology");
       }
     } finally {
-      if (ticket === inFlight.current) {
+      if (ticket === refreshTicket.current) {
         setLoading(false);
       }
     }
@@ -155,8 +168,8 @@ export function useTopologyData({
 
   const data = useMemo<TopologyData | undefined>(() => {
     if (eventTypes.length === 0) return undefined;
-    return buildTopology(eventTypes, detailsById, metrics, namespace, endpoint, hideIdleEdges);
-  }, [eventTypes, detailsById, metrics, namespace, endpoint, hideIdleEdges]);
+    return buildTopology(eventTypes, detailsById, metrics, namespace, endpoint, searchText, hideIdleEdges);
+  }, [eventTypes, detailsById, metrics, namespace, endpoint, searchText, hideIdleEdges]);
 
   // Unfiltered option lists for the filter UI — derived from the full catalog
   // so picking a namespace doesn't make the namespace dropdown collapse to one.
@@ -187,24 +200,54 @@ function buildTopology(
   metrics: api.MetricsOverview | undefined,
   namespace: string | undefined,
   endpoint: string | undefined,
+  searchText: string | undefined,
   hideIdleEdges: boolean | undefined,
 ): TopologyData {
-  // 1a. Filter by namespace if requested.
+  // 1a. Namespace filter.
   const namespaceFiltered = namespace
     ? eventTypes.filter((et) => et.namespace === namespace)
     : eventTypes;
 
-  // 1b. Filter by endpoint focus — keep only event types this endpoint
-  //     produces or consumes. The build below then naturally only walks the
-  //     peers of `endpoint`.
-  const filteredTypes = endpoint
+  // 1b. Search filter. Keep an event type if its name/id matches OR any of
+  //     its producers/consumers matches by name. Empty/whitespace = no filter.
+  const lowerSearch = searchText?.trim().toLowerCase() ?? "";
+  const searchFiltered = lowerSearch
     ? namespaceFiltered.filter((et) => {
+        if ((et.name ?? "").toLowerCase().includes(lowerSearch)) return true;
+        if ((et.id ?? "").toLowerCase().includes(lowerSearch)) return true;
         const det = et.id ? detailsById[et.id] : undefined;
-        const producers = det?.producers ?? [];
-        const consumers = det?.consumers ?? [];
-        return producers.includes(endpoint) || consumers.includes(endpoint);
+        if (det?.producers?.some((p) => p.toLowerCase().includes(lowerSearch))) return true;
+        if (det?.consumers?.some((c) => c.toLowerCase().includes(lowerSearch))) return true;
+        return false;
       })
     : namespaceFiltered;
+
+  // 1c. Endpoint focus — restrict to event types `endpoint` produces/consumes,
+  //     and pre-compute the set of pub-sub counterparties so the build loop
+  //     can drop unrelated co-producers / co-consumers.
+  let relevantTypes = searchFiltered;
+  let allowedEndpoints: Set<string> | undefined;
+  if (endpoint) {
+    relevantTypes = searchFiltered.filter((et) => {
+      const det = et.id ? detailsById[et.id] : undefined;
+      const producers = det?.producers ?? [];
+      const consumers = det?.consumers ?? [];
+      return producers.includes(endpoint) || consumers.includes(endpoint);
+    });
+
+    allowedEndpoints = new Set([endpoint]);
+    for (const et of relevantTypes) {
+      const det = et.id ? detailsById[et.id] : undefined;
+      const producers = det?.producers ?? [];
+      const consumers = det?.consumers ?? [];
+      if (producers.includes(endpoint)) {
+        for (const c of consumers) allowedEndpoints.add(c);
+      }
+      if (consumers.includes(endpoint)) {
+        for (const p of producers) allowedEndpoints.add(p);
+      }
+    }
+  }
 
   // 2. Index metrics so we can answer "how many published / handled / failed
   //    for endpoint X event type Y in this window?" in O(1).
@@ -256,7 +299,6 @@ function buildTopology(
     return e;
   };
 
-  const namespaces = new Set<string>();
   // Tracks (endpoint, eventType, kind) → traffic for picking the top event pills.
   const pillCandidates: Array<{
     eventTypeId: string;
@@ -269,9 +311,8 @@ function buildTopology(
     consumers: string[];
   }> = [];
 
-  for (const et of filteredTypes) {
+  for (const et of relevantTypes) {
     if (!et.id) continue;
-    if (et.namespace) namespaces.add(et.namespace);
 
     const detail = detailsById[et.id];
     const producers = detail?.producers ?? [];
@@ -279,6 +320,7 @@ function buildTopology(
 
     // Publish side ------------------------------------------------------------
     for (const producer of producers) {
+      if (allowedEndpoints && !allowedEndpoints.has(producer)) continue;
       const node = ensureNode(producer);
       node.publishedTypeIds.add(et.id);
       const msgs = published[`${producer}::${et.id}`] ?? 0;
@@ -304,6 +346,7 @@ function buildTopology(
 
     // Subscribe side ----------------------------------------------------------
     for (const consumer of consumers) {
+      if (allowedEndpoints && !allowedEndpoints.has(consumer)) continue;
       const node = ensureNode(consumer);
       node.subscribedTypeIds.add(et.id);
       const msgs = handled[`${consumer}::${et.id}`] ?? 0;
@@ -319,7 +362,7 @@ function buildTopology(
   }
 
   // 4. Materialise nodes with derived health.
-  const nodes: TopologyNode[] = Array.from(nodeAccum.entries())
+  const allNodes: TopologyNode[] = Array.from(nodeAccum.entries())
     .map(([id, n]) => {
       const health: NodeHealth = classifyNodeHealth(
         n.failedMessages,
@@ -354,6 +397,11 @@ function buildTopology(
     ? allEdges.filter((e) => e.health !== "idle")
     : allEdges;
 
+  // 5b. Drop nodes that have no remaining edges — otherwise hiding idle edges
+  //     leaves orphan endpoint cards floating with no connections.
+  const activeEndpointIds = new Set(edges.map((e) => e.endpointId));
+  const nodes = allNodes.filter((n) => activeEndpointIds.has(n.id));
+
   // 6. Pick the top event pills by traffic (skipping idle edges).
   const pills: EventPill[] = pillCandidates
     .filter((c) => c.messages > 0)
@@ -367,15 +415,33 @@ function buildTopology(
       tooltip: buildPillTooltip(c),
     }));
 
-  // 7. Summary strip counts.
+  // 7. Summary strip counts — all derived from the visible nodes and edges so
+  //    the numbers in the strip match what's actually rendered.
+  const visibleTypeIds = new Set<string>();
+  for (const e of edges) {
+    for (const id of e.eventTypeIds) visibleTypeIds.add(id);
+  }
+  const visibleNamespaces = new Set<string>();
+  for (const et of relevantTypes) {
+    if (et.id && visibleTypeIds.has(et.id) && et.namespace) {
+      visibleNamespaces.add(et.namespace);
+    }
+  }
+  const producingEndpoints = new Set<string>();
+  const consumingEndpoints = new Set<string>();
+  for (const e of edges) {
+    if (e.kind === "publish") producingEndpoints.add(e.endpointId);
+    else consumingEndpoints.add(e.endpointId);
+  }
+
   const summary = {
     endpoints: nodes.length,
-    eventTypes: filteredTypes.length,
+    eventTypes: visibleTypeIds.size,
     edges: edges.length,
     edgesWithFailures: edges.filter((e) => e.health === "fail").length,
-    namespaces: namespaces.size,
-    producingEndpoints: nodes.filter((n) => n.publishCount > 0).length,
-    consumingEndpoints: nodes.filter((n) => n.subscribeCount > 0).length,
+    namespaces: visibleNamespaces.size,
+    producingEndpoints: producingEndpoints.size,
+    consumingEndpoints: consumingEndpoints.size,
   };
 
   return { nodes, edges, pills, summary };

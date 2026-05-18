@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as api from "api-client";
 import Page from "components/page";
 import { Button } from "components/ui/button";
@@ -57,6 +57,7 @@ export default function Topology() {
       period,
       namespace,
       endpoint,
+      searchText: search,
       hideIdleEdges,
     });
 
@@ -74,23 +75,24 @@ export default function Topology() {
     });
 
 
-  // Highlight filter — dim non-matching nodes via auto-select of the first
-  // match. Same behaviour as before; just sourced from URL-driven `search`.
-  const filteredData = useMemo(() => {
-    if (!data) return data;
-    if (!search.trim()) return data;
-    const lower = search.toLowerCase();
-    const matchingNodes = new Set(
-      data.nodes
-        .filter((n) => n.name.toLowerCase().includes(lower))
-        .map((n) => n.id),
-    );
-    if (matchingNodes.size > 0 && !selectedNodeId) {
-      const first = Array.from(matchingNodes)[0];
-      Promise.resolve().then(() => setSelectedNodeId(first));
+  // Whenever the rendered node set changes (filter applied / cleared) and the
+  // currently-selected node has disappeared, jump the selection to the first
+  // visible one so the inspector panel stays useful. The previous version
+  // only auto-selected on the very first match, which left the wrong node
+  // selected after a subsequent search.
+  useEffect(() => {
+    if (!data) return;
+    if (data.nodes.length === 0) {
+      if (selectedNodeId !== undefined) setSelectedNodeId(undefined);
+      return;
     }
-    return data;
-  }, [data, search, selectedNodeId]);
+    if (
+      selectedNodeId === undefined ||
+      !data.nodes.some((n) => n.id === selectedNodeId)
+    ) {
+      setSelectedNodeId(data.nodes[0].id);
+    }
+  }, [data, selectedNodeId]);
 
   const periodLabel =
     PERIODS.find((p) => p.value === period)?.label ?? "1h";
@@ -221,7 +223,7 @@ export default function Topology() {
 
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
               <TopologyGraph
-                nodes={filteredData?.nodes ?? data.nodes}
+                nodes={data.nodes}
                 edges={data.edges}
                 pills={data.pills}
                 selectedNodeId={selectedNodeId}

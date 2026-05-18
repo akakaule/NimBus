@@ -16,6 +16,14 @@ interface UseTopologyDataOptions {
   period: api.Period;
   /** Optional namespace filter — when set, only event types matching are included. */
   namespace?: string;
+  /**
+   * Optional endpoint filter — when set, only event types produced or consumed
+   * by this endpoint are included. The graph collapses to that endpoint and
+   * its directly-connected peers.
+   */
+  endpoint?: string;
+  /** When true, edges with zero traffic are removed from the rendered graph. */
+  hideIdleEdges?: boolean;
 }
 
 interface UseTopologyDataResult {
@@ -25,6 +33,10 @@ interface UseTopologyDataResult {
   refresh: () => Promise<void>;
   lastUpdated?: Date;
   error?: string;
+  /** All namespaces seen across the unfiltered event-type catalog. */
+  allNamespaces: string[];
+  /** All endpoints seen as producers or consumers across the unfiltered catalog. */
+  allEndpoints: string[];
 }
 
 /**
@@ -46,6 +58,8 @@ interface UseTopologyDataResult {
 export function useTopologyData({
   period,
   namespace,
+  endpoint,
+  hideIdleEdges,
 }: UseTopologyDataOptions): UseTopologyDataResult {
   const [eventTypes, setEventTypes] = useState<api.EventType[]>([]);
   const [detailsById, setDetailsById] = useState<
@@ -141,10 +155,30 @@ export function useTopologyData({
 
   const data = useMemo<TopologyData | undefined>(() => {
     if (eventTypes.length === 0) return undefined;
-    return buildTopology(eventTypes, detailsById, metrics, namespace);
-  }, [eventTypes, detailsById, metrics, namespace]);
+    return buildTopology(eventTypes, detailsById, metrics, namespace, endpoint, hideIdleEdges);
+  }, [eventTypes, detailsById, metrics, namespace, endpoint, hideIdleEdges]);
 
-  return { data, loading, refresh, lastUpdated, error };
+  // Unfiltered option lists for the filter UI — derived from the full catalog
+  // so picking a namespace doesn't make the namespace dropdown collapse to one.
+  const allNamespaces = useMemo(() => {
+    const out = new Set<string>();
+    for (const et of eventTypes) {
+      if (et.namespace) out.add(et.namespace);
+    }
+    return Array.from(out).sort();
+  }, [eventTypes]);
+
+  const allEndpoints = useMemo(() => {
+    const out = new Set<string>();
+    for (const et of eventTypes) {
+      const det = et.id ? detailsById[et.id] : undefined;
+      det?.producers?.forEach((p) => out.add(p));
+      det?.consumers?.forEach((c) => out.add(c));
+    }
+    return Array.from(out).sort();
+  }, [eventTypes, detailsById]);
+
+  return { data, loading, refresh, lastUpdated, error, allNamespaces, allEndpoints };
 }
 
 function buildTopology(
@@ -152,11 +186,25 @@ function buildTopology(
   detailsById: Record<string, api.EventTypeDetails>,
   metrics: api.MetricsOverview | undefined,
   namespace: string | undefined,
+  endpoint: string | undefined,
+  hideIdleEdges: boolean | undefined,
 ): TopologyData {
-  // 1. Filter by namespace if requested.
-  const filteredTypes = namespace
+  // 1a. Filter by namespace if requested.
+  const namespaceFiltered = namespace
     ? eventTypes.filter((et) => et.namespace === namespace)
     : eventTypes;
+
+  // 1b. Filter by endpoint focus — keep only event types this endpoint
+  //     produces or consumes. The build below then naturally only walks the
+  //     peers of `endpoint`.
+  const filteredTypes = endpoint
+    ? namespaceFiltered.filter((et) => {
+        const det = et.id ? detailsById[et.id] : undefined;
+        const producers = det?.producers ?? [];
+        const consumers = det?.consumers ?? [];
+        return producers.includes(endpoint) || consumers.includes(endpoint);
+      })
+    : namespaceFiltered;
 
   // 2. Index metrics so we can answer "how many published / handled / failed
   //    for endpoint X event type Y in this window?" in O(1).
@@ -291,8 +339,9 @@ function buildTopology(
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  // 5. Materialise edges with derived health.
-  const edges: TopologyEdge[] = Array.from(edgeAccum.values()).map((e) => ({
+  // 5. Materialise edges with derived health. Drop idle edges when the user
+  //    has asked to see only edges with traffic.
+  const allEdges: TopologyEdge[] = Array.from(edgeAccum.values()).map((e) => ({
     id: `${e.kind}::${e.endpointId}`,
     kind: e.kind,
     endpointId: e.endpointId,
@@ -301,6 +350,9 @@ function buildTopology(
     health:
       e.failures > 0 ? "fail" : e.messages === 0 ? "idle" : "healthy",
   }));
+  const edges = hideIdleEdges
+    ? allEdges.filter((e) => e.health !== "idle")
+    : allEdges;
 
   // 6. Pick the top event pills by traffic (skipping idle edges).
   const pills: EventPill[] = pillCandidates

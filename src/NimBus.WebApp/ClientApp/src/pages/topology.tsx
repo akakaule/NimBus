@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "api-client";
 import Page from "components/page";
 import { Button } from "components/ui/button";
+import { Select } from "components/ui/select";
 import { StatRow, StatTile } from "components/ui/stat-tile";
 import {
   FilterToolbar,
@@ -14,6 +15,7 @@ import { cn } from "lib/utils";
 import { TopologyGraph } from "components/topology/topology-graph";
 import { TopologyInspector } from "components/topology/topology-inspector";
 import { useTopologyData } from "components/topology/use-topology-data";
+import { useUrlFilters } from "hooks/use-url-filters";
 
 const PERIODS: Array<{ label: string; value: api.Period }> = [
   { label: "1h", value: api.Period._1h },
@@ -22,20 +24,58 @@ const PERIODS: Array<{ label: string; value: api.Period }> = [
   { label: "7d", value: api.Period._7d },
 ];
 
-export default function Topology() {
-  const [period, setPeriod] = useState<api.Period>(api.Period._1h);
-  const [search, setSearch] = useState("");
-  const [namespace, setNamespace] = useState<string | undefined>(undefined);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>();
-  const { data, loading, refresh, lastUpdated, error } = useTopologyData({
-    period,
-    namespace,
-  });
+// URL-driven filter state — survives Back from the node-detail click and keeps
+// the topology view shareable via copy/paste.
+type TopologyFilter = {
+  searchTerm: string;
+  selectedNamespace: string;
+  selectedEndpoint: string;
+  showOnlyTraffic: string; // "1" when active, "" otherwise
+};
 
-  // Highlight filter — when the user types a search term, dim every node that
-  // doesn't match. We don't filter edges away because hiding context confuses
-  // the graph shape; matching nodes get an orange ring via selectedNodeId
-  // pass-through, all others keep their normal styling. (Selection still wins.)
+const DEFAULT_TOPOLOGY_FILTER: TopologyFilter = {
+  searchTerm: "",
+  selectedNamespace: "",
+  selectedEndpoint: "",
+  showOnlyTraffic: "",
+};
+
+export default function Topology() {
+  const { applied, setFiltersWithoutHistory } =
+    useUrlFilters<TopologyFilter>(DEFAULT_TOPOLOGY_FILTER);
+
+  const search = applied.searchTerm;
+  const namespace = applied.selectedNamespace || undefined;
+  const endpoint = applied.selectedEndpoint || undefined;
+  const hideIdleEdges = applied.showOnlyTraffic === "1";
+
+  const [period, setPeriod] = useState<api.Period>(api.Period._1h);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>();
+
+  const { data, loading, refresh, lastUpdated, error, allNamespaces, allEndpoints } =
+    useTopologyData({
+      period,
+      namespace,
+      endpoint,
+      hideIdleEdges,
+    });
+
+  // Live filter setters — replaceState so per-keystroke history isn't polluted.
+  const setSearch = (next: string) =>
+    setFiltersWithoutHistory({ ...applied, searchTerm: next });
+  const setNamespace = (next: string) =>
+    setFiltersWithoutHistory({ ...applied, selectedNamespace: next });
+  const setEndpoint = (next: string) =>
+    setFiltersWithoutHistory({ ...applied, selectedEndpoint: next });
+  const setShowOnlyTraffic = (next: boolean) =>
+    setFiltersWithoutHistory({
+      ...applied,
+      showOnlyTraffic: next ? "1" : "",
+    });
+
+
+  // Highlight filter — dim non-matching nodes via auto-select of the first
+  // match. Same behaviour as before; just sourced from URL-driven `search`.
   const filteredData = useMemo(() => {
     if (!data) return data;
     if (!search.trim()) return data;
@@ -45,11 +85,8 @@ export default function Topology() {
         .filter((n) => n.name.toLowerCase().includes(lower))
         .map((n) => n.id),
     );
-    // Surface a match by auto-selecting the first one — operators searching
-    // by name expect their result to be highlighted.
     if (matchingNodes.size > 0 && !selectedNodeId) {
       const first = Array.from(matchingNodes)[0];
-      // Defer to avoid setting state during render
       Promise.resolve().then(() => setSelectedNodeId(first));
     }
     return data;
@@ -114,15 +151,36 @@ export default function Topology() {
                 <FilterChip
                   field="Namespace"
                   value={namespace}
-                  onRemove={() => setNamespace(undefined)}
+                  onRemove={() => setNamespace("")}
+                />
+              )}
+              {endpoint && (
+                <FilterChip
+                  field="Endpoint"
+                  value={endpoint}
+                  onRemove={() => setEndpoint("")}
+                />
+              )}
+              {hideIdleEdges && (
+                <FilterChip
+                  field="Show"
+                  value="edges with traffic"
+                  onRemove={() => setShowOnlyTraffic(false)}
                 />
               )}
             </>
           }
           actions={
-            <Button variant="ghost" size="sm" disabled title="Filter builder — coming soon">
-              + Add filter
-            </Button>
+            <AddFilterMenu
+              namespaces={allNamespaces}
+              endpoints={allEndpoints}
+              hasNamespaceFilter={!!namespace}
+              hasEndpointFilter={!!endpoint}
+              hasTrafficFilter={hideIdleEdges}
+              onPickNamespace={setNamespace}
+              onPickEndpoint={setEndpoint}
+              onEnableTrafficFilter={() => setShowOnlyTraffic(true)}
+            />
           }
         />
 
@@ -193,6 +251,190 @@ export default function Topology() {
   );
 }
 
+interface AddFilterMenuProps {
+  namespaces: string[];
+  endpoints: string[];
+  hasNamespaceFilter: boolean;
+  hasEndpointFilter: boolean;
+  hasTrafficFilter: boolean;
+  onPickNamespace: (value: string) => void;
+  onPickEndpoint: (value: string) => void;
+  onEnableTrafficFilter: () => void;
+}
+
+type MenuMode = "closed" | "list" | "pick-namespace" | "pick-endpoint";
+
+// Lightweight popover so the disabled "+ Add filter" stub becomes a real
+// dimension picker. Only inactive dimensions appear in the list — picking one
+// applies the filter, closes the menu, and renders a removable chip via the
+// parent's FilterToolbar.
+const AddFilterMenu: React.FC<AddFilterMenuProps> = ({
+  namespaces,
+  endpoints,
+  hasNamespaceFilter,
+  hasEndpointFilter,
+  hasTrafficFilter,
+  onPickNamespace,
+  onPickEndpoint,
+  onEnableTrafficFilter,
+}) => {
+  const [mode, setMode] = useState<MenuMode>("closed");
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (mode === "closed") return;
+    const handleClick = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setMode("closed");
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [mode]);
+
+  const allDimensionsActive =
+    hasNamespaceFilter && hasEndpointFilter && hasTrafficFilter;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setMode(mode === "closed" ? "list" : "closed")}
+        disabled={allDimensionsActive}
+        title={
+          allDimensionsActive
+            ? "All filters applied"
+            : "Add a filter to narrow the graph"
+        }
+      >
+        + Add filter
+      </Button>
+
+      {mode !== "closed" && (
+        <div
+          className={cn(
+            "absolute z-10 mt-1 right-0",
+            "bg-card border border-border rounded-nb-md shadow-md",
+            "min-w-[260px] p-2",
+          )}
+          role="menu"
+        >
+          {mode === "list" && (
+            <div className="flex flex-col gap-1">
+              {!hasNamespaceFilter && (
+                <MenuRow onClick={() => setMode("pick-namespace")}>
+                  Namespace…
+                </MenuRow>
+              )}
+              {!hasEndpointFilter && (
+                <MenuRow onClick={() => setMode("pick-endpoint")}>
+                  Endpoint…
+                </MenuRow>
+              )}
+              {!hasTrafficFilter && (
+                <MenuRow
+                  onClick={() => {
+                    onEnableTrafficFilter();
+                    setMode("closed");
+                  }}
+                >
+                  Show: edges with traffic
+                </MenuRow>
+              )}
+            </div>
+          )}
+
+          {mode === "pick-namespace" && (
+            <PickerPanel
+              label="Pick a namespace"
+              options={namespaces}
+              emptyHint="No namespaces available."
+              onPick={(value) => {
+                onPickNamespace(value);
+                setMode("closed");
+              }}
+              onCancel={() => setMode("list")}
+            />
+          )}
+
+          {mode === "pick-endpoint" && (
+            <PickerPanel
+              label="Pick an endpoint"
+              options={endpoints}
+              emptyHint="No endpoints available."
+              onPick={(value) => {
+                onPickEndpoint(value);
+                setMode("closed");
+              }}
+              onCancel={() => setMode("list")}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MenuRow: React.FC<{
+  onClick: () => void;
+  children: React.ReactNode;
+}> = ({ onClick, children }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    role="menuitem"
+    className={cn(
+      "text-left text-[13px] px-2.5 py-1.5 rounded-nb-sm",
+      "hover:bg-muted/60 transition-colors",
+    )}
+  >
+    {children}
+  </button>
+);
+
+const PickerPanel: React.FC<{
+  label: string;
+  options: string[];
+  emptyHint: string;
+  onPick: (value: string) => void;
+  onCancel: () => void;
+}> = ({ label, options, emptyHint, onPick, onCancel }) => (
+  <div className="flex flex-col gap-2">
+    <div className="flex items-center justify-between text-[11.5px] font-mono uppercase text-muted-foreground px-1">
+      <span>{label}</span>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="hover:text-foreground"
+        aria-label="Back"
+      >
+        ←
+      </button>
+    </div>
+    {options.length === 0 ? (
+      <p className="text-[12px] text-muted-foreground px-1">{emptyHint}</p>
+    ) : (
+      <Select
+        autoFocus
+        defaultValue=""
+        onChange={(e) => {
+          if (e.target.value) onPick(e.target.value);
+        }}
+      >
+        <option value="" disabled>
+          Choose…
+        </option>
+        {options.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}
+      </Select>
+    )}
+  </div>
+);
+
 const Legend: React.FC = () => (
   <div className="flex gap-5 flex-wrap items-center font-mono text-[11px] text-muted-foreground">
     <LegendNode color="var(--nb-success,#2E8F5E)" tint="var(--nb-success-50,#DCEFE4)">
@@ -255,9 +497,6 @@ const LegendLine: React.FC<{
 );
 
 function exportSvg(): void {
-  // Find the first topology SVG on the page and download it as a file. We
-  // intentionally serialise the live DOM so the exported file matches what
-  // the operator was looking at including selection / hover state.
   const svg = document.querySelector<SVGSVGElement>(".rounded-nb-lg svg");
   if (!svg) return;
   const serializer = new XMLSerializer();

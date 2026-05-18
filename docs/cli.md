@@ -56,6 +56,7 @@ nb infra apply --solution-id nimbus --environment dev --resource-group rg-nimbus
 | `--sql-connection-string` | Conditional | Required when `--sql-mode external` |
 | `--sql-admin-login` | Conditional | Required when `--sql-mode provision` |
 | `--sql-admin-password` | Conditional | Required when `--sql-mode provision` |
+| `--sql-server-name` | No | Override the SQL server name (default: `sql-{solution-id}-{environment}`). Useful when the default DNS name is held in Azure's global namespace from a recent delete (24–72h cooldown). |
 | `--resolver-plan` | No | Resolver Function App hosting plan: `ElasticPremium` (default, EP1 Windows) or `FlexConsumption` (scale-to-zero Linux, cheaper for dev/test) |
 
 Deploys core infrastructure (Service Bus, App Insights, and either Cosmos DB or Azure SQL depending on `--storage-provider`) and the web app infrastructure via bicep. The provisioned SQL path uses AAD managed-identity auth (`Authentication=Active Directory Default`); the external path uses the supplied connection string verbatim. Automatically creates an Application Insights API key and resolves required resource endpoints/namespace settings.
@@ -132,7 +133,7 @@ Run infrastructure, topology, and app deployment in sequence.
 nb setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
-Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-connection-string`, `--sql-admin-login`, `--sql-admin-password`, and `--resolver-plan`.
+Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-connection-string`, `--sql-admin-login`, `--sql-admin-password`, `--sql-server-name`, and `--resolver-plan`.
 
 ---
 

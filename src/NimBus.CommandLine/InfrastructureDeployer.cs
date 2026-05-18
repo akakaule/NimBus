@@ -142,9 +142,14 @@ internal sealed class InfrastructureDeployer
         // Provisioned: assemble a connection string for the AAD-managed identity wiring; the
         // bicep template emits the FQDN. We return a placeholder format the WebApp resolves
         // against its managed identity at runtime.
-        var sqlServerName = $"sql-{names.SolutionId.ToLowerInvariant()}-{names.Environment.ToLowerInvariant()}";
+        var sqlServerName = EffectiveSqlServerName(options, names);
         return $"Server=tcp:{sqlServerName}.database.windows.net,1433;Initial Catalog=MessageDatabase;Authentication=Active Directory Default;Encrypt=true;";
     }
+
+    private static string EffectiveSqlServerName(InfrastructureOptions options, DeploymentNames names) =>
+        string.IsNullOrWhiteSpace(options.SqlServerName)
+            ? names.SqlServerName
+            : options.SqlServerName!.ToLowerInvariant();
 
     private async Task DeployCoreInfrastructureAsync(InfrastructureOptions options, DeploymentNames names, IReadOnlyDictionary<string, string> existingLocations, CancellationToken cancellationToken)
     {
@@ -173,6 +178,11 @@ internal sealed class InfrastructureDeployer
             arguments.Add($"sqlAdminPassword={options.SqlAdminPassword}");
         }
 
+        if (!string.IsNullOrWhiteSpace(options.SqlServerName))
+        {
+            arguments.Add($"sqlServerName={EffectiveSqlServerName(options, names)}");
+        }
+
         if (!string.IsNullOrWhiteSpace(options.Location))
         {
             arguments.Add($"locationParam={options.Location}");
@@ -182,7 +192,7 @@ internal sealed class InfrastructureDeployer
         AddPinnedLocation(arguments, existingLocations, names.ServiceBusNamespace, "serviceBusLocation", pinned);
         AddPinnedLocation(arguments, existingLocations, names.AppInsightsName, "appInsightsLocation", pinned);
         AddPinnedLocation(arguments, existingLocations, names.CosmosAccountName, "cosmosLocation", pinned);
-        AddPinnedLocation(arguments, existingLocations, names.SqlServerName, "sqlLocation", pinned);
+        AddPinnedLocation(arguments, existingLocations, EffectiveSqlServerName(options, names), "sqlLocation", pinned);
         AddPinnedLocation(arguments, existingLocations, names.FuncStorageAccountName, "funcStorageLocation", pinned);
         AddPinnedLocation(arguments, existingLocations, names.ManagementAppServicePlanName, "managementAppServicePlanLocation", pinned);
         AddPinnedLocation(arguments, existingLocations, names.CoreAppServicePlanName, "coreAppServicePlanLocation", pinned);

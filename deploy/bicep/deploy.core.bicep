@@ -36,6 +36,12 @@ param sqlAdminLogin string = ''
 @secure()
 param sqlAdminPassword string = ''
 
+// Optional override for the SQL server name. Azure SQL server names are globally
+// unique across all of Azure and are held in the DNS namespace for 24-72 hours
+// after a delete, so users sometimes need to pick a fresh name to redeploy.
+// Empty means "use the default sql-{solutionId}-{environment}".
+param sqlServerName string = ''
+
 // Resolver Function App hosting plan. 'ElasticPremium' (default, EP1, Windows)
 // preserves the existing behavior. 'FlexConsumption' provisions a Flex Consumption
 // plan (FC1, Linux) that scales to zero — significantly cheaper for dev/test.
@@ -70,7 +76,8 @@ var cosmosAccountName = 'cosmos-${toLower(solutionId)}-${toLower(environment)}'
 
 var cosmosDbName = 'MessageDatabase'
 
-var sqlServerName = 'sql-${toLower(solutionId)}-${toLower(environment)}'
+var defaultSqlServerName = 'sql-${toLower(solutionId)}-${toLower(environment)}'
+var effectiveSqlServerName = empty(sqlServerName) ? defaultSqlServerName : sqlServerName
 
 var sqlDbName = 'MessageDatabase'
 
@@ -126,7 +133,7 @@ module cosmosAccount 'templates/cosmosDB.bicep' = if (storageProvider == 'cosmos
 module azureSql 'templates/azureSql.bicep' = if (storageProvider == 'sqlserver' && sqlMode == 'provision') {
   name: 'azureSqlDeploy'
   params: {
-    serverName: sqlServerName
+    serverName: effectiveSqlServerName
     databaseName: sqlDbName
     location: effectiveSqlLocation
     administratorLogin: sqlAdminLogin

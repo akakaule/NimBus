@@ -115,6 +115,7 @@ internal static class Program
                 var sqlConnectionString = applyCommand.Option("--sql-connection-string <VALUE>", "Pre-existing SQL Server connection string. Required when --sql-mode is 'external'.", CommandOptionType.SingleValue);
                 var sqlAdminLogin = applyCommand.Option("--sql-admin-login <VALUE>", "SQL admin login when --sql-mode is 'provision'.", CommandOptionType.SingleValue);
                 var sqlAdminPassword = applyCommand.Option("--sql-admin-password <VALUE>", "SQL admin password when --sql-mode is 'provision'.", CommandOptionType.SingleValue);
+                var sqlServerName = applyCommand.Option("--sql-server-name <NAME>", "Override the SQL server name (default: 'sql-{solution-id}-{environment}'). Use this when the default DNS name is held in Azure's global namespace from a recent delete (24-72h cooldown).", CommandOptionType.SingleValue);
                 var resolverPlan = applyCommand.Option("--resolver-plan <PLAN>", "Hosting plan for the resolver Function App: ElasticPremium | FlexConsumption. Defaults to 'ElasticPremium' (EP1, Windows). 'FlexConsumption' is the cheaper scale-to-zero Linux option suited for dev/test.", CommandOptionType.SingleValue);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
@@ -148,6 +149,7 @@ internal static class Program
                         sqlConnectionString.Value(),
                         sqlAdminLogin.Value(),
                         sqlAdminPassword.Value(),
+                        sqlServerName.Value(),
                         resolverPlanChoice);
 
                     await deployer.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
@@ -259,6 +261,7 @@ internal static class Program
             var setupSqlConnectionString = setupCommand.Option("--sql-connection-string <VALUE>", "Pre-existing SQL Server connection string. Required when --sql-mode is 'external'.", CommandOptionType.SingleValue);
             var setupSqlAdminLogin = setupCommand.Option("--sql-admin-login <VALUE>", "SQL admin login when --sql-mode is 'provision'.", CommandOptionType.SingleValue);
             var setupSqlAdminPassword = setupCommand.Option("--sql-admin-password <VALUE>", "SQL admin password when --sql-mode is 'provision'.", CommandOptionType.SingleValue);
+            var setupSqlServerName = setupCommand.Option("--sql-server-name <NAME>", "Override the SQL server name (default: 'sql-{solution-id}-{environment}'). Use this when the default DNS name is held in Azure's global namespace from a recent delete (24-72h cooldown).", CommandOptionType.SingleValue);
 
             setupCommand.OnExecuteAsync(async cancellationToken =>
             {
@@ -292,6 +295,7 @@ internal static class Program
                     setupSqlConnectionString.Value(),
                     setupSqlAdminLogin.Value(),
                     setupSqlAdminPassword.Value(),
+                    setupSqlServerName.Value(),
                     ParseResolverPlan(setupResolverPlan.Value()));
 
                 var topologyOptions = new TopologyOptions(solutionId.Value(), environment.Value(), resourceGroup.Value());

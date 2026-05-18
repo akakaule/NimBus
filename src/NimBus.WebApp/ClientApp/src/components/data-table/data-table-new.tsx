@@ -80,6 +80,7 @@ export function DataTable({
   );
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [globalFilter, setGlobalFilter] = useState("");
+  const clearRowSelection = () => setRowSelection({});
 
   // Convert Map-based rows to column accessor format
   const columns = useMemo<ColumnDef<ITableRow>[]>(() => {
@@ -146,7 +147,11 @@ export function DataTable({
                     const selectedRows = rows.filter(
                       (_, idx) => rowSelection[idx],
                     );
-                    action.onClick(selectedRows);
+                    try {
+                      action.onClick(selectedRows);
+                    } finally {
+                      clearRowSelection();
+                    }
                   }}
                 >
                   {action.name}
@@ -167,7 +172,11 @@ export function DataTable({
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    action.onClick();
+                    try {
+                      action.onClick();
+                    } finally {
+                      clearRowSelection();
+                    }
                   }}
                 >
                   {action.name}

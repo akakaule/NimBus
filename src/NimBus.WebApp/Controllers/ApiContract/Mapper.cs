@@ -90,7 +90,9 @@ public static class Mapper
             OriginatingFrom = messageEntity.OriginatingFrom,
             EnqueuedTimeUtc = messageEntity.EnqueuedTimeUtc,
 
-            EventTypeId = messageEntity.MessageContent?.EventContent?.EventTypeId,
+            EventTypeId = !string.IsNullOrWhiteSpace(messageEntity.EventTypeId)
+                ? messageEntity.EventTypeId
+                : messageEntity.MessageContent?.EventContent?.EventTypeId,
         };
         //Temporary fix, when messageType is not present
         try

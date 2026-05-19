@@ -66,6 +66,8 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IEmailSender, SmtpEmailSender>();
         services.AddTransient<IClaimsTransformation, NimBusClaimsTransformation>();
 
+        services.AddHostedService<IdentityInitializerHostedService>();
+
         return services;
     }
 }

@@ -29,6 +29,24 @@ public class NimBusIdentityOptions
     /// SMTP configuration for sending confirmation and password reset emails.
     /// </summary>
     public SmtpOptions Smtp { get; set; } = new();
+
+    /// <summary>
+    /// Deployment-time admin bootstrap. When Email and Password are both set and the user
+    /// store is empty, a single confirmed admin is created on startup. Idempotent — no-op
+    /// once any user exists. Intended for the very first sign-in on a fresh deployment;
+    /// rotate or remove the password from configuration after that.
+    /// </summary>
+    public BootstrapOptions Bootstrap { get; set; } = new();
+}
+
+/// <summary>
+/// First-admin bootstrap, applied by the Identity initializer hosted service.
+/// </summary>
+public class BootstrapOptions
+{
+    public string Email { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
 }
 
 /// <summary>

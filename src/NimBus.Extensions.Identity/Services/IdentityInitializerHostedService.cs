@@ -59,11 +59,18 @@ internal sealed class IdentityInitializerHostedService : IHostedService
 
         if (!string.Equals(schema, "dbo", StringComparison.OrdinalIgnoreCase))
         {
-            // Schema names can't be parameterized in DDL — pattern-validated above to keep
-            // this safe. EXEC keeps CREATE SCHEMA as the first statement in its batch.
-            await dbContext.Database.ExecuteSqlRawAsync(
-                $"IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'{schema}') EXEC('CREATE SCHEMA [{schema}]')",
-                ct).ConfigureAwait(false);
+            // Schema names can't be parameterized in DDL. The schema value is validated
+            // against SchemaNamePattern above to be a safe SQL identifier, so direct
+            // embedding is acceptable here. EF1002 flags interpolation into raw SQL — the
+            // validation upstream is exactly the "make sure the value is sanitized" path
+            // the analyzer message points at. EXEC keeps CREATE SCHEMA as the first
+            // statement in its batch.
+            var createSchemaSql =
+                "IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'" + schema + "') "
+                + "EXEC('CREATE SCHEMA [" + schema + "]')";
+#pragma warning disable EF1002 // schema validated against SchemaNamePattern
+            await dbContext.Database.ExecuteSqlRawAsync(createSchemaSql, ct).ConfigureAwait(false);
+#pragma warning restore EF1002
         }
 
         if (await IdentityTablesExistAsync(dbContext, schema, ct).ConfigureAwait(false))

@@ -70,6 +70,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NimBus.Core\NimBus.Core.csproj" />
+    <ProjectReference Include="..\NimBus.Extensions.Identity\NimBus.Extensions.Identity.csproj" />
     <ProjectReference Include="..\NimBus.Manager\NimBus.Manager.csproj" />
     <ProjectReference Include="..\NimBus.Management.ServiceBus\NimBus.Management.ServiceBus.csproj" />
     <ProjectReference Include="..\NimBus.MessageStore.Abstractions\NimBus.MessageStore.Abstractions.csproj" />

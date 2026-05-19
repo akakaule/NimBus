@@ -262,6 +262,8 @@ internal static class Program
             var setupSqlAdminLogin = setupCommand.Option("--sql-admin-login <VALUE>", "SQL admin login when --sql-mode is 'provision'.", CommandOptionType.SingleValue);
             var setupSqlAdminPassword = setupCommand.Option("--sql-admin-password <VALUE>", "SQL admin password when --sql-mode is 'provision'.", CommandOptionType.SingleValue);
             var setupSqlServerName = setupCommand.Option("--sql-server-name <NAME>", "Override the SQL server name (default: 'sql-{solution-id}-{environment}'). Use this when the default DNS name is held in Azure's global namespace from a recent delete (24-72h cooldown).", CommandOptionType.SingleValue);
+            var setupIdentityAdminEmail = setupCommand.Option("--identity-admin-email <EMAIL>", "When using --storage-provider sqlserver, enables username/password sign-in and seeds this email as the first admin on first boot.", CommandOptionType.SingleValue);
+            var setupIdentityAdminPassword = setupCommand.Option("--identity-admin-password <VALUE>", "Password for the bootstrap admin. Required when --identity-admin-email is set.", CommandOptionType.SingleValue);
 
             setupCommand.OnExecuteAsync(async cancellationToken =>
             {
@@ -283,6 +285,11 @@ internal static class Program
                         throw new InvalidOperationException("--sql-admin-login and --sql-admin-password are required when --sql-mode is 'provision'.");
                 }
 
+                if (!string.IsNullOrWhiteSpace(setupIdentityAdminEmail.Value()) && string.IsNullOrWhiteSpace(setupIdentityAdminPassword.Value()))
+                    throw new InvalidOperationException("--identity-admin-password is required when --identity-admin-email is set.");
+                if (!string.IsNullOrWhiteSpace(setupIdentityAdminEmail.Value()) && providerChoice != StorageProviderChoice.SqlServer)
+                    throw new InvalidOperationException("--identity-admin-email requires --storage-provider sqlserver.");
+
                 var infraOptions = new InfrastructureOptions(
                     solutionId.Value(),
                     environment.Value(),
@@ -296,7 +303,9 @@ internal static class Program
                     setupSqlAdminLogin.Value(),
                     setupSqlAdminPassword.Value(),
                     setupSqlServerName.Value(),
-                    ParseResolverPlan(setupResolverPlan.Value()));
+                    ParseResolverPlan(setupResolverPlan.Value()),
+                    setupIdentityAdminEmail.Value(),
+                    setupIdentityAdminPassword.Value());
 
                 var topologyOptions = new TopologyOptions(solutionId.Value(), environment.Value(), resourceGroup.Value());
                 var appOptions = new AppDeploymentOptions(

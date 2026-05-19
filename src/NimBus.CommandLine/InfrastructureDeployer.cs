@@ -251,6 +251,12 @@ internal sealed class InfrastructureDeployer
             $"serviceBusFullyQualifiedNamespace={serviceBusFullyQualifiedNamespace}",
         };
 
+        if (!string.IsNullOrWhiteSpace(options.IdentityAdminEmail))
+        {
+            arguments.Add($"identityAdminEmail={options.IdentityAdminEmail}");
+            arguments.Add($"identityAdminPassword={options.IdentityAdminPassword}");
+        }
+
         if (!string.IsNullOrWhiteSpace(options.Location))
         {
             arguments.Add($"locationParam={options.Location}");

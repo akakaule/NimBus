@@ -16,6 +16,15 @@ param sqlConnectionString string = ''
 param serviceBusFullyQualifiedNamespace string
 param locationParam string = 'westeurope'
 
+// Optional bootstrap admin for NimBus.Extensions.Identity. When both are set AND
+// the active storage provider is SQL Server, the WebApp is configured to use
+// ASP.NET Core Identity-backed username/password sign-in; the initializer hosted
+// service seeds this single admin on first boot. Leave empty to keep the WebApp
+// on its existing auth path (Entra ID / local-dev).
+param identityAdminEmail string = ''
+@secure()
+param identityAdminPassword string = ''
+
 // Per-resource location override. Empty means "use the global locationParam".
 // The CLI pins this to the existing web app's location when one is already
 // present so we don't try to migrate it to a different region.
@@ -110,7 +119,31 @@ var sqlSetting = hasSql ? [
   }
 ] : []
 
-var baseWebAppSettings = concat(coreWebAppSettings, cosmosSetting, sqlSetting)
+// NimBus Identity (username/password) is wired only on SQL deployments and only
+// when a bootstrap admin email is supplied. The connection string reuses the
+// MessageDatabase; Identity tables live under a separate schema (default
+// 'nimbus') so they don't collide with the message-store schema.
+var identityEnabled = hasSql && !empty(identityAdminEmail)
+var identitySettings = identityEnabled ? [
+  {
+    name: 'NimBusIdentity__ConnectionString'
+    value: sqlConnectionString
+  }
+  {
+    name: 'NimBusIdentity__RequireEmailConfirmation'
+    value: 'false'
+  }
+  {
+    name: 'NimBusIdentity__Bootstrap__Email'
+    value: identityAdminEmail
+  }
+  {
+    name: 'NimBusIdentity__Bootstrap__Password'
+    value: identityAdminPassword
+  }
+] : []
+
+var baseWebAppSettings = concat(coreWebAppSettings, cosmosSetting, sqlSetting, identitySettings)
 
 var developmentDiagnosticSettings = isDevelopmentEnvironment ? [
   {

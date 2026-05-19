@@ -30,6 +30,7 @@ using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.Middleware;
 using System.Text.Json.Serialization;
 using NimBus.Core.Extensions;
+using NimBus.Extensions.Identity;
 using NimBus.Management.ServiceBus;
 using NimBus.MessageStore.SqlServer;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -67,6 +68,29 @@ namespace NimBus.WebApp
 
                 if (Configuration.GetValue<bool>("EnableLocalDevAuthentication", false))
                     throw new InvalidOperationException("SECURITY: EnableLocalDevAuthentication must not be enabled outside Development environment. Remove this setting from production configuration.");
+            }
+
+            // Opt into ASP.NET Core Identity-backed username/password sign-in when the
+            // deployment supplies NimBusIdentity:ConnectionString. The reflection check below
+            // then routes the auth-branch ladder to the Identity-only path; downstream config
+            // (RequireEmailConfirmation, Bootstrap, Smtp) is bound from the same section.
+            var identityConnection = Configuration["NimBusIdentity:ConnectionString"];
+            if (!string.IsNullOrWhiteSpace(identityConnection))
+            {
+                services.AddNimBusIdentity(opts =>
+                {
+                    opts.ConnectionString = identityConnection;
+                    var schema = Configuration["NimBusIdentity:Schema"];
+                    if (!string.IsNullOrWhiteSpace(schema)) opts.Schema = schema;
+                    opts.RequireEmailConfirmation = Configuration.GetValue("NimBusIdentity:RequireEmailConfirmation", true);
+                    opts.EnableEntraIdLogin = Configuration.GetValue("NimBusIdentity:EnableEntraIdLogin", false);
+
+                    opts.Bootstrap.Email = Configuration["NimBusIdentity:Bootstrap:Email"] ?? string.Empty;
+                    opts.Bootstrap.Password = Configuration["NimBusIdentity:Bootstrap:Password"] ?? string.Empty;
+                    opts.Bootstrap.DisplayName = Configuration["NimBusIdentity:Bootstrap:DisplayName"] ?? string.Empty;
+
+                    Configuration.GetSection("NimBusIdentity:Smtp").Bind(opts.Smtp);
+                });
             }
 
             // Bypass authentication for local development (requires explicit opt-in via config)

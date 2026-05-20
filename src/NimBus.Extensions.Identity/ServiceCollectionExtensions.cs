@@ -59,6 +59,12 @@ public static class ServiceCollectionExtensions
             cookie.Cookie.Name = "NimBus.Identity";
             cookie.Cookie.HttpOnly = true;
             cookie.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.Always;
+            // SameSite=Lax underwrites the no-anti-forgery decision on
+            // /api/auth/logout — cross-site POSTs from a hostile origin don't
+            // carry the cookie, so the worst case is "unexpected logout from a
+            // top-level navigation", not silent data destruction. Set
+            // explicitly rather than relying on the ASP.NET Core default.
+            cookie.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
             cookie.ExpireTimeSpan = TimeSpan.FromHours(8);
             cookie.SlidingExpiration = true;
         });

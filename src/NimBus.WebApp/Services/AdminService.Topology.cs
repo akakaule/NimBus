@@ -80,8 +80,7 @@ public partial class AdminService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to delete rule {Rule} on subscription {Subscription}",
-                        item.Rule.Name, item.Subscription);
+                    LogDeleteRuleFailed(ex, item.Rule.Name, item.Subscription);
                     ruleErrors.Add($"Rule {item.Subscription}/{item.Rule.Name}: {ex.Message}");
                 }
                 finally
@@ -107,7 +106,7 @@ public partial class AdminService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to delete subscription {Subscription}", sub.Name);
+                LogDeleteSubscriptionFailed(ex, sub.Name);
                 result.Errors.Add($"Subscription {sub.Name}: {ex.Message}");
             }
         }

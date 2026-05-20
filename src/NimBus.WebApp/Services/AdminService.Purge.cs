@@ -78,7 +78,7 @@ public partial class AdminService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not accept SB session {SessionId} on {EndpointId}", sessionId, endpointId);
+            LogAcceptSessionFailed(ex, sessionId, endpointId);
             result.Errors.Add($"Could not accept session: {ex.Message}");
         }
 
@@ -102,7 +102,7 @@ public partial class AdminService
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogWarning(ex, "Failed to complete active message {MessageId}", message.MessageId);
+                            LogCompleteActiveMessageFailed(ex, message.MessageId);
                             result.Errors.Add($"Active message {message.MessageId}: {ex.Message}");
                         }
                     }
@@ -113,7 +113,7 @@ public partial class AdminService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error removing active messages from session {SessionId}", sessionId);
+                LogRemoveActiveMessagesError(ex, sessionId);
                 result.Errors.Add($"Active messages error: {ex.Message}");
             }
 
@@ -146,8 +146,7 @@ public partial class AdminService
                             }
                             catch (Exception ex)
                             {
-                                _logger.LogWarning(ex, "Failed to complete deferred message {SequenceNumber}",
-                                    message.SequenceNumber);
+                                LogCompleteDeferredMessageFailed(ex, message.SequenceNumber);
                                 result.Errors.Add($"Deferred message seq {message.SequenceNumber}: {ex.Message}");
                             }
                         }
@@ -159,7 +158,7 @@ public partial class AdminService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error removing deferred messages from session {SessionId}", sessionId);
+                LogRemoveDeferredMessagesError(ex, sessionId);
                 result.Errors.Add($"Deferred messages error: {ex.Message}");
             }
 
@@ -171,7 +170,7 @@ public partial class AdminService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to clear session state for {SessionId}", sessionId);
+                LogClearSessionStateFailed(ex, sessionId);
                 result.Errors.Add($"Clear session state: {ex.Message}");
             }
 
@@ -210,7 +209,7 @@ public partial class AdminService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error removing messages from Deferred subscription for session {SessionId}", sessionId);
+            LogRemoveDeferredSubscriptionError(ex, sessionId);
             result.Errors.Add($"Deferred subscription error: {ex.Message}");
         }
 
@@ -235,7 +234,7 @@ public partial class AdminService
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Failed to remove Cosmos event {EventId}", ev.EventId);
+                        LogRemoveCosmosEventFailed(ex, ev.EventId);
                         result.Errors.Add($"Cosmos event {ev.EventId}: {ex.Message}");
                     }
                 }
@@ -248,7 +247,7 @@ public partial class AdminService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error removing Cosmos events for session {SessionId}", sessionId);
+            LogRemoveCosmosEventsError(ex, sessionId);
             result.Errors.Add($"Cosmos removal error: {ex.Message}");
         }
 
@@ -583,7 +582,7 @@ public partial class AdminService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to delete all events for {EndpointId}", endpointId);
+            LogDeleteAllEventsFailed(ex, endpointId);
             errors.Add(ex.Message);
         }
 

@@ -88,8 +88,7 @@ public partial class AdminService
                     var failedMessage = await _cosmosClient.GetFailedMessage(ev.EventId, endpointId);
                     if (failedMessage == null)
                     {
-                        _logger.LogWarning("Failed message not found for event {EventId} on {EndpointId}, skipping",
-                            ev.EventId, endpointId);
+                        LogFailedMessageNotFound(ev.EventId, endpointId);
                         Interlocked.Increment(ref failed);
                         errors.Add($"{ev.EventId}: failed message not found");
                         return;
@@ -100,7 +99,7 @@ public partial class AdminService
 
                     if (string.IsNullOrEmpty(eventJson))
                     {
-                        _logger.LogWarning("No event content for event {EventId}, skipping", ev.EventId);
+                        LogNoEventContent(ev.EventId);
                         Interlocked.Increment(ref failed);
                         errors.Add($"{ev.EventId}: no event content");
                         return;
@@ -112,7 +111,7 @@ public partial class AdminService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to resubmit event {EventId}", ev.EventId);
+                    LogResubmitFailed(ex, ev.EventId);
                     Interlocked.Increment(ref failed);
                     errors.Add($"{ev.EventId}: {ex.Message}");
                 }
@@ -176,7 +175,7 @@ public partial class AdminService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to delete dead-lettered event {EventId}", ev.EventId);
+                    LogDeleteDeadLetteredFailed(ex, ev.EventId);
                     failed++;
                     errors.Add($"{ev.EventId}: {ex.Message}");
                 }
@@ -224,7 +223,7 @@ public partial class AdminService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to clear session state for {SessionId} on {EndpointId}", sessionId, endpointId);
+            LogClearSessionStateFailedForEndpoint(ex, sessionId, endpointId);
             result.Errors.Add($"Clear session state: {ex.Message}");
         }
 
@@ -246,7 +245,7 @@ public partial class AdminService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to send ProcessDeferredRequest for {SessionId} on {EndpointId}", sessionId, endpointId);
+            LogSendProcessDeferredRequestFailed(ex, sessionId, endpointId);
             result.Errors.Add($"Send ProcessDeferredRequest: {ex.Message}");
         }
 

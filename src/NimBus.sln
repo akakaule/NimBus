@@ -140,6 +140,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SDK", "SDK", "{35EA80CA-17E
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Observability", "Observability", "{68A3A83B-62C4-4455-A0BC-4FF74719F34F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.Extensions.Identity.Tests", "..\tests\NimBus.Extensions.Identity.Tests\NimBus.Extensions.Identity.Tests.csproj", "{33C7481D-9B3B-4FB1-8FB3-2BBBAF42DE89}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -654,6 +656,18 @@ Global
 		{E56A6868-1B42-440E-ADB1-0824416DF07E}.Release|x64.Build.0 = Release|Any CPU
 		{E56A6868-1B42-440E-ADB1-0824416DF07E}.Release|x86.ActiveCfg = Release|Any CPU
 		{E56A6868-1B42-440E-ADB1-0824416DF07E}.Release|x86.Build.0 = Release|Any CPU
+		{33C7481D-9B3B-4FB1-8FB3-2BBBAF42DE89}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{33C7481D-9B3B-4FB1-8FB3-2BBBAF42DE89}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{33C7481D-9B3B-4FB1-8FB3-2BBBAF42DE89}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{33C7481D-9B3B-4FB1-8FB3-2BBBAF42DE89}.Debug|x64.Build.0 = Debug|Any CPU
+		{33C7481D-9B3B-4FB1-8FB3-2BBBAF42DE89}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{33C7481D-9B3B-4FB1-8FB3-2BBBAF42DE89}.Debug|x86.Build.0 = Debug|Any CPU
+		{33C7481D-9B3B-4FB1-8FB3-2BBBAF42DE89}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{33C7481D-9B3B-4FB1-8FB3-2BBBAF42DE89}.Release|Any CPU.Build.0 = Release|Any CPU
+		{33C7481D-9B3B-4FB1-8FB3-2BBBAF42DE89}.Release|x64.ActiveCfg = Release|Any CPU
+		{33C7481D-9B3B-4FB1-8FB3-2BBBAF42DE89}.Release|x64.Build.0 = Release|Any CPU
+		{33C7481D-9B3B-4FB1-8FB3-2BBBAF42DE89}.Release|x86.ActiveCfg = Release|Any CPU
+		{33C7481D-9B3B-4FB1-8FB3-2BBBAF42DE89}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

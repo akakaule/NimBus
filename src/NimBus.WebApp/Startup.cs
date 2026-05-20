@@ -311,9 +311,23 @@ namespace NimBus.WebApp
 
             services.AddSingleton<IServiceBusManagement>(sp => new ServiceBusManagement(sp.GetRequiredService<ServiceBusAdministrationClient>()));
 
-            services.AddSingleton<IApplicationInsightsService>(services =>
-                new ApplicationInsightsService(Configuration.GetValue<string>("AppInsights:ApplicationId"), Configuration.GetValue<string>("AppInsights:ApiKey"))
-            );
+            // Typed HttpClient via IHttpClientFactory — pools the underlying
+            // SocketsHttpHandler across calls, hooks into AddHttpClientInstrumentation
+            // for OpenTelemetry, and leaves room for a future Polly retry policy.
+            services.AddHttpClient<IApplicationInsightsService, ApplicationInsightsService>((sp, http) =>
+            {
+                var cfg = sp.GetRequiredService<IConfiguration>();
+                var appId = cfg.GetValue<string>("AppInsights:ApplicationId");
+                var apiKey = cfg.GetValue<string>("AppInsights:ApiKey");
+                if (!string.IsNullOrWhiteSpace(appId))
+                {
+                    http.BaseAddress = new Uri($"https://api.applicationinsights.io/v1/apps/{appId}/");
+                }
+                if (!string.IsNullOrWhiteSpace(apiKey))
+                {
+                    http.DefaultRequestHeaders.Add("x-api-key", apiKey);
+                }
+            });
 
             services.AddApplicationInsightsTelemetry();
 

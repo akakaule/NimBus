@@ -11,21 +11,16 @@ using System.Web;
 
 namespace NimBus.WebApp.Services.ApplicationInsights
 {
-    public class ApplicationInsightsService : IApplicationInsightsService, IDisposable
+    public class ApplicationInsightsService : IApplicationInsightsService
     {
+        // HttpClient is owned by IHttpClientFactory — the typed-client
+        // registration in Startup.cs sets BaseAddress + x-api-key. Don't
+        // dispose it here; the factory recycles handlers for us.
+        private readonly HttpClient client;
 
-        private HttpClient client;
-
-        public ApplicationInsightsService(string applicationId, string apiKey)
+        public ApplicationInsightsService(HttpClient client)
         {
-            this.client = new HttpClient() { BaseAddress = new Uri($"https://api.applicationinsights.io/v1/apps/{applicationId}/") };
-            this.client.DefaultRequestHeaders.Add("x-api-key", apiKey);
-        }
-
-        public void Dispose()
-        {
-            client?.Dispose();
-            GC.SuppressFinalize(this);
+            this.client = client;
         }
 
         public async Task<IEnumerable<LogEntry>> GetLogs(string messageId, SeverityLevel minimumLevel)

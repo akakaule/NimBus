@@ -1,12 +1,16 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-// NimBus storage provider toggle. CLI flag wins (e.g. `aspire run -- --StorageProvider cosmos`
-// or `dotnet run -- --StorageProvider cosmos`); NIMBUS_STORAGE_PROVIDER env-var is a fallback
-// for parity with the AspirePubSub sample. Default is sqlserver, which runs entirely locally
-// on the Aspire-managed SQL Server container.
+// NimBus storage provider toggle. Accepts the same flag names as the slim
+// src/NimBus.AppHost so muscle memory carries between the two sample apphosts:
+//   --NIMBUS_STORAGE_PROVIDER sqlserver  (env or arg)
+//   --StorageProvider sqlserver          (legacy synonym, kept for backwards compat)
+//   NIMBUS_STORAGE_PROVIDER env var
+// Default is sqlserver, which runs entirely locally on the Aspire-managed SQL
+// Server container.
 var storageProvider = (
-        builder.Configuration["StorageProvider"]
-        ?? Environment.GetEnvironmentVariable("NIMBUS_STORAGE_PROVIDER")
+        Environment.GetEnvironmentVariable("NIMBUS_STORAGE_PROVIDER")
+        ?? builder.Configuration["NIMBUS_STORAGE_PROVIDER"]
+        ?? builder.Configuration["StorageProvider"]
         ?? "sqlserver")
     .ToLowerInvariant();
 
@@ -15,6 +19,14 @@ if (storageProvider is not ("sqlserver" or "cosmos"))
     throw new InvalidOperationException(
         $"Unknown StorageProvider '{storageProvider}'. Use 'sqlserver' (default) or 'cosmos'.");
 }
+
+// Optional: enable NimBus.Extensions.Identity (username/password sign-in) on the
+// nimbus-ops WebApp. Off by default — the demo's e2e Playwright suite relies on
+// the LocalDev auth bypass below. Same flag shape as the slim NimBus.AppHost.
+var identityEnabled = string.Equals(
+    Environment.GetEnvironmentVariable("NIMBUS_IDENTITY") ?? builder.Configuration["NIMBUS_IDENTITY"],
+    "true",
+    StringComparison.OrdinalIgnoreCase);
 
 // Service Bus source. Default is a real Azure namespace via AddConnectionString
 // (connection string supplied by the AppHost's user-secrets). Setting
@@ -65,7 +77,9 @@ var sql = builder.AddSqlServer("sql")
     .WithDataVolume();
 var crmDb = sql.AddDatabase("crm");
 var erpDb = sql.AddDatabase("erp");
-var nimbusDb = storageProvider == "sqlserver" ? sql.AddDatabase("nimbus") : null;
+// nimbusDb is provisioned when the message store needs it OR when Identity
+// needs it. Identity always requires SQL even if the message store is Cosmos.
+var nimbusDb = (storageProvider == "sqlserver" || identityEnabled) ? sql.AddDatabase("nimbus") : null;
 
 // DbGate — web SQL UI for browsing the Aspire-managed SQL Server (and the
 // [nimbus].[OutboxMessages] table in particular). Wired manually because the
@@ -114,15 +128,40 @@ var nimbusOps = builder.AddProject<Projects.NimBus_WebApp>("nimbus-ops")
     .WithReference(servicebus)
     .WithEnvironment("NimBus__PlatformType", typeof(CrmErpDemo.Contracts.CrmErpPlatformConfiguration).FullName!)
     .WithEnvironment("NimBus__PlatformAssembly", crmErpContractsPath)
+    .WithEndpoint("http", e => e.Port = 28376)
+    .WithEndpoint("https", e => e.Port = 28375)
+    .WithExternalHttpEndpoints();
+
+if (identityEnabled)
+{
+    var adminEmail = Environment.GetEnvironmentVariable("NIMBUS_IDENTITY_ADMIN_EMAIL")
+        ?? builder.Configuration["NIMBUS_IDENTITY_ADMIN_EMAIL"]
+        ?? "admin@local";
+    var adminPassword = Environment.GetEnvironmentVariable("NIMBUS_IDENTITY_ADMIN_PASSWORD")
+        ?? builder.Configuration["NIMBUS_IDENTITY_ADMIN_PASSWORD"]
+        ?? "Local!Admin123";
+
+    nimbusOps
+        .WithReference(nimbusDb!)
+        .WithEnvironment("NimBusIdentity__ConnectionString", nimbusDb!.Resource.ConnectionStringExpression)
+        .WithEnvironment("NimBusIdentity__RequireEmailConfirmation", "false")
+        .WithEnvironment("NimBusIdentity__Bootstrap__Email", adminEmail)
+        .WithEnvironment("NimBusIdentity__Bootstrap__Password", adminPassword)
+        .WaitFor(nimbusDb);
+
+    Console.WriteLine(
+        $"Local Identity: enabled. Sign in at /account/login as {adminEmail} " +
+        "(override with NIMBUS_IDENTITY_ADMIN_EMAIL / NIMBUS_IDENTITY_ADMIN_PASSWORD).");
+}
+else
+{
     // Local-dev auth bypass — required so the e2e Playwright suite (and a
     // human operator browsing the dashboard) can hit the API without an
     // Azure AD ClientId. Aspire defaults ASPNETCORE_ENVIRONMENT to Development
     // for child projects, which is the gate Startup.cs checks before honoring
     // this flag.
-    .WithEnvironment("EnableLocalDevAuthentication", "true")
-    .WithEndpoint("http", e => e.Port = 28376)
-    .WithEndpoint("https", e => e.Port = 28375)
-    .WithExternalHttpEndpoints();
+    nimbusOps.WithEnvironment("EnableLocalDevAuthentication", "true");
+}
 
 // Provider-specific wiring. The WebApp/Resolver pick their backend off NimBus__StorageProvider;
 // we set it explicitly so the AppHost CLI flag wins over the runtime auto-detect fallback.

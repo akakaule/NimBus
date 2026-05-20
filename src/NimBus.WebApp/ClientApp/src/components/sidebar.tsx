@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { cn } from "lib/utils";
 import { getEnv } from "hooks/app-status";
+import SidebarUserFooter from "components/sidebar-user-footer";
 
 interface NavItem {
   name: string;
@@ -279,6 +280,8 @@ const Sidebar = () => {
           </div>
         ))}
       </div>
+
+      <SidebarUserFooter />
     </aside>
   );
 };

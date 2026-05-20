@@ -1,9 +1,15 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk.Razor">
 
   <PropertyGroup>
     <IsPackable>true</IsPackable>
     <Description>ASP.NET Core Identity extension for NimBus WebApp — username/password authentication with email verification.</Description>
     <PackageTags>azure;servicebus;messaging;nimbus;identity;authentication</PackageTags>
+    <!-- Razor Class Library so the Views/Account/*.cshtml ship inside the
+         assembly and are discoverable from any consuming WebApp via the
+         standard view-location chain. Without Sdk.Razor, the .cshtml files
+         exist on disk but aren't compiled into the package, and the runtime
+         can't find /Views/Account/Login.cshtml in a consuming app. -->
+    <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
   </PropertyGroup>
 
   <ItemGroup>

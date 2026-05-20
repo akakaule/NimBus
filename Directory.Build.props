@@ -27,6 +27,17 @@
     <AnalysisLevelStyle>latest-recommended</AnalysisLevelStyle>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
+  <!--
+    NuGet vulnerability audit. AuditMode=all covers transitive packages too;
+    Level=moderate raises NU1901-NU1904 warnings on CVSS 4.0+ advisories.
+    Release builds promote those to errors via the TreatWarningsAsErrors block
+    below, so vulnerable dependencies fail CI without an extra workflow step.
+  -->
+  <PropertyGroup Label="NuGet audit">
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>moderate</NuGetAuditLevel>
+  </PropertyGroup>
   <!-- Treat warnings as errors are always on when building in release -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

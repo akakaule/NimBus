@@ -33,6 +33,7 @@ public class AccountController : Controller
     {
         ViewData["ReturnUrl"] = returnUrl ?? "/";
         ViewData["EnableEntraId"] = _options.EnableEntraIdLogin;
+        ViewData["AllowRegistration"] = _options.AllowRegistration;
         return View();
     }
 
@@ -43,6 +44,7 @@ public class AccountController : Controller
         returnUrl ??= "/";
         ViewData["ReturnUrl"] = returnUrl;
         ViewData["EnableEntraId"] = _options.EnableEntraIdLogin;
+        ViewData["AllowRegistration"] = _options.AllowRegistration;
 
         if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password))
         {
@@ -78,6 +80,7 @@ public class AccountController : Controller
     [HttpGet("register")]
     public IActionResult Register()
     {
+        if (!_options.AllowRegistration) return NotFound();
         return View();
     }
 
@@ -85,6 +88,7 @@ public class AccountController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Register(string email, string displayName, string password, string confirmPassword)
     {
+        if (!_options.AllowRegistration) return NotFound();
         if (password != confirmPassword)
         {
             ViewData["Error"] = "Passwords do not match.";

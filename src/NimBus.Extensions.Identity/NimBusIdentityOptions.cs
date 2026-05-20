@@ -26,6 +26,14 @@ public class NimBusIdentityOptions
     public bool EnableEntraIdLogin { get; set; }
 
     /// <summary>
+    /// Allow unauthenticated visitors to self-register through
+    /// <c>GET /account/register</c>. Default <c>false</c>: register routes
+    /// return 404 and the login page hides the "Create an account" link.
+    /// Set true on tenant slots where self-service signup is desired.
+    /// </summary>
+    public bool AllowRegistration { get; set; }
+
+    /// <summary>
     /// SMTP configuration for sending confirmation and password reset emails.
     /// </summary>
     public SmtpOptions Smtp { get; set; } = new();

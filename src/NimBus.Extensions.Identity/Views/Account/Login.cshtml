@@ -3,6 +3,7 @@
     var error = ViewData["Error"] as string;
     var returnUrl = ViewData["ReturnUrl"] as string ?? "/";
     var enableEntraId = ViewData["EnableEntraId"] is true;
+    var allowRegistration = ViewData["AllowRegistration"] is true;
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -66,7 +67,10 @@
         }
 
         <div class="links">
-            <a href="/account/register">Create an account</a> &middot;
+            @if (allowRegistration)
+            {
+                <a href="/account/register">Create an account</a> <span>&middot;</span>
+            }
             <a href="/account/forgot-password">Forgot password?</a>
         </div>
     </div>

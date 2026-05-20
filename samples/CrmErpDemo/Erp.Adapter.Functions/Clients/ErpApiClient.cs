@@ -1,15 +1,18 @@
 using System.Net.Http.Json;
+using CrmErpDemo.Contracts.Http;
 
 namespace Erp.Adapter.Functions.Clients;
 
 public sealed class ErpApiClient(HttpClient http) : IErpApiClient
 {
+    private const string ApiName = "ERP API";
+
     public async Task<ErpCustomerResponse> UpsertCustomerAsync(Guid crmAccountId, CustomerUpsertPayload payload, CancellationToken ct)
     {
         var response = await http.PutAsJsonAsync($"/api/customers/by-crm/{crmAccountId}", payload, ct);
-        await EnsureSuccess(
-            response,
+        await response.EnsureSuccessOrThrowAsync(
             $"Upsert ERP customer from CRM account {crmAccountId} (LegalName=\"{payload.LegalName}\")",
+            ApiName,
             ct);
         return await response.Content.ReadFromJsonAsync<ErpCustomerResponse>(cancellationToken: ct)
             ?? throw new InvalidOperationException(
@@ -30,51 +33,27 @@ public sealed class ErpApiClient(HttpClient http) : IErpApiClient
                 payload.Phone,
             },
             ct);
-        await EnsureSuccess(
-            response,
+        await response.EnsureSuccessOrThrowAsync(
             $"Upsert ERP contact {contactId} (CrmAccountId={payload.CrmAccountId})",
+            ApiName,
             ct);
     }
 
     public async Task MarkCustomerByCrmIdDeletedAsync(Guid crmAccountId, CancellationToken ct)
     {
         var response = await http.PostAsync($"/api/customers/by-crm/{crmAccountId}/deleted", content: null, ct);
-        await EnsureSuccess(
-            response,
+        await response.EnsureSuccessOrThrowAsync(
             $"Mark ERP customer deleted by CRM account {crmAccountId}",
+            ApiName,
             ct);
     }
 
     public async Task MarkContactDeletedAsync(Guid contactId, CancellationToken ct)
     {
         var response = await http.PostAsync($"/api/contacts/{contactId}/deleted", content: null, ct);
-        await EnsureSuccess(
-            response,
+        await response.EnsureSuccessOrThrowAsync(
             $"Mark ERP contact {contactId} deleted",
+            ApiName,
             ct);
-    }
-
-    // Replaces HttpResponseMessage.EnsureSuccessStatusCode() with an exception
-    // that surfaces the operation context, request path, status, and response
-    // body — so the WebApp's Failed-message view shows actionable detail rather
-    // than just "Response status code does not indicate success: 404 (Not Found)".
-    private static async Task EnsureSuccess(HttpResponseMessage response, string operation, CancellationToken ct)
-    {
-        if (response.IsSuccessStatusCode) return;
-
-        string body = string.Empty;
-        try { body = await response.Content.ReadAsStringAsync(ct); } catch { /* best-effort */ }
-        if (body.Length > 500) body = body[..500] + "…";
-
-        var method = response.RequestMessage?.Method.Method ?? "?";
-        var path = response.RequestMessage?.RequestUri?.PathAndQuery ?? "?";
-        var status = (int)response.StatusCode;
-        var reason = response.ReasonPhrase ?? response.StatusCode.ToString();
-        var bodyPart = string.IsNullOrWhiteSpace(body) ? "" : $" Body: {body}";
-
-        throw new HttpRequestException(
-            $"{operation} failed: ERP API {method} {path} → {status} {reason}.{bodyPart}",
-            inner: null,
-            statusCode: response.StatusCode);
     }
 }

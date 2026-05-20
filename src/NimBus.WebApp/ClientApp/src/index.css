@@ -118,6 +118,14 @@
     animation: nb-flow 4s linear infinite;
   }
 
+  /* Flow-view ribbon variant — thicker pattern so the marching dashes stay
+     legible on the wide Sankey-style routes. Shares the `nb-flow` keyframe
+     so the cadence matches the graph-view edges. */
+  .nb-flow-anim-ribbon {
+    stroke-dasharray: 14 18;
+    animation: nb-flow 4s linear infinite;
+  }
+
   /* Monitor wall — pulsing red dot used in the hero pill, failing-band
      header, and stale-data banner. Tuned slow enough that it reads as a
      heartbeat from across a room rather than a flicker. */

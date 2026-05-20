@@ -12,10 +12,18 @@ import {
 import { EmptyState } from "components/ui/empty-state";
 import { Spinner } from "components/ui/spinner";
 import { cn } from "lib/utils";
+import { TopologyFlow } from "components/topology/topology-flow";
 import { TopologyGraph } from "components/topology/topology-graph";
 import { TopologyInspector } from "components/topology/topology-inspector";
 import { useTopologyData } from "components/topology/use-topology-data";
 import { useUrlFilters } from "hooks/use-url-filters";
+
+type TopologyView = "flow" | "graph";
+
+const VIEW_OPTIONS: Array<{ value: TopologyView; label: string; isNew?: boolean }> = [
+  { value: "flow", label: "Flow", isNew: true },
+  { value: "graph", label: "Graph" },
+];
 
 const PERIODS: Array<{ label: string; value: api.Period }> = [
   { label: "1h", value: api.Period._1h },
@@ -51,6 +59,10 @@ export default function Topology() {
 
   const [period, setPeriod] = useState<api.Period>(api.Period._1h);
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>();
+  // Flow is the default — it answers "who actually receives what from whom?"
+  // more directly than the hub-and-spoke graph for most operators. The graph
+  // view stays one click away for users who want spatial context.
+  const [view, setView] = useState<TopologyView>("flow");
 
   const { data, loading, refresh, lastUpdated, error, allNamespaces, allEndpoints } =
     useTopologyData({
@@ -184,6 +196,7 @@ export default function Topology() {
               onEnableTrafficFilter={() => setShowOnlyTraffic(true)}
             />
           }
+          trailing={<ViewSwitcher value={view} onChange={setView} />}
         />
 
         {data ? (
@@ -222,13 +235,22 @@ export default function Topology() {
             <Legend />
 
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
-              <TopologyGraph
-                nodes={data.nodes}
-                edges={data.edges}
-                pills={data.pills}
-                selectedNodeId={selectedNodeId}
-                onSelectNode={setSelectedNodeId}
-              />
+              {view === "flow" ? (
+                <TopologyFlow
+                  nodes={data.nodes}
+                  flowEdges={data.flowEdges}
+                  selectedNodeId={selectedNodeId}
+                  onSelectNode={setSelectedNodeId}
+                />
+              ) : (
+                <TopologyGraph
+                  nodes={data.nodes}
+                  edges={data.edges}
+                  pills={data.pills}
+                  selectedNodeId={selectedNodeId}
+                  onSelectNode={setSelectedNodeId}
+                />
+              )}
               <TopologyInspector
                 data={data}
                 selectedNodeId={selectedNodeId}
@@ -377,6 +399,55 @@ const AddFilterMenu: React.FC<AddFilterMenuProps> = ({
     </div>
   );
 };
+
+interface ViewSwitcherProps {
+  value: TopologyView;
+  onChange: (next: TopologyView) => void;
+}
+
+// Segmented control mirroring the design's Flow / Graph toggle. The "NEW"
+// chip on Flow is the same coral-on-tint marker used in the prototype to
+// nudge operators toward the new bipartite view.
+const ViewSwitcher: React.FC<ViewSwitcherProps> = ({ value, onChange }) => (
+  <div
+    role="tablist"
+    aria-label="Topology view"
+    className="inline-flex bg-card border border-border rounded-nb-md p-[3px] gap-[2px]"
+  >
+    {VIEW_OPTIONS.map((opt) => {
+      const active = value === opt.value;
+      return (
+        <button
+          key={opt.value}
+          role="tab"
+          aria-selected={active}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className={cn(
+            "px-3 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5",
+            active
+              ? "bg-primary text-white"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {opt.label}
+          {opt.isNew && (
+            <span
+              className={cn(
+                "font-mono text-[9px] tracking-[0.1em] px-1.5 rounded-[3px]",
+                active
+                  ? "bg-white/20 text-white"
+                  : "bg-primary-tint text-primary-600",
+              )}
+            >
+              NEW
+            </span>
+          )}
+        </button>
+      );
+    })}
+  </div>
+);
 
 const MenuRow: React.FC<{
   onClick: () => void;

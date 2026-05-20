@@ -3,6 +3,8 @@ import * as api from "api-client";
 import type {
   EdgeKind,
   EventPill,
+  FlowEdge,
+  FlowEdgeHealth,
   NodeHealth,
   TopologyData,
   TopologyEdge,
@@ -311,6 +313,38 @@ function buildTopology(
     consumers: string[];
   }> = [];
 
+  // (producer, consumer) → bipartite route for the Flow view. We accumulate
+  // one entry per producer→consumer pair (across all event types they share),
+  // and approximate per-route traffic by attributing the consumer's
+  // handled-count for an event type evenly across that event type's producers.
+  // This is the best estimate available from the existing /metrics endpoint
+  // since traffic isn't tagged with source-endpoint on the receive side.
+  type FlowAccum = {
+    from: string;
+    to: string;
+    eventTypeIds: Set<string>;
+    eventTypeLabels: Record<string, string>;
+    messages: number;
+    failures: number;
+  };
+  const flowAccum = new Map<string, FlowAccum>();
+  const ensureFlow = (from: string, to: string) => {
+    const key = `${from}::${to}`;
+    let f = flowAccum.get(key);
+    if (!f) {
+      f = {
+        from,
+        to,
+        eventTypeIds: new Set(),
+        eventTypeLabels: {},
+        messages: 0,
+        failures: 0,
+      };
+      flowAccum.set(key, f);
+    }
+    return f;
+  };
+
   for (const et of relevantTypes) {
     if (!et.id) continue;
 
@@ -359,6 +393,34 @@ function buildTopology(
       edge.messages += msgs;
       edge.failures += fails;
     }
+
+    // Flow side ---------------------------------------------------------------
+    // For every (producer, consumer) pair that share this event type, record
+    // a route. Per-route traffic is the consumer's handled count for this
+    // event type, evenly split across the producers (best estimate available
+    // from the existing metrics — receive-side counts aren't tagged with the
+    // source endpoint).
+    const allowedProducers = allowedEndpoints
+      ? producers.filter((p) => allowedEndpoints!.has(p))
+      : producers;
+    const allowedConsumers = allowedEndpoints
+      ? consumers.filter((c) => allowedEndpoints!.has(c))
+      : consumers;
+    if (allowedProducers.length > 0 && allowedConsumers.length > 0) {
+      const producerShare = 1 / allowedProducers.length;
+      const label = et.name || et.id;
+      for (const consumer of allowedConsumers) {
+        const consumerMsgs = handled[`${consumer}::${et.id}`] ?? 0;
+        const consumerFails = failed[`${consumer}::${et.id}`] ?? 0;
+        for (const producer of allowedProducers) {
+          const flow = ensureFlow(producer, consumer);
+          flow.eventTypeIds.add(et.id);
+          flow.eventTypeLabels[et.id] = label;
+          flow.messages += consumerMsgs * producerShare;
+          flow.failures += consumerFails * producerShare;
+        }
+      }
+    }
   }
 
   // 4. Materialise nodes with derived health.
@@ -402,6 +464,30 @@ function buildTopology(
   const activeEndpointIds = new Set(edges.map((e) => e.endpointId));
   const nodes = allNodes.filter((n) => activeEndpointIds.has(n.id));
 
+  // 5c. Materialise the bipartite flow edges. Same idle-filter semantics as
+  //     hub edges — if the operator asked to hide idle traffic, drop flow
+  //     ribbons with zero messages so the canvas focuses on live routes.
+  const allFlowEdges: FlowEdge[] = Array.from(flowAccum.values()).map((f) => {
+    const eventTypeIds = Array.from(f.eventTypeIds).sort();
+    const messages = Math.round(f.messages);
+    const failures = Math.round(f.failures);
+    const health: FlowEdgeHealth =
+      failures > 0 ? "fail" : messages === 0 ? "idle" : "live";
+    return {
+      id: `${f.from}::${f.to}`,
+      from: f.from,
+      to: f.to,
+      eventTypeIds,
+      messages,
+      failures,
+      health,
+      tooltip: buildFlowTooltip(f.from, f.to, eventTypeIds, f.eventTypeLabels, messages, failures),
+    };
+  });
+  const flowEdges = hideIdleEdges
+    ? allFlowEdges.filter((f) => f.health !== "idle")
+    : allFlowEdges;
+
   // 6. Pick the top event pills by traffic (skipping idle edges).
   const pills: EventPill[] = pillCandidates
     .filter((c) => c.messages > 0)
@@ -444,7 +530,33 @@ function buildTopology(
     consumingEndpoints: consumingEndpoints.size,
   };
 
-  return { nodes, edges, pills, summary };
+  return { nodes, edges, pills, flowEdges, summary };
+}
+
+function buildFlowTooltip(
+  from: string,
+  to: string,
+  eventTypeIds: string[],
+  labels: Record<string, string>,
+  messages: number,
+  failures: number,
+): string {
+  const head = `${from} → ${to}`;
+  const trafficBits: string[] = [];
+  if (messages > 0) trafficBits.push(`${messages.toLocaleString()} ok`);
+  if (failures > 0) trafficBits.push(`${failures.toLocaleString()} failed`);
+  if (trafficBits.length === 0) trafficBits.push("idle");
+  const traffic = trafficBits.join(" · ");
+  const previewLabels = eventTypeIds.slice(0, 3).map((id) => labels[id] ?? id);
+  const eventsSummary =
+    previewLabels.length === 0
+      ? "no event types"
+      : `events: ${previewLabels.join(", ")}${
+          eventTypeIds.length > previewLabels.length
+            ? ` +${eventTypeIds.length - previewLabels.length}`
+            : ""
+        }`;
+  return `${head} · ${traffic} · ${eventsSummary}`;
 }
 
 function indexCounts(

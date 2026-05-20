@@ -115,12 +115,81 @@ The Bicep templates skip Cosmos provisioning entirely when `storageProvider == '
 The AppHost reads `NIMBUS_STORAGE_PROVIDER`:
 
 ```bash
-# Cosmos (default)
+# Cosmos (default — requires ConnectionStrings:cosmos in user-secrets)
 dotnet run --project src/NimBus.AppHost
 
-# SQL Server (requires ConnectionStrings:sqlserver in user-secrets or env)
+# SQL Server — Aspire pulls the mssql container, creates the 'nimbusdb' database,
+# and wires the connection string into the WebApp/Resolver automatically.
 NIMBUS_STORAGE_PROVIDER=sqlserver dotnet run --project src/NimBus.AppHost
 ```
+
+The SQL Server container is provisioned with a persistent data volume,
+so tables and seeded users survive AppHost restarts. Docker Desktop must
+be running.
+
+### Local sign-in via NIMBUS_IDENTITY
+
+Setting `NIMBUS_IDENTITY=true` when launching the AppHost wires the
+`NimBus.Extensions.Identity` package into the management WebApp for the
+duration of the Aspire run — the WebApp serves cookie-based
+username/password sign-in at `/account/login` instead of the default
+Entra ID flow. Off by default; the rest of the local-dev experience is
+unchanged unless the env var is set.
+
+Identity needs SQL, so flipping the switch also auto-provisions the
+Aspire-managed SQL Server container even when the message store is
+Cosmos. The container, the `nimbusdb` database, the `nimbus` schema,
+the eight `AspNet*` tables, and the bootstrap admin are all created on
+first run — no user-secrets setup required.
+
+**Launch.**
+
+```powershell
+# PowerShell
+$env:NIMBUS_IDENTITY = "true"
+dotnet run --project src/NimBus.AppHost
+```
+
+```bash
+# bash / zsh
+NIMBUS_IDENTITY=true dotnet run --project src/NimBus.AppHost
+```
+
+Args form also works (`dotnet run --project src/NimBus.AppHost -- --NIMBUS_IDENTITY true`).
+
+**First sign-in.** Open the WebApp URL from the Aspire dashboard.
+Unauthenticated requests redirect to `/account/login`. Sign in as:
+
+| Field | Default | Override env var |
+|---|---|---|
+| Email | `admin@local` | `NIMBUS_IDENTITY_ADMIN_EMAIL` |
+| Password | `Local!Admin123` | `NIMBUS_IDENTITY_ADMIN_PASSWORD` |
+
+The defaults are also printed to the AppHost console on start-up. A
+successful sign-in sets a `NimBus.Identity` cookie and lands the SPA.
+
+```powershell
+$env:NIMBUS_IDENTITY = "true"
+$env:NIMBUS_IDENTITY_ADMIN_EMAIL = "you@example.com"
+$env:NIMBUS_IDENTITY_ADMIN_PASSWORD = "<your-pwd>"
+dotnet run --project src/NimBus.AppHost
+```
+
+**Bootstrap is one-shot.** The admin is created only when the user
+store is empty. After the first sign-in, change the password from the
+UI; the override env vars become inert on subsequent runs. Drop the
+`nimbus.AspNet*` tables to reseed.
+
+**Security.** These defaults are for local dev only. The Azure deploy
+path uses CLI-supplied credentials via
+`nb setup --identity-admin-email … --identity-admin-password …`
+(see *SQL-only deployment* above). Never set
+`NIMBUS_IDENTITY_ADMIN_PASSWORD=Local!Admin123` on a deployed slot.
+
+Implementation reference: `src/NimBus.AppHost/Program.cs` (the env-var
+resolution and validation block) and
+`docs/sdk-api-reference.md` § Identity Extension (the underlying
+`AddNimBusIdentity` surface).
 
 ## Operator tools that are Cosmos-only in v1
 

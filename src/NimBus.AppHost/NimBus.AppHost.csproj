@@ -1,4 +1,4 @@
-<Project Sdk="Aspire.AppHost.Sdk/13.3.3">
+<Project Sdk="Aspire.AppHost.Sdk/13.3.4">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -9,7 +9,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Hosting.AppHost" Version="13.3.3" />
+    <PackageReference Include="Aspire.Hosting.AppHost" Version="13.3.4" />
+    <PackageReference Include="Aspire.Hosting.SqlServer" Version="13.3.4" />
+    <PackageReference Include="CommunityToolkit.Aspire.Hosting.DbGate" Version="9.7.0" />
   </ItemGroup>
 
   <ItemGroup>

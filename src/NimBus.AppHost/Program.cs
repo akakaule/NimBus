@@ -1,12 +1,57 @@
+using Aspire.Hosting.ApplicationModel;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
-// Storage provider selection. Set NIMBUS_STORAGE_PROVIDER=sqlserver to spin up an
-// Aspire-managed SQL Server container instead of expecting a Cosmos connection
-// string. Default 'cosmos' preserves the existing local-dev experience.
-var storageProvider = (Environment.GetEnvironmentVariable("NIMBUS_STORAGE_PROVIDER") ?? "cosmos").ToLowerInvariant();
+// Storage provider selection. NIMBUS_STORAGE_PROVIDER=sqlserver (or
+// --NIMBUS_STORAGE_PROVIDER sqlserver) spins up an Aspire-managed SQL Server
+// container instead of expecting a Cosmos connection string. Default 'cosmos'
+// preserves the existing local-dev experience.
+var storageProvider = (Environment.GetEnvironmentVariable("NIMBUS_STORAGE_PROVIDER")
+    ?? builder.Configuration["NIMBUS_STORAGE_PROVIDER"]
+    ?? "cosmos").ToLowerInvariant();
+
+// Optional: enable NimBus.Extensions.Identity (username/password sign-in) for the
+// management WebApp. Off by default — set NIMBUS_IDENTITY=true (or pass
+// --NIMBUS_IDENTITY true) to opt in. Identity needs SQL, so flipping the switch
+// also provisions the SQL container even when storage is Cosmos.
+var identityEnabled = string.Equals(
+    Environment.GetEnvironmentVariable("NIMBUS_IDENTITY") ?? builder.Configuration["NIMBUS_IDENTITY"],
+    "true",
+    StringComparison.OrdinalIgnoreCase);
 
 // Real Azure Service Bus (connection string from configuration/user secrets)
 var servicebus = builder.AddConnectionString("servicebus");
+
+// Aspire-managed SQL Server container — provisioned when storage is sqlserver
+// OR when Identity is enabled (Identity always needs SQL, even if messages are
+// stored in Cosmos). Persistent container + data volume keep the database across
+// AppHost restarts so users don't have to re-bootstrap admins every run.
+IResourceBuilder<SqlServerDatabaseResource>? nimbusDb = null;
+if (storageProvider == "sqlserver" || identityEnabled)
+{
+    var sql = builder.AddSqlServer("sqlserver")
+        .WithLifetime(ContainerLifetime.Persistent)
+        .WithDataVolume();
+    nimbusDb = sql.AddDatabase("nimbusdb");
+
+    // DbGate — web SQL browser for the Aspire-managed SQL Server. Wired manually
+    // because the CommunityToolkit DbGate package doesn't ship a WithDbGate()
+    // extension for SqlServerServerResource (only Postgres/Mongo/MySQL/Redis).
+    // Reads the resource's password parameter so the auto-generated sa password
+    // is wired into the container without leaking into config files.
+    builder.AddDbGate("dbgate")
+        .WaitFor(sql)
+        .WithEnvironment(ctx =>
+        {
+            ctx.EnvironmentVariables["CONNECTIONS"] = "sql";
+            ctx.EnvironmentVariables["LABEL_sql"] = "Aspire SQL Server";
+            ctx.EnvironmentVariables["ENGINE_sql"] = "mssql@dbgate-plugin-mssql";
+            ctx.EnvironmentVariables["USER_sql"] = "sa";
+            ctx.EnvironmentVariables["SERVER_sql"] = sql.Resource.PrimaryEndpoint.Property(EndpointProperty.Host);
+            ctx.EnvironmentVariables["PORT_sql"] = sql.Resource.PrimaryEndpoint.Property(EndpointProperty.Port);
+            ctx.EnvironmentVariables["PASSWORD_sql"] = sql.Resource.PasswordParameter;
+        });
+}
 
 // Topology provisioner — runs once then exits
 var provisioner = builder.AddProject<Projects.AspirePubSub_Provisioner>("provisioner")
@@ -29,16 +74,16 @@ var webapp = builder.AddProject<Projects.NimBus_WebApp>("webapp")
 // resolves its own connection string at runtime.
 if (storageProvider == "sqlserver")
 {
-    // Note: requires the Aspire.Hosting.SqlServer package. Documented in
-    // docs/storage-providers.md. Falls back to a connection string if the package
-    // isn't available, mirroring the Cosmos default.
-    var sqlConnection = builder.Configuration["ConnectionStrings:sqlserver"];
-    if (!string.IsNullOrEmpty(sqlConnection))
-    {
-        var sql = builder.AddConnectionString("sqlserver");
-        resolver.WithReference(sql).WithEnvironment("SqlConnection", sqlConnection);
-        webapp.WithReference(sql).WithEnvironment("SqlConnection", sqlConnection);
-    }
+    // The SQL Server provider in NimBus.MessageStore.SqlServer reads
+    // ConnectionStrings:sqlserver / SqlConnection / SqlServerConnection.
+    // Bridge nimbusDb's ConnectionStringExpression onto those keys so the
+    // runtime picks up the Aspire-managed container without further config.
+    resolver.WithReference(nimbusDb!)
+            .WithEnvironment("ConnectionStrings__sqlserver", nimbusDb!.Resource.ConnectionStringExpression)
+            .WaitFor(nimbusDb);
+    webapp.WithReference(nimbusDb!)
+          .WithEnvironment("ConnectionStrings__sqlserver", nimbusDb!.Resource.ConnectionStringExpression)
+          .WaitFor(nimbusDb);
 }
 else
 {
@@ -47,27 +92,8 @@ else
     webapp.WithReference(cosmos);
 }
 
-// Optional: enable NimBus.Extensions.Identity (username/password sign-in) for
-// the management WebApp. Off by default — set NIMBUS_IDENTITY=true (or pass
-// --NIMBUS_IDENTITY true) to opt in. Requires a SQL connection string in
-// ConnectionStrings:sqlserver (the same user-secret used by the SQL storage
-// path); throws here if missing so the failure mode is obvious instead of a
-// runtime crash in the WebApp.
-var identityEnabled = string.Equals(
-    Environment.GetEnvironmentVariable("NIMBUS_IDENTITY") ?? builder.Configuration["NIMBUS_IDENTITY"],
-    "true",
-    StringComparison.OrdinalIgnoreCase);
 if (identityEnabled)
 {
-    var identitySqlConnection = builder.Configuration["ConnectionStrings:sqlserver"];
-    if (string.IsNullOrWhiteSpace(identitySqlConnection))
-    {
-        throw new InvalidOperationException(
-            "NIMBUS_IDENTITY=true requires a SQL connection string. Set it via " +
-            "`dotnet user-secrets --project src/NimBus.AppHost set ConnectionStrings:sqlserver \"<conn>\"` " +
-            "or the ConnectionStrings__sqlserver env var.");
-    }
-
     var adminEmail = Environment.GetEnvironmentVariable("NIMBUS_IDENTITY_ADMIN_EMAIL")
         ?? builder.Configuration["NIMBUS_IDENTITY_ADMIN_EMAIL"]
         ?? "admin@local";
@@ -76,10 +102,12 @@ if (identityEnabled)
         ?? "Local!Admin123";
 
     webapp
-        .WithEnvironment("NimBusIdentity__ConnectionString", identitySqlConnection)
+        .WithReference(nimbusDb!)
+        .WithEnvironment("NimBusIdentity__ConnectionString", nimbusDb!.Resource.ConnectionStringExpression)
         .WithEnvironment("NimBusIdentity__RequireEmailConfirmation", "false")
         .WithEnvironment("NimBusIdentity__Bootstrap__Email", adminEmail)
-        .WithEnvironment("NimBusIdentity__Bootstrap__Password", adminPassword);
+        .WithEnvironment("NimBusIdentity__Bootstrap__Password", adminPassword)
+        .WaitFor(nimbusDb);
 
     Console.WriteLine(
         $"Local Identity: enabled. Sign in at /account/login as {adminEmail} " +

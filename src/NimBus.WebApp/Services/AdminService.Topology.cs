@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using NimBus.WebApp.ManagementApi;
@@ -55,26 +57,41 @@ public partial class AdminService
         var actualTopic = await GetActualTopology(endpointNameLower);
         MarkDeprecated(expectedTopic, actualTopic);
 
-        // Delete deprecated rules first
+        // Delete deprecated rules first. Rule deletions are independent per
+        // (subscription, rule) — parallelize with a small concurrency cap so
+        // the Service Bus admin API doesn't rate-limit on busy topics.
         var deprecatedRules = actualTopic.Subscriptions
             .SelectMany(s => s.Rules.Select(r => new { Subscription = s.Name, Rule = r }))
             .Where(x => x.Rule.IsDeprecated)
             .ToList();
 
-        foreach (var item in deprecatedRules)
+        const int RuleDeleteConcurrency = 5;
+        var deletedRules = new ConcurrentBag<string>();
+        var ruleErrors = new ConcurrentBag<string>();
+        using (var gate = new SemaphoreSlim(RuleDeleteConcurrency))
         {
-            try
+            await Task.WhenAll(deprecatedRules.Select(async item =>
             {
-                await _sbAdmin.DeleteRuleAsync(endpointNameLower, item.Subscription, item.Rule.Name);
-                result.DeletedRules.Add($"{item.Subscription}/{item.Rule.Name}");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to delete rule {Rule} on subscription {Subscription}",
-                    item.Rule.Name, item.Subscription);
-                result.Errors.Add($"Rule {item.Subscription}/{item.Rule.Name}: {ex.Message}");
-            }
+                await gate.WaitAsync();
+                try
+                {
+                    await _sbAdmin.DeleteRuleAsync(endpointNameLower, item.Subscription, item.Rule.Name);
+                    deletedRules.Add($"{item.Subscription}/{item.Rule.Name}");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to delete rule {Rule} on subscription {Subscription}",
+                        item.Rule.Name, item.Subscription);
+                    ruleErrors.Add($"Rule {item.Subscription}/{item.Rule.Name}: {ex.Message}");
+                }
+                finally
+                {
+                    gate.Release();
+                }
+            }));
         }
+        result.DeletedRules.AddRange(deletedRules);
+        result.Errors.AddRange(ruleErrors);
 
         // Delete deprecated subscriptions
         var deprecatedSubscriptions = actualTopic.Subscriptions

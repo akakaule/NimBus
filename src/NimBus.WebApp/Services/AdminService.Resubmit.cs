@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Logging;
@@ -55,8 +57,15 @@ public partial class AdminService
         int processed = 0;
         int succeeded = 0;
         int failed = 0;
-        var errors = new List<string>();
+        var errors = new ConcurrentBag<string>();
         string continuationToken = string.Empty;
+
+        // Per-event work (GetFailedMessage + Resubmit + ArchiveFailedEvent) is
+        // independent across distinct EventIds within a page. Parallelize with
+        // a small concurrency cap so Cosmos + Service Bus don't see a thundering
+        // herd. Pages still drain serially via the continuation token.
+        const int ResubmitConcurrency = 5;
+        using var gate = new SemaphoreSlim(ResubmitConcurrency);
 
         do
         {
@@ -68,13 +77,12 @@ public partial class AdminService
                 },
                 continuationToken, PageSize);
 
-            foreach (var ev in response.Events)
+            var eligible = response.Events.Where(ev => ev.UpdatedAt < cutoff).ToList();
+            Interlocked.Add(ref processed, eligible.Count);
+
+            await Task.WhenAll(eligible.Select(async ev =>
             {
-                if (ev.UpdatedAt >= cutoff)
-                    continue;
-
-                processed++;
-
+                await gate.WaitAsync();
                 try
                 {
                     var failedMessage = await _cosmosClient.GetFailedMessage(ev.EventId, endpointId);
@@ -82,9 +90,9 @@ public partial class AdminService
                     {
                         _logger.LogWarning("Failed message not found for event {EventId} on {EndpointId}, skipping",
                             ev.EventId, endpointId);
-                        failed++;
+                        Interlocked.Increment(ref failed);
                         errors.Add($"{ev.EventId}: failed message not found");
-                        continue;
+                        return;
                     }
 
                     var eventTypeId = failedMessage.EventTypeId;
@@ -93,22 +101,26 @@ public partial class AdminService
                     if (string.IsNullOrEmpty(eventJson))
                     {
                         _logger.LogWarning("No event content for event {EventId}, skipping", ev.EventId);
-                        failed++;
+                        Interlocked.Increment(ref failed);
                         errors.Add($"{ev.EventId}: no event content");
-                        continue;
+                        return;
                     }
 
                     await _managerClient.Resubmit(failedMessage, endpointId, eventTypeId, eventJson);
                     await _cosmosClient.ArchiveFailedEvent(ev.EventId, ev.SessionId, endpointId);
-                    succeeded++;
+                    Interlocked.Increment(ref succeeded);
                 }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to resubmit event {EventId}", ev.EventId);
-                    failed++;
+                    Interlocked.Increment(ref failed);
                     errors.Add($"{ev.EventId}: {ex.Message}");
                 }
-            }
+                finally
+                {
+                    gate.Release();
+                }
+            }));
 
             continuationToken = response.ContinuationToken;
         }
@@ -119,7 +131,7 @@ public partial class AdminService
             Processed = processed,
             Succeeded = succeeded,
             Failed = failed,
-            Errors = errors
+            Errors = errors.ToList()
         };
     }
 

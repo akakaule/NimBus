@@ -376,6 +376,7 @@ The pipeline uses `nb setup` to run all deployment steps (`infra apply` → `top
 | [Testing Guide](docs/testing.md) | Test layers, conformance suites, OpenTelemetry coverage, and diagrams |
 | [CLI Reference](docs/cli.md) | All `nb` commands: infra, topology, deploy, endpoint, container, catalog |
 | [SDK API Reference](docs/sdk-api-reference.md) | Interfaces: IPublisherClient, IEventHandler, RetryPolicy, IOutbox |
+| [WebApp REST API](docs/webapp-rest-api.md) | The HTTP control plane: route map, auth, calling from outside the SPA, code generation, current external-grade gaps |
 | [Extensions](docs/extensions.md) | Extension framework guide |
 | [Architecture](docs/architecture.md) | System design and component overview |
 

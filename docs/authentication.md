@@ -202,6 +202,9 @@ otherwise Entra.
 
 ## See also
 
+- [`webapp-rest-api.md`](webapp-rest-api.md)
+  — how to *call* the management API once you have a credential (cookie or
+  bearer token); this page covers credential setup only
 - [`storage-providers.md` § Local sign-in via NIMBUS_IDENTITY](storage-providers.md#local-sign-in-via-nimbus_identity)
   — the click-by-click local walk-through
 - [`sdk-api-reference.md` § Identity Extension](sdk-api-reference.md)

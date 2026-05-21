@@ -184,7 +184,7 @@ Key entrypoints and composition:
 Primary responsibilities:
 
 - host the authenticated management UI
-- expose the backing management API from a contract-first OpenAPI definition
+- expose the backing management API from a contract-first OpenAPI definition — see [WebApp REST API](webapp-rest-api.md) for the per-endpoint reference and external-caller setup
 - query and mutate operational state in Cosmos DB
 - issue recovery commands back into the messaging pipeline
 - manage Service Bus topology and subscriptions

@@ -3310,6 +3310,7 @@ namespace NimBus.WebApp.ManagementApi
     {
         private string _endpointId;
         private string _subscriptionStatus;
+        private string _storageStatus;
         private System.DateTime _eventTime;
         private double _failedCount;
         private double _deferredCount;
@@ -3338,6 +3339,23 @@ namespace NimBus.WebApp.ManagementApi
                 if (_subscriptionStatus != value)
                 {
                     _subscriptionStatus = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Marks whether the per-endpoint storage container could be queried. "ok" means the counts are accurate. "unavailable" means the container/table was missing or unreachable; counts are zero and the row should be rendered with a "Storage unavailable" badge.
+        /// <br/>
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("storageStatus", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string StorageStatus    {
+            get { return _storageStatus; }
+            set
+            {
+                if (_storageStatus != value)
+                {
+                    _storageStatus = value;
                     RaisePropertyChanged();
                 }
             }

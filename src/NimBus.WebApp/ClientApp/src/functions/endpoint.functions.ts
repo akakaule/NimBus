@@ -11,12 +11,15 @@ export enum EndpointStatus {
   Pending = "Pending",
   Disabled = "Disabled",
   MissingSubscription = "Subscription Missing",
+  StorageUnavailable = "Storage Unavailable",
 }
 
 export const getEndpointStatus = (
   props: IEndpointStatusCount,
 ): EndpointStatus => {
-  if (props.subscriptionStatus! === "not-found") {
+  if (props.storageStatus === "unavailable") {
+    return EndpointStatus.StorageUnavailable;
+  } else if (props.subscriptionStatus! === "not-found") {
     return EndpointStatus.MissingSubscription;
   } else if (props.subscriptionStatus! === "disabled") {
     return EndpointStatus.Disabled;
@@ -42,6 +45,8 @@ export const mapStatusToColor = (status: EndpointStatus): string => {
     case EndpointStatus.Disabled:
       return "purple";
     case EndpointStatus.MissingSubscription:
+      return "gray";
+    case EndpointStatus.StorageUnavailable:
       return "gray";
   }
 };

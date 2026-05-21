@@ -244,7 +244,8 @@ public static class Mapper
             PendingCount = state.PendingCount + state.UnsupportedCount,
             UnsupportedCount = state.UnsupportedCount,
             DeadletterCount = state.DeadletterCount,
-            FailedCount = state.FailedCount + state.DeadletterCount
+            FailedCount = state.FailedCount + state.DeadletterCount,
+            StorageStatus = "ok"
         };
     }
 

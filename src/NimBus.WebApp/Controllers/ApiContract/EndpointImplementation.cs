@@ -23,6 +23,8 @@ using TechnicalContact = NimBus.MessageStore.States.TechnicalContact;
 using NimBus.WebApp.Services;
 using System.Threading;
 using Microsoft.Azure.Cosmos;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 
 namespace NimBus.WebApp.Controllers;
 
@@ -34,8 +36,10 @@ public class EndpointImplementation : IEndpointApiController
     private readonly IServiceBusManagement serviceBusManagement;
     private readonly IEndpointAuthorizationService _authorizationService;
     private readonly HttpContext _context;
+    private readonly ILogger<EndpointImplementation> _logger;
     private const int InitialEvents = 40;
     private const int PagingEvents = 40;
+    private const int SqlInvalidObjectNameErrorNumber = 208;
 
     public EndpointImplementation(
         IHttpContextAccessor contextAccessor,
@@ -43,7 +47,8 @@ public class EndpointImplementation : IEndpointApiController
         IConfiguration configuration,
         INimBusMessageStore cosmosClient,
         IServiceBusManagement serviceBusManagement,
-        IEndpointAuthorizationService authorizationService)
+        IEndpointAuthorizationService authorizationService,
+        ILogger<EndpointImplementation> logger)
     {
         this.platform = platform;
         this.configuration = configuration;
@@ -51,6 +56,7 @@ public class EndpointImplementation : IEndpointApiController
         this.serviceBusManagement = serviceBusManagement;
         this._authorizationService = authorizationService;
         _context = contextAccessor.HttpContext;
+        _logger = logger;
     }
 
     public async Task<ActionResult<IEnumerable<string>>> EndpointIdsAllAsync()
@@ -192,78 +198,61 @@ public class EndpointImplementation : IEndpointApiController
             .Where(endpoint => _authorizationService.IsManagerOfEndpoint(endpoint.Id) && ShowEndpoint(endpoint.Id))
             .Select(e => e.Id);
 
-        var endpointStateCounts = new List<EndpointStateCount>();
-
-        try
+        var result = new List<EndpointStatusCount>();
+        foreach (var endpointId in endpointIds)
         {
-            foreach (var endpointId in endpointIds)
-            {
-                endpointStateCounts.Add(await cosmosClient.DownloadEndpointStateCount(endpointId));
-            }
-        }
-        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-        {
-            return new NotFoundObjectResult("Endpoint container not found in database");
-        }
-        catch (EndpointNotFoundException)
-        {
-            return new NotFoundObjectResult("Endpoint container not found in database");
+            result.Add(await DownloadStatusOrStubAsync(endpointId));
         }
 
-        return new OkObjectResult(endpointStateCounts.Select(Mapper.EndpointStatusCountFromEndpointStateCount));
+        return new OkObjectResult(result);
     }
 
     public async Task<ActionResult<IEnumerable<EndpointStatusCount>>> PostApiEndpointStatusCountAsync(IEnumerable<string> body)
     {
         var result = new ConcurrentBag<EndpointStatusCount>();
-        var endpointIds = body as string[] ?? body.ToArray();
+        var endpointIds = (body as string[] ?? body.ToArray())
+            .Where(id => EndpointVerificationService.EndpointExists(platform, id));
 
         var options = new ParallelOptions { MaxDegreeOfParallelism = Math.Min(System.Environment.ProcessorCount, 4) };
-        var returnObjectIfCancelled = new NotFoundObjectResult("Endpoint not found");
 
-        using (var cts = new CancellationTokenSource())
+        await Parallel.ForEachAsync(endpointIds, options, async (endpointId, _) =>
         {
-            var par = Parallel.ForEachAsync(endpointIds, options, async (endpointId, token) =>
-            {
-                token.ThrowIfCancellationRequested(); // Check for cancellation before proceeding
+            result.Add(await DownloadStatusOrStubAsync(endpointId));
+        });
 
-                var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);
-                if (endpointIdValid)
-                {
-                    try
-                    {
-                        var endpointStateCount = await cosmosClient.DownloadEndpointStateCount(endpointId);
-                        result.Add(Mapper.EndpointStatusCountFromEndpointStateCount(endpointStateCount));
-                    }
-                    catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-                    {
-                        cts.Cancel();
-                        returnObjectIfCancelled = new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
-                    }
-                    catch (EndpointNotFoundException)
-                    {
-                        cts.Cancel();
-                        returnObjectIfCancelled = new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
-                    }
-                } else
-                {
-                    cts.Cancel();
-                    returnObjectIfCancelled = new NotFoundObjectResult("Endpoint not found");
-                }
-            });
-
-            try
-            {
-                await par;
-                return new OkObjectResult(result.ToList());
-            }
-            catch (OperationCanceledException)
-            {
-                return returnObjectIfCancelled;
-            }
-        }
-
+        return new OkObjectResult(result.ToList());
     }
+
+    private async Task<EndpointStatusCount> DownloadStatusOrStubAsync(string endpointId)
+    {
+        try
+        {
+            var endpointStateCount = await cosmosClient.DownloadEndpointStateCount(endpointId);
+            return Mapper.EndpointStatusCountFromEndpointStateCount(endpointStateCount);
+        }
+        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _logger.LogWarning(ex, "Storage container missing for endpoint {EndpointId} (Cosmos 404)", endpointId);
+            return StorageUnavailableStub(endpointId);
+        }
+        catch (EndpointNotFoundException ex)
+        {
+            _logger.LogWarning(ex, "Storage container missing for endpoint {EndpointId} (EndpointNotFoundException)", endpointId);
+            return StorageUnavailableStub(endpointId);
+        }
+        catch (SqlException ex) when (ex.Number == SqlInvalidObjectNameErrorNumber)
+        {
+            _logger.LogWarning(ex, "Storage table missing for endpoint {EndpointId} (SQL 208)", endpointId);
+            return StorageUnavailableStub(endpointId);
+        }
+    }
+
+    private static EndpointStatusCount StorageUnavailableStub(string endpointId)
+        => new EndpointStatusCount
+        {
+            EndpointId = endpointId,
+            StorageStatus = "unavailable",
+        };
 
     public async Task<ActionResult<IEnumerable<Event>>> GetEndpointStatusIdAsync(string endpointName)
     {

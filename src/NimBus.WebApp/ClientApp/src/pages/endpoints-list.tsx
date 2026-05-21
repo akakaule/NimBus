@@ -134,10 +134,23 @@ export default class EndpointsList extends React.Component<
       filteredEndpointIds = endPointIds;
     }
 
-    const [endpoints, metadatas] = await Promise.all([
+    const [endpointsResult, metadatasResult] = await Promise.allSettled([
       this.client.postApiEndpointStatusCount(filteredEndpointIds),
       this.client.postApiMetadatashort(filteredEndpointIds),
     ]);
+
+    const endpoints =
+      endpointsResult.status === "fulfilled"
+        ? endpointsResult.value
+        : filteredEndpointIds.map(
+            (id) =>
+              new api.EndpointStatusCount({
+                endpointId: id,
+                storageStatus: "unavailable",
+              }),
+          );
+    const metadatas =
+      metadatasResult.status === "fulfilled" ? metadatasResult.value : [];
 
     for (const endpoint of endpoints) {
       this.state.endpointStates.push(this.mapMomentInEndpointStatus(endpoint));

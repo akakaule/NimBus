@@ -4618,6 +4618,9 @@ export interface IApplicationStatus {
 export class EndpointStatusCount implements IEndpointStatusCount {
     endpointId?: string;
     subscriptionStatus?: string;
+    /** Marks whether the per-endpoint storage container could be queried. "ok" means the counts are accurate. "unavailable" means the container/table was missing or unreachable; counts are zero and the row should be rendered with a "Storage unavailable" badge.
+ */
+    storageStatus?: string;
     eventTime?: moment.Moment;
     failedCount?: number;
     deferredCount?: number;
@@ -4644,6 +4647,7 @@ export class EndpointStatusCount implements IEndpointStatusCount {
             }
             this.endpointId = _data["endpointId"];
             this.subscriptionStatus = _data["subscriptionStatus"];
+            this.storageStatus = _data["storageStatus"];
             this.eventTime = _data["eventTime"] ? moment(_data["eventTime"].toString()) : undefined as any;
             this.failedCount = _data["failedCount"];
             this.deferredCount = _data["deferredCount"];
@@ -4668,6 +4672,7 @@ export class EndpointStatusCount implements IEndpointStatusCount {
         }
         data["endpointId"] = this.endpointId;
         data["subscriptionStatus"] = this.subscriptionStatus;
+        data["storageStatus"] = this.storageStatus;
         data["eventTime"] = this.eventTime ? this.eventTime.toISOString() : undefined as any;
         data["failedCount"] = this.failedCount;
         data["deferredCount"] = this.deferredCount;
@@ -4688,6 +4693,9 @@ export class EndpointStatusCount implements IEndpointStatusCount {
 export interface IEndpointStatusCount {
     endpointId?: string;
     subscriptionStatus?: string;
+    /** Marks whether the per-endpoint storage container could be queried. "ok" means the counts are accurate. "unavailable" means the container/table was missing or unreachable; counts are zero and the row should be rendered with a "Storage unavailable" badge.
+ */
+    storageStatus?: string;
     eventTime?: moment.Moment;
     failedCount?: number;
     deferredCount?: number;

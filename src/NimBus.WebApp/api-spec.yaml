@@ -1928,6 +1928,13 @@ components:
           type: string
         subscriptionStatus:
           type: string
+        storageStatus:
+          type: string
+          description: >
+            Marks whether the per-endpoint storage container could be queried.
+            "ok" means the counts are accurate. "unavailable" means the
+            container/table was missing or unreachable; counts are zero and
+            the row should be rendered with a "Storage unavailable" badge.
         eventTime:
           type: string
           format: date-time

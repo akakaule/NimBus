@@ -3,24 +3,23 @@ using Erp.Api.Entities;
 using Erp.Api.Mapping;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
-using NimBus.Manager;
-using NimBus.MessageStore;
 using NimBus.SDK;
 
 namespace Erp.Api.HandoffMode;
 
 // Drains expired handoff jobs once per second and drives PendingHandoff →
-// Completed (or Failed) on the NimBus side via the manager client.
+// Completed (or Failed) on the NimBus side via IHandoffClient.
 //
 // On success: applies the ERP upsert that the user handler skipped (the spec
 // guarantees the user handler is NOT re-invoked on settlement, so the ERP
 // write has to happen here for the demo to remain end-to-end coherent), then
 // publishes ErpCustomerCreated through the same outbox the live handler uses,
-// and signals CompleteHandoff.
+// and signals IHandoffClient.CompleteAsync.
 //
-// On failure: skips the upsert and signals FailHandoff with a canned DMF-style
-// error string. The Resolver flips the audit row to Failed; the session stays
-// blocked until the operator clicks Resubmit / Skip in NimBus.WebApp.
+// On failure: skips the upsert and signals IHandoffClient.FailAsync with a
+// canned DMF-style error string. The Resolver flips the audit row to Failed;
+// the session stays blocked until the operator clicks Resubmit / Skip in
+// NimBus.WebApp.
 internal sealed class HandoffJobBackgroundService(
     HandoffJobTracker tracker,
     HandoffModeState modeState,
@@ -81,21 +80,19 @@ internal sealed class HandoffJobBackgroundService(
         var roll = Random.Shared.NextDouble();
         var shouldFail = roll < failureRate;
 
-        // ManagerClient.CompleteHandoff / FailHandoff only inspect these six fields
-        // plus PendingSubStatus on the entity — anything else is accepted as null.
-        var entity = new MessageEntity
-        {
-            EventId = job.EventId,
-            SessionId = job.SessionId,
-            MessageId = job.MessageId,
-            OriginatingMessageId = job.OriginatingMessageId,
-            EventTypeId = job.EventTypeId,
-            CorrelationId = job.CorrelationId,
-            PendingSubStatus = "Handoff",
-        };
+        // Typed coords map straight off the HandoffJob row the adapter
+        // persisted at MarkPendingHandoff time. No bag-of-fields ceremony,
+        // no tracking-store lookup.
+        var coords = new HandoffSettlement(
+            EventId: job.EventId,
+            SessionId: job.SessionId,
+            MessageId: job.MessageId,
+            EventTypeId: job.EventTypeId,
+            CorrelationId: job.CorrelationId ?? job.MessageId,
+            OriginatingMessageId: job.OriginatingMessageId ?? job.MessageId);
 
         await using var scope = services.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IManagerClient>();
+        var handoff = scope.ServiceProvider.GetRequiredService<IHandoffClient>();
 
         if (shouldFail)
         {
@@ -103,7 +100,7 @@ internal sealed class HandoffJobBackgroundService(
             logger.LogWarning(
                 "Handoff job {ExternalJobId} for event {EventId} failing (roll={Roll:F2} < failureRate={FailureRate:F2}): {ErrorText}",
                 job.ExternalJobId, job.EventId, roll, failureRate, errorText);
-            await manager.FailHandoff(entity, Endpoint, errorText, errorType: "DmfValidationError");
+            await handoff.FailAsync(coords, errorText, errorType: "DmfValidationError", cancellationToken);
             return;
         }
 
@@ -116,15 +113,14 @@ internal sealed class HandoffJobBackgroundService(
             // If the demo upsert itself blows up, treat it as a DMF failure rather
             // than leaking the exception out of the background tick.
             logger.LogError(ex, "Handoff job {ExternalJobId} upsert failed; settling as failed.", job.ExternalJobId);
-            await manager.FailHandoff(entity, Endpoint, $"Erp upsert failed: {ex.Message}", errorType: "DmfValidationError");
+            await handoff.FailAsync(coords, $"Erp upsert failed: {ex.Message}", errorType: "DmfValidationError", cancellationToken);
             return;
         }
 
-        var detailsJson = JsonConvert.SerializeObject(new { importedRecordId = job.ExternalJobId });
         logger.LogInformation(
             "Handoff job {ExternalJobId} for event {EventId} completed.",
             job.ExternalJobId, job.EventId);
-        await manager.CompleteHandoff(entity, Endpoint, detailsJson);
+        await handoff.CompleteAsync(coords, new { importedRecordId = job.ExternalJobId }, cancellationToken);
     }
 
     private static async Task ApplyUpsertAsync(IServiceProvider scopedServices, HandoffJob job, CancellationToken cancellationToken)

@@ -5,7 +5,6 @@ using Erp.Api.HandoffMode;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
-using NimBus.Manager;
 using NimBus.Outbox.SqlServer;
 using NimBus.SDK.Extensions;
 using NimBus.SDK.Hosting;
@@ -45,11 +44,12 @@ if (hasServiceBus)
     });
     builder.Services.AddNimBusOutboxDispatcher(TimeSpan.FromSeconds(1));
 
-    // ManagerClient drives Pending → Completed/Failed transitions for handoff
+    // IHandoffClient drives Pending → Completed/Failed transitions for handoff
     // jobs once the ERP "DMF import" completes. Only registered when Service Bus
     // is wired — without it the handoff demo can't issue control messages.
-    builder.Services.AddSingleton<IManagerClient>(sp =>
-        new ManagerClient(sp.GetRequiredService<ServiceBusClient>()));
+    // AddNimBusHandoffClient also registers the matching IMessageTrackingStore
+    // dependency lookup; the SQL Server store is wired separately above.
+    builder.Services.AddNimBusHandoffClient("ErpEndpoint");
     builder.Services.AddHostedService<HandoffJobBackgroundService>();
 }
 else

@@ -11,8 +11,8 @@ NimBus management WebApp UI to resubmit, and asserts on cross-system state.
 | `01-happy-path.spec.ts` | CRM → ERP propagation, ERP → CRM propagation, both endpoints stay clean |
 | `02-error-mode-recovery.spec.ts` | Single message fails (ERP error mode) → resubmit via NimBus WebApp UI → success. Plus a service-mode silent-drop variant. |
 | `03-blocked-messages-recovery.spec.ts` | One create + N updates published while ERP is in error mode. Head fails, siblings defer behind the session lock. Resubmit head from the WebApp; verify the deferred backlog drains in order and all endpoints return to zero. |
-| `04-pending-handoff-success.spec.ts` | Handoff mode ON: create handed off, sibling updates defer behind the in-flight handoff, `HandoffJobBackgroundService` settles via `CompleteHandoff`, all rows reach Completed. |
-| `05-pending-handoff-failure.spec.ts` | Handoff mode at failureRate=1.0: `FailHandoff` carries DMF error text → audit row Failed → operator Skip via NimBus REST → Skipped. |
+| `04-pending-handoff-success.spec.ts` | Handoff mode ON: create handed off, sibling updates defer behind the in-flight handoff, `HandoffJobBackgroundService` settles via `IHandoffClient.CompleteAsync`, all rows reach Completed. |
+| `05-pending-handoff-failure.spec.ts` | Handoff mode at failureRate=1.0: `IHandoffClient.FailAsync` carries DMF error text → audit row Failed → operator Skip via NimBus REST → Skipped. |
 | `06-pending-handoff-resubmit.spec.ts` | Same trigger as 05, but operator clicks Resubmit in the NimBus.WebApp UI (handoff mode disabled first); audit row leaves Failed and the ERP customer materialises. |
 
 Setup and teardown go through REST APIs; the WebApp browser is used for the

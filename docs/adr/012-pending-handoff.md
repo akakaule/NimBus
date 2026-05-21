@@ -87,6 +87,19 @@ The chosen design — `Pending` + a nullable sub-status — keeps the dashboard 
 - The WebApp surfaces `HandoffReason`, `ExternalJobId`, and `ExpectedBy` on the message detail page. Operators can resubmit / skip Pending+Handoff entries with the same buttons as today (FR-042, SC-006).
 - An optional Resolver-side timeout sweeper (FR-050) is in scope but not built in v1. Adapters with bounded reasonable wait times can opt in later via `ExpectedBy`. The default is "no sweeper running" — adapters with unbounded reasonable wait times stay unaffected.
 
+## Update — 2026-05-20 — settlement API simplified
+
+The original settlement surface was `IManagerClient.CompleteHandoff(MessageEntity, …)` / `FailHandoff(…)` in `NimBus.Manager`. Reviewing it against the canonical Erp.Api shape in CrmErpDemo surfaced two real frictions for adapter authors:
+
+- **Discovery / packaging.** `NimBus.Manager` wasn't packable and wasn't transitively reachable from `NimBus.SDK`, so adapter authors had to add a second package reference and hand-register `IManagerClient`.
+- **Bag-of-fields contract.** Settlement required hand-constructing a `MessageEntity` with seven specific fields plus `PendingSubStatus = "Handoff"`. The fields are *already* persisted by the adapter alongside its `ExternalJobId`, so the ceremony is busywork.
+
+The fix introduces `NimBus.SDK.IHandoffClient` with two methods (`CompleteAsync(HandoffSettlement, …)` / `FailAsync(HandoffSettlement, …)`), where `HandoffSettlement` is a typed record carrying the six audit-row coordinates by name. `NimBus.Manager` is now packable; its `CompleteHandoff` / `FailHandoff` methods are `[Obsolete]` thin shims that produce byte-identical Service Bus control messages via the shared `HandoffControlMessageFactory`. Operator-tool methods on `IManagerClient` (`Resubmit`, `Skip`) are unchanged.
+
+Why coords and not `externalJobId`: a "look the row up by external job id" design was considered but rejected because it requires an `IMessageTrackingStore` dependency in the settlement process. The canonical CrmErpDemo settlement process (`Erp.Api`) has no audit-DB access by design; the Resolver owns that DB. Requiring it would regress the dependency footprint. The new `GetPendingHandoffByExternalJobId` query on `IMessageTrackingStore` (and the `IX_UnresolvedEvents_ExternalJobId_PendingHandoff` filtered index in `0011_HandoffLookup.sql`) stays in for diagnostic / operator-UI scenarios where the calling process *does* have store access.
+
+DI: `AddNimBusSubscriber` auto-registers `IHandoffClient` for the subscriber's endpoint. Settlement-only processes call `services.AddNimBusHandoffClient(endpoint)` explicitly. Neither path requires a tracking-store registration.
+
 ## See Also
 
 - Spec: [`docs/specs/002-async-message-completion/spec.md`](../specs/002-async-message-completion/spec.md)

@@ -14,8 +14,9 @@ import { waitFor } from "../helpers/wait-for.js";
  * session (further updates to the same account) defer FIFO behind it.
  *
  * After the configured deadline elapses, Erp.Api's HandoffJobBackgroundService
- * applies the ERP-side upsert and signals CompleteHandoff. The Resolver flips
- * the Pending row to Completed; the deferred siblings replay in order.
+ * applies the ERP-side upsert and signals IHandoffClient.CompleteAsync. The
+ * Resolver flips the Pending row to Completed; the deferred siblings replay
+ * in order.
  *
  * Verification: all three audit rows end Completed, ERP customer reflects the
  * latest update, and the original handoff metadata fields were populated.
@@ -49,7 +50,7 @@ test.describe("PendingHandoff success: create handed off, sibling updates defer,
 
   test("create + 2 in-flight updates → create reaches Pending+Handoff, updates defer, all complete", async () => {
     // ── 1. Enable handoff mode with a short deadline so the test wraps up
-    //       quickly. failureRate=0 means CompleteHandoff always wins.
+    //       quickly. failureRate=0 means CompleteAsync always wins.
     await erp.setHandoffMode({ enabled: true, durationSeconds: 3, failureRate: 0 });
 
     // ── 2. Create one CRM account. The ERP adapter's CrmAccountCreated handler
@@ -110,7 +111,7 @@ test.describe("PendingHandoff success: create handed off, sibling updates defer,
     //       the slack — we don't need a fixed sleep.
     //
     // ── 7. All three audit rows for our session on ErpEndpoint should be
-    //       Completed (the create after CompleteHandoff fires; the two updates
+    //       Completed (the create after CompleteAsync fires; the two updates
     //       after the deferred replay drains the session).
     const lastRevName = updates[updates.length - 1].legalName;
     await waitFor(

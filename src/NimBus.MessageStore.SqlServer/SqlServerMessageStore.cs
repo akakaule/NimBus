@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.SqlClient;
@@ -513,6 +514,25 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
             $"SELECT TOP 1 * FROM {T("UnresolvedEvents")} WHERE EndpointId = @E AND EventId = @V AND Deleted = 0 ORDER BY UpdatedAtUtc DESC",
             new { E = endpointId, V = eventId }, commandTimeout: _commandTimeout);
         return row == null ? throw new EndpointNotFoundException(endpointId) : MapUnresolvedEventRow(row);
+    }
+
+    public async Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(externalJobId)) return null;
+        await using var conn = Open();
+        // Restrict to the pending-handoff slice so the filtered index in
+        // 0011_HandoffLookup.sql is hit and we don't return stale failed/completed
+        // rows where ExternalJobId may linger.
+        var row = await conn.QueryFirstOrDefaultAsync(
+            $@"SELECT TOP 1 * FROM {T("UnresolvedEvents")}
+               WHERE EndpointId = @E
+                 AND ExternalJobId = @X
+                 AND PendingSubStatus = 'Handoff'
+                 AND Status = 'Pending'
+                 AND Deleted = 0
+               ORDER BY UpdatedAtUtc DESC",
+            new { E = endpointId, X = externalJobId }, commandTimeout: _commandTimeout);
+        return row == null ? null : MapUnresolvedEventRow(row);
     }
 
     public Task<UnresolvedEvent> GetEventById(string endpointId, string id)

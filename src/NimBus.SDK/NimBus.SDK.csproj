@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="NimBus.Testing" />
+    <InternalsVisibleTo Include="NimBus.SDK.Tests" />
   </ItemGroup>
 
 </Project>

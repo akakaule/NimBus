@@ -6,8 +6,8 @@ public interface IHandoffJobRegistration
 }
 
 // Mirrors Erp.Api.HandoffMode.HandoffJob (the receiving DTO). The first six fields
-// match the MessageEntity shape that ManagerClient.CompleteHandoff / FailHandoff read,
-// so Erp.Api can settle the message without dragging in the message store.
+// map directly onto a HandoffSettlement record so Erp.Api can call
+// IHandoffClient.CompleteAsync / FailAsync without dragging in the message store.
 public sealed record HandoffJob
 {
     public required string EventId { get; init; }

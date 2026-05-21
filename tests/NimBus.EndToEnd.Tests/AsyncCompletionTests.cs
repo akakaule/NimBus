@@ -2,6 +2,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Messages;
 using NimBus.EndToEnd.Tests.Infrastructure;
+using NimBus.SDK;
 using NimBus.SDK.EventHandlers;
 
 namespace NimBus.EndToEnd.Tests;
@@ -137,6 +138,99 @@ public class AsyncCompletionTests
             "Original EventId must produce a ResolutionResponse (Pending → Completed).");
         Assert.IsTrue(resolutionResponses.Count >= 3,
             $"Expected at least 3 ResolutionResponses (original + 2 siblings); got {resolutionResponses.Count}.");
+    }
+
+    [TestMethod]
+    public async Task IHandoffClient_CompleteAsync_PublishesHandoffCompletedRequest_AndDrivesResolution()
+    {
+        // Validates the IHandoffClient surface end-to-end: the new typed
+        // settlement API must produce a HandoffCompletedRequest that flows
+        // through the subscriber pipeline exactly the same way the legacy
+        // IManagerClient.CompleteHandoff path does.
+        const string sessionId = "session-handoff-client-complete";
+        var fixture = new EndToEndFixture();
+        var handler = new HandoffOnFirstHandler
+        {
+            HandoffReason = "DMF import in flight",
+            ExternalJobId = "JOB-CLIENT-OK",
+        };
+        fixture.RegisterHandler(() => handler);
+
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-CLIENT-OK" });
+        await fixture.DeliverAll();
+
+        var pendingHandoff = fixture.ResponseBus.SentMessages.Single(r => r.MessageType == MessageType.PendingHandoffResponse);
+        var coords = new HandoffSettlement(
+            EventId: pendingHandoff.EventId,
+            SessionId: sessionId,
+            MessageId: pendingHandoff.CorrelationId,
+            EventTypeId: "OrderPlaced",
+            CorrelationId: pendingHandoff.CorrelationId,
+            OriginatingMessageId: pendingHandoff.OriginatingMessageId);
+
+        // Invoke IHandoffClient against the PublishBus directly — same on-wire
+        // path as production, just routed through the in-memory fixture.
+        var handoffClient = new HandoffClient(
+            fixture.PublishBus,
+            new HandoffClientOptions { Endpoint = EndpointName });
+        await handoffClient.CompleteAsync(coords, new { importedRecordId = "ext-1" });
+        await fixture.DeliverAll();
+
+        Assert.AreEqual(1, handler.HandleCalls,
+            "HandoffClient.CompleteAsync must NOT re-invoke the user handler.");
+
+        var resolution = fixture.ResponseBus.SentMessages.SingleOrDefault(r =>
+            r.MessageType == MessageType.ResolutionResponse && r.EventId == pendingHandoff.EventId);
+        Assert.IsNotNull(resolution, "CompleteAsync should drive a ResolutionResponse for the original EventId (Pending → Completed).");
+    }
+
+    [TestMethod]
+    public async Task IHandoffClient_FailAsync_PreservesErrorText_VerbatimOnErrorResponse()
+    {
+        // Sister test of the CompleteAsync case above — IHandoffClient.FailAsync
+        // must produce an ErrorResponse whose ErrorText carries the operator-
+        // supplied message verbatim (SC-004 / NFR-004).
+        const string sessionId = "session-handoff-client-fail";
+        const string dmfErrorText = "DMF rejected: missing mandatory address line";
+        const string dmfErrorType = "DmfValidationError";
+
+        var fixture = new EndToEndFixture();
+        var handler = new HandoffOnFirstHandler
+        {
+            HandoffReason = "DMF import in flight",
+            ExternalJobId = "JOB-CLIENT-FAIL",
+        };
+        fixture.RegisterHandler(() => handler);
+
+        await fixture.Publisher.Publish(new OrderPlaced(sessionId) { OrderId = "ORD-CLIENT-FAIL" });
+        await fixture.DeliverAll();
+
+        var pendingHandoff = fixture.ResponseBus.SentMessages.Single(r => r.MessageType == MessageType.PendingHandoffResponse);
+        var coords = new HandoffSettlement(
+            EventId: pendingHandoff.EventId,
+            SessionId: sessionId,
+            MessageId: pendingHandoff.CorrelationId,
+            EventTypeId: "OrderPlaced",
+            CorrelationId: pendingHandoff.CorrelationId,
+            OriginatingMessageId: pendingHandoff.OriginatingMessageId);
+
+        var handoffClient = new HandoffClient(
+            fixture.PublishBus,
+            new HandoffClientOptions { Endpoint = EndpointName });
+        await handoffClient.FailAsync(coords, dmfErrorText, dmfErrorType);
+        await fixture.DeliverAll();
+        await DrainUntilEmpty(fixture);
+
+        Assert.AreEqual(1, handler.HandleCalls,
+            "HandoffClient.FailAsync must NOT re-invoke the user handler.");
+
+        var errorResponse = fixture.ResponseBus.SentMessages
+            .Where(r => r.MessageType == MessageType.ErrorResponse && r.EventId == pendingHandoff.EventId)
+            .OrderBy(r => r.MessageId)
+            .LastOrDefault();
+        Assert.IsNotNull(errorResponse, "FailAsync should produce an ErrorResponse for the original EventId.");
+        StringAssert.Contains(errorResponse!.MessageContent?.ErrorContent?.ErrorText ?? string.Empty, dmfErrorText,
+            $"Operator-supplied errorText must round-trip verbatim. Got: {errorResponse.MessageContent?.ErrorContent?.ErrorText}");
     }
 
     [TestMethod]

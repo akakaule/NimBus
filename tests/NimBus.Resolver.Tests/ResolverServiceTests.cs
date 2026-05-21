@@ -429,6 +429,7 @@ public class ResolverServiceTests
 
         public Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount) => throw new NotSupportedException();
         public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
+        public Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, System.Threading.CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
         public Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
         public Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();

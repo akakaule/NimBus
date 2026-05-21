@@ -166,6 +166,13 @@ namespace NimBus.SDK.Extensions
                 return new SubscriberClient(serviceBusAdapter, eventHandlerProvider);
             });
 
+            // Handler code in the subscriber process commonly settles its own
+            // pending handoffs (e.g. polling a status endpoint inside a hosted
+            // service that runs alongside the handler). Auto-registering the
+            // handoff client here means adapter authors get IHandoffClient for
+            // free with no extra DI line.
+            RegisterHandoffClient(services, options.Endpoint);
+
             return services;
         }
 
@@ -230,6 +237,80 @@ namespace NimBus.SDK.Extensions
             });
 
             return services;
+        }
+
+        /// <summary>
+        /// Registers an <see cref="IHandoffClient"/> bound to <paramref name="endpoint"/>
+        /// for processes that settle pending handoffs without hosting a subscriber
+        /// themselves (e.g. the CrmErpDemo's <c>Erp.Api</c> background worker).
+        /// Requires a <see cref="ServiceBusClient"/> to already be registered.
+        ///
+        /// <para>Safe to call multiple times with different endpoints — each call
+        /// adds a <em>keyed</em> registration accessible via
+        /// <c>IServiceProvider.GetRequiredKeyedService&lt;IHandoffClient&gt;(endpoint)</c>.
+        /// The non-keyed <see cref="IHandoffClient"/> singleton resolves to the
+        /// <em>first</em> registered endpoint; multi-endpoint processes should
+        /// use the keyed lookup to avoid routing a settlement message to the
+        /// wrong topic.</para>
+        /// </summary>
+        /// <param name="services">The service collection.</param>
+        /// <param name="endpoint">The subscriber endpoint whose pending-handoff rows this client settles.</param>
+        /// <returns>The service collection for chaining.</returns>
+        public static IServiceCollection AddNimBusHandoffClient(this IServiceCollection services, string endpoint)
+        {
+            if (string.IsNullOrEmpty(endpoint))
+                throw new ArgumentException("Endpoint must be specified.", nameof(endpoint));
+
+            RegisterHandoffClient(services, endpoint);
+            return services;
+        }
+
+        // Shared registration helper called by both AddNimBusHandoffClient (the
+        // explicit settle-only entry point) and AddNimBusSubscriber (the implicit
+        // "subscriber process can settle its own handoffs" path).
+        //
+        // Each endpoint registers a keyed IHandoffClient so multi-endpoint
+        // processes (a single host that subscribes to or settles handoffs for
+        // multiple topics) can coexist without silently routing one endpoint's
+        // settlement messages to another. Adapter code in those processes
+        // resolves via `sp.GetRequiredKeyedService<IHandoffClient>(endpoint)`.
+        //
+        // For the common single-endpoint case, the first registration also
+        // wires a non-keyed IHandoffClient that just forwards to its keyed
+        // sibling — so handler code can keep injecting plain `IHandoffClient`
+        // without ceremony. Subsequent calls to RegisterHandoffClient leave the
+        // non-keyed binding pointing at the first endpoint; multi-endpoint
+        // processes are expected to use the keyed lookup.
+        //
+        // The handoff client publishes to the subscriber endpoint's topic, so it
+        // builds its own ISender — independent of any publisher-side ISender
+        // registered for an outbound endpoint. The sender is wrapped with the
+        // OpenTelemetry decorator so settlement control messages emit the same
+        // publish spans as any other NimBus send.
+        private static void RegisterHandoffClient(IServiceCollection services, string endpoint)
+        {
+            // Keyed registration — one slot per endpoint. AddKeyedSingleton is
+            // additive (unlike TryAddKeyedSingleton, which we don't want here):
+            // re-registering the same endpoint is benign; different endpoints
+            // each get their own binding.
+            services.AddKeyedSingleton<IHandoffClient>(endpoint, (sp, _) =>
+            {
+                var client = sp.GetRequiredService<ServiceBusClient>();
+                var serviceBusSender = client.CreateSender(endpoint);
+                ISender innerSender = NimBusOpenTelemetryDecorators.InstrumentSender(
+                    new Sender(serviceBusSender), MessagingSystem.ServiceBus);
+                return new HandoffClient(
+                    innerSender,
+                    new HandoffClientOptions { Endpoint = endpoint },
+                    sp.GetService<ILogger<HandoffClient>>());
+            });
+
+            // Single-endpoint convenience binding — TryAddSingleton means the
+            // first registered endpoint wins. Multi-endpoint processes must use
+            // the keyed lookup; the singular IHandoffClient remains useful for
+            // the (much more common) one-endpoint-per-process case.
+            services.TryAddSingleton<IHandoffClient>(sp =>
+                sp.GetRequiredKeyedService<IHandoffClient>(endpoint));
         }
     }
 }

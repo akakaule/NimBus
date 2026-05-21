@@ -9,7 +9,7 @@ import { waitFor } from "../helpers/wait-for.js";
  * PendingHandoff failure path.
  *
  * With handoff mode enabled at failureRate=1.0, every settlement tick
- * picks a canned DMF-style error and calls IManagerClient.FailHandoff(...).
+ * picks a canned DMF-style error and calls IHandoffClient.FailAsync(...).
  * The Resolver flips Pending → Failed; the session stays blocked until an
  * operator clicks Skip (or Resubmit) in NimBus.WebApp.
  *
@@ -76,7 +76,7 @@ test.describe("PendingHandoff failure: handoff fails → operator Skip → row r
     const errorText = failedEvent.messageContent?.errorContent?.errorText ?? "";
     expect(errorText, "messageContent.errorContent.errorText").toMatch(/^DMF rejected:/);
 
-    // Sanity: ERP customer was NOT created (FailHandoff path skips the upsert).
+    // Sanity: ERP customer was NOT created (FailAsync path skips the upsert).
     expect(await erp.findCustomerByCrmAccountId(account.id)).toBeNull();
 
     // ── 4. Operator triggers Skip via the NimBus REST API. The eventTypeId is

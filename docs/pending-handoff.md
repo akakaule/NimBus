@@ -165,53 +165,51 @@ time are read.
 ## Settlement side — completing or failing the work
 
 The external system (or a worker that watches it) tells NimBus how the
-work ended by calling **`IManagerClient.CompleteHandoff`** or
-**`FailHandoff`**. Both expect a `MessageEntity` populated with the
-audit-row coordinates and `PendingSubStatus = "Handoff"`; everything
-else can be null.
+work ended by calling **`IHandoffClient.CompleteAsync`** or
+**`FailAsync`** on a `HandoffSettlement` that carries the six audit-row
+coordinates the adapter already persisted at registration time.
+
+> **Migration note.** The previous shape — `IManagerClient.CompleteHandoff(MessageEntity, …)` —
+> remains available behind `[Obsolete]` and is byte-identical on the wire.
+> New code should use `IHandoffClient`; the old API takes a `MessageEntity`
+> with `PendingSubStatus = "Handoff"` and is preserved only so existing
+> adapters keep compiling.
 
 Reference: [`samples/CrmErpDemo/Erp.Api/HandoffMode/HandoffJobBackgroundService.cs`](../samples/CrmErpDemo/Erp.Api/HandoffMode/HandoffJobBackgroundService.cs)
 
 ```csharp
 private async Task SettleAsync(HandoffJob job, CancellationToken cancellationToken)
 {
-    // CompleteHandoff / FailHandoff only inspect these six fields plus
-    // PendingSubStatus. Anything else is accepted as null.
-    var entity = new MessageEntity
-    {
-        EventId = job.EventId,
-        SessionId = job.SessionId,
-        MessageId = job.MessageId,
-        OriginatingMessageId = job.OriginatingMessageId,
-        EventTypeId = job.EventTypeId,
-        CorrelationId = job.CorrelationId,
-        PendingSubStatus = "Handoff",
-    };
+    // Coords map straight off the HandoffJob row the adapter persisted at
+    // MarkPendingHandoff time. No bag-of-fields ceremony.
+    var coords = new HandoffSettlement(
+        EventId: job.EventId,
+        SessionId: job.SessionId,
+        MessageId: job.MessageId,
+        EventTypeId: job.EventTypeId,
+        CorrelationId: job.CorrelationId ?? job.MessageId,
+        OriginatingMessageId: job.OriginatingMessageId ?? job.MessageId);
 
     await using var scope = services.CreateAsyncScope();
-    var manager = scope.ServiceProvider.GetRequiredService<IManagerClient>();
+    var handoff = scope.ServiceProvider.GetRequiredService<IHandoffClient>();
 
     if (workSucceeded)
     {
         // Anything you want the audit trail to remember about the result.
-        // Stored on the resulting ResolutionResponse and visible in the WebApp
-        // flow timeline.
-        var detailsJson = JsonConvert.SerializeObject(new
-        {
-            importedRecordId = job.ExternalJobId,
-        });
-
-        await manager.CompleteHandoff(entity, "ErpEndpoint", detailsJson);
+        // Records / POCOs are serialised internally; strings pass through
+        // verbatim. Stored on the resulting ResolutionResponse and visible
+        // in the WebApp flow timeline.
+        await handoff.CompleteAsync(coords, new { importedRecordId = job.ExternalJobId }, cancellationToken);
     }
     else
     {
         // errorText becomes the ErrorContent on the Failed audit row.
         // errorType is a free-text classifier for grouping/alerting.
-        await manager.FailHandoff(
-            entity,
-            "ErpEndpoint",
+        await handoff.FailAsync(
+            coords,
             errorText: "DMF rejected: invalid postal code",
-            errorType: "DmfValidationError");
+            errorType: "DmfValidationError",
+            cancellationToken);
     }
 }
 ```
@@ -222,20 +220,26 @@ sample writes the ERP customer row), the settlement code has to do that
 itself. The handler ran once at the start; settlement is purely an
 audit/session-state transition.
 
-### Wiring the Manager client
+### Wiring the handoff client
 
 Settlement code typically lives outside the subscriber process (an API,
-a worker, an Azure Function). Wherever it lives, register the manager
+a worker, an Azure Function). Wherever it lives, register the handoff
 client and the same Service Bus client the rest of the platform uses:
 
 ```csharp
-services.AddSingleton<IManagerClient, ManagerClient>();
 services.AddAzureServiceBusClient("servicebus");
+services.AddNimBusHandoffClient("ErpEndpoint");  // standalone, settle-only
 ```
 
-`IManagerClient.CompleteHandoff` / `FailHandoff` publish to the
-subscriber endpoint's topic — no extra topology setup beyond what the
-adapter already provisions.
+Subscriber-process settlement (the handler itself, or a hosted service
+alongside it) gets `IHandoffClient` for free — `AddNimBusSubscriber`
+auto-registers it for the configured endpoint.
+
+`IHandoffClient.CompleteAsync` / `FailAsync` publish to the subscriber
+endpoint's topic — no extra topology setup beyond what the adapter
+already provisions. Settlement requires no message-store dependency:
+adapters that don't have audit-DB access (the canonical CrmErpDemo
+shape) settle perfectly happily.
 
 ## Audit semantics
 

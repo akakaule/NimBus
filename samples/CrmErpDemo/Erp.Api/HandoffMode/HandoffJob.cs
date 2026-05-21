@@ -3,11 +3,13 @@ namespace Erp.Api.HandoffMode;
 // In-flight handoff job tracked by Erp.Api on behalf of the ERP adapter. The
 // adapter POSTs one of these when its CrmAccountCreated handler signals
 // PendingHandoff. The BackgroundService picks it up after DueAt and drives
-// settlement via IManagerClient.CompleteHandoff / FailHandoff.
+// settlement via IHandoffClient.CompleteAsync / FailAsync.
 //
-// The first six fields are exactly what ManagerClient.CompleteHandoff /
-// FailHandoff read off MessageEntity, so we can construct a minimal stub
-// without dragging the message store into Erp.Api.
+// The first six fields are exactly the audit-row coordinates the
+// BackgroundService passes through a HandoffSettlement record at settlement
+// time, so the adapter persists nothing more than NimBus already needs to
+// address the original message — and crucially nothing from the message
+// store (the message store lives in the Resolver process, not here).
 //
 // PayloadJson carries the original event so the BackgroundService can apply
 // the ERP-side write before signalling Completed (the user handler is NOT

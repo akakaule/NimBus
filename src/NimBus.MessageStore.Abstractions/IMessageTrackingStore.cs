@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using NimBus.MessageStore.States;
 
@@ -31,6 +32,24 @@ public interface IMessageTrackingStore
     Task<UnresolvedEvent> GetEventById(string endpointId, string id);
     Task<List<UnresolvedEvent>> GetEventsByIds(string endpointId, IEnumerable<string> eventIds);
     Task<IEnumerable<UnresolvedEvent>> GetCompletedEventsOnEndpoint(string endpointId);
+
+    /// <summary>
+    /// Locate the single pending-handoff row whose ExternalJobId matches, scoped
+    /// to the endpoint that owns the handoff. Used by the operator-side tooling
+    /// — the WebApp's "settle this stuck handoff" action and CLI diagnostics —
+    /// that needs to resolve audit-row coordinates from the external correlation
+    /// token an adapter persisted.
+    ///
+    /// <para>Not used by <c>IHandoffClient</c>: adapters carry the audit-row
+    /// coordinates themselves (via <c>HandoffSettlement</c>) so the settlement
+    /// process needs no audit-DB access. See ADR-012 for the rationale.</para>
+    ///
+    /// <para>Returns null when no matching pending-handoff row exists (already
+    /// settled, never registered, or wrong job id). The endpoint scope keeps
+    /// Cosmos partitioning correct and lets SQL Server hit a filtered index
+    /// (see 0011_HandoffLookup.sql).</para>
+    /// </summary>
+    Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default);
 
     // Filtered queries
     Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount);

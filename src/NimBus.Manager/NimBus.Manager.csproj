@@ -2,7 +2,13 @@
 
   <PropertyGroup>
 	  <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <Description>Operator tools (Resubmit, Skip) for the NimBus messaging platform. For adapter-side handoff settlement, see NimBus.SDK's IHandoffClient.</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />

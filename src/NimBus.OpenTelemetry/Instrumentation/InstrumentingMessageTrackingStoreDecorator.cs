@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using NimBus.Core.Diagnostics;
@@ -130,6 +131,9 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
 
     public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId) =>
         InstrumentAsync(nameof(GetPendingEvent), () => _inner.GetPendingEvent(endpointId, eventId, sessionId));
+
+    public Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default) =>
+        InstrumentAsync(nameof(GetPendingHandoffByExternalJobId), () => _inner.GetPendingHandoffByExternalJobId(endpointId, externalJobId, cancellationToken));
 
     public Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId) =>
         InstrumentAsync(nameof(GetFailedEvent), () => _inner.GetFailedEvent(endpointId, eventId, sessionId));

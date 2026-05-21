@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace NimBus.MessageStore;
@@ -32,6 +33,7 @@ public interface ICosmosDbClient
 
     Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount);
     Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId);
+    Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default);
     Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId);
     Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId);
     Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId);
@@ -490,6 +492,35 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
     public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId) =>
         GetEvent(endpointId, eventId, sessionId, PendingStatus);
+
+    public async Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(externalJobId)) return null;
+        var container = await GetEndpointContainer(endpointId);
+        // Filter on event.ExternalJobId (the persisted location) plus the
+        // pending-handoff discriminator. Container is partitioned per endpoint
+        // already so this query stays within one partition.
+        var queryDefinition = new QueryDefinition(
+                @"SELECT TOP 1 * FROM c
+                  WHERE c.event.ExternalJobId = @x
+                    AND c.event.PendingSubStatus = 'Handoff'
+                    AND c.status = @status
+                    AND (NOT IS_DEFINED(c.deleted) OR c.deleted != true)")
+            .WithParameter("@x", externalJobId)
+            .WithParameter("@status", PendingStatus);
+        var result = container.GetItemQueryIterator<EventDbo>(queryDefinition);
+
+        if (result.HasMoreResults)
+        {
+            var eventDbo = await result.ReadNextAsync(cancellationToken);
+            if (eventDbo.Any())
+            {
+                return eventDbo.First().Event;
+            }
+        }
+
+        return null;
+    }
 
     public Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId) =>
         GetEvent(endpointId, eventId, sessionId, FailedStatus);

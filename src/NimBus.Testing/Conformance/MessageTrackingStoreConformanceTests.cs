@@ -62,6 +62,39 @@ public abstract class MessageTrackingStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task GetPendingHandoffByExternalJobId_returns_the_pending_row()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-handoff");
+        var eventId = Id("e-handoff");
+        var externalJobId = Id("ext-job");
+
+        var content = SampleEvent(endpointId, eventId, "s-handoff");
+        content.PendingSubStatus = "Handoff";
+        content.HandoffReason = "Awaiting external work";
+        content.ExternalJobId = externalJobId;
+        await store.UploadPendingMessage(eventId, "s-handoff", endpointId, content);
+
+        var fetched = await store.GetPendingHandoffByExternalJobId(endpointId, externalJobId);
+
+        Assert.IsNotNull(fetched);
+        Assert.AreEqual(eventId, fetched.EventId);
+        Assert.AreEqual("Handoff", fetched.PendingSubStatus);
+        Assert.AreEqual(externalJobId, fetched.ExternalJobId);
+    }
+
+    [TestMethod]
+    public async Task GetPendingHandoffByExternalJobId_returns_null_when_no_match()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-handoff-miss");
+
+        var fetched = await store.GetPendingHandoffByExternalJobId(endpointId, Id("never-registered"));
+
+        Assert.IsNull(fetched);
+    }
+
+    [TestMethod]
     public async Task UploadStatus_is_idempotent_under_repeated_writes()
     {
         var store = CreateStore();

@@ -144,9 +144,15 @@ import) and the per-entity outcome only arrives later, calling
    duration of the external work.
 
 The user handler is **not** re-invoked when the external system reports
-back. Settlement is driven by `IManagerClient.CompleteHandoff` (success) or
-`IManagerClient.FailHandoff` (failure). See [ADR-012](adr/012-pending-handoff.md)
-and the [PendingHandoff message flow](message-flows.md#13-pendinghandoff-async-completion).
+back. Settlement is driven by `IHandoffClient.CompleteAsync` (success) or
+`IHandoffClient.FailAsync` (failure) — registered automatically by
+`AddNimBusSubscriber` and standalone via `services.AddNimBusHandoffClient(endpoint)`
+in settlement-only processes. `IManagerClient.CompleteHandoff` /
+`FailHandoff` are kept for backwards compatibility (`[Obsolete]`) and used
+only by the WebApp's operator tools (`Resubmit`, `Skip`).
+See [ADR-012](adr/012-pending-handoff.md), the practitioner-level walkthrough
+in [pending-handoff.md](pending-handoff.md), and the
+[PendingHandoff message flow](message-flows.md#13-pendinghandoff-async-completion).
 
 ```csharp
 public class CreateOrderHandler : IEventHandler<OrderPlaced>

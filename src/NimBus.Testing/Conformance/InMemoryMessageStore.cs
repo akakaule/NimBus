@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using NimBus.Core.Messages;
 using NimBus.MessageStore;
@@ -50,6 +51,17 @@ public class InMemoryMessageStore : INimBusMessageStore
     public Task<bool> UploadCompletedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => Upsert(eventId, sessionId, endpointId, ResolutionStatus.Completed, content);
 
     public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.Pending);
+
+    public Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(externalJobId)) return Task.FromResult<UnresolvedEvent>(null);
+        var match = _events.Values.FirstOrDefault(e =>
+            e.EndpointId == endpointId
+            && e.ResolutionStatus == ResolutionStatus.Pending
+            && e.PendingSubStatus == "Handoff"
+            && e.ExternalJobId == externalJobId);
+        return Task.FromResult(match);
+    }
     public Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.Failed);
     public Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.Deferred);
     public Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.DeadLettered);

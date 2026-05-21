@@ -68,7 +68,7 @@ test.describe("PendingHandoff failure: handoff fails → operator Resubmit via W
     const errorText = failedEvent.messageContent?.errorContent?.errorText ?? "";
     expect(errorText, "messageContent.errorContent.errorText").toMatch(/^DMF rejected:/);
 
-    // Sanity: ERP customer was NOT created (FailHandoff path skips the upsert).
+    // Sanity: ERP customer was NOT created (FailAsync path skips the upsert).
     expect(await erp.findCustomerByCrmAccountId(account.id)).toBeNull();
 
     // ── 4. Disable handoff mode BEFORE clicking Resubmit. Otherwise the

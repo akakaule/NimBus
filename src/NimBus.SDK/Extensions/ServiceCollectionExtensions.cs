@@ -87,6 +87,13 @@ namespace NimBus.SDK.Extensions
         /// <summary>
         /// Registers a NimBus subscriber with the DI container.
         /// Requires a <see cref="ServiceBusClient"/> to be registered in the container.
+        /// <para>One subscriber endpoint per process — calling this twice with
+        /// different endpoints throws, because <see cref="ISubscriberClient"/> is
+        /// a non-keyed singleton and the second registration would silently lose
+        /// its handler set. Host one endpoint per process (which matches the
+        /// Aspire / Functions topology in samples/CrmErpDemo); if multi-endpoint
+        /// hosting is needed, file an issue to discuss keyed-ISubscriberClient
+        /// support.</para>
         /// </summary>
         public static IServiceCollection AddNimBusSubscriber(this IServiceCollection services, Action<NimBusSubscriberOptions> configure, Action<NimBusSubscriberBuilder> configureBuilder)
         {
@@ -95,6 +102,30 @@ namespace NimBus.SDK.Extensions
 
             if (string.IsNullOrEmpty(options.Endpoint))
                 throw new ArgumentException("Endpoint must be specified.", nameof(configure));
+
+            // One-endpoint-per-process guard. A second call against the *same*
+            // endpoint is benign (TryAdd would keep the first registration anyway);
+            // a second call against a *different* endpoint silently bound the
+            // second endpoint's handlers to a no-op, which is the bug.
+            foreach (var descriptor in services)
+            {
+                if (descriptor.ServiceType == typeof(SubscriberEndpointMarker)
+                    && descriptor.ImplementationInstance is SubscriberEndpointMarker existing
+                    && !string.Equals(existing.Endpoint, options.Endpoint, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"AddNimBusSubscriber was already called for endpoint '{existing.Endpoint}'. " +
+                        $"Registering a second subscriber endpoint ('{options.Endpoint}') in the same container " +
+                        "is not supported — ISubscriberClient is a non-keyed singleton. Host one endpoint per " +
+                        "process (matches the Aspire / Functions topology in samples/CrmErpDemo) or file an issue " +
+                        "to discuss keyed-ISubscriberClient support.");
+                }
+            }
+            services.AddSingleton(new SubscriberEndpointMarker(options.Endpoint));
+
+            // Match the publisher path — consumer-side spans + meters depend on
+            // the same OTel ActivitySource/Meter registrations.
+            services.AddNimBusInstrumentation();
 
             var builder = new NimBusSubscriberBuilder(services);
             configureBuilder(builder);
@@ -109,10 +140,17 @@ namespace NimBus.SDK.Extensions
             services.TryAddSingleton<ISubscriberClient>(sp =>
             {
                 var client = sp.GetRequiredService<ServiceBusClient>();
-                var deferredProcessor = sp.GetService<IDeferredMessageProcessor>();
 
+                // Handler Reply/Send calls flow through ResponseService → this
+                // sender. Decorate with InstrumentSender so those outbound
+                // messages emit the same publish span as IPublisherClient sends.
+                // (Outbox decoration is intentionally NOT applied here —
+                // handler-side replies are correlated, not transactional with
+                // a local DB write; reach for IPublisherClient when transactional
+                // semantics are needed.)
                 var serviceBusSender = client.CreateSender(options.Endpoint);
-                var sender = new Sender(serviceBusSender);
+                ISender sender = NimBusOpenTelemetryDecorators.InstrumentSender(
+                    new Sender(serviceBusSender), MessagingSystem.ServiceBus);
                 var responseService = new ResponseService(sender);
                 var eventHandlerProvider = new EventHandlerProvider();
 
@@ -311,6 +349,15 @@ namespace NimBus.SDK.Extensions
             // the (much more common) one-endpoint-per-process case.
             services.TryAddSingleton<IHandoffClient>(sp =>
                 sp.GetRequiredKeyedService<IHandoffClient>(endpoint));
+        }
+
+        // Marker singleton recorded by AddNimBusSubscriber so a second call
+        // against a different endpoint can fail with a clear error instead of
+        // silently keeping the first registration's handlers.
+        private sealed class SubscriberEndpointMarker
+        {
+            public SubscriberEndpointMarker(string endpoint) => Endpoint = endpoint;
+            public string Endpoint { get; }
         }
     }
 }

@@ -125,8 +125,8 @@ const CompletedTab = (props: ICompletedTabProps) => {
     { id: "eventId", label: "Event Id", numeric: false, width: "15%" },
     { id: "sessionId", label: "Session Id", numeric: false, width: "15%" },
     { id: "eventTypeId", label: "Event Type", numeric: false, width: "30%" },
-    { id: "updated", label: "Updated(UTC)", numeric: false, width: "20%" },
-    { id: "added", label: "Added(UTC)", numeric: false, width: "20%" },
+    { id: "updated", label: "Updated", numeric: false, width: "20%" },
+    { id: "added", label: "Added", numeric: false, width: "20%" },
   ];
 
   const headActions: ITableHeadAction[] = [];

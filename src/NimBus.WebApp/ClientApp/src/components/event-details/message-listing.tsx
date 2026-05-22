@@ -444,7 +444,7 @@ export default function MessageListing(props: IMessageListingProps) {
             }
           />
           <PropertyRow
-            label="Enqueued (UTC)"
+            label="Enqueued"
             value={formatMoment(props.eventDetails?.enqueuedTimeUtc)}
             mono
           />

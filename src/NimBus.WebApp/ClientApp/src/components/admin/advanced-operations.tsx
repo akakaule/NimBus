@@ -126,7 +126,7 @@ export function SubscriptionPurgeCard({ endpoints }: { endpoints: EndpointOption
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Before (UTC)</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Before</label>
               <Input type="datetime-local" value={before} onChange={(e) => setBefore(e.target.value)} />
             </div>
           </div>
@@ -314,7 +314,7 @@ export function SkipMessagesCard({ endpoints }: { endpoints: EndpointOption[] })
               <Combobox options={endpoints} value={selected} onChange={(v) => { setSelected(v); setPreviewCount(null); setResult(null); }} placeholder="Select endpoint..." label="Endpoint" multiple={false} />
             </div>
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Before (UTC, optional)</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Before (optional)</label>
               <Input type="datetime-local" value={before} onChange={(e) => setBefore(e.target.value)} />
             </div>
           </div>
@@ -481,11 +481,11 @@ export function CopyEndpointCard({ endpoints }: { endpoints: EndpointOption[] })
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">From (UTC, optional)</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">From (optional)</label>
               <Input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} />
             </div>
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">To (UTC, optional)</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">To (optional)</label>
               <Input type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)} />
             </div>
             <div>

@@ -589,8 +589,8 @@ const EventsPanel = (props: EventsPanelProps) => {
     { id: "status", label: "Status", numeric: false, width: "8%" },
     { id: "sessionId", label: "Session Id", numeric: false, width: "10%" },
     { id: "eventTypeId", label: "Event Type", numeric: false, width: "15%" },
-    { id: "updated", label: "Updated(UTC)", numeric: false, width: "12%" },
-    { id: "added", label: "Added(UTC)", numeric: false, width: "12%" },
+    { id: "updated", label: "Updated", numeric: false, width: "12%" },
+    { id: "added", label: "Added", numeric: false, width: "12%" },
   ];
 
   const headActions: ITableHeadAction[] = [

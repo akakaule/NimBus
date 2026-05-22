@@ -68,10 +68,12 @@ function formatTimestamp(
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return ts;
 
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  const mon = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const hr = String(d.getUTCHours()).padStart(2, "0");
-  const min = String(d.getUTCMinutes()).padStart(2, "0");
+  // Render axis labels in the browser's local timezone — the rest of the
+  // WebApp (formatMoment, etc.) already does the same via moment().format().
+  const day = String(d.getDate()).padStart(2, "0");
+  const mon = String(d.getMonth() + 1).padStart(2, "0");
+  const hr = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
 
   if (bucketSize === "day") return `${day}/${mon}`;
   if (bucketSize === "minute") return `${hr}:${min}`;

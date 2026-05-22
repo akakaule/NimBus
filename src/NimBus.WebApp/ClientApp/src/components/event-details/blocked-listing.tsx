@@ -34,7 +34,7 @@ export default function BlockedListing(props: IBlockedListing) {
     { id: "eventId", label: "Event Id", numeric: false },
     { id: "sessionId", label: "Session Id", numeric: false },
     { id: "eventTypeId", label: "Event Type", numeric: false },
-    { id: "added", label: "Added(UTC)", numeric: false },
+    { id: "added", label: "Added", numeric: false },
   ];
 
   const headActions: ITableHeadAction[] = [];

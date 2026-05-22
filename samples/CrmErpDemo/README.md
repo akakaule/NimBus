@@ -10,9 +10,9 @@ graph TB
 
     subgraph crmSide["CRM (system A)"]
         crmWeb["<b>crm-web</b><br/>[Container: Vite SPA]"]
-        crmApi["<b>crm-api</b><br/>[Container: ASP.NET Core]<br/><i>publishes via outbox</i>"]
-        crmDb[("<b>crm DB</b><br/>[Container: SQL Server]<br/><i>entities + nimbus.OutboxMessages</i>")]
-        crmAdapter["<b>crm-adapter</b><br/>[Container: .NET Worker]<br/><i>outbox dispatcher,<br/>NimBus subscriber,<br/>DeferredProcessor</i>"]
+        crmApi["<b>crm-api</b><br/>[Container: ASP.NET Core]<br/><i>publishes directly</i>"]
+        crmDb[("<b>crm DB</b><br/>[Container: SQL Server]<br/><i>entities</i>")]
+        crmAdapter["<b>crm-adapter</b><br/>[Container: .NET Worker]<br/><i>NimBus subscriber,<br/>DeferredProcessor</i>"]
     end
 
     subgraph erpSide["ERP (system B)"]
@@ -30,11 +30,11 @@ graph TB
     user -->|HTTPS| erpWeb
     crmWeb -->|REST| crmApi
     erpWeb -->|REST| erpApi
-    crmApi -->|EF Core<br/>same SQL tx| crmDb
+    crmApi -->|EF Core| crmDb
     erpApi -->|EF Core<br/>same SQL tx| erpDb
-    crmAdapter -->|polls outbox<br/>1s| crmDb
     erpApi -.->|hosts dispatcher,<br/>polls outbox 1s| erpDb
-    crmAdapter <-->|publish + subscribe<br/>session-aware| sb
+    crmApi -->|direct publish| sb
+    crmAdapter -->|subscribe<br/>session-aware| sb
     erpAdapter <-->|ServiceBusTrigger<br/>session-aware| sb
     erpApi -->|publish via dispatcher| sb
     crmAdapter -->|HTTP upsert /<br/>link-erp| crmApi
@@ -58,8 +58,8 @@ graph TB
 
 ## What this demo showcases
 
-- **Outbox-based business event detection** — CRM/ERP API writes the entity, then `IPublisherClient.Publish(...)` stages a domain event row in the same DB; the adapter's outbox dispatcher forwards it to Service Bus. (At-least-once delivery survives API crashes after the DB commit.)
-- **Single-connection atomic commit** — entity insert and outbox row insert run on the *same* `SqlConnection` and `SqlTransaction` (via `OutboxScope.RunAsync`). One physical connection means no MSDTC promotion — important because Aspire's containerized SQL Server can't service distributed transactions anyway.
+- **Direct publishing from CRM** — `Crm.Api` publishes CRM-originated events directly to Service Bus, keeping the CRM adapter focused on inbound ERP events.
+- **Transactional outbox on ERP** — `Erp.Api` stages ERP-originated events in its SQL outbox and hosts the dispatcher, so the ERP side is the single sample that demonstrates the outbox pattern.
 - **Domain event mapping** — the adapter maps DB entities to clean contract events (`CrmAccountCreated`, `ErpCustomerCreated`, ...) — published applications don't see DB schemas.
 - **Origin-prefixed event names** — every event has exactly one producer (`CrmAccountCreated` is only published by CRM, `ErpCustomerCreated` only by ERP). The single-producer convention matches the platform's main catalog and structurally prevents cross-topic forwarding loops.
 - **Receiving adapter calls the target REST API** — typed `HttpClient` per system; handlers are idempotent (upsert keyed on the originator's id).
@@ -135,7 +135,7 @@ graph LR
 
 ### Flow 1 — CRM → ERP → CRM round-trip (account creation)
 
-The headline scenario. Demonstrates the transactional outbox, cross-topic forwarding, the `Origin` discriminator on `ErpCustomerCreated`, and the back-fill of the ERP customer id onto the CRM account row.
+The headline scenario. Demonstrates direct CRM publishing, ERP-side transactional outbox, cross-topic forwarding, the `Origin` discriminator on `ErpCustomerCreated`, and the back-fill of the ERP customer id onto the CRM account row.
 
 ```mermaid
 sequenceDiagram
@@ -153,12 +153,8 @@ sequenceDiagram
     User->>Web: Create "Acme GmbH"
     Web->>CrmApi: POST /api/accounts
     CrmApi->>CrmDb: INSERT Accounts (Origin = "Crm")
-    CrmApi->>CrmDb: INSERT outbox (CrmAccountCreated)
+    CrmApi->>SB: Send CrmAccountCreated<br/>topic = crmendpoint, session = AccountId
     CrmApi-->>Web: 201 Created
-
-    Note over CrmAd,CrmDb: outbox poll, 1s
-    CrmAd->>CrmDb: SELECT pending
-    CrmAd->>SB: Send CrmAccountCreated<br/>topic = crmendpoint, session = AccountId
 
     Note over SB: ErpEndpoint forward sub matches<br/>(EventTypeId='CrmAccountCreated' AND From IS NULL)<br/>action: SET To='ErpEndpoint' → forward to erpendpoint
 
@@ -231,8 +227,8 @@ sequenceDiagram
     rect rgba(70, 130, 200, 0.2)
         Note over U1,ErpApi: CRM-originated contact
         U1->>CrmApi: POST /api/contacts
-        CrmApi->>CrmApi: INSERT (Origin="Crm") + outbox (CrmContactCreated)
-        CrmAd->>SB: dispatch CrmContactCreated to crmendpoint
+        CrmApi->>CrmApi: INSERT (Origin="Crm")
+        CrmApi->>SB: publish CrmContactCreated to crmendpoint
         Note over SB: ErpEndpoint forward sub<br/>matches CrmContactCreated → erpendpoint
         SB-->>ErpAd: deliver
         ErpAd->>ErpApi: PUT /api/contacts/upsert/{id}
@@ -260,14 +256,15 @@ sequenceDiagram
     autonumber
     actor User as CRM user
     actor Op as Operator
+    participant CrmApi as crm-api
     participant CrmAd as crm-adapter
     participant SB as Service Bus
     participant ErpAd as erp-adapter
     participant ErpApi as erp-api
     participant Ops as nimbus-ops
 
-    Note over User,CrmAd: account created and outbox dispatched
-    CrmAd->>SB: Send CrmAccountCreated
+    Note over User,CrmAd: account created and published
+    CrmApi->>SB: Send CrmAccountCreated
     SB-->>ErpAd: deliver
     ErpAd->>ErpApi: PUT /api/customers/by-crm/{id}
     ErpApi--xErpAd: connection refused (erp-api stopped)
@@ -303,7 +300,7 @@ samples/CrmErpDemo/
   CrmErpDemo.Contracts/      Shared events + endpoints + CrmErpPlatformConfiguration
   CrmErpDemo.Provisioner/    Code-first SB topology (CrmEndpoint, ErpEndpoint)
   Crm.Api/                   ASP.NET Core minimal API + EF Core SQL Server
-  Crm.Adapter/               Worker (BackgroundService) + outbox dispatcher
+  Crm.Adapter/               Worker (BackgroundService) subscriber
   Crm.Web/                   React + Vite + TS + Tailwind SPA
   Erp.Api/                   ASP.NET Core minimal API + EF Core; hosts ERP outbox dispatcher
   Erp.Adapter.Functions/     Azure Functions isolated worker
@@ -324,7 +321,7 @@ NimBus's message store (audit trail, resolver state, blocked sessions, metrics) 
 
 Cosmos is an alternative — supply `ConnectionStrings:cosmos` as a user secret and pass `--StorageProvider cosmos` to the AppHost. The AppHost reads the flag at `samples/CrmErpDemo/CrmErpDemo.AppHost/Program.cs:7-11`; the same value is bridged to the Resolver and `nimbus-ops` WebApp via `NimBus__StorageProvider` so they call the matching `AddSqlServerMessageStore()` / `AddCosmosDbMessageStore()` registration.
 
-The CRM and ERP business databases (and their `nimbus.OutboxMessages` outbox tables) are always SQL Server regardless of the message-store choice.
+The CRM and ERP business databases are always SQL Server regardless of the message-store choice. Only ERP uses the `nimbus.OutboxMessages` outbox table.
 
 ## Running locally — SQL Server (default)
 
@@ -365,8 +362,7 @@ In Cosmos mode Aspire skips provisioning the `nimbus` SQL database; the Resolver
 1. Open **crm-web** from the Aspire dashboard.
 2. Create an account "Acme GmbH" (DE).
 3. In the Aspire logs you should see, in order:
-   - `crm-api` writes the account + outbox row
-   - `crm-adapter` dispatches `CrmAccountCreated` to Service Bus
+   - `crm-api` writes the account and publishes `CrmAccountCreated` directly to Service Bus
    - `erp-adapter` Function fires on `ErpEndpoint`
    - `erp-api` receives `PUT /api/customers/by-crm/{id}` and writes the customer + outbox row
    - `erp-api`'s outbox dispatcher publishes `ErpCustomerCreated`
@@ -374,7 +370,7 @@ In Cosmos mode Aspire skips provisioning the `nimbus` SQL database; the Resolver
 4. Open **erp-web** → the new customer is visible.
 5. Refresh **crm-web** → the account row now shows the ERP customer number (`✓ C-...`).
 6. Open **nimbus-ops** → the audit trail (Resolver) shows both events on the same `AccountId` session.
-7. Open **dbgate** (web SQL UI) → connect "Aspire SQL Server" auto-loads → inspect `crm.[nimbus].[OutboxMessages]` and `erp.[nimbus].[OutboxMessages]` to see outbox rows being written and dispatched.
+7. Open **dbgate** (web SQL UI) → connect "Aspire SQL Server" auto-loads → inspect `erp.[nimbus].[OutboxMessages]` to see ERP outbox rows being written and dispatched.
 
 ## Failure path (to demonstrate resubmit)
 
@@ -422,8 +418,7 @@ No authn/authz, no multi-tenant, no production deployment scripts, no non-Azure 
 | Domain event contracts                  | `CrmErpDemo.Contracts/Events/*.cs`                                                         |
 | Topology (endpoints, consumes/produces) | `CrmErpDemo.Contracts/Endpoints/*.cs` + `CrmErpPlatformConfiguration.cs`                   |
 | CRM business event detection            | `Crm.Api/Endpoints/AccountEndpoints.cs` (publish after `SaveChangesAsync`)                 |
-| Atomic entity + outbox commit           | `Crm.Api/OutboxScope.cs`, `Erp.Api/OutboxScope.cs` (shares EF's `SqlConnection`/`SqlTransaction` with `SqlServerOutbox` via `SqlServerOutboxAmbientTransaction`) |
-| Outbox dispatcher (CRM)                 | `Crm.Adapter/Program.cs` (`AddNimBusOutboxDispatcher` + `OutboxDispatcherSender` registration) |
+| ERP atomic entity + outbox commit       | `Erp.Api/OutboxScope.cs` (shares EF's `SqlConnection`/`SqlTransaction` with `SqlServerOutbox` via `SqlServerOutboxAmbientTransaction`) |
 | CRM subscriber handlers                 | `Crm.Adapter/Handlers/*.cs`                                                                |
 | ERP Function adapter                    | `Erp.Adapter.Functions/Functions/ErpEndpointFunction.cs` + deferred function                |
 | ERP subscriber handlers                 | `Erp.Adapter.Functions/Handlers/*.cs`                                                       |

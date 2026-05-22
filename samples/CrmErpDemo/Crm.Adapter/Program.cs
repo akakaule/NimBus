@@ -6,7 +6,6 @@ using CrmErpDemo.Contracts.Events;
 using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
 using NimBus.Core.Pipeline;
-using NimBus.Outbox.SqlServer;
 using NimBus.SDK.Extensions;
 using NimBus.SDK.Hosting;
 
@@ -15,9 +14,6 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.AddServiceDefaults();
 builder.AddAzureServiceBusClient("servicebus");
 
-var crmConnectionString = builder.Configuration.GetConnectionString("crm")
-    ?? throw new InvalidOperationException("ConnectionStrings:crm is required.");
-
 var crmApiBaseUrl = builder.Configuration["services:crm-api:https:0"]
     ?? builder.Configuration["services:crm-api:http:0"]
     ?? builder.Configuration["Crm:ApiBaseUrl"]
@@ -25,18 +21,9 @@ var crmApiBaseUrl = builder.Configuration["services:crm-api:https:0"]
 
 builder.Services.AddHttpClient<ICrmApiClient, CrmApiClient>(c => c.BaseAddress = new Uri(crmApiBaseUrl));
 
-// Outbox + dispatcher: adapter owns dispatch so the API stays lean.
-builder.Services.AddNimBusSqlServerOutbox(crmConnectionString);
-builder.Services.AddSingleton<OutboxDispatcherSender>(sp =>
-{
-    var client = sp.GetRequiredService<ServiceBusClient>();
-    return new OutboxDispatcherSender(client.CreateSender("CrmEndpoint"));
-});
-builder.Services.AddNimBusOutboxDispatcher(TimeSpan.FromSeconds(1));
-
-// Middleware pipeline. Crm.Adapter is a pure publish/subscribe adapter — it owns
-// its own outbox via AddNimBusSqlServerOutbox above and does not read or write
-// the NimBus message store.
+// Middleware pipeline. Crm.Adapter is a pure subscriber adapter: CRM-originated
+// events are published directly by Crm.Api, while the ERP side is the sample
+// that demonstrates the transactional outbox pattern.
 builder.Services.AddNimBus(n =>
 {
     n.AddPipelineBehavior<LoggingMiddleware>();
@@ -75,10 +62,4 @@ builder.Services.AddHostedService(sp =>
     return new DeferredProcessorService(sbClient, processor, logger, "CrmEndpoint");
 });
 
-var host = builder.Build();
-
-// Ensure outbox table exists on startup so a fresh DB doesn't race the dispatcher.
-var startupOutbox = (SqlServerOutbox)host.Services.GetRequiredService<NimBus.Core.Outbox.IOutbox>();
-await startupOutbox.EnsureTableExistsAsync();
-
-host.Run();
+builder.Build().Run();

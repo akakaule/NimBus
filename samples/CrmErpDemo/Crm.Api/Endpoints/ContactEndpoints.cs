@@ -23,12 +23,9 @@ public static class ContactEndpoints
             input.CreatedAt = DateTimeOffset.UtcNow;
             input.Origin = "Crm";
 
-            await OutboxScope.RunAsync(db, async () =>
-            {
-                db.Contacts.Add(input);
-                await db.SaveChangesAsync();
-                await publisher.Publish(ContactMapper.ToCreatedEvent(input));
-            });
+            db.Contacts.Add(input);
+            await db.SaveChangesAsync();
+            await publisher.Publish(ContactMapper.ToCreatedEvent(input));
             return Results.Created($"/api/contacts/{input.Id}", input);
         });
 
@@ -37,17 +34,14 @@ public static class ContactEndpoints
             var existing = await db.Contacts.FindAsync(id);
             if (existing is null) return Results.NotFound();
 
-            await OutboxScope.RunAsync(db, async () =>
-            {
-                existing.AccountId = input.AccountId;
-                existing.FirstName = input.FirstName;
-                existing.LastName = input.LastName;
-                existing.Email = input.Email;
-                existing.Phone = input.Phone;
-                existing.UpdatedAt = DateTimeOffset.UtcNow;
-                await db.SaveChangesAsync();
-                await publisher.Publish(ContactMapper.ToUpdatedEvent(existing));
-            });
+            existing.AccountId = input.AccountId;
+            existing.FirstName = input.FirstName;
+            existing.LastName = input.LastName;
+            existing.Email = input.Email;
+            existing.Phone = input.Phone;
+            existing.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync();
+            await publisher.Publish(ContactMapper.ToUpdatedEvent(existing));
             return Results.Ok(existing);
         });
 
@@ -102,13 +96,10 @@ public static class ContactEndpoints
             if (existing is null) return Results.NotFound();
             if (existing.IsDeleted) return Results.Ok(existing);
 
-            await OutboxScope.RunAsync(db, async () =>
-            {
-                existing.IsDeleted = true;
-                existing.UpdatedAt = DateTimeOffset.UtcNow;
-                await db.SaveChangesAsync();
-                await publisher.Publish(ContactMapper.ToDeletedEvent(existing));
-            });
+            existing.IsDeleted = true;
+            existing.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync();
+            await publisher.Publish(ContactMapper.ToDeletedEvent(existing));
             return Results.Ok(existing);
         });
 

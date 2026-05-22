@@ -81,8 +81,8 @@ var erpDb = sql.AddDatabase("erp");
 // needs it. Identity always requires SQL even if the message store is Cosmos.
 var nimbusDb = (storageProvider == "sqlserver" || identityEnabled) ? sql.AddDatabase("nimbus") : null;
 
-// DbGate — web SQL UI for browsing the Aspire-managed SQL Server (and the
-// [nimbus].[OutboxMessages] table in particular). Wired manually because the
+// DbGate — web SQL UI for browsing the Aspire-managed SQL Server, including
+// the ERP [nimbus].[OutboxMessages] table. Wired manually because the
 // CommunityToolkit DbGate package does not ship a WithDbGate() extension for
 // SqlServerServerResource (only Postgres/Mongo/MySQL/Redis).
 builder.AddDbGate("dbgate")
@@ -199,7 +199,6 @@ if (provisioner is not null) crmApi = crmApi.WaitFor(provisioner);
 
 var crmAdapter = builder.AddProject<Projects.Crm_Adapter>("crm-adapter")
     .WithReference(servicebus)
-    .WithReference(crmDb)
     .WithReference(crmApi)
     .WaitFor(crmApi);
 if (provisioner is not null) crmAdapter.WaitFor(provisioner);

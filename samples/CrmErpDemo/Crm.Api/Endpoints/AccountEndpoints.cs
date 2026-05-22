@@ -25,18 +25,10 @@ public static class AccountEndpoints
             input.UpdatedAt = null;
             input.Origin = "Crm";
 
-            // Transactional outbox: the entity write and the outbox row insert
-            // commit together on a single SqlConnection. If Publish throws (or
-            // the process crashes before commit), the transaction rolls back
-            // and the Account row never persists without its outbox event.
-            await OutboxScope.RunAsync(db, async () =>
-            {
-                db.Accounts.Add(input);
-                await db.SaveChangesAsync();
-                logger.LogInformation("Publishing CrmAccountCreated for {AccountId} ({LegalName})", input.Id, input.LegalName);
-                await publisher.Publish(AccountMapper.ToCreatedEvent(input));
-                logger.LogInformation("CrmAccountCreated published to outbox for {AccountId}", input.Id);
-            });
+            db.Accounts.Add(input);
+            await db.SaveChangesAsync();
+            logger.LogInformation("Publishing CrmAccountCreated for {AccountId} ({LegalName})", input.Id, input.LegalName);
+            await publisher.Publish(AccountMapper.ToCreatedEvent(input));
 
             return Results.Created($"/api/accounts/{input.Id}", input);
         });
@@ -46,15 +38,12 @@ public static class AccountEndpoints
             var existing = await db.Accounts.FindAsync(id);
             if (existing is null) return Results.NotFound();
 
-            await OutboxScope.RunAsync(db, async () =>
-            {
-                existing.LegalName = input.LegalName;
-                existing.TaxId = input.TaxId;
-                existing.CountryCode = input.CountryCode;
-                existing.UpdatedAt = DateTimeOffset.UtcNow;
-                await db.SaveChangesAsync();
-                await publisher.Publish(AccountMapper.ToUpdatedEvent(existing));
-            });
+            existing.LegalName = input.LegalName;
+            existing.TaxId = input.TaxId;
+            existing.CountryCode = input.CountryCode;
+            existing.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync();
+            await publisher.Publish(AccountMapper.ToUpdatedEvent(existing));
             return Results.Ok(existing);
         });
 
@@ -79,13 +68,10 @@ public static class AccountEndpoints
             if (existing is null) return Results.NotFound();
             if (existing.IsDeleted) return Results.Ok(existing);
 
-            await OutboxScope.RunAsync(db, async () =>
-            {
-                existing.IsDeleted = true;
-                existing.UpdatedAt = DateTimeOffset.UtcNow;
-                await db.SaveChangesAsync();
-                await publisher.Publish(AccountMapper.ToDeletedEvent(existing));
-            });
+            existing.IsDeleted = true;
+            existing.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync();
+            await publisher.Publish(AccountMapper.ToDeletedEvent(existing));
             return Results.Ok(existing);
         });
 

@@ -3,7 +3,7 @@ using Crm.Api.Endpoints;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
-using NimBus.Outbox.SqlServer;
+using NimBus.SDK;
 using NimBus.SDK.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -26,24 +26,15 @@ var crmConnectionString = builder.Configuration.GetConnectionString("crm")
 
 builder.Services.AddDbContext<CrmDbContext>(opt => opt.UseSqlServer(crmConnectionString));
 
-// Outbox staging lives in the same database as the entity tables.
-// Adapter hosts the dispatcher that forwards these rows to Service Bus.
-builder.Services.AddNimBusSqlServerOutbox(crmConnectionString);
 if (hasServiceBus)
 {
     builder.Services.AddNimBusPublisher("CrmEndpoint");
 }
 else
 {
-    // Fallback publisher that writes events to the outbox only. Without the
-    // adapter's dispatcher + SB, events stay in the outbox — fine for a
-    // demo smoke test of the web → API → DB path.
-    builder.Services.AddSingleton<NimBus.SDK.IPublisherClient>(sp =>
-    {
-        var outbox = sp.GetRequiredService<NimBus.Core.Outbox.IOutbox>();
-        var sender = new NimBus.Core.Outbox.OutboxSender(outbox);
-        return new NimBus.SDK.PublisherClient(sender);
-    });
+    // Keep the CRUD API usable in DB-only smoke tests. Publishing is skipped
+    // when Service Bus is not configured.
+    builder.Services.AddSingleton<IPublisherClient, NoopPublisherClient>();
 }
 
 // CORS for the Vite SPA.
@@ -54,7 +45,7 @@ var app = builder.Build();
 app.UseCors();
 app.MapDefaultEndpoints();
 
-// Ensure DB + outbox table exist for the demo.
+// Ensure DB tables exist for the demo.
 // Retry so the API survives SQL-container startup timing; if init ultimately fails,
 // log the error and keep running so Kestrel binds — endpoints will surface the error
 // back to the web client via 500 instead of leaving the port unreachable (ECONNREFUSED).
@@ -69,8 +60,8 @@ for (var attempt = 1; attempt <= 10 && !initSucceeded; attempt++)
         // EnsureCreatedAsync only creates the schema when it also creates the database.
         // Aspire's SQL Server integration pre-creates the 'crm' database empty, so
         // EnsureCreatedAsync becomes a no-op and Accounts/Contacts never get created.
-        // Check for the specific Accounts table — HasTablesAsync returns true if ANY
-        // table (e.g. the outbox one) exists, which is misleading here.
+        // Check for the specific Accounts table instead of relying on a broad
+        // database-exists check.
         var creator = (IRelationalDatabaseCreator)db.GetService<IDatabaseCreator>();
         if (!await creator.ExistsAsync())
             await creator.CreateAsync();
@@ -107,8 +98,6 @@ for (var attempt = 1; attempt <= 10 && !initSucceeded; attempt++)
                 CREATE INDEX IX_Audits_Entity ON dbo.Audits (EntityType, EntityId, Timestamp DESC);
             END");
 
-        var outbox = (SqlServerOutbox)scope.ServiceProvider.GetRequiredService<NimBus.Core.Outbox.IOutbox>();
-        await outbox.EnsureTableExistsAsync();
         initSucceeded = true;
     }
     catch (Exception ex)

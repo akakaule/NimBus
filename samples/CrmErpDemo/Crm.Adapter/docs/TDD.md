@@ -17,11 +17,11 @@
 | **Source repository** | `samples/CrmErpDemo/Crm.Adapter` (in the NimBus repo) |
 | **Deployment unit(s)** | `crm-adapter` Container App (via Aspire / `Microsoft.NET.Sdk.Worker`) |
 | **Runtime** | .NET 10 (`net10.0`), `Microsoft.Extensions.Hosting` worker |
-| **NimBus version** | Project references (`NimBus.SDK`, `NimBus.Outbox.SqlServer`, `NimBus.ServiceDefaults`) — no NuGet pin |
+| **NimBus version** | Project references (`NimBus.SDK`, `NimBus.ServiceDefaults`) — no NuGet pin |
 | **Last reviewed** | 2026-04-27 |
 | **Next review** | {TBD} |
 
-> **Scope of this document.** Technical implementation of `Crm.Adapter` for developers and operations. Covers every integration the adapter handles — the outbox dispatch path that publishes CRM-originated events to NimBus, and the subscriber path that handles ERP-originated events back into the CRM API. Contains no business rationale; the demo's storyline lives in [`../README.md`](../../README.md) and the higher-level NimBus docs.
+> **Scope of this document.** Technical implementation of `Crm.Adapter` for developers and operations. Covers the subscriber path that handles ERP-originated events back into the CRM API. CRM-originated events are published directly by `Crm.Api`; the ERP side owns the transactional outbox showcase. Contains no business rationale; the demo's storyline lives in [`../README.md`](../../README.md) and the higher-level NimBus docs.
 
 ---
 
@@ -29,27 +29,24 @@
 
 ### 1.1 Purpose  <!-- [MIXED] -->
 
-Bridge between the CRM SQL database (written by `Crm.Api`) and the NimBus message bus on the `CrmEndpoint` topic: forward CRM-originated domain events out of the SQL outbox to Service Bus, and apply ERP-originated events back into the CRM via the CRM API.
+Bridge from NimBus to the CRM API on the `CrmEndpoint` topic: apply ERP-originated events back into CRM via idempotent HTTP calls.
 
 ### 1.2 Scope  <!-- [MIXED] -->
 
 | In scope | Out of scope |
 |---|---|
-| Outbox dispatch to Service Bus topic `CrmEndpoint` | Writing entities directly to the CRM database (owned by `Crm.Api`) |
 | Subscribing to `CrmEndpoint` and applying inbound events via the CRM REST API | Originating outbound events (the publish call lives in `Crm.Api`) |
 | Deferred-message replay for unblocked sessions | NimBus topology provisioning (owned by `CrmErpDemo.Provisioner`) |
 | Idempotent calls to `Crm.Api` (upsert / link-erp) | Authentication / authorization (the demo runs without auth) |
 
 ### 1.3 Responsibilities  <!-- [AUTO] — derived from `Program.cs` and `Handlers/*` -->
 
-1. **Outbox dispatch.** Run `OutboxDispatcherHostedService` (registered via `AddNimBusOutboxDispatcher(TimeSpan.FromSeconds(1))`) that polls the `OutboxMessages` table in the `crm` SQL database and forwards rows to `OutboxDispatcherSender`, which wraps a `ServiceBusSender` for the `CrmEndpoint` topic.
-2. **Subscribe to `CrmEndpoint`.** Run `NimBusReceiverHostedService` (registered via `AddNimBusReceiver`) bound to topic/subscription `CrmEndpoint` / `CrmEndpoint`. Dispatch inbound messages through the NimBus pipeline (`LoggingMiddleware`, `ValidationMiddleware`) into registered `IEventHandler<T>` implementations. Consumer-side telemetry (`NimBus.Process` span + processed/duration counters) is emitted by `ServiceBusAdapter` automatically — no pipeline behavior to register.
-3. **Apply inbound events.** Use `HttpClient`-typed `ICrmApiClient` to call back into `Crm.Api`:
+1. **Subscribe to `CrmEndpoint`.** Run `NimBusReceiverHostedService` (registered via `AddNimBusReceiver`) bound to topic/subscription `CrmEndpoint` / `CrmEndpoint`. Dispatch inbound messages through the NimBus pipeline (`LoggingMiddleware`, `ValidationMiddleware`) into registered `IEventHandler<T>` implementations. Consumer-side telemetry (`NimBus.Process` span + processed/duration counters) is emitted by `ServiceBusAdapter` automatically — no pipeline behavior to register.
+2. **Apply inbound events.** Use `HttpClient`-typed `ICrmApiClient` to call back into `Crm.Api`:
    - `ErpCustomerCreated` (from ERP) → `ErpCustomerCreatedHandler`. If `Origin=Crm`: `POST /api/accounts/{id}/link-erp`. If `Origin=Erp`: `PUT /api/accounts/external/{erpCustomerId}`.
    - `ErpContactCreated` (from ERP) → `ErpContactCreatedHandler` → `PUT /api/contacts/upsert/{contactId}`.
    - `ErpContactUpdated` (from ERP) → `ErpContactUpdatedHandler` → `PUT /api/contacts/upsert/{contactId}`.
-4. **Deferred-message replay.** Run `DeferredProcessorService` against `CrmEndpoint/deferredprocessor` (sessions OFF) — replays deferred messages in FIFO once a session is unblocked.
-5. **Outbox table bootstrap.** On startup, call `(SqlServerOutbox)IOutbox.EnsureTableExistsAsync()` so a fresh DB does not race the dispatcher.
+3. **Deferred-message replay.** Run `DeferredProcessorService` against `CrmEndpoint/deferredprocessor` (sessions OFF) — replays deferred messages in FIFO once a session is unblocked.
 
 ### 1.4 Versioning  <!-- [MIXED] -->
 
@@ -57,11 +54,11 @@ The adapter ships with the demo (`samples/CrmErpDemo/`) and follows the NimBus r
 
 ### 1.5 Architecture at a glance  <!-- [MIXED] -->
 
-`Crm.Adapter` is a single .NET 10 worker that hosts three independent NimBus pipelines: an outbox dispatcher, a session-aware subscriber, and a deferred-message replayer. Outbound publishes are written by `Crm.Api` to the SQL outbox table inside the same DB transaction as the entity write (transactional outbox); the adapter dispatches them on a 1-second poll. Inbound handlers are stateless and idempotent — they call back into `Crm.Api` over HTTP (typed `HttpClient` with Aspire service discovery). The CrmErpDemo follows an origin-prefixed event-naming convention: each event has exactly one producer (`Crm*` events from CRM, `Erp*` events from ERP), so cross-topic loops are structurally impossible. The legacy round-trip discriminator `ErpCustomerCreated.Origin` still distinguishes ERP-originated customers from CRM-originated round-trip acks (see §4.2).
+`Crm.Adapter` is a single .NET 10 worker that hosts two independent NimBus pipelines: a session-aware subscriber and a deferred-message replayer. CRM-originated publishes are direct from `Crm.Api`; only the ERP side demonstrates transactional outbox. Inbound handlers are stateless and idempotent — they call back into `Crm.Api` over HTTP (typed `HttpClient` with Aspire service discovery). The CrmErpDemo follows an origin-prefixed event-naming convention: each event has exactly one producer (`Crm*` events from CRM, `Erp*` events from ERP), so cross-topic loops are structurally impossible. The legacy round-trip discriminator `ErpCustomerCreated.Origin` still distinguishes ERP-originated customers from CRM-originated round-trip acks (see §4.2).
 
 | Direction | Source | Target | Event family | Handler / route | Ordering key | Criticality | Owner |
 |---|---|---|---|---|---|---|---|
-| CRM → NimBus | `Crm.Api` (SQL outbox) | NimBus topic `CrmEndpoint` | `CrmAccountCreated`, `CrmAccountUpdated`, `CrmContactCreated`, `CrmContactUpdated` | [`OutboxDispatcherHostedService`](#5-worked-integration--account-round-trip) | `AccountId` / `ContactId` | {TBD} | {TBD} |
+| CRM → NimBus | `Crm.Api` (direct publish) | NimBus topic `CrmEndpoint` | `CrmAccountCreated`, `CrmAccountUpdated`, `CrmContactCreated`, `CrmContactUpdated` | `IPublisherClient` in `Crm.Api` | `AccountId` / `ContactId` | {TBD} | {TBD} |
 | NimBus → CRM | NimBus topic `CrmEndpoint` | `Crm.Api` (HTTP) | `ErpCustomerCreated` | [`ErpCustomerCreatedHandler`](#5-worked-integration--account-round-trip) | `AccountId` | {TBD} | {TBD} |
 | NimBus → CRM | NimBus topic `CrmEndpoint` | `Crm.Api` (HTTP) | `ErpContactCreated`, `ErpContactUpdated` | [`ErpContactCreatedHandler` / `ErpContactUpdatedHandler`](#61-erp-originated-contact-update) | `ContactId` | {TBD} | {TBD} |
 
@@ -77,14 +74,14 @@ The adapter ships with the demo (`samples/CrmErpDemo/`) and follows the NimBus r
 graph TB
     user(["<b>CRM user</b><br/>[Person]<br/><i>Creates / updates accounts<br/>and contacts in Crm.Web</i>"])
 
-    crm["<b>CRM (Crm.Web + Crm.Api + crm DB)</b><br/>[Software system]<br/><i>SPA-driven CRUD;<br/>writes domain events to outbox</i>"]
-    adapter["<b>Crm.Adapter</b><br/>[Software system]<br/><i>Dispatches outbox events to NimBus;<br/>handles ERP-originated events back into CRM</i>"]
+    crm["<b>CRM (Crm.Web + Crm.Api + crm DB)</b><br/>[Software system]<br/><i>SPA-driven CRUD;<br/>publishes CRM events directly</i>"]
+    adapter["<b>Crm.Adapter</b><br/>[Software system]<br/><i>Handles ERP-originated events back into CRM</i>"]
     nimbus["<b>NimBus</b><br/>[Software system]<br/><i>Service Bus topic CrmEndpoint +<br/>Resolver + WebApp</i>"]
     erp["<b>ERP (Erp.Adapter.Functions + Erp.Api)</b><br/>[Software system]<br/><i>Mirror system;<br/>publishes ErpCustomerCreated and ErpContact* events</i>"]
 
     user -->|edits accounts / contacts| crm
-    crm -->|reads from / writes to outbox| adapter
-    adapter -->|publishes events to /<br/>subscribes from| nimbus
+    crm -->|publishes events to| nimbus
+    adapter -->|subscribes from| nimbus
     nimbus -->|delivers events to| erp
     erp -->|publishes acks /<br/>updates back to| nimbus
     adapter -->|HTTP upsert / link-erp| crm
@@ -107,16 +104,15 @@ graph TB
 
     subgraph crmSys["CRM (Crm.Web + Crm.Api + Crm.Adapter)"]
         web["<b>crm-web</b><br/>[Container: Vite SPA]<br/><i>React + TS UI</i>"]
-        api["<b>crm-api</b><br/>[Container: ASP.NET Core minimal API]<br/><i>CRUD over crm DB;<br/>publishes events to outbox</i>"]
-        adapter["<b>crm-adapter</b><br/>[Container: .NET 10 Worker]<br/><i>Outbox dispatcher,<br/>subscriber pipeline,<br/>deferred-message replay</i>"]
-        sql[("<b>crm DB</b><br/>[Container: SQL Server]<br/><i>Entities + OutboxMessages<br/>(NimBus.Outbox.SqlServer)</i>")]
+        api["<b>crm-api</b><br/>[Container: ASP.NET Core minimal API]<br/><i>CRUD over crm DB;<br/>publishes events directly</i>"]
+        adapter["<b>crm-adapter</b><br/>[Container: .NET 10 Worker]<br/><i>subscriber pipeline,<br/>deferred-message replay</i>"]
+        sql[("<b>crm DB</b><br/>[Container: SQL Server]<br/><i>Entities</i>")]
     end
 
     user(["<b>CRM user</b><br/>[Person]"]) -->|HTTPS| web
     web -->|HTTPS<br/>service discovery| api
     api -->|EF Core<br/>same DB transaction| sql
-    adapter -->|polls outbox<br/>every 1s| sql
-    adapter -->|publishes (OutboxDispatcherSender)<br/>Service Bus| nimbusSb
+    api -->|publishes<br/>Service Bus| nimbusSb
     nimbusSb -->|delivers (session-aware)<br/>topic CrmEndpoint / sub CrmEndpoint| adapter
     adapter -->|HTTP PUT/POST<br/>typed HttpClient| api
     erp -->|publishes events to| nimbusSb
@@ -141,14 +137,14 @@ The demo runs locally via .NET Aspire. The adapter is **not** declared with sepa
 | Resource | Aspire reference | Purpose |
 |---|---|---|
 | SQL Server (Aspire-managed container) | `builder.AddSqlServer("sql")` | Hosts the `crm` database |
-| `crm` database | `sql.AddDatabase("crm")` | Entities + outbox table |
+| `crm` database | `sql.AddDatabase("crm")` | CRM entities used by `Crm.Api`; not referenced by the adapter |
 | Service Bus connection | `builder.AddConnectionString("servicebus")` | Topic `CrmEndpoint` (provisioned by `CrmErpDemo.Provisioner`) |
 | Cosmos DB connection | `builder.AddConnectionString("cosmos")` | Used by `NimBus.Resolver` and `nimbus-ops` (not by the adapter directly) |
 | `crm-adapter` project | `builder.AddProject<Projects.Crm_Adapter>("crm-adapter")` | This adapter |
 | `crm-api` project | `builder.AddProject<Projects.Crm_Api>("crm-api")` | Target of adapter HTTP callbacks |
 | `provisioner` project | `builder.AddProject<Projects.CrmErpDemo_Provisioner>("provisioner")` | Creates topics/subscriptions (`CrmEndpoint`, `ErpEndpoint`) |
 
-Aspire `WithReference` calls on `crm-adapter`: `servicebus`, `crmDb` (`crm` connection string), `crmApi` (service-discovery URL).
+Aspire `WithReference` calls on `crm-adapter`: `servicebus`, `crmApi` (service-discovery URL).
 
 > **NimBus topology** (Service Bus topic + subscription, Cosmos containers for Resolver state per ADR-008) is provisioned by `CrmErpDemo.Provisioner` from the `Endpoint` declaration. The adapter does not own the topic; the topic name equals the endpoint class name (`CrmEndpoint`).
 
@@ -169,7 +165,6 @@ Aspire `WithReference` calls on `crm-adapter`: `servicebus`, `crmDb` (`crm` conn
 | `crm-api` (account upsert from ERP) | `{crm-api}/api/accounts/external/{erpCustomerId}` | None (demo) |
 | `crm-api` (contact upsert) | `{crm-api}/api/contacts/upsert/{contactId}` | None (demo) |
 | Service Bus | `sb://{servicebus-namespace}/CrmEndpoint` | Connection string from Aspire |
-| SQL `crm` outbox | `Server=...; Database=crm;` | Connection string from Aspire |
 
 > **Auth gap (demo only).** No bearer/MI auth on the HTTP calls into `crm-api`, no Managed Identity to Service Bus / SQL. This is acceptable for a local Aspire demo but flagged in §8 for any production lift.
 
@@ -179,7 +174,7 @@ Aspire `WithReference` calls on `crm-adapter`: `servicebus`, `crmDb` (`crm` conn
 |---|---|
 | Adapter → `crm-api` auth | None (demo) |
 | Adapter → Service Bus auth | Connection string from `ConnectionStrings:servicebus` (user secret on the AppHost) |
-| Adapter → SQL `crm` | Connection string from `ConnectionStrings:crm` (Aspire-injected) |
+| Adapter → SQL `crm` | n/a — CRM persistence is owned by `Crm.Api` |
 | Inbound webhook auth | n/a — adapter exposes no HTTP surface |
 | Secrets | User secrets on the AppHost; not stored in code |
 | PII in logs | Handlers log identifiers only (`AccountId`, `ErpCustomerId`, `CustomerNumber`, `ContactId`). Bodies are not logged. ✅ |
@@ -196,11 +191,11 @@ Aspire `WithReference` calls on `crm-adapter`: `servicebus`, `crmDb` (`crm` conn
 | Source | Content |
 |---|---|
 | `appsettings.json` | `Logging:LogLevel` only (Default Information; Hosting.Lifetime Information) |
-| Connection strings (Aspire-injected) | `ConnectionStrings:crm` (required — throws on startup if missing); `ConnectionStrings:servicebus` (used by `AddAzureServiceBusClient`) |
+| Connection strings (Aspire-injected) | `ConnectionStrings:servicebus` (used by `AddAzureServiceBusClient`) |
 | Service-discovery keys | `services:crm-api:https:0` / `services:crm-api:http:0` — resolved from Aspire `WithReference(crmApi)`; falls back to `Crm:ApiBaseUrl` if missing |
-| Hard-coded | Outbox poll interval `TimeSpan.FromSeconds(1)`; topic name `"CrmEndpoint"`; deferred-processor subscription `"deferredprocessor"` |
+| Hard-coded | Topic name `"CrmEndpoint"`; deferred-processor subscription `"deferredprocessor"` |
 
-> TODO(human): consider extracting the outbox poll interval and the topic name to `appsettings.json` if the adapter is ever lifted out of the demo.
+> TODO(human): consider extracting the topic name to `appsettings.json` if the adapter is ever lifted out of the demo.
 
 ---
 
@@ -220,26 +215,23 @@ See [`events.md`](./events.md) for field-level event schemas and full mapping ta
 | `ErpContactCreated` | `ErpContactCreatedHandler` (`Crm.Adapter/Handlers`) | `PUT /api/contacts/upsert/{ContactId}` | Idempotent on `ContactId` |
 | `ErpContactUpdated` | `ErpContactUpdatedHandler` (`Crm.Adapter/Handlers`) | `PUT /api/contacts/upsert/{ContactId}` | Idempotent on `ContactId` |
 
-### 3.2 Published events (adapter → NimBus, via outbox dispatch)  <!-- [AUTO] -->
+### 3.2 Published events (CRM → NimBus, direct from `Crm.Api`)  <!-- [AUTO] -->
 
-The adapter does not call `IPublisherClient.Publish(...)` itself. Outbound events are written by `Crm.Api` to the SQL outbox table; the adapter's `OutboxDispatcherHostedService` picks them up and forwards them to the `CrmEndpoint` topic via `OutboxDispatcherSender`.
+The adapter does not publish CRM-originated events. `Crm.Api` calls `IPublisherClient.Publish(...)` directly after saving the entity.
 
 | Event | Trigger (in `Crm.Api`) | Published via |
 |---|---|---|
-| `CrmAccountCreated` | `POST /api/accounts/` | Outbox → `OutboxDispatcherSender` → topic `CrmEndpoint` |
-| `CrmAccountUpdated` | `PUT /api/accounts/{id}` | Outbox → `OutboxDispatcherSender` → topic `CrmEndpoint` |
-| `CrmContactCreated` | `POST /api/contacts/` | Outbox → `OutboxDispatcherSender` → topic `CrmEndpoint` |
-| `CrmContactUpdated` | `PUT /api/contacts/{id}` | Outbox → `OutboxDispatcherSender` → topic `CrmEndpoint` |
+| `CrmAccountCreated` | `POST /api/accounts/` | Direct `IPublisherClient` publish to topic `CrmEndpoint` |
+| `CrmAccountUpdated` | `PUT /api/accounts/{id}` | Direct `IPublisherClient` publish to topic `CrmEndpoint` |
+| `CrmContactCreated` | `POST /api/contacts/` | Direct `IPublisherClient` publish to topic `CrmEndpoint` |
+| `CrmContactUpdated` | `PUT /api/contacts/{id}` | Direct `IPublisherClient` publish to topic `CrmEndpoint` |
 
 ### 3.3 Triggers  <!-- [HUMAN] -->
 
 | Trigger | Type | Frequency / schedule | Notes |
 |---|---|---|---|
-| Outbox dispatch | Polled | Every 1 s (hard-coded in `Program.cs`) | Default batch size 100. Batch can be raised if outbox throughput becomes a bottleneck. |
 | Inbound subscription | Continuous | Driven by Service Bus delivery | Session-aware. Concurrency / prefetch use `NimBusReceiverOptions` defaults. |
 | Deferred-processor | Continuous | Driven by Service Bus delivery on `deferredprocessor` sub | `MaxConcurrentCalls = 1`, `AutoCompleteMessages = false`. |
-
-> TODO(human): document the expected daily volume of CRM account / contact mutations and confirm whether the 1s outbox poll is acceptable under that load.
 
 ---
 
@@ -395,10 +387,9 @@ sequenceDiagram
 
     User->>Web: Create account (Acme GmbH)
     Web->>Api: POST /api/accounts
-    Api->>Sql: INSERT Accounts; INSERT OutboxMessages (CrmAccountCreated)
+    Api->>Sql: INSERT Accounts
+    Api->>NB: Publish CrmAccountCreated (session = AccountId)
     Api-->>Web: 201 Created
-    Adp->>Sql: SELECT pending OutboxMessages (every 1s)
-    Adp->>NB: Send CrmAccountCreated (session = AccountId)
     NB-->>Erp: Deliver CrmAccountCreated
     Erp->>Erp: PUT /api/customers/by-crm/{AccountId}; INSERT outbox (ErpCustomerCreated, Origin=Crm)
     Erp->>NB: Send ErpCustomerCreated (session = AccountId)
@@ -518,7 +509,7 @@ See [`events.md`](./events.md) for field tables and per-integration mappings.
 | `crm-api` unreachable (Kestrel down) | `HttpRequestException` (connection refused) | Service Bus redelivers; session blocks until restart | Restart `crm-api` → Resubmit blocked session |
 | Validation failure (missing `Required` field) | `ValidationMiddleware` throws | Permanent — surfaces in Resolver as `Invalid` | Fix producer; resubmit |
 | Echo loop (CRM → ERP → CRM `ErpCustomerCreated`) | `Origin` enum discriminates | `Origin=Crm` → link-erp; no second publish | None |
-| Outbox row dispatched twice (at-least-once) | None — by design | `link-erp` and `external/{id}` upserts are idempotent | None |
+| CRM publish delivered twice (at-least-once) | None — by design | `link-erp` and `external/{id}` upserts are idempotent | None |
 | Session blocked by an earlier failed message | NimBus session lock held | New messages on same session defer | Operator resubmits failed message → `DeferredProcessorService` replays |
 
 ---
@@ -566,12 +557,12 @@ Documented as a branch of §5 (`ErpCustomerCreatedHandler` when `Origin = Custom
 | Availability | {TBD — demo} | n/a |
 | Throughput — steady state | {TBD} | n/a |
 | Throughput — burst | {TBD} | n/a |
-| Latency — outbound (account create → on bus) | {TBD; bounded by 1s outbox poll} | hard-coded poll interval |
+| Latency — outbound (account create → on bus) | {TBD; direct publish from `Crm.Api`} | Service Bus publish latency |
 | Latency — inbound (event → CRM row updated) | {TBD} | n/a |
 | Retry budget | Service Bus `MaxDeliveryCount` (default 10 unless overridden by provisioner) | §4.3 |
 | Cold-start | < 5 s observed locally | Aspire dashboard |
 
-> **Known bottlenecks.** Outbox poll interval (1 s) is the floor of any CRM-originated event's transit time. Raise the dispatcher batch size before lowering the interval.
+> **Known bottlenecks.** CRM-originated publish latency is now direct Service Bus send time; ERP-originated events still include the ERP outbox dispatcher poll.
 
 > TODO(human): Appendix B-1 collects every `{TBD}` here.
 
@@ -582,7 +573,7 @@ Documented as a branch of §5 (`ErpCustomerCreatedHandler` when `Origin = Custom
 Design-level risks that affect how the adapter behaves under load, drift, or operational stress.
 
 - **No retry policy → 4xx burns the full delivery budget.** The handlers throw `HttpRequestException` on any non-2xx from `crm-api` (`EnsureSuccessStatusCode()`). Without a `RetryPolicies(...)` block or an `IPermanentFailureClassifier`, a permanent 4xx (e.g. 404 Not Found, 422 Validation Failed) is retried up to Service Bus `MaxDeliveryCount` before reaching the Resolver — operator pages on dead-letter. See §4.3 / §4.4.
-- **Hard-coded 1 s outbox poll.** Embedded in `Program.cs:36` as `TimeSpan.FromSeconds(1)`. Raise to env-bound config before any production lift; raise the batch size first if throughput needs improving.
+- **ERP outbox poll interval.** ERP owns the outbox showcase and hosts its dispatcher in `Erp.Api`.
 - **Auth model is demo-only.** No bearer/MI auth on calls to `crm-api`; no Managed Identity to Service Bus or SQL. Acceptable for the local Aspire demo, blocker for any non-demo deployment.
 
 > Findings 1 has a one-line remediation that is small enough to PR. Finding 2 is a config-shape change. Finding 3 is a deployment / production-readiness gate.
@@ -608,7 +599,7 @@ Design-level risks that affect how the adapter behaves under load, drift, or ope
 | Metric | Source | Alert threshold |
 |---|---|---|
 | Handler duration p95 | App Insights / OTel histogram `nimbus.message.process.duration` (via `NimBusConsumerInstrumentation` in `ServiceBusAdapter`) | {TBD} |
-| Outbox pending count | `SqlServerOutbox` (queryable) | {TBD} |
+| CRM pending outbound count | n/a — CRM publishes directly | n/a |
 | Service Bus dead-letter count | Azure Monitor on `CrmEndpoint` | > 0 |
 | Resolver unresolved count | `nimbus-ops` Resolver dashboard | {TBD} |
 
@@ -628,7 +619,7 @@ Design-level risks that affect how the adapter behaves under load, drift, or ope
 | Unit | none today | — | — |
 | Integration | none today | — | — |
 | End-to-end | manual via the demo's "happy path" + "failure path" runbooks | Real Service Bus + Cosmos + SQL via Aspire | `samples/CrmErpDemo/README.md` §"End-to-end happy path" |
-| Contract | implicit | `CrmEndpoint.Produces<>` / `Consumes<>` ↔ `AddNimBusSubscriber` / `AddNimBusOutboxDispatcher` wiring | n/a |
+| Contract | implicit | `CrmEndpoint.Produces<>` / `Consumes<>` ↔ `Crm.Api` publish calls and `AddNimBusSubscriber` wiring | n/a |
 
 > **Gap.** No automated tests live in `tests/` for `Crm.Adapter`. The demo's runbook (`samples/CrmErpDemo/README.md`) is the only verification today. Adding handler-level tests against `NimBus.Testing` (in-memory transport) is a low-cost win — see §8.
 
@@ -656,7 +647,7 @@ Design-level risks that affect how the adapter behaves under load, drift, or ope
 | [`../../CrmErpDemo.Contracts/Endpoints/CrmEndpoint.cs`](../../CrmErpDemo.Contracts/Endpoints/CrmEndpoint.cs) | Authoritative event contract |
 | [`../../CrmErpDemo.Contracts/Events/`](../../CrmErpDemo.Contracts/Events) | Event class definitions |
 | [`../../CrmErpDemo.AppHost/Program.cs`](../../CrmErpDemo.AppHost/Program.cs) | Aspire orchestration (resources, references, wait-fors) |
-| [`../../Crm.Api/Program.cs`](../../Crm.Api/Program.cs) | Outbox publisher wiring |
+| [`../../Crm.Api/Program.cs`](../../Crm.Api/Program.cs) | Direct publisher wiring |
 
 **Adapter docs.**
 
@@ -672,7 +663,7 @@ Design-level risks that affect how the adapter behaves under load, drift, or ope
 | [`docs/sdk-api-reference.md`](../../../../docs/sdk-api-reference.md) | `AddNimBus*` extension methods, `IEventHandler<T>`, `IPublisherClient` |
 | [`docs/pipeline-middleware.md`](../../../../docs/pipeline-middleware.md) | `IMessagePipelineBehavior` pattern |
 | [`docs/adr/001-session-based-ordering.md`](../../../../docs/adr/001-session-based-ordering.md) | Session ordering rationale |
-| [`docs/adr/005-transactional-outbox-sql-server.md`](../../../../docs/adr/005-transactional-outbox-sql-server.md) | Outbox rationale |
+| [`docs/adr/005-transactional-outbox-sql-server.md`](../../../../docs/adr/005-transactional-outbox-sql-server.md) | ERP-side outbox rationale |
 | [`docs/adr/008-per-endpoint-cosmos-containers.md`](../../../../docs/adr/008-per-endpoint-cosmos-containers.md) | Resolver storage layout |
 
 ---
@@ -690,6 +681,6 @@ Design-level risks that affect how the adapter behaves under load, drift, or ope
 | # | Section | Question | Owner |
 |---|---|---|---|
 | B-1 | §1.5, §5.3, §7 | Criticality + operational owner; adapter-level NFR targets (availability, throughput, latency, downtime impact). The demo answers are "n/a"; if the adapter is ever lifted out of the demo, fill these in. | NimBus tech lead |
-| B-2 | §3.3 | Expected daily volume of CRM account / contact mutations and confirmation that 1 s outbox poll is acceptable. | NimBus tech lead |
+| B-2 | §3.3 | Expected daily volume of CRM account / contact mutations and confirmation that direct publish latency is acceptable. | NimBus tech lead |
 | B-3 | §8 (finding 1) | Decision: add per-event retry policy + `IPermanentFailureClassifier` to differentiate 4xx from 5xx? | NimBus tech lead |
 | B-5 | §9.3 | Dashboard URLs once the adapter leaves the local Aspire context. | Operations |

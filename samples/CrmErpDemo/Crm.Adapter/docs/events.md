@@ -43,7 +43,7 @@ public class CrmEndpoint : Endpoint
 
 *Source: `CrmErpDemo.Contracts/Endpoints/CrmEndpoint.cs`.*
 
-### 1.1 Published events (CRM → NimBus, via outbox dispatch)
+### 1.1 Published events (CRM → NimBus, direct from `Crm.Api`)
 
 | Event | Base class | Session key | Anchor |
 |---|---|---|---|
@@ -153,7 +153,7 @@ classDiagram
 
 **Purpose.** Published by CRM when an Account is created.
 
-**Direction.** Published by adapter (via outbox dispatch).
+**Direction.** Published directly by `Crm.Api`.
 
 **Trigger.** `POST /api/accounts` in `Crm.Api`.
 
@@ -183,7 +183,7 @@ classDiagram
 
 **Purpose.** Published by CRM when an Account is updated.
 
-**Direction.** Published by adapter (via outbox dispatch).
+**Direction.** Published directly by `Crm.Api`.
 
 **Trigger.** `PUT /api/accounts/{id}` in `Crm.Api`.
 
@@ -292,7 +292,7 @@ public enum CustomerOrigin { Erp = 0, Crm = 1 }
 
 **Purpose.** Published by CRM when a Contact is created.
 
-**Direction.** Published by adapter (via outbox).
+**Direction.** Published directly by `Crm.Api`.
 
 **Trigger.** `POST /api/contacts` in `Crm.Api`.
 
@@ -317,7 +317,7 @@ public enum CustomerOrigin { Erp = 0, Crm = 1 }
 
 **Purpose.** Published by CRM when a Contact is updated.
 
-**Direction.** Published by adapter (via outbox).
+**Direction.** Published directly by `Crm.Api`.
 
 **Trigger.** `PUT /api/contacts/{id}` in `Crm.Api`.
 

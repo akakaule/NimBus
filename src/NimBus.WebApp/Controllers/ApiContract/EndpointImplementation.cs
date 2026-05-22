@@ -211,7 +211,8 @@ public class EndpointImplementation : IEndpointApiController
     {
         var result = new ConcurrentBag<EndpointStatusCount>();
         var endpointIds = (body as string[] ?? body.ToArray())
-            .Where(id => EndpointVerificationService.EndpointExists(platform, id));
+            .Where(id => EndpointVerificationService.EndpointExists(platform, id)
+                      && _authorizationService.IsManagerOfEndpoint(id));
 
         var options = new ParallelOptions { MaxDegreeOfParallelism = Math.Min(System.Environment.ProcessorCount, 4) };
 

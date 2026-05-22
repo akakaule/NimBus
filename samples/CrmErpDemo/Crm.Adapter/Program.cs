@@ -42,6 +42,9 @@ builder.Services.AddNimBusReceiver(opts =>
     opts.MaxConcurrentSessions = 32;
 });
 
-// Deferred replay is now auto-registered by AddNimBusSubscriber above.
+// Deferred-replay BackgroundService. Worker hosts that own the deferred-processor
+// trigger themselves opt in here; Functions hosts skip this and add their own
+// [ServiceBusTrigger] function class instead.
+builder.Services.AddNimBusDeferredProcessorHostedService("CrmEndpoint");
 
 builder.Build().Run();

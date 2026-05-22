@@ -105,20 +105,14 @@ namespace NimBus.SDK.Extensions
                 throw new ArgumentException("Endpoint must be specified.", nameof(configure));
 
             // One-endpoint-per-process guard. A second call against the *same*
-            // endpoint with matching deferred-host opts is benign (TryAdd keeps
-            // the first registration anyway). A second call with a *different*
-            // endpoint silently binds the second endpoint's handlers to a no-op,
-            // which is the bug. A second call against the same endpoint with
-            // *different* deferred-host opts is also surprising — TryAddSingleton
-            // / TryAddEnumerable mean the first call wins, so a later "Disable"
-            // can't undo the already-registered hosted service. Throw on both
-            // mismatch shapes so the misuse is loud at startup.
+            // endpoint is benign (TryAdd would keep the first registration anyway);
+            // a second call against a *different* endpoint silently bound the
+            // second endpoint's handlers to a no-op, which is the bug.
             foreach (var descriptor in services)
             {
-                if (descriptor.ServiceType != typeof(SubscriberEndpointMarker)) continue;
-                if (descriptor.ImplementationInstance is not SubscriberEndpointMarker existing) continue;
-
-                if (!string.Equals(existing.Endpoint, options.Endpoint, StringComparison.Ordinal))
+                if (descriptor.ServiceType == typeof(SubscriberEndpointMarker)
+                    && descriptor.ImplementationInstance is SubscriberEndpointMarker existing
+                    && !string.Equals(existing.Endpoint, options.Endpoint, StringComparison.Ordinal))
                 {
                     throw new InvalidOperationException(
                         $"AddNimBusSubscriber was already called for endpoint '{existing.Endpoint}'. " +
@@ -127,26 +121,8 @@ namespace NimBus.SDK.Extensions
                         "process (matches the Aspire / Functions topology in samples/CrmErpDemo) or file an issue " +
                         "to discuss keyed-ISubscriberClient support.");
                 }
-
-                if (existing.DisableDeferredProcessorHostedService != options.DisableDeferredProcessorHostedService
-                    || !string.Equals(existing.DeferredProcessorSubscriptionName, options.DeferredProcessorSubscriptionName, StringComparison.Ordinal))
-                {
-                    throw new InvalidOperationException(
-                        $"AddNimBusSubscriber was already called for endpoint '{options.Endpoint}' with different " +
-                        $"deferred-processor host options " +
-                        $"(DisableDeferredProcessorHostedService={existing.DisableDeferredProcessorHostedService}, " +
-                        $"DeferredProcessorSubscriptionName='{existing.DeferredProcessorSubscriptionName}'). " +
-                        $"The new call requested " +
-                        $"(DisableDeferredProcessorHostedService={options.DisableDeferredProcessorHostedService}, " +
-                        $"DeferredProcessorSubscriptionName='{options.DeferredProcessorSubscriptionName}'). " +
-                        "Conflicting deferred-host options are silently ignored by TryAddSingleton + TryAddEnumerable, " +
-                        "so this throws to surface the misuse early. Set the options once, on the first call.");
-                }
             }
-            services.AddSingleton(new SubscriberEndpointMarker(
-                options.Endpoint,
-                options.DisableDeferredProcessorHostedService,
-                options.DeferredProcessorSubscriptionName));
+            services.AddSingleton(new SubscriberEndpointMarker(options.Endpoint));
 
             // Match the publisher path — consumer-side spans + meters depend on
             // the same OTel ActivitySource/Meter registrations.
@@ -159,22 +135,10 @@ namespace NimBus.SDK.Extensions
             // endpoint may park messages on the Deferred subscription and needs this processor
             // to drain them. Register a default so adapters don't have to repeat the wiring.
             // TryAddSingleton preserves the ability to override (e.g., a custom subscription name).
+            // The trigger-side BackgroundService is *not* auto-registered — see
+            // AddNimBusDeferredProcessorHostedService for the explicit opt-in.
             services.TryAddSingleton<IDeferredMessageProcessor>(sp =>
                 new DeferredMessageProcessor(sp.GetRequiredService<ServiceBusClient>()));
-
-            // Worker-side host for the deferred-processor trigger subscription
-            // (non-session, "deferredprocessor"). Registered typed + idempotent so
-            // repeated AddNimBusSubscriber calls with the same endpoint don't
-            // stack duplicate BackgroundServices. Functions hosts that own the
-            // trigger via [ServiceBusTrigger] set DisableDeferredProcessorHostedService
-            // = true; the per-host marker check above rejects conflicting opts.
-            if (!options.DisableDeferredProcessorHostedService)
-            {
-                services.TryAddSingleton(new DeferredMessageProcessorHostedServiceOptions(
-                    TopicName: options.Endpoint,
-                    SubscriptionName: options.DeferredProcessorSubscriptionName));
-                services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, DeferredMessageProcessorHostedService>());
-            }
 
             services.TryAddSingleton<ISubscriberClient>(sp =>
             {
@@ -317,6 +281,51 @@ namespace NimBus.SDK.Extensions
         }
 
         /// <summary>
+        /// Registers the Worker-side deferred-processor host as an
+        /// <see cref="IHostedService"/>. The host listens on the non-session
+        /// <paramref name="subscriptionName"/> subscription of
+        /// <paramref name="endpoint"/>'s topic, and on each trigger message
+        /// drives <see cref="IDeferredMessageProcessor"/> to drain the matching
+        /// session on the <c>Deferred</c> parking subscription.
+        ///
+        /// <para>Call this from Worker / BackgroundService hosts that own the
+        /// deferred-processor trigger themselves. Azure Functions hosts that
+        /// own the trigger via a <c>[ServiceBusTrigger]</c> function class
+        /// should NOT call this — their function class is the trigger; the
+        /// shared body lives in
+        /// <see cref="NimBus.SDK.Hosting.DeferredMessageDispatcher.ProcessAsync"/>.</para>
+        ///
+        /// <para>Requires <see cref="AddNimBusSubscriber(IServiceCollection, string, Action{NimBusSubscriberBuilder})"/>
+        /// to have been called first so <see cref="IDeferredMessageProcessor"/>
+        /// is registered. The two methods are order-independent — DI resolution
+        /// happens at host start.</para>
+        ///
+        /// <para>Idempotent: registered via
+        /// <c>TryAddEnumerable(ServiceDescriptor.Singleton&lt;IHostedService, DeferredMessageProcessorHostedService&gt;())</c>,
+        /// so repeated calls don't stack duplicate BackgroundServices.</para>
+        /// </summary>
+        /// <param name="services">The service collection.</param>
+        /// <param name="endpoint">The endpoint (topic name) whose deferred parking subscription is drained when the trigger fires.</param>
+        /// <param name="subscriptionName">Name of the non-session trigger subscription. Default <c>"deferredprocessor"</c>.</param>
+        /// <returns>The service collection for chaining.</returns>
+        public static IServiceCollection AddNimBusDeferredProcessorHostedService(
+            this IServiceCollection services,
+            string endpoint,
+            string subscriptionName = "deferredprocessor")
+        {
+            if (string.IsNullOrEmpty(endpoint))
+                throw new ArgumentException("Endpoint must be specified.", nameof(endpoint));
+            if (string.IsNullOrEmpty(subscriptionName))
+                throw new ArgumentException("Subscription name must be specified.", nameof(subscriptionName));
+
+            services.TryAddSingleton(new DeferredMessageProcessorHostedServiceOptions(
+                TopicName: endpoint,
+                SubscriptionName: subscriptionName));
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, DeferredMessageProcessorHostedService>());
+            return services;
+        }
+
+        /// <summary>
         /// Registers an <see cref="IHandoffClient"/> bound to <paramref name="endpoint"/>
         /// for processes that settle pending handoffs without hosting a subscriber
         /// themselves (e.g. the CrmErpDemo's <c>Erp.Api</c> background worker).
@@ -391,25 +400,12 @@ namespace NimBus.SDK.Extensions
         }
 
         // Marker singleton recorded by AddNimBusSubscriber so a second call
-        // can fail with a clear error instead of silently keeping the first
-        // registration's handlers. Tracks both the endpoint (mismatch → wrong
-        // subscriber) and the deferred-host config (mismatch → silent surprise
-        // because TryAddSingleton + TryAddEnumerable can't undo the first call).
+        // against a different endpoint can fail with a clear error instead of
+        // silently keeping the first registration's handlers.
         private sealed class SubscriberEndpointMarker
         {
-            public SubscriberEndpointMarker(
-                string endpoint,
-                bool disableDeferredProcessorHostedService,
-                string deferredProcessorSubscriptionName)
-            {
-                Endpoint = endpoint;
-                DisableDeferredProcessorHostedService = disableDeferredProcessorHostedService;
-                DeferredProcessorSubscriptionName = deferredProcessorSubscriptionName;
-            }
-
+            public SubscriberEndpointMarker(string endpoint) => Endpoint = endpoint;
             public string Endpoint { get; }
-            public bool DisableDeferredProcessorHostedService { get; }
-            public string DeferredProcessorSubscriptionName { get; }
         }
     }
 }

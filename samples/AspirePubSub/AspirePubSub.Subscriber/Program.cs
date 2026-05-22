@@ -28,7 +28,9 @@ builder.Services.AddNimBusReceiver(opts =>
     opts.SubscriptionName = "BillingEndpoint";
 });
 
-// The deferred-replay BackgroundService is now auto-registered by AddNimBusSubscriber above.
+// Deferred-replay BackgroundService for the trigger subscription. Worker hosts opt in here;
+// Functions hosts would skip this and add their own [ServiceBusTrigger] function class.
+builder.Services.AddNimBusDeferredProcessorHostedService("BillingEndpoint");
 
 var host = builder.Build();
 host.Run();

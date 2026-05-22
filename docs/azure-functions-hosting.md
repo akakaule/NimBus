@@ -205,32 +205,27 @@ that extracts `SessionId`, calls the processor, and handles `SessionCannotBeLock
 worker that owns its own `[ServiceBusTrigger]` (and from anywhere else that wants to drive
 deferred replay).
 
-> **Functions hosts must opt out of the BackgroundService**. By default
-> `AddNimBusSubscriber` also registers `DeferredMessageProcessorHostedService`, a Worker-side
-> `BackgroundService` that listens on the same `deferredprocessor` subscription. In a
-> Functions worker that would compete with the function trigger for the same messages. Disable
-> it on the subscriber registration:
->
-> ```csharp
-> builder.Services.AddNimBusSubscriber(
->     opts =>
->     {
->         opts.Endpoint = "BillingEndpoint";
->         opts.DisableDeferredProcessorHostedService = true;
->     },
->     sub => sub.AddHandlersFromAssemblyContaining<MyHandler>());
-> ```
->
-> If you forget the opt-out you'll see a startup log line on the BackgroundService side
-> (`"Deferred-processor hosted service enabled on topic 'BillingEndpoint'..."`) and intermittent
-> duplicate-settlement errors on the Functions side. Flip the option and restart.
+> **Functions hosts: do not call `AddNimBusDeferredProcessorHostedService`**. That extension
+> wires a Worker-side `BackgroundService` for the same `deferredprocessor` subscription. In a
+> Functions worker the two would race each other for the same messages. The Functions sample
+> registers `AddNimBusSubscriber` and the function class above — nothing else.
 
-### Migrating from a hand-rolled DeferredProcessorService
+### Worker hosts: opt in to the BackgroundService
 
-Worker hosts that previously registered a `DeferredProcessorService` (BackgroundService) by
-hand should delete that class and its `AddHostedService(...)` line — `AddNimBusSubscriber`
-now wires the equivalent automatically. If you keep the hand-rolled service, also set
-`DisableDeferredProcessorHostedService = true` so the two don't compete.
+Worker / `BackgroundService` hosts that don't have a `[ServiceBusTrigger]` function add one
+line to opt in to the library-provided host instead of writing the trigger loop by hand:
+
+```csharp
+builder.Services.AddNimBusSubscriber("BillingEndpoint", sub =>
+    sub.AddHandlersFromAssemblyContaining<MyHandler>());
+
+// Worker-side opt-in. Skip this in Functions hosts — the function class is the trigger.
+builder.Services.AddNimBusDeferredProcessorHostedService("BillingEndpoint");
+```
+
+The hosted service is registered with `TryAddEnumerable` so repeated calls are idempotent. If
+your host also runs custom code on the same subscription (legacy hand-rolled
+`DeferredProcessorService`), pick one — they will both try to settle the same trigger message.
 
 ### Subscription naming
 
@@ -240,8 +235,8 @@ Two distinct subscriptions are involved — keeping the names straight matters:
   via `AcceptSessionAsync(sessionId)`. Default constant
   `NimBus.Core.Constants.DeferredSubscriptionName`.
 - **`deferredprocessor`** (non-session, the *trigger lot*) — read by the BackgroundService or
-  by the `[ServiceBusTrigger]` function class above. Default option
-  `NimBusSubscriberOptions.DeferredProcessorSubscriptionName`.
+  by the `[ServiceBusTrigger]` function class above. Default `subscriptionName` parameter on
+  `AddNimBusDeferredProcessorHostedService`.
 
 Key difference from the main function:
 - **`IsSessionsEnabled = false`** — The `deferredprocessor` subscription is NOT session-enabled

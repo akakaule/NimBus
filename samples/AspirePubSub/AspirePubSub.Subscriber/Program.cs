@@ -1,10 +1,7 @@
-using AspirePubSub.Subscriber;
 using AspirePubSub.Subscriber.Handlers;
 using NimBus.Core.Extensions;
-using NimBus.Core.Messages;
 using NimBus.Core.Pipeline;
 using NimBus.SDK.Extensions;
-using NimBus.SDK.Hosting;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -31,15 +28,7 @@ builder.Services.AddNimBusReceiver(opts =>
     opts.SubscriptionName = "BillingEndpoint";
 });
 
-// Hosted service that drives the deferred replay loop. The IDeferredMessageProcessor
-// itself is registered by AddNimBusSubscriber above.
-builder.Services.AddHostedService(sp =>
-{
-    var sbClient = sp.GetRequiredService<Azure.Messaging.ServiceBus.ServiceBusClient>();
-    var processor = sp.GetRequiredService<IDeferredMessageProcessor>();
-    var logger = sp.GetRequiredService<ILogger<DeferredProcessorService>>();
-    return new DeferredProcessorService(sbClient, processor, logger, "BillingEndpoint");
-});
+// The deferred-replay BackgroundService is now auto-registered by AddNimBusSubscriber above.
 
 var host = builder.Build();
 host.Run();

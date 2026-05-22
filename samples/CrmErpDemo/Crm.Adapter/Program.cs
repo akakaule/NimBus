@@ -1,9 +1,6 @@
-using Azure.Messaging.ServiceBus;
-using Crm.Adapter;
 using Crm.Adapter.Clients;
 using Crm.Adapter.Handlers;
 using NimBus.Core.Extensions;
-using NimBus.Core.Messages;
 using NimBus.Core.Pipeline;
 using NimBus.SDK.Extensions;
 
@@ -45,14 +42,6 @@ builder.Services.AddNimBusReceiver(opts =>
     opts.MaxConcurrentSessions = 32;
 });
 
-// Deferred replay hosted service. The IDeferredMessageProcessor itself is registered
-// by AddNimBusSubscriber above.
-builder.Services.AddHostedService(sp =>
-{
-    var sbClient = sp.GetRequiredService<ServiceBusClient>();
-    var processor = sp.GetRequiredService<IDeferredMessageProcessor>();
-    var logger = sp.GetRequiredService<ILogger<DeferredProcessorService>>();
-    return new DeferredProcessorService(sbClient, processor, logger, "CrmEndpoint");
-});
+// Deferred replay is now auto-registered by AddNimBusSubscriber above.
 
 builder.Build().Run();

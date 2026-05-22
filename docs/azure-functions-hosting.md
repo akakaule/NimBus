@@ -169,67 +169,83 @@ Key points:
 
 ## Adding a DeferredProcessor Function
 
-In NimBus, deferred message processing is handled separately from the main handler. Add a second function in the same project for the DeferredProcessor subscription:
+In NimBus, deferred message processing is handled separately from the main handler. Functions hosts need a dedicated function on the `deferredprocessor` trigger subscription:
 
 ```csharp
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
 using NimBus.Core.Messages;
-using NimBus.ServiceBus;
+using NimBus.SDK.Hosting;
 
-public class BillingDeferredProcessorFunction
+public class BillingDeferredProcessorFunction(IDeferredMessageProcessor processor)
 {
-    private readonly IDeferredMessageProcessor _processor;
-    private readonly ServiceBusClient _sbClient;
-
-    public BillingDeferredProcessorFunction(
-        IDeferredMessageProcessor processor,
-        ServiceBusClient sbClient)
-    {
-        _processor = processor;
-        _sbClient = sbClient;
-    }
-
     [Function("BillingDeferredProcessor")]
     public async Task RunAsync(
         [ServiceBusTrigger(
             "%TopicName%",
-            "DeferredProcessor",
+            "deferredprocessor",
             Connection = "AzureWebJobsServiceBus",
             IsSessionsEnabled = false)]
         ServiceBusReceivedMessage message,
         ServiceBusMessageActions messageActions)
     {
-        var sessionId = message.ApplicationProperties.TryGetValue("SessionId", out var sid)
-            ? sid?.ToString()
-            : message.SessionId;
+        var outcome = await DeferredMessageDispatcher.ProcessAsync(message, processor, "BillingEndpoint");
 
-        if (string.IsNullOrEmpty(sessionId))
-        {
-            await messageActions.DeadLetterMessageAsync(message, "No SessionId");
-            return;
-        }
-
-        try
-        {
-            await _processor.ProcessDeferredMessagesAsync(sessionId, "BillingEndpoint");
+        if (outcome.Action == DeferredMessageDispatchAction.DeadLetter)
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: outcome.DeadLetterReason);
+        else
             await messageActions.CompleteMessageAsync(message);
-        }
-        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.SessionCannotBeLocked)
-        {
-            await messageActions.CompleteMessageAsync(message);
-        }
     }
 }
 ```
 
-`IDeferredMessageProcessor` is registered for you by `AddNimBusSubscriber` (using the
-default Deferred subscription name). Override with your own `TryAddSingleton`/`AddSingleton`
-only if you need a non-default subscription name.
+`IDeferredMessageProcessor` is registered for you by `AddNimBusSubscriber`. The shared body
+that extracts `SessionId`, calls the processor, and handles `SessionCannotBeLocked` lives in
+`NimBus.SDK.Hosting.DeferredMessageDispatcher.ProcessAsync` — call it from any Functions
+worker that owns its own `[ServiceBusTrigger]` (and from anywhere else that wants to drive
+deferred replay).
+
+> **Functions hosts must opt out of the BackgroundService**. By default
+> `AddNimBusSubscriber` also registers `DeferredMessageProcessorHostedService`, a Worker-side
+> `BackgroundService` that listens on the same `deferredprocessor` subscription. In a
+> Functions worker that would compete with the function trigger for the same messages. Disable
+> it on the subscriber registration:
+>
+> ```csharp
+> builder.Services.AddNimBusSubscriber(
+>     opts =>
+>     {
+>         opts.Endpoint = "BillingEndpoint";
+>         opts.DisableDeferredProcessorHostedService = true;
+>     },
+>     sub => sub.AddHandlersFromAssemblyContaining<MyHandler>());
+> ```
+>
+> If you forget the opt-out you'll see a startup log line on the BackgroundService side
+> (`"Deferred-processor hosted service enabled on topic 'BillingEndpoint'..."`) and intermittent
+> duplicate-settlement errors on the Functions side. Flip the option and restart.
+
+### Migrating from a hand-rolled DeferredProcessorService
+
+Worker hosts that previously registered a `DeferredProcessorService` (BackgroundService) by
+hand should delete that class and its `AddHostedService(...)` line — `AddNimBusSubscriber`
+now wires the equivalent automatically. If you keep the hand-rolled service, also set
+`DisableDeferredProcessorHostedService = true` so the two don't compete.
+
+### Subscription naming
+
+Two distinct subscriptions are involved — keeping the names straight matters:
+
+- **`Deferred`** (session-enabled, the *parking lot*) — read by `IDeferredMessageProcessor`
+  via `AcceptSessionAsync(sessionId)`. Default constant
+  `NimBus.Core.Constants.DeferredSubscriptionName`.
+- **`deferredprocessor`** (non-session, the *trigger lot*) — read by the BackgroundService or
+  by the `[ServiceBusTrigger]` function class above. Default option
+  `NimBusSubscriberOptions.DeferredProcessorSubscriptionName`.
 
 Key difference from the main function:
-- **`IsSessionsEnabled = false`** — The DeferredProcessor subscription is NOT session-enabled
-- It receives a trigger message, then processes deferred messages from the Deferred subscription independently
+- **`IsSessionsEnabled = false`** — The `deferredprocessor` subscription is NOT session-enabled
+- It receives a trigger message, then `DeferredMessageDispatcher` drains the matching session on the `Deferred` parking subscription
 
 ## Multiple Endpoints in One Function App
 

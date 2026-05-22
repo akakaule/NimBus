@@ -61,9 +61,19 @@ builder.Services.AddNimBus(n =>
     n.AddPipelineBehavior<ServiceModeMiddleware>();
 });
 
-builder.Services.AddNimBusSubscriber("ErpEndpoint", sub =>
-{
-    sub.AddHandlersFromAssemblyContaining<CrmAccountCreatedHandler>();
-});
+// The Functions worker owns the deferred-processor trigger directly via
+// ErpDeferredProcessorFunction's [ServiceBusTrigger]. Disable the auto-
+// registered BackgroundService so it doesn't compete with the function
+// trigger for the same "deferredprocessor" subscription.
+builder.Services.AddNimBusSubscriber(
+    opts =>
+    {
+        opts.Endpoint = "ErpEndpoint";
+        opts.DisableDeferredProcessorHostedService = true;
+    },
+    sub =>
+    {
+        sub.AddHandlersFromAssemblyContaining<CrmAccountCreatedHandler>();
+    });
 
 builder.Build().Run();

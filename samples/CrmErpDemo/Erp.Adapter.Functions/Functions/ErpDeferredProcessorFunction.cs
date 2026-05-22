@@ -1,6 +1,7 @@
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
 using NimBus.Core.Messages;
+using NimBus.SDK.Hosting;
 
 namespace Erp.Adapter.Functions.Functions;
 
@@ -16,22 +17,13 @@ public class ErpDeferredProcessorFunction(IDeferredMessageProcessor processor)
         ServiceBusReceivedMessage message,
         ServiceBusMessageActions messageActions)
     {
-        var sessionId = message.ApplicationProperties.TryGetValue("SessionId", out var sid)
-            ? sid?.ToString()
-            : message.SessionId;
+        var outcome = await DeferredMessageDispatcher.ProcessAsync(message, processor, "ErpEndpoint");
 
-        if (string.IsNullOrEmpty(sessionId))
+        if (outcome.Action == DeferredMessageDispatchAction.DeadLetter)
         {
-            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "No SessionId");
-            return;
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: outcome.DeadLetterReason);
         }
-
-        try
-        {
-            await processor.ProcessDeferredMessagesAsync(sessionId, "ErpEndpoint");
-            await messageActions.CompleteMessageAsync(message);
-        }
-        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.SessionCannotBeLocked)
+        else
         {
             await messageActions.CompleteMessageAsync(message);
         }

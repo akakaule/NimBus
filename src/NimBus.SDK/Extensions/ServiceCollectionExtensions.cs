@@ -11,7 +11,6 @@ using NimBus.OpenTelemetry;
 using NimBus.SDK.EventHandlers;
 using NimBus.SDK.Hosting;
 using NimBus.ServiceBus;
-using System;
 
 namespace NimBus.SDK.Extensions
 {

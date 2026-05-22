@@ -2,12 +2,10 @@ using Azure.Messaging.ServiceBus;
 using Crm.Adapter;
 using Crm.Adapter.Clients;
 using Crm.Adapter.Handlers;
-using CrmErpDemo.Contracts.Events;
 using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
 using NimBus.Core.Pipeline;
 using NimBus.SDK.Extensions;
-using NimBus.SDK.Hosting;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -33,12 +31,7 @@ builder.Services.AddNimBus(n =>
 // Subscriber + receiver for CrmEndpoint. Also publishes acks/errors back through CrmEndpoint sender.
 builder.Services.AddNimBusSubscriber("CrmEndpoint", sub =>
 {
-    sub.AddHandler<ErpCustomerCreated, ErpCustomerCreatedHandler>();
-    sub.AddHandler<ErpCustomerUpdated, ErpCustomerUpdatedHandler>();
-    sub.AddHandler<ErpCustomerDeleted, ErpCustomerDeletedHandler>();
-    sub.AddHandler<ErpContactCreated, ErpContactCreatedHandler>();
-    sub.AddHandler<ErpContactUpdated, ErpContactUpdatedHandler>();
-    sub.AddHandler<ErpContactDeleted, ErpContactDeletedHandler>();
+    sub.AddHandlersFromAssemblyContaining<ErpCustomerCreatedHandler>();
 });
 builder.Services.AddNimBusReceiver(opts =>
 {

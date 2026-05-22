@@ -194,6 +194,14 @@ namespace NimBus.WebApp
             }).AddJsonOptions(opts =>
             {
                 opts.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+                // Normalise every outbound DateTime to UTC with a `Z` suffix so the
+                // SPA's moment.js parses it as UTC (then renders in browser-local).
+                // Without this, Unspecified-Kind DateTimes from Cosmos / SQL get
+                // serialised without offset and moment treats them as local time —
+                // displaying UTC wall-clocks as if they were local. See
+                // Services/UtcDateTimeJsonConverter.cs for the rationale.
+                opts.JsonSerializerOptions.Converters.Add(new Services.UtcDateTimeJsonConverter());
+                opts.JsonSerializerOptions.Converters.Add(new Services.NullableUtcDateTimeJsonConverter());
             });
 
             services.AddMvc().AddRazorRuntimeCompilation();

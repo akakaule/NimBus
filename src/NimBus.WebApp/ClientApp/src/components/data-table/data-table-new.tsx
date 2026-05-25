@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   useReactTable,
@@ -230,16 +230,25 @@ export function DataTable({
     },
   });
 
-  // Trigger onPageChange when approaching end of data
+  // Prefetch the next page when the user actually advances pageIndex. The previous
+  // version also fired on `rows.length` changes, which produced a cascade: an initial
+  // fetch of `pageSize` rows immediately satisfied the "≤ one page from the end"
+  // condition, triggered onPageChange, that appended more rows, which fired the effect
+  // again, etc. — so opening a list page issued 2–3 fetches without user input.
+  const prevPageIndex = useRef(0);
+  const pageIndex = table.getState().pagination.pageIndex;
   useEffect(() => {
-    if (onPageChange) {
-      const { pageIndex, pageSize } = table.getState().pagination;
-      const totalRows = rows.length;
-      if (totalRows - pageSize * (pageIndex + 1) <= pageSize) {
-        onPageChange();
-      }
+    if (pageIndex <= prevPageIndex.current) {
+      prevPageIndex.current = pageIndex;
+      return;
     }
-  }, [table.getState().pagination.pageIndex, onPageChange, rows.length]);
+    prevPageIndex.current = pageIndex;
+    if (!onPageChange) return;
+    const pageSize = table.getState().pagination.pageSize;
+    if (rows.length - pageSize * (pageIndex + 1) <= pageSize) {
+      onPageChange();
+    }
+  }, [pageIndex, onPageChange, rows.length, table]);
 
   const selectedRows = useMemo(() => {
     return rows.filter((_, idx) => rowSelection[idx]);

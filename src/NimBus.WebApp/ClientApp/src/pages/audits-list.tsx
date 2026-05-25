@@ -163,11 +163,11 @@ export default function AuditsList() {
     fetchAudits(apiFilter, pageSize);
   }, [apiFilter, pageSize, fetchAudits]);
 
-  const handlePageChange = () => {
-    if (continuationToken) {
+  const handlePageChange = useCallback(() => {
+    if (continuationToken && !loading) {
       fetchAudits(apiFilter, pageSize, continuationToken, true);
     }
-  };
+  }, [continuationToken, loading, fetchAudits, apiFilter, pageSize]);
 
   const rows = audits.map(mapAuditToRow);
 

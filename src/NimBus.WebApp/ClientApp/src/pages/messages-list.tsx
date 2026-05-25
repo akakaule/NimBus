@@ -185,11 +185,11 @@ export default function MessagesList() {
     fetchMessages(apiFilter, pageSize);
   }, [apiFilter, pageSize, fetchMessages]);
 
-  const handlePageChange = () => {
+  const handlePageChange = useCallback(() => {
     if (continuationToken && !loading) {
       fetchMessages(apiFilter, pageSize, continuationToken, true);
     }
-  };
+  }, [continuationToken, loading, fetchMessages, apiFilter, pageSize]);
 
   // Clicking an ID cell narrows the current filter set by setting just that
   // field; other fields stay as the user left them (URL-driven merge behavior).

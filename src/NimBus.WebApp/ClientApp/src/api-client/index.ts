@@ -508,6 +508,122 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Complete a pending handoff
+     * @param body (optional) 
+     * @return OK
+     */
+    postHandoffComplete(endpointId: string, eventId: string, messageId: string, body?: CompleteHandoffRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/event/handoff/complete/{endpointId}/{eventId}/{messageId}";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        if (eventId === undefined || eventId === null)
+            throw new globalThis.Error("The parameter 'eventId' must be defined.");
+        url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
+        if (messageId === undefined || messageId === null)
+            throw new globalThis.Error("The parameter 'messageId' must be defined.");
+        url_ = url_.replace("{messageId}", encodeURIComponent("" + messageId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostHandoffComplete(_response);
+        });
+    }
+
+    protected processPostHandoffComplete(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Event is not a pending handoff", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint or event not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * Fail a pending handoff
+     * @param body (optional) 
+     * @return OK
+     */
+    postHandoffFail(endpointId: string, eventId: string, messageId: string, body?: FailHandoffRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/event/handoff/fail/{endpointId}/{eventId}/{messageId}";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        if (eventId === undefined || eventId === null)
+            throw new globalThis.Error("The parameter 'eventId' must be defined.");
+        url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
+        if (messageId === undefined || messageId === null)
+            throw new globalThis.Error("The parameter 'messageId' must be defined.");
+        url_ = url_.replace("{messageId}", encodeURIComponent("" + messageId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostHandoffFail(_response);
+        });
+    }
+
+    protected processPostHandoffFail(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Event is not a pending handoff, or reason is missing", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint or event not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
      * Get paginated endpoint status with events
      * @return OK
      */
@@ -5388,6 +5504,126 @@ export interface IResubmitWithChanges {
     [key: string]: any;
 }
 
+export class CompleteHandoffRequest implements ICompleteHandoffRequest {
+    /** Optional operator note written to the audit log and carried on the completion payload. */
+    note?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: ICompleteHandoffRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.note = _data["note"];
+        }
+    }
+
+    static fromJS(data: any): CompleteHandoffRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new CompleteHandoffRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["note"] = this.note;
+        return data;
+    }
+
+    clone(): CompleteHandoffRequest {
+        const json = this.toJSON();
+        let result = new CompleteHandoffRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ICompleteHandoffRequest {
+    /** Optional operator note written to the audit log and carried on the completion payload. */
+    note?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class FailHandoffRequest implements IFailHandoffRequest {
+    /** Human-readable failure reason. Surfaces verbatim on the resulting Failed audit row. */
+    reason!: string;
+    /** Optional logical error classifier used for grouping and alerting downstream. */
+    errorType?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IFailHandoffRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.reason = _data["reason"];
+            this.errorType = _data["errorType"];
+        }
+    }
+
+    static fromJS(data: any): FailHandoffRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new FailHandoffRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["reason"] = this.reason;
+        data["errorType"] = this.errorType;
+        return data;
+    }
+
+    clone(): FailHandoffRequest {
+        const json = this.toJSON();
+        let result = new FailHandoffRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IFailHandoffRequest {
+    /** Human-readable failure reason. Surfaces verbatim on the resulting Failed audit row. */
+    reason: string;
+    /** Optional logical error classifier used for grouping and alerting downstream. */
+    errorType?: string | undefined;
+
+    [key: string]: any;
+}
+
 export class Event implements IEvent {
     updatedAt?: moment.Moment;
     enqueuedTimeUtc?: moment.Moment;
@@ -9110,6 +9346,8 @@ export enum MessageAuditAuditType {
     Skip = "skip",
     Retry = "retry",
     Comment = "comment",
+    CompleteHandoff = "completeHandoff",
+    FailHandoff = "failHandoff",
 }
 
 export class MessageContent implements IMessageContent {
@@ -9213,6 +9451,8 @@ export enum AuditSearchFilterAuditType {
     Skip = "skip",
     Retry = "retry",
     Comment = "comment",
+    CompleteHandoff = "completeHandoff",
+    FailHandoff = "failHandoff",
 }
 
 export enum AuditEntryAuditType {
@@ -9221,6 +9461,8 @@ export enum AuditEntryAuditType {
     Skip = "skip",
     Retry = "retry",
     Comment = "comment",
+    CompleteHandoff = "completeHandoff",
+    FailHandoff = "failHandoff",
 }
 
 export class EventContent implements IEventContent {

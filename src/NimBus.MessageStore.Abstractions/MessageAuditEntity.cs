@@ -18,6 +18,8 @@ namespace NimBus.MessageStore
         ResubmitWithChanges,
         Skip,
         Retry,
-        Comment
+        Comment,
+        CompleteHandoff,
+        FailHandoff
     }
 }

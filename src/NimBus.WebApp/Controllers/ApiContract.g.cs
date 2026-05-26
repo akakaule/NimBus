@@ -467,6 +467,36 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostSkipEventIdsAsync(string eventId, string messageId);
 
         /// <summary>
+        /// Complete a pending handoff
+        /// </summary>
+
+        /// <remarks>
+        /// Settle a message parked in the PendingHandoff state as Completed by publishing a HandoffCompletedRequest to the owning subscriber endpoint on the operator's behalf. The optional note is written to the audit log.
+        /// </remarks>
+
+
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostHandoffCompleteAsync(CompleteHandoffRequest body, string endpointId, string eventId, string messageId);
+
+        /// <summary>
+        /// Fail a pending handoff
+        /// </summary>
+
+        /// <remarks>
+        /// Settle a message parked in the PendingHandoff state as Failed by publishing a HandoffFailedRequest to the owning subscriber endpoint on the operator's behalf. The required reason surfaces on the resulting Failed audit row and is written to the audit log.
+        /// </remarks>
+
+
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostHandoffFailAsync(FailHandoffRequest body, string endpointId, string eventId, string messageId);
+
+        /// <summary>
         /// Your GET endpoint
         /// </summary>
 
@@ -653,6 +683,34 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.PostSkipEventIdsAsync(eventId, messageId);
+        }
+
+        /// <summary>
+        /// Complete a pending handoff
+        /// </summary>
+        /// <remarks>
+        /// Settle a message parked in the PendingHandoff state as Completed by publishing a HandoffCompletedRequest to the owning subscriber endpoint on the operator's behalf. The optional note is written to the audit log.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/event/handoff/complete/{endpointId}/{eventId}/{messageId}")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostHandoffComplete([Microsoft.AspNetCore.Mvc.FromBody] CompleteHandoffRequest body, string endpointId, string eventId, string messageId)
+        {
+
+            return _implementation.PostHandoffCompleteAsync(body, endpointId, eventId, messageId);
+        }
+
+        /// <summary>
+        /// Fail a pending handoff
+        /// </summary>
+        /// <remarks>
+        /// Settle a message parked in the PendingHandoff state as Failed by publishing a HandoffFailedRequest to the owning subscriber endpoint on the operator's behalf. The required reason surfaces on the resulting Failed audit row and is written to the audit log.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/event/handoff/fail/{endpointId}/{eventId}/{messageId}")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostHandoffFail([Microsoft.AspNetCore.Mvc.FromBody] FailHandoffRequest body, string endpointId, string eventId, string messageId)
+        {
+
+            return _implementation.PostHandoffFailAsync(body, endpointId, eventId, messageId);
         }
 
         /// <summary>
@@ -4299,6 +4357,128 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return Newtonsoft.Json.JsonConvert.DeserializeObject<ResubmitWithChanges>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class CompleteHandoffRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _note;
+
+        /// <summary>
+        /// Optional operator note written to the audit log and carried on the completion payload.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("note", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Note    {
+            get { return _note; }
+            set
+            {
+                if (_note != value)
+                {
+                    _note = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static CompleteHandoffRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<CompleteHandoffRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class FailHandoffRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _reason;
+        private string _errorType;
+
+        /// <summary>
+        /// Human-readable failure reason. Surfaces verbatim on the resulting Failed audit row.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("reason", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string Reason    {
+            get { return _reason; }
+            set
+            {
+                if (_reason != value)
+                {
+                    _reason = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Optional logical error classifier used for grouping and alerting downstream.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("errorType", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ErrorType    {
+            get { return _errorType; }
+            set
+            {
+                if (_errorType != value)
+                {
+                    _errorType = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static FailHandoffRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<FailHandoffRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
 
         }
         public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
@@ -9120,6 +9300,12 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"comment")]
         Comment = 4,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"completeHandoff")]
+        CompleteHandoff = 5,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"failHandoff")]
+        FailHandoff = 6,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -9303,6 +9489,12 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"comment")]
         Comment = 4,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"completeHandoff")]
+        CompleteHandoff = 5,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"failHandoff")]
+        FailHandoff = 6,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -9323,6 +9515,12 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"comment")]
         Comment = 4,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"completeHandoff")]
+        CompleteHandoff = 5,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"failHandoff")]
+        FailHandoff = 6,
 
     }
 

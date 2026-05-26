@@ -17,6 +17,10 @@ import {
   PropertySection,
   PropertyRow,
 } from "components/ui/property-list";
+import HandoffHero, {
+  type HandoffState,
+} from "components/event-details/handoff-hero";
+import { useToast } from "components/ui/toast";
 import { formatMoment } from "functions/endpoint.functions";
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
@@ -87,6 +91,19 @@ interface IMessageListingProps {
   ) => Promise<void>;
   deleteEvent?: () => Promise<void>;
   reprocessDeferred?: () => Promise<void>;
+  completeHandoff?: (
+    endpointId: string,
+    eventId: string,
+    messageId: string,
+    note?: string,
+  ) => Promise<void>;
+  failHandoff?: (
+    endpointId: string,
+    eventId: string,
+    messageId: string,
+    reason: string,
+    errorType?: string,
+  ) => Promise<void>;
   onCommentAdded?: () => void;
 }
 
@@ -111,12 +128,51 @@ export default function MessageListing(props: IMessageListingProps) {
     props.eventDetails?.eventTypeId,
   );
 
+  const { addToast } = useToast();
+
+  // Handoff hero (Variant B). `heroOverride` lets the card flip to settled/
+  // failed the instant the operator acts — the underlying Pending → Completed/
+  // Failed transition is asynchronous (the subscriber processes the published
+  // control message), so the override reflects operator intent until the event
+  // document catches up on the next load.
+  const [heroOverride, setHeroOverride] = useState<{
+    state: HandoffState;
+    note?: string;
+    reason?: string;
+  } | null>(null);
+  const [completeOpen, setCompleteOpen] = useState(false);
+  const [failOpen, setFailOpen] = useState(false);
+  const [handoffNote, setHandoffNote] = useState("");
+  const [failReason, setFailReason] = useState("");
+  const [handoffBusy, setHandoffBusy] = useState(false);
+  const [operatorName, setOperatorName] = useState<string>("operator");
+  const [piiRevealed, setPiiRevealed] = useState(false);
+
   useEffect(() => {
     setTextAreaValue(
       props.eventDetails?.messageContent?.eventContent?.eventJson,
     );
     setShowErrorDetails(false);
+    // Reset handoff UI when navigating to a different event.
+    setHeroOverride(null);
+    setPiiRevealed(false);
   }, [props.eventDetails]);
+
+  useEffect(() => {
+    let active = true;
+    const client = new api.Client(api.CookieAuth());
+    client
+      .getMe()
+      .then((me) => {
+        if (active && me?.name) setOperatorName(me.name);
+      })
+      .catch(() => {
+        /* fallback to "operator" */
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const resubmitWithChanges: IButtonState = {
     isDisabled: false,
@@ -175,12 +231,82 @@ export default function MessageListing(props: IMessageListingProps) {
     );
   };
 
-  const showOperatorActions =
-    isFailedMessage(props.eventDetails?.resolutionStatus) ||
-    isPendingHandoff(
-      props.eventDetails?.resolutionStatus,
-      props.eventDetails?.pendingSubStatus,
-    );
+  const isHandoff = isPendingHandoff(
+    props.eventDetails?.resolutionStatus,
+    props.eventDetails?.pendingSubStatus,
+  );
+
+  // Pending handoffs are driven by the Hero card's Complete/Fail actions, so the
+  // Details-header resubmit/skip buttons are only for terminally failed events.
+  const showFailedActions = isFailedMessage(props.eventDetails?.resolutionStatus);
+
+  // The hero shows for any pending handoff, and stays visible (in its settled/
+  // failed form) immediately after the operator acts.
+  const heroState: HandoffState | null = heroOverride
+    ? heroOverride.state
+    : isHandoff
+      ? "pending"
+      : null;
+
+  const confirmCompleteHandoff = async () => {
+    const note = handoffNote.trim();
+    setHandoffBusy(true);
+    try {
+      await props.completeHandoff?.(
+        props.eventDetails?.endpointId!,
+        props.eventDetails?.eventId!,
+        props.eventDetails?.lastMessageId!,
+        note || undefined,
+      );
+      setCompleteOpen(false);
+      setHeroOverride({ state: "settled", note: note || undefined });
+      addToast({
+        title: "Handoff completed",
+        description: "Completion published — propagating downstream.",
+        variant: "success",
+      });
+    } catch {
+      addToast({
+        title: "Could not complete handoff",
+        description: "The settlement request failed. Try again.",
+        variant: "error",
+      });
+    } finally {
+      setHandoffBusy(false);
+    }
+  };
+
+  const confirmFailHandoff = async () => {
+    const reason = failReason.trim();
+    if (!reason) return;
+    setHandoffBusy(true);
+    try {
+      await props.failHandoff?.(
+        props.eventDetails?.endpointId!,
+        props.eventDetails?.eventId!,
+        props.eventDetails?.lastMessageId!,
+        reason,
+      );
+      setFailOpen(false);
+      setHeroOverride({ state: "failed", reason });
+      addToast({
+        title: "Handoff failed",
+        description: "Marked as failed — will surface under Blocked downstream.",
+        variant: "error",
+      });
+    } catch {
+      addToast({
+        title: "Could not fail handoff",
+        description: "The settlement request failed. Try again.",
+        variant: "error",
+      });
+    } finally {
+      setHandoffBusy(false);
+    }
+  };
+
+  const payloadJson = props.eventDetails?.messageContent?.eventContent?.eventJson;
+  const hasPii = !!payloadJson && /\$piiMasked"\s*:\s*true/i.test(payloadJson);
 
   const reprocessBtn: IButtonState = { isDisabled: false, text: "Reprocess" };
   const [reprocessButton, setReprocessButton] = useState(reprocessBtn);
@@ -256,9 +382,31 @@ export default function MessageListing(props: IMessageListingProps) {
 
   return (
     <div className="w-full">
+      {heroState && (
+        <div className="mb-5 overflow-hidden rounded-nb-lg border border-border">
+          <HandoffHero
+            state={heroState}
+            reason={props.eventDetails?.handoffReason}
+            externalJobId={props.eventDetails?.externalJobId}
+            expectedBy={props.eventDetails?.expectedBy}
+            settledNote={heroOverride?.note}
+            failedReason={heroOverride?.reason}
+            resolvedBy={operatorName}
+            busy={handoffBusy}
+            onComplete={() => {
+              setHandoffNote("");
+              setCompleteOpen(true);
+            }}
+            onFail={() => {
+              setFailReason("");
+              setFailOpen(true);
+            }}
+          />
+        </div>
+      )}
       <h4 className="text-lg font-semibold flex items-center gap-4">
         Details
-        {showOperatorActions && (
+        {showFailedActions && (
           <div className="flex gap-2">
             <Button
               size="xs"
@@ -551,22 +699,42 @@ export default function MessageListing(props: IMessageListingProps) {
         </>
       )}
 
-      {props.eventDetails?.messageContent?.eventContent?.eventJson && (
+      {payloadJson && (
         <div className="mt-4">
-          <CodeBlock
-            title="Payload"
-            subtitle="application/json"
-            linkifyGuid={(_guid) =>
-              // Clicking a GUID in the payload jumps to the Messages search
-              // pre-filtered to that ID — IDs become first-class navigation
-              // bridges between pages (design rec §09 code).
-              `/Messages?eventId=${_guid}`
+          {/* Masked payloads carry "$piiMasked": true. Keep the (already
+              server-hashed) values blurred by default so PII tokens aren't
+              shoulder-surfed; the operator reveals them on demand. */}
+          <div
+            className={
+              hasPii && !piiRevealed
+                ? "[&_pre]:blur-[5px] [&_pre]:select-none transition-[filter] duration-150"
+                : "transition-[filter] duration-150"
             }
           >
-            {safeFormatJson(
-              props.eventDetails.messageContent.eventContent.eventJson,
-            )}
-          </CodeBlock>
+            <CodeBlock
+              title="Payload"
+              subtitle="application/json"
+              actions={
+                hasPii ? (
+                  <button
+                    type="button"
+                    onClick={() => setPiiRevealed((v) => !v)}
+                    className="font-mono text-[11px] font-semibold text-primary-600 dark:text-primary-400 border border-border rounded px-2 py-1 hover:bg-primary-tint dark:hover:bg-primary-900/40"
+                  >
+                    {piiRevealed ? "Hide PII" : "Reveal PII"}
+                  </button>
+                ) : undefined
+              }
+              linkifyGuid={(_guid) =>
+                // Clicking a GUID in the payload jumps to the Messages search
+                // pre-filtered to that ID — IDs become first-class navigation
+                // bridges between pages (design rec §09 code).
+                `/Messages?eventId=${_guid}`
+              }
+            >
+              {safeFormatJson(payloadJson)}
+            </CodeBlock>
+          </div>
         </div>
       )}
 
@@ -636,6 +804,125 @@ export default function MessageListing(props: IMessageListingProps) {
           </Button>
           <Button colorScheme="red" onClick={deleteEventClick}>
             Delete
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Complete handoff */}
+      <Modal isOpen={completeOpen} onClose={() => setCompleteOpen(false)}>
+        <ModalHeader onClose={() => setCompleteOpen(false)}>
+          Complete handoff?
+        </ModalHeader>
+        <ModalBody>
+          <p className="text-sm text-muted-foreground">
+            Mark this event as successfully handed off. A{" "}
+            <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
+              HandoffCompletedRequest
+            </code>{" "}
+            is published to the subscriber, moving it out of pending so it
+            propagates downstream.
+          </p>
+          <div className="mt-3 rounded-nb-md border border-border bg-canvas dark:bg-muted/40 p-3 flex flex-col gap-1.5">
+            <div className="flex justify-between font-mono text-[11.5px]">
+              <span className="text-muted-foreground">Event</span>
+              <b className="font-semibold text-foreground">
+                {props.eventDetails?.eventTypeId ?? "—"}
+              </b>
+            </div>
+            {props.eventDetails?.externalJobId && (
+              <div className="flex justify-between font-mono text-[11.5px]">
+                <span className="text-muted-foreground">External job</span>
+                <b className="font-semibold text-foreground">
+                  {props.eventDetails.externalJobId}
+                </b>
+              </div>
+            )}
+            <div className="flex justify-between font-mono text-[11.5px]">
+              <span className="text-muted-foreground">Endpoint</span>
+              <b className="font-semibold text-foreground">
+                {props.eventDetails?.endpointId ?? "—"}
+              </b>
+            </div>
+          </div>
+          <label className="block mt-3.5 mb-1.5 text-xs font-semibold text-foreground">
+            Operator note{" "}
+            <span className="font-normal text-muted-foreground">
+              (optional, written to audit log)
+            </span>
+          </label>
+          <Textarea
+            value={handoffNote}
+            onChange={(e) => setHandoffNote(e.target.value)}
+            placeholder="e.g. Verified batch finished cleanly in the external console."
+            rows={3}
+          />
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setCompleteOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            colorScheme="blue"
+            isLoading={handoffBusy}
+            disabled={handoffBusy}
+            onClick={confirmCompleteHandoff}
+          >
+            Complete handoff
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Fail handoff */}
+      <Modal isOpen={failOpen} onClose={() => setFailOpen(false)}>
+        <ModalHeader onClose={() => setFailOpen(false)}>
+          Fail this handoff?
+        </ModalHeader>
+        <ModalBody>
+          <p className="text-sm text-muted-foreground">
+            Mark the event as terminally failed. A{" "}
+            <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
+              HandoffFailedRequest
+            </code>{" "}
+            is published; the event surfaces under the{" "}
+            <b className="font-semibold text-foreground">Blocked</b> tab on
+            dependent endpoints and triggers any failure alerts.
+          </p>
+          <div className="mt-3 rounded-nb-md border border-border bg-canvas dark:bg-muted/40 p-3 flex flex-col gap-1.5">
+            <div className="flex justify-between font-mono text-[11.5px]">
+              <span className="text-muted-foreground">Event</span>
+              <b className="font-semibold text-foreground">
+                {props.eventDetails?.eventTypeId ?? "—"}
+              </b>
+            </div>
+            <div className="flex justify-between font-mono text-[11.5px]">
+              <span className="text-muted-foreground">Reversible</span>
+              <b className="font-semibold text-foreground">
+                No — re-publish needed
+              </b>
+            </div>
+          </div>
+          <label className="block mt-3.5 mb-1.5 text-xs font-semibold text-foreground">
+            Failure reason{" "}
+            <span className="font-semibold text-status-danger">required</span>
+          </label>
+          <Textarea
+            value={failReason}
+            onChange={(e) => setFailReason(e.target.value)}
+            placeholder="e.g. External system reported permanent failure; batch was rejected."
+            rows={3}
+          />
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setFailOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            colorScheme="red"
+            isLoading={handoffBusy}
+            disabled={handoffBusy || !failReason.trim()}
+            onClick={confirmFailHandoff}
+          >
+            Fail handoff
           </Button>
         </ModalFooter>
       </Modal>

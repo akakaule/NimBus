@@ -196,6 +196,110 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             return new OkResult();
         }
+        public Task<IActionResult> PostHandoffCompleteAsync(CompleteHandoffRequest body, string endpointId, string eventId, string messageId)
+            => SettlePendingHandoffAsync(
+                endpointId, eventId, messageId,
+                MessageAuditType.CompleteHandoff,
+                body?.Note,
+                (pendingEntry, operatorName) =>
+                {
+                    // Carry the operator note (and who completed it) on the completion
+                    // payload so the resulting Completed audit row records the manual
+                    // intervention, not just an anonymous external job finishing.
+                    var detailsJson = string.IsNullOrWhiteSpace(body?.Note)
+                        ? null
+                        : JsonConvert.SerializeObject(new { note = body.Note, completedBy = operatorName });
+#pragma warning disable CS0618 // Manager-side settlement: the WebApp *is* the Manager. The
+                    // [Obsolete] hint steers adapters toward IHandoffClient (endpoint-bound,
+                    // registered per endpoint); the manager path takes the endpoint as a
+                    // parameter and reuses the ServiceBusClient this controller already holds.
+                    return managerClient.CompleteHandoff(pendingEntry, endpointId, detailsJson);
+#pragma warning restore CS0618
+                });
+
+        public Task<IActionResult> PostHandoffFailAsync(FailHandoffRequest body, string endpointId, string eventId, string messageId)
+        {
+            if (string.IsNullOrWhiteSpace(body?.Reason))
+                return Task.FromResult<IActionResult>(new BadRequestObjectResult("A failure reason is required."));
+
+            return SettlePendingHandoffAsync(
+                endpointId, eventId, messageId,
+                MessageAuditType.FailHandoff,
+                body.Reason,
+                (pendingEntry, _) =>
+                {
+#pragma warning disable CS0618 // See PostHandoffCompleteAsync — manager-side settlement.
+                    return managerClient.FailHandoff(pendingEntry, endpointId, body.Reason, body.ErrorType);
+#pragma warning restore CS0618
+                });
+        }
+
+        // Shared body for the two handoff-settlement operator actions. Loads the
+        // pending event, verifies it really is parked in PendingHandoff, publishes
+        // the settlement control message via the supplied action, then records an
+        // audit row. The Pending → Completed/Failed transition itself happens
+        // asynchronously when the owning subscriber processes the control message.
+        private async Task<IActionResult> SettlePendingHandoffAsync(
+            string endpointId,
+            string eventId,
+            string messageId,
+            MessageAuditType auditType,
+            string auditComment,
+            Func<MessageEntity, string, Task> settle)
+        {
+            if (!EndpointVerificationService.EndpointExists(platform, endpointId))
+                return new NotFoundObjectResult("Endpoint not found");
+
+            if (!authorizationService.IsManagerOfEndpoint(endpointId))
+                throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpointId}'.");
+
+            UnresolvedEvent pendingEvent;
+            try
+            {
+                pendingEvent = await cosmosClient.GetEvent(endpointId, eventId);
+            }
+            catch (Exception e)
+            {
+                logger.LogWarning("Handoff settle: event not found. EndpointId: {EndpointId}, EventId: {EventId}, Ex: {Exception}", endpointId, eventId, e.Message);
+                return new NotFoundObjectResult("Event not found");
+            }
+
+            if (pendingEvent == null)
+                return new NotFoundObjectResult("Event not found");
+
+            if (pendingEvent.ResolutionStatus != MessageStore.ResolutionStatus.Pending
+                || !string.Equals(pendingEvent.PendingSubStatus, "Handoff", StringComparison.Ordinal))
+            {
+                logger.LogWarning(
+                    "Handoff settle rejected: event is not a pending handoff. EndpointId: {EndpointId}, EventId: {EventId}, Status: {Status}, SubStatus: {SubStatus}",
+                    endpointId, eventId, pendingEvent.ResolutionStatus, pendingEvent.PendingSubStatus ?? "<null>");
+                return new BadRequestObjectResult("Event is not a pending handoff.");
+            }
+
+            var pendingEntry = new MessageEntity
+            {
+                EventId = pendingEvent.EventId,
+                MessageId = messageId,
+                SessionId = pendingEvent.SessionId,
+                CorrelationId = pendingEvent.CorrelationId,
+                OriginatingMessageId = pendingEvent.OriginatingMessageId,
+                EventTypeId = pendingEvent.EventTypeId,
+                PendingSubStatus = pendingEvent.PendingSubStatus,
+            };
+
+            var messageAuditEntity = authorizationService.GetMessageAuditEntity(auditType);
+            messageAuditEntity.Comment = auditComment;
+
+            logger.LogInformation(
+                "Handoff settle ({AuditType}). EndpointId: {EndpointId}, EventId: {EventId}, MessageId: {MessageId}",
+                auditType, endpointId, eventId, messageId);
+
+            await settle(pendingEntry, messageAuditEntity.AuditorName);
+            await cosmosClient.StoreMessageAudit(eventId, messageAuditEntity, endpointId, pendingEvent.EventTypeId);
+
+            return new OkResult();
+        }
+
         public async Task<ActionResult<DeferredReprocessResult>> PostReprocessDeferredAsync(string endpointId, string sessionId)
         {
             if (!EndpointVerificationService.EndpointExists(platform, endpointId))
@@ -222,21 +326,20 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 if (unresolvedEvent == null) return new BadRequestResult();
                 var result = Mapper.EventFromMessageStoreEvent(unresolvedEvent);
 
-                // Completed events don't store eventContent in the endpoint container.
-                // Fetch from the messages container if missing.
-                if (unresolvedEvent.ResolutionStatus == MessageStore.ResolutionStatus.Completed
-                    && string.IsNullOrEmpty(unresolvedEvent.MessageContent?.EventContent?.EventJson))
+                // The Payload shown on the detail page must be the inbound *event
+                // request* — the original EventRequest, or the latest
+                // ResubmissionRequest if the event was resubmitted — never a
+                // ResolutionResponse (which carries the handler's result, e.g. an
+                // imported record id) or a handoff control message. The endpoint
+                // container stores the *last* message's content, which for
+                // completed/settled events is the resolution response, so resolve
+                // the request payload from the full message history instead.
+                var requestJson = await GetLatestEventRequestPayload(id);
+                if (!string.IsNullOrEmpty(requestJson))
                 {
-                    var history = await cosmosClient.GetEventHistory(id);
-                    var messageWithContent = history.FirstOrDefault(m =>
-                        !string.IsNullOrEmpty(m.MessageContent?.EventContent?.EventJson));
-                    if (messageWithContent != null)
-                    {
-                        result.MessageContent ??= new ManagementApi.MessageContent();
-                        result.MessageContent.EventContent ??= new ManagementApi.EventContent();
-                        result.MessageContent.EventContent.EventJson =
-                            messageWithContent.MessageContent.EventContent.EventJson;
-                    }
+                    result.MessageContent ??= new ManagementApi.MessageContent();
+                    result.MessageContent.EventContent ??= new ManagementApi.EventContent();
+                    result.MessageContent.EventContent.EventJson = requestJson;
                 }
 
                 return result;
@@ -614,6 +717,31 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
             }
         }
+        // The detail-page Payload should reflect the event request that was
+        // processed, not whatever the last message on the event happened to carry
+        // (a ResolutionResponse, handoff control message, etc.). Returns the
+        // EventJson of the most recent EventRequest / ResubmissionRequest in the
+        // event's history, or null when none carries event content.
+        private async Task<string> GetLatestEventRequestPayload(string eventId)
+        {
+            try
+            {
+                var history = await cosmosClient.GetEventHistory(eventId);
+                var request = history
+                    .Where(m => (m.MessageType == Core.Messages.MessageType.EventRequest
+                              || m.MessageType == Core.Messages.MessageType.ResubmissionRequest)
+                             && !string.IsNullOrEmpty(m.MessageContent?.EventContent?.EventJson))
+                    .OrderByDescending(m => m.EnqueuedTimeUtc)
+                    .FirstOrDefault();
+                return request?.MessageContent?.EventContent?.EventJson;
+            }
+            catch (Exception e)
+            {
+                logger.LogWarning("GetLatestEventRequestPayload failed for EventId {EventId}: {Exception}", eventId, e.Message);
+                return null;
+            }
+        }
+
         private async Task<MessageEntity> GetMessageWithFallback(string eventId, string messageId)
         {
             var message = await cosmosClient.GetMessage(eventId, messageId);

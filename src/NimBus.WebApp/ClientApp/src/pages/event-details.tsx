@@ -173,6 +173,41 @@ const EventDetails = (props: EventDetailsProps) => {
     await reloadEvent();
   };
 
+  // Settle a pending handoff on the operator's behalf. The Pending → Completed/
+  // Failed transition itself is asynchronous (the owning subscriber processes
+  // the published control message), so we reload audits — which the operator
+  // note/reason lands in immediately — rather than the event document.
+  const completeHandoff = async (
+    endpointId: string,
+    eventId: string,
+    messageId: string,
+    note?: string,
+  ) => {
+    await client.postHandoffComplete(
+      endpointId,
+      eventId,
+      messageId,
+      note ? new api.CompleteHandoffRequest({ note }) : undefined,
+    );
+    reloadAudits();
+  };
+
+  const failHandoff = async (
+    endpointId: string,
+    eventId: string,
+    messageId: string,
+    reason: string,
+    errorType?: string,
+  ) => {
+    await client.postHandoffFail(
+      endpointId,
+      eventId,
+      messageId,
+      new api.FailHandoffRequest({ reason, errorType }),
+    );
+    reloadAudits();
+  };
+
   const tabs = () => {
     const blockedCount = blockedTotal > 99 ? "99+" : blockedTotal;
 
@@ -187,6 +222,8 @@ const EventDetails = (props: EventDetailsProps) => {
             skipEvent={skipEvent}
             deleteEvent={deleteEvent}
             reprocessDeferred={reprocessDeferred}
+            completeHandoff={completeHandoff}
+            failHandoff={failHandoff}
             onCommentAdded={reloadAudits}
             eventTypes={eventTypes}
             eventDetails={cosmosEvent}

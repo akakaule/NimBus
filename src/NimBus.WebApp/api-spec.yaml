@@ -201,6 +201,83 @@ paths:
           description: OK
       tags:
         - Event
+  '/api/event/handoff/complete/{endpointId}/{eventId}/{messageId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: eventId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: messageId
+        in: path
+        required: true
+    post:
+      summary: Complete a pending handoff
+      description: >-
+        Settle a message parked in the PendingHandoff state as Completed by
+        publishing a HandoffCompletedRequest to the owning subscriber endpoint
+        on the operator's behalf. The optional note is written to the audit log.
+      operationId: post-handoff-complete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteHandoffRequest'
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Event is not a pending handoff
+        '404':
+          description: Endpoint or event not found
+      tags:
+        - Event
+  '/api/event/handoff/fail/{endpointId}/{eventId}/{messageId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: eventId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: messageId
+        in: path
+        required: true
+    post:
+      summary: Fail a pending handoff
+      description: >-
+        Settle a message parked in the PendingHandoff state as Failed by
+        publishing a HandoffFailedRequest to the owning subscriber endpoint on
+        the operator's behalf. The required reason surfaces on the resulting
+        Failed audit row and is written to the audit log.
+      operationId: post-handoff-fail
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FailHandoffRequest'
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Event is not a pending handoff, or reason is missing
+        '404':
+          description: Endpoint or event not found
+      tags:
+        - Event
   '/api/endpoint/status/{endpointName}':
     parameters:
       - schema:
@@ -1985,6 +2062,8 @@ components:
             - skip
             - retry
             - comment
+            - completeHandoff
+            - failHandoff
         comment:
           type: string
           nullable: true
@@ -2075,6 +2154,27 @@ components:
           type: string
         eventContent:
           type: string
+    CompleteHandoffRequest:
+      title: CompleteHandoffRequest
+      type: object
+      properties:
+        note:
+          type: string
+          nullable: true
+          description: Optional operator note written to the audit log and carried on the completion payload.
+    FailHandoffRequest:
+      title: FailHandoffRequest
+      type: object
+      properties:
+        reason:
+          type: string
+          description: Human-readable failure reason. Surfaces verbatim on the resulting Failed audit row.
+        errorType:
+          type: string
+          nullable: true
+          description: Optional logical error classifier used for grouping and alerting downstream.
+      required:
+        - reason
     Event:
       title: Event
       x-stoplight:
@@ -2757,6 +2857,8 @@ components:
             - skip
             - retry
             - comment
+            - completeHandoff
+            - failHandoff
         createdAtFrom:
           type: string
           format: date-time
@@ -2909,6 +3011,8 @@ components:
             - skip
             - retry
             - comment
+            - completeHandoff
+            - failHandoff
         comment:
           type: string
           nullable: true

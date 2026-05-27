@@ -57,15 +57,11 @@ public class IdentityInitializerHostedServiceTests
     [TestMethod]
     public async Task Bootstrap_NoOpsWhenUserStoreAlreadyHasUsers()
     {
-        await using var scope = IdentityTestScope.Create(o =>
-        {
-            o.Bootstrap.Email = "newadmin@local";
-            o.Bootstrap.Password = "Local!Admin123";
-        });
+        // No bootstrap creds yet — the first run must create the schema and
+        // tables without seeding anyone, so we can plant a different user by
+        // hand and then prove a later run with creds leaves it untouched.
+        await using var scope = IdentityTestScope.Create();
 
-        // First run: schema + tables only, NO bootstrap creds — so a different
-        // user gets seeded manually instead, then the second run with
-        // bootstrap creds set should not overwrite it.
         await RunInitializerAsync(scope);
 
         using (var seedScope = scope.Services.CreateScope())
@@ -80,6 +76,12 @@ public class IdentityInitializerHostedServiceTests
             var result = await userManager.CreateAsync(existing, "Pre!Existing123");
             Assert.IsTrue(result.Succeeded, "harness setup: existing user must seed");
         }
+
+        // Now turn bootstrap on. The store is non-empty, so the second run
+        // must skip seeding rather than add "newadmin@local".
+        var options = scope.Services.GetRequiredService<NimBusIdentityOptions>();
+        options.Bootstrap.Email = "newadmin@local";
+        options.Bootstrap.Password = "Local!Admin123";
 
         await RunInitializerAsync(scope);
 

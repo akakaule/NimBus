@@ -106,6 +106,11 @@ public class AuthApiControllerTests
             User = principal ?? new ClaimsPrincipal(new ClaimsIdentity()),
         };
 
+        // SignInManager.SignOutAsync() reads its HttpContext from the
+        // accessor, not from the controller's ControllerContext. Without this
+        // the accessor's HttpContext is null and SignOutAsync throws.
+        serviceScope.ServiceProvider.GetRequiredService<IHttpContextAccessor>().HttpContext = httpContext;
+
         return new AuthApiController(signInManager, userManager)
         {
             ControllerContext = new ControllerContext

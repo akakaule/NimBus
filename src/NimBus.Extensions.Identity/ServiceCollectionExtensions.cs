@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NimBus.Extensions.Identity.Data;
@@ -34,7 +35,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<INimBusIdentityMarker, NimBusIdentityMarker>();
 
         services.AddDbContext<NimBusIdentityDbContext>(db =>
-            db.UseSqlServer(options.ConnectionString));
+            db.UseSqlServer(options.ConnectionString)
+              .ReplaceService<IModelCacheKeyFactory, NimBusIdentityModelCacheKeyFactory>());
 
         services.AddIdentity<NimBusUser, IdentityRole>(identity =>
             {

@@ -439,3 +439,16 @@ The framework is fully backward compatible. `MessageHandler` accepts optional `M
 | `MessageLifecycleNotifier` | Broadcasts lifecycle events to observers |
 | `NimBusBuilder` | Default `INimBusBuilder` implementation |
 | `PipelineBehaviorRegistry` | Ordered list of behavior types |
+
+## Event-type authoring tip — authored `Example` payloads pay off twice
+
+A `public static readonly T Example = new T { … }` field on an `IEvent`
+type now feeds **both** the existing "Example payload" tab in the WebApp
+**and** the seed for `GET /api/event-types/{eventtypeid}/fake` (used by the
+Compose dialog's "Generate fake data" button — see
+[`docs/webapp-rest-api.md`](webapp-rest-api.md#server-side-schema-valid-fake-payloads)).
+The fake-payload generator deep-clones the example, type-aware randomizes
+every leaf, and falls back to the example verbatim when no randomization
+satisfies `TryValidate` inside the retry budget. Authoring a good example
+therefore both documents the type and guarantees the Compose dialog
+produces a submit-clean payload on first try.

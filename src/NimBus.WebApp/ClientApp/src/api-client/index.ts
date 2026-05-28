@@ -422,6 +422,53 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Generate a randomized, schema-valid fake payload for the event type
+     * @return OK
+     */
+    getEventtypesEventtypeidFake(eventtypeid: string): Promise<FakeEventPayload> {
+        let url_ = this.baseUrl + "/api/event-types/{eventtypeid}/fake";
+        if (eventtypeid === undefined || eventtypeid === null)
+            throw new globalThis.Error("The parameter 'eventtypeid' must be defined.");
+        url_ = url_.replace("{eventtypeid}", encodeURIComponent("" + eventtypeid));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetEventtypesEventtypeidFake(_response);
+        });
+    }
+
+    protected processGetEventtypesEventtypeidFake(response: Response): Promise<FakeEventPayload> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = FakeEventPayload.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Event type not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<FakeEventPayload>(null as any);
+    }
+
+    /**
      * @return OK
      */
     postResubmitEventIds(eventId: string, messageId: string): Promise<void> {
@@ -4595,6 +4642,65 @@ export interface IEventTypeDetails {
     codeRepoLink?: string;
     producers?: string[];
     consumers?: string[];
+
+    [key: string]: any;
+}
+
+/** Response shape for GET /api/event-types/{eventtypeid}/fake. The payload field is a fully-formed JSON string (indented), not a structured object — the client inserts it verbatim into the textarea. Null when the type cannot be constructed (abstract, interface, or no accessible parameterless constructor). */
+export class FakeEventPayload implements IFakeEventPayload {
+    /** Indented JSON payload string, or null when the type cannot be constructed. */
+    payload?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IFakeEventPayload) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.payload = _data["payload"];
+        }
+    }
+
+    static fromJS(data: any): FakeEventPayload {
+        data = typeof data === 'object' ? data : {};
+        let result = new FakeEventPayload();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["payload"] = this.payload;
+        return data;
+    }
+
+    clone(): FakeEventPayload {
+        const json = this.toJSON();
+        let result = new FakeEventPayload();
+        result.init(json);
+        return result;
+    }
+}
+
+/** Response shape for GET /api/event-types/{eventtypeid}/fake. The payload field is a fully-formed JSON string (indented), not a structured object — the client inserts it verbatim into the textarea. Null when the type cannot be constructed (abstract, interface, or no accessible parameterless constructor). */
+export interface IFakeEventPayload {
+    /** Indented JSON payload string, or null when the type cannot be constructed. */
+    payload?: string | undefined;
 
     [key: string]: any;
 }

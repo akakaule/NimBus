@@ -15,11 +15,13 @@ namespace NimBus.WebApp.Controllers.ApiContract
     {
         private readonly IPlatform platform;
         private readonly ICodeRepoService codeRepoService;
+        private readonly FakeEventPayloadGenerator fakePayloadGenerator;
 
-        public EventTypeImplementation(IPlatform platform, ICodeRepoService codeRepoService)
+        public EventTypeImplementation(IPlatform platform, ICodeRepoService codeRepoService, FakeEventPayloadGenerator fakePayloadGenerator)
         {
             this.platform = platform;
             this.codeRepoService = codeRepoService;
+            this.fakePayloadGenerator = fakePayloadGenerator;
         }
 
         public async Task<ActionResult<IEnumerable<ManagementApi.EventType>>> GetEventTypesAsync()
@@ -95,6 +97,20 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 Consumers = platform.GetConsumers(eventType).Select(x => x.Name).ToList(),
             };
             return new OkObjectResult(eventTypeDetails);
+        }
+
+        public async Task<ActionResult<FakeEventPayload>> GetEventtypesEventtypeidFakeAsync(string eventtypeid)
+        {
+            var eventType = platform.EventTypes.FirstOrDefault(et => et.Id.Equals(eventtypeid, StringComparison.OrdinalIgnoreCase));
+            if (eventType == null)
+            {
+                // Match the spec's expected body verbatim; the existing
+                // GetEventtypesEventtypeidAsync also returns a 404 NotFoundObjectResult.
+                return new NotFoundObjectResult("EventType not found");
+            }
+
+            var payload = fakePayloadGenerator.Generate(eventType);
+            return new OkObjectResult(new FakeEventPayload { Payload = payload });
         }
     }
 }

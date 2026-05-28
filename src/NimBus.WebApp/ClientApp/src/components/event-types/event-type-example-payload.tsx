@@ -9,7 +9,6 @@ import {
   ModalFooter,
 } from "components/ui/modal";
 import { useToast } from "components/ui/toast";
-import { generateFakeEventPayload } from "lib/fake-event-data";
 import * as api from "api-client";
 
 const CopyIcon = () => (
@@ -83,6 +82,7 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
     hasError: boolean;
     text: string;
   }>({ hasError: false, text: "" });
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const handleCopy = async () => {
     try {
@@ -117,8 +117,56 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
     setIsOpen(true);
   };
 
-  const handleGenerateFakeData = () => {
-    setEditedJson(generateFakeEventPayload(eventType.properties));
+  const handleGenerateFakeData = async () => {
+    if (isGenerating) return;
+    if (!eventType.id) {
+      addToast({
+        title: "Could not generate fake data.",
+        variant: "error",
+        duration: 4000,
+      });
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const client = new api.Client(api.CookieAuth());
+      const response = await client.getEventtypesEventtypeidFake(eventType.id);
+      if (response?.payload) {
+        setEditedJson(response.payload);
+      } else {
+        // 200 with payload === null: the type could not be constructed
+        // server-side (abstract / no parameterless ctor). Non-blocking
+        // toast; leave the textarea untouched.
+        addToast({
+          title: "Fake data could not be generated for this event type.",
+          variant: "info",
+          duration: 4000,
+        });
+      }
+    } catch (err: unknown) {
+      // 404 surfaces with status 404; everything else is treated as a
+      // generic network/server failure. No fallback to the old client-side
+      // heuristic — the spec explicitly disallows that (FR-022).
+      const status = api.SwaggerException.isSwaggerException(err)
+        ? err.status
+        : 0;
+      if (status === 404) {
+        addToast({
+          title: "Event type not found.",
+          variant: "error",
+          duration: 4000,
+        });
+      } else {
+        addToast({
+          title: "Could not generate fake data.",
+          variant: "error",
+          duration: 4000,
+        });
+      }
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleSendEvent = async () => {
@@ -203,9 +251,10 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
           <Button
             variant="ghost"
             onClick={handleGenerateFakeData}
+            disabled={isGenerating}
             leftIcon={<SparklesIcon />}
           >
-            Generate fake data
+            {isGenerating ? "Generating…" : "Generate fake data"}
           </Button>
           <Button
             variant="solid"

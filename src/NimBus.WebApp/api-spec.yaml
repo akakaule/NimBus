@@ -159,6 +159,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/EventTypeDetails'
       operationId: get-eventtypes-eventtypeid
+  '/api/event-types/{eventtypeid}/fake':
+    parameters:
+      - schema:
+          type: string
+        name: eventtypeid
+        in: path
+        required: true
+    get:
+      summary: Generate a randomized, schema-valid fake payload for the event type
+      description: >-
+        Reflects over the registered CLR type and produces a randomized JSON
+        payload that is guaranteed to deserialize as the type and satisfy the
+        type's own IEvent.TryValidate rules (the same gate the Compose /
+        Resubmit-with-changes submit path applies). Returns the example
+        payload as a safe fallback when no randomized variant validates inside
+        the retry budget; returns payload=null only when the type cannot be
+        constructed.
+      tags:
+        - EventType
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FakeEventPayload'
+        '404':
+          description: Event type not found
+      operationId: get-eventtypes-eventtypeid-fake
   '/api/event/resubmit/{eventId}/{messageId}':
     parameters:
       - schema:
@@ -1976,6 +2005,20 @@ components:
           type: array
           items:
             type: string
+    FakeEventPayload:
+      title: FakeEventPayload
+      type: object
+      description: >-
+        Response shape for GET /api/event-types/{eventtypeid}/fake. The
+        payload field is a fully-formed JSON string (indented), not a
+        structured object — the client inserts it verbatim into the textarea.
+        Null when the type cannot be constructed (abstract, interface, or no
+        accessible parameterless constructor).
+      properties:
+        payload:
+          type: string
+          nullable: true
+          description: Indented JSON payload string, or null when the type cannot be constructed.
     EventTypeGrouping:
       title: EventTypeGrouping
       type: object

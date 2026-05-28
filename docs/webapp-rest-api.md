@@ -191,6 +191,43 @@ curl -H "Authorization: Bearer $TOKEN" \
      https://nimbus.example.com/api/event-types
 ```
 
+#### Server-side schema-valid fake payloads
+
+`GET /api/event-types/{eventtypeid}/fake` (operation id
+`get-eventtypes-eventtypeid-fake`) reflects over the registered CLR type and
+returns a randomized JSON payload that is guaranteed to deserialize as the
+type and pass the type's own `IEvent.TryValidate` rules (the same gate the
+Compose / Resubmit-with-changes submit path applies). The WebApp's
+"Generate fake data" button in the Compose dialog calls this endpoint
+instead of guessing values in the browser.
+
+Request:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+     https://nimbus.example.com/api/event-types/CustomerRegistered/fake
+```
+
+Response shape (`200 OK`):
+
+```json
+{
+  "payload": "{\n  \"CustomerId\": \"…\",\n  \"Email\": \"alex.hansen@example.com\",\n  \"FullName\": \"Alex Hansen\"\n}"
+}
+```
+
+The `payload` field is a fully-formed JSON string (indented), not a
+structured object — the client inserts it verbatim into the textarea. When
+the type cannot be constructed (abstract, interface, or no accessible
+parameterless constructor) the field is `null` and the client surfaces a
+non-blocking toast. When `eventtypeid` is not registered in
+`IPlatform.EventTypes` the endpoint returns `404 Not Found` with body
+`"EventType not found"`. The generator strategy (seed from the authored
+`static T Example`, deep-clone, randomize, validate, retry up to 5 times,
+fall back to the example) lives in
+`src/NimBus.WebApp/Services/FakeEventPayloadGenerator.cs`; the singleton
+registration is in `Startup.cs`.
+
 ### Application
 
 Process-wide platform stats and metadata about the running installation.

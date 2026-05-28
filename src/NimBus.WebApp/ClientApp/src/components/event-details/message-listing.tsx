@@ -105,6 +105,12 @@ interface IMessageListingProps {
     errorType?: string,
   ) => Promise<void>;
   onCommentAdded?: () => void;
+  /**
+   * Spec 006: id of the event currently blocking this session, parsed by the
+   * page from the most recent deferral error text. Drives the "Blocked by" row
+   * in the Properties panel. Omit when not deferred or no GUID could be parsed.
+   */
+  blockedByEventId?: string;
 }
 
 interface IButtonState {
@@ -537,6 +543,26 @@ export default function MessageListing(props: IMessageListingProps) {
               mono
             />
           )}
+          {/* Spec 006: render only when the event is deferred AND a blocker
+              GUID was parsed AND we have an endpointId to build the link with.
+              All three are required — endpointId is part of the route, and a
+              row without a valid link would mislead operators. */}
+          {props.eventDetails?.resolutionStatus?.toLowerCase() === "deferred" &&
+            props.blockedByEventId &&
+            props.eventDetails?.endpointId && (
+              <PropertyRow
+                label="Blocked by"
+                value={
+                  <Link
+                    to={`/Message/Index/${props.eventDetails.endpointId}/${props.blockedByEventId}/0`}
+                    className="text-status-info font-semibold no-underline hover:underline"
+                  >
+                    {props.blockedByEventId}
+                  </Link>
+                }
+                mono
+              />
+            )}
         </PropertySection>
 
         <PropertySection title="Details">

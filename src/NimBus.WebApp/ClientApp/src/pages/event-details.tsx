@@ -7,6 +7,7 @@ import TabSelection from "components/tab-selection";
 import Loading from "components/loading/loading";
 import BlockedListing from "components/event-details/blocked-listing";
 import FlowTimeline from "components/event-details/flow-timeline";
+import { parseBlockedByEventId } from "functions/endpoint.functions";
 
 const { useEffect, useState } = React;
 
@@ -211,6 +212,25 @@ const EventDetails = (props: EventDetailsProps) => {
   const tabs = () => {
     const blockedCount = blockedTotal > 99 ? "99+" : blockedTotal;
 
+    // Spec 006: derive the blocking event id from the most recent deferral
+    // history entry. Older deferrals can name a different (already-resolved)
+    // blocker, so we walk newest-first by enqueuedTimeUtc and pick the first
+    // entry whose error text parses to a GUID. Falls through to undefined when
+    // no history entry matches the canonical "is blocked by {GUID}" phrase.
+    const blockedByEventId = (() => {
+      if (!histories || histories.length === 0) return undefined;
+      const ordered = [...histories].sort((a, b) => {
+        const av = a.enqueuedTimeUtc?.valueOf?.() ?? 0;
+        const bv = b.enqueuedTimeUtc?.valueOf?.() ?? 0;
+        return bv - av;
+      });
+      for (const entry of ordered) {
+        const parsed = parseBlockedByEventId(entry.errorContent?.errorText);
+        if (parsed) return parsed;
+      }
+      return undefined;
+    })();
+
     return [
       {
         name: `Message`,
@@ -227,6 +247,7 @@ const EventDetails = (props: EventDetailsProps) => {
             onCommentAdded={reloadAudits}
             eventTypes={eventTypes}
             eventDetails={cosmosEvent}
+            blockedByEventId={blockedByEventId}
             key="Message"
           />
         ),

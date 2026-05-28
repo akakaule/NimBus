@@ -58,3 +58,21 @@ export const formatMoment = (moment?: moment.Moment, slim = false): string => {
     ? moment.format(formatString)
     : "Invalid timestamp";
 };
+
+// Spec 006: parse the blocking event GUID out of a StrictMessageHandler-formatted
+// deferral error text ("Session {sessionId} is blocked by {eventId}"). Anchored
+// on the `is blocked by` phrase (case-insensitive) so wrapping prefixes/suffixes
+// in future error-text rewrites still match as long as the canonical substring
+// survives. Returns the GUID exactly as it appears in the input (no normalization)
+// so the rendered route matches the destination page's expected casing. Never
+// throws; returns undefined on null/undefined input or no match.
+const BLOCKED_BY_EVENT_ID_RE =
+  /is blocked by\s+([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/i;
+
+export const parseBlockedByEventId = (
+  errorText: string | null | undefined,
+): string | undefined => {
+  if (!errorText) return undefined;
+  const match = BLOCKED_BY_EVENT_ID_RE.exec(errorText);
+  return match ? match[1] : undefined;
+};

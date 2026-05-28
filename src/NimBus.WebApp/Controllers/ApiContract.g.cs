@@ -897,6 +897,18 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<EventTypeDetails>> GetEventtypesEventtypeidAsync(string eventtypeid);
 
         /// <summary>
+        /// Generate a randomized, schema-valid fake payload for the event type
+        /// </summary>
+
+        /// <remarks>
+        /// Reflects over the registered CLR type and produces a randomized JSON payload that is guaranteed to deserialize as the type and satisfy the type's own IEvent.TryValidate rules (the same gate the Compose / Resubmit-with-changes submit path applies). Returns the example payload as a safe fallback when no randomized variant validates inside the retry budget; returns payload=null only when the type cannot be constructed.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<FakeEventPayload>> GetEventtypesEventtypeidFakeAsync(string eventtypeid);
+
+        /// <summary>
         /// Your GET endpoint
         /// </summary>
 
@@ -938,6 +950,20 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.GetEventtypesEventtypeidAsync(eventtypeid);
+        }
+
+        /// <summary>
+        /// Generate a randomized, schema-valid fake payload for the event type
+        /// </summary>
+        /// <remarks>
+        /// Reflects over the registered CLR type and produces a randomized JSON payload that is guaranteed to deserialize as the type and satisfy the type's own IEvent.TryValidate rules (the same gate the Compose / Resubmit-with-changes submit path applies). Returns the example payload as a safe fallback when no randomized variant validates inside the retry budget; returns payload=null only when the type cannot be constructed.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/event-types/{eventtypeid}/fake")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<FakeEventPayload>> GetEventtypesEventtypeidFake(string eventtypeid)
+        {
+
+            return _implementation.GetEventtypesEventtypeidFakeAsync(eventtypeid);
         }
 
         /// <summary>
@@ -3208,6 +3234,61 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return Newtonsoft.Json.JsonConvert.DeserializeObject<EventTypeDetails>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    /// <summary>
+    /// Response shape for GET /api/event-types/{eventtypeid}/fake. The payload field is a fully-formed JSON string (indented), not a structured object — the client inserts it verbatim into the textarea. Null when the type cannot be constructed (abstract, interface, or no accessible parameterless constructor).
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class FakeEventPayload : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _payload;
+
+        /// <summary>
+        /// Indented JSON payload string, or null when the type cannot be constructed.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("payload", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Payload    {
+            get { return _payload; }
+            set
+            {
+                if (_payload != value)
+                {
+                    _payload = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static FakeEventPayload FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<FakeEventPayload>(data, new Newtonsoft.Json.JsonSerializerSettings());
 
         }
         public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;

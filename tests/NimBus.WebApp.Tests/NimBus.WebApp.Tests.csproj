@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Skip the WebApp's NSwag / npm pipeline when this test project triggers
+         a transitive build of the WebApp; the tests reflect over the
+         FakeEventPayloadGenerator and the EventTypeImplementation directly, not
+         the wire. -->
+    <SkipSpaBuild>true</SkipSpaBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageReference Include="MSTest.TestAdapter" Version="2.2.10" />
+    <PackageReference Include="MSTest.TestFramework" Version="2.2.10" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NimBus.WebApp\NimBus.WebApp.csproj" />
+  </ItemGroup>
+
+</Project>

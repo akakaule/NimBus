@@ -317,6 +317,11 @@ namespace NimBus.WebApp
 
             services.AddSingleton<ICodeRepoService>(sp => new CodeRepoService(Configuration["RepositoryUrl"]));
 
+            // FakeEventPayloadGenerator is registered as a singleton — it
+            // holds no shared mutable state (each call uses a per-call Random
+            // instance), so the JIT can keep the heuristic lookup hot.
+            services.AddSingleton<FakeEventPayloadGenerator>();
+
             services.AddSingleton<IServiceBusManagement>(sp => new ServiceBusManagement(sp.GetRequiredService<ServiceBusAdministrationClient>()));
 
             // Typed HttpClient via IHttpClientFactory — pools the underlying

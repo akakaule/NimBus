@@ -69,6 +69,14 @@ public static class ServiceCollectionExtensions
             cookie.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
             cookie.ExpireTimeSpan = TimeSpan.FromHours(8);
             cookie.SlidingExpiration = true;
+
+            // Anonymous requests to the SignalR hub or the JSON API surface
+            // get a clean 401 (or 403 on access-denied) instead of the
+            // default 302 redirect to /account/login — the SignalR client
+            // cannot follow the 302 and the SPA's fetch caller misinterprets
+            // it as an opaque CORS / redirect failure. See spec 010
+            // FR-011 / FR-012 and <see cref="NimBusCookieAuthenticationEvents"/>.
+            cookie.Events = NimBusCookieAuthenticationEvents.Create();
         });
 
         services.AddTransient<IEmailSender, SmtpEmailSender>();

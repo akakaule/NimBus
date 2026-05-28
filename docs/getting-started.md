@@ -242,6 +242,15 @@ Open the WebApp URL from the Aspire Dashboard:
    - **Flow** tab — Visual timeline of the complete message lifecycle
    - **Blocked** tab — Events blocked by this session
 
+> **Response compression.** The WebApp runs ASP.NET Core's in-process response-compression
+> middleware (Brotli first, Gzip fallback, both at `CompressionLevel.Optimal`) so that the
+> SPA bundle, CSS, JSON API payloads, and SVG icons are negotiated down to ~20-30 % of
+> their raw size for browsers that advertise `Accept-Encoding`. Under Aspire there is no
+> reverse proxy in front of the WebApp — this middleware closes the gap. If you deploy
+> behind App Service, Application Gateway, or any other layer that already compresses, do
+> nothing: the middleware honours an existing `Content-Encoding` header on its way out and
+> does not double-encode, so the outer compression takes precedence transparently.
+
 ## 9. Test Error Handling
 
 Publish a message that will fail:

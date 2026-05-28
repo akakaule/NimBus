@@ -30,6 +30,124 @@ import { useEffect, useState } from "react";
 // flags slow events so the operator can investigate (rec §09 event-details).
 const SLOW_PROCESSING_MS = 1000;
 
+// Lowercased forms of the messageType enum so callers can compare without
+// caring about transport casing (see FR-003 of spec 005).
+const START_ANCHOR_TYPE = "eventrequest";
+const WAITED_LIFECYCLE_TYPES = new Set([
+  "deferralresponse",
+  "pendinghandoffresponse",
+]);
+const END_ANCHOR_TYPES = new Set([
+  "resolutionresponse",
+  "skipresponse",
+  "errorresponse",
+  "unsupportedresponse",
+  "deferralresponse",
+  "pendinghandoffresponse",
+]);
+
+function toEpochMs(value: unknown): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  // moment objects expose valueOf(); strings/Dates also have meaningful valueOf().
+  const anyVal = value as { valueOf?: () => unknown };
+  if (typeof anyVal?.valueOf === "function") {
+    const v = anyVal.valueOf();
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+  }
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+// Simple millisecond delta between two moment-like / string-like timestamps.
+// Used as the third-fallback Queue value when the row's `queueTimeMs` is
+// missing — matches pre-spec behaviour. Returns `undefined` when either side
+// is unparseable so the chain can keep falling back gracefully.
+export function diffMs(later: unknown, earlier: unknown): number | undefined {
+  const a = toEpochMs(later);
+  const b = toEpochMs(earlier);
+  if (a === undefined || b === undefined) return undefined;
+  return a - b;
+}
+
+/**
+ * Spec 005 — derive the "queue" portion of a waited lifecycle from the
+ * message history.
+ *
+ * The captured row-level `queueTimeMs` is the millisecond gap between dequeue
+ * and pickup of the *last* delivery. For deferred / pending-handoff events
+ * that delivery is the replay or the settlement control message — the figure
+ * does not reflect the actual wait. This function reconstructs the
+ * end-to-end queue span from the history when (and only when) the lifecycle
+ * contains at least one `DeferralResponse` or `PendingHandoffResponse`.
+ *
+ * Pure function: O(n), no `Date.now()`, no DOM access, tolerant of forward-
+ * compatible additions to the messageType enum (unknowns are ignored).
+ */
+export function getHistoryQueueTimeMs(
+  messages: api.Message[] | null | undefined,
+): number | undefined {
+  // FR-002: empty / missing input -> undefined.
+  if (!messages || messages.length === 0) return undefined;
+
+  // Normalise once (FR-003) and capture the parsed timestamp alongside so the
+  // function stays O(n) over the input.
+  const normalised: { type: string; ts: number }[] = [];
+  let waited = false;
+  for (const m of messages) {
+    const rawType = m?.messageType;
+    const type = typeof rawType === "string" ? rawType.toLowerCase() : "";
+    const ts = toEpochMs(m?.enqueuedTimeUtc);
+    if (ts === undefined) continue;
+    normalised.push({ type, ts });
+    if (WAITED_LIFECYCLE_TYPES.has(type)) waited = true;
+  }
+
+  // FR-004: override is gated on lifecycle shape — non-waited events fall
+  // through to today's row-level value.
+  if (!waited) return undefined;
+  if (normalised.length === 0) return undefined;
+
+  // FR-005 start anchor: earliest EventRequest. FR-006 partial-history
+  // fallback: earliest message overall, validated by FR-008's non-negative
+  // guard.
+  let startAnchor: number | undefined;
+  let earliestOverall: number = Number.POSITIVE_INFINITY;
+  for (const n of normalised) {
+    if (n.ts < earliestOverall) earliestOverall = n.ts;
+    if (n.type === START_ANCHOR_TYPE) {
+      if (startAnchor === undefined || n.ts < startAnchor) startAnchor = n.ts;
+    }
+  }
+  if (startAnchor === undefined) {
+    startAnchor = earliestOverall === Number.POSITIVE_INFINITY
+      ? undefined
+      : earliestOverall;
+  }
+  if (startAnchor === undefined) return undefined;
+
+  // FR-005/FR-007 end anchor: latest message whose normalised type is a
+  // recognised lifecycle outcome (deferral/pending-handoff are valid end
+  // anchors because still-waiting events have no terminal outcome yet — the
+  // segment then reads "wait so far").
+  let endAnchor: number | undefined;
+  for (const n of normalised) {
+    if (!END_ANCHOR_TYPES.has(n.type)) continue;
+    if (endAnchor === undefined || n.ts > endAnchor) endAnchor = n.ts;
+  }
+  if (endAnchor === undefined) return undefined;
+
+  // FR-008: negative spans (clock skew between SB enqueue time and Resolver
+  // timestamps) -> undefined so the caller silently falls back to the row
+  // value.
+  const span = endAnchor - startAnchor;
+  if (span < 0) return undefined;
+  // FR-009: result is in milliseconds, same units as queueTimeMs.
+  return span;
+}
+
 function statusToBadgeVariant(
   status: string | undefined,
 ):
@@ -81,6 +199,14 @@ function safeFormatJson(raw: string): string {
 
 interface IMessageListingProps {
   eventDetails: api.Event | undefined;
+  /**
+   * Full message history for the event (same array `FlowTimeline` consumes).
+   * Spec 005 (FR-015..FR-017): when populated and the lifecycle contains a
+   * deferral or pending-handoff entry, the Queue segment is derived from the
+   * history instead of the per-delivery `queueTimeMs`. Omitting it preserves
+   * today's behaviour.
+   */
+  messages?: api.Message[];
   eventTypes: api.EventType[];
   skipEvent: (eventId: string, messageId: string) => Promise<void>;
   resubmitEvent: (eventId: string, messageId: string) => Promise<void>;
@@ -458,60 +584,80 @@ export default function MessageListing(props: IMessageListingProps) {
       </h4>
       <br />
       {/* Timing bar — queue · processing · ack as a stacked horizontal bar.
-          Operators glance once instead of scanning three KV rows (rec §09). */}
+          Operators glance once instead of scanning three KV rows (rec §09).
+
+          Spec 005 (FR-020/FR-050): the Queue value is chosen via
+          `getHistoryQueueTimeMs(props.messages) ?? event.queueTimeMs ??
+          diffMs(event.updatedAt, event.enqueuedTimeUtc)`. The override fires
+          only on waited (deferred / pending-handoff) lifecycles so the
+          captured row value — which describes only the *last* delivery — does
+          not silently report a millisecond for an event that actually spent
+          minutes waiting. Use `??` (not `||`) so a measured `0` is preserved.
+          DO NOT collapse this chain back to a single `event.queueTimeMs`
+          read; that regresses the spec. Processing time stays on the existing
+          chain (FR-021). */}
       {(props.eventDetails?.queueTimeMs !== undefined ||
-        props.eventDetails?.processingTimeMs !== undefined) && (
-        <TimingBar
-          className="mb-4"
-          segments={[
-            {
-              label: "Queue",
-              display: formatDurationMs(props.eventDetails?.queueTimeMs),
-              weight: Math.max(props.eventDetails?.queueTimeMs ?? 0, 0),
-              colorClass: "bg-[#BFD8F2]",
-            },
-            {
-              label: "Processing",
-              display: formatDurationMs(
-                props.eventDetails?.processingTimeMs,
-              ),
-              weight: Math.max(props.eventDetails?.processingTimeMs ?? 0, 0),
-              colorClass: "bg-status-warning",
-            },
-            {
-              label: "Ack",
-              display: "< 1 ms",
-              weight: 0.05 *
-                ((props.eventDetails?.queueTimeMs ?? 0) +
-                  (props.eventDetails?.processingTimeMs ?? 0) || 1),
-              colorClass: "bg-status-success",
-            },
-          ]}
-          total={
-            <span>
-              {formatDurationMs(
-                (props.eventDetails?.queueTimeMs ?? 0) +
-                  (props.eventDetails?.processingTimeMs ?? 0),
-              )}{" "}
-              ·{" "}
-              <span
-                className={
-                  isFailedMessage(props.eventDetails?.resolutionStatus)
-                    ? "text-status-danger"
-                    : "text-status-success"
-                }
-              >
-                {props.eventDetails?.resolutionStatus}
+        props.eventDetails?.processingTimeMs !== undefined) && (() => {
+        const queueMs =
+          getHistoryQueueTimeMs(props.messages) ??
+          props.eventDetails?.queueTimeMs ??
+          diffMs(
+            props.eventDetails?.updatedAt,
+            props.eventDetails?.enqueuedTimeUtc,
+          );
+        const processingMs = props.eventDetails?.processingTimeMs;
+        // FR-022: Total uses the displayed Queue + Processing — if Queue is
+        // overridden, the override participates in the total.
+        const totalMs = (queueMs ?? 0) + (processingMs ?? 0);
+        return (
+          <TimingBar
+            className="mb-4"
+            segments={[
+              {
+                label: "Queue",
+                display: formatDurationMs(queueMs),
+                weight: Math.max(queueMs ?? 0, 0),
+                colorClass: "bg-[#BFD8F2]",
+              },
+              {
+                label: "Processing",
+                display: formatDurationMs(processingMs),
+                weight: Math.max(processingMs ?? 0, 0),
+                colorClass: "bg-status-warning",
+              },
+              {
+                label: "Ack",
+                display: "< 1 ms",
+                weight:
+                  0.05 * ((queueMs ?? 0) + (processingMs ?? 0) || 1),
+                colorClass: "bg-status-success",
+              },
+            ]}
+            total={
+              <span>
+                {formatDurationMs(totalMs)}{" "}
+                ·{" "}
+                <span
+                  className={
+                    isFailedMessage(props.eventDetails?.resolutionStatus)
+                      ? "text-status-danger"
+                      : "text-status-success"
+                  }
+                >
+                  {props.eventDetails?.resolutionStatus}
+                </span>
               </span>
-            </span>
-          }
-          trailing={
-            (props.eventDetails?.processingTimeMs ?? 0) >= SLOW_PROCESSING_MS
-              ? `Above ${SLOW_PROCESSING_MS} ms — check downstream sink`
-              : undefined
-          }
-        />
-      )}
+            }
+            // FR-023: the slow-processing callout evaluates Processing only,
+            // never the overridden Queue value.
+            trailing={
+              (processingMs ?? 0) >= SLOW_PROCESSING_MS
+                ? `Above ${SLOW_PROCESSING_MS} ms — check downstream sink`
+                : undefined
+            }
+          />
+        );
+      })()}
 
       <PropertyList>
         <PropertySection title="Identifiers">

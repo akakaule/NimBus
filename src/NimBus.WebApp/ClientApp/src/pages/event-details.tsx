@@ -227,6 +227,11 @@ const EventDetails = (props: EventDetailsProps) => {
             onCommentAdded={reloadAudits}
             eventTypes={eventTypes}
             eventDetails={cosmosEvent}
+            // Spec 005 (FR-016): the same `histories` array already fed to
+            // `FlowTimeline` is forwarded here so MessageListing can derive a
+            // lifecycle-aware Queue value for deferred / pending-handoff
+            // events.
+            messages={histories}
             key="Message"
           />
         ),

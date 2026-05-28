@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -5,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Authorization;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -214,6 +216,33 @@ namespace NimBus.WebApp
 
             services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
 
+            // Response compression — Brotli first, Gzip second.
+            // App Service's default IIS compression doesn't cover `application/javascript`
+            // reliably and never serves precompressed `.br` files emitted by the Vite build;
+            // the in-process middleware fills both gaps for Aspire / reverse-proxy-less
+            // deployments. When an outer layer (App Service, Application Gateway) already
+            // compresses, ASP.NET Core's middleware honours the existing `Content-Encoding`
+            // header and does not double-encode.
+            services.AddResponseCompression(options =>
+            {
+                options.EnableForHttps = true;
+                options.Providers.Add<BrotliCompressionProvider>();
+                options.Providers.Add<GzipCompressionProvider>();
+                options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(new[]
+                {
+                    // SPA bundle assets — Vite emits these and they dominate first-load bytes.
+                    "application/javascript",
+                    // JSON API responses (endpoints/audits/messages lists run 100-500 KB).
+                    "application/json",
+                    // SPA stylesheet bundle (Tailwind compresses ~80 % under Brotli).
+                    "text/css",
+                    // Inline icon assets shipped from ClientApp/public.
+                    "image/svg+xml",
+                });
+            });
+            services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Optimal);
+            services.Configure<GzipCompressionProviderOptions>(o => o.Level = CompressionLevel.Optimal);
+
             services.AddSpaStaticFiles(configuration =>
             {
                 configuration.RootPath = "ClientApp/build/public";
@@ -410,6 +439,14 @@ namespace NimBus.WebApp
             });
 
             app.UseHttpsRedirection();
+
+            // Response compression MUST run before UseSpaStaticFiles, UseStaticFiles, and
+            // UseRouting. The static-file middleware short-circuits the request and writes
+            // the response body inline; if compression sits *after* it, the SPA bundle
+            // ships uncompressed because the encoding is selected too late to apply to the
+            // already-written stream. Routing/endpoint middleware has the same hazard for
+            // JSON API responses. Do not move this call below either of them.
+            app.UseResponseCompression();
 
             // Add security headers to all responses
             app.UseMiddleware<SecurityHeadersMiddleware>();

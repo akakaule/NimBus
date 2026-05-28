@@ -197,6 +197,7 @@ Authentication and authorization:
 - requests are routed through a policy scheme that chooses OpenID Connect or JWT bearer based on the request
 - a development-only local authentication bypass exists behind configuration flags
 - endpoint-level authorization is implemented against endpoint role assignments in the platform model
+- the SignalR `GridEventsHub` is part of the global authorize surface — `[Authorize]` on the hub class closes the previous gap where anonymous WebSocket clients could negotiate and receive endpoint-state broadcasts. A cookie-scheme `CookieAuthenticationEvents` handler (`NimBus.Extensions.Identity.NimBusCookieAuthenticationEvents`) returns a clean 401 (or 403 on access-denied) for hub-path and `/api/*` requests instead of the default 302 redirect to the login page, so the SignalR client and SPA fetch caller see an actionable auth error rather than an opaque "negotiate failed" / CORS failure. See spec [010-authorize-gridevents-hub](specs/010-authorize-gridevents-hub/spec.md).
 
 Important code anchors:
 

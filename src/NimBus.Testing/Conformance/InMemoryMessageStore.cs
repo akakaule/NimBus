@@ -254,7 +254,7 @@ public class InMemoryMessageStore : INimBusMessageStore
         return Task.FromResult(new MessageSearchResult { Messages = results });
     }
 
-    public Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity, string? endpointId = null, string? eventTypeId = null)
+    public virtual Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity, string? endpointId = null, string? eventTypeId = null)
     {
         _audits.GetOrAdd(eventId, _ => new List<MessageAuditEntity>()).Add(auditEntity);
         return Task.CompletedTask;

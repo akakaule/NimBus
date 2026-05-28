@@ -37,6 +37,7 @@ public class EndpointImplementation : IEndpointApiController
     private readonly IEndpointAuthorizationService _authorizationService;
     private readonly HttpContext _context;
     private readonly ILogger<EndpointImplementation> _logger;
+    private readonly IAuditLogService _auditLogService;
     private const int InitialEvents = 40;
     private const int PagingEvents = 40;
     private const int SqlInvalidObjectNameErrorNumber = 208;
@@ -48,7 +49,8 @@ public class EndpointImplementation : IEndpointApiController
         INimBusMessageStore cosmosClient,
         IServiceBusManagement serviceBusManagement,
         IEndpointAuthorizationService authorizationService,
-        ILogger<EndpointImplementation> logger)
+        ILogger<EndpointImplementation> logger,
+        IAuditLogService auditLogService)
     {
         this.platform = platform;
         this.configuration = configuration;
@@ -57,6 +59,7 @@ public class EndpointImplementation : IEndpointApiController
         this._authorizationService = authorizationService;
         _context = contextAccessor.HttpContext;
         _logger = logger;
+        _auditLogService = auditLogService;
     }
 
     public async Task<ActionResult<IEnumerable<string>>> EndpointIdsAllAsync()
@@ -306,6 +309,16 @@ public class EndpointImplementation : IEndpointApiController
         var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointName);
         if (endpointIdValid)
         {
+            if (!_authorizationService.IsManagerOfEndpoint(endpointName))
+            {
+                await _auditLogService.LogAuditAsync(MessageAuditType.GetEndpointDetails, _context,
+                    accessDenied: true, endpointId: endpointName);
+                return new ForbidResult();
+            }
+
+            await _auditLogService.LogAuditAsync(MessageAuditType.GetEndpointDetails, _context,
+                endpointId: endpointName);
+
             try
             {
                 var state = await cosmosClient.DownloadEndpointStateCount(endpointName);
@@ -391,7 +404,12 @@ public class EndpointImplementation : IEndpointApiController
         var env = configuration.GetValue<string>("Environment");
         if (!isManagementUser && (env.Equals("prod", StringComparison.OrdinalIgnoreCase) ||
                                   env.Equals("stag", StringComparison.OrdinalIgnoreCase)))
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+                accessDenied: true, endpointId: endpointName,
+                data: $"Environment={env}");
             return new NotFoundObjectResult("Endpoint cannot be purged in Production and Staging environments");
+        }
 
         // Validate endpoint
         var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointName);
@@ -405,6 +423,9 @@ public class EndpointImplementation : IEndpointApiController
 
         var endpointManagement = new EndpointManagement(serviceBusManagement);
         await endpointManagement.ClearEndpoint(endpointName);
+
+        await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+            endpointId: endpointName);
 
         if (isPurged)
             return new OkObjectResult($"{endpointName} is purged");
@@ -525,6 +546,22 @@ public class EndpointImplementation : IEndpointApiController
             return new NotFoundObjectResult("Endpoint not found");
         }
 
+        // Resolve the audit-type up front; both branches need it for the
+        // access-denied path and the success path.
+        MessageAuditType? auditType = body switch
+        {
+            "enable" => MessageAuditType.EnableEndpoint,
+            "disable" => MessageAuditType.DisableEndpoint,
+            _ => null,
+        };
+
+        if (auditType.HasValue && !_authorizationService.IsManagerOfEndpoint(endpointId))
+        {
+            await _auditLogService.LogAuditAsync(auditType.Value, _context,
+                accessDenied: true, endpointId: endpointId);
+            return new ForbidResult();
+        }
+
         var endpointManagement = new EndpointManagement(serviceBusManagement);
         switch (body)
         {
@@ -534,6 +571,8 @@ public class EndpointImplementation : IEndpointApiController
                     var metadata = await cosmosClient.GetEndpointMetadata(endpointId);
                     metadata.SubscriptionStatus = true;
                     await cosmosClient.SetEndpointMetadata(metadata);
+                    await _auditLogService.LogAuditAsync(MessageAuditType.EnableEndpoint, _context,
+                        endpointId: endpointId);
                     if (await endpointManagement.IsEndpointActive(endpointId))
                         return new OkObjectResult($"{endpointId} is active");
                     break;
@@ -544,6 +583,8 @@ public class EndpointImplementation : IEndpointApiController
                     var metadata = await cosmosClient.GetEndpointMetadata(endpointId);
                     metadata.SubscriptionStatus = false;
                     await cosmosClient.SetEndpointMetadata(metadata);
+                    await _auditLogService.LogAuditAsync(MessageAuditType.DisableEndpoint, _context,
+                        endpointId: endpointId);
                     if (!await endpointManagement.IsEndpointActive(endpointId))
                         return new OkObjectResult($"{endpointId} is disable");
                     break;

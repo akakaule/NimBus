@@ -7,6 +7,7 @@ using NimBus.SDK;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
 using NimBus.WebApp.Services.ApplicationInsights;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Cosmos;
 using Microsoft.CodeAnalysis;
@@ -30,6 +31,8 @@ namespace NimBus.WebApp.Controllers.ApiContract
         private readonly IEndpointAuthorizationService authorizationService;
         private readonly IAdminService adminService;
         private readonly ServiceBusClient serviceBusClient;
+        private readonly IAuditLogService auditLogService;
+        private readonly IHttpContextAccessor httpContextAccessor;
 
         public EventImplementation(
             IApplicationInsightsService applicationInsightsService,
@@ -39,7 +42,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
             INimBusMessageStore cosmosClient,
             IEndpointAuthorizationService authorizationService,
             IAdminService adminService,
-            ServiceBusClient serviceBusClient)
+            ServiceBusClient serviceBusClient,
+            IAuditLogService auditLogService,
+            IHttpContextAccessor httpContextAccessor)
         {
             this.platform = platform;
             this.logger = logger;
@@ -49,6 +54,8 @@ namespace NimBus.WebApp.Controllers.ApiContract
             this.authorizationService = authorizationService;
             this.adminService = adminService;
             this.serviceBusClient = serviceBusClient;
+            this.auditLogService = auditLogService;
+            this.httpContextAccessor = httpContextAccessor;
         }
         public async Task<ActionResult<Message>> GetEventIdsAsync(string eventId, string messageId)
         {
@@ -144,15 +151,19 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 endpoint = errorResponse.From;
             }
 
-            var messageAuditEntity = authorizationService.GetMessageAuditEntity(MessageAuditType.Resubmit);
             var eventJson = errorResponse.MessageContent.EventContent.EventJson;
 
             if (!authorizationService.IsManagerOfEndpoint(endpoint))
+            {
+                await auditLogService.LogAuditAsync(MessageAuditType.Resubmit, httpContextAccessor.HttpContext,
+                    accessDenied: true, eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
                 throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpoint}'.");
+            }
 
             await managerClient.Resubmit(errorResponse, endpoint, eventTypeId, eventJson);
             await cosmosClient.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
-            await cosmosClient.StoreMessageAudit(eventId, messageAuditEntity, endpoint, eventTypeId);
+            await auditLogService.LogAuditAsync(MessageAuditType.Resubmit, httpContextAccessor.HttpContext,
+                eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
             return new OkResult();
         }
 
@@ -185,13 +196,16 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 endpoint = errorResponse.From;
             }
 
-            var messageAuditEntity = authorizationService.GetMessageAuditEntity(MessageAuditType.Skip);
-
             if (!authorizationService.IsManagerOfEndpoint(endpoint))
+            {
+                await auditLogService.LogAuditAsync(MessageAuditType.Skip, httpContextAccessor.HttpContext,
+                    accessDenied: true, eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
                 throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpoint}'.");
+            }
 
             await managerClient.Skip(errorResponse, endpoint, eventTypeId);
-            await cosmosClient.StoreMessageAudit(eventId, messageAuditEntity, endpoint, eventTypeId);
+            await auditLogService.LogAuditAsync(MessageAuditType.Skip, httpContextAccessor.HttpContext,
+                eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
             await cosmosClient.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
 
             return new OkResult();
@@ -251,7 +265,11 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new NotFoundObjectResult("Endpoint not found");
 
             if (!authorizationService.IsManagerOfEndpoint(endpointId))
+            {
+                await auditLogService.LogAuditAsync(auditType, httpContextAccessor.HttpContext,
+                    accessDenied: true, eventId: eventId, endpointId: endpointId);
                 throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpointId}'.");
+            }
 
             UnresolvedEvent pendingEvent;
             try
@@ -287,15 +305,15 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 PendingSubStatus = pendingEvent.PendingSubStatus,
             };
 
-            var messageAuditEntity = authorizationService.GetMessageAuditEntity(auditType);
-            messageAuditEntity.Comment = auditComment;
-
             logger.LogInformation(
                 "Handoff settle ({AuditType}). EndpointId: {EndpointId}, EventId: {EventId}, MessageId: {MessageId}",
                 auditType, endpointId, eventId, messageId);
 
-            await settle(pendingEntry, messageAuditEntity.AuditorName);
-            await cosmosClient.StoreMessageAudit(eventId, messageAuditEntity, endpointId, pendingEvent.EventTypeId);
+            var auditorName = AuditLogService.ResolveAuditorName(httpContextAccessor.HttpContext);
+            await settle(pendingEntry, auditorName);
+            await auditLogService.LogAuditAsync(auditType, httpContextAccessor.HttpContext,
+                data: auditComment, eventId: eventId, endpointId: endpointId,
+                eventTypeId: pendingEvent.EventTypeId);
 
             return new OkResult();
         }
@@ -358,6 +376,16 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 return new NotFoundObjectResult("Endpoint not found");
             }
+
+            if (!authorizationService.IsManagerOfEndpoint(endpoint))
+            {
+                await auditLogService.LogAuditAsync(MessageAuditType.GetEventDetails, httpContextAccessor.HttpContext,
+                    accessDenied: true, eventId: id, endpointId: endpoint);
+                return new ForbidResult();
+            }
+
+            await auditLogService.LogAuditAsync(MessageAuditType.GetEventDetails, httpContextAccessor.HttpContext,
+                eventId: id, endpointId: endpoint);
 
             var eventDetails = new EventDetails();
 
@@ -479,6 +507,14 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new BadRequestObjectResult("Event content is empty");
             }
 
+            if (!authorizationService.IsManagerOfEndpoint(producingEndpoint.Id))
+            {
+                await auditLogService.LogAuditAsync(MessageAuditType.Compose, httpContextAccessor.HttpContext,
+                    accessDenied: true, data: JsonConvert.SerializeObject(body),
+                    endpointId: producingEndpoint.Id, eventTypeId: body.EventTypeId);
+                throw new UnauthorizedAccessException($"User is unauthorized to compose events for endpoint '{producingEndpoint.Id}'.");
+            }
+
             var type = eventType.GetEventClassType();
             try
             {
@@ -495,6 +531,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 // matches what every other producer in the platform sends.
                 var publisher = await PublisherClient.CreateAsync(serviceBusClient, producingEndpoint.Id);
                 await publisher.Publish(@event);
+                await auditLogService.LogAuditAsync(MessageAuditType.Compose, httpContextAccessor.HttpContext,
+                    data: JsonConvert.SerializeObject(body),
+                    endpointId: producingEndpoint.Id, eventTypeId: body.EventTypeId);
                 return new OkResult();
             }
             catch (JsonReaderException e)
@@ -543,14 +582,19 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 }
             }
 
-            var messageAuditEntity = authorizationService.GetMessageAuditEntity(MessageAuditType.ResubmitWithChanges);
-
             if (!authorizationService.IsManagerOfEndpoint(endpoint))
+            {
+                await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext,
+                    accessDenied: true, data: JsonConvert.SerializeObject(body),
+                    eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
                 throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpoint}'.");
+            }
 
             await managerClient.Resubmit(errorResponse, endpoint, eventTypeId, body.EventContent);
             await cosmosClient.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
-            await cosmosClient.StoreMessageAudit(eventId, messageAuditEntity, endpoint, eventTypeId);
+            await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext,
+                data: JsonConvert.SerializeObject(body),
+                eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
 
             return new OkResult();
         }
@@ -695,11 +739,25 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new NotFoundObjectResult("Endpoint not found");
             }
 
+            // Spec 008 FR-032: pass the search filter (serialized) as Data so
+            // operators answering "what searches has user X run?" see the
+            // query parameters, not just the bare action.
+            var searchDataJson = JsonConvert.SerializeObject(body);
+
+            if (!authorizationService.IsManagerOfEndpoint(endpointId))
+            {
+                await auditLogService.LogAuditAsync(MessageAuditType.SearchEvents, httpContextAccessor.HttpContext,
+                    accessDenied: true, data: searchDataJson, endpointId: endpointId);
+                return new ForbidResult();
+            }
+
             try
             {
                 var filter = Mapper.MapFilter(body.EventFilter);
                 filter.EndPointId = endpointId;  // Use validated URL parameter instead of body value
                 var reponse = await cosmosClient.GetEventsByFilter(filter, body.ContinuationToken, body.MaxSearchItemsCount);
+                await auditLogService.LogAuditAsync(MessageAuditType.SearchEvents, httpContextAccessor.HttpContext,
+                    data: searchDataJson, endpointId: endpointId);
                 return new SearchResponse
                 {
                     Events = reponse.Events

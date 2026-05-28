@@ -205,7 +205,21 @@ Important code anchors:
 - `src/NimBus.WebApp/Controllers/ApiContract/*.cs`
 - `src/NimBus.WebApp/Hubs/GridEventsHub.cs`
 - `src/NimBus.WebApp/Services/EndpointAuthorizationService.cs`
+- `src/NimBus.WebApp/Services/AuditLogService.cs`
 - `src/NimBus.WebApp/Services/ApplicationInsights/ApplicationInsightsService.cs`
+
+Audit-write contract (spec 008):
+
+- Every privileged-action handler invokes `IAuditLogService.LogAuditAsync(...)`
+  exactly once — on both the success and access-denied branches — for the set
+  of actions enumerated in `MessageAuditType`.
+- The service writes to two independent sinks: the durable
+  `IMessageTrackingStore` (Cosmos / SQL) AND Application Insights via
+  structured `ILogger` (well-known message `"Webapp AuditEvent occurred"`).
+- Both writes are best-effort: failures are absorbed and logged as warnings.
+  The audit trail is durability-best-effort by design, NOT transactionally
+  coupled to the user action. See `docs/webapp-rest-api.md#audit` for the
+  per-action table and KQL query template.
 
 Operational characteristics:
 

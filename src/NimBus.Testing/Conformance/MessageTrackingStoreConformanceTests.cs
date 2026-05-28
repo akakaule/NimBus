@@ -503,4 +503,86 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual(2, items.Count);
         Assert.IsTrue(items.All(a => a.Audit.AuditorName == auditor));
     }
+
+    // ───── Spec 008: round-trip of the four new MessageAuditEntity fields ─────
+
+    [TestMethod]
+    public async Task StoreMessageAudit_roundtrips_AccessDenied_and_Data_fields()
+    {
+        var store = CreateStore();
+        var eventId = Id("evt-aud-new");
+        var endpointId = Id("ep-aud-new");
+        var dataPayload = "{\"filter\":\"OrderPlaced\",\"endpointId\":\"" + endpointId + "\"}";
+
+        await store.StoreMessageAudit(eventId, new MessageAuditEntity
+        {
+            AuditorName = Id("alice"),
+            AuditTimestamp = DateTime.UtcNow,
+            AuditType = MessageAuditType.SearchEvents,
+            AccessDenied = true,
+            Data = dataPayload,
+            EventId = eventId,
+            EndpointId = endpointId,
+        }, endpointId, eventTypeId: "OrderPlaced");
+
+        var audits = (await store.GetMessageAudits(eventId)).ToList();
+
+        Assert.AreEqual(1, audits.Count);
+        var audit = audits[0];
+        Assert.IsTrue(audit.AccessDenied, "AccessDenied should round-trip as true");
+        Assert.AreEqual(dataPayload, audit.Data, "Data payload should round-trip");
+        // Mirrored EventId/EndpointId are populated by the writer where supported
+        // (SQL: read from row columns; Cosmos: from the serialized document; in-memory: from the entity itself).
+        Assert.AreEqual(eventId, audit.EventId);
+        Assert.AreEqual(endpointId, audit.EndpointId);
+    }
+
+    [TestMethod]
+    public async Task StoreMessageAudit_legacy_row_defaults_AccessDenied_false_and_Data_null()
+    {
+        // Per spec FR-074: rows written without the new fields (the legacy code
+        // path, or a row created from a pre-migration entity) MUST project with
+        // AccessDenied = false and Data = null so the audit-list UI renders unchanged.
+        var store = CreateStore();
+        var eventId = Id("evt-aud-legacy");
+        await store.StoreMessageAudit(eventId, new MessageAuditEntity
+        {
+            AuditorName = Id("legacy-user"),
+            AuditTimestamp = DateTime.UtcNow,
+            AuditType = MessageAuditType.Resubmit,
+        });
+
+        var audits = (await store.GetMessageAudits(eventId)).ToList();
+
+        Assert.AreEqual(1, audits.Count);
+        Assert.IsFalse(audits[0].AccessDenied, "legacy row should default AccessDenied to false");
+        Assert.IsNull(audits[0].Data, "legacy row should default Data to null");
+    }
+
+    [TestMethod]
+    public async Task SearchAudits_projects_AccessDenied_and_Data_fields()
+    {
+        var store = CreateStore();
+        var auditor = Id("eve");
+        var eventId = Id("evt-sa-new");
+        var endpointId = Id("ep-sa-new");
+
+        await store.StoreMessageAudit(eventId, new MessageAuditEntity
+        {
+            AuditorName = auditor,
+            AuditTimestamp = DateTime.UtcNow,
+            AuditType = MessageAuditType.GetEventDetails,
+            AccessDenied = true,
+            Data = "context-payload",
+            EventId = eventId,
+            EndpointId = endpointId,
+        }, endpointId);
+
+        var resp = await store.SearchAudits(new AuditFilter { AuditorName = auditor }, continuationToken: null, maxItemCount: 50);
+
+        var items = resp.Audits.ToList();
+        Assert.AreEqual(1, items.Count);
+        Assert.IsTrue(items[0].Audit.AccessDenied);
+        Assert.AreEqual("context-payload", items[0].Audit.Data);
+    }
 }

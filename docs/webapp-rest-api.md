@@ -302,12 +302,92 @@ Order in this list is roughly priority for shipping an "external" promise; the
 audit that produced it lives in the planning notes for the documentation
 work.
 
+## Audit
+
+Spec 008 (centralized audit log service) requires every privileged-action
+handler in the WebApp to call `IAuditLogService.LogAuditAsync(...)` exactly
+once, on both the success and access-denied branches. The service writes the
+audit row to two independent sinks:
+
+1. **Durable** — the configured `IMessageTrackingStore` (Cosmos DB or SQL
+   Server). Surfaced by the existing audit-list endpoints
+   (`GetMessageAudits`, `SearchAudits`) and the WebApp Audits page.
+2. **Short-term operational** — Application Insights, via a structured
+   `ILogger` scope. The well-known message string is
+   `"Webapp AuditEvent occurred"` so KQL queries can pivot on it directly.
+
+Both writes are best-effort: a failure to either sink is logged as a warning
+and absorbed — the user's action proceeds either way.
+
+### Actions audited
+
+The `MessageAuditType` enum enumerates the audit-worthy actions and the
+controller method that fires each one:
+
+| `AuditType`           | Triggered by                                              |
+|-----------------------|-----------------------------------------------------------|
+| `Resubmit`            | `EventImplementation.PostResubmitEventIdsAsync`           |
+| `ResubmitWithChanges` | `EventImplementation.PostResubmitWithChangesEventIdsAsync`|
+| `Skip`                | `EventImplementation.PostSkipEventIdsAsync`               |
+| `CompleteHandoff`     | `EventImplementation.PostHandoffCompleteAsync`            |
+| `FailHandoff`         | `EventImplementation.PostHandoffFailAsync`                |
+| `SearchEvents`        | `EventImplementation.PostApiEventEndpointIdGetByFilterAsync` — filter passed as `Data` |
+| `GetEventDetails`     | `EventImplementation.GetEventDetailsIdAsync`              |
+| `GetEndpointDetails`  | `EndpointImplementation.GetEndpointStatusCountIdAsync`    |
+| `EnableEndpoint`      | `EndpointImplementation.PostEndpointSubscriptionstatusAsync` (body="enable")  |
+| `DisableEndpoint`     | `EndpointImplementation.PostEndpointSubscriptionstatusAsync` (body="disable") |
+| `PurgeMessages`       | `EndpointImplementation.PostEndpointPurgeAsync`, `AdminImplementation.PostAdminSessionPurgeAsync`, `AdminImplementation.PostAdminPurgeAsync` |
+| `Compose`             | `EventImplementation.PostComposeNewEventAsync`            |
+
+`Retry` and `Comment` remain on the enum for backward compatibility with rows
+written before spec 008.
+
+### Audit row shape
+
+Each row is a `MessageAuditEntity`:
+
+```
+AuditorName     // resolved from "name" → ClaimTypes.Name → preferred_username → "anonymous"
+AuditTimestamp  // DateTime.UtcNow at the moment LogAuditAsync was called
+AuditType       // enum value (stored as string for forward compatibility)
+Comment         // operator-typed free text (null on the new code path)
+AccessDenied    // true when the authorization layer rejected the attempt
+Data            // structured action context (e.g. search filter JSON), truncated to ~4 KB
+EventId         // mirrors the eventId argument; null for endpoint-scoped actions
+EndpointId      // mirrors the endpointId argument
+```
+
+### App Insights query template
+
+```kql
+traces
+| where message == "Webapp AuditEvent occurred"
+| project timestamp,
+          AuditType        = tostring(customDimensions.AuditType),
+          AuditorName      = tostring(customDimensions.AuditorName),
+          EventId          = tostring(customDimensions.EventId),
+          EndpointId       = tostring(customDimensions.EndpointId),
+          AccessDenied     = tobool(customDimensions.AccessDenied),
+          Data             = tostring(customDimensions.Data)
+| order by timestamp desc
+```
+
+### Guarantees and non-goals
+
+- **Best-effort, not transactional.** A failure to write the audit row does
+  not fail the user action. See spec 008 NFR-002 and User Story 5.
+- **One row per event for bulk actions.** Not one row per batch — matches
+  the audit-list UI's per-event granularity.
+- **No PII masking inside the service.** Callers MUST pass already-masked
+  content via the `Data` parameter; masking is an upstream concern.
+
 ## See also
 
 - [`docs/architecture.md`](architecture.md) — system-level shape and where
   the WebApp sits.
 - [`docs/authentication.md`](authentication.md) — credential plumbing,
   Identity / Entra setup, bootstrap admin.
+- [`docs/specs/008-centralized-audit-log-service/spec.md`](specs/008-centralized-audit-log-service/spec.md) — full spec for the audit contract.
 - [`src/NimBus.WebApp/api-spec.yaml`](../src/NimBus.WebApp/api-spec.yaml) —
   the machine-readable contract this page describes.
 - [`src/NimBus.WebApp/Startup.cs`](../src/NimBus.WebApp/Startup.cs) — auth,

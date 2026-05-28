@@ -285,8 +285,8 @@ VALUES (
     public async Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity, string? endpointId = null, string? eventTypeId = null)
     {
         var sql = $@"
-INSERT INTO {T("MessageAudits")} (EventId, EndpointId, EventTypeId, AuditorName, AuditTimestamp, AuditType, Comment)
-VALUES (@EventId, @EndpointId, @EventTypeId, @AuditorName, @AuditTimestamp, @AuditType, @Comment)";
+INSERT INTO {T("MessageAudits")} (EventId, EndpointId, EventTypeId, AuditorName, AuditTimestamp, AuditType, Comment, AccessDenied, Data)
+VALUES (@EventId, @EndpointId, @EventTypeId, @AuditorName, @AuditTimestamp, @AuditType, @Comment, @AccessDenied, @Data)";
         await using var conn = Open();
         await conn.ExecuteAsync(sql, new
         {
@@ -297,6 +297,8 @@ VALUES (@EventId, @EndpointId, @EventTypeId, @AuditorName, @AuditTimestamp, @Aud
             auditEntity.AuditTimestamp,
             AuditType = auditEntity.AuditType.ToString(),
             auditEntity.Comment,
+            auditEntity.AccessDenied,
+            auditEntity.Data,
         }, commandTimeout: _commandTimeout);
     }
 
@@ -312,6 +314,10 @@ VALUES (@EventId, @EndpointId, @EventTypeId, @AuditorName, @AuditTimestamp, @Aud
             AuditTimestamp = r.AuditTimestamp,
             AuditType = Enum.TryParse((string)r.AuditType, out MessageAuditType at) ? at : MessageAuditType.Comment,
             Comment = r.Comment,
+            AccessDenied = r.AccessDenied is bool b ? b : false,
+            Data = r.Data,
+            EventId = r.EventId,
+            EndpointId = r.EndpointId,
         }).ToList();
     }
 
@@ -335,7 +341,7 @@ VALUES (@EventId, @EndpointId, @EventTypeId, @AuditorName, @AuditTimestamp, @Aud
         p.Add("PageSize", pageSize);
 
         var sql = $@"
-SELECT EventId, EndpointId, EventTypeId, AuditorName, AuditTimestamp, AuditType, Comment, CreatedAtUtc
+SELECT EventId, EndpointId, EventTypeId, AuditorName, AuditTimestamp, AuditType, Comment, AccessDenied, Data, CreatedAtUtc
 FROM {T("MessageAudits")}
 WHERE {string.Join(" AND ", where)}
 ORDER BY CreatedAtUtc DESC, Id DESC
@@ -356,6 +362,10 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
                 AuditTimestamp = r.AuditTimestamp,
                 AuditType = Enum.TryParse((string)r.AuditType, out MessageAuditType at) ? at : MessageAuditType.Comment,
                 Comment = r.Comment,
+                AccessDenied = r.AccessDenied is bool b ? b : false,
+                Data = r.Data,
+                EventId = r.EventId,
+                EndpointId = r.EndpointId,
             },
         }).ToList();
 

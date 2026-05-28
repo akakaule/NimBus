@@ -377,6 +377,10 @@ namespace NimBus.WebApp
                 healthChecks.AddCosmosDbHealthCheck();
             }
             services.AddScoped<IEndpointAuthorizationService, EndpointAuthorizationService>();
+            // Spec 008: centralized audit-write contract. Scoped so the captured
+            // INimBusMessageStore lifetime matches the request, consistent with
+            // every other message-store consumer in this file.
+            services.AddScoped<IAuditLogService, AuditLogService>();
             services.AddTransient<IEndpointApiController, EndpointImplementation>();
             services.AddTransient<IStorageHookApiController, StorageHookImplementation>();
             services.AddTransient<IEventApiController, EventImplementation>();

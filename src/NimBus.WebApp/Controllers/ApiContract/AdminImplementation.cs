@@ -4,7 +4,9 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Newtonsoft.Json;
 using NimBus.Core;
+using NimBus.MessageStore;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
 
@@ -16,17 +18,20 @@ public class AdminImplementation : IAdminApiController
     private readonly IPlatform _platform;
     private readonly IConfiguration _configuration;
     private readonly HttpContext _context;
+    private readonly IAuditLogService _auditLogService;
 
     public AdminImplementation(
         IHttpContextAccessor contextAccessor,
         IAdminService adminService,
         IPlatform platform,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IAuditLogService auditLogService)
     {
         _adminService = adminService;
         _platform = platform;
         _configuration = configuration;
         _context = contextAccessor.HttpContext;
+        _auditLogService = auditLogService;
     }
 
     public async Task<ActionResult<PlatformConfig>> GetAdminPlatformConfigAsync()
@@ -125,12 +130,20 @@ public class AdminImplementation : IAdminApiController
     public async Task<ActionResult<SessionPurgeResult>> PostAdminSessionPurgeAsync(string endpointId, string sessionId)
     {
         if (!IsUserInSecurityGroup("EIP_Management"))
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+                accessDenied: true, endpointId: endpointId,
+                data: JsonConvert.SerializeObject(new { sessionId }));
             return new ForbidResult();
+        }
 
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
             return new NotFoundObjectResult("Endpoint not found");
 
         var result = await _adminService.PurgeSessionAsync(endpointId, sessionId);
+        await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+            endpointId: endpointId,
+            data: JsonConvert.SerializeObject(new { sessionId }));
         return new OkObjectResult(result);
     }
 
@@ -172,11 +185,20 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminPurgeAsync(string endpointId, PurgeRequest body)
     {
-        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!IsUserInSecurityGroup("EIP_Management"))
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+                accessDenied: true, endpointId: endpointId,
+                data: JsonConvert.SerializeObject(body));
+            return new ForbidResult();
+        }
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
 
         var subscription = string.IsNullOrEmpty(body.Subscription) ? endpointId : body.Subscription;
         var result = await _adminService.PurgeSubscriptionAsync(endpointId, subscription, body.States?.ToList() ?? new(), body.Before);
+        await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+            endpointId: endpointId,
+            data: JsonConvert.SerializeObject(body));
         return new OkObjectResult(result);
     }
 

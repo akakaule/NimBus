@@ -94,6 +94,7 @@ public class EndpointAuthorizationService : IEndpointAuthorizationService
     }
 
     /// <inheritdoc/>
+    [Obsolete("Use IAuditLogService.LogAuditAsync — see spec 008 (centralized audit log service). This bridge remains for any legacy caller that has not yet migrated; it will be removed in a follow-up release.", error: false)]
     public MessageAuditEntity GetMessageAuditEntity(MessageAuditType type)
     {
         var name = GetCurrentUserName();

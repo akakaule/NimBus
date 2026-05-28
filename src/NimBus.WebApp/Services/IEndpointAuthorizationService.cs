@@ -1,3 +1,4 @@
+using System;
 using NimBus.MessageStore;
 
 namespace NimBus.WebApp.Services;
@@ -19,6 +20,7 @@ public interface IEndpointAuthorizationService
     /// </summary>
     /// <param name="type">The type of audit action.</param>
     /// <returns>A MessageAuditEntity populated with current user information.</returns>
+    [Obsolete("Use IAuditLogService.LogAuditAsync — see spec 008 (centralized audit log service). This bridge remains for any legacy caller that has not yet migrated; it will be removed in a follow-up release.", error: false)]
     MessageAuditEntity GetMessageAuditEntity(MessageAuditType type);
 
     /// <summary>

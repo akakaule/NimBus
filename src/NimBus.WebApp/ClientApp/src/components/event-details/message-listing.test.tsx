@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import moment from "moment";
@@ -9,11 +9,28 @@ import MessageListing, {
 } from "./message-listing";
 
 // MessageListing internally constructs an api.Client and queries `getMe()` on
-// mount to label handoff actions. Stub the network call so the component test
-// stays hermetic.
+// mount to label handoff actions. Stub the toast provider and the api Client
+// so the component tests stay hermetic.
 vi.mock("components/ui/toast", () => ({
   useToast: () => ({ addToast: () => {} }),
 }));
+
+vi.mock("api-client", async () => {
+  const actual = await vi.importActual<typeof import("api-client")>("api-client");
+  class MockClient {
+    getMe() {
+      return Promise.resolve(undefined);
+    }
+    postMessageAudit() {
+      return Promise.resolve(undefined);
+    }
+  }
+  return {
+    ...actual,
+    Client: MockClient,
+    CookieAuth: () => ({}),
+  };
+});
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {
@@ -65,7 +82,6 @@ describe("getHistoryQueueTimeMs (spec 005)", () => {
       msg(api.MessageType.EventRequest, "2026-05-28T10:00:30.000Z"), // replay
       msg(api.MessageType.ResolutionResponse, "2026-05-28T10:00:30.050Z"),
     ];
-    // 30,050 ms between first EventRequest and final ResolutionResponse.
     expect(getHistoryQueueTimeMs(history)).toBe(30_050);
   });
 
@@ -76,7 +92,6 @@ describe("getHistoryQueueTimeMs (spec 005)", () => {
       msg(api.MessageType.HandoffCompletedRequest, "2026-05-28T11:05:00.000Z"),
       msg(api.MessageType.ResolutionResponse, "2026-05-28T11:05:00.080Z"),
     ];
-    // End anchor is the latest recognised lifecycle outcome -> ResolutionResponse.
     expect(getHistoryQueueTimeMs(history)).toBe(300_080);
   });
 
@@ -90,8 +105,6 @@ describe("getHistoryQueueTimeMs (spec 005)", () => {
 
   it("case 6 - partial history (no EventRequest) falls back to earliest message as start", () => {
     const history: api.Message[] = [
-      // Aged out: EventRequest missing. Start anchor falls back to earliest
-      // remaining message per FR-006.
       msg(api.MessageType.DeferralResponse, "2026-05-28T13:00:00.000Z"),
       msg(api.MessageType.ResolutionResponse, "2026-05-28T13:00:10.000Z"),
     ];
@@ -101,14 +114,12 @@ describe("getHistoryQueueTimeMs (spec 005)", () => {
   it("case 7 - clock-skewed history (end anchor before start) -> undefined", () => {
     const history: api.Message[] = [
       msg(api.MessageType.EventRequest, "2026-05-28T14:00:00.500Z"),
-      // Skewed timestamps push the only end-anchor before the start anchor.
       msg(api.MessageType.DeferralResponse, "2026-05-28T13:59:59.900Z"),
     ];
     expect(getHistoryQueueTimeMs(history)).toBeUndefined();
   });
 
   it("normalises messageType casing so transport differences do not change the result", () => {
-    // Mixed casing -> still recognised as a waited lifecycle.
     const history: api.Message[] = [
       msg("EventRequest", "2026-05-28T15:00:00.000Z"),
       msg("DEFERRALRESPONSE", "2026-05-28T15:00:05.000Z"),
@@ -127,9 +138,7 @@ describe("getHistoryQueueTimeMs (spec 005)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// FR-041 - the timing bar's Queue segment uses the overridden value on a
-// deferred fixture and the row value on a non-deferred fixture (with the
-// `messages` prop populated in both cases).
+// FR-041 - timing bar uses overridden value on a deferred fixture.
 // ---------------------------------------------------------------------------
 describe("MessageListing timing bar (spec 005)", () => {
   function eventFixture(overrides: Partial<api.IEvent>): api.Event {
@@ -168,7 +177,6 @@ describe("MessageListing timing bar (spec 005)", () => {
 
   it("uses the history-derived value for a deferred lifecycle", () => {
     stubMe();
-    // Row says 12 ms (the replay delay); history says the wait was 30,045 ms.
     const deferredHistory: api.Message[] = [
       msg(api.MessageType.EventRequest, "2026-05-28T10:00:00.000Z"),
       msg(api.MessageType.DeferralResponse, "2026-05-28T10:00:00.500Z"),
@@ -177,9 +185,7 @@ describe("MessageListing timing bar (spec 005)", () => {
     ];
     renderListing(eventFixture({}), deferredHistory);
 
-    // 30,045 ms -> formatDurationMs renders "30.05s" (toFixed(2) rounding).
     expect(screen.getByText(/30\.05s/)).toBeTruthy();
-    // FR-022: Total = Queue + Processing = 30,045 + 45 = 30,090 ms -> "30.09s".
     expect(screen.getByText(/30\.09s/)).toBeTruthy();
   });
 
@@ -191,21 +197,18 @@ describe("MessageListing timing bar (spec 005)", () => {
     ];
     renderListing(eventFixture({}), linearHistory);
 
-    // Row value of 12 ms is shown verbatim — no override applies.
     expect(screen.getByText(/Queue\s+12ms/)).toBeTruthy();
   });
 
   it("preserves a measured zero in queueTimeMs (?? not || for the fallback chain)", () => {
     stubMe();
-    // No history override fires; row queueTimeMs is a genuine 0.
     renderListing(eventFixture({ queueTimeMs: 0 }), []);
     expect(screen.getByText(/Queue\s+0ms/)).toBeTruthy();
   });
 });
 
 // ---------------------------------------------------------------------------
-// Helper: diffMs is the third-fallback timing source. A focused test guards
-// the contract that the chain depends on.
+// Helper: diffMs is the third-fallback timing source.
 // ---------------------------------------------------------------------------
 describe("diffMs (spec 005 third-fallback)", () => {
   it("returns the millisecond delta between two moment values", () => {
@@ -220,5 +223,74 @@ describe("diffMs (spec 005 third-fallback)", () => {
   it("returns undefined when either side is missing", () => {
     expect(diffMs(undefined, moment())).toBeUndefined();
     expect(diffMs(moment(), undefined)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 006 — render-conditionality for the "Blocked by" PropertyRow.
+// ---------------------------------------------------------------------------
+const SPEC_006_ENDPOINT_ID = "endpoint-a";
+const SPEC_006_BLOCKED_BY = "cce3b12a-1234-5678-9abc-def012345678";
+
+function spec006BuildEvent(overrides: Partial<api.Event>): api.Event {
+  return {
+    eventId: "11111111-1111-1111-1111-111111111111",
+    sessionId: "session-1",
+    lastMessageId: "22222222-2222-2222-2222-222222222222",
+    endpointId: SPEC_006_ENDPOINT_ID,
+    ...overrides,
+  } as unknown as api.Event;
+}
+
+function spec006RenderListing(eventDetails: api.Event, blockedByEventId?: string) {
+  return render(
+    <MemoryRouter>
+      <MessageListing
+        eventDetails={eventDetails}
+        eventTypes={[]}
+        skipEvent={vi.fn()}
+        resubmitEvent={vi.fn()}
+        resubmitEventWithChanges={vi.fn()}
+        blockedByEventId={blockedByEventId}
+      />
+    </MemoryRouter>,
+  );
+}
+
+describe("MessageListing — Blocked by row (spec 006)", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
+  });
+
+  it("renders a 'Blocked by' link for a deferred event with a valid blockedByEventId", () => {
+    spec006RenderListing(
+      spec006BuildEvent({ resolutionStatus: "Deferred" }),
+      SPEC_006_BLOCKED_BY,
+    );
+
+    expect(screen.getByText("Blocked by")).toBeTruthy();
+    const link = screen.getByRole("link", { name: SPEC_006_BLOCKED_BY });
+    expect(link.getAttribute("href")).toBe(
+      `/Message/Index/${SPEC_006_ENDPOINT_ID}/${SPEC_006_BLOCKED_BY}/0`,
+    );
+  });
+
+  it("does not render 'Blocked by' for a deferred event when blockedByEventId is omitted", () => {
+    spec006RenderListing(spec006BuildEvent({ resolutionStatus: "Deferred" }), undefined);
+    expect(screen.queryByText("Blocked by")).toBeNull();
+  });
+
+  it("does not render 'Blocked by' for a non-deferred event even when blockedByEventId is provided", () => {
+    spec006RenderListing(spec006BuildEvent({ resolutionStatus: "Completed" }), SPEC_006_BLOCKED_BY);
+    expect(screen.queryByText("Blocked by")).toBeNull();
   });
 });

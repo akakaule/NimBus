@@ -142,6 +142,10 @@ export default function MessagesList() {
     string | undefined
   >(undefined);
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  // Bumped on every explicit Search click so the fetch effect re-runs even when
+  // the filter is unchanged (same URL → `applied`/`apiFilter` stay referentially
+  // stable, so Search would otherwise be a no-op when nothing changed).
+  const [searchNonce, setSearchNonce] = useState(0);
 
   const apiFilter = useMemo(() => toMessageSearchFilter(applied), [applied]);
 
@@ -183,7 +187,7 @@ export default function MessagesList() {
   useEffect(() => {
     setContinuationToken(undefined);
     fetchMessages(apiFilter, pageSize);
-  }, [apiFilter, pageSize, fetchMessages]);
+  }, [apiFilter, pageSize, fetchMessages, searchNonce]);
 
   const handlePageChange = useCallback(() => {
     if (continuationToken && !loading) {
@@ -207,7 +211,11 @@ export default function MessagesList() {
       <div className="flex flex-col w-full">
         <MessageFilterBar
           value={applied}
-          onSearch={(next) => applyFilters(next)}
+          onSearch={(next) => {
+            applyFilters(next);
+            // Force a refresh even when the filter is unchanged.
+            setSearchNonce((n) => n + 1);
+          }}
           onReset={resetFilters}
           isLoading={loading}
         />

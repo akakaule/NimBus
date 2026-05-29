@@ -157,6 +157,12 @@ const EventsPanel = (props: EventsPanelProps) => {
   const { applied, applyFilters, resetFilters, setFiltersWithoutHistory } =
     useUrlFilters<EndpointFilterParams>(DEFAULT_ENDPOINT_FILTER_PARAMS);
 
+  // Bumped on every explicit Search click. The fetch effect is keyed on the URL
+  // filter (`applied`), which does not change when Search is clicked without
+  // altering any filter — so without this nonce, Search would be a no-op when
+  // nothing changed. Including it in the fetch deps makes Search always refresh.
+  const [searchNonce, setSearchNonce] = React.useState(0);
+
   const [events, setEvents] = React.useState<api.Event[]>([]);
   const [sessions, setSessions] = React.useState<Record<string, SessionState>>(
     {},
@@ -212,7 +218,7 @@ const EventsPanel = (props: EventsPanelProps) => {
     setSessions({});
     fetchEvents(buildEventFilterFromParams(applied, endpointId));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applied, endpointId]);
+  }, [applied, endpointId, searchNonce]);
 
   // Update rows when events or sessions change
   React.useEffect(() => {
@@ -551,6 +557,9 @@ const EventsPanel = (props: EventsPanelProps) => {
   // The useEffect on `applied` then refetches.
   const handleFilterClicked = (filter: api.EventFilter): void => {
     applyFilters(paramsFromEventFilter(filter, applied));
+    // Force a refresh even when the filter is unchanged (same URL → `applied`
+    // stays referentially stable, so the fetch effect would otherwise not re-run).
+    setSearchNonce((n) => n + 1);
   };
 
   // Reset — clear all URL filter params back to defaults (failed-message statuses).

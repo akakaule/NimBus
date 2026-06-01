@@ -61,12 +61,23 @@ export default defineConfig({
   },
   build: {
     outDir: 'build/public',
-    sourcemap: true,
+    // Don't ship source maps in production builds (they were ~351MB of .map
+    // files served from wwwroot). Still emitted for an explicit dev build
+    // (`vite build --mode development`).
+    sourcemap: process.env.NODE_ENV !== 'production',
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (/node_modules[\\/](react|react-dom|react-router-dom)[\\/]/.test(id)) {
             return 'vendor';
+          }
+          // Keep page-specific heavy libs out of the eager vendor/main chunk so
+          // they only load with the route that uses them (Insights / Topology).
+          if (/node_modules[\\/]recharts[\\/]/.test(id)) {
+            return 'charts';
+          }
+          if (/node_modules[\\/](react-d3-tree|d3-[^\\/]+|d3)[\\/]/.test(id)) {
+            return 'tree';
           }
         },
       },

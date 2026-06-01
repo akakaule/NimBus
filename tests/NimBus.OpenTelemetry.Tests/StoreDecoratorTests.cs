@@ -210,6 +210,7 @@ internal sealed class ThrowingStore : IMessageTrackingStore
     public Task StoreMessage(NimBus.MessageStore.MessageEntity message) => _passthrough.StoreMessage(message);
     public Task<NimBus.MessageStore.MessageEntity> GetMessage(string eventId, string messageId) => _passthrough.GetMessage(eventId, messageId);
     public Task<IEnumerable<NimBus.MessageStore.MessageEntity>> GetEventHistory(string eventId) => _passthrough.GetEventHistory(eventId);
+    public Task<NimBus.MessageStore.MessageEntity> GetLatestEventRequestMessage(string eventId) => _passthrough.GetLatestEventRequestMessage(eventId);
     public Task<NimBus.MessageStore.MessageEntity> GetFailedMessage(string eventId, string endpointId) => _passthrough.GetFailedMessage(eventId, endpointId);
     public Task<NimBus.MessageStore.MessageEntity> GetDeadletteredMessage(string eventId, string endpointId) => _passthrough.GetDeadletteredMessage(eventId, endpointId);
     public Task RemoveStoredMessage(string eventId, string messageId) => _passthrough.RemoveStoredMessage(eventId, messageId);

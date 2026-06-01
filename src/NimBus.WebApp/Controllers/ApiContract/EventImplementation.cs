@@ -784,13 +784,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
         {
             try
             {
-                var history = await cosmosClient.GetEventHistory(eventId);
-                var request = history
-                    .Where(m => (m.MessageType == Core.Messages.MessageType.EventRequest
-                              || m.MessageType == Core.Messages.MessageType.ResubmissionRequest)
-                             && !string.IsNullOrEmpty(m.MessageContent?.EventContent?.EventJson))
-                    .OrderByDescending(m => m.EnqueuedTimeUtc)
-                    .FirstOrDefault();
+                // Server-side TOP 1 (single-partition on the messages container)
+                // instead of pulling the whole message history and filtering in
+                // memory on every event-detail load.
+                var request = await cosmosClient.GetLatestEventRequestMessage(eventId);
                 return request?.MessageContent?.EventContent?.EventJson;
             }
             catch (Exception e)
@@ -805,22 +802,29 @@ namespace NimBus.WebApp.Controllers.ApiContract
             var message = await cosmosClient.GetMessage(eventId, messageId);
             if (message != null) return message;
 
-            // Fallback: search per-endpoint containers for the event data
-            foreach (var ep in platform.Endpoints)
+            // Fallback: the message wasn't in the shared messages container, so probe
+            // the per-endpoint containers. An event lives in exactly one of them, so
+            // probe concurrently rather than serially — the old loop cost one
+            // cross-partition query per endpoint in sequence (10-20s on large
+            // topologies) on what is a rare error/recovery path.
+            var probes = platform.Endpoints.Select(async ep =>
             {
                 try
                 {
-                    var unresolvedEvent = await cosmosClient.GetEvent(ep.Id, eventId);
-                    if (unresolvedEvent != null)
-                    {
-                        logger.LogInformation("Message {MessageId} not found in messages container, using fallback from endpoint {EndpointId}", messageId, ep.Id);
-                        return MessageEntityFromUnresolvedEvent(unresolvedEvent);
-                    }
+                    return (ep.Id, Event: await cosmosClient.GetEvent(ep.Id, eventId));
                 }
                 catch (Exception ex)
                 {
                     logger.LogDebug(ex, "Fallback lookup failed for endpoint {EndpointId}", ep.Id);
+                    return (ep.Id, Event: (UnresolvedEvent)null);
                 }
+            });
+
+            var hit = Array.Find(await Task.WhenAll(probes), r => r.Event != null);
+            if (hit.Event != null)
+            {
+                logger.LogInformation("Message {MessageId} not found in messages container, using fallback from endpoint {EndpointId}", messageId, hit.Id);
+                return MessageEntityFromUnresolvedEvent(hit.Event);
             }
 
             return null;

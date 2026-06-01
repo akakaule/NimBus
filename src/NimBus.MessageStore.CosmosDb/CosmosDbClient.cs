@@ -83,6 +83,7 @@ public interface ICosmosDbClient
     Task StoreMessage(MessageEntity message);
     Task<MessageEntity> GetMessage(string eventId, string messageId);
     Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId);
+    Task<MessageEntity> GetLatestEventRequestMessage(string eventId);
     Task<MessageEntity> GetFailedMessage(string eventId, string endpointId);
     Task<MessageEntity> GetDeadletteredMessage(string eventId, string endpointId);
 
@@ -540,7 +541,13 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         var container = await GetEndpointContainer(endpointId);
         var queryDefinition = new QueryDefinition("SELECT * FROM c WHERE c.event.EventId = @eventId")
             .WithParameter("@eventId", eventId);
-        var result = container.GetItemQueryIterator<EventDbo>(queryDefinition);
+        // Lookup-by-eventId on a container partitioned by /id (eventId_sessionId), so it
+        // necessarily fans across partitions; event.EventId is already covered by the
+        // default range index (a composite index can't improve a single equality with no
+        // ORDER BY). Cap the fetch to the single document the caller actually reads so RU
+        // and payload don't scale with how many session-events share the eventId.
+        var result = container.GetItemQueryIterator<EventDbo>(queryDefinition, null,
+            new QueryRequestOptions { MaxItemCount = 1 });
 
         if (result.HasMoreResults)
         {
@@ -699,7 +706,17 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             token = eventDbo.ContinuationToken;
             foreach (var queryResult in eventDbo)
             {
-                events.Add(queryResult.Event);
+                var ev = queryResult.Event;
+                // Search results never surface the full request payload — the detail
+                // view fetches it on demand via GetLatestEventRequestMessage — so drop
+                // the heavy EventJson blob, which otherwise dominates the response on a
+                // 100-row page. ErrorContent and all metadata are kept (the error-grouped
+                // search view reads ErrorText).
+                if (ev?.MessageContent?.EventContent != null)
+                {
+                    ev.MessageContent.EventContent.EventJson = null;
+                }
+                events.Add(ev);
             }
 
             if (eventDbo.Count > 0)
@@ -790,7 +807,12 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         var blockedMessageEvents = new List<UnresolvedEvent>();
         try
         {
-            FeedIterator<EventDbo> queryResult = container.GetItemLinqQueryable<EventDbo>(true, null)
+            // Bound page size so a session with many pending events streams in
+            // pages rather than one oversized response. (Full caller-driven
+            // pagination would need an INimBusMessageStore signature change across
+            // all providers — tracked separately.)
+            FeedIterator<EventDbo> queryResult = container
+                .GetItemLinqQueryable<EventDbo>(true, null, new QueryRequestOptions { MaxItemCount = 200 })
                 .Where(e => e.Status.Equals(PendingStatus, StringComparison.OrdinalIgnoreCase))
                 .Where(e => !e.Deleted.HasValue || !e.Deleted.Value)
                 .OrderByDescending(e => e.Event.UpdatedAt).ToFeedIterator();
@@ -1032,21 +1054,30 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     public async Task<string> GetEndpointErrorList(string endpointId)
     {
         var container = await GetEndpointContainer(endpointId);
+        // Only the id is used by the caller — project it server-side instead of
+        // reading whole EventDbo documents (large EventJson / stack traces), which
+        // cut RU and payload by 10-50x. Accumulate then join once (no O(n^2) concat).
         var sqlQuery =
-            $"SELECT * FROM c WHERE c.status IN ('{FailedStatus}', '{DeferredStatus}') AND (NOT IS_DEFINED(c.deleted) or c.deleted != true)";
+            $"SELECT c.id FROM c WHERE c.status IN ('{FailedStatus}', '{DeferredStatus}') AND (NOT IS_DEFINED(c.deleted) or c.deleted != true)";
 
-        var result = container.GetItemQueryIterator<EventDbo>(sqlQuery);
-        var failedAndDefferedlist = "";
+        var result = container.GetItemQueryIterator<IdProjection>(sqlQuery);
+        var ids = new List<string>();
         while (result.HasMoreResults)
         {
             var message = await result.ReadNextAsync();
             foreach (var queryResult in message)
             {
-                failedAndDefferedlist += $"{queryResult.Id};";
+                ids.Add(queryResult.Id);
             }
         }
 
-        return failedAndDefferedlist;
+        // Preserve the historical "id1;id2;...;" shape (trailing separator included).
+        return ids.Count == 0 ? "" : string.Join(";", ids) + ";";
+    }
+
+    private sealed class IdProjection
+    {
+        [JsonProperty("id")] public string Id { get; set; }
     }
 
     private async Task<ICosmosContainerAdapter> GetEndpointContainer(string endpointId)
@@ -1256,6 +1287,31 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         }
 
         return messages;
+    }
+
+    public async Task<MessageEntity> GetLatestEventRequestMessage(string eventId)
+    {
+        var container = await GetMessagesContainer();
+        // Single-partition (the messages container is partitioned by /eventId) TOP 1:
+        // fetch only the newest message that carries event content instead of pulling
+        // the whole history and filtering in memory on every event-detail page load.
+        var query = new QueryDefinition(
+                "SELECT TOP 1 * FROM c WHERE c.eventId = @eventId " +
+                "AND c.message.MessageType IN ('EventRequest', 'ResubmissionRequest') " +
+                "AND IS_DEFINED(c.message.MessageContent.EventContent.EventJson) " +
+                "AND c.message.MessageContent.EventContent.EventJson != null " +
+                "AND c.message.MessageContent.EventContent.EventJson != '' " +
+                "ORDER BY c.message.EnqueuedTimeUtc DESC")
+            .WithParameter("@eventId", eventId);
+        var result = container.GetItemQueryIterator<MessageDocument>(query, null,
+            new QueryRequestOptions { MaxItemCount = 1 });
+        if (result.HasMoreResults)
+        {
+            var feed = await result.ReadNextAsync();
+            return feed.FirstOrDefault()?.Message;
+        }
+
+        return null;
     }
 
     public async Task<MessageEntity> GetFailedMessage(string eventId, string endpointId)
@@ -1740,7 +1796,11 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                   "AND c.message.EnqueuedTimeUtc >= @from";
 
         var query = new QueryDefinition(sql).WithParameter("@from", fromIso);
-        var iterator = container.GetItemQueryIterator<FailedMessageQueryResult>(query);
+        // Bound page size so a high-failure window streams in pages instead of
+        // materialising one huge response (each row already projects just the
+        // fields below, never the full document). The loop still drains every match.
+        var iterator = container.GetItemQueryIterator<FailedMessageQueryResult>(query, null,
+            new QueryRequestOptions { MaxItemCount = 1000 });
         var results = new List<FailedMessageInfo>();
 
         while (iterator.HasMoreResults)

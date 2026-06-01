@@ -201,13 +201,17 @@ public class EndpointImplementation : IEndpointApiController
             .Where(endpoint => _authorizationService.IsManagerOfEndpoint(endpoint.Id) && ShowEndpoint(endpoint.Id))
             .Select(e => e.Id);
 
-        var result = new List<EndpointStatusCount>();
-        foreach (var endpointId in endpointIds)
+        // Each status download is an independent Cosmos round-trip; probe them
+        // concurrently (bounded) instead of serially so the all-endpoints view
+        // isn't O(endpoints) × latency. Mirrors PostApiEndpointStatusCountAsync.
+        var result = new ConcurrentBag<EndpointStatusCount>();
+        var options = new ParallelOptions { MaxDegreeOfParallelism = Math.Min(System.Environment.ProcessorCount, 4) };
+        await Parallel.ForEachAsync(endpointIds, options, async (endpointId, _) =>
         {
             result.Add(await DownloadStatusOrStubAsync(endpointId));
-        }
+        });
 
-        return new OkObjectResult(result);
+        return new OkObjectResult(result.ToList());
     }
 
     public async Task<ActionResult<IEnumerable<EndpointStatusCount>>> PostApiEndpointStatusCountAsync(IEnumerable<string> body)
@@ -657,10 +661,16 @@ public class EndpointImplementation : IEndpointApiController
             metadataList.Add(new EndpointMetadata { EndpointId = s });
         }
 
-        foreach (var endpointMetadata in metadataList.Where(endpointMetadata => endpointMetadata.SubscriptionStatus == null))
+        // Each probe is an independent Service Bus admin REST call (~100-500ms);
+        // run them concurrently (bounded) rather than serially so a 40-endpoint
+        // list doesn't block for many seconds. Each call mutates its own metadata
+        // object, so there's no shared state to guard.
+        var pendingStatus = metadataList.Where(m => m.SubscriptionStatus == null);
+        var statusOptions = new ParallelOptions { MaxDegreeOfParallelism = Math.Min(System.Environment.ProcessorCount, 4) };
+        await Parallel.ForEachAsync(pendingStatus, statusOptions, async (endpointMetadata, _) =>
         {
             await SetSubscriptionStatusMetadata(endpointMetadata);
-        }
+        });
 
         return new OkObjectResult(Mapper.MetadataShortFromList(metadataList));
     }
@@ -718,6 +728,12 @@ public class EndpointImplementation : IEndpointApiController
             _ => null,
         };
 
-        await cosmosClient.SetEndpointMetadata(metadata);
+        // Only spend RU persisting a *known* status. A failed/unknown probe leaves
+        // SubscriptionStatus null for this render without a redundant "unknown"
+        // upsert (the previous code wrote on every probe, including failures).
+        if (metadata.SubscriptionStatus != null)
+        {
+            await cosmosClient.SetEndpointMetadata(metadata);
+        }
     }
 }

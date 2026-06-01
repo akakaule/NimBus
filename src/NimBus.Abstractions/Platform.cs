@@ -24,6 +24,16 @@ namespace NimBus.Core
     {
         private Dictionary<string, IEndpoint> _endpoints;
 
+        // Topology is static once endpoints are registered, but the WebApp asks for
+        // producers/consumers of an event type repeatedly (per event type, per request),
+        // and each call used to scan every endpoint — O(endpoints) per lookup, O(n*m)
+        // across a full event-type listing. Build the inverted indexes once, lazily,
+        // and invalidate if an endpoint is added afterwards. Equality matches the old
+        // `.Contains(eventType)` (default IEventType comparer), so results are identical.
+        private List<IEventType> _eventTypesCache;
+        private Dictionary<IEventType, List<IEndpoint>> _consumersByType;
+        private Dictionary<IEventType, List<IEndpoint>> _producersByType;
+
         protected Platform()
         {
             _endpoints = new Dictionary<string, IEndpoint>();
@@ -37,21 +47,45 @@ namespace NimBus.Core
             if (endpoint is null) throw new ArgumentNullException(nameof(endpoint));
 #endif
             _endpoints.Add(endpoint.Id, endpoint);
+            // Topology changed — drop the derived indexes so they rebuild on next read.
+            _eventTypesCache = null;
+            _consumersByType = null;
+            _producersByType = null;
         }
 
         public IEnumerable<IEndpoint> Endpoints => _endpoints.Values;
 
         public IEnumerable<IEventType> EventTypes =>
-            Endpoints
-            .SelectMany(ep => ep.EventTypesConsumed.Union(ep.EventTypesProduced))
-            .Distinct();
+            _eventTypesCache ??= Endpoints
+                .SelectMany(ep => ep.EventTypesConsumed.Union(ep.EventTypesProduced))
+                .Distinct()
+                .ToList();
 
         public IEnumerable<IEndpoint> GetConsumers(IEventType eventType) =>
-            Endpoints
-            .Where(ep => ep.EventTypesConsumed.Contains(eventType));
+            (_consumersByType ??= BuildIndex(ep => ep.EventTypesConsumed))
+                .TryGetValue(eventType, out var consumers) ? consumers : Enumerable.Empty<IEndpoint>();
 
         public IEnumerable<IEndpoint> GetProducers(IEventType eventType) =>
-            Endpoints
-            .Where(ep => ep.EventTypesProduced.Contains(eventType));
+            (_producersByType ??= BuildIndex(ep => ep.EventTypesProduced))
+                .TryGetValue(eventType, out var producers) ? producers : Enumerable.Empty<IEndpoint>();
+
+        private Dictionary<IEventType, List<IEndpoint>> BuildIndex(
+            Func<IEndpoint, IEnumerable<IEventType>> eventTypesOf)
+        {
+            var index = new Dictionary<IEventType, List<IEndpoint>>();
+            foreach (var endpoint in _endpoints.Values)
+            {
+                foreach (var eventType in eventTypesOf(endpoint))
+                {
+                    if (!index.TryGetValue(eventType, out var endpoints))
+                    {
+                        endpoints = new List<IEndpoint>();
+                        index[eventType] = endpoints;
+                    }
+                    endpoints.Add(endpoint);
+                }
+            }
+            return index;
+        }
     }
 }

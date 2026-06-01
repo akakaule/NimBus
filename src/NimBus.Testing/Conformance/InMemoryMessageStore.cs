@@ -226,6 +226,15 @@ public class InMemoryMessageStore : INimBusMessageStore
     public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId)
         => Task.FromResult<IEnumerable<MessageEntity>>(_messages.Values.Where(m => m.EventId == eventId).ToList());
 
+    public Task<MessageEntity> GetLatestEventRequestMessage(string eventId)
+        => Task.FromResult(
+            _messages.Values
+                .Where(m => m.EventId == eventId
+                         && (m.MessageType == MessageType.EventRequest || m.MessageType == MessageType.ResubmissionRequest)
+                         && !string.IsNullOrEmpty(m.MessageContent?.EventContent?.EventJson))
+                .OrderByDescending(m => m.EnqueuedTimeUtc)
+                .FirstOrDefault());
+
     public Task<MessageEntity> GetFailedMessage(string eventId, string endpointId)
     {
         var match = _messages.Values.FirstOrDefault(m => m.EventId == eventId && m.EndpointId == endpointId);

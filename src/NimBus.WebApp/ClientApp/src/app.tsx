@@ -1,23 +1,30 @@
+import { lazy, Suspense } from "react";
 import { Route, Routes, useLocation } from "react-router-dom";
 import Sidebar from "components/sidebar";
 import Topbar from "components/topbar";
-import EndpointDetails from "pages/endpoint-details";
-import EventDetails from "pages/event-details";
-import EndpointsList from "pages/endpoints-list";
-import EventTypesList from "pages/event-types-list";
-import EventTypeDetails from "pages/event-type-details";
-import MessagesList from "pages/messages-list";
-import Admin from "pages/admin";
-import Metrics from "pages/metrics";
-import Topology from "pages/topology";
-import Insights from "pages/insights";
-import Monitor from "pages/monitor";
-import AuditsList from "pages/audits-list";
 import Footer from "components/footer";
+import Loading from "components/loading/loading";
 import { Navigation } from "models/navigation";
 import { ToastProvider } from "components/ui/toast";
 import { CommandPaletteProvider } from "components/command-palette";
 import { ThemeProvider } from "hooks/use-theme";
+
+// Pages are route-level code-split: the initial bundle carries only the shell
+// (sidebar/topbar/footer) and whichever route the user lands on. Each page —
+// and its heavy, page-specific deps (recharts on Insights, react-d3-tree on
+// Topology) — is fetched on demand when its route is first visited.
+const EndpointDetails = lazy(() => import("pages/endpoint-details"));
+const EventDetails = lazy(() => import("pages/event-details"));
+const EndpointsList = lazy(() => import("pages/endpoints-list"));
+const EventTypesList = lazy(() => import("pages/event-types-list"));
+const EventTypeDetails = lazy(() => import("pages/event-type-details"));
+const MessagesList = lazy(() => import("pages/messages-list"));
+const Admin = lazy(() => import("pages/admin"));
+const Metrics = lazy(() => import("pages/metrics"));
+const Topology = lazy(() => import("pages/topology"));
+const Insights = lazy(() => import("pages/insights"));
+const Monitor = lazy(() => import("pages/monitor"));
+const AuditsList = lazy(() => import("pages/audits-list"));
 
 const navigation: Navigation = [
   {
@@ -132,17 +139,25 @@ function AppShell() {
   );
 
   const routes = (
-    <Routes>
-      {navigation
-        .filter((x) => x.render)
-        .map((route) => (
-          <Route
-            key={route.path}
-            path={route.path}
-            element={route.render!()}
-          />
-        ))}
-    </Routes>
+    <Suspense
+      fallback={
+        <div className="flex flex-1 items-center justify-center p-8">
+          <Loading />
+        </div>
+      }
+    >
+      <Routes>
+        {navigation
+          .filter((x) => x.render)
+          .map((route) => (
+            <Route
+              key={route.path}
+              path={route.path}
+              element={route.render!()}
+            />
+          ))}
+      </Routes>
+    </Suspense>
   );
 
   if (isFullscreen) {

@@ -186,6 +186,63 @@ public abstract class MessageTrackingStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task GetLatestEventRequestMessage_returns_newest_request_with_payload()
+    {
+        var store = CreateStore();
+        var eventId = Id("evt-lr");
+        var ep = Id("ep1");
+        var now = DateTime.UtcNow;
+
+        // Older EventRequest carrying a payload.
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = eventId, MessageId = Id("m1"), EndpointId = ep,
+            MessageType = MessageType.EventRequest,
+            EnqueuedTimeUtc = now.AddMinutes(-10),
+            MessageContent = new MessageContent { EventContent = new EventContent { EventJson = "{\"v\":1}" } },
+        });
+        // Newer ResubmissionRequest carrying a payload — this is the one that should win.
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = eventId, MessageId = Id("m2"), EndpointId = ep,
+            MessageType = MessageType.ResubmissionRequest,
+            EnqueuedTimeUtc = now.AddMinutes(-2),
+            MessageContent = new MessageContent { EventContent = new EventContent { EventJson = "{\"v\":2}" } },
+        });
+        // Newest message overall, but not a request type — must be ignored.
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = eventId, MessageId = Id("m3"), EndpointId = ep,
+            MessageType = MessageType.PendingHandoffResponse,
+            EnqueuedTimeUtc = now,
+            MessageContent = new MessageContent { EventContent = new EventContent { EventJson = "{\"v\":3}" } },
+        });
+
+        var latest = await store.GetLatestEventRequestMessage(eventId);
+
+        Assert.IsNotNull(latest);
+        Assert.AreEqual("{\"v\":2}", latest.MessageContent?.EventContent?.EventJson);
+    }
+
+    [TestMethod]
+    public async Task GetLatestEventRequestMessage_returns_null_when_no_request_carries_payload()
+    {
+        var store = CreateStore();
+        var eventId = Id("evt-lr-none");
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = eventId, MessageId = Id("m1"), EndpointId = Id("ep1"),
+            MessageType = MessageType.PendingHandoffResponse,
+            EnqueuedTimeUtc = DateTime.UtcNow,
+            MessageContent = new MessageContent(),
+        });
+
+        var latest = await store.GetLatestEventRequestMessage(eventId);
+
+        Assert.IsNull(latest);
+    }
+
+    [TestMethod]
     public async Task StoreMessageAudit_appends_to_history()
     {
         var store = CreateStore();

@@ -17,6 +17,7 @@ using NimBus;
 using NimBus.WebApp.Hubs;
 using NimBus.WebApp.Services.ApplicationInsights;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Net.Http.Headers;
 using NSwag.AspNetCore;
 using NimBus.Core;
 using NimBus.Core.Messages;
@@ -188,6 +189,36 @@ namespace NimBus.WebApp
                         .Build();
                     options.Filters.Add(new AuthorizeFilter(policy));
                 }).AddMicrosoftIdentityUI();
+            }
+
+            // Entra/OIDC parity with the Identity cookie's clean-401 behaviour
+            // (spec 010 FR-011/FR-012). When an anonymous, non-bearer request to
+            // the SignalR hub or /api/* is challenged, the policy scheme forwards
+            // to OpenIdConnect, whose default OnRedirectToIdentityProvider issues a
+            // 302 to the IdP — which a SignalR negotiate or SPA fetch cannot follow.
+            // Suppress the redirect for those surfaces and return a literal 401 so
+            // the client surfaces the standard "session expired" affordance.
+            // Browser navigations to non-API paths still redirect to the IdP.
+            if (hasEntraId)
+            {
+                services.Configure<OpenIdConnectOptions>(OpenIdConnectDefaults.AuthenticationScheme, options =>
+                {
+                    var previous = options.Events.OnRedirectToIdentityProvider;
+                    options.Events.OnRedirectToIdentityProvider = async ctx =>
+                    {
+                        if (NimBusCookieAuthenticationEvents.IsApiOrHubPath(ctx.Request.Path))
+                        {
+                            ctx.Response.StatusCode = Microsoft.AspNetCore.Http.StatusCodes.Status401Unauthorized;
+                            ctx.HandleResponse();
+                            return;
+                        }
+
+                        if (previous is not null)
+                        {
+                            await previous(ctx).ConfigureAwait(false);
+                        }
+                    };
+                });
             }
 
             services.AddControllers(options =>
@@ -462,7 +493,32 @@ namespace NimBus.WebApp
 
             app.UseRouting();
 
-            app.UseSpaStaticFiles();
+            app.UseSpaStaticFiles(new StaticFileOptions
+            {
+                OnPrepareResponse = ctx =>
+                {
+                    var path = ctx.Context.Request.Path.Value ?? string.Empty;
+                    var headers = ctx.Context.Response.GetTypedHeaders();
+                    if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Vite emits content-hashed filenames under /assets/ — the bytes
+                        // for a given URL never change, so cache them aggressively and skip
+                        // revalidation entirely. A new deploy ships new hashes, new URLs.
+                        headers.CacheControl = new CacheControlHeaderValue
+                        {
+                            Public = true,
+                            MaxAge = TimeSpan.FromDays(365),
+                            Extensions = { new NameValueHeaderValue("immutable") },
+                        };
+                    }
+                    else
+                    {
+                        // Unhashed root assets (favicon, etc.) must revalidate so a deploy
+                        // is picked up without serving stale bytes.
+                        headers.CacheControl = new CacheControlHeaderValue { NoCache = true };
+                    }
+                },
+            });
 
             // OpenAPI / Swagger UI publishes the management API surface, so keep
             // it gated to Development. Production hosts should not expose the
@@ -496,6 +552,12 @@ namespace NimBus.WebApp
                 {
                     OnPrepareResponse = ctx =>
                     {
+                        // index.html references content-hashed bundles; it MUST NOT be
+                        // cached, or a browser holding a stale copy will request asset
+                        // hashes that no longer exist after a deploy (blank page / 404s).
+                        ctx.Context.Response.GetTypedHeaders().CacheControl =
+                            new CacheControlHeaderValue { NoCache = true, NoStore = true, MustRevalidate = true };
+
                         if (!ctx.Context.User.Identity.IsAuthenticated)
                         {
                             ctx.Context.Response.Redirect(loginPath);

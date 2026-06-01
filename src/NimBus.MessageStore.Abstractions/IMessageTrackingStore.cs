@@ -75,6 +75,13 @@ public interface IMessageTrackingStore
     Task StoreMessage(MessageEntity message);
     Task<MessageEntity> GetMessage(string eventId, string messageId);
     Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId);
+    /// <summary>
+    /// Returns the most recent message that carries event content (an
+    /// <c>EventRequest</c> or <c>ResubmissionRequest</c> with a non-empty
+    /// <c>EventJson</c>), or <c>null</c> when none exists. Lets callers obtain the
+    /// "current request payload" without materialising the whole event history.
+    /// </summary>
+    Task<MessageEntity> GetLatestEventRequestMessage(string eventId);
     Task<MessageEntity> GetFailedMessage(string eventId, string endpointId);
     Task<MessageEntity> GetDeadletteredMessage(string eventId, string endpointId);
     Task RemoveStoredMessage(string eventId, string messageId);

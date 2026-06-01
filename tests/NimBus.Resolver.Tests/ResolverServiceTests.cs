@@ -464,6 +464,13 @@ public class ResolverServiceTests
         public Task<MessageEntity> GetMessage(string eventId, string messageId) => throw new NotSupportedException();
         public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId) =>
             Task.FromResult<IEnumerable<MessageEntity>>(StoredMessages.Where(m => m.EventId == eventId).ToList());
+        public Task<MessageEntity> GetLatestEventRequestMessage(string eventId) =>
+            Task.FromResult(StoredMessages
+                .Where(m => m.EventId == eventId
+                         && (m.MessageType == MessageType.EventRequest || m.MessageType == MessageType.ResubmissionRequest)
+                         && !string.IsNullOrEmpty(m.MessageContent?.EventContent?.EventJson))
+                .OrderByDescending(m => m.EnqueuedTimeUtc)
+                .FirstOrDefault());
         public Task<MessageEntity> GetFailedMessage(string eventId, string endpointId) => throw new NotSupportedException();
         public Task<MessageEntity> GetDeadletteredMessage(string eventId, string endpointId) => throw new NotSupportedException();
         public Task RemoveStoredMessage(string eventId, string messageId) => throw new NotSupportedException();

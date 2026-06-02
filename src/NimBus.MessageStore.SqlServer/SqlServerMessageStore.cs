@@ -341,7 +341,7 @@ VALUES (@EventId, @EndpointId, @EventTypeId, @AuditorName, @AuditTimestamp, @Aud
     public async Task<AuditSearchResult> SearchAudits(AuditFilter filter, string? continuationToken, int maxItemCount)
     {
         var offset = DecodeOffset(continuationToken);
-        var pageSize = maxItemCount > 0 ? maxItemCount : 100;
+        var pageSize = PaginationLimits.Resolve(maxItemCount);
 
         var where = new List<string> { "1 = 1" };
         var p = new DynamicParameters();
@@ -591,7 +591,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
     public async Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount)
     {
         var offset = DecodeOffset(continuationToken);
-        var pageSize = maxSearchItemsCount > 0 ? maxSearchItemsCount : 100;
+        var pageSize = PaginationLimits.Resolve(maxSearchItemsCount);
 
         var where = new List<string> { "Deleted = 0" };
         var p = new DynamicParameters();
@@ -813,7 +813,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
     public async Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount)
     {
         var offset = DecodeOffset(continuationToken);
-        var pageSize = maxItemCount > 0 ? maxItemCount : 100;
+        var pageSize = PaginationLimits.Resolve(maxItemCount);
 
         var where = new List<string> { "1 = 1" };
         var p = new DynamicParameters();

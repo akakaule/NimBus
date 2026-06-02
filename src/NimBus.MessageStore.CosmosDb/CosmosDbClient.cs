@@ -1,5 +1,6 @@
 ﻿using Serilog;
 using NimBus.Core.Messages;
+using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Cosmos.Linq;
@@ -123,9 +124,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     private const string SubscriptionsContainer = "subscriptions";
     private const string MessagesContainer = "messages";
     private const string AuditsContainer = "audits";
-
-    //Has to be atleast 1 higher than rows showed in table
-    private const int MaxSearchItemsCount = 100;
 
     public CosmosDbClient(CosmosClient cosmosClient, ILogger logger = null)
     {
@@ -634,7 +632,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     {
         var container = await GetEndpointContainer(filter.EndPointId);
         var requestOptions = new QueryRequestOptions
-            { MaxItemCount = maxSearchItemsCount != 0 ? maxSearchItemsCount : MaxSearchItemsCount };
+            { MaxItemCount = PaginationLimits.Resolve(maxSearchItemsCount) };
         var queryable = container
             .GetItemLinqQueryable<EventDbo>(true,
                 String.IsNullOrEmpty(continuationToken) ? null : continuationToken,
@@ -699,7 +697,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         var result = query.OrderByDescending(e => e.Event.UpdatedAt).ToFeedIterator();
         var events = new List<UnresolvedEvent>();
         var token = "";
-        var effectiveLimit = maxSearchItemsCount > 0 ? maxSearchItemsCount : MaxSearchItemsCount;
+        var effectiveLimit = PaginationLimits.Resolve(maxSearchItemsCount);
         while (result.HasMoreResults && events.Count <= effectiveLimit)
         {
             var eventDbo = await result.ReadNextAsync();
@@ -1191,7 +1189,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         foreach (var kvp in parameters)
             queryDef = queryDef.WithParameter(kvp.Key, kvp.Value);
 
-        var requestOptions = new QueryRequestOptions { MaxItemCount = maxItemCount > 0 ? maxItemCount : 50 };
+        var requestOptions = new QueryRequestOptions { MaxItemCount = PaginationLimits.Resolve(maxItemCount) };
         var result = container.GetItemQueryIterator<MessageDocument>(
             queryDef,
             string.IsNullOrEmpty(continuationToken) ? null : continuationToken,
@@ -1473,7 +1471,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         foreach (var kvp in parameters)
             queryDef = queryDef.WithParameter(kvp.Key, kvp.Value);
 
-        var requestOptions = new QueryRequestOptions { MaxItemCount = maxItemCount > 0 ? maxItemCount : 50 };
+        var requestOptions = new QueryRequestOptions { MaxItemCount = PaginationLimits.Resolve(maxItemCount) };
         var result = container.GetItemQueryIterator<AuditDocument>(
             queryDef,
             string.IsNullOrEmpty(continuationToken) ? null : continuationToken,

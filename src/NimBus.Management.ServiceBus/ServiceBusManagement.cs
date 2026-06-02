@@ -43,6 +43,8 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task CreateSubscription(string topicName, string subscriptionName)
     {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
         try
         {
             var subscriptionProperties = new CreateSubscriptionOptions(topicName, subscriptionName)
@@ -67,6 +69,9 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task CreateForwardSubscription(string topicName, string subscriptionName, string forwardTo)
     {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
+        ServiceBusFilterValidator.ValidateName(forwardTo, nameof(forwardTo));
         try
         {
             var subscriptionProperties = new CreateSubscriptionOptions(topicName, subscriptionName)
@@ -102,6 +107,8 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task DeleteSubscription(string topicName, string subscriptionName)
     {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
         try
         {
             _logger?.Verbose("Creating subscription...");
@@ -117,10 +124,14 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task CreateRule(string topicName, string subscriptionName, string ruleName)
     {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
+        ServiceBusFilterValidator.ValidateName(ruleName, nameof(ruleName));
         try
         {
             var ruleOptions = new CreateRuleOptions
             {
+                Name = ruleName,
                 Filter = new SqlRuleFilter($"user.To='{subscriptionName}'")
             };
 
@@ -137,10 +148,15 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task CreateEventTypeRule(string topicName, string subscriptionName, string ruleName, string eventtype)
     {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
+        ServiceBusFilterValidator.ValidateName(ruleName, nameof(ruleName));
+        ServiceBusFilterValidator.ValidateName(eventtype, nameof(eventtype));
         try
         {
             var ruleOptions = new CreateRuleOptions
             {
+                Name = ruleName,
                 Filter = new SqlRuleFilter($"user.EventTypeId='{eventtype}'"),
                 Action = new SqlRuleAction($"SET user.From ='{topicName}'; SET user.EventId = newid(); SET user.To = '{subscriptionName}';")
             };
@@ -158,6 +174,12 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task CreateCustomRule(string topicName, string subscriptionName, string ruleName, string filter, string action)
     {
+        // Names are validated here; `filter` and `action` are SQL templates whose
+        // interpolated values must already have been validated upstream. We don't
+        // second-guess the SQL syntax of an explicitly-supplied custom rule.
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
+        ServiceBusFilterValidator.ValidateName(ruleName, nameof(ruleName));
         try
         {
             var ruleOptions = new CreateRuleOptions
@@ -184,6 +206,7 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task CreateTopic(string topicName)
     {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
         try
         {
             var topicParams = new CreateTopicOptions(topicName)
@@ -207,6 +230,9 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task DeleteRule(string topicName, string subscriptionName, string ruleName)
     {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
+        ServiceBusFilterValidator.ValidateName(ruleName, nameof(ruleName));
         try
         {
             _logger?.Verbose("Deleting rule...");
@@ -221,6 +247,8 @@ public class ServiceBusManagement : IServiceBusManagement
     }
     public async Task DisableSubscription(string topicName, string subscriptionName)
     {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
         try
         {
             var subscription = await client.GetSubscriptionAsync(topicName, subscriptionName);
@@ -243,7 +271,8 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task EnableSubscription(string topicName, string subscriptionName)
     {
-
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
         try
         {
             var subscription = await client.GetSubscriptionAsync(topicName, subscriptionName);
@@ -266,7 +295,9 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task UpdateForwardTo(string topicName, string subscriptionName, string forwardTo)
     {
-
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
+        ServiceBusFilterValidator.ValidateName(forwardTo, nameof(forwardTo));
         try
         {
             var subscription = await client.GetSubscriptionAsync(topicName, subscriptionName);
@@ -294,6 +325,8 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task<SubscriptionState> GetSubscriptionState(string topicName, string subscriptionName)
     {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
         try
         {
             var subscription = await client.GetSubscriptionAsync(topicName, subscriptionName);
@@ -321,6 +354,7 @@ public class ServiceBusManagement : IServiceBusManagement
     public async Task CreateDeferredSubscription(string topicName)
     {
         const string subscriptionName = "Deferred";
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
 
         try
         {
@@ -373,6 +407,7 @@ public class ServiceBusManagement : IServiceBusManagement
     public async Task CreateDeferredProcessorSubscription(string topicName)
     {
         const string subscriptionName = "DeferredProcessor";
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
 
         try
         {

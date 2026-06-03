@@ -205,8 +205,11 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
-    public async Task HandleHandoffCompletedRequest_NotBlockedByThis_DoesNothing()
+    public async Task HandleHandoffCompletedRequest_MismatchedEventId_SendsResolutionAndCompletes()
     {
+        // Settlement's EventId ≠ BlockedByEventId — a misaddressed or duplicate
+        // settlement. VerifySessionIsBlockedByThis throws SessionBlockedException.
+        // Rather than silently dead-lettering, surface it as resolved in the Flow.
         var ctx = CreateContext(messageType: MessageType.HandoffCompletedRequest, from: "Manager");
         ctx.IsSessionBlockedByThisResult = false;
         ctx.BlockedByEventId = "different-event";
@@ -216,12 +219,29 @@ public class StrictMessageHandlerTests
 
         await sut.Handle(ctx);
 
-        // VerifySessionIsBlockedByThis throws SessionBlockedException, which the
-        // base MessageHandler swallows. No state changes — the message is left
-        // for redelivery (per the existing pattern for other control flows).
+        Assert.AreEqual(1, response.ResolutionCalls, "Unmatched settlement is surfaced as resolved, not silently dropped");
+        Assert.AreEqual(1, ctx.CompletedCalls, "Message must be completed, not left for redelivery");
+        Assert.AreEqual(0, ctx.UnblockSessionCalls, "Must NOT unblock — this settlement does not own the block");
+        Assert.AreEqual(0, ctx.DeadLetterCalls, "Must not silently dead-letter");
+    }
+
+    [TestMethod]
+    public async Task HandleHandoffCompletedRequest_SessionNotBlockedAtAll_SendsResolutionAndCompletes()
+    {
+        // Session isn't blocked at all (already resolved / wrong session).
+        var ctx = CreateContext(messageType: MessageType.HandoffCompletedRequest, from: "Manager");
+        ctx.IsSessionBlockedByThisResult = false;
+        ctx.BlockedByEventId = null;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, response.ResolutionCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
         Assert.AreEqual(0, ctx.UnblockSessionCalls);
-        Assert.AreEqual(0, response.ResolutionCalls);
-        Assert.AreEqual(0, ctx.CompletedCalls);
+        Assert.AreEqual(0, ctx.DeadLetterCalls);
     }
 
     [TestMethod]
@@ -250,6 +270,73 @@ public class StrictMessageHandlerTests
         Assert.IsNotNull(response.LastErrorException);
         var errorMessage = response.LastErrorException.InnerException?.Message ?? response.LastErrorException.Message;
         StringAssert.Contains(errorMessage, "DMF rejected: invalid postal code", "Operator-supplied errorText must be preserved verbatim");
+    }
+
+    [TestMethod]
+    public async Task HandleHandoffFailedRequest_MismatchedEventId_CompletesWithoutErrorResponse()
+    {
+        // Settlement's EventId ≠ BlockedByEventId. There is no matching blocked
+        // event to flip to Failed, and a SendErrorResponse here could mis-target a
+        // different event — so log an Error and Complete so it doesn't silently
+        // dead-letter. No error response is sent (it would mis-target).
+        var ctx = CreateContext(messageType: MessageType.HandoffFailedRequest, from: "Manager");
+        ctx.IsSessionBlockedByThisResult = false;
+        ctx.BlockedByEventId = "different-event";
+        ctx.MessageContent = new MessageContent
+        {
+            EventContent = new EventContent { EventTypeId = "OrderPlaced", EventJson = "{}" },
+            ErrorContent = new ErrorContent { ErrorText = "DMF rejected", ErrorType = "DmfValidationError" },
+        };
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.CompletedCalls, "Message must be completed, not left to silently dead-letter");
+        Assert.AreEqual(0, response.ErrorCalls, "Must NOT send an ErrorResponse — it could mis-target a different event");
+        Assert.AreEqual(0, ctx.UnblockSessionCalls, "Must not touch the block — no matching blocked event");
+        Assert.AreEqual(0, ctx.DeadLetterCalls, "Must not silently dead-letter");
+    }
+
+    [TestMethod]
+    public async Task HandleHandoffFailedRequest_SessionNotBlockedAtAll_CompletesWithoutErrorResponse()
+    {
+        var ctx = CreateContext(messageType: MessageType.HandoffFailedRequest, from: "Manager");
+        ctx.IsSessionBlockedByThisResult = false;
+        ctx.BlockedByEventId = null;
+        ctx.MessageContent = new MessageContent
+        {
+            EventContent = new EventContent { EventTypeId = "OrderPlaced", EventJson = "{}" },
+            ErrorContent = new ErrorContent { ErrorText = "DMF rejected", ErrorType = "DmfValidationError" },
+        };
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.CompletedCalls);
+        Assert.AreEqual(0, response.ErrorCalls);
+        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(0, ctx.DeadLetterCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleHandoffFailedRequest_FromNonManager_DeadLetters()
+    {
+        var ctx = CreateContext(messageType: MessageType.HandoffFailedRequest, from: "SomeEndpoint");
+        ctx.IsSessionBlockedByThisResult = true;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        // UnauthorizedAccessException flows through the base MessageHandler -> dead-letters
+        Assert.AreEqual(1, ctx.DeadLetterCalls);
+        Assert.AreEqual(0, response.ErrorCalls);
+        Assert.AreEqual(0, ctx.CompletedCalls);
     }
 
     [TestMethod]

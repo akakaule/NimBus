@@ -182,31 +182,60 @@ namespace NimBus.Core.Messages
 
         public override async Task HandleHandoffCompletedRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
-            LogInfo(messageContext, "Handle (HandoffCompleted)");
-            AuthorizeManagerRequest(messageContext);
-            await VerifySessionIsBlockedByThis(messageContext, cancellationToken);
-            await UnblockSession(messageContext, cancellationToken);
-            await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
-            // Existing ResolutionResponse path flips Pending → Completed on the
-            // original audit row. The user handler is intentionally NOT invoked.
-            await SendResolutionResponse(messageContext, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
-            LogInfo(messageContext, "Successfully processed (HandoffCompleted)");
+            try
+            {
+                LogInfo(messageContext, "Handle (HandoffCompleted)");
+                AuthorizeManagerRequest(messageContext);
+                await VerifySessionIsBlockedByThis(messageContext, cancellationToken);
+                await UnblockSession(messageContext, cancellationToken);
+                await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
+                // Existing ResolutionResponse path flips Pending → Completed on the
+                // original audit row. The user handler is intentionally NOT invoked.
+                await SendResolutionResponse(messageContext, cancellationToken);
+                await CompleteMessage(messageContext, cancellationToken);
+                LogInfo(messageContext, "Successfully processed (HandoffCompleted)");
+            }
+            catch (SessionBlockedException exception)
+            {
+                // The settlement's SessionId isn't blocked, or its EventId ≠
+                // BlockedByEventId — a misaddressed or duplicate settlement. There is
+                // no matching blocked event to unblock; the original is already
+                // resolved. Mirror HandleRetryRequest's catch: surface it as resolved
+                // in the Flow and Complete, rather than letting the base handler
+                // swallow it and silently dead-letter. Do NOT unblock.
+                LogError(messageContext, "HandoffCompleted settlement does not match a blocked session — surfacing as resolved", exception);
+                await SendResolutionResponse(messageContext, cancellationToken);
+                await CompleteMessage(messageContext, cancellationToken);
+            }
         }
 
         public override async Task HandleHandoffFailedRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
-            LogInfo(messageContext, "Handle (HandoffFailed)");
-            AuthorizeManagerRequest(messageContext);
-            await VerifySessionIsBlockedByThis(messageContext, cancellationToken);
-            // Synthesise an exception from the inbound ErrorContent so the existing
-            // SendErrorResponse path flips the audit row Pending → Failed with the
-            // operator-supplied error text preserved verbatim. Session stays
-            // blocked — the operator decides Resubmit / Skip from the WebApp.
-            var handoffError = BuildHandoffError(messageContext);
-            await SendErrorResponse(messageContext, handoffError, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
-            LogInfo(messageContext, "Successfully processed (HandoffFailed)");
+            try
+            {
+                LogInfo(messageContext, "Handle (HandoffFailed)");
+                AuthorizeManagerRequest(messageContext);
+                await VerifySessionIsBlockedByThis(messageContext, cancellationToken);
+                // Synthesise an exception from the inbound ErrorContent so the existing
+                // SendErrorResponse path flips the audit row Pending → Failed with the
+                // operator-supplied error text preserved verbatim. Session stays
+                // blocked — the operator decides Resubmit / Skip from the WebApp.
+                var handoffError = BuildHandoffError(messageContext);
+                await SendErrorResponse(messageContext, handoffError, cancellationToken);
+                await CompleteMessage(messageContext, cancellationToken);
+                LogInfo(messageContext, "Successfully processed (HandoffFailed)");
+            }
+            catch (SessionBlockedException exception)
+            {
+                // The settlement's SessionId isn't blocked, or its EventId ≠
+                // BlockedByEventId — a misaddressed or duplicate settlement. There is
+                // no matching blocked event to flip to Failed, and a SendErrorResponse
+                // here could mis-target a different event. Log an Error with full
+                // metadata and Complete so the failure is surfaced where an operator
+                // looks instead of silently dead-lettering via the base handler.
+                LogError(messageContext, "HandoffFailed settlement does not match a blocked session — no matching event to fail", exception);
+                await CompleteMessage(messageContext, cancellationToken);
+            }
         }
 
         public override async Task HandleContinuationRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)

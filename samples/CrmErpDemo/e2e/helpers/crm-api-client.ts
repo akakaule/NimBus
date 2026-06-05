@@ -21,6 +21,27 @@ export interface CreateCrmAccountRequest {
   countryCode: string;
 }
 
+export interface CrmContact {
+  id: string;
+  accountId?: string | null;
+  firstName: string;
+  lastName: string;
+  email?: string | null;
+  phone?: string | null;
+  origin: string;
+  isDeleted: boolean;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface CreateCrmContactRequest {
+  firstName: string;
+  lastName: string;
+  email?: string | null;
+  phone?: string | null;
+  accountId?: string | null;
+}
+
 export class CrmApiClient {
   private constructor(private readonly api: APIRequestContext) {}
 
@@ -40,6 +61,13 @@ export class CrmApiClient {
     const res = await this.api.post("/api/accounts", { data: req });
     if (!res.ok()) throw new Error(`CRM POST /api/accounts → ${res.status()} ${await res.text()}`);
     return (await res.json()) as CrmAccount;
+  }
+
+  /** Create a CRM contact. Publishes CrmContactCreated (SessionKey=ContactId). */
+  async createContact(req: CreateCrmContactRequest): Promise<CrmContact> {
+    const res = await this.api.post("/api/contacts", { data: req });
+    if (!res.ok()) throw new Error(`CRM POST /api/contacts → ${res.status()} ${await res.text()}`);
+    return (await res.json()) as CrmContact;
   }
 
   async getAccount(id: string): Promise<CrmAccount | null> {

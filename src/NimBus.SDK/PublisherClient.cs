@@ -105,6 +105,12 @@ public class PublisherClient : IPublisherClient
         await _sender.Send(message);
     }
 
+    /// <inheritdoc/>
+    public Task Publish(IMessage message, CancellationToken cancellationToken = default)
+    {
+        return _sender.Send(message, 0, cancellationToken);
+    }
+
     /// <summary>
     /// Pre-release - use with care!
     /// Publish multiple messages at once. Make sure batch size enforced by Azure Service Bus is taken into account.

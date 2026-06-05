@@ -24,7 +24,7 @@ In scope for spec 022 (this roadmap delivers all of it):
 |---|---|---|---|
 | 0 | Dynamic-routing gate | (in `spec.md` → "Phase 0 result") | ✅ **Done & committed** (`21b3174`) |
 | 1 | Schema registry + agent REST API | [`plan-phase1.md`](plan-phase1.md) | ✅ **Done** — all 14 tasks committed; full solution test sweep green |
-| 2 | `NimBus.Mcp` server | [`plan-phase2-mcp.md`](plan-phase2-mcp.md) | ⏳ **Planned, not started** |
+| 2 | `NimBus.Mcp` server | [`plan-phase2-mcp.md`](plan-phase2-mcp.md) | ✅ **Done** — 6 tasks committed; 36 MCP tests green; Release build clean |
 | 3 | EnrichmentAgent demo + AppHost + smoke + emulator fidelity | [`plan-phase3-demo.md`](plan-phase3-demo.md) | ⏳ **Planned, not started** |
 
 Phase dependencies: 0 → 1 → 3 (the demo needs the REST core). Phase 2 (MCP) depends on Phase 1 and can run in parallel with Phase 3; the demo runs **REST-direct** for determinism and treats MCP as a later swap (see Phase 3 plan, decision on `IBusGateway`).

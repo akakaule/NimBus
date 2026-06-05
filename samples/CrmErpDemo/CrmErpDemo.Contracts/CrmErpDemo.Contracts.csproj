@@ -9,6 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\NimBus.Abstractions\NimBus.Abstractions.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.Core\NimBus.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\NimBus.SDK\NimBus.SDK.csproj" />
   </ItemGroup>
 
 </Project>

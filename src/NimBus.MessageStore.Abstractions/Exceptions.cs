@@ -81,7 +81,7 @@ public class StorageProviderTransientException : Exception
 /// Thrown when an event type is re-registered with a schema different from the stored one.
 /// Agent-defined schemas are immutable in v1; callers should surface this as HTTP 409.
 /// </summary>
-public class SchemaConflictException : Exception
+public sealed class SchemaConflictException : Exception
 {
     public string EventTypeId { get; }
 

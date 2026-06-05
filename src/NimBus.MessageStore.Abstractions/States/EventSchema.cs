@@ -19,6 +19,7 @@ public class EventSchema
     /// <summary>Optional JSONPath selecting the session key for ordering.</summary>
     public string? SessionKeyPath { get; set; }
 
+    /// <summary>Always 1 in v1; reserved for future schema evolution.</summary>
     public int Version { get; set; } = 1;
 
     /// <summary>The agent that created it (from the API key).</summary>
@@ -26,5 +27,6 @@ public class EventSchema
 
     public string? CreatedBy { get; set; }
 
+    /// <summary>Creation timestamp, UTC.</summary>
     public DateTime CreatedUtc { get; set; }
 }

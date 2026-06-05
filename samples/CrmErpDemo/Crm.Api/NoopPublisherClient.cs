@@ -1,4 +1,5 @@
 using NimBus.Core.Events;
+using NimBus.Core.Messages;
 using NimBus.SDK;
 
 namespace Crm.Api;
@@ -6,6 +7,8 @@ namespace Crm.Api;
 internal sealed class NoopPublisherClient : IPublisherClient
 {
     public Task Publish(IEvent @event) => Task.CompletedTask;
+
+    public Task Publish(IMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     public Task Publish(IEvent @event, string sessionId, string correlationId) => Task.CompletedTask;
 

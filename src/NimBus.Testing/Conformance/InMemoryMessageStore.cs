@@ -28,6 +28,7 @@ public class InMemoryMessageStore : INimBusMessageStore
     private readonly ConcurrentDictionary<string, List<MessageAuditEntity>> _audits = new();
     private readonly ConcurrentDictionary<string, EndpointSubscription> _subscriptions = new();
     private readonly ConcurrentDictionary<string, EndpointMetadata> _metadata = new();
+    private readonly ConcurrentDictionary<string, EventSchema> _schemas = new();
 
     private (string, string, string) Key(string endpoint, string eventId, string session) => (endpoint, eventId, session ?? string.Empty);
 
@@ -334,6 +335,20 @@ public class InMemoryMessageStore : INimBusMessageStore
 
     public Task<bool> DeleteSubscription(string subscriptionId)
         => Task.FromResult(_subscriptions.TryRemove(subscriptionId, out _));
+
+    public Task<EventSchema?> GetSchema(string eventTypeId)
+        => Task.FromResult(_schemas.TryGetValue(eventTypeId, out var s) ? s : (EventSchema?)null);
+
+    public Task<IReadOnlyList<EventSchema>> GetSchemas()
+        => Task.FromResult<IReadOnlyList<EventSchema>>(_schemas.Values.ToList());
+
+    public Task<EventSchema> DefineEventType(EventSchema schema)
+    {
+        var existing = _schemas.GetOrAdd(schema.EventTypeId, schema);
+        if (!ReferenceEquals(existing, schema) && !SchemaJson.Equal(existing.JsonSchema, schema.JsonSchema))
+            throw new SchemaConflictException(schema.EventTypeId);
+        return Task.FromResult(existing);
+    }
 
     public Task<EndpointMetadata> GetEndpointMetadata(string endpointId)
         => _metadata.TryGetValue(endpointId, out var m) ? Task.FromResult(m) : throw new EndpointNotFoundException(endpointId);

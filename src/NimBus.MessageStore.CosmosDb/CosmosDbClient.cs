@@ -136,6 +136,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     private const string SubscriptionsContainer = "subscriptions";
     private const string MessagesContainer = "messages";
     private const string AuditsContainer = "audits";
+    private const string EventSchemasContainerName = "eventschemas";
 
     public CosmosDbClient(CosmosClient cosmosClient, ILogger<CosmosDbClient> logger = null)
     {
@@ -1195,6 +1196,57 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
     private Task<ICosmosContainerAdapter> GetAuditsContainer() =>
         GetCachedContainerAsync(AuditsContainer, "/eventId");
+
+    private async Task<ICosmosContainerAdapter> GetEventSchemasContainer()
+    {
+        var db = _cosmosClient.GetDatabase(DatabaseId);
+        return await db.CreateContainerIfNotExistsAsync(EventSchemasContainerName, "/id");
+    }
+
+    // ── IEventSchemaStore ──────────────────────────────────────────────────────
+
+    public async Task<NimBus.MessageStore.States.EventSchema?> GetSchema(string eventTypeId)
+    {
+        var container = await GetEventSchemasContainer();
+        try
+        {
+            var resp = await container.ReadItemAsync<NimBus.MessageStore.States.EventSchema>(
+                eventTypeId, new PartitionKey(eventTypeId));
+            return resp.Resource;
+        }
+        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
+    public async Task<System.Collections.Generic.IReadOnlyList<NimBus.MessageStore.States.EventSchema>> GetSchemas()
+    {
+        var container = await GetEventSchemasContainer();
+        var results = new List<NimBus.MessageStore.States.EventSchema>();
+        using var iterator = container.GetItemQueryIterator<NimBus.MessageStore.States.EventSchema>("SELECT * FROM c");
+        while (iterator.HasMoreResults)
+            results.AddRange(await iterator.ReadNextAsync());
+        return results;
+    }
+
+    public async Task<NimBus.MessageStore.States.EventSchema> DefineEventType(NimBus.MessageStore.States.EventSchema schema)
+    {
+        if (string.IsNullOrWhiteSpace(schema?.JsonSchema))
+            throw new ArgumentException("schema.JsonSchema is required.", nameof(schema));
+
+        var existing = await GetSchema(schema.EventTypeId);
+        if (existing != null)
+        {
+            if (!NimBus.MessageStore.Abstractions.SchemaJson.Equal(existing.JsonSchema, schema.JsonSchema))
+                throw new NimBus.MessageStore.Abstractions.SchemaConflictException(schema.EventTypeId);
+            return existing;
+        }
+
+        var container = await GetEventSchemasContainer();
+        var resp = await container.UpsertItemAsync(schema, new PartitionKey(schema.EventTypeId));
+        return resp.Resource;
+    }
 
     public async Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount)
     {

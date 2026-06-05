@@ -539,6 +539,10 @@ public class ResolverServiceTests
         }
 
         public Task<AuditSearchResult> SearchAudits(AuditFilter filter, string? continuationToken, int maxItemCount) => throw new NotSupportedException();
+
+        public Task<NimBus.MessageStore.States.EventSchema?> GetSchema(string eventTypeId) => throw new NotSupportedException();
+        public Task<System.Collections.Generic.IReadOnlyList<NimBus.MessageStore.States.EventSchema>> GetSchemas() => throw new NotSupportedException();
+        public Task<NimBus.MessageStore.States.EventSchema> DefineEventType(NimBus.MessageStore.States.EventSchema schema) => throw new NotSupportedException();
     }
 
     internal sealed record UploadCall(string EventId, string SessionId, string EndpointId, UnresolvedEvent Content);

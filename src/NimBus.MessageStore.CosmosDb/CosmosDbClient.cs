@@ -1244,8 +1244,22 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         }
 
         var container = await GetEventSchemasContainer();
-        var resp = await container.UpsertItemAsync(schema, new PartitionKey(schema.EventTypeId));
-        return resp.Resource;
+        try
+        {
+            // Atomic create-or-409: never an upsert, so a concurrent create of a
+            // DIFFERENT schema for the same new id can't silently overwrite.
+            var resp = await container.CreateItemAsync(schema, new PartitionKey(schema.EventTypeId));
+            return resp.Resource;
+        }
+        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            // Lost the create race. Re-read the winner; surface a conflict only if it
+            // differs (schemas are immutable), otherwise the create was idempotent.
+            var raced = await GetSchema(schema.EventTypeId);
+            if (raced != null && !NimBus.MessageStore.Abstractions.SchemaJson.Equal(raced.JsonSchema, schema.JsonSchema))
+                throw new NimBus.MessageStore.Abstractions.SchemaConflictException(schema.EventTypeId);
+            return raced;
+        }
     }
 
     public async Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount)

@@ -28,6 +28,7 @@ public class ServiceBusFilterValidatorTests
     [DataRow("from-CrmEndpoint")] // composed rule name
     [DataRow("a")]                // single char
     [DataRow("a.b_c-d$1")]        // every allowed char class
+    [DataRow("crm.contact.enriched.v1")] // spec 022 agent-defined dynamic EventTypeId (namespaced)
     public void ValidateName_AcceptsValidValue(string value)
     {
         // Must not throw.

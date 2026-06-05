@@ -113,6 +113,15 @@ internal sealed class EndToEndFixture
     }
 
     /// <summary>
+    /// Registers a handler for a dynamically-typed event keyed only by its EventTypeId string
+    /// (no compiled IEvent class) — the agent-zone consumer path for spec 022.
+    /// </summary>
+    public void RegisterDynamicHandler(string eventTypeId, Func<IEventJsonHandler> handlerFactory)
+    {
+        _eventHandlerProvider.RegisterHandler(eventTypeId, handlerFactory);
+    }
+
+    /// <summary>
     /// Delivers all pending published messages through the subscriber pipeline.
     /// </summary>
     public Task DeliverAll(CancellationToken cancellationToken = default)

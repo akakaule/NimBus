@@ -467,6 +467,7 @@ namespace NimBus.WebApp
             services.AddTransient<IDevApiController, DevImplementation>();
             services.AddTransient<IAgentApiController, AgentImplementation>();
             services.AddSingleton<IAgentEventPublisher, AgentEventPublisher>();
+            services.AddSingleton<IAgentSubscriptionRegistry, AgentSubscriptionRegistry>();
             services.AddScoped<SeedDataService>();
         }
 

@@ -19,7 +19,7 @@ namespace NimBus.WebApp.Services
 
         public AgentEventPublisher(ServiceBusClient serviceBusClient, IConfiguration config)
         {
-            var zoneEndpointId = config["Agent:ZoneEndpointId"] ?? "AgentZoneEndpoint";
+            var zoneEndpointId = AgentZone.ResolveEndpointId(config);
             // PublisherClient.CreateAsync completes synchronously (Task.FromResult; the
             // ServiceBusSender/AMQP link is created lazily on first send), so resolving it
             // once eagerly here is safe and avoids allocating a new sender per publish.

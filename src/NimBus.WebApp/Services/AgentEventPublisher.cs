@@ -15,19 +15,18 @@ namespace NimBus.WebApp.Services
     /// </summary>
     public sealed class AgentEventPublisher : IAgentEventPublisher
     {
-        private readonly ServiceBusClient _serviceBusClient;
-        private readonly string _zoneEndpointId;
+        private readonly IPublisherClient _publisher;
 
         public AgentEventPublisher(ServiceBusClient serviceBusClient, IConfiguration config)
         {
-            _serviceBusClient = serviceBusClient;
-            _zoneEndpointId = config["Agent:ZoneEndpointId"] ?? "AgentZoneEndpoint";
+            var zoneEndpointId = config["Agent:ZoneEndpointId"] ?? "AgentZoneEndpoint";
+            // PublisherClient.CreateAsync completes synchronously (Task.FromResult; the
+            // ServiceBusSender/AMQP link is created lazily on first send), so resolving it
+            // once eagerly here is safe and avoids allocating a new sender per publish.
+            _publisher = PublisherClient.CreateAsync(serviceBusClient, zoneEndpointId).GetAwaiter().GetResult();
         }
 
-        public async Task PublishAsync(IMessage message, CancellationToken cancellationToken = default)
-        {
-            var publisher = await PublisherClient.CreateAsync(_serviceBusClient, _zoneEndpointId, cancellationToken);
-            await publisher.Publish(message, cancellationToken);
-        }
+        public Task PublishAsync(IMessage message, CancellationToken cancellationToken = default)
+            => _publisher.Publish(message, cancellationToken);
     }
 }

@@ -422,5 +422,37 @@ namespace NimBus.WebApp.Tests
             Assert.IsFalse(string.IsNullOrWhiteSpace(publisher.Published?.SessionId),
                 "A sessionId must be generated when none is supplied");
         }
+
+        [TestMethod]
+        public async Task PostAgentPublish_blank_eventTypeId_returns_400_and_does_not_publish()
+        {
+            var (impl, _, publisher) = BuildWithPublisher();
+
+            var result = await impl.PostAgentPublishAsync(new AgentPublishRequest
+            {
+                EventTypeId = "   ",
+                Payload = "{\"industry\":\"retail\"}",
+            });
+
+            Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult),
+                "Blank/whitespace eventTypeId must yield 400");
+            Assert.AreEqual(0, publisher.CallCount, "Publisher must NOT be called when eventTypeId is blank");
+        }
+
+        [TestMethod]
+        public async Task PostAgentPublish_blank_payload_returns_400_and_does_not_publish()
+        {
+            var (impl, _, publisher) = BuildWithPublisher();
+
+            var result = await impl.PostAgentPublishAsync(new AgentPublishRequest
+            {
+                EventTypeId = "crm.lead.v1",
+                Payload = "   ",
+            });
+
+            Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult),
+                "Blank/whitespace payload must yield 400");
+            Assert.AreEqual(0, publisher.CallCount, "Publisher must NOT be called when payload is blank");
+        }
     }
 }

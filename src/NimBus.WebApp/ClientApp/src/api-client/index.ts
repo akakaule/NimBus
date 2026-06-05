@@ -3753,6 +3753,280 @@ export class Client extends ApiClientBase {
         }
         return Promise.resolve<TimeSeriesOverview>(null as any);
     }
+
+    /**
+     * Get agent catalog
+     * @return OK
+     */
+    getAgentCatalog(): Promise<AgentCatalog> {
+        let url_ = this.baseUrl + "/api/agent/catalog";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAgentCatalog(_response);
+        });
+    }
+
+    protected processGetAgentCatalog(response: Response): Promise<AgentCatalog> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AgentCatalog.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AgentCatalog>(null as any);
+    }
+
+    /**
+     * Define or retrieve an event type
+     * @param body (optional) 
+     * @return OK
+     */
+    postAgentEventTypes(body?: DefineEventTypeRequest | undefined): Promise<EventTypeInfo> {
+        let url_ = this.baseUrl + "/api/agent/event-types";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAgentEventTypes(_response);
+        });
+    }
+
+    protected processPostAgentEventTypes(response: Response): Promise<EventTypeInfo> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = EventTypeInfo.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            return throwException("Event type already exists with a different schema", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<EventTypeInfo>(null as any);
+    }
+
+    /**
+     * Subscribe to an event type
+     * @param body (optional) 
+     * @return OK
+     */
+    postAgentSubscribe(body?: AgentSubscribeRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/agent/subscribe";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAgentSubscribe(_response);
+        });
+    }
+
+    protected processPostAgentSubscribe(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * Receive the next available event
+     * @param eventTypeId (optional) 
+     * @param waitSeconds (optional) 
+     * @return OK
+     */
+    getAgentReceive(eventTypeId?: string | undefined, waitSeconds?: number | undefined): Promise<AgentReceivedMessage> {
+        let url_ = this.baseUrl + "/api/agent/receive?";
+        if (eventTypeId === null)
+            throw new globalThis.Error("The parameter 'eventTypeId' cannot be null.");
+        else if (eventTypeId !== undefined)
+            url_ += "eventTypeId=" + encodeURIComponent("" + eventTypeId) + "&";
+        if (waitSeconds === null)
+            throw new globalThis.Error("The parameter 'waitSeconds' cannot be null.");
+        else if (waitSeconds !== undefined)
+            url_ += "waitSeconds=" + encodeURIComponent("" + waitSeconds) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAgentReceive(_response);
+        });
+    }
+
+    protected processGetAgentReceive(response: Response): Promise<AgentReceivedMessage> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AgentReceivedMessage.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 204) {
+            return response.text().then((_responseText) => {
+            return throwException("No message available in the wait window", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AgentReceivedMessage>(null as any);
+    }
+
+    /**
+     * Publish an event
+     * @param body (optional) 
+     * @return OK
+     */
+    postAgentPublish(body?: AgentPublishRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/agent/publish";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAgentPublish(_response);
+        });
+    }
+
+    protected processPostAgentPublish(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Payload failed schema validation", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Unknown eventTypeId", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * Settle a received event
+     * @param body (optional) 
+     * @return OK
+     */
+    postAgentSettle(body?: AgentSettleRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/agent/settle";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAgentSettle(_response);
+        });
+    }
+
+    protected processPostAgentSettle(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
 }
 
 export class OldEvent implements IOldEvent {
@@ -9275,6 +9549,549 @@ export interface IAuditEntry {
     [key: string]: any;
 }
 
+export class AgentCatalog implements IAgentCatalog {
+    endpoints?: string[];
+    eventTypes?: EventTypeInfo[];
+
+    [key: string]: any;
+
+    constructor(data?: IAgentCatalog) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(item);
+            }
+            if (Array.isArray(_data["eventTypes"])) {
+                this.eventTypes = [] as any;
+                for (let item of _data["eventTypes"])
+                    this.eventTypes!.push(EventTypeInfo.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): AgentCatalog {
+        data = typeof data === 'object' ? data : {};
+        let result = new AgentCatalog();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item);
+        }
+        if (Array.isArray(this.eventTypes)) {
+            data["eventTypes"] = [];
+            for (let item of this.eventTypes)
+                data["eventTypes"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): AgentCatalog {
+        const json = this.toJSON();
+        let result = new AgentCatalog();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAgentCatalog {
+    endpoints?: string[];
+    eventTypes?: EventTypeInfo[];
+
+    [key: string]: any;
+}
+
+export class EventTypeInfo implements IEventTypeInfo {
+    eventTypeId?: string;
+    name?: string;
+    jsonSchema?: string;
+    description?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IEventTypeInfo) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.eventTypeId = _data["eventTypeId"];
+            this.name = _data["name"];
+            this.jsonSchema = _data["jsonSchema"];
+            this.description = _data["description"];
+        }
+    }
+
+    static fromJS(data: any): EventTypeInfo {
+        data = typeof data === 'object' ? data : {};
+        let result = new EventTypeInfo();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["eventTypeId"] = this.eventTypeId;
+        data["name"] = this.name;
+        data["jsonSchema"] = this.jsonSchema;
+        data["description"] = this.description;
+        return data;
+    }
+
+    clone(): EventTypeInfo {
+        const json = this.toJSON();
+        let result = new EventTypeInfo();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IEventTypeInfo {
+    eventTypeId?: string;
+    name?: string;
+    jsonSchema?: string;
+    description?: string;
+
+    [key: string]: any;
+}
+
+export class DefineEventTypeRequest implements IDefineEventTypeRequest {
+    eventTypeId!: string;
+    name?: string;
+    jsonSchema!: string;
+    description?: string;
+    sessionKeyPath?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IDefineEventTypeRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.eventTypeId = _data["eventTypeId"];
+            this.name = _data["name"];
+            this.jsonSchema = _data["jsonSchema"];
+            this.description = _data["description"];
+            this.sessionKeyPath = _data["sessionKeyPath"];
+        }
+    }
+
+    static fromJS(data: any): DefineEventTypeRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new DefineEventTypeRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["eventTypeId"] = this.eventTypeId;
+        data["name"] = this.name;
+        data["jsonSchema"] = this.jsonSchema;
+        data["description"] = this.description;
+        data["sessionKeyPath"] = this.sessionKeyPath;
+        return data;
+    }
+
+    clone(): DefineEventTypeRequest {
+        const json = this.toJSON();
+        let result = new DefineEventTypeRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDefineEventTypeRequest {
+    eventTypeId: string;
+    name?: string;
+    jsonSchema: string;
+    description?: string;
+    sessionKeyPath?: string;
+
+    [key: string]: any;
+}
+
+export class AgentSubscribeRequest implements IAgentSubscribeRequest {
+    eventTypeId!: string;
+
+    [key: string]: any;
+
+    constructor(data?: IAgentSubscribeRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.eventTypeId = _data["eventTypeId"];
+        }
+    }
+
+    static fromJS(data: any): AgentSubscribeRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new AgentSubscribeRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["eventTypeId"] = this.eventTypeId;
+        return data;
+    }
+
+    clone(): AgentSubscribeRequest {
+        const json = this.toJSON();
+        let result = new AgentSubscribeRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAgentSubscribeRequest {
+    eventTypeId: string;
+
+    [key: string]: any;
+}
+
+export class HandoffCoordinates implements IHandoffCoordinates {
+    eventId?: string;
+    sessionId?: string;
+    messageId?: string;
+    eventTypeId?: string;
+    correlationId?: string;
+    originatingMessageId?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IHandoffCoordinates) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.eventId = _data["eventId"];
+            this.sessionId = _data["sessionId"];
+            this.messageId = _data["messageId"];
+            this.eventTypeId = _data["eventTypeId"];
+            this.correlationId = _data["correlationId"];
+            this.originatingMessageId = _data["originatingMessageId"];
+        }
+    }
+
+    static fromJS(data: any): HandoffCoordinates {
+        data = typeof data === 'object' ? data : {};
+        let result = new HandoffCoordinates();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["eventId"] = this.eventId;
+        data["sessionId"] = this.sessionId;
+        data["messageId"] = this.messageId;
+        data["eventTypeId"] = this.eventTypeId;
+        data["correlationId"] = this.correlationId;
+        data["originatingMessageId"] = this.originatingMessageId;
+        return data;
+    }
+
+    clone(): HandoffCoordinates {
+        const json = this.toJSON();
+        let result = new HandoffCoordinates();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IHandoffCoordinates {
+    eventId?: string;
+    sessionId?: string;
+    messageId?: string;
+    eventTypeId?: string;
+    correlationId?: string;
+    originatingMessageId?: string;
+
+    [key: string]: any;
+}
+
+export class AgentReceivedMessage implements IAgentReceivedMessage {
+    eventTypeId?: string;
+    payload?: string;
+    coordinates?: HandoffCoordinates;
+
+    [key: string]: any;
+
+    constructor(data?: IAgentReceivedMessage) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.eventTypeId = _data["eventTypeId"];
+            this.payload = _data["payload"];
+            this.coordinates = _data["coordinates"] ? HandoffCoordinates.fromJS(_data["coordinates"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): AgentReceivedMessage {
+        data = typeof data === 'object' ? data : {};
+        let result = new AgentReceivedMessage();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["eventTypeId"] = this.eventTypeId;
+        data["payload"] = this.payload;
+        data["coordinates"] = this.coordinates ? this.coordinates.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): AgentReceivedMessage {
+        const json = this.toJSON();
+        let result = new AgentReceivedMessage();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAgentReceivedMessage {
+    eventTypeId?: string;
+    payload?: string;
+    coordinates?: HandoffCoordinates;
+
+    [key: string]: any;
+}
+
+export class AgentPublishRequest implements IAgentPublishRequest {
+    eventTypeId!: string;
+    payload!: string;
+    sessionId?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IAgentPublishRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.eventTypeId = _data["eventTypeId"];
+            this.payload = _data["payload"];
+            this.sessionId = _data["sessionId"];
+        }
+    }
+
+    static fromJS(data: any): AgentPublishRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new AgentPublishRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["eventTypeId"] = this.eventTypeId;
+        data["payload"] = this.payload;
+        data["sessionId"] = this.sessionId;
+        return data;
+    }
+
+    clone(): AgentPublishRequest {
+        const json = this.toJSON();
+        let result = new AgentPublishRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAgentPublishRequest {
+    eventTypeId: string;
+    payload: string;
+    sessionId?: string;
+
+    [key: string]: any;
+}
+
+export class AgentSettleRequest implements IAgentSettleRequest {
+    coordinates!: HandoffCoordinates;
+    outcome!: AgentSettleRequestOutcome;
+    result?: string;
+    errorText?: string;
+    errorType?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IAgentSettleRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+        if (!data) {
+            this.coordinates = new HandoffCoordinates();
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.coordinates = _data["coordinates"] ? HandoffCoordinates.fromJS(_data["coordinates"]) : new HandoffCoordinates();
+            this.outcome = _data["outcome"];
+            this.result = _data["result"];
+            this.errorText = _data["errorText"];
+            this.errorType = _data["errorType"];
+        }
+    }
+
+    static fromJS(data: any): AgentSettleRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new AgentSettleRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["coordinates"] = this.coordinates ? this.coordinates.toJSON() : undefined as any;
+        data["outcome"] = this.outcome;
+        data["result"] = this.result;
+        data["errorText"] = this.errorText;
+        data["errorType"] = this.errorType;
+        return data;
+    }
+
+    clone(): AgentSettleRequest {
+        const json = this.toJSON();
+        let result = new AgentSettleRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAgentSettleRequest {
+    coordinates: HandoffCoordinates;
+    outcome: AgentSettleRequestOutcome;
+    result?: string;
+    errorText?: string;
+    errorType?: string;
+
+    [key: string]: any;
+}
+
 export class Anonymous implements IAnonymous {
     produces?: EventTypeGrouping[];
     consumes?: EventTypeGrouping[];
@@ -9454,6 +10271,13 @@ export enum MessageAuditAuditType {
     Comment = "comment",
     CompleteHandoff = "completeHandoff",
     FailHandoff = "failHandoff",
+    SearchEvents = "searchEvents",
+    GetEventDetails = "getEventDetails",
+    GetEndpointDetails = "getEndpointDetails",
+    EnableEndpoint = "enableEndpoint",
+    DisableEndpoint = "disableEndpoint",
+    PurgeMessages = "purgeMessages",
+    Compose = "compose",
 }
 
 export class MessageContent implements IMessageContent {
@@ -9559,6 +10383,13 @@ export enum AuditSearchFilterAuditType {
     Comment = "comment",
     CompleteHandoff = "completeHandoff",
     FailHandoff = "failHandoff",
+    SearchEvents = "searchEvents",
+    GetEventDetails = "getEventDetails",
+    GetEndpointDetails = "getEndpointDetails",
+    EnableEndpoint = "enableEndpoint",
+    DisableEndpoint = "disableEndpoint",
+    PurgeMessages = "purgeMessages",
+    Compose = "compose",
 }
 
 export enum AuditEntryAuditType {
@@ -9569,6 +10400,18 @@ export enum AuditEntryAuditType {
     Comment = "comment",
     CompleteHandoff = "completeHandoff",
     FailHandoff = "failHandoff",
+    SearchEvents = "searchEvents",
+    GetEventDetails = "getEventDetails",
+    GetEndpointDetails = "getEndpointDetails",
+    EnableEndpoint = "enableEndpoint",
+    DisableEndpoint = "disableEndpoint",
+    PurgeMessages = "purgeMessages",
+    Compose = "compose",
+}
+
+export enum AgentSettleRequestOutcome {
+    Complete = "complete",
+    Fail = "fail",
 }
 
 export class EventContent implements IEventContent {

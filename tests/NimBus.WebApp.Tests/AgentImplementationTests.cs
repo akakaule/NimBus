@@ -7,12 +7,16 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Threading;
 using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.ManagementApi;
+using NimBus.WebApp.Services;
+using IMessage = global::NimBus.Core.Messages.IMessage;
+using MessageType = global::NimBus.Core.Messages.MessageType;
 
 namespace NimBus.WebApp.Tests
 {
@@ -51,18 +55,42 @@ namespace NimBus.WebApp.Tests
             public IEnumerable<NimBus.Core.Endpoints.IRoleAssignment> RoleAssignments => Enumerable.Empty<NimBus.Core.Endpoints.IRoleAssignment>();
         }
 
+        // ── Fake publisher (captures the published Message) ─────────────────
+
+        private sealed class CapturingPublisher : IAgentEventPublisher
+        {
+            public IMessage? Published { get; private set; }
+            public int CallCount { get; private set; }
+
+            public Task PublishAsync(IMessage message, CancellationToken cancellationToken = default)
+            {
+                Published = message;
+                CallCount++;
+                return Task.CompletedTask;
+            }
+        }
+
         // ── Builder ─────────────────────────────────────────────────────────
 
         private static (AgentImplementation Impl, InMemoryMessageStore Store) Build(
             params string[] endpointIds)
         {
+            var (impl, store, _) = BuildWithPublisher(endpointIds);
+            return (impl, store);
+        }
+
+        private static (AgentImplementation Impl, InMemoryMessageStore Store, CapturingPublisher Publisher) BuildWithPublisher(
+            params string[] endpointIds)
+        {
             var store = new InMemoryMessageStore();
             var platform = new FakePlatform(endpointIds);
+            var publisher = new CapturingPublisher();
             var impl = new AgentImplementation(
                 store,
                 platform,
+                publisher,
                 NullLogger<AgentImplementation>.Instance);
-            return (impl, store);
+            return (impl, store, publisher);
         }
 
         private static DefineEventTypeRequest ValidRequest(
@@ -270,21 +298,129 @@ namespace NimBus.WebApp.Tests
         }
 
         [TestMethod]
-        public async Task PostAgentPublish_stub_returns_501()
-        {
-            var (impl, _) = Build();
-            var result = await impl.PostAgentPublishAsync(new AgentPublishRequest());
-            var statusResult = result as StatusCodeResult;
-            Assert.AreEqual(501, statusResult?.StatusCode);
-        }
-
-        [TestMethod]
         public async Task PostAgentSettle_stub_returns_501()
         {
             var (impl, _) = Build();
             var result = await impl.PostAgentSettleAsync(new AgentSettleRequest());
             var statusResult = result as StatusCodeResult;
             Assert.AreEqual(501, statusResult?.StatusCode);
+        }
+
+        // ── PostAgentPublishAsync ────────────────────────────────────────────
+
+        private const string IndustrySchema =
+            "{\"type\":\"object\",\"required\":[\"industry\"],\"properties\":{\"industry\":{\"type\":\"string\"}}}";
+
+        private static async Task SeedSchema(InMemoryMessageStore store, string eventTypeId, string jsonSchema)
+        {
+            await store.DefineEventType(new NimBus.MessageStore.States.EventSchema
+            {
+                EventTypeId = eventTypeId,
+                Name = eventTypeId,
+                JsonSchema = jsonSchema,
+                Version = 1,
+                AgentId = "test",
+                CreatedUtc = DateTime.UtcNow,
+            });
+        }
+
+        [TestMethod]
+        public async Task PostAgentPublish_unknown_eventTypeId_returns_404_and_does_not_publish()
+        {
+            var (impl, _, publisher) = BuildWithPublisher();
+
+            var result = await impl.PostAgentPublishAsync(new AgentPublishRequest
+            {
+                EventTypeId = "never.defined.v1",
+                Payload = "{\"industry\":\"retail\"}",
+            });
+
+            Assert.IsInstanceOfType(result, typeof(NotFoundObjectResult),
+                "Unknown eventTypeId must yield 404");
+            Assert.AreEqual(0, publisher.CallCount, "Publisher must NOT be called for an unknown event type");
+        }
+
+        [TestMethod]
+        public async Task PostAgentPublish_payload_violates_schema_returns_400_and_does_not_publish()
+        {
+            var (impl, store, publisher) = BuildWithPublisher();
+            await SeedSchema(store, "crm.lead.v1", IndustrySchema);
+
+            // Missing the required "industry" property -> schema violation.
+            var result = await impl.PostAgentPublishAsync(new AgentPublishRequest
+            {
+                EventTypeId = "crm.lead.v1",
+                Payload = "{\"foo\":1}",
+            });
+
+            Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult),
+                "Schema-violating payload must yield 400");
+            Assert.AreEqual(0, publisher.CallCount, "Publisher must NOT be called for an invalid payload");
+        }
+
+        [TestMethod]
+        public async Task PostAgentPublish_malformed_json_payload_returns_400_and_does_not_publish()
+        {
+            var (impl, store, publisher) = BuildWithPublisher();
+            await SeedSchema(store, "crm.lead.v1", IndustrySchema);
+
+            // Unparseable JSON.
+            var result = await impl.PostAgentPublishAsync(new AgentPublishRequest
+            {
+                EventTypeId = "crm.lead.v1",
+                Payload = "{\"a\":",
+            });
+
+            Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult),
+                "Malformed JSON payload must yield 400");
+            Assert.AreEqual(0, publisher.CallCount, "Publisher must NOT be called for malformed JSON");
+        }
+
+        [TestMethod]
+        public async Task PostAgentPublish_valid_payload_returns_200_and_publishes_message()
+        {
+            var (impl, store, publisher) = BuildWithPublisher();
+            await SeedSchema(store, "crm.lead.v1", IndustrySchema);
+
+            const string payload = "{\"industry\":\"retail\"}";
+            const string sessionId = "session-abc";
+
+            var result = await impl.PostAgentPublishAsync(new AgentPublishRequest
+            {
+                EventTypeId = "crm.lead.v1",
+                Payload = payload,
+                SessionId = sessionId,
+            });
+
+            Assert.IsInstanceOfType(result, typeof(OkResult), "Valid payload must yield 200");
+            Assert.AreEqual(1, publisher.CallCount, "Publisher must be called exactly once");
+
+            var message = publisher.Published;
+            Assert.IsNotNull(message, "A Message must be captured");
+            Assert.AreEqual("crm.lead.v1", message!.EventTypeId);
+            Assert.AreEqual("crm.lead.v1", message.To);
+            Assert.AreEqual(MessageType.EventRequest, message.MessageType);
+            Assert.AreEqual(sessionId, message.SessionId, "Provided sessionId must be carried through");
+            Assert.IsNotNull(message.MessageContent?.EventContent);
+            Assert.AreEqual("crm.lead.v1", message.MessageContent!.EventContent!.EventTypeId);
+            Assert.AreEqual(payload, message.MessageContent.EventContent.EventJson);
+        }
+
+        [TestMethod]
+        public async Task PostAgentPublish_valid_payload_without_sessionId_generates_one()
+        {
+            var (impl, store, publisher) = BuildWithPublisher();
+            await SeedSchema(store, "crm.lead.v1", IndustrySchema);
+
+            var result = await impl.PostAgentPublishAsync(new AgentPublishRequest
+            {
+                EventTypeId = "crm.lead.v1",
+                Payload = "{\"industry\":\"retail\"}",
+            });
+
+            Assert.IsInstanceOfType(result, typeof(OkResult));
+            Assert.IsFalse(string.IsNullOrWhiteSpace(publisher.Published?.SessionId),
+                "A sessionId must be generated when none is supplied");
         }
     }
 }

@@ -8,6 +8,7 @@ using NimBus.Core;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using NimBus.WebApp.ManagementApi;
+using NimBus.WebApp.Services;
 
 namespace NimBus.WebApp.Controllers.ApiContract
 {
@@ -15,15 +16,18 @@ namespace NimBus.WebApp.Controllers.ApiContract
     {
         private readonly IEventSchemaStore _schemas;
         private readonly IPlatform _platform;
+        private readonly IAgentEventPublisher _publisher;
         private readonly ILogger<AgentImplementation> _logger;
 
         public AgentImplementation(
             IEventSchemaStore schemas,
             IPlatform platform,
+            IAgentEventPublisher publisher,
             ILogger<AgentImplementation> logger)
         {
             _schemas = schemas;
             _platform = platform;
+            _publisher = publisher;
             _logger = logger;
         }
 
@@ -104,9 +108,63 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
         // ── POST /api/agent/publish ───────────────────────────────────────────
 
-        // TODO(spec 022 Task 10): implement
-        public Task<IActionResult> PostAgentPublishAsync(AgentPublishRequest body)
-            => Task.FromResult<IActionResult>(new StatusCodeResult(501));
+        public async Task<IActionResult> PostAgentPublishAsync(AgentPublishRequest body)
+        {
+            if (string.IsNullOrWhiteSpace(body.EventTypeId))
+                return new BadRequestObjectResult("eventTypeId is required.");
+            if (string.IsNullOrWhiteSpace(body.Payload))
+                return new BadRequestObjectResult("payload is required.");
+
+            var schema = await _schemas.GetSchema(body.EventTypeId);
+            if (schema == null)
+                return new NotFoundObjectResult($"Unknown eventTypeId '{body.EventTypeId}'.");
+
+            NJsonSchema.JsonSchema jsonSchema;
+            try
+            {
+                jsonSchema = await NJsonSchema.JsonSchema.FromJsonAsync(schema.JsonSchema);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Registered schema for {EventTypeId} is not valid JSON Schema", body.EventTypeId);
+                return new BadRequestObjectResult($"Registered schema for '{body.EventTypeId}' is not valid JSON Schema: {ex.Message}");
+            }
+
+            ICollection<NJsonSchema.Validation.ValidationError> errors;
+            try
+            {
+                errors = jsonSchema.Validate(body.Payload);
+            }
+            catch (Exception ex)
+            {
+                return new BadRequestObjectResult($"Payload is not valid JSON: {ex.Message}");
+            }
+
+            if (errors.Count > 0)
+                return new BadRequestObjectResult(errors.Select(e => $"{e.Path}: {e.Kind}").ToList());
+
+            var message = new global::NimBus.Core.Messages.Message
+            {
+                To = body.EventTypeId,
+                EventTypeId = body.EventTypeId,
+                SessionId = string.IsNullOrWhiteSpace(body.SessionId) ? Guid.NewGuid().ToString() : body.SessionId,
+                CorrelationId = Guid.NewGuid().ToString(),
+                MessageId = Guid.NewGuid().ToString(),
+                RetryCount = 0,
+                MessageType = global::NimBus.Core.Messages.MessageType.EventRequest,
+                MessageContent = new global::NimBus.Core.Messages.MessageContent
+                {
+                    EventContent = new global::NimBus.Core.Messages.EventContent
+                    {
+                        EventTypeId = body.EventTypeId,
+                        EventJson = body.Payload,
+                    },
+                },
+            };
+
+            await _publisher.PublishAsync(message);
+            return new OkResult();
+        }
 
         // ── POST /api/agent/settle ────────────────────────────────────────────
 

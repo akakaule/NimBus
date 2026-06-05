@@ -56,7 +56,7 @@ if (useEmulator)
         "servicebus-emulator-config.generated.json");
     File.WriteAllText(
         emulatorConfigPath,
-        CrmErpDemo.AppHost.EmulatorTopologyConfigBuilder.Build(
+        CrmErpDemo.Contracts.EmulatorTopologyConfigBuilder.Build(
             new CrmErpDemo.Contracts.CrmErpPlatformConfiguration()));
 
     servicebus = builder

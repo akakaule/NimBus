@@ -3,7 +3,7 @@ using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Messages;
 
-namespace CrmErpDemo.AppHost;
+namespace CrmErpDemo.Contracts;
 
 // Generates the Service Bus emulator's UserConfig JSON from an IPlatform.
 //
@@ -19,8 +19,33 @@ namespace CrmErpDemo.AppHost;
 // The shape mirrors EnsureEndpointTopologyAsync in
 // src/NimBus.CommandLine/ServiceBusTopologyProvisioner.cs — the production
 // provisioner stays the source of truth for real Azure.
-internal static class EmulatorTopologyConfigBuilder
+public static class EmulatorTopologyConfigBuilder
 {
+    // ---------------------------------------------------------------------------
+    // DEMO-SCOPED WORKAROUND: dynamic-event forward rules
+    //
+    // The compiled forwarding loop above (cross-endpoint loop) derives forward
+    // subscriptions only from COMPILED event types (endpoint.EventTypesProduced ×
+    // platform.GetConsumers). Dynamically-typed events — where the publisher sets
+    // a string EventTypeId but there is no corresponding IEvent class registered
+    // on an endpoint — are invisible to that loop.
+    //
+    // For spec 022, the AI agent publishes "crm.contact.enriched.v1" onto the
+    // AgentZoneEndpoint topic using a dynamic event type string, so no auto-generated
+    // forward rule matches it. The entries below add explicit forward subscriptions
+    // for these dynamic routes.
+    //
+    // NOTE: The production ServiceBusTopologyProvisioner
+    //   (src/NimBus.CommandLine/ServiceBusTopologyProvisioner.cs)
+    // has the SAME gap: it only iterates endpoint.EventTypesProduced and would
+    // also miss dynamic event types in a real Azure run. A parity fix for that
+    // provisioner is deferred until the dynamic-event API is stabilised.
+    // ---------------------------------------------------------------------------
+    private static readonly IReadOnlyList<(string SourceEndpoint, string EventTypeId, string TargetEndpoint)> DynamicForwards =
+    [
+        ("AgentZoneEndpoint", "crm.contact.enriched.v1", "DataPlatformEndpoint"),
+    ];
+
     public static string Build(IPlatform platform)
     {
         var endpoints = platform.Endpoints
@@ -161,6 +186,39 @@ internal static class EmulatorTopologyConfigBuilder
                 Name = consumer.Id,
                 Properties = ForwardSubscriptionProperties(consumer.Id),
                 Rules = rules.ToArray(),
+            });
+        }
+
+        // Dynamic-event forward subscriptions (see DynamicForwards declaration above).
+        // For each entry whose source matches this endpoint, emit a forward subscription
+        // on this topic. Subscription name uses the "AgentDyn-<target>" convention to
+        // avoid colliding with the compiled forward subscriptions (named after the
+        // consumer endpoint id) when the dynamic target is the same consumer.
+        var addedDynamicSubNames = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var (sourceEndpoint, eventTypeId, targetEndpoint) in DynamicForwards)
+        {
+            if (!string.Equals(sourceEndpoint, endpoint.Id, StringComparison.Ordinal))
+                continue;
+
+            var subName = $"AgentDyn-{targetEndpoint}";
+
+            // Guard against duplicates if DynamicForwards has more than one entry for
+            // the same (source, target) pair.
+            if (!addedDynamicSubNames.Add(subName))
+                continue;
+
+            subscriptions.Add(new
+            {
+                Name = subName,
+                Properties = ForwardSubscriptionProperties(targetEndpoint),
+                Rules = new object[]
+                {
+                    Rule(
+                        eventTypeId,
+                        $"user.EventTypeId = '{eventTypeId}' AND user.From IS NULL",
+                        $"SET user.From = '{sourceEndpoint}'; SET user.EventId = newid(); SET user.To = '{targetEndpoint}';"),
+                },
             });
         }
 

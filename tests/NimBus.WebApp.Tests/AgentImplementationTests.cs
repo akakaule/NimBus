@@ -11,12 +11,15 @@ using System.Threading;
 using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
+using NimBus.Manager;
 using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
 using IMessage = global::NimBus.Core.Messages.IMessage;
 using MessageType = global::NimBus.Core.Messages.MessageType;
+using MessageEntity = global::NimBus.MessageStore.MessageEntity;
+using UnresolvedEvent = global::NimBus.MessageStore.UnresolvedEvent;
 
 namespace NimBus.WebApp.Tests
 {
@@ -70,27 +73,117 @@ namespace NimBus.WebApp.Tests
             }
         }
 
+        // ── Fake IManagerClient (captures handoff settlements) ──────────────
+
+        private sealed class CapturingManagerClient : IManagerClient
+        {
+            public MessageEntity? CompletedEntry { get; private set; }
+            public string? CompletedEndpoint { get; private set; }
+            public string? CompletedDetails { get; private set; }
+            public int CompleteCount { get; private set; }
+
+            public MessageEntity? FailedEntry { get; private set; }
+            public string? FailedEndpoint { get; private set; }
+            public string? FailedErrorText { get; private set; }
+            public string? FailedErrorType { get; private set; }
+            public int FailCount { get; private set; }
+
+            public Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson)
+                => throw new NotImplementedException();
+
+            public Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId)
+                => throw new NotImplementedException();
+
+            public Task CompleteHandoff(MessageEntity pendingEntry, string endpoint, string? detailsJson = null)
+            {
+                CompletedEntry = pendingEntry;
+                CompletedEndpoint = endpoint;
+                CompletedDetails = detailsJson;
+                CompleteCount++;
+                return Task.CompletedTask;
+            }
+
+            public Task FailHandoff(MessageEntity pendingEntry, string endpoint, string errorText, string? errorType = null)
+            {
+                FailedEntry = pendingEntry;
+                FailedEndpoint = endpoint;
+                FailedErrorText = errorText;
+                FailedErrorType = errorType;
+                FailCount++;
+                return Task.CompletedTask;
+            }
+        }
+
+        // The Agent Zone endpoint id receive/settle resolve to when no IConfiguration is
+        // supplied (AgentZone.ResolveEndpointId(null) -> the default). Tests seed parked
+        // events under this endpoint id.
+        private const string ZoneId = AgentZone.DefaultAgentZoneEndpointId;
+
         // ── Builder ─────────────────────────────────────────────────────────
 
         private static (AgentImplementation Impl, InMemoryMessageStore Store) Build(
             params string[] endpointIds)
         {
-            var (impl, store, _) = BuildWithPublisher(endpointIds);
+            var (impl, store, _, _, _) = BuildAgent(endpointIds);
             return (impl, store);
         }
 
         private static (AgentImplementation Impl, InMemoryMessageStore Store, CapturingPublisher Publisher) BuildWithPublisher(
             params string[] endpointIds)
         {
+            var (impl, store, publisher, _, _) = BuildAgent(endpointIds);
+            return (impl, store, publisher);
+        }
+
+        private static (AgentImplementation Impl, InMemoryMessageStore Store, CapturingPublisher Publisher, CapturingManagerClient Manager, AgentSubscriptionRegistry Registry) BuildAgent(
+            params string[] endpointIds)
+        {
             var store = new InMemoryMessageStore();
             var platform = new FakePlatform(endpointIds);
             var publisher = new CapturingPublisher();
+            var manager = new CapturingManagerClient();
+            var registry = new AgentSubscriptionRegistry();
             var impl = new AgentImplementation(
                 store,
                 platform,
                 publisher,
+                store,
+                manager,
+                registry,
+                config: null,                 // -> AgentZone default zone id
+                httpContextAccessor: null,    // -> CurrentAgentId() falls back to "demo-agent"
                 NullLogger<AgentImplementation>.Instance);
-            return (impl, store, publisher);
+            return (impl, store, publisher, manager, registry);
+        }
+
+        // Seeds a Pending+Handoff event under the Agent Zone endpoint, exactly as Task 7's
+        // Agent Zone subscriber parks each agent event.
+        private static Task SeedPendingHandoff(
+            InMemoryMessageStore store,
+            string eventId,
+            string sessionId,
+            string eventTypeId,
+            string payload,
+            string messageId = "msg-1",
+            string correlationId = "corr-1",
+            string originatingMessageId = "orig-1")
+        {
+            return store.UploadPendingMessage(eventId, sessionId, ZoneId, new UnresolvedEvent
+            {
+                EventTypeId = eventTypeId,
+                LastMessageId = messageId,
+                CorrelationId = correlationId,
+                OriginatingMessageId = originatingMessageId,
+                PendingSubStatus = "Handoff",
+                MessageContent = new global::NimBus.Core.Messages.MessageContent
+                {
+                    EventContent = new global::NimBus.Core.Messages.EventContent
+                    {
+                        EventTypeId = eventTypeId,
+                        EventJson = payload,
+                    },
+                },
+            });
         }
 
         private static DefineEventTypeRequest ValidRequest(
@@ -277,33 +370,204 @@ namespace NimBus.WebApp.Tests
                 "Empty jsonSchema must yield 400");
         }
 
-        // ── Stubs return 501 ─────────────────────────────────────────────────
+        // ── PostAgentSubscribeAsync ──────────────────────────────────────────
 
         [TestMethod]
-        public async Task PostAgentSubscribe_stub_returns_501()
+        public async Task PostAgentSubscribe_valid_returns_200_and_records_subscription()
         {
-            var (impl, _) = Build();
-            var result = await impl.PostAgentSubscribeAsync(new AgentSubscribeRequest());
-            var statusResult = result as StatusCodeResult;
-            Assert.AreEqual(501, statusResult?.StatusCode);
+            var (impl, _, _, _, registry) = BuildAgent();
+
+            var result = await impl.PostAgentSubscribeAsync(new AgentSubscribeRequest
+            {
+                EventTypeId = "crm.lead.v1",
+            });
+
+            Assert.IsInstanceOfType(result, typeof(OkResult), "Valid subscribe must yield 200");
+            // CurrentAgentId() falls back to "demo-agent" with no X-Agent-Id header.
+            CollectionAssert.Contains(registry.GetSubscriptions("demo-agent").ToArray(), "crm.lead.v1",
+                "Registry must record the subscription for the current agent");
         }
 
         [TestMethod]
-        public async Task GetAgentReceive_stub_returns_501()
+        public async Task PostAgentSubscribe_empty_eventTypeId_returns_400()
         {
-            var (impl, _) = Build();
-            var result = await impl.GetAgentReceiveAsync("any.type", null);
-            var statusResult = result.Result as StatusCodeResult;
-            Assert.AreEqual(501, statusResult?.StatusCode);
+            var (impl, _, _, _, registry) = BuildAgent();
+
+            var result = await impl.PostAgentSubscribeAsync(new AgentSubscribeRequest { EventTypeId = "" });
+
+            Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult), "Empty eventTypeId must yield 400");
+            Assert.AreEqual(0, registry.GetSubscriptions("demo-agent").Count, "Nothing must be recorded on a 400");
+        }
+
+        // ── GetAgentReceiveAsync ─────────────────────────────────────────────
+
+        [TestMethod]
+        public async Task GetAgentReceive_parked_handoff_returns_200_with_coordinates()
+        {
+            var (impl, store) = Build();
+            await SeedPendingHandoff(store,
+                eventId: "evt-1", sessionId: "sess-1", eventTypeId: "crm.lead.v1",
+                payload: "{\"industry\":\"retail\"}",
+                messageId: "msg-99", correlationId: "corr-77", originatingMessageId: "orig-55");
+
+            var result = await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0);
+
+            var ok = result.Result as OkObjectResult;
+            Assert.IsNotNull(ok, "Expected 200 OkObjectResult");
+            var msg = ok!.Value as AgentReceivedMessage;
+            Assert.IsNotNull(msg);
+            Assert.AreEqual("crm.lead.v1", msg!.EventTypeId);
+            Assert.AreEqual("{\"industry\":\"retail\"}", msg.Payload);
+            Assert.IsNotNull(msg.Coordinates);
+            Assert.AreEqual("evt-1", msg.Coordinates.EventId);
+            Assert.AreEqual("sess-1", msg.Coordinates.SessionId);
+            Assert.AreEqual("msg-99", msg.Coordinates.MessageId);
+            Assert.AreEqual("crm.lead.v1", msg.Coordinates.EventTypeId);
+            Assert.AreEqual("corr-77", msg.Coordinates.CorrelationId);
+            Assert.AreEqual("orig-55", msg.Coordinates.OriginatingMessageId);
         }
 
         [TestMethod]
-        public async Task PostAgentSettle_stub_returns_501()
+        public async Task GetAgentReceive_empty_store_waitSeconds0_returns_204()
         {
             var (impl, _) = Build();
-            var result = await impl.PostAgentSettleAsync(new AgentSettleRequest());
-            var statusResult = result as StatusCodeResult;
-            Assert.AreEqual(501, statusResult?.StatusCode);
+
+            var result = await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0);
+
+            Assert.IsInstanceOfType(result.Result, typeof(NoContentResult), "Nothing parked must yield 204");
+        }
+
+        [TestMethod]
+        public async Task GetAgentReceive_nonmatching_type_returns_204_matching_returns_200()
+        {
+            var (impl, store) = Build();
+            await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+
+            var miss = await impl.GetAgentReceiveAsync("other.type.v1", waitSeconds: 0);
+            Assert.IsInstanceOfType(miss.Result, typeof(NoContentResult),
+                "A parked event of a different type than the query param must yield 204");
+
+            var hit = await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0);
+            Assert.IsInstanceOfType(hit.Result, typeof(OkObjectResult),
+                "A parked event matching the query param must yield 200");
+        }
+
+        [TestMethod]
+        public async Task GetAgentReceive_no_query_param_uses_subscriptions_to_filter()
+        {
+            var (impl, store, _, _, _) = BuildAgent();
+            await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+
+            // Subscribed only to a different type -> the parked event must NOT match.
+            await impl.PostAgentSubscribeAsync(new AgentSubscribeRequest { EventTypeId = "other.type.v1" });
+            var miss = await impl.GetAgentReceiveAsync(eventTypeId: null, waitSeconds: 0);
+            Assert.IsInstanceOfType(miss.Result, typeof(NoContentResult),
+                "With a non-matching subscription and no query param, nothing matches -> 204");
+
+            // Now subscribe to the parked type -> it matches.
+            await impl.PostAgentSubscribeAsync(new AgentSubscribeRequest { EventTypeId = "crm.lead.v1" });
+            var hit = await impl.GetAgentReceiveAsync(eventTypeId: null, waitSeconds: 0);
+            Assert.IsInstanceOfType(hit.Result, typeof(OkObjectResult),
+                "Once subscribed to the parked type, the event matches -> 200");
+        }
+
+        // ── PostAgentSettleAsync ─────────────────────────────────────────────
+
+        private static AgentSettleRequest SettleRequest(
+            string eventId,
+            AgentSettleRequestOutcome outcome,
+            string? result = null,
+            string? errorText = null,
+            string? errorType = null,
+            string messageId = "msg-99")
+        {
+            return new AgentSettleRequest
+            {
+                Coordinates = new HandoffCoordinates { EventId = eventId, MessageId = messageId },
+                Outcome = outcome,
+                Result = result,
+                ErrorText = errorText,
+                ErrorType = errorType,
+            };
+        }
+
+        [TestMethod]
+        public async Task PostAgentSettle_complete_returns_200_and_calls_CompleteHandoff()
+        {
+            var (impl, store, _, manager, _) = BuildAgent();
+            await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}", messageId: "msg-99");
+
+            var result = await impl.PostAgentSettleAsync(
+                SettleRequest("evt-1", AgentSettleRequestOutcome.Complete, result: "{\"importedId\":42}"));
+
+            Assert.IsInstanceOfType(result, typeof(OkResult), "Complete settle must yield 200");
+            Assert.AreEqual(1, manager.CompleteCount, "CompleteHandoff must be called once");
+            Assert.AreEqual(0, manager.FailCount, "FailHandoff must NOT be called");
+            Assert.AreEqual("evt-1", manager.CompletedEntry?.EventId);
+            Assert.AreEqual("msg-99", manager.CompletedEntry?.MessageId, "MessageId comes from the request coordinates");
+            Assert.AreEqual(ZoneId, manager.CompletedEndpoint, "Endpoint must be the zone id");
+            Assert.AreEqual("{\"importedId\":42}", manager.CompletedDetails, "Result flows through as details");
+        }
+
+        [TestMethod]
+        public async Task PostAgentSettle_fail_returns_200_and_calls_FailHandoff()
+        {
+            var (impl, store, _, manager, _) = BuildAgent();
+            await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+
+            var result = await impl.PostAgentSettleAsync(
+                SettleRequest("evt-1", AgentSettleRequestOutcome.Fail, errorText: "boom", errorType: "RuntimeError"));
+
+            Assert.IsInstanceOfType(result, typeof(OkResult), "Fail settle must yield 200");
+            Assert.AreEqual(1, manager.FailCount, "FailHandoff must be called once");
+            Assert.AreEqual(0, manager.CompleteCount, "CompleteHandoff must NOT be called");
+            Assert.AreEqual("evt-1", manager.FailedEntry?.EventId);
+            Assert.AreEqual(ZoneId, manager.FailedEndpoint);
+            Assert.AreEqual("boom", manager.FailedErrorText);
+            Assert.AreEqual("RuntimeError", manager.FailedErrorType);
+        }
+
+        [TestMethod]
+        public async Task PostAgentSettle_fail_without_errorText_returns_400()
+        {
+            var (impl, store, _, manager, _) = BuildAgent();
+            await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+
+            var result = await impl.PostAgentSettleAsync(
+                SettleRequest("evt-1", AgentSettleRequestOutcome.Fail, errorText: null));
+
+            Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult), "Missing errorText must yield 400");
+            Assert.AreEqual(0, manager.FailCount, "FailHandoff must NOT be called without errorText");
+        }
+
+        [TestMethod]
+        public async Task PostAgentSettle_event_not_found_returns_404()
+        {
+            var (impl, _, _, manager, _) = BuildAgent();
+
+            var result = await impl.PostAgentSettleAsync(
+                SettleRequest("missing-evt", AgentSettleRequestOutcome.Complete));
+
+            Assert.IsInstanceOfType(result, typeof(NotFoundObjectResult), "Unknown event must yield 404");
+            Assert.AreEqual(0, manager.CompleteCount);
+        }
+
+        [TestMethod]
+        public async Task PostAgentSettle_event_not_pending_handoff_returns_400()
+        {
+            var (impl, store, _, manager, _) = BuildAgent();
+            // Completed (not a pending handoff) event under the zone.
+            await store.UploadCompletedMessage("evt-1", "sess-1", ZoneId, new UnresolvedEvent
+            {
+                EventTypeId = "crm.lead.v1",
+                LastMessageId = "msg-1",
+            });
+
+            var result = await impl.PostAgentSettleAsync(
+                SettleRequest("evt-1", AgentSettleRequestOutcome.Complete));
+
+            Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult), "Non-pending-handoff event must yield 400");
+            Assert.AreEqual(0, manager.CompleteCount);
         }
 
         // ── PostAgentPublishAsync ────────────────────────────────────────────

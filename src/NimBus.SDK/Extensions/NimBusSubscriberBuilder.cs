@@ -302,7 +302,7 @@ namespace NimBus.SDK.Extensions
             /// <summary>
             /// The CLR event type for a typed handler, or <c>null</c> for a
             /// dynamic (string-keyed) registration added via
-            /// <see cref="AddDynamicHandler"/> that has no compiled IEvent class.
+            /// <see cref="AddDynamicHandler(string, Func{IEventJsonHandler})"/> that has no compiled IEvent class.
             /// </summary>
             public Type? EventType { get; set; }
 

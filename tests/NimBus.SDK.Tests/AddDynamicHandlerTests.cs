@@ -203,7 +203,110 @@ namespace NimBus.SDK.Tests
             StringAssert.Contains(ex.Message, EventTypeId);
         }
 
+        // ── SP-aware overload: AddDynamicHandler(string, Func<IServiceProvider, IEventJsonHandler>) ──
+        //
+        // The DI-aware overload resolves the handler from the IServiceProvider once at
+        // ISubscriberClient construction (mirrored here by reg.Register(sp, provider)).
+
+        [TestMethod]
+        public async Task AddDynamicHandler_SpFactory_Dispatch_InvokesResolvedHandler()
+        {
+            // Arrange — register the handler in DI so the SP-factory can resolve it.
+            var services = new ServiceCollection();
+            services.AddSingleton<SpResolvedHandler>();
+            var sp = services.BuildServiceProvider();
+
+            var builder = new NimBusSubscriberBuilder(new ServiceCollection());
+            builder.AddDynamicHandler(EventTypeId, p => p.GetRequiredService<SpResolvedHandler>());
+
+            var provider = new EventHandlerProvider();
+            foreach (var reg in builder.HandlerRegistrations)
+            {
+                reg.Register(sp, provider);
+            }
+
+            // Act
+            await provider.Handle(new StubMessageContext(EventTypeId, ExpectedJson), CancellationToken.None);
+
+            // Assert — the handler resolved via the SP factory received the raw EventJson.
+            var resolved = sp.GetRequiredService<SpResolvedHandler>();
+            Assert.AreEqual(ExpectedJson, resolved.ReceivedJson,
+                "The handler resolved via the IServiceProvider factory must receive the raw EventJson.");
+        }
+
+        [TestMethod]
+        public void AddDynamicHandler_SpFactory_Returns_This_ForChaining()
+        {
+            var builder = new NimBusSubscriberBuilder(new ServiceCollection());
+            var returned = builder.AddDynamicHandler(
+                EventTypeId,
+                p => new DelegateEventJsonHandler((_, _) => Task.CompletedTask));
+
+            Assert.AreSame(builder, returned, "SP-aware AddDynamicHandler must return 'this' for fluent chaining.");
+        }
+
+        [TestMethod]
+        public void AddDynamicHandler_SpFactory_NullFactory_Throws()
+        {
+            var builder = new NimBusSubscriberBuilder(new ServiceCollection());
+
+            Assert.ThrowsException<ArgumentNullException>(() =>
+                builder.AddDynamicHandler(EventTypeId, (Func<IServiceProvider, IEventJsonHandler>)null!));
+        }
+
+        [TestMethod]
+        public void AddDynamicHandler_SpFactory_EmptyEventTypeId_Throws()
+        {
+            var builder = new NimBusSubscriberBuilder(new ServiceCollection());
+
+            Assert.ThrowsException<ArgumentException>(() =>
+                builder.AddDynamicHandler("", p => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
+        }
+
+        [TestMethod]
+        public void Typed_Then_SpDynamic_SameEventTypeId_ThrowsInvalidOperation_NotNre()
+        {
+            var builder = new NimBusSubscriberBuilder(new ServiceCollection());
+            builder.AddHandler<DynamicCollisionEvent, DynamicCollisionEventHandler>();
+
+            var ex = Assert.ThrowsException<InvalidOperationException>(() =>
+                builder.AddDynamicHandler(
+                    nameof(DynamicCollisionEvent),
+                    p => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
+
+            StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent));
+            StringAssert.Contains(ex.Message, "typed");
+        }
+
+        [TestMethod]
+        public void SpDynamic_Then_Typed_SameEventTypeId_ThrowsInvalidOperation_NotNre()
+        {
+            var builder = new NimBusSubscriberBuilder(new ServiceCollection());
+            builder.AddDynamicHandler(
+                nameof(DynamicCollisionEvent),
+                p => new DelegateEventJsonHandler((_, _) => Task.CompletedTask));
+
+            var ex = Assert.ThrowsException<InvalidOperationException>(() =>
+                builder.AddHandler<DynamicCollisionEvent, DynamicCollisionEventHandler>());
+
+            StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent));
+            StringAssert.Contains(ex.Message, "dynamic");
+        }
+
         // ── Stub ──────────────────────────────────────────────────────────────
+
+        // Handler resolved via the SP-aware AddDynamicHandler overload; records the
+        // EventJson it was dispatched so the test can assert correct delivery.
+        private sealed class SpResolvedHandler : IEventJsonHandler
+        {
+            public string? ReceivedJson { get; private set; }
+
+            public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
+            {
+                ReceivedJson = context.MessageContent.EventContent.EventJson;
+                return Task.CompletedTask;
+            }
+        }
 
         private sealed class StubMessageContext : IMessageContext
         {

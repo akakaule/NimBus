@@ -26,8 +26,10 @@ builder.Services.AddSingleton<ServiceBusClient>(sp =>
     return new ServiceBusClient(connection);
 });
 
-// Register EnrichedContactHandler for DI resolution.
-builder.Services.AddTransient<EnrichedContactHandler>();
+// Register EnrichedContactHandler for DI resolution. The SP-factory below resolves it
+// ONCE at ISubscriberClient construction and captures it for the lifetime of the host, so
+// Singleton is the honest lifetime (its only dependency, ILogger<T>, is itself a singleton).
+builder.Services.AddSingleton<EnrichedContactHandler>();
 
 builder.Services.AddNimBusSubscriber("DataPlatformEndpoint", sub =>
 {

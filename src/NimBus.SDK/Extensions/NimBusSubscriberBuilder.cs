@@ -77,6 +77,35 @@ namespace NimBus.SDK.Extensions
         }
 
         /// <summary>
+        /// Registers a handler for a dynamically-typed event keyed by its string EventTypeId
+        /// (e.g. "crm.contact.enriched.v1") with no compiled IEvent class. The factory typically
+        /// returns a DelegateEventJsonHandler reading context.MessageContent.EventContent.EventJson.
+        /// Spec 022 — the hosted-subscriber counterpart to AddHandler&lt;TEvent,THandler&gt;.
+        /// </summary>
+        /// <param name="eventTypeId">The wire EventTypeId string (e.g. "crm.contact.enriched.v1"). Must not be null or whitespace.</param>
+        /// <param name="handlerFactory">Factory invoked per message to create the handler. Must not be null.</param>
+        public NimBusSubscriberBuilder AddDynamicHandler(string eventTypeId, Func<IEventJsonHandler> handlerFactory)
+        {
+            if (string.IsNullOrWhiteSpace(eventTypeId))
+                throw new ArgumentException("Event type id must not be null or empty.", nameof(eventTypeId));
+            if (handlerFactory == null) throw new ArgumentNullException(nameof(handlerFactory));
+
+            HandlerRegistrations.Add(new HandlerRegistration
+            {
+                EventTypeId = eventTypeId,
+                EventType = null,
+                HandlerType = null,
+                IsExplicit = true,
+                Register = (_, handlerProvider) =>
+                {
+                    handlerProvider.RegisterHandler(eventTypeId, handlerFactory);
+                }
+            });
+
+            return this;
+        }
+
+        /// <summary>
         /// Configures retry policies for this subscriber.
         /// </summary>
         public NimBusSubscriberBuilder ConfigureRetryPolicies(Action<DefaultRetryPolicyProvider> configure)

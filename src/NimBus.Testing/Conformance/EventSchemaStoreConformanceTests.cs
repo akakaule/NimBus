@@ -70,6 +70,14 @@ public abstract class EventSchemaStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task DefineEventType_null_or_empty_schema_throws()
+    {
+        var store = CreateStore();
+        await Assert.ThrowsExceptionAsync<ArgumentException>(
+            () => store.DefineEventType(new EventSchema { EventTypeId = $"ct.{Guid.NewGuid():N}.v1", Name = "x", JsonSchema = "", AgentId = "a" }));
+    }
+
+    [TestMethod]
     public async Task GetSchemas_returns_registered()
     {
         var store = CreateStore();

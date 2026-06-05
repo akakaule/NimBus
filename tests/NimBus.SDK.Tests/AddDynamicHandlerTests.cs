@@ -1,10 +1,11 @@
-#pragma warning disable CA1707, CA2007
+#pragma warning disable CA1707, CA2007, CS8618, CS8625, CS8603
 using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using NimBus.SDK.EventHandlers;
@@ -148,6 +149,60 @@ namespace NimBus.SDK.Tests
                 builder.AddDynamicHandler(EventTypeId, null!));
         }
 
+        // ── Dynamic/typed EventTypeId collision tests ─────────────────────────
+        //
+        // A typed event's EventTypeId is its unqualified CLR type name (EventType.Id
+        // => Type.Name). So a typed handler for `DynamicCollisionEvent` claims the
+        // wire id "DynamicCollisionEvent"; registering a dynamic handler for that
+        // same string must be rejected with a clear InvalidOperationException —
+        // NOT a NullReferenceException on the dynamic entry's null EventType.
+
+        [TestMethod]
+        public void Dynamic_Then_Typed_SameEventTypeId_ThrowsInvalidOperation_NotNre()
+        {
+            var builder = new NimBusSubscriberBuilder(new ServiceCollection());
+            builder.AddDynamicHandler(
+                nameof(DynamicCollisionEvent),
+                () => new DelegateEventJsonHandler((_, _) => Task.CompletedTask));
+
+            var ex = Assert.ThrowsException<InvalidOperationException>(() =>
+                builder.AddHandler<DynamicCollisionEvent, DynamicCollisionEventHandler>());
+
+            StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent));
+            StringAssert.Contains(ex.Message, "dynamic");
+        }
+
+        [TestMethod]
+        public void Typed_Then_Dynamic_SameEventTypeId_ThrowsInvalidOperation()
+        {
+            var builder = new NimBusSubscriberBuilder(new ServiceCollection());
+            builder.AddHandler<DynamicCollisionEvent, DynamicCollisionEventHandler>();
+
+            var ex = Assert.ThrowsException<InvalidOperationException>(() =>
+                builder.AddDynamicHandler(
+                    nameof(DynamicCollisionEvent),
+                    () => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
+
+            StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent));
+            StringAssert.Contains(ex.Message, "typed");
+        }
+
+        [TestMethod]
+        public void Dynamic_Then_Dynamic_SameEventTypeId_ThrowsInvalidOperation()
+        {
+            var builder = new NimBusSubscriberBuilder(new ServiceCollection());
+            builder.AddDynamicHandler(
+                EventTypeId,
+                () => new DelegateEventJsonHandler((_, _) => Task.CompletedTask));
+
+            var ex = Assert.ThrowsException<InvalidOperationException>(() =>
+                builder.AddDynamicHandler(
+                    EventTypeId,
+                    () => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
+
+            StringAssert.Contains(ex.Message, EventTypeId);
+        }
+
         // ── Stub ──────────────────────────────────────────────────────────────
 
         private sealed class StubMessageContext : IMessageContext
@@ -217,6 +272,19 @@ namespace NimBus.SDK.Tests
             public Task<bool> HasDeferredMessages(CancellationToken cancellationToken = default) => Task.FromResult(false);
             public Task ResetDeferredCount(CancellationToken cancellationToken = default) => Task.CompletedTask;
             public Task ScheduleRedelivery(TimeSpan delay, int throttleRetryCount, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        }
+
+        // Typed event whose EventTypeId (== unqualified type name) is reused by a
+        // dynamic registration in the collision tests above.
+        public sealed class DynamicCollisionEvent : Event
+        {
+            public string Id { get; set; } = "";
+        }
+
+        public sealed class DynamicCollisionEventHandler : IEventHandler<DynamicCollisionEvent>
+        {
+            public Task Handle(DynamicCollisionEvent message, IEventHandlerContext context, CancellationToken cancellationToken = default)
+                => Task.CompletedTask;
         }
     }
 }

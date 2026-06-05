@@ -1,6 +1,6 @@
-using NimBus.MessageStore.States;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using NimBus.MessageStore.States;
 
 namespace NimBus.MessageStore.Abstractions;
 

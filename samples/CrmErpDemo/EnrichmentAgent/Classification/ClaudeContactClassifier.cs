@@ -63,11 +63,12 @@ public sealed class ClaudeContactClassifier : IContactClassifier, IDisposable
             cancellationToken);
 
         // The model is instructed to return schema-valid JSON; the first text block contains it.
+        // A missing/empty/safety-filtered response yields no text block — surface a clear error.
         var json = response.Content
             .Select(b => b.Value)
             .OfType<TextBlock>()
-            .First()
-            .Text;
+            .FirstOrDefault()?.Text
+            ?? throw new InvalidOperationException("Claude returned no text block for the enrichment request.");
 
         var result = JsonConvert.DeserializeObject<EnrichmentResponse>(json)
             ?? throw new InvalidOperationException($"Claude returned null deserialized result. Raw JSON: {json}");
@@ -106,7 +107,7 @@ public sealed class ClaudeContactClassifier : IContactClassifier, IDisposable
     }
 
     /// <inheritdoc/>
-    public void Dispose() => _client.HttpClient.Dispose();
+    public void Dispose() => _client.Dispose();
 
     private static Dictionary<string, JsonElement> BuildSchema()
     {
@@ -123,9 +124,12 @@ public sealed class ClaudeContactClassifier : IContactClassifier, IDisposable
             }
             """;
 
-        return JsonDocument.Parse(schemaJson).RootElement
+        // Dispose the document but keep the values valid: JsonElement.Clone() detaches
+        // each value from the pooled-buffer-backed document so it survives disposal.
+        using var doc = JsonDocument.Parse(schemaJson);
+        return doc.RootElement
             .EnumerateObject()
-            .ToDictionary(p => p.Name, p => p.Value);
+            .ToDictionary(p => p.Name, p => p.Value.Clone());
     }
 
     /// <summary>Private DTO matching the structured output schema.</summary>

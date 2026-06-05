@@ -107,7 +107,7 @@ public class DeterministicContactClassifierTests
     }
 
     [TestMethod]
-    [Description("Tests that ClaudeContactClassifier is skipped/inconclusive when no API key is present (no network calls in CI).")]
+    [Description("CI guard (not a classifier test): asserts no Claude/network path runs when ANTHROPIC_API_KEY is absent, mirroring Program.cs DI selection.")]
     public async Task ClaudeClassifier_IsSkipped_When_ApiKey_Absent()
     {
         var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");

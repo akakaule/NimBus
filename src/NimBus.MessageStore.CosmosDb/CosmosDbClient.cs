@@ -136,7 +136,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     private const string SubscriptionsContainer = "subscriptions";
     private const string MessagesContainer = "messages";
     private const string AuditsContainer = "audits";
-    private const string EventSchemasContainerName = "eventschemas";
+    private const string EventSchemasContainer = "eventschemas";
 
     public CosmosDbClient(CosmosClient cosmosClient, ILogger<CosmosDbClient> logger = null)
     {
@@ -1200,37 +1200,36 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     private async Task<ICosmosContainerAdapter> GetEventSchemasContainer()
     {
         var db = _cosmosClient.GetDatabase(DatabaseId);
-        return await db.CreateContainerIfNotExistsAsync(EventSchemasContainerName, "/id");
+        return await db.CreateContainerIfNotExistsAsync(EventSchemasContainer, "/id");
     }
 
     // ── IEventSchemaStore ──────────────────────────────────────────────────────
 
-    public async Task<NimBus.MessageStore.States.EventSchema?> GetSchema(string eventTypeId)
+    public async Task<EventSchema?> GetSchema(string eventTypeId)
     {
         var container = await GetEventSchemasContainer();
         try
         {
-            var resp = await container.ReadItemAsync<NimBus.MessageStore.States.EventSchema>(
-                eventTypeId, new PartitionKey(eventTypeId));
+            var resp = await container.ReadItemAsync<EventSchema>(eventTypeId, new PartitionKey(eventTypeId));
             return resp.Resource;
         }
-        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
             return null;
         }
     }
 
-    public async Task<System.Collections.Generic.IReadOnlyList<NimBus.MessageStore.States.EventSchema>> GetSchemas()
+    public async Task<IReadOnlyList<EventSchema>> GetSchemas()
     {
         var container = await GetEventSchemasContainer();
-        var results = new List<NimBus.MessageStore.States.EventSchema>();
-        using var iterator = container.GetItemQueryIterator<NimBus.MessageStore.States.EventSchema>("SELECT * FROM c");
+        var results = new List<EventSchema>();
+        using var iterator = container.GetItemQueryIterator<EventSchema>("SELECT * FROM c");
         while (iterator.HasMoreResults)
             results.AddRange(await iterator.ReadNextAsync());
         return results;
     }
 
-    public async Task<NimBus.MessageStore.States.EventSchema> DefineEventType(NimBus.MessageStore.States.EventSchema schema)
+    public async Task<EventSchema> DefineEventType(EventSchema schema)
     {
         if (string.IsNullOrWhiteSpace(schema?.JsonSchema))
             throw new ArgumentException("schema.JsonSchema is required.", nameof(schema));
@@ -1238,8 +1237,8 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         var existing = await GetSchema(schema.EventTypeId);
         if (existing != null)
         {
-            if (!NimBus.MessageStore.Abstractions.SchemaJson.Equal(existing.JsonSchema, schema.JsonSchema))
-                throw new NimBus.MessageStore.Abstractions.SchemaConflictException(schema.EventTypeId);
+            if (!SchemaJson.Equal(existing.JsonSchema, schema.JsonSchema))
+                throw new SchemaConflictException(schema.EventTypeId);
             return existing;
         }
 
@@ -1251,13 +1250,16 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             var resp = await container.CreateItemAsync(schema, new PartitionKey(schema.EventTypeId));
             return resp.Resource;
         }
-        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.Conflict)
         {
             // Lost the create race. Re-read the winner; surface a conflict only if it
             // differs (schemas are immutable), otherwise the create was idempotent.
             var raced = await GetSchema(schema.EventTypeId);
-            if (raced != null && !NimBus.MessageStore.Abstractions.SchemaJson.Equal(raced.JsonSchema, schema.JsonSchema))
-                throw new NimBus.MessageStore.Abstractions.SchemaConflictException(schema.EventTypeId);
+            if (raced is null)
+                throw new InvalidOperationException(
+                    $"Event type '{schema.EventTypeId}' reported a create conflict but could not be re-read.");
+            if (!SchemaJson.Equal(raced.JsonSchema, schema.JsonSchema))
+                throw new SchemaConflictException(schema.EventTypeId);
             return raced;
         }
     }

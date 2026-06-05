@@ -10,5 +10,6 @@ public class CrmErpPlatformConfiguration : Platform
         AddEndpoint(new CrmEndpoint());
         AddEndpoint(new ErpEndpoint());
         AddEndpoint(new DataPlatformEndpoint());
+        AddEndpoint(new AgentZoneEndpoint());
     }
 }

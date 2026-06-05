@@ -250,4 +250,24 @@ var dataPlatformAdapter = builder
     .WithEnvironment("SubscriptionName", "DataPlatformEndpoint");
 if (provisioner is not null) dataPlatformAdapter.WaitFor(provisioner);
 
+// Agent Zone (spec 022). The park host subscribes to AgentZoneEndpoint and parks
+// every inbound CrmContactCreated as Pending+Handoff. Wired exactly like the
+// Crm.Adapter worker subscriber (WithReference(servicebus) + gate on the
+// provisioner): the AgentZoneEndpoint topology is created by the provisioner in
+// real-Azure mode, or pre-declared in the emulator's UserConfig otherwise — the
+// same topology gate the other subscribers rely on.
+var agentZone = builder.AddProject<Projects.CrmErpDemo_AgentZone>("agent-zone")
+    .WithReference(servicebus);
+if (provisioner is not null) agentZone.WaitFor(provisioner);
+
+// EnrichmentAgent (spec 022). Runs the receive->classify->define->publish->settle
+// loop against the agent REST API on nimbus-ops. nimbus-ops is registered
+// unconditionally above, so the agent binds to it directly — service discovery
+// rewrites "https+http://nimbus-ops" to the resolved endpoint. ANTHROPIC_API_KEY
+// is forwarded when present; absent, the agent uses its deterministic classifier.
+builder.AddProject<Projects.EnrichmentAgent>("enrichment-agent")
+    .WithReference(nimbusOps)
+    .WaitFor(nimbusOps)
+    .WithEnvironment("ANTHROPIC_API_KEY", builder.Configuration["ANTHROPIC_API_KEY"] ?? "");
+
 builder.Build().Run();

@@ -181,7 +181,7 @@ public class InMemoryMessageStore : INimBusMessageStore
         });
     }
 
-    public Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId)
+    public virtual Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId)
         => Task.FromResult<IEnumerable<UnresolvedEvent>>(_events.Values.Where(e => e.EndpointId == endpointId && e.ResolutionStatus == ResolutionStatus.Pending).ToList());
 
     public Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId)

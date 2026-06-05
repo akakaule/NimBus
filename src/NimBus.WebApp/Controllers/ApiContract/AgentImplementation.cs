@@ -1,11 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using NimBus.Core;
@@ -20,6 +19,7 @@ using CoreMessage = NimBus.Core.Messages.Message;
 using CoreMessageType = NimBus.Core.Messages.MessageType;
 using CoreMessageContent = NimBus.Core.Messages.MessageContent;
 using CoreEventContent = NimBus.Core.Messages.EventContent;
+using StoreResolutionStatus = NimBus.MessageStore.ResolutionStatus;
 
 namespace NimBus.WebApp.Controllers.ApiContract
 {
@@ -144,11 +144,22 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
         // ── GET /api/agent/receive ────────────────────────────────────────────
 
+        // NOTE: receive is a *non-claiming* read. A parked event stays Pending+Handoff
+        // until it is settled, so two concurrent receives (two agents on the same event
+        // type, or one agent polling twice before it settles) can be handed the same
+        // event — delivery is at-least-once with possible duplicate processing. The
+        // losing /settle then 400s on the Pending+Handoff status guard. This is
+        // acceptable for the v1 demo-grade flow; a claim/lease is flagged for the spec's
+        // deferred-recovery section.
         public async Task<ActionResult<AgentReceivedMessage>> GetAgentReceiveAsync(string eventTypeId, int? waitSeconds)
         {
             var zoneId = AgentZone.ResolveEndpointId(_config);
-            var wait = waitSeconds ?? 20;
+            // Clamp the long-poll window so a client can't pin a request thread (and burn
+            // store RUs) for hours by passing a huge waitSeconds.
+            var wait = Math.Clamp(waitSeconds ?? 20, 0, 60);
             var deadline = DateTime.UtcNow.AddSeconds(wait);
+            // Stop polling as soon as the client disconnects.
+            var ct = _httpContextAccessor?.HttpContext?.RequestAborted ?? CancellationToken.None;
 
             // Build the type filter once: explicit query param wins; otherwise fall back
             // to the agent's registered subscriptions; otherwise match anything.
@@ -163,23 +174,14 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             do
             {
-                UnresolvedEvent parked;
-                try
-                {
-                    parked = (await _store.GetPendingEventsOnSession(zoneId))
-                        .Where(e => string.Equals(e.PendingSubStatus, HandoffSubStatus, StringComparison.Ordinal))
-                        .Where(e => matches(e.EventTypeId))
-                        .FirstOrDefault();
-                }
-                catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-                {
-                    // Zone container doesn't exist yet — nothing parked.
-                    return new NoContentResult();
-                }
-                catch (EndpointNotFoundException)
-                {
-                    return new NoContentResult();
-                }
+                // The Cosmos store returns null (not an empty sequence) when the zone
+                // container doesn't exist yet — coalesce so the query can't NRE → 500.
+                // A nothing-parked result simply falls through to 204. Genuine store
+                // faults (throttling, connectivity) are left to propagate as 500.
+                var parked = (await _store.GetPendingEventsOnSession(zoneId) ?? Enumerable.Empty<UnresolvedEvent>())
+                    .Where(e => string.Equals(e.PendingSubStatus, HandoffSubStatus, StringComparison.Ordinal))
+                    .Where(e => matches(e.EventTypeId))
+                    .FirstOrDefault();
 
                 if (parked != null)
                 {
@@ -202,9 +204,17 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 if (wait == 0)
                     break;
 
-                await Task.Delay(500);
+                try
+                {
+                    await Task.Delay(500, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Client disconnected mid-poll — stop and report nothing parked.
+                    break;
+                }
             }
-            while (DateTime.UtcNow < deadline);
+            while (DateTime.UtcNow < deadline && !ct.IsCancellationRequested);
 
             return new NoContentResult();
         }
@@ -297,7 +307,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             if (pending == null)
                 return new NotFoundObjectResult("Event not found");
 
-            if (pending.ResolutionStatus != global::NimBus.MessageStore.ResolutionStatus.Pending
+            if (pending.ResolutionStatus != StoreResolutionStatus.Pending
                 || !string.Equals(pending.PendingSubStatus, HandoffSubStatus, StringComparison.Ordinal))
             {
                 _logger.LogWarning(
@@ -347,7 +357,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
         private string CurrentAgentId()
         {
             var header = _httpContextAccessor?.HttpContext?.Request?.Headers[AgentIdHeader].ToString();
-            return string.IsNullOrWhiteSpace(header) ? DefaultAgentId : header;
+            return string.IsNullOrWhiteSpace(header) ? DefaultAgentId : header.Trim();
         }
     }
 }

@@ -114,6 +114,15 @@ namespace NimBus.WebApp.Tests
             }
         }
 
+        // Store whose GetPendingEventsOnSession returns null — mirrors the real Cosmos
+        // provider when the zone container doesn't exist yet. The real InMemoryMessageStore
+        // returns an empty sequence and so cannot exercise the null-guard.
+        private sealed class NullPendingStore : InMemoryMessageStore
+        {
+            public override Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId)
+                => Task.FromResult<IEnumerable<UnresolvedEvent>>(null!);
+        }
+
         // The Agent Zone endpoint id receive/settle resolve to when no IConfiguration is
         // supplied (AgentZone.ResolveEndpointId(null) -> the default). Tests seed parked
         // events under this endpoint id.
@@ -435,6 +444,29 @@ namespace NimBus.WebApp.Tests
             var result = await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0);
 
             Assert.IsInstanceOfType(result.Result, typeof(NoContentResult), "Nothing parked must yield 204");
+        }
+
+        [TestMethod]
+        public async Task GetAgentReceive_store_returns_null_pending_returns_204_not_500()
+        {
+            // The Cosmos store returns null (not empty) when the zone container is missing.
+            // Receive must null-guard and report 204, never NRE into a 500.
+            var store = new NullPendingStore();
+            var impl = new AgentImplementation(
+                store,
+                new FakePlatform(),
+                new CapturingPublisher(),
+                store,
+                new CapturingManagerClient(),
+                new AgentSubscriptionRegistry(),
+                config: null,
+                httpContextAccessor: null,
+                NullLogger<AgentImplementation>.Instance);
+
+            var result = await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0);
+
+            Assert.IsInstanceOfType(result.Result, typeof(NoContentResult),
+                "A null pending result (zone container missing) must be guarded -> 204");
         }
 
         [TestMethod]

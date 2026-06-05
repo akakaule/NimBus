@@ -1231,6 +1231,8 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
     public async Task<EventSchema> DefineEventType(EventSchema schema)
     {
+        if (string.IsNullOrWhiteSpace(schema?.EventTypeId))
+            throw new ArgumentException("schema.EventTypeId is required.", nameof(schema));
         if (string.IsNullOrWhiteSpace(schema?.JsonSchema))
             throw new ArgumentException("schema.JsonSchema is required.", nameof(schema));
 

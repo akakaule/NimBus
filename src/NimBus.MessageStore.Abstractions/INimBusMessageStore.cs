@@ -14,6 +14,7 @@ public interface INimBusMessageStore
     : IMessageTrackingStore,
       ISubscriptionStore,
       IEndpointMetadataStore,
-      IMetricsStore
+      IMetricsStore,
+      IEventSchemaStore
 {
 }

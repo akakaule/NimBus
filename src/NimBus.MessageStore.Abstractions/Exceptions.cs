@@ -76,3 +76,24 @@ public class StorageProviderTransientException : Exception
         RetryAfter = retryAfter;
     }
 }
+
+/// <summary>
+/// Thrown when an event type is re-registered with a schema different from the stored one.
+/// Agent-defined schemas are immutable in v1; callers should surface this as HTTP 409.
+/// </summary>
+public class SchemaConflictException : Exception
+{
+    public string EventTypeId { get; }
+
+    public SchemaConflictException(string eventTypeId)
+        : base($"Event type '{eventTypeId}' already exists with a different schema; agent-defined schemas are immutable in v1.")
+    {
+        EventTypeId = eventTypeId;
+    }
+
+    public SchemaConflictException(string eventTypeId, Exception innerException)
+        : base($"Event type '{eventTypeId}' already exists with a different schema; agent-defined schemas are immutable in v1.", innerException)
+    {
+        EventTypeId = eventTypeId;
+    }
+}

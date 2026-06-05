@@ -9,6 +9,11 @@ using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
+// Aliased to disambiguate from the NSwag-generated NimBus.WebApp.ManagementApi.* types.
+using CoreMessage = NimBus.Core.Messages.Message;
+using CoreMessageType = NimBus.Core.Messages.MessageType;
+using CoreMessageContent = NimBus.Core.Messages.MessageContent;
+using CoreEventContent = NimBus.Core.Messages.EventContent;
 
 namespace NimBus.WebApp.Controllers.ApiContract
 {
@@ -124,6 +129,8 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 jsonSchema = await NJsonSchema.JsonSchema.FromJsonAsync(schema.JsonSchema);
             }
+            // NJsonSchema throws assorted undocumented exception types on bad schema JSON
+            // (JsonReaderException, InvalidOperationException, etc.) — catch-all is intentional.
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Registered schema for {EventTypeId} is not valid JSON Schema", body.EventTypeId);
@@ -135,6 +142,8 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 errors = jsonSchema.Validate(body.Payload);
             }
+            // NJsonSchema throws assorted undocumented exception types on unparseable payload
+            // JSON (JsonReaderException, etc.) — catch-all is intentional.
             catch (Exception ex)
             {
                 return new BadRequestObjectResult($"Payload is not valid JSON: {ex.Message}");
@@ -143,7 +152,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             if (errors.Count > 0)
                 return new BadRequestObjectResult(errors.Select(e => $"{e.Path}: {e.Kind}").ToList());
 
-            var message = new global::NimBus.Core.Messages.Message
+            var message = new CoreMessage
             {
                 To = body.EventTypeId,
                 EventTypeId = body.EventTypeId,
@@ -151,10 +160,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 CorrelationId = Guid.NewGuid().ToString(),
                 MessageId = Guid.NewGuid().ToString(),
                 RetryCount = 0,
-                MessageType = global::NimBus.Core.Messages.MessageType.EventRequest,
-                MessageContent = new global::NimBus.Core.Messages.MessageContent
+                MessageType = CoreMessageType.EventRequest,
+                MessageContent = new CoreMessageContent
                 {
-                    EventContent = new global::NimBus.Core.Messages.EventContent
+                    EventContent = new CoreEventContent
                     {
                         EventTypeId = body.EventTypeId,
                         EventJson = body.Payload,

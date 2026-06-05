@@ -12,7 +12,7 @@ public interface INimBusAgentApi
 
     /// <summary>
     /// POST /api/agent/event-types — define or update an event type.
-    /// Returns null on 409 (schema conflict; caller should inspect <see cref="NimBusApiException"/>).
+    /// Throws <see cref="NimBusApiException"/> on 409 (schema conflict with a different schema).
     /// </summary>
     Task<EventTypeInfo?> DefineEventTypeAsync(DefineEventTypeRequest req, CancellationToken ct = default);
 

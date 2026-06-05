@@ -212,7 +212,7 @@ public class NimBusAgentApiClientTests
 
         var pq = handler.CapturedRequest!.RequestUri!.PathAndQuery.TrimStart('/');
         StringAssert.Contains(pq, "eventTypeId=order.created");
-        Assert.IsFalse(pq.Contains("waitSeconds"), "waitSeconds should not be in query when null");
+        Assert.IsFalse(pq.Contains("waitSeconds", StringComparison.Ordinal), "waitSeconds should not be in query when null");
     }
 
     // ── PublishAsync ──────────────────────────────────────────────────────────
@@ -317,9 +317,9 @@ public class NimBusAgentApiClientTests
         Assert.AreEqual(2, multiHandler.Requests.Count);
         Assert.AreEqual(HttpMethod.Post, multiHandler.Requests[0].Method);
         Assert.AreEqual(HttpMethod.Post, multiHandler.Requests[1].Method);
-        Assert.IsTrue(multiHandler.Requests[0].RequestUri!.ToString().Contains("messages/search"),
+        Assert.IsTrue(multiHandler.Requests[0].RequestUri!.ToString().Contains("messages/search", StringComparison.Ordinal),
             "First request should go to /api/messages/search");
-        Assert.IsTrue(multiHandler.Requests[1].RequestUri!.ToString().Contains("audits/search"),
+        Assert.IsTrue(multiHandler.Requests[1].RequestUri!.ToString().Contains("audits/search", StringComparison.Ordinal),
             "Second request should go to /api/audits/search");
     }
 

@@ -27,53 +27,53 @@ public sealed class NimBusAgentApiClient : INimBusAgentApi
     /// <inheritdoc/>
     public async Task<AgentCatalog?> GetCatalogAsync(CancellationToken ct = default)
     {
-        var response = await _http.GetAsync("api/agent/catalog", ct).ConfigureAwait(false);
-        await EnsureSuccessAsync(response).ConfigureAwait(false);
+        using var response = await _http.GetAsync("api/agent/catalog", ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, ct).ConfigureAwait(false);
         return await response.Content.ReadFromJsonAsync<AgentCatalog>(s_jsonOptions, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task<EventTypeInfo?> DefineEventTypeAsync(DefineEventTypeRequest req, CancellationToken ct = default)
     {
-        var response = await _http.PostAsJsonAsync("api/agent/event-types", req, s_jsonOptions, ct).ConfigureAwait(false);
-        await EnsureSuccessAsync(response).ConfigureAwait(false);
+        using var response = await _http.PostAsJsonAsync("api/agent/event-types", req, s_jsonOptions, ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, ct).ConfigureAwait(false);
         return await response.Content.ReadFromJsonAsync<EventTypeInfo>(s_jsonOptions, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task SubscribeAsync(AgentSubscribeRequest req, CancellationToken ct = default)
     {
-        var response = await _http.PostAsJsonAsync("api/agent/subscribe", req, s_jsonOptions, ct).ConfigureAwait(false);
-        await EnsureSuccessAsync(response).ConfigureAwait(false);
+        using var response = await _http.PostAsJsonAsync("api/agent/subscribe", req, s_jsonOptions, ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task<AgentReceivedMessage?> ReceiveAsync(string? eventTypeId, int? waitSeconds, CancellationToken ct = default)
     {
         var url = BuildReceiveUrl(eventTypeId, waitSeconds);
-        var response = await _http.GetAsync(url, ct).ConfigureAwait(false);
+        using var response = await _http.GetAsync(url, ct).ConfigureAwait(false);
 
         if (response.StatusCode == HttpStatusCode.NoContent)
         {
             return null;
         }
 
-        await EnsureSuccessAsync(response).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, ct).ConfigureAwait(false);
         return await response.Content.ReadFromJsonAsync<AgentReceivedMessage>(s_jsonOptions, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task PublishAsync(AgentPublishRequest req, CancellationToken ct = default)
     {
-        var response = await _http.PostAsJsonAsync("api/agent/publish", req, s_jsonOptions, ct).ConfigureAwait(false);
-        await EnsureSuccessAsync(response).ConfigureAwait(false);
+        using var response = await _http.PostAsJsonAsync("api/agent/publish", req, s_jsonOptions, ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task SettleAsync(AgentSettleRequest req, CancellationToken ct = default)
     {
-        var response = await _http.PostAsJsonAsync("api/agent/settle", req, s_jsonOptions, ct).ConfigureAwait(false);
-        await EnsureSuccessAsync(response).ConfigureAwait(false);
+        using var response = await _http.PostAsJsonAsync("api/agent/settle", req, s_jsonOptions, ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -81,15 +81,21 @@ public sealed class NimBusAgentApiClient : INimBusAgentApi
     {
         // POST /api/messages/search — send eventTypeId hint as array element
         var msgBody = new MessageSearchBody(new MessageSearchFilterBody(new[] { query }));
-        var msgResponse = await _http.PostAsJsonAsync("api/messages/search", msgBody, s_jsonOptions, ct).ConfigureAwait(false);
-        await EnsureSuccessAsync(msgResponse).ConfigureAwait(false);
-        var msgJson = await msgResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        string msgJson;
+        using (var msgResponse = await _http.PostAsJsonAsync("api/messages/search", msgBody, s_jsonOptions, ct).ConfigureAwait(false))
+        {
+            await EnsureSuccessAsync(msgResponse, ct).ConfigureAwait(false);
+            msgJson = await msgResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        }
 
         // POST /api/audits/search — send eventTypeId hint as string
         var auditBody = new AuditSearchBody(new AuditSearchFilterBody(query));
-        var auditResponse = await _http.PostAsJsonAsync("api/audits/search", auditBody, s_jsonOptions, ct).ConfigureAwait(false);
-        await EnsureSuccessAsync(auditResponse).ConfigureAwait(false);
-        var auditJson = await auditResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        string auditJson;
+        using (var auditResponse = await _http.PostAsJsonAsync("api/audits/search", auditBody, s_jsonOptions, ct).ConfigureAwait(false))
+        {
+            await EnsureSuccessAsync(auditResponse, ct).ConfigureAwait(false);
+            auditJson = await auditResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        }
 
         return $"{{\"messages\":{msgJson},\"audits\":{auditJson}}}";
     }
@@ -121,14 +127,14 @@ public sealed class NimBusAgentApiClient : INimBusAgentApi
         return qs.ToString();
     }
 
-    private static async Task EnsureSuccessAsync(HttpResponseMessage response)
+    private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken ct = default)
     {
         if (response.IsSuccessStatusCode)
         {
             return;
         }
 
-        var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         throw new NimBusApiException((int)response.StatusCode, body);
     }
 }

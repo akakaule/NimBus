@@ -55,6 +55,22 @@ namespace NimBus.SDK.EventHandlers
             _handlerBuilders[eventTypeId] = buildEventJsonHandler;
         }
 
+        /// <summary>
+        /// Registers a handler for a <em>dynamically-typed</em> event keyed directly by its
+        /// <paramref name="eventTypeId"/> string, with no compiled <see cref="IEvent"/> class.
+        /// Used for agent-defined event types (e.g. <c>crm.contact.enriched.v1</c>) whose contract
+        /// is a registered JSON Schema rather than code. The factory typically returns a
+        /// <see cref="DelegateEventJsonHandler"/>.
+        /// </summary>
+        public void RegisterHandler(string eventTypeId, Func<IEventJsonHandler> eventJsonHandlerFactory)
+        {
+            if (string.IsNullOrWhiteSpace(eventTypeId))
+                throw new ArgumentException("Event type id must not be null or empty.", nameof(eventTypeId));
+            if (eventJsonHandlerFactory == null) throw new ArgumentNullException(nameof(eventJsonHandlerFactory));
+
+            _handlerBuilders[eventTypeId] = eventJsonHandlerFactory;
+        }
+
         private IEventJsonHandler GetHandler(string eventTypeId)
         {
             if (!_handlerBuilders.TryGetValue(eventTypeId, out var factory))

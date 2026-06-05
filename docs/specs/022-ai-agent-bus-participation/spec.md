@@ -3,7 +3,7 @@
 Feature Branch: `022-ai-agent-bus-participation`
 Created: 2026-06-05
 Updated: 2026-06-05
-Status: Draft (brainstorming)
+Status: Implemented (v1, demo-grade) — Phases 0–3 complete. See [`plan.md`](plan.md) for the roadmap and per-phase plans. (Originally drafted during brainstorming; the design below was carried through to implementation.)
 Input: User description: "I would like to have NimBus be an AI-enabled platform — make it easy for AI agents to interact with the platform: subscribe to existing events, define and create their own event types, register endpoints, publish and process messages, and hand over data to other systems (a REST interface with an OpenAPI spec, an MCP server, a CLI tool). Build a tech demo showcasing this. Also consider an SDK similar to https://github.com/microsoft/agents for building NimBus-enabled agents — including agents that monitor endpoints, troubleshoot failed messages, fix bugs, create PRs."
 
 > **How to read this document.** The [Overview](#overview-plain-language) and [What changes](#what-changes-at-a-glance) sections are written for anyone — no NimBus internals required. The sections after that get progressively more technical for whoever implements it. Terms in **bold** on first use are defined in the [Glossary](#glossary).

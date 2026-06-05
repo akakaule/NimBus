@@ -457,6 +457,7 @@ namespace NimBus.WebApp
             services.AddTransient<IMetricsApiController, MetricsImplementation>();
             services.AddTransient<IAuditApiController, AuditImplementation>();
             services.AddTransient<IDevApiController, DevImplementation>();
+            services.AddTransient<IAgentApiController, AgentImplementation>();
             services.AddScoped<SeedDataService>();
         }
 

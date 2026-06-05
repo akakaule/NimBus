@@ -90,6 +90,21 @@ namespace NimBus.SDK.Extensions
                 throw new ArgumentException("Event type id must not be null or empty.", nameof(eventTypeId));
             if (handlerFactory == null) throw new ArgumentNullException(nameof(handlerFactory));
 
+            // Symmetric to AddHandlerRegistration's dedup: two handlers (dynamic or
+            // typed) claiming the same wire EventTypeId can't both win the dispatch
+            // table, so fail loudly rather than let the later Register() overwrite
+            // the earlier one at provider-construction time.
+            var existing = HandlerRegistrations.SingleOrDefault(r => r.EventTypeId == eventTypeId);
+            if (existing != null)
+            {
+                throw new InvalidOperationException(
+                    $"EventTypeId '{eventTypeId}' is already registered as a " +
+                    $"{(existing.EventType is null ? "dynamic" : "typed")} handler " +
+                    $"('{existing.HandlerType?.FullName ?? "<dynamic>"}'); " +
+                    "cannot also register a dynamic handler for it. " +
+                    "Register only one handler per EventTypeId.");
+            }
+
             HandlerRegistrations.Add(new HandlerRegistration
             {
                 EventTypeId = eventTypeId,
@@ -148,6 +163,18 @@ namespace NimBus.SDK.Extensions
             var existing = HandlerRegistrations.SingleOrDefault(r => r.EventTypeId == eventTypeId);
             if (existing != null)
             {
+                if (existing.EventType is null)
+                {
+                    // The existing entry is a DYNAMIC (string-keyed) registration —
+                    // AddDynamicHandler stores no CLR EventType. A dynamic handler
+                    // and a typed handler claiming the same wire EventTypeId is a
+                    // genuine conflict the dispatch table can't resolve, so fail
+                    // loudly rather than NRE on existing.EventType below.
+                    throw new InvalidOperationException(
+                        $"EventTypeId '{eventTypeId}' is already registered as a dynamic handler; " +
+                        $"cannot also register a typed handler ('{handlerType.FullName}') for it. " +
+                        "Register only one handler per EventTypeId.");
+                }
                 if (existing.EventType != eventType)
                 {
                     // Distinct CLR types collapsing onto the same wire id —
@@ -156,7 +183,7 @@ namespace NimBus.SDK.Extensions
                     // silently overwrite the other.
                     throw new InvalidOperationException(
                         $"Two distinct event types map to the same EventTypeId '{eventTypeId}': " +
-                        $"'{existing.EventType.FullName}' and '{eventType.FullName}'. " +
+                        $"'{existing.EventType?.FullName ?? "<dynamic>"}' and '{eventType.FullName}'. " +
                         "EventTypeId is derived from the unqualified type name and must be unique across the subscriber. " +
                         "Rename one of the events to disambiguate.");
                 }
@@ -172,7 +199,7 @@ namespace NimBus.SDK.Extensions
                 {
                     throw new InvalidOperationException(
                         $"Multiple handlers were discovered for event type '{eventType.FullName}': " +
-                        $"'{existing.HandlerType.FullName}' and '{handlerType.FullName}'. " +
+                        $"'{existing.HandlerType?.FullName ?? "<dynamic>"}' and '{handlerType.FullName}'. " +
                         "Register one handler explicitly with AddHandler<TEvent,THandler>() to choose the handler.");
                 }
             }
@@ -224,8 +251,19 @@ namespace NimBus.SDK.Extensions
         internal class HandlerRegistration
         {
             public string EventTypeId { get; set; }
-            public Type EventType { get; set; }
-            public Type HandlerType { get; set; }
+
+            /// <summary>
+            /// The CLR event type for a typed handler, or <c>null</c> for a
+            /// dynamic (string-keyed) registration added via
+            /// <see cref="AddDynamicHandler"/> that has no compiled IEvent class.
+            /// </summary>
+            public Type? EventType { get; set; }
+
+            /// <summary>
+            /// The CLR handler type for a typed handler, or <c>null</c> for a
+            /// dynamic registration whose handler is produced by a factory.
+            /// </summary>
+            public Type? HandlerType { get; set; }
             public bool IsExplicit { get; set; }
             public Action<IServiceProvider, EventHandlerProvider> Register { get; set; }
         }

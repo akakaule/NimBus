@@ -1,4 +1,4 @@
-#pragma warning disable CA1707, CA2007
+#pragma warning disable CA1707, CA2007, CA1307
 
 using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -36,6 +36,18 @@ public class ToolMappingTests
         using var doc = JsonDocument.Parse(result);
         Assert.IsTrue(doc.RootElement.TryGetProperty("endpoints", out _), "JSON should contain 'endpoints'");
         Assert.IsTrue(doc.RootElement.TryGetProperty("eventTypes", out _), "JSON should contain 'eventTypes'");
+    }
+
+    [TestMethod]
+    public async Task DiscoverTopology_WhenCatalogNull_ReturnsNoTopologyAvailable()
+    {
+        var fake = new FakeApi { CatalogResult = null };
+        var tools = new NimBusAgentTools(fake);
+
+        var result = await tools.DiscoverTopologyAsync();
+
+        Assert.IsTrue(fake.GetCatalogCalled, "GetCatalogAsync should have been called");
+        Assert.AreEqual("no topology available", result);
     }
 
     // ── 2. define_event_type ─────────────────────────────────────────────────

@@ -146,7 +146,7 @@ namespace NimBus.SDK.Tests
             var builder = new NimBusSubscriberBuilder(new ServiceCollection());
 
             Assert.ThrowsException<ArgumentNullException>(() =>
-                builder.AddDynamicHandler(EventTypeId, null!));
+                builder.AddDynamicHandler(EventTypeId, (Func<IEventJsonHandler>)null!));
         }
 
         // ── Dynamic/typed EventTypeId collision tests ─────────────────────────

@@ -1761,6 +1761,144 @@ namespace NimBus.WebApp.ManagementApi
 
     }
 
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public interface IAgentApiController
+    {
+
+        /// <summary>
+        /// Get agent catalog
+        /// </summary>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AgentCatalog>> GetAgentCatalogAsync();
+
+        /// <summary>
+        /// Define or retrieve an event type
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<EventTypeInfo>> PostAgentEventTypesAsync(DefineEventTypeRequest body);
+
+        /// <summary>
+        /// Subscribe to an event type
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostAgentSubscribeAsync(AgentSubscribeRequest body);
+
+        /// <summary>
+        /// Receive the next available event
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AgentReceivedMessage>> GetAgentReceiveAsync(string eventTypeId, int? waitSeconds);
+
+        /// <summary>
+        /// Publish an event
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostAgentPublishAsync(AgentPublishRequest body);
+
+        /// <summary>
+        /// Settle a received event
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostAgentSettleAsync(AgentSettleRequest body);
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+
+    public partial class AgentApiController : Microsoft.AspNetCore.Mvc.Controller
+    {
+        private IAgentApiController _implementation;
+
+        public AgentApiController(IAgentApiController implementation)
+        {
+            _implementation = implementation;
+        }
+
+        /// <summary>
+        /// Get agent catalog
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/agent/catalog")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AgentCatalog>> GetAgentCatalog()
+        {
+
+            return _implementation.GetAgentCatalogAsync();
+        }
+
+        /// <summary>
+        /// Define or retrieve an event type
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/agent/event-types")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<EventTypeInfo>> PostAgentEventTypes([Microsoft.AspNetCore.Mvc.FromBody] DefineEventTypeRequest body)
+        {
+
+            return _implementation.PostAgentEventTypesAsync(body);
+        }
+
+        /// <summary>
+        /// Subscribe to an event type
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/agent/subscribe")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostAgentSubscribe([Microsoft.AspNetCore.Mvc.FromBody] AgentSubscribeRequest body)
+        {
+
+            return _implementation.PostAgentSubscribeAsync(body);
+        }
+
+        /// <summary>
+        /// Receive the next available event
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/agent/receive")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AgentReceivedMessage>> GetAgentReceive([Microsoft.AspNetCore.Mvc.FromQuery] string eventTypeId, [Microsoft.AspNetCore.Mvc.FromQuery] int? waitSeconds)
+        {
+
+            return _implementation.GetAgentReceiveAsync(eventTypeId, waitSeconds);
+        }
+
+        /// <summary>
+        /// Publish an event
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/agent/publish")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostAgentPublish([Microsoft.AspNetCore.Mvc.FromBody] AgentPublishRequest body)
+        {
+
+            return _implementation.PostAgentPublishAsync(body);
+        }
+
+        /// <summary>
+        /// Settle a received event
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/agent/settle")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostAgentSettle([Microsoft.AspNetCore.Mvc.FromBody] AgentSettleRequest body)
+        {
+
+            return _implementation.PostAgentSettleAsync(body);
+        }
+
+    }
+
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class OldEvent : System.ComponentModel.INotifyPropertyChanged
     {
@@ -9159,6 +9297,700 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AgentCatalog : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.Collections.Generic.List<string> _endpoints;
+        private System.Collections.Generic.List<EventTypeInfo> _eventTypes;
+
+        [Newtonsoft.Json.JsonProperty("endpoints", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Endpoints    {
+            get { return _endpoints; }
+            set
+            {
+                if (_endpoints != value)
+                {
+                    _endpoints = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("eventTypes", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<EventTypeInfo> EventTypes    {
+            get { return _eventTypes; }
+            set
+            {
+                if (_eventTypes != value)
+                {
+                    _eventTypes = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AgentCatalog FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AgentCatalog>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class EventTypeInfo : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _eventTypeId;
+        private string _name;
+        private string _jsonSchema;
+        private string _description;
+
+        [Newtonsoft.Json.JsonProperty("eventTypeId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EventTypeId    {
+            get { return _eventTypeId; }
+            set
+            {
+                if (_eventTypeId != value)
+                {
+                    _eventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("jsonSchema", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string JsonSchema    {
+            get { return _jsonSchema; }
+            set
+            {
+                if (_jsonSchema != value)
+                {
+                    _jsonSchema = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("description", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Description    {
+            get { return _description; }
+            set
+            {
+                if (_description != value)
+                {
+                    _description = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static EventTypeInfo FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<EventTypeInfo>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DefineEventTypeRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _eventTypeId;
+        private string _name;
+        private string _jsonSchema;
+        private string _description;
+        private string _sessionKeyPath;
+
+        [Newtonsoft.Json.JsonProperty("eventTypeId", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string EventTypeId    {
+            get { return _eventTypeId; }
+            set
+            {
+                if (_eventTypeId != value)
+                {
+                    _eventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("jsonSchema", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string JsonSchema    {
+            get { return _jsonSchema; }
+            set
+            {
+                if (_jsonSchema != value)
+                {
+                    _jsonSchema = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("description", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Description    {
+            get { return _description; }
+            set
+            {
+                if (_description != value)
+                {
+                    _description = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("sessionKeyPath", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SessionKeyPath    {
+            get { return _sessionKeyPath; }
+            set
+            {
+                if (_sessionKeyPath != value)
+                {
+                    _sessionKeyPath = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static DefineEventTypeRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<DefineEventTypeRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AgentSubscribeRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _eventTypeId;
+
+        [Newtonsoft.Json.JsonProperty("eventTypeId", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string EventTypeId    {
+            get { return _eventTypeId; }
+            set
+            {
+                if (_eventTypeId != value)
+                {
+                    _eventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AgentSubscribeRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AgentSubscribeRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class HandoffCoordinates : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _eventId;
+        private string _sessionId;
+        private string _messageId;
+        private string _eventTypeId;
+        private string _correlationId;
+        private string _originatingMessageId;
+
+        [Newtonsoft.Json.JsonProperty("eventId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EventId    {
+            get { return _eventId; }
+            set
+            {
+                if (_eventId != value)
+                {
+                    _eventId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("sessionId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SessionId    {
+            get { return _sessionId; }
+            set
+            {
+                if (_sessionId != value)
+                {
+                    _sessionId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("messageId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string MessageId    {
+            get { return _messageId; }
+            set
+            {
+                if (_messageId != value)
+                {
+                    _messageId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("eventTypeId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EventTypeId    {
+            get { return _eventTypeId; }
+            set
+            {
+                if (_eventTypeId != value)
+                {
+                    _eventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("correlationId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string CorrelationId    {
+            get { return _correlationId; }
+            set
+            {
+                if (_correlationId != value)
+                {
+                    _correlationId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("originatingMessageId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string OriginatingMessageId    {
+            get { return _originatingMessageId; }
+            set
+            {
+                if (_originatingMessageId != value)
+                {
+                    _originatingMessageId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static HandoffCoordinates FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<HandoffCoordinates>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AgentReceivedMessage : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _eventTypeId;
+        private string _payload;
+        private HandoffCoordinates _coordinates;
+
+        [Newtonsoft.Json.JsonProperty("eventTypeId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EventTypeId    {
+            get { return _eventTypeId; }
+            set
+            {
+                if (_eventTypeId != value)
+                {
+                    _eventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("payload", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Payload    {
+            get { return _payload; }
+            set
+            {
+                if (_payload != value)
+                {
+                    _payload = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("coordinates", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public HandoffCoordinates Coordinates    {
+            get { return _coordinates; }
+            set
+            {
+                if (_coordinates != value)
+                {
+                    _coordinates = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AgentReceivedMessage FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AgentReceivedMessage>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AgentPublishRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _eventTypeId;
+        private string _payload;
+        private string _sessionId;
+
+        [Newtonsoft.Json.JsonProperty("eventTypeId", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string EventTypeId    {
+            get { return _eventTypeId; }
+            set
+            {
+                if (_eventTypeId != value)
+                {
+                    _eventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("payload", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string Payload    {
+            get { return _payload; }
+            set
+            {
+                if (_payload != value)
+                {
+                    _payload = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("sessionId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SessionId    {
+            get { return _sessionId; }
+            set
+            {
+                if (_sessionId != value)
+                {
+                    _sessionId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AgentPublishRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AgentPublishRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AgentSettleRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private HandoffCoordinates _coordinates = new HandoffCoordinates();
+        private AgentSettleRequestOutcome _outcome;
+        private string _result;
+        private string _errorText;
+        private string _errorType;
+
+        [Newtonsoft.Json.JsonProperty("coordinates", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required]
+        public HandoffCoordinates Coordinates    {
+            get { return _coordinates; }
+            set
+            {
+                if (_coordinates != value)
+                {
+                    _coordinates = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("outcome", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public AgentSettleRequestOutcome Outcome    {
+            get { return _outcome; }
+            set
+            {
+                if (_outcome != value)
+                {
+                    _outcome = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("result", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Result    {
+            get { return _result; }
+            set
+            {
+                if (_result != value)
+                {
+                    _result = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("errorText", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ErrorText    {
+            get { return _errorText; }
+            set
+            {
+                if (_errorText != value)
+                {
+                    _errorText = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("errorType", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ErrorType    {
+            get { return _errorType; }
+            set
+            {
+                if (_errorType != value)
+                {
+                    _errorType = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AgentSettleRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AgentSettleRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class Response : System.ComponentModel.INotifyPropertyChanged
     {
         private System.Collections.Generic.List<EventTypeGrouping> _produces;
@@ -9387,6 +10219,27 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"failHandoff")]
         FailHandoff = 6,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"searchEvents")]
+        SearchEvents = 7,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"getEventDetails")]
+        GetEventDetails = 8,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"getEndpointDetails")]
+        GetEndpointDetails = 9,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"enableEndpoint")]
+        EnableEndpoint = 10,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"disableEndpoint")]
+        DisableEndpoint = 11,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"purgeMessages")]
+        PurgeMessages = 12,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"compose")]
+        Compose = 13,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -9576,6 +10429,27 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"failHandoff")]
         FailHandoff = 6,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"searchEvents")]
+        SearchEvents = 7,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"getEventDetails")]
+        GetEventDetails = 8,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"getEndpointDetails")]
+        GetEndpointDetails = 9,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"enableEndpoint")]
+        EnableEndpoint = 10,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"disableEndpoint")]
+        DisableEndpoint = 11,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"purgeMessages")]
+        PurgeMessages = 12,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"compose")]
+        Compose = 13,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -9602,6 +10476,39 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"failHandoff")]
         FailHandoff = 6,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"searchEvents")]
+        SearchEvents = 7,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"getEventDetails")]
+        GetEventDetails = 8,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"getEndpointDetails")]
+        GetEndpointDetails = 9,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"enableEndpoint")]
+        EnableEndpoint = 10,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"disableEndpoint")]
+        DisableEndpoint = 11,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"purgeMessages")]
+        PurgeMessages = 12,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"compose")]
+        Compose = 13,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum AgentSettleRequestOutcome
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"complete")]
+        Complete = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"fail")]
+        Fail = 1,
 
     }
 

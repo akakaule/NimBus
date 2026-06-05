@@ -40,6 +40,11 @@ public sealed class NimBusAgentTools
     public async Task<string> DiscoverTopologyAsync(CancellationToken ct = default)
     {
         var catalog = await _api.GetCatalogAsync(ct).ConfigureAwait(false);
+        if (catalog is null)
+        {
+            return "no topology available";
+        }
+
         return JsonSerializer.Serialize(catalog, s_json);
     }
 
@@ -60,6 +65,11 @@ public sealed class NimBusAgentTools
         {
             var req = new DefineEventTypeRequest(eventTypeId, jsonSchema, name, description, sessionKeyPath);
             var info = await _api.DefineEventTypeAsync(req, ct).ConfigureAwait(false);
+            if (info is null)
+            {
+                return "event type defined (no result returned)";
+            }
+
             return JsonSerializer.Serialize(info, s_json);
         }
         catch (NimBusApiException ex) when (ex.StatusCode == 409)

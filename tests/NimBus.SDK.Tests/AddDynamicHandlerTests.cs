@@ -14,7 +14,7 @@ using NimBus.SDK.Extensions;
 namespace NimBus.SDK.Tests
 {
     /// <summary>
-    /// Coverage for <see cref="NimBusSubscriberBuilder.AddDynamicHandler"/>.
+    /// Coverage for <see cref="NimBusSubscriberBuilder.AddDynamicHandler(string, System.Func{NimBus.SDK.EventHandlers.IEventJsonHandler})"/>.
     /// Verifies that a string-keyed handler registered through the builder reaches
     /// the <see cref="EventHandlerProvider"/> and is dispatched the raw EventJson
     /// from <c>context.MessageContent.EventContent</c>.

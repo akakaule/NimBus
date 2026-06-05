@@ -23,7 +23,7 @@ In scope for spec 022 (this roadmap delivers all of it):
 | Phase | Deliverable | Plan | Status |
 |---|---|---|---|
 | 0 | Dynamic-routing gate | (in `spec.md` → "Phase 0 result") | ✅ **Done & committed** (`21b3174`) |
-| 1 | Schema registry + agent REST API | [`plan-phase1.md`](plan-phase1.md) | ▶ **In progress** — T1–T11 done & committed; **T12 (in-memory loop test), T13 (full sweep), T14 (spec error-handling reconcile) remain** |
+| 1 | Schema registry + agent REST API | [`plan-phase1.md`](plan-phase1.md) | ✅ **Done** — all 14 tasks committed; full solution test sweep green |
 | 2 | `NimBus.Mcp` server | [`plan-phase2-mcp.md`](plan-phase2-mcp.md) | ⏳ **Planned, not started** |
 | 3 | EnrichmentAgent demo + AppHost + smoke + emulator fidelity | [`plan-phase3-demo.md`](plan-phase3-demo.md) | ⏳ **Planned, not started** |
 

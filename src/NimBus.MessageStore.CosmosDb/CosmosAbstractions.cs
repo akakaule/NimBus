@@ -24,6 +24,7 @@ public interface ICosmosContainerAdapter
     FeedIterator<T> GetItemQueryIterator<T>(string queryText);
     FeedIterator<T> GetItemQueryIterator<T>(string queryText, string continuationToken = null, QueryRequestOptions requestOptions = null);
     IOrderedQueryable<T> GetItemLinqQueryable<T>(bool allowSynchronousQueryExecution = false, string continuationToken = null, QueryRequestOptions requestOptions = null);
+    Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default);
     Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default);
     Task<ItemResponse<T>> DeleteItemAsync<T>(string id, PartitionKey partitionKey);
     Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey);
@@ -86,6 +87,9 @@ public sealed class CosmosContainerAdapter : ICosmosContainerAdapter
 
     public IOrderedQueryable<T> GetItemLinqQueryable<T>(bool allowSynchronousQueryExecution = false, string continuationToken = null, QueryRequestOptions requestOptions = null) =>
         _container.GetItemLinqQueryable<T>(allowSynchronousQueryExecution, continuationToken, requestOptions);
+
+    public Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default) =>
+        _container.CreateItemAsync(item, partitionKey);
 
     public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default) =>
         _container.UpsertItemAsync(item, partitionKey);

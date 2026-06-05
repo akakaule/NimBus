@@ -283,12 +283,13 @@ This keeps the agent API smaller and avoids mixing two concepts: message partici
 | Publish/subscribe to an unknown `eventTypeId` | `404`. |
 | `define_event_type` called again, identical schema | Idempotent no-op (returns existing). |
 | `define_event_type` with the same id but **any different** schema | `409 Conflict` — agent-defined schemas are immutable in v1 (see [Schema versioning (v1)](#schema-versioning-v1)). Evolution/compatibility rules are deferred to a later spec. |
-| Agent crashes / never settles | The received message stays under peek-lock with a visibility timeout; on expiry it reappears for redelivery. After N attempts it dead-letters via the existing Resolver/DLQ policy — no new mechanism. |
-| LLM fails or is low-confidence | Agent calls `settle_message` with a **fail** + reason (Resolver: pending → failed), or publishes nothing and lets redelivery/DLQ apply. Failures show in `failed-insights`/audits. |
+| Agent crashes / never settles | The event is **parked** (`Pending+Handoff`) off the bus with the session blocked — there is **no SB peek-lock to expire, so no automatic redelivery/DLQ**. v1 recovery is **operator-driven**: Resubmit/Skip from the WebApp (already wired), with the optional `ExpectedBy` deadline surfacing stuck tasks. An automatic timeout sweeper is deferred (see [Future sub-projects](#future-sub-projects)). |
+| LLM fails or is low-confidence | Agent calls `settle_message` with a **fail** + reason (Resolver: pending → failed); failures show in `failed-insights`/audits. The event is parked, not on the bus, so there is no implicit redelivery — the agent must settle, or it stays parked until operator recovery. |
+| Same parked event received twice (concurrent agents, or a re-poll before settle) | `/api/agent/receive` is a **non-claiming read** — a parked event stays `Pending+Handoff` until settled, so concurrent receives can return it more than once (**at-least-once**). The losing `settle` returns `400` (the event is no longer a pending handoff). A per-receive claim/lease is deferred to a later spec. |
 | Oversized payload | Reuse the claim-check path (spec 013) for large bodies; otherwise enforce a size cap with `413`. |
 | MCP → REST auth failure | `401`, surfaced as a tool error. |
 
-The principle: **reuse NimBus's existing retry, lock, Resolver, and DLQ semantics** rather than inventing agent-specific failure handling. The agent is just another participant subject to the same guarantees.
+The principle: **reuse NimBus's existing Resolver, audit, and handoff semantics** rather than inventing agent-specific failure handling. `/api/agent/receive` + `/settle` are built on the existing **pending-handoff** mechanism — a coded Agent Zone subscriber parks each routed event `Pending+Handoff`, `/receive` is a stateless message-store read, and `/settle` drives a handoff completion/failure through the Resolver. **No Service Bus lock is held across the agent's `receive → reason → publish → settle` round-trip** (a peek-lock can't survive two stateless HTTP requests), which is why the crash and duplicate-delivery rows above describe park-and-recover rather than SB lock expiry. The agent is otherwise just another participant in the audit trail.
 
 ---
 

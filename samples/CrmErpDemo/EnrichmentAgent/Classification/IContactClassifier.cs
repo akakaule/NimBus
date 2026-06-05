@@ -29,7 +29,7 @@ public sealed record ContactInput(
 /// <summary>
 /// Enrichment data produced by the classifier. Must be valid against the
 /// <c>crm.contact.enriched.v1</c> JSON schema:
-/// <c>{"type":"object","required":["industry"],"properties":{"industry":{"type":"string"},"leadScore":{"type":"integer"},"rationale":{"type":"string"}}}</c>
+/// <c>{"type":"object","required":["industry"],"properties":{"contactId":{"type":"string"},"industry":{"type":"string"},"leadScore":{"type":"integer"},"rationale":{"type":"string"}}}</c>
 /// </summary>
 /// <param name="Industry">Inferred industry vertical (required). Must be non-empty.</param>
 /// <param name="LeadScore">Lead score 0–100 (integer). Higher is hotter.</param>

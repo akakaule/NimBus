@@ -26,9 +26,17 @@ builder.Services.AddSingleton<ServiceBusClient>(sp =>
     return new ServiceBusClient(connection);
 });
 
+// Register EnrichedContactHandler for DI resolution.
+builder.Services.AddTransient<EnrichedContactHandler>();
+
 builder.Services.AddNimBusSubscriber("DataPlatformEndpoint", sub =>
 {
     sub.AddHandler<ErpCustomerCreated, ErpCustomerCreatedHandler>();
+
+    // Spec 022 Phase 3 Task D — consume the AI-agent enriched-contact event on this endpoint.
+    // The event has no compiled IEvent class; it is identified only by its EventTypeId string.
+    // Use the DI-aware overload so EnrichedContactHandler receives its ILogger from the container.
+    sub.AddDynamicHandler("crm.contact.enriched.v1", sp => sp.GetRequiredService<EnrichedContactHandler>());
 });
 
 builder.Build().Run();

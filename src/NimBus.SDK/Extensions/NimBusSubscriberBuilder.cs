@@ -121,6 +121,53 @@ namespace NimBus.SDK.Extensions
         }
 
         /// <summary>
+        /// Registers a handler for a dynamically-typed event keyed by its string EventTypeId,
+        /// with a DI-aware factory that receives the <see cref="IServiceProvider"/> at registration
+        /// time. This is the DI-integrated counterpart to
+        /// <see cref="AddDynamicHandler(string, Func{IEventJsonHandler})"/> — the
+        /// <paramref name="handlerFactory"/> is called once when the
+        /// <see cref="ISubscriberClient"/> singleton is resolved, so it behaves like a singleton
+        /// handler (appropriate for handlers whose dependencies are themselves singletons).
+        /// </summary>
+        /// <param name="eventTypeId">The wire EventTypeId string (e.g. "crm.contact.enriched.v1"). Must not be null or whitespace.</param>
+        /// <param name="handlerFactory">Factory that receives the DI container and returns the handler. Must not be null.</param>
+        public NimBusSubscriberBuilder AddDynamicHandler(string eventTypeId, Func<IServiceProvider, IEventJsonHandler> handlerFactory)
+        {
+            if (string.IsNullOrWhiteSpace(eventTypeId))
+                throw new ArgumentException("Event type id must not be null or empty.", nameof(eventTypeId));
+            if (handlerFactory == null) throw new ArgumentNullException(nameof(handlerFactory));
+
+            var existing = HandlerRegistrations.SingleOrDefault(r => r.EventTypeId == eventTypeId);
+            if (existing != null)
+            {
+                throw new InvalidOperationException(
+                    $"EventTypeId '{eventTypeId}' is already registered as a " +
+                    $"{(existing.EventType is null ? "dynamic" : "typed")} handler " +
+                    $"('{existing.HandlerType?.FullName ?? "<dynamic>"}'); " +
+                    "cannot also register a dynamic handler for it. " +
+                    "Register only one handler per EventTypeId.");
+            }
+
+            HandlerRegistrations.Add(new HandlerRegistration
+            {
+                EventTypeId = eventTypeId,
+                EventType = null,
+                HandlerType = null,
+                IsExplicit = true,
+                Register = (provider, handlerProvider) =>
+                {
+                    // Resolve the handler once (at ISubscriberClient singleton creation) and
+                    // register it as a constant factory — this mirrors how AddHandler<TEvent,THandler>
+                    // resolves from IServiceProvider, but for the DI-aware dynamic variant.
+                    var handler = handlerFactory(provider);
+                    handlerProvider.RegisterHandler(eventTypeId, () => handler);
+                }
+            });
+
+            return this;
+        }
+
+        /// <summary>
         /// Configures retry policies for this subscriber.
         /// </summary>
         public NimBusSubscriberBuilder ConfigureRetryPolicies(Action<DefaultRetryPolicyProvider> configure)

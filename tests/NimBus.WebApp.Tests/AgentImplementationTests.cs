@@ -138,7 +138,12 @@ namespace NimBus.WebApp.Tests
         public async Task PostAgentEventTypes_valid_request_returns_200_EventTypeInfo()
         {
             var (impl, _) = Build();
-            var req = ValidRequest(eventTypeId: "order.placed.v1", jsonSchema: "{\"type\":\"object\"}");
+            // Name omitted so the implementation's Name fallback (=> EventTypeId) is exercised.
+            var req = new DefineEventTypeRequest
+            {
+                EventTypeId = "order.placed.v1",
+                JsonSchema = "{\"type\":\"object\"}",
+            };
 
             var result = await impl.PostAgentEventTypesAsync(req);
 
@@ -148,6 +153,10 @@ namespace NimBus.WebApp.Tests
             var info = ok!.Value as EventTypeInfo;
             Assert.IsNotNull(info);
             Assert.AreEqual("order.placed.v1", info!.EventTypeId);
+            // Name fallback: a null request Name becomes the EventTypeId.
+            Assert.AreEqual("order.placed.v1", info.Name);
+            // JsonSchema round-trips unchanged.
+            Assert.AreEqual("{\"type\":\"object\"}", info.JsonSchema);
         }
 
         [TestMethod]
@@ -161,6 +170,29 @@ namespace NimBus.WebApp.Tests
 
             Assert.IsInstanceOfType(first.Result, typeof(OkObjectResult), "First call must be 200");
             Assert.IsInstanceOfType(second.Result, typeof(OkObjectResult), "Second call with same schema must be 200");
+        }
+
+        [TestMethod]
+        public async Task PostAgentEventTypes_then_GetAgentCatalog_round_trips_the_event_type()
+        {
+            // Same controller instance + same backing store: a defined event type
+            // must subsequently appear in the catalog.
+            var (impl, _) = Build("ep-alpha");
+            var req = ValidRequest(
+                eventTypeId: "inventory.adjusted.v1",
+                jsonSchema: "{\"type\":\"object\"}",
+                name: "Inventory Adjusted");
+
+            var define = await impl.PostAgentEventTypesAsync(req);
+            Assert.IsInstanceOfType(define.Result, typeof(OkObjectResult), "Define must be 200");
+
+            var catalogResult = await impl.GetAgentCatalogAsync();
+            var catalog = (catalogResult.Result as OkObjectResult)!.Value as AgentCatalog;
+            Assert.IsNotNull(catalog);
+
+            var entry = catalog!.EventTypes.SingleOrDefault(e => e.EventTypeId == "inventory.adjusted.v1");
+            Assert.IsNotNull(entry, "Defined event type must appear in the catalog");
+            Assert.AreEqual("Inventory Adjusted", entry!.Name);
         }
 
         // ── PostAgentEventTypesAsync — conflict ─────────────────────────────
@@ -191,6 +223,18 @@ namespace NimBus.WebApp.Tests
 
             Assert.IsInstanceOfType(result.Result, typeof(BadRequestObjectResult),
                 "Empty eventTypeId must yield 400");
+        }
+
+        [TestMethod]
+        public async Task PostAgentEventTypes_whitespace_eventTypeId_returns_400()
+        {
+            var (impl, _) = Build();
+            var req = ValidRequest(eventTypeId: "   ");
+
+            var result = await impl.PostAgentEventTypesAsync(req);
+
+            Assert.IsInstanceOfType(result.Result, typeof(BadRequestObjectResult),
+                "Whitespace-only eventTypeId must yield 400");
         }
 
         [TestMethod]

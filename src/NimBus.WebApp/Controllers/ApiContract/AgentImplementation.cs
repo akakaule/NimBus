@@ -52,10 +52,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
         public async Task<ActionResult<EventTypeInfo>> PostAgentEventTypesAsync(DefineEventTypeRequest body)
         {
-            if (string.IsNullOrEmpty(body.EventTypeId))
+            if (string.IsNullOrWhiteSpace(body.EventTypeId))
                 return new BadRequestObjectResult("eventTypeId is required.");
 
-            if (string.IsNullOrEmpty(body.JsonSchema))
+            if (string.IsNullOrWhiteSpace(body.JsonSchema))
                 return new BadRequestObjectResult("jsonSchema is required.");
 
             var schema = new EventSchema
@@ -87,10 +87,6 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 _logger.LogWarning("Schema conflict for event type {EventTypeId}", body.EventTypeId);
                 return new ConflictResult();
-            }
-            catch (ArgumentException ex)
-            {
-                return new BadRequestObjectResult(ex.Message);
             }
         }
 

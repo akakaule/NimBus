@@ -17,7 +17,7 @@ namespace NimBus.EndToEnd.Tests;
 public class AgentParkAndSettleTests
 {
     [TestMethod]
-    public async Task ParkedDynamicEvent_EmitsPendingHandoff()
+    public async Task ParkedDynamicEvent_EmitsPendingHandoff_AndCompletes()
     {
         var fixture = new EndToEndFixture();
         fixture.RegisterDynamicHandler("crm.contact.enriched.v1", () => new MarkPendingHandoffJsonHandler());
@@ -33,9 +33,16 @@ public class AgentParkAndSettleTests
             MessageType = MessageType.EventRequest,
             MessageContent = new MessageContent { EventContent = new EventContent { EventTypeId = "crm.contact.enriched.v1", EventJson = "{}" } },
         });
-        await fixture.DeliverAll();
+        var results = await fixture.DeliverAllWithResults();
 
+        // The park path emits the PendingHandoffResponse so an external agent can pull and settle it.
         Assert.IsTrue(fixture.ResponseBus.SentMessages.Any(m => m.MessageType == MessageType.PendingHandoffResponse),
             "Parked event must emit a PendingHandoffResponse.");
+
+        // No SB lock is held while parked: StrictMessageHandler completes the SB message immediately
+        // after emitting the response and blocking the session — proving the park is lock-free.
+        var result = results.Single();
+        Assert.IsTrue(result.Session.WasCompleted, "Parked event must complete the Service Bus message.");
+        Assert.IsFalse(result.Session.WasDeadLettered, "Parked event must not be dead-lettered.");
     }
 }

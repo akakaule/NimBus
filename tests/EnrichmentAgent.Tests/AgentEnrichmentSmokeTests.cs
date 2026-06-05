@@ -120,6 +120,53 @@ public class AgentEnrichmentSmokeTests
         // Bonus: ordering — define before publish before settle (the demo's logical chain).
         Assert.IsTrue(bus.Calls.IndexOf("Define") < bus.Calls.IndexOf("Publish"), "Define must precede Publish.");
         Assert.IsTrue(bus.Calls.IndexOf("Publish") < bus.Calls.IndexOf("Settle"), "Publish must precede Settle.");
+
+        // ── Drain: the second receive yields the null sentinel (nothing parked). The loop
+        //    should report no work and perform no further publish/settle.
+        var processedAgain = await worker.ProcessNextAsync(CancellationToken.None);
+        Assert.IsFalse(processedAgain, "A second ProcessNextAsync over an empty inbox should report false.");
+        Assert.AreEqual(1, bus.Publishes.Count, "No additional publish should occur when nothing is parked.");
+        Assert.AreEqual(1, bus.Settles.Count, "No additional settle should occur when nothing is parked.");
+    }
+
+    [TestMethod]
+    public async Task ProcessNextAsync_RejectedPublish_DoesNotSettle_HandoffStaysParked()
+    {
+        // A rejected publish (the agent API returns a non-2xx → RestBusGateway throws) must
+        // abort the cycle BEFORE settle, so the handoff stays parked for retry / operator
+        // recovery. The agent must never mark work "complete" when the enriched publish failed.
+        var contact = new CrmContactCreated
+        {
+            ContactId = Guid.Parse("33333333-3333-3333-3333-333333333333"),
+            FirstName = "Bob",
+            LastName = "Jones",
+            Email = "bob@bank.com",
+            Phone = "+1-555-0199",
+        };
+
+        var coords = new HandoffCoordinates(
+            EventId: "event-002",
+            SessionId: "session-xyz",
+            MessageId: "message-002",
+            EventTypeId: AgentLoopWorker.SourceEventTypeId,
+            CorrelationId: "correlation-002",
+            OriginatingMessageId: "origin-002");
+
+        var seeded = new ReceivedMessage(
+            AgentLoopWorker.SourceEventTypeId,
+            JsonConvert.SerializeObject(contact),
+            coords);
+
+        var bus = new RejectingPublishBusGateway(seeded);
+        var worker = new AgentLoopWorker(bus, new DeterministicContactClassifier(), NullLogger<AgentLoopWorker>.Instance);
+
+        // The publish failure must propagate out of ProcessNextAsync (not be swallowed).
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => worker.ProcessNextAsync(CancellationToken.None));
+
+        Assert.AreEqual(1, bus.PublishAttempts, "The agent should have attempted exactly one publish.");
+        Assert.AreEqual(0, bus.Settles.Count,
+            "The handoff must NOT be settled when the enriched publish failed — it stays parked for recovery.");
     }
 
     /// <summary>
@@ -129,11 +176,47 @@ public class AgentEnrichmentSmokeTests
     private sealed record EnrichedContact(string ContactId, string Industry, int LeadScore, string? Rationale);
 
     /// <summary>
+    /// In-memory <see cref="IBusGateway"/> whose <see cref="PublishAsync"/> always fails — the
+    /// way the real <see cref="RestBusGateway"/> surfaces a rejected publish (non-2xx → throw).
+    /// Records publish attempts and any settle calls so a test can prove settle never ran.
+    /// </summary>
+    private sealed class RejectingPublishBusGateway : IBusGateway
+    {
+        private readonly Queue<ReceivedMessage?> _inbox;
+
+        public RejectingPublishBusGateway(params ReceivedMessage?[] inbox) => _inbox = new Queue<ReceivedMessage?>(inbox);
+
+        public int PublishAttempts { get; private set; }
+        public List<(HandoffCoordinates Coordinates, string Outcome, string? Result)> Settles { get; } = new();
+
+        public Task SubscribeAsync(string eventTypeId, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task DefineEventTypeAsync(string eventTypeId, string jsonSchema, string? name, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task<ReceivedMessage?> ReceiveAsync(string? eventTypeId, int waitSeconds, CancellationToken ct = default)
+            => Task.FromResult(_inbox.Count > 0 ? _inbox.Dequeue() : null);
+
+        public Task PublishAsync(string eventTypeId, string payloadJson, string? sessionId, CancellationToken ct = default)
+        {
+            PublishAttempts++;
+            return Task.FromException(new InvalidOperationException(
+                "publish rejected: agent API → 400 Bad Request (simulated)."));
+        }
+
+        public Task SettleAsync(HandoffCoordinates coordinates, string outcome, string? result, CancellationToken ct = default)
+        {
+            Settles.Add((coordinates, outcome, result));
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
     /// A realistic in-memory <see cref="IBusGateway"/> that performs REAL schema validation.
     /// Schemas are stored in a real <see cref="InMemoryMessageStore"/> (an
     /// <see cref="IEventSchemaStore"/>); publishes are validated against the stored schema
     /// with NJsonSchema, exactly as <c>AgentImplementation.PostAgentPublishAsync</c> does.
-    /// On a valid publish it records the event and forwards the payload to a captured consumer.
+    /// On a valid publish it records the event and forwards the payload to a captured consumer;
+    /// on an invalid publish it THROWS, mirroring the real RestBusGateway's 400 → HttpRequestException.
     /// </summary>
     private sealed class ValidatingInMemoryBusGateway : IBusGateway
     {
@@ -197,10 +280,14 @@ public class AgentEnrichmentSmokeTests
             var jsonSchema = await NJsonSchema.JsonSchema.FromJsonAsync(schema.JsonSchema, ct);
             LastPublishValidationErrors = jsonSchema.Validate(payloadJson).ToList();
 
-            // A real broker rejects an invalid payload — so we do NOT record or forward it.
-            // The test asserts LastPublishValidationErrors is empty, so any invalid payload fails.
+            // The real RestBusGateway THROWS (HttpRequestException on a 400) when the agent
+            // API rejects an invalid payload. The fake throws too — before recording or
+            // forwarding anything — so the schema gate is real: if the agent ever emits an
+            // invalid payload, the publish throws and propagates out of ProcessNextAsync.
             if (LastPublishValidationErrors.Count > 0)
-                return;
+                throw new InvalidOperationException(
+                    "publish rejected: schema validation failed: " +
+                    string.Join("; ", LastPublishValidationErrors.Select(e => $"{e.Path}: {e.Kind}")));
 
             Publishes.Add((eventTypeId, payloadJson, sessionId));
             await _consumer(payloadJson);

@@ -22,7 +22,7 @@ public sealed class AgentLoopWorker : BackgroundService
 
     /// <summary>JSON schema for <see cref="EnrichedEventTypeId"/>.</summary>
     public const string EnrichedSchema =
-        "{\"type\":\"object\",\"required\":[\"industry\"],\"properties\":{\"industry\":{\"type\":\"string\"},\"leadScore\":{\"type\":\"integer\"},\"rationale\":{\"type\":\"string\"}}}";
+        "{\"type\":\"object\",\"required\":[\"industry\"],\"properties\":{\"contactId\":{\"type\":\"string\"},\"industry\":{\"type\":\"string\"},\"leadScore\":{\"type\":\"integer\"},\"rationale\":{\"type\":\"string\"}}}";
 
     // Small long-poll window: short enough to react to shutdown promptly, long
     // enough to avoid hammering the API when the Agent Zone is idle.

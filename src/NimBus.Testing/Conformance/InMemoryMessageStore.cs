@@ -344,6 +344,7 @@ public class InMemoryMessageStore : INimBusMessageStore
 
     public Task<EventSchema> DefineEventType(EventSchema schema)
     {
+        if (string.IsNullOrWhiteSpace(schema?.EventTypeId)) throw new ArgumentException("schema.EventTypeId is required.", nameof(schema));
         if (string.IsNullOrWhiteSpace(schema?.JsonSchema)) throw new ArgumentException("schema.JsonSchema is required.", nameof(schema));
         var existing = _schemas.GetOrAdd(schema.EventTypeId, schema);
         if (!ReferenceEquals(existing, schema) && !SchemaJson.Equal(existing.JsonSchema, schema.JsonSchema))

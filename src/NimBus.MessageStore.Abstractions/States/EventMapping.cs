@@ -1,4 +1,5 @@
 using System;
+using Newtonsoft.Json;
 
 namespace NimBus.MessageStore.States;
 
@@ -19,7 +20,8 @@ public enum MappingState
 /// </summary>
 public class EventMapping
 {
-    /// <summary>Stable id: "{sourceEventTypeId}->{targetEventTypeId}".</summary>
+    /// <summary>Stable id: "{sourceEventTypeId}->{targetEventTypeId}". Cosmos partition key.</summary>
+    [JsonProperty(PropertyName = "id")]
     public string Id { get; set; } = string.Empty;
     public string SourceEventTypeId { get; set; } = string.Empty;
     public string TargetEventTypeId { get; set; } = string.Empty;

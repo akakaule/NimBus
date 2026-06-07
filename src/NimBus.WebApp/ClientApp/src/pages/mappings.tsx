@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import * as api from "api-client";
 import Page from "components/page";
 import Loading from "components/loading/loading";
@@ -257,7 +257,14 @@ function MappingDetailPanel({
 export default function MappingsPage() {
   const [mappings, setMappings] = useState<api.MappingInfo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<api.MappingInfo | null>(null);
+  // Key the selection by id (not the object) so a refresh re-resolves the
+  // selected mapping from the freshly-fetched list — keeping it selected and
+  // showing its updated state after an Approve/Reject/Pause/Resume action.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = useMemo(
+    () => mappings.find((m) => m.id === selectedId) ?? null,
+    [mappings, selectedId],
+  );
 
   const fetchMappings = useCallback(async () => {
     setLoading(true);
@@ -265,17 +272,11 @@ export default function MappingsPage() {
       const client = new api.Client(api.CookieAuth());
       const result = await client.getAgentMappings();
       setMappings(result ?? []);
-      // Keep the selected mapping in sync if it was already selected.
-      if (selected) {
-        const updated = (result ?? []).find((m) => m.id === selected.id);
-        setSelected(updated ?? null);
-      }
     } catch (err) {
       console.error("Failed to fetch mappings", err);
     } finally {
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -317,12 +318,12 @@ export default function MappingsPage() {
                   data-testid="mapping-row"
                   className={
                     "flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors " +
-                    (selected?.id === m.id
+                    (selectedId === m.id
                       ? "bg-primary/[0.08]"
                       : "hover:bg-muted")
                   }
                   onClick={() =>
-                    setSelected((prev) => (prev?.id === m.id ? null : m))
+                    setSelectedId((prev) => (prev === m.id ? null : m.id ?? null))
                   }
                 >
                   <span className="font-medium text-sm truncate min-w-0">

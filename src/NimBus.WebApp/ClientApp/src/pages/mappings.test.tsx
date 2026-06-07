@@ -145,4 +145,46 @@ describe("Mappings page (spec 023)", () => {
       expect(mockApprove).toHaveBeenCalledWith("map-1");
     });
   });
+
+  it("keeps the same mapping selected (with updated state) after an action refreshes the list", async () => {
+    const { default: MappingsPage } = await import("./mappings");
+
+    // After Approve, the refresh returns the SAME mapping id but now Active.
+    const approvedMapping = Object.assign(new api.MappingInfo(), {
+      ...sampleMapping,
+      state: api.MappingInfoState.Active,
+    });
+    mockGetMappings
+      .mockResolvedValueOnce([sampleMapping])
+      .mockResolvedValueOnce([approvedMapping]);
+
+    const { getByText, getByRole, queryByRole } = render(
+      <ToastProvider>
+        <MemoryRouter>
+          <MappingsPage />
+        </MemoryRouter>
+      </ToastProvider>,
+    );
+
+    await waitFor(() => {
+      expect(getByText("SourceEvent")).toBeTruthy();
+    });
+
+    const row = getByText("SourceEvent").closest("[data-testid='mapping-row']") ??
+      getByText("SourceEvent");
+    await userEvent.click(row);
+
+    await waitFor(() => {
+      expect(getByRole("button", { name: /approve/i })).toBeTruthy();
+    });
+
+    await userEvent.click(getByRole("button", { name: /approve/i }));
+
+    // Selection persists across the post-action refresh: the detail panel now
+    // reflects the Active state (Pause button shown, Approve gone).
+    await waitFor(() => {
+      expect(getByRole("button", { name: /pause/i })).toBeTruthy();
+      expect(queryByRole("button", { name: /approve/i })).toBeNull();
+    });
+  });
 });

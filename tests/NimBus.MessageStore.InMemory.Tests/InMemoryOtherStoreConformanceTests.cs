@@ -28,3 +28,9 @@ public sealed class InMemoryEventSchemaStoreConformanceTests : EventSchemaStoreC
 {
     protected override IEventSchemaStore CreateStore() => new InMemoryMessageStore();
 }
+
+[TestClass]
+public sealed class InMemoryEventMappingStoreConformanceTests : EventMappingStoreConformanceTests
+{
+    protected override IEventMappingStore CreateStore() => new InMemoryMessageStore();
+}

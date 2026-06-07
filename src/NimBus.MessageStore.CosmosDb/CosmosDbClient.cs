@@ -125,6 +125,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     private const string MessagesContainer = "messages";
     private const string AuditsContainer = "audits";
     private const string EventSchemasContainer = "eventschemas";
+    private const string EventMappingsContainer = "eventmappings";
 
     public CosmosDbClient(CosmosClient cosmosClient, ILogger logger = null)
     {
@@ -1107,6 +1108,12 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         return await db.CreateContainerIfNotExistsAsync(EventSchemasContainer, "/id");
     }
 
+    private async Task<ICosmosContainerAdapter> GetEventMappingsContainer()
+    {
+        var db = _cosmosClient.GetDatabase(DatabaseId);
+        return await db.CreateContainerIfNotExistsAsync(EventMappingsContainer, "/id");
+    }
+
     // ── IEventSchemaStore ──────────────────────────────────────────────────────
 
     public async Task<EventSchema?> GetSchema(string eventTypeId)
@@ -1168,6 +1175,60 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 throw new SchemaConflictException(schema.EventTypeId);
             return raced;
         }
+    }
+
+    // ── IEventMappingStore ─────────────────────────────────────────────────────
+
+    public async Task<EventMapping?> GetMapping(string id)
+    {
+        var container = await GetEventMappingsContainer();
+        try
+        {
+            var resp = await container.ReadItemAsync<EventMapping>(id, new PartitionKey(id));
+            return resp.Resource;
+        }
+        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
+    public async Task<EventMapping?> GetActiveMappingForSource(string sourceEventTypeId)
+    {
+        var container = await GetEventMappingsContainer();
+        var activeState = MappingState.Active.ToString();
+        var query = new QueryDefinition(
+            "SELECT TOP 1 * FROM c WHERE c.SourceEventTypeId = @s AND c.State = @state")
+            .WithParameter("@s", sourceEventTypeId)
+            .WithParameter("@state", activeState);
+        using var iterator = container.GetItemQueryIterator<EventMapping>(query,
+            requestOptions: new QueryRequestOptions { MaxItemCount = 1 });
+        if (iterator.HasMoreResults)
+        {
+            var page = await iterator.ReadNextAsync();
+            return page.FirstOrDefault();
+        }
+        return null;
+    }
+
+    public async Task<IReadOnlyList<EventMapping>> GetMappings()
+    {
+        var container = await GetEventMappingsContainer();
+        var results = new List<EventMapping>();
+        using var iterator = container.GetItemQueryIterator<EventMapping>("SELECT * FROM c");
+        while (iterator.HasMoreResults)
+            results.AddRange(await iterator.ReadNextAsync());
+        return results;
+    }
+
+    public async Task<EventMapping> SaveMapping(EventMapping mapping)
+    {
+        if (string.IsNullOrWhiteSpace(mapping?.Id))
+            throw new ArgumentException("mapping.Id is required.", nameof(mapping));
+
+        var container = await GetEventMappingsContainer();
+        var resp = await container.UpsertItemAsync(mapping, new PartitionKey(mapping.Id));
+        return resp.Resource;
     }
 
     public async Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount)

@@ -1899,6 +1899,144 @@ namespace NimBus.WebApp.ManagementApi
 
     }
 
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public interface IAgentMappingsApiController
+    {
+
+        /// <summary>
+        /// Propose a new event mapping
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<MappingInfo>> PostAgentMappingsAsync(ProposeMappingRequest body);
+
+        /// <summary>
+        /// List all event mappings
+        /// </summary>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<MappingInfo>>> GetAgentMappingsAsync();
+
+        /// <summary>
+        /// Approve a draft mapping
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostAgentMappingApproveAsync(string id);
+
+        /// <summary>
+        /// Reject a mapping
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostAgentMappingRejectAsync(string id);
+
+        /// <summary>
+        /// Pause an active mapping
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostAgentMappingPauseAsync(string id);
+
+        /// <summary>
+        /// Resume a paused mapping
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostAgentMappingResumeAsync(string id);
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+
+    public partial class AgentMappingsApiController : Microsoft.AspNetCore.Mvc.Controller
+    {
+        private IAgentMappingsApiController _implementation;
+
+        public AgentMappingsApiController(IAgentMappingsApiController implementation)
+        {
+            _implementation = implementation;
+        }
+
+        /// <summary>
+        /// Propose a new event mapping
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/agent/mappings")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<MappingInfo>> PostAgentMappings([Microsoft.AspNetCore.Mvc.FromBody] ProposeMappingRequest body)
+        {
+
+            return _implementation.PostAgentMappingsAsync(body);
+        }
+
+        /// <summary>
+        /// List all event mappings
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/agent/mappings")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<MappingInfo>>> GetAgentMappings()
+        {
+
+            return _implementation.GetAgentMappingsAsync();
+        }
+
+        /// <summary>
+        /// Approve a draft mapping
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/agent/mappings/{id}/approve")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostAgentMappingApprove(string id)
+        {
+
+            return _implementation.PostAgentMappingApproveAsync(id);
+        }
+
+        /// <summary>
+        /// Reject a mapping
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/agent/mappings/{id}/reject")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostAgentMappingReject(string id)
+        {
+
+            return _implementation.PostAgentMappingRejectAsync(id);
+        }
+
+        /// <summary>
+        /// Pause an active mapping
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/agent/mappings/{id}/pause")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostAgentMappingPause(string id)
+        {
+
+            return _implementation.PostAgentMappingPauseAsync(id);
+        }
+
+        /// <summary>
+        /// Resume a paused mapping
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/agent/mappings/{id}/resume")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostAgentMappingResume(string id)
+        {
+
+            return _implementation.PostAgentMappingResumeAsync(id);
+        }
+
+    }
+
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class OldEvent : System.ComponentModel.INotifyPropertyChanged
     {
@@ -9991,6 +10129,305 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class ProposeMappingRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _sourceEventTypeId;
+        private string _targetEventTypeId;
+        private string _transform;
+        private string _sourceSchemaHash;
+        private string _rationale;
+        private string _workedExamplesJson;
+
+        [Newtonsoft.Json.JsonProperty("sourceEventTypeId", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string SourceEventTypeId    {
+            get { return _sourceEventTypeId; }
+            set
+            {
+                if (_sourceEventTypeId != value)
+                {
+                    _sourceEventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("targetEventTypeId", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string TargetEventTypeId    {
+            get { return _targetEventTypeId; }
+            set
+            {
+                if (_targetEventTypeId != value)
+                {
+                    _targetEventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("transform", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string Transform    {
+            get { return _transform; }
+            set
+            {
+                if (_transform != value)
+                {
+                    _transform = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("sourceSchemaHash", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string SourceSchemaHash    {
+            get { return _sourceSchemaHash; }
+            set
+            {
+                if (_sourceSchemaHash != value)
+                {
+                    _sourceSchemaHash = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("rationale", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Rationale    {
+            get { return _rationale; }
+            set
+            {
+                if (_rationale != value)
+                {
+                    _rationale = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("workedExamplesJson", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string WorkedExamplesJson    {
+            get { return _workedExamplesJson; }
+            set
+            {
+                if (_workedExamplesJson != value)
+                {
+                    _workedExamplesJson = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static ProposeMappingRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<ProposeMappingRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class MappingInfo : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _id;
+        private string _sourceEventTypeId;
+        private string _targetEventTypeId;
+        private string _transform;
+        private string _rationale;
+        private string _workedExamplesJson;
+        private MappingInfoState _state;
+        private int _version;
+        private string _createdBy;
+        private string _approvedBy;
+
+        [Newtonsoft.Json.JsonProperty("id", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Id    {
+            get { return _id; }
+            set
+            {
+                if (_id != value)
+                {
+                    _id = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("sourceEventTypeId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SourceEventTypeId    {
+            get { return _sourceEventTypeId; }
+            set
+            {
+                if (_sourceEventTypeId != value)
+                {
+                    _sourceEventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("targetEventTypeId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string TargetEventTypeId    {
+            get { return _targetEventTypeId; }
+            set
+            {
+                if (_targetEventTypeId != value)
+                {
+                    _targetEventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("transform", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Transform    {
+            get { return _transform; }
+            set
+            {
+                if (_transform != value)
+                {
+                    _transform = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("rationale", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Rationale    {
+            get { return _rationale; }
+            set
+            {
+                if (_rationale != value)
+                {
+                    _rationale = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("workedExamplesJson", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string WorkedExamplesJson    {
+            get { return _workedExamplesJson; }
+            set
+            {
+                if (_workedExamplesJson != value)
+                {
+                    _workedExamplesJson = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("state", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public MappingInfoState State    {
+            get { return _state; }
+            set
+            {
+                if (_state != value)
+                {
+                    _state = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("version", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Version    {
+            get { return _version; }
+            set
+            {
+                if (_version != value)
+                {
+                    _version = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("createdBy", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string CreatedBy    {
+            get { return _createdBy; }
+            set
+            {
+                if (_createdBy != value)
+                {
+                    _createdBy = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("approvedBy", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ApprovedBy    {
+            get { return _approvedBy; }
+            set
+            {
+                if (_approvedBy != value)
+                {
+                    _approvedBy = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static MappingInfo FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<MappingInfo>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class Response : System.ComponentModel.INotifyPropertyChanged
     {
         private System.Collections.Generic.List<EventTypeGrouping> _produces;
@@ -10509,6 +10946,27 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"fail")]
         Fail = 1,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum MappingInfoState
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Draft")]
+        Draft = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Active")]
+        Active = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Paused")]
+        Paused = 2,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Stale")]
+        Stale = 3,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Rejected")]
+        Rejected = 4,
 
     }
 

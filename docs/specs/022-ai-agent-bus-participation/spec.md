@@ -172,6 +172,7 @@ In v1, agent-defined schemas are immutable after creation.
 - Calling `define_event_type` with an identical schema is idempotent.
 - Calling `define_event_type` with the same id but a different schema returns `409 Conflict`.
 - The schema record includes `version = 1`.
+- **The `version` field is inert in v1.** Actual versioning is done by minting a new event-type ID with an incremented suffix (e.g. `crm.contact.enriched.v2`), per the event-type ID convention in [Schema registry](#schema-registry); the `version` field is reserved for a future in-place evolution scheme.
 - Schema evolution and compatibility rules are deferred to a later spec.
 
 ---
@@ -255,7 +256,7 @@ Every MCP tool is a thin wrapper over exactly one REST call (the read-only `sear
 
 1. A user creates a contact in the **CRM React UI**. `Crm.Api` publishes `CrmContactCreated` (existing behavior).
 2. The **Agent Zone** has a subscription to `CrmContactCreated`; NimBus forwards the event there (existing rule-based routing).
-3. The **agent runner** calls the MCP tool `receive_messages` → `GET /api/agent/receive`, which returns the pending `CrmContactCreated` from the Agent Zone subscription under a peek-lock, with the coordinates needed to settle it.
+3. The **agent runner** calls the MCP tool `receive_messages` → `GET /api/agent/receive`, which returns the pending `CrmContactCreated` from the Agent Zone subscription as a **non-claiming read** — no Service Bus lock is held (see [Handoff in v1](#handoff-in-v1) and the receive note under [Error handling](#error-handling)) — returning the coordinates needed to settle it.
 4. The agent asks **Claude** to classify the contact: industry, lead score, a short rationale.
 5. **First run only:** the agent calls `define_event_type` → `POST /api/agent/event-types`, registering `crm.contact.enriched.v1` with a JSON Schema. Idempotent on later runs.
 6. The agent calls `publish_event` → `POST /api/agent/publish` with `eventTypeId = crm.contact.enriched.v1` and a payload. The API **validates the payload against the schema**, then publishes onto the Agent Zone topic with the `EventTypeId` property set for routing.
@@ -331,6 +332,21 @@ A final smoke test / manual checklist that defines "done" for the demo:
 
 ---
 
+## v1 implementation notes — deltas from this spec
+
+Status is **Implemented (v1, demo-grade)**, but a few statements above describe *intent* the shipped v1 does not (yet) fully match. They are tracked as tasks in [`plan-v1.1-spec-closure.md`](plan-v1.1-spec-closure.md). None block the demo; they are the gap between "demo-grade v1" and "spec-complete v1."
+
+| # | This spec says | Shipped v1 | Where |
+|---|---|---|---|
+| D1 | Agent identity is an **API key** that maps to an `agentId` ([Agent identity](#agent-identity-demo-version), [Assumptions](#design-decisions-made-during-brainstorming)) | A self-asserted, **unauthenticated** `X-Agent-Id` header (default `demo-agent`); no key, no mapping, no authorization on `/api/agent/*` | `AgentImplementation.cs` (`CurrentAgentId`) |
+| D2 | `sessionKeyPath` (JSONPath) selects the session key for ordering ([Schema registry](#schema-registry)) | Stored on the schema but **not enforced** — `publish` uses the caller-supplied `sessionId` (or a fresh GUID); the path is never evaluated | `AgentImplementation.PostAgentPublishAsync` |
+| D3 | Oversized payloads reuse the claim-check (spec 013) or return `413`; an MCP→REST auth failure returns `401` ([Error handling](#error-handling)) | **Neither is implemented** — there is no size cap and no auth path | `PostAgentPublishAsync` |
+| D4 | Success criterion #1: an external **MCP client** completes the full loop | Proven over **REST** (the scripted `EnrichmentAgent` uses `RestBusGateway`); the **MCP** path has only tool→mock-REST mapping tests and is **not wired into the AppHost** nor exercised live | `EnrichmentAgent/Bus/RestBusGateway.cs`; `NimBus.Mcp.Tests` |
+| D5 | Agent Zone routing via `EventTypeId` filters, provisioned by `nb topology apply` ([Architecture](#the-agent-zone-and-event-type-routing-the-novel-part), [Components](#components--responsibilities)) | Works in the **emulator** via a hardcoded `DynamicForwards` list; the production `ServiceBusTopologyProvisioner` has the **same dynamic-forward gap** and is not yet fixed | `EmulatorTopologyConfigBuilder.cs` (`DynamicForwards`); `ServiceBusTopologyProvisioner.cs` |
+| D6 | Crash / never-settle recovery ([Error handling](#error-handling)) | Operator-only (Resubmit/Skip + `ExpectedBy`); **no automatic timeout sweeper** for parked `Pending+Handoff` events (deferred, see [Future sub-projects](#future-sub-projects)) | — |
+
+---
+
 ## Future sub-projects
 
 This spec is the foundation. Each item below is its own spec → plan → implementation cycle, built on the API + Agent Zone + schema registry delivered here.
@@ -358,5 +374,5 @@ This spec is the foundation. Each item below is its own spec → plan → implem
 ## Open questions
 
 1. ~~**Routing spike outcome** — does property-based `EventTypeId` filtering behave exactly as assumed for non-compiled events?~~ **Resolved (2026-06-05): Phase 0 passed** — `EventTypeId` is already a first-class routed property; no revisit of decision #4. See [Phase 0 result](#phase-0-result--passed-2026-06-05). (Live SB-emulator routing smoke still recommended during the AppHost demo phase.)
-2. **Agent runner host** — ship the demo runner as C# (consistent with the repo) or as a small Python script (closest to typical MCP-agent ergonomics)? Leaning C# for repo consistency.
-3. **Where enriched results surface** — rely solely on the existing WebApp dashboard + ERP UI, or add a tiny "agent activity" panel? Leaning reuse-only for this cycle.
+2. ~~**Agent runner host** — C# or Python?~~ **Resolved: C#** (`samples/CrmErpDemo/EnrichmentAgent`), for repo consistency.
+3. ~~**Where enriched results surface** — add a tiny "agent activity" panel?~~ **Resolved: reuse-only** — the existing WebApp dashboard + ERP UI are sufficient for v1.

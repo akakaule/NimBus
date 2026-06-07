@@ -122,6 +122,16 @@ internal sealed class EndToEndFixture
     }
 
     /// <summary>
+    /// Registers a fallback handler invoked for any event type with no specific handler
+    /// registered. Used by the Mapping Executor (spec 023) to dispatch every inbound
+    /// message to the executor regardless of EventTypeId.
+    /// </summary>
+    public void RegisterFallbackHandler(Func<IEventJsonHandler> handlerFactory)
+    {
+        _eventHandlerProvider.RegisterFallbackHandler(handlerFactory);
+    }
+
+    /// <summary>
     /// Delivers all pending published messages through the subscriber pipeline.
     /// </summary>
     public Task DeliverAll(CancellationToken cancellationToken = default)

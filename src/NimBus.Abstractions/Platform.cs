@@ -18,6 +18,13 @@ namespace NimBus.Core
         IEnumerable<IEndpoint> GetConsumers(IEventType eventType);
 
         IEnumerable<IEndpoint> GetProducers(IEventType eventType);
+
+        /// <summary>
+        /// Dynamically-typed event forwards (spec 022 D5). Empty for platforms with no dynamic events.
+        /// Provisioning creates a forward subscription + EventTypeId rule for each.
+        /// </summary>
+        IReadOnlyList<NimBus.Core.Endpoints.DynamicForward> DynamicForwards
+            => Array.Empty<NimBus.Core.Endpoints.DynamicForward>();
     }
 
     public abstract class Platform : IPlatform
@@ -54,6 +61,10 @@ namespace NimBus.Core
         }
 
         public IEnumerable<IEndpoint> Endpoints => _endpoints.Values;
+
+        /// <inheritdoc cref="IPlatform.DynamicForwards"/>
+        public virtual IReadOnlyList<NimBus.Core.Endpoints.DynamicForward> DynamicForwards =>
+            Array.Empty<NimBus.Core.Endpoints.DynamicForward>();
 
         public IEnumerable<IEventType> EventTypes =>
             _eventTypesCache ??= Endpoints

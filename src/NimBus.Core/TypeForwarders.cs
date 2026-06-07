@@ -17,6 +17,7 @@ using System.Runtime.CompilerServices;
 [assembly: TypeForwardedTo(typeof(NimBus.Core.Endpoints.IRoleAssignment))]
 [assembly: TypeForwardedTo(typeof(NimBus.Core.Endpoints.RoleAssignment))]
 [assembly: TypeForwardedTo(typeof(NimBus.Core.Endpoints.Environment))]
+[assembly: TypeForwardedTo(typeof(NimBus.Core.Endpoints.DynamicForward))]
 
 // Forward platform types to NimBus.Abstractions
 [assembly: TypeForwardedTo(typeof(NimBus.Core.IPlatform))]

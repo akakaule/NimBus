@@ -92,6 +92,22 @@ public sealed class ServiceBusTopologyProvisioner
         {
             await EnsureEndpointTopologyAsync(client, platform, endpoint, isEmulator, cancellationToken).ConfigureAwait(false);
         }
+
+        // Dynamic-forward pass (spec 022 D5): provision forward subscription + EventTypeId rule
+        // for dynamically-typed events that the compiled-event loop above cannot derive.
+        foreach (var fwd in platform.DynamicForwards.OrderBy(f => f.EventTypeId, StringComparer.Ordinal))
+        {
+            var subName = $"AgentDyn-{fwd.TargetEndpoint}";
+            await EnsureForwardSubscriptionAsync(client, fwd.SourceEndpoint, subName, fwd.TargetEndpoint, cancellationToken).ConfigureAwait(false);
+            await EnsureRuleAsync(
+                client,
+                fwd.SourceEndpoint,
+                subName,
+                $"dyn-{fwd.EventTypeId}",
+                $"user.EventTypeId = '{fwd.EventTypeId}' AND user.From IS NULL",
+                $"SET user.From = '{fwd.SourceEndpoint}'; SET user.EventId = newid(); SET user.To = '{fwd.TargetEndpoint}';",
+                cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static async Task EnsureEndpointTopologyAsync(

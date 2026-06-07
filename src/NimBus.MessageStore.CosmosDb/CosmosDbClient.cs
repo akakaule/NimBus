@@ -1294,7 +1294,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         var container = await GetEventMappingsContainer();
         var activeState = MappingState.Active.ToString();
         var query = new QueryDefinition(
-            "SELECT TOP 1 * FROM c WHERE c.SourceEventTypeId = @s AND c.State = @state")
+            "SELECT TOP 1 * FROM c WHERE c.sourceEventTypeId = @s AND c.state = @state")
             .WithParameter("@s", sourceEventTypeId)
             .WithParameter("@state", activeState);
         using var iterator = container.GetItemQueryIterator<EventMapping>(query,

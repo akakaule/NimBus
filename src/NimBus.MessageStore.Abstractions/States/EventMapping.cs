@@ -24,27 +24,45 @@ public class EventMapping
     /// <summary>Stable id: "{sourceEventTypeId}->{targetEventTypeId}". Cosmos partition key.</summary>
     [JsonProperty(PropertyName = "id")]
     public string Id { get; set; } = string.Empty;
+
+    [JsonProperty(PropertyName = "sourceEventTypeId")]
     public string SourceEventTypeId { get; set; } = string.Empty;
+
+    [JsonProperty(PropertyName = "targetEventTypeId")]
     public string TargetEventTypeId { get; set; } = string.Empty;
 
     /// <summary>The reusable artifact: a JSONata expression mapping source JSON to target JSON.</summary>
+    [JsonProperty(PropertyName = "transform")]
     public string Transform { get; set; } = string.Empty;
 
     /// <summary>The LLM's short explanation, shown to the operator during review.</summary>
+    [JsonProperty(PropertyName = "rationale")]
     public string? Rationale { get; set; }
 
     /// <summary>Serialized JSON array of { source, output } worked examples.</summary>
+    [JsonProperty(PropertyName = "workedExamplesJson")]
     public string? WorkedExamplesJson { get; set; }
 
     /// <summary>Fingerprint of the source schema at authoring time, for drift detection.</summary>
+    [JsonProperty(PropertyName = "sourceSchemaHash")]
     public string SourceSchemaHash { get; set; } = string.Empty;
 
+    [JsonProperty(PropertyName = "state")]
     [JsonConverter(typeof(StringEnumConverter))]
     public MappingState State { get; set; } = MappingState.Draft;
+
+    [JsonProperty(PropertyName = "version")]
     public int Version { get; set; } = 1;
 
+    [JsonProperty(PropertyName = "createdBy")]
     public string? CreatedBy { get; set; }
+
+    [JsonProperty(PropertyName = "createdUtc")]
     public DateTime CreatedUtc { get; set; }
+
+    [JsonProperty(PropertyName = "approvedBy")]
     public string? ApprovedBy { get; set; }
+
+    [JsonProperty(PropertyName = "approvedUtc")]
     public DateTime? ApprovedUtc { get; set; }
 }

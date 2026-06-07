@@ -30,6 +30,7 @@ This is the second sub-project built on spec 022's foundation (schema registry, 
 
 **New projects / components**
 - **Mapping Executor** — a `NimBus.SDK`-based hosted worker (new) that applies approved mappings at runtime. The only new component in the message hot path.
+- **Mapping Zone** — a single, pre-provisioned NimBus endpoint/topic the Executor owns (mirrors spec-022's Agent Zone); source events with a mapping are forwarded here.
 - **`MappingAgent`** (in `samples/CrmErpDemo/`) — a scripted agent that authors mappings, so the demo is reproducible without a human driving a chat client.
 - **Marketing source app** (in `samples/CrmErpDemo/`) — emits `marketing.lead.created.v1` in its own contract.
 
@@ -39,10 +40,12 @@ This is the second sub-project built on spec 022's foundation (schema registry, 
 - `src/NimBus.WebApp/api-spec.yaml` — add `/api/agent/mappings/*` endpoints (NSwag-generated C# contract + TS client).
 - `src/NimBus.WebApp/Controllers/ApiContract/…` — implement the mapping endpoints; add a **Mappings** review page to `ClientApp/`.
 - `src/NimBus.Mcp/` — add `propose_mapping` (and `list_mappings`) tools, 1:1 over the new REST endpoints.
-- `samples/CrmErpDemo/CrmErpDemo.Contracts/` + `CrmErpDemo.AppHost/` — register the Marketing source + canonical ERP customer contracts; run the Marketing app, `MappingAgent`, and Mapping Executor as Aspire resources.
+- `src/NimBus.SDK/` — add a **fallback dynamic handler** (a default `IEventJsonHandler` invoked when no `EventTypeId`-specific handler matches), so the Executor can decide per message from the registry without runtime handler (un)registration.
+- **Topology provisioning** — declare the `source → Mapping Zone` and `Mapping Zone → target` forwards as **dynamic forwards**, provisioned by both the emulator builder and the production `ServiceBusTopologyProvisioner`. Reuses — and **depends on** — [spec-022 plan-v1.1 D5](../022-ai-agent-bus-participation/plan-v1.1-spec-closure.md).
+- `samples/CrmErpDemo/CrmErpDemo.Contracts/` + `CrmErpDemo.AppHost/` — register the Marketing source + canonical ERP customer contracts and the Mapping Zone + its forwards; run the Marketing app, `MappingAgent`, and Mapping Executor as Aspire resources.
 - `docs/` — this spec + a short usage guide.
 
-**Deliberately unchanged:** the spec-022 agent API, Agent Zone, schema registry, and MCP server are reused as-is. No production auth (inherits spec-022 demo-grade `X-Agent-Id`). No new transport.
+**Deliberately unchanged:** the spec-022 agent API, Agent Zone, schema registry, and MCP server are reused as-is. **No runtime Service Bus topology mutation** — routes are provisioned via `nb topology apply`, exactly as in spec 022. No production auth (inherits spec-022 demo-grade `X-Agent-Id`). No new transport.
 
 ---
 
@@ -64,6 +67,7 @@ These six decisions scope this spec. Each was chosen deliberately over the alter
 - **Source and target contracts are both registered** as event types (JSON Schema) before a mapping is authored.
 - **One source → one target** per mapping in v1.
 - **Auth = demo-grade**, inherited from spec 022 (`X-Agent-Id`); production hardening is out of scope.
+- **Depends on spec 022 + its plan-v1.1 D5** — declared dynamic-forward provisioning in both the emulator builder and the production `ServiceBusTopologyProvisioner`. Without it, routes to the Mapping Zone exist only in the emulator.
 
 ---
 
@@ -84,7 +88,10 @@ The result: NimBus can host agents, but it can't yet let an agent do the platfor
 **In scope (v1)**
 - A **mapping registry** (`IEventMappingStore` + Cosmos/SQL/in-memory implementations) holding agent-authored, declarative **JSONata** transforms keyed by `(sourceEventTypeId → targetEventTypeId)`, with a lifecycle state and a `sourceSchemaHash` for drift detection.
 - A **mapping API** (`/api/agent/mappings/*`): propose (agent), list/get, approve/reject/pause/resume (operator), described in `api-spec.yaml`.
-- A **Mapping Executor**: a `NimBus.SDK` hosted worker that registers a dynamic handler (spec-022 `AddDynamicHandler`) for each source type with an **Active** mapping, applies the transform, validates the output against the target schema, publishes the target event, and parks failures via the existing pending-handoff path.
+- A **Mapping Executor**: a `NimBus.SDK` hosted worker that registers a single **fallback handler** on the pre-provisioned **Mapping Zone**, consults the registry per message (Active → transform; Paused/Stale/none → park), validates the output against the target schema, publishes the target event, and parks failures via the existing pending-handoff path.
+- A pre-provisioned **Mapping Zone** endpoint, with `source → Mapping Zone` and `Mapping Zone → target` routes declared as **dynamic forwards** and provisioned by both the emulator builder and the production provisioner (**depends on** [spec-022 plan-v1.1 D5](../022-ai-agent-bus-participation/plan-v1.1-spec-closure.md)).
+- A small additive **SDK fallback dynamic handler** (default `IEventJsonHandler` on `EventTypeId` miss) so the Executor decides per message from the registry without runtime (un)registration or restarts.
+- **Sample sourcing** for authoring/worked-examples via the existing `GET /api/messages/search` (by source `EventTypeId`), with operator-supplied samples or schema-synthesized examples as fallback.
 - A **sandboxed JSONata engine** for deterministic JSON→JSON transformation.
 - **MCP tools** `propose_mapping` and `list_mappings`, 1:1 over the REST endpoints.
 - A **WebApp Mappings page**: review queue (draft + rationale + worked examples), approve/reject, and an active/stale/paused view with drift alerts.
@@ -98,6 +105,7 @@ The result: NimBus can host agents, but it can't yet let an agent do the platfor
 - Auto-promotion (removing the human gate).
 - Mapping versioning/compatibility rules beyond re-authoring.
 - Non-JSON formats.
+- **Runtime Service Bus topology mutation** — auto-creating routes for brand-new source types at approval time; v1 provisions routes via `nb topology apply`, so a brand-new source type needs a provisioning pass (the deferred "fully dynamic topology" future of spec 022).
 - Production authentication/authorization, quotas, billing (inherits spec-022 demo-grade identity).
 
 ---
@@ -129,9 +137,20 @@ The result: NimBus can host agents, but it can't yet let an agent do the platfor
 
 ### The Mapping Executor (the novel part)
 
-- For each mapping in state **Active**, the Executor registers a **dynamically-typed handler** (spec-022 `AddDynamicHandler(sourceEventTypeId, …)`) on the source endpoint/Agent Zone.
-- On each message it (1) validates the input against the source schema and compares `sourceSchemaHash`; (2) applies the JSONata transform; (3) validates the output against the **target** JSON Schema; (4) publishes the target event with its `EventTypeId` set for routing (reusing spec-022 dynamic routing); (5) settles via the Resolver/handoff path.
-- The Executor **never calls an LLM**. It loads transforms from the registry and caches Active mappings, refreshing on lifecycle changes.
+The Executor owns a **pre-provisioned Mapping Zone** endpoint/topic (mirroring spec-022's Agent Zone). Source events that have a registered mapping are routed into the Mapping Zone by standard forward rules (see [Routing and handler registration](#routing-and-handler-registration)); the Executor's job is to consult the registry and apply the right transform.
+
+- The Executor registers a **single catch-all (fallback) handler** on the Mapping Zone — *not* one handler per mapping. For every message it looks up the source `EventTypeId` in the mapping registry and acts on the mapping's **state**:
+  - **Active** → (1) validate the input against the source schema and compare `sourceSchemaHash`; (2) apply the JSONata transform; (3) validate the output against the **target** JSON Schema; (4) publish the target event with its `EventTypeId` set for routing; (5) settle via the Resolver/handoff path.
+  - **Paused / Stale** → park the message (hold for recovery); do not transform.
+  - **No mapping** → park as a misconfiguration (the message was routed here but nothing maps it).
+- The Executor **never calls an LLM**. It reads transforms from the registry and caches them, invalidating the cache on lifecycle changes — so approving, pausing, or staling a mapping takes effect **without restarting or re-registering handlers**.
+
+### Routing and handler registration
+
+This spec keeps spec-022's "no runtime Service Bus topology mutation" constraint, which forces two design choices the review surfaced:
+
+- **Physical routing is provisioned, not created at runtime.** For a source event to reach the Executor and the target event to reach its consumer, two forward routes must exist — `source endpoint → Mapping Zone` and `Mapping Zone → target consumer`. These are **declared dynamic forwards** applied by `nb topology apply`, using the same declaration mechanism that [spec 022's plan-v1.1 task D5](../022-ai-agent-bus-participation/plan-v1.1-spec-closure.md) adds to *both* the emulator builder and the production provisioner. **Spec 023 depends on that D5 fix** — without it, the route to the Mapping Zone (and onward) silently fails in real topology. Approving a mapping makes it *handled*; routing a brand-new source type still needs a provisioning pass (an operator/deploy action). Fully-runtime route creation is the deferred "fully dynamic topology" future.
+- **Handler registration is per-message, not per-mapping.** The current SDK registers dynamic handlers at startup (`NimBusSubscriberBuilder.AddDynamicHandler`); `EventHandlerProvider.GetHandler` is string-keyed and **throws `EventHandlerNotFoundException` on a miss** — there is no public runtime registration on `ISubscriberClient` and no fallback. Rather than add runtime (un)registration or require Executor restarts, this spec adds one **small, additive SDK piece: a fallback `IEventJsonHandler`** invoked when no `EventTypeId`-specific handler matches. The Executor registers exactly that fallback for the Mapping Zone and decides everything from the registry per message. (`EventHandlerProvider` already stores handlers in a `ConcurrentDictionary`, so the addition is minimal.)
 
 ### Mapping registry
 
@@ -173,11 +192,11 @@ Draft ──approve──► Active ──source drift──► Stale (paused) �
 **Authoring (once):**
 
 1. An operator (or the agent autonomously) declares: map `marketing.lead.created.v1` → `erp.customer.upsert.v1`, with a one-line intent note.
-2. The `MappingAgent` reads both JSON Schemas from `GET /api/agent/catalog` and pulls a few sample source messages.
+2. The `MappingAgent` reads both JSON Schemas from `GET /api/agent/catalog` and pulls a few sample source messages via the existing `GET /api/messages/search` (by source `EventTypeId`). If no traffic exists yet, it uses operator-supplied samples or synthesizes examples from the source schema.
 3. It asks Claude (structured output) for a **JSONata transform** + rationale, then runs the transform against the samples to produce **worked examples**.
 4. It calls `propose_mapping` → `POST /api/agent/mappings`, storing the transform, rationale, worked examples, and `sourceSchemaHash`. State = **Draft**.
 5. The draft appears on the WebApp **Mappings** page with the transform, rationale, and worked examples side-by-side.
-6. The operator approves → `POST /api/agent/mappings/{id}/approve`. State = **Active**; the Executor registers a handler for the source type.
+6. The operator approves → `POST /api/agent/mappings/{id}/approve`. State = **Active**. The Executor's catch-all handler is already in place, so it picks the mapping up from the registry on the next matching message — **no registration or restart**. (Routing for the source type must already be provisioned; for the demo it is pre-declared.)
 
 **Runtime (every message, no LLM):**
 
@@ -195,7 +214,8 @@ Draft ──approve──► Active ──source drift──► Stale (paused) �
 | Transformed output fails the **target** schema | Park as a failed handoff with the validation errors + offending payload; **nothing is published**; surfaced in the WebApp for resubmit/skip (reuses spec-022 Resolver/audit/handoff). |
 | Transform **throws** at runtime (unexpected input) | Same park-and-recover path; the offending message is preserved. |
 | **Source schema drift** (`sourceSchemaHash` mismatch / input no longer schema-valid) | Mark the mapping **Stale**, pause it, raise a drift alert on the Mappings page, and request re-author → back through approval. In-flight messages **park, not drop**. |
-| **No Active mapping** for a received source type | The Executor ignores it; normal NimBus routing applies. |
+| Message reaches the Mapping Zone but the mapping is **Paused** or **Stale** | **Park** it (hold for recovery) — never transform or silently complete. |
+| Message reaches the Mapping Zone but **no mapping exists** for its source type | **Park** as a misconfiguration (it was routed here expecting a mapping); surface for operator attention rather than silently completing. |
 | `propose_mapping` for an unknown source/target event type | `404` — both contracts must be registered first. |
 | Low-confidence authoring | The agent still submits a Draft but flags low confidence; the operator sees the flag before approving. |
 | LLM unavailable during authoring | Authoring fails gracefully; **runtime is unaffected** (it never calls the LLM). |
@@ -271,4 +291,6 @@ Each is its own spec → plan → implementation cycle, built on the mapping reg
 
 1. **JSONata library** — select a maintained .NET JSONata evaluator (e.g. `Jsonata.Net.Native`) and confirm availability, license, and sandboxing/timeout behavior before implementation. If none is suitable, fall back to a constrained mapping DSL that compiles to a deterministic transform.
 2. **Drift sensitivity** — `sourceSchemaHash` is an exact-match fingerprint, so any source-schema edit (even an additive, compatible one) marks a mapping Stale. Acceptable for v1; a compatibility-aware check is a candidate for the mapping-evolution future spec.
-3. **Worked-example sourcing** — pull sample source messages from live/recent traffic (the message store) or require the operator to supply representative samples at authoring time? Leaning store-sourced with an operator override.
+3. ~~**Worked-example sourcing**~~ **Resolved (review):** samples come from the existing `GET /api/messages/search` by source `EventTypeId`, with operator-supplied samples or schema-synthesized examples when no traffic exists yet.
+4. **Fallback-handler scope** — expose the fallback `IEventJsonHandler` as a general `NimBusSubscriberBuilder` feature, or keep it Executor-local? Leaning general (it's broadly useful and tiny).
+5. **Mapping Zone granularity** — one shared Mapping Zone for all mappings (simplest, chosen for v1) vs. per-integration zones for isolation/throughput. Revisit only if a shared zone becomes a bottleneck.

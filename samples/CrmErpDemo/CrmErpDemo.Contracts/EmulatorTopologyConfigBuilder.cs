@@ -21,31 +21,6 @@ namespace CrmErpDemo.Contracts;
 // provisioner stays the source of truth for real Azure.
 public static class EmulatorTopologyConfigBuilder
 {
-    // ---------------------------------------------------------------------------
-    // DEMO-SCOPED WORKAROUND: dynamic-event forward rules
-    //
-    // The compiled forwarding loop above (cross-endpoint loop) derives forward
-    // subscriptions only from COMPILED event types (endpoint.EventTypesProduced ×
-    // platform.GetConsumers). Dynamically-typed events — where the publisher sets
-    // a string EventTypeId but there is no corresponding IEvent class registered
-    // on an endpoint — are invisible to that loop.
-    //
-    // For spec 022, the AI agent publishes "crm.contact.enriched.v1" onto the
-    // AgentZoneEndpoint topic using a dynamic event type string, so no auto-generated
-    // forward rule matches it. The entries below add explicit forward subscriptions
-    // for these dynamic routes.
-    //
-    // NOTE: The production ServiceBusTopologyProvisioner
-    //   (src/NimBus.CommandLine/ServiceBusTopologyProvisioner.cs)
-    // has the SAME gap: it only iterates endpoint.EventTypesProduced and would
-    // also miss dynamic event types in a real Azure run. A parity fix for that
-    // provisioner is deferred until the dynamic-event API is stabilised.
-    // ---------------------------------------------------------------------------
-    private static readonly IReadOnlyList<(string SourceEndpoint, string EventTypeId, string TargetEndpoint)> DynamicForwards =
-    [
-        ("AgentZoneEndpoint", "crm.contact.enriched.v1", "DataPlatformEndpoint"),
-    ];
-
     public static string Build(IPlatform platform)
     {
         var endpoints = platform.Endpoints
@@ -57,9 +32,10 @@ public static class EmulatorTopologyConfigBuilder
             BuildResolverTopic(),
         };
 
+        var dynamicForwards = platform.DynamicForwards;
         foreach (var endpoint in endpoints)
         {
-            topics.Add(BuildEndpointTopic(platform, endpoint));
+            topics.Add(BuildEndpointTopic(platform, endpoint, dynamicForwards));
         }
 
         var root = new
@@ -103,7 +79,7 @@ public static class EmulatorTopologyConfigBuilder
         },
     };
 
-    private static object BuildEndpointTopic(IPlatform platform, IEndpoint endpoint)
+    private static object BuildEndpointTopic(IPlatform platform, IEndpoint endpoint, IReadOnlyList<DynamicForward> dynamicForwards)
     {
         var subscriptions = new List<object>
         {
@@ -189,19 +165,19 @@ public static class EmulatorTopologyConfigBuilder
             });
         }
 
-        // Dynamic-event forward subscriptions (see DynamicForwards declaration above).
+        // Dynamic-event forward subscriptions (sourced from platform.DynamicForwards, spec 022 D5).
         // For each entry whose source matches this endpoint, emit a forward subscription
         // on this topic. Subscription name uses the "AgentDyn-<target>" convention to
         // avoid colliding with the compiled forward subscriptions (named after the
         // consumer endpoint id) when the dynamic target is the same consumer.
         var addedDynamicSubNames = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var (sourceEndpoint, eventTypeId, targetEndpoint) in DynamicForwards)
+        foreach (var fwd in dynamicForwards)
         {
-            if (!string.Equals(sourceEndpoint, endpoint.Id, StringComparison.Ordinal))
+            if (!string.Equals(fwd.SourceEndpoint, endpoint.Id, StringComparison.Ordinal))
                 continue;
 
-            var subName = $"AgentDyn-{targetEndpoint}";
+            var subName = $"AgentDyn-{fwd.TargetEndpoint}";
 
             // Guard against duplicates if DynamicForwards has more than one entry for
             // the same (source, target) pair.
@@ -211,13 +187,13 @@ public static class EmulatorTopologyConfigBuilder
             subscriptions.Add(new
             {
                 Name = subName,
-                Properties = ForwardSubscriptionProperties(targetEndpoint),
+                Properties = ForwardSubscriptionProperties(fwd.TargetEndpoint),
                 Rules = new object[]
                 {
                     Rule(
-                        eventTypeId,
-                        $"user.EventTypeId = '{eventTypeId}' AND user.From IS NULL",
-                        $"SET user.From = '{sourceEndpoint}'; SET user.EventId = newid(); SET user.To = '{targetEndpoint}';"),
+                        fwd.EventTypeId,
+                        $"user.EventTypeId = '{fwd.EventTypeId}' AND user.From IS NULL",
+                        $"SET user.From = '{fwd.SourceEndpoint}'; SET user.EventId = newid(); SET user.To = '{fwd.TargetEndpoint}';"),
                 },
             });
         }

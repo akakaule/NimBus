@@ -2,107 +2,104 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>NimBus — AI Agents as Bus Participants</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NimBus — AI Agents as Bus Participants (Spec 022)</title>
 <style>
-  @page { size: A4; margin: 0; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
   :root{
-    --ink:#0f172a; --muted:#475569; --line:#e2e8f0; --soft:#f8fafc;
-    --teal:#0e7490; --teal2:#0891b2; --amber:#b45309; --amberbg:#fffbeb; --amberln:#fde68a;
-    --green:#15803d; --greenbg:#f0fdf4; --greenln:#bbf7d0; --grey:#64748b; --greybg:#f1f5f9;
+    --ink:#0f172a; --muted:#475569; --soft:#64748b; --line:#e2e8f0; --bg:#f8fafc;
+    --teal:#0e7490; --teal2:#0891b2; --tealsoft:#ecfeff;
+    --amber:#b45309; --amberbg:#fffbeb; --amberln:#fde68a;
+    --green:#15803d; --greenbg:#f0fdf4; --greenln:#bbf7d0;
     --blue:#1d4ed8;
   }
-  html,body{ font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif; color:var(--ink); -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  .page{ width:210mm; min-height:297mm; padding:13mm 13mm 9mm; }
-  /* Header */
-  header{ background:linear-gradient(110deg,var(--teal) 0%,var(--teal2) 70%,#22b8cf 100%); color:#fff; border-radius:14px; padding:16px 20px; display:flex; justify-content:space-between; align-items:flex-start; gap:16px; }
-  .eyebrow{ font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; opacity:.85; font-weight:600; }
-  h1{ font-size:25px; line-height:1.08; margin:4px 0 5px; letter-spacing:-.3px; }
-  .subtitle{ font-size:12px; line-height:1.45; opacity:.95; max-width:128mm; }
-  .badge{ flex:0 0 auto; text-align:center; background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.4); border-radius:10px; padding:9px 12px; font-size:10px; line-height:1.5; }
-  .badge b{ display:block; font-size:13px; letter-spacing:.04em; }
-  /* Layout */
-  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:11px; margin-top:13px; }
-  .card{ border:1px solid var(--line); border-radius:11px; padding:12px 14px; background:#fff; }
-  .card h2{ font-size:12.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--teal); margin-bottom:8px; }
-  .ba{ display:flex; gap:9px; align-items:flex-start; margin-bottom:9px; }
-  .ba:last-child{ margin-bottom:0; }
-  .pill{ flex:0 0 auto; font-size:9px; font-weight:700; letter-spacing:.05em; padding:3px 7px; border-radius:999px; margin-top:1px; }
-  .pill.before{ background:var(--greybg); color:var(--grey); }
-  .pill.after{ background:#ecfeff; color:var(--teal); }
-  .ba p{ font-size:11.5px; line-height:1.42; color:var(--muted); }
-  .ba p b{ color:var(--ink); }
-  ol.caps{ list-style:none; counter-reset:c; }
-  ol.caps li{ counter-increment:c; position:relative; padding-left:27px; font-size:11.5px; line-height:1.4; color:var(--muted); margin-bottom:7.5px; }
-  ol.caps li:last-child{ margin-bottom:0; }
-  ol.caps li b{ color:var(--ink); }
-  ol.caps li::before{ content:counter(c); position:absolute; left:0; top:-1px; width:19px; height:19px; border-radius:50%; background:var(--teal); color:#fff; font-size:11px; font-weight:700; text-align:center; line-height:19px; }
-  /* Diagram */
-  .diagram{ margin-top:12px; border:1px solid var(--line); border-radius:11px; padding:12px 14px 10px; background:var(--soft); }
-  .diagram h2{ font-size:12.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--teal); margin-bottom:2px; }
-  .diagram .lede{ font-size:11px; color:var(--muted); margin-bottom:8px; }
-  .diagram svg{ width:100%; height:auto; display:block; }
-  /* Status */
-  .status{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:11px; margin-top:12px; }
-  .scard{ border-radius:11px; padding:11px 13px; border:1px solid; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif; line-height:1.55; font-size:16px; }
+  .wrap{ max-width:980px; margin:0 auto; padding:0 20px 70px; }
+  header.hero{ background:linear-gradient(115deg,var(--teal) 0%,var(--teal2) 65%,#22b8cf 100%); color:#fff; }
+  .hero-inner{ max-width:980px; margin:0 auto; padding:46px 20px 40px; }
+  .eyebrow{ font-size:12px; letter-spacing:.18em; text-transform:uppercase; opacity:.85; font-weight:700; }
+  h1{ font-size:38px; line-height:1.1; margin:8px 0 12px; letter-spacing:-.5px; }
+  .lede{ font-size:18px; max-width:720px; opacity:.96; }
+  .badges{ margin-top:18px; display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{ background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.4); border-radius:999px; padding:5px 12px; font-size:13px; font-weight:600; }
+  h2{ font-size:24px; margin:40px 0 6px; letter-spacing:-.3px; display:flex; align-items:center; gap:10px; }
+  h2::before{ content:""; width:10px; height:22px; border-radius:3px; background:var(--teal); display:inline-block; }
+  .card{ background:#fff; border:1px solid var(--line); border-radius:14px; padding:18px 20px; margin:14px 0; }
+  .lede2{ color:var(--muted); font-size:14.5px; margin:4px 0 12px; }
+  .ba{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .ba .box{ border-radius:12px; padding:16px 18px; border:1px solid; }
+  .ba .before{ background:var(--bg); border-color:var(--line); }
+  .ba .after{ background:var(--tealsoft); border-color:#a5e8f0; }
+  .ba .tag{ font-size:11px; font-weight:800; letter-spacing:.06em; padding:3px 8px; border-radius:999px; display:inline-block; margin-bottom:8px; }
+  .ba .before .tag{ background:#e2e8f0; color:var(--soft); }
+  .ba .after .tag{ background:#cffafe; color:var(--teal); }
+  .ba p{ margin:0; color:var(--muted); font-size:14.5px; } .ba p b{ color:var(--ink); }
+  .caps{ display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin:14px 0; }
+  .cap{ border:1px solid var(--line); border-radius:11px; padding:12px 13px; background:#fff; }
+  .cap .k{ display:inline-grid; place-items:center; width:24px; height:24px; border-radius:6px; background:var(--tealsoft); color:var(--teal); font-weight:800; font-size:13px; margin-bottom:7px; }
+  .cap b{ display:block; font-size:14px; margin-bottom:2px; } .cap span{ font-size:12px; color:var(--muted); line-height:1.35; }
+  .status{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:14px 0; }
+  .scard{ border-radius:14px; padding:16px 18px; border:1px solid; }
   .scard.ok{ background:var(--greenbg); border-color:var(--greenln); }
   .scard.pend{ background:var(--amberbg); border-color:var(--amberln); }
-  .scard.out{ background:var(--greybg); border-color:var(--line); }
-  .scard h3{ font-size:11px; text-transform:uppercase; letter-spacing:.06em; margin-bottom:7px; display:flex; align-items:center; gap:6px; }
-  .scard.ok h3{ color:var(--green); } .scard.pend h3{ color:var(--amber); } .scard.out h3{ color:var(--grey); }
-  .scard ul{ list-style:none; }
-  .scard li{ font-size:10.3px; line-height:1.38; color:var(--muted); padding-left:13px; position:relative; margin-bottom:5px; }
+  .scard.out{ background:#f1f5f9; border-color:var(--line); }
+  .scard h3{ font-size:13px; text-transform:uppercase; letter-spacing:.05em; margin:0 0 10px; }
+  .scard.ok h3{ color:var(--green); } .scard.pend h3{ color:var(--amber); } .scard.out h3{ color:var(--soft); }
+  .scard ul{ list-style:none; padding:0; margin:0; }
+  .scard li{ font-size:13px; line-height:1.4; color:var(--muted); padding-left:18px; position:relative; margin-bottom:8px; }
   .scard li:last-child{ margin-bottom:0; }
-  .scard li::before{ position:absolute; left:0; top:0; font-weight:700; }
+  .scard li::before{ position:absolute; left:0; top:0; font-weight:800; }
   .scard.ok li::before{ content:"✓"; color:var(--green); }
   .scard.pend li::before{ content:"○"; color:var(--amber); }
-  .scard.out li::before{ content:"–"; color:var(--grey); }
-  footer{ margin-top:12px; display:flex; justify-content:space-between; align-items:center; font-size:9.5px; color:var(--grey); border-top:1px solid var(--line); padding-top:7px; }
+  .scard.out li::before{ content:"–"; color:#94a3b8; }
+  svg.diagram{ width:100%; height:auto; display:block; }
+  footer{ margin-top:44px; border-top:1px solid var(--line); padding-top:16px; color:var(--soft); font-size:13.5px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
   footer .dot{ color:var(--teal); }
+  @media (max-width:760px){ .ba,.status{ grid-template-columns:1fr; } .caps{ grid-template-columns:1fr 1fr; } h1{ font-size:30px; } }
 </style>
 </head>
 <body>
-<div class="page">
 
-  <header>
-    <div>
-      <div class="eyebrow">NimBus · Feature Brief</div>
-      <h1>AI Agents as Bus Participants</h1>
-      <div class="subtitle">Let AI agents (e.g. Claude) join the event platform as first-class peers — discovering, defining, exchanging and settling messages — through a standard agent API (REST&nbsp;+&nbsp;OpenAPI) and an MCP server. <b>No code written or deployed.</b></div>
+<header class="hero">
+  <div class="hero-inner">
+    <div class="eyebrow">NimBus · Feature Brief · Spec 022</div>
+    <h1>AI Agents as Bus Participants</h1>
+    <p class="lede">Let AI agents (e.g. Claude) join the event platform as first-class peers — discovering, defining, exchanging and settling messages — through a standard agent API (REST&nbsp;+&nbsp;OpenAPI) and an MCP server. <b>No code written or deployed.</b></p>
+    <div class="badges">
+      <span class="chip">v1 · demo-grade · implemented</span>
+      <span class="chip">🔌 REST + MCP</span>
+      <span class="chip">📜 no code</span>
     </div>
-    <div class="badge"><b>v1</b>demo-grade<br>implemented</div>
-  </header>
+  </div>
+</header>
 
-  <div class="grid2">
-    <div class="card">
-      <h2>Why it matters</h2>
-      <div class="ba"><span class="pill before">BEFORE</span><p>Only hand-written <b>C# services</b> could publish or consume events. An AI agent had no way in — there was no door built for it.</p></div>
-      <div class="ba"><span class="pill after">AFTER</span><p>An external <b>AI agent</b> can discover the platform, invent its own message type at runtime, subscribe, publish (validated), and settle its work — all visible in the same audit trail as coded services.</p></div>
-    </div>
-    <div class="card">
-      <h2>What an AI agent can do</h2>
-      <ol class="caps">
-        <li><b>Discover</b> the platform — endpoints & event types.</li>
-        <li><b>Define a new event type</b> at runtime from a JSON schema — no C#, no deploy.</li>
-        <li><b>Subscribe & receive</b> matching messages (pull-based).</li>
-        <li><b>Publish</b> messages — auto-validated against the schema it defined.</li>
-        <li><b>Settle</b> work (done / failed) — tracked end-to-end.</li>
-      </ol>
+<div class="wrap">
+
+  <h2>Why it matters</h2>
+  <div class="card">
+    <div class="ba">
+      <div class="box before"><span class="tag">BEFORE</span><p>Only hand-written <b>C# services</b> could publish or consume events. An AI agent had no way in — there was no door built for it.</p></div>
+      <div class="box after"><span class="tag">AFTER</span><p>An external <b>AI agent</b> can discover the platform, invent its own message type at runtime, subscribe, publish (validated), and settle its work — all visible in the same audit trail as coded services.</p></div>
     </div>
   </div>
 
-  <div class="diagram">
-    <h2>How it works — the live demo</h2>
-    <div class="lede">An AI enrichment agent joins the existing CRM → ERP demo: a coded service hands off to an LLM, which hands back to coded services — one continuous, audited chain.</div>
-    <svg viewBox="0 0 1000 250" role="img" aria-label="Agent enrichment pipeline">
+  <h2>What an AI agent can do</h2>
+  <div class="caps">
+    <div class="cap"><span class="k">1</span><b>Discover</b><span>the platform — endpoints &amp; event types</span></div>
+    <div class="cap"><span class="k">2</span><b>Define</b><span>a new event type at runtime from a JSON schema — no C#</span></div>
+    <div class="cap"><span class="k">3</span><b>Subscribe &amp; receive</b><span>matching messages (pull-based)</span></div>
+    <div class="cap"><span class="k">4</span><b>Publish</b><span>messages — auto-validated against the schema</span></div>
+    <div class="cap"><span class="k">5</span><b>Settle</b><span>work done / failed — tracked end-to-end</span></div>
+  </div>
+
+  <h2>How it works — the live demo</h2>
+  <div class="card">
+    <div class="lede2">An AI enrichment agent joins the existing CRM → ERP demo: a coded service hands off to an LLM, which hands back to coded services — one continuous, audited chain.</div>
+    <svg class="diagram" viewBox="0 0 1000 250" role="img" aria-label="Agent enrichment pipeline">
       <defs>
         <marker id="ar"  markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#475569"/></marker>
         <marker id="arA" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#b45309"/></marker>
-        <marker id="arD" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#94a3b8"/></marker>
       </defs>
-
-      <!-- Stage boxes -->
-      <!-- 1 CRM -->
       <g>
         <rect x="8" y="40" width="150" height="64" rx="10" fill="#fff" stroke="#cbd5e1"/>
         <circle cx="34" cy="64" r="9" fill="#0e7490"/><path d="M22 86 a12 9 0 0 1 24 0 z" fill="#0e7490"/>
@@ -110,7 +107,6 @@
         <text x="56" y="78" font-size="10.5" fill="#64748b">contact created</text>
         <text x="56" y="93" font-size="10.5" fill="#64748b">(coded service)</text>
       </g>
-      <!-- 2 Agent Zone -->
       <g>
         <rect x="218" y="40" width="160" height="64" rx="10" fill="#fff" stroke="#cbd5e1"/>
         <rect x="234" y="56" width="13" height="13" rx="2" fill="#0e7490"/><rect x="234" y="74" width="13" height="9" rx="2" fill="#a5d8e6"/>
@@ -118,7 +114,6 @@
         <text x="256" y="78" font-size="10" fill="#64748b">parks the event,</text>
         <text x="256" y="92" font-size="10" fill="#64748b">awaits an agent</text>
       </g>
-      <!-- 3 AI agent (highlight) -->
       <g>
         <rect x="438" y="30" width="174" height="84" rx="11" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.6"/>
         <rect x="456" y="48" width="20" height="16" rx="4" fill="#b45309"/><circle cx="462" cy="55" r="2.2" fill="#fff"/><circle cx="470" cy="55" r="2.2" fill="#fff"/><line x1="466" y1="42" x2="466" y2="48" stroke="#b45309" stroke-width="2"/><circle cx="466" cy="40" r="2" fill="#b45309"/>
@@ -127,7 +122,6 @@
         <text x="456" y="90" font-size="10.5" fill="#92400e">classify: industry,</text>
         <text x="456" y="104" font-size="10.5" fill="#92400e">lead score, define type</text>
       </g>
-      <!-- 4 ERP / DataPlatform -->
       <g>
         <rect x="672" y="40" width="160" height="64" rx="10" fill="#fff" stroke="#cbd5e1"/>
         <path d="M690 58 h16 v22 h-16 z" fill="#0e7490"/><path d="M690 58 h16 v6 h-16 z" fill="#a5d8e6"/>
@@ -135,7 +129,6 @@
         <text x="714" y="76" font-size="12.5" font-weight="700" fill="#0f172a">Platform</text>
         <text x="714" y="93" font-size="10" fill="#64748b">consumes enriched</text>
       </g>
-      <!-- 5 Dashboard -->
       <g>
         <rect x="892" y="40" width="100" height="64" rx="10" fill="#fff" stroke="#cbd5e1"/>
         <rect x="906" y="56" width="30" height="20" rx="2" fill="none" stroke="#0e7490"/><line x1="911" y1="71" x2="916" y2="66" stroke="#0e7490" stroke-width="2"/><line x1="916" y1="66" x2="921" y2="69" stroke="#0e7490" stroke-width="2"/><line x1="921" y1="69" x2="930" y2="61" stroke="#0e7490" stroke-width="2"/>
@@ -143,8 +136,6 @@
         <text x="942" y="79" font-size="11.5" font-weight="700" fill="#0f172a">board</text>
         <text x="906" y="98" font-size="9.5" fill="#64748b">full audit trail</text>
       </g>
-
-      <!-- Arrows between stages -->
       <line x1="158" y1="72" x2="214" y2="72" stroke="#475569" stroke-width="2" marker-end="url(#ar)"/>
       <text x="186" y="64" font-size="9" fill="#475569" text-anchor="middle">event</text>
       <line x1="378" y1="72" x2="434" y2="72" stroke="#b45309" stroke-width="2" marker-end="url(#arA)"/>
@@ -152,29 +143,22 @@
       <line x1="612" y1="72" x2="668" y2="72" stroke="#b45309" stroke-width="2" marker-end="url(#arA)"/>
       <text x="640" y="64" font-size="9" fill="#b45309" text-anchor="middle">publish</text>
       <line x1="832" y1="72" x2="888" y2="72" stroke="#475569" stroke-width="2" marker-end="url(#ar)"/>
-
-      <!-- enriched event label under the publish arrow -->
       <text x="640" y="128" font-size="9.5" fill="#92400e" text-anchor="middle" font-style="italic">crm.contact.enriched.v1 (agent-defined)</text>
-
-      <!-- MCP / REST callout above the agent -->
       <rect x="408" y="2" width="234" height="22" rx="11" fill="#eef6f9" stroke="#0891b2" stroke-dasharray="3 2"/>
       <text x="525" y="17" font-size="10.5" font-weight="600" fill="#0e7490" text-anchor="middle">↕ via MCP server or REST API — no code</text>
       <line x1="525" y1="24" x2="525" y2="30" stroke="#0891b2" stroke-width="1.4" stroke-dasharray="2 2"/>
-
-      <!-- Observe arrows to dashboard strip -->
       <line x1="83"  y1="104" x2="83"  y2="150" stroke="#94a3b8" stroke-width="1.3" stroke-dasharray="3 3"/>
       <line x1="298" y1="104" x2="298" y2="150" stroke="#94a3b8" stroke-width="1.3" stroke-dasharray="3 3"/>
       <line x1="525" y1="114" x2="525" y2="150" stroke="#94a3b8" stroke-width="1.3" stroke-dasharray="3 3"/>
       <line x1="752" y1="104" x2="752" y2="150" stroke="#94a3b8" stroke-width="1.3" stroke-dasharray="3 3"/>
       <rect x="8" y="150" width="984" height="34" rx="9" fill="#f1f5f9" stroke="#cbd5e1"/>
-      <text x="500" y="171" font-size="11" fill="#475569" text-anchor="middle">Every hop — coded service → AI agent → coded service — is recorded in the <tspan font-weight="700" fill="#0f172a">same audit trail &amp; dashboard</tspan>, with the platform’s existing ordering &amp; recovery guarantees.</text>
-
-      <!-- footer note -->
+      <text x="500" y="171" font-size="11" fill="#475569" text-anchor="middle">Every hop — coded service → AI agent → coded service — is recorded in the <tspan font-weight="700" fill="#0f172a">same audit trail &amp; dashboard</tspan>, with the platform's existing ordering &amp; recovery guarantees.</text>
       <text x="8" y="214" font-size="9.5" fill="#94a3b8">One body of work, two interfaces: the same REST/OpenAPI core powers both the agent API and the MCP server.</text>
-      <text x="8" y="232" font-size="9.5" fill="#94a3b8">Reuses NimBus’s existing pending-handoff mechanism — the agent is just another participant, subject to the same guarantees.</text>
+      <text x="8" y="232" font-size="9.5" fill="#94a3b8">Reuses NimBus's existing pending-handoff mechanism — the agent is just another participant, subject to the same guarantees.</text>
     </svg>
   </div>
 
+  <h2>Status</h2>
   <div class="status">
     <div class="scard ok">
       <h3>✓ Delivered &amp; tested</h3>
@@ -210,7 +194,6 @@
     <span><span class="dot">●</span> NimBus — Azure-native event-driven integration platform</span>
     <span>Spec 022 · AI Agents as Bus Participants · v1 (demo-grade)</span>
   </footer>
-
 </div>
 </body>
 </html>

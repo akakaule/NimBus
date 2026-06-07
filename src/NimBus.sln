@@ -160,6 +160,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.MappingExecutor", "N
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.MappingExecutor.Tests", "..\tests\NimBus.MappingExecutor.Tests\NimBus.MappingExecutor.Tests.csproj", "{1A8A4875-E0D7-4567-A180-99FB37FD4116}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Marketing.Api", "..\samples\CrmErpDemo\Marketing.Api\Marketing.Api.csproj", "{9925111D-3C64-4841-B6A9-2312E64CE305}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -794,6 +796,18 @@ Global
 		{1A8A4875-E0D7-4567-A180-99FB37FD4116}.Release|x64.Build.0 = Release|Any CPU
 		{1A8A4875-E0D7-4567-A180-99FB37FD4116}.Release|x86.ActiveCfg = Release|Any CPU
 		{1A8A4875-E0D7-4567-A180-99FB37FD4116}.Release|x86.Build.0 = Release|Any CPU
+		{9925111D-3C64-4841-B6A9-2312E64CE305}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9925111D-3C64-4841-B6A9-2312E64CE305}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9925111D-3C64-4841-B6A9-2312E64CE305}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{9925111D-3C64-4841-B6A9-2312E64CE305}.Debug|x64.Build.0 = Debug|Any CPU
+		{9925111D-3C64-4841-B6A9-2312E64CE305}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{9925111D-3C64-4841-B6A9-2312E64CE305}.Debug|x86.Build.0 = Debug|Any CPU
+		{9925111D-3C64-4841-B6A9-2312E64CE305}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9925111D-3C64-4841-B6A9-2312E64CE305}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9925111D-3C64-4841-B6A9-2312E64CE305}.Release|x64.ActiveCfg = Release|Any CPU
+		{9925111D-3C64-4841-B6A9-2312E64CE305}.Release|x64.Build.0 = Release|Any CPU
+		{9925111D-3C64-4841-B6A9-2312E64CE305}.Release|x86.ActiveCfg = Release|Any CPU
+		{9925111D-3C64-4841-B6A9-2312E64CE305}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

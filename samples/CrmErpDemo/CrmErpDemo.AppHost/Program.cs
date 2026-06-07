@@ -263,4 +263,16 @@ builder.AddProject<Projects.EnrichmentAgent>("enrichment-agent")
     .WaitFor(nimbusOps)
     .WithEnvironment("ANTHROPIC_API_KEY", builder.Configuration["ANTHROPIC_API_KEY"] ?? "");
 
+// Marketing source (spec 023). Publishes marketing.lead.created.v1 as a classless
+// dynamic event onto MarketingEndpoint. Also seeds marketing.lead.created.v1 and
+// erp.customer.upsert.v1 schemas into the NimBus registry via the agent REST API
+// so the AI Integration Mapper can reference both event types when authoring a mapping.
+var marketingApi = builder.AddProject<Projects.Marketing_Api>("marketing-api")
+    .WithReference(servicebus)
+    .WithReference(nimbusOps)
+    .WaitFor(nimbusOps)
+    .WithEndpoint("http", e => e.Port = 5085)
+    .WithExternalHttpEndpoints();
+if (provisioner is not null) marketingApi.WaitFor(provisioner);
+
 builder.Build().Run();

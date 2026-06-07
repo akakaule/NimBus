@@ -88,4 +88,39 @@ public class MappingExecutorHandlerTests
         Assert.AreEqual(0, pub.Count);
         Assert.AreEqual(1, park.Count, "A message with no mapping at the zone must park, not silently complete");
     }
+
+    [TestMethod]
+    public async Task Stale_source_schema_hash_parks_and_persists_mapping_as_Stale()
+    {
+        var store = new InMemoryMessageStore();
+
+        // Register source and target schemas.
+        await store.DefineEventType(new EventSchema { EventTypeId = Src, Name = Src, JsonSchema = SourceSchema, Version = 1, AgentId = "t", CreatedUtc = DateTime.UtcNow });
+        await store.DefineEventType(new EventSchema { EventTypeId = Tgt, Name = Tgt, JsonSchema = "{\"type\":\"object\"}", Version = 1, AgentId = "t", CreatedUtc = DateTime.UtcNow });
+
+        // Save an Active mapping with a deliberately wrong (stale) SourceSchemaHash.
+        var mappingId = $"{Src}->{Tgt}";
+        await store.SaveMapping(new EventMapping
+        {
+            Id = mappingId, SourceEventTypeId = Src, TargetEventTypeId = Tgt,
+            Transform = "{ \"customerId\": leadId }",
+            SourceSchemaHash = "stale-hash", // intentionally != SchemaHash.Of(SourceSchema)
+            State = MappingState.Active, Version = 1,
+        });
+
+        var pub = new CapturingPublisher();
+        var park = new CapturingPark();
+        var handler = new MappingExecutorHandler(store, store, new JsonataTransformEngine(), pub, park, NullLogger<MappingExecutorHandler>.Instance);
+
+        await handler.Handle(MessageContextStub.ForEventType(Src, "{ \"leadId\": \"L-99\" }"));
+
+        // Nothing should be published.
+        Assert.AreEqual(0, pub.Count, "Drifted mapping must not publish");
+        // Message must be parked.
+        Assert.AreEqual(1, park.Count, "Drifted mapping must park the message");
+        // The mapping must have been persisted as Stale.
+        var persisted = await store.GetMapping(mappingId);
+        Assert.IsNotNull(persisted, "Mapping must still exist after drift detection");
+        Assert.AreEqual(MappingState.Stale, persisted!.State, "Mapping state must be updated to Stale after schema drift");
+    }
 }

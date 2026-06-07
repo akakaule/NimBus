@@ -31,8 +31,12 @@ public sealed class RestMappingGateway : IMappingBusGateway
     public async Task<IReadOnlyList<string>> GetSamplePayloadsAsync(
         string eventTypeId, int maxCount, CancellationToken ct = default)
     {
-        var url = $"/api/messages/search?eventTypeId={Uri.EscapeDataString(eventTypeId)}&maxCount={maxCount}";
-        using var response = await _http.GetAsync(url, ct);
+        var requestBody = new
+        {
+            filter = new { eventTypeId = new[] { eventTypeId } },
+            maxItemCount = maxCount,
+        };
+        using var response = await _http.PostAsync("/api/messages/search", JsonBody(requestBody), ct);
 
         // 404 or 204 → no messages found — return empty rather than throw.
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.NoContent)

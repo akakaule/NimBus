@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NimBus — Demo Guide: AI Agents on the Bus (Spec 022)</title>
+<style>
+  :root{
+    --ink:#0f172a; --muted:#475569; --soft:#64748b; --line:#e2e8f0; --bg:#f8fafc;
+    --teal:#0e7490; --teal2:#0891b2; --tealsoft:#ecfeff;
+    --amber:#b45309; --amberbg:#fffbeb; --amberln:#fde68a;
+    --green:#15803d; --greenbg:#f0fdf4; --greenln:#bbf7d0;
+    --blue:#1d4ed8; --bluebg:#eff6ff; --blueln:#bfdbfe; --code:#0b1220;
+  }
+  *{ box-sizing:border-box; } html{ scroll-behavior:smooth; }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif; line-height:1.55; font-size:16px; }
+  .wrap{ max-width:980px; margin:0 auto; padding:0 20px 80px; }
+  header.hero{ background:linear-gradient(115deg,var(--teal) 0%,var(--teal2) 65%,#22b8cf 100%); color:#fff; }
+  .hero-inner{ max-width:980px; margin:0 auto; padding:46px 20px 40px; }
+  .eyebrow{ font-size:12px; letter-spacing:.18em; text-transform:uppercase; opacity:.85; font-weight:700; }
+  h1{ font-size:38px; line-height:1.1; margin:8px 0 12px; letter-spacing:-.5px; }
+  .lede{ font-size:18px; max-width:700px; opacity:.96; }
+  .badges{ margin-top:18px; display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{ background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.4); border-radius:999px; padding:5px 12px; font-size:13px; font-weight:600; }
+  nav.toc{ background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px 18px; margin:26px 0 8px; }
+  nav.toc b{ font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); }
+  nav.toc ol{ margin:8px 0 0; padding:0; list-style:none; display:grid; grid-template-columns:1fr 1fr; gap:4px 24px; }
+  nav.toc a{ color:var(--teal); text-decoration:none; font-size:14.5px; }
+  nav.toc a:hover{ text-decoration:underline; }
+  h2{ font-size:25px; margin:44px 0 8px; letter-spacing:-.3px; scroll-margin-top:16px; }
+  h2 .num{ display:inline-grid; place-items:center; width:30px; height:30px; border-radius:8px; background:var(--teal); color:#fff; font-size:16px; margin-right:10px; vertical-align:2px; }
+  h3{ font-size:18px; margin:24px 0 6px; }
+  p{ margin:10px 0; } .sub{ color:var(--muted); } a{ color:var(--teal); }
+  .card{ background:#fff; border:1px solid var(--line); border-radius:14px; padding:20px 22px; margin:16px 0; }
+  .caps{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:14px 0; }
+  .cap{ border:1px solid var(--line); border-radius:11px; padding:12px 14px; background:#fff; }
+  .cap .k{ display:inline-grid; place-items:center; width:24px; height:24px; border-radius:6px; background:var(--tealsoft); color:var(--teal); font-weight:800; font-size:13px; margin-bottom:6px; }
+  .cap b{ display:block; font-size:14.5px; } .cap span{ font-size:12.5px; color:var(--muted); }
+  .step{ display:flex; gap:16px; align-items:flex-start; background:#fff; border:1px solid var(--line); border-radius:14px; padding:18px 20px; margin:14px 0; }
+  .step .n{ flex:0 0 auto; width:38px; height:38px; border-radius:50%; background:var(--teal); color:#fff; font-weight:800; font-size:18px; display:grid; place-items:center; box-shadow:0 2px 0 #0b5566; }
+  .step .body{ flex:1; min-width:0; } .step h4{ margin:2px 0 6px; font-size:17px; } .step p{ margin:6px 0; }
+  pre{ position:relative; background:var(--code); color:#e6edf3; border-radius:10px; padding:14px 16px; overflow:auto; font-size:13.5px; line-height:1.5; margin:10px 0; }
+  pre code{ font-family:"Cascadia Code",Consolas,Menlo,monospace; }
+  code.inline{ background:#eef2f7; color:#0b3a44; padding:1.5px 6px; border-radius:5px; font-size:14px; font-family:Consolas,Menlo,monospace; }
+  .cmt{ color:#7d8aa0; }
+  .copybtn{ position:absolute; top:8px; right:8px; background:#1f2a3a; color:#cbd5e1; border:1px solid #324259; border-radius:6px; font-size:11px; padding:3px 8px; cursor:pointer; }
+  .copybtn:hover{ background:#2a3850; color:#fff; } .copybtn.ok{ background:#14532d; color:#bbf7d0; border-color:#166534; }
+  .note{ border-radius:10px; padding:12px 16px; margin:14px 0; border:1px solid; font-size:14.5px; }
+  .note .h{ font-weight:800; font-size:13px; letter-spacing:.03em; text-transform:uppercase; display:block; margin-bottom:3px; }
+  .note.tip{ background:var(--greenbg); border-color:var(--greenln); } .note.tip .h{ color:var(--green); }
+  .note.info{ background:var(--bluebg); border-color:var(--blueln); } .note.info .h{ color:var(--blue); }
+  .note.warn{ background:var(--amberbg); border-color:var(--amberln); } .note.warn .h{ color:var(--amber); }
+  ul.check{ list-style:none; padding:0; margin:10px 0; }
+  ul.check li{ position:relative; padding:8px 0 8px 34px; border-bottom:1px dashed var(--line); }
+  ul.check li:last-child{ border-bottom:0; }
+  ul.check li::before{ content:"✓"; position:absolute; left:0; top:8px; width:22px; height:22px; border-radius:6px; background:var(--greenbg); color:var(--green); font-weight:800; display:grid; place-items:center; border:1px solid var(--greenln); font-size:13px; }
+  table{ width:100%; border-collapse:collapse; margin:12px 0; font-size:14.5px; }
+  th,td{ text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th{ background:var(--bg); font-size:12.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--soft); }
+  td code{ font-family:Consolas,Menlo,monospace; font-size:13px; color:#0b3a44; }
+  svg.diagram{ width:100%; height:auto; display:block; }
+  footer{ margin-top:50px; border-top:1px solid var(--line); padding-top:18px; color:var(--soft); font-size:13.5px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+  @media (max-width:720px){ nav.toc ol{ grid-template-columns:1fr; } .caps{ grid-template-columns:1fr; } h1{ font-size:30px; } }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="eyebrow">NimBus · Demo Guide · Spec 022</div>
+    <h1>Watch an AI agent join the bus</h1>
+    <p class="lede">An external AI agent becomes a first-class participant on your event platform — it discovers the topology, invents a new event type at runtime, publishes a validated message, and settles its work, all in the same audit trail as your coded services. No code written or deployed.</p>
+    <div class="badges">
+      <span class="chip">🧠 AI as a bus participant</span>
+      <span class="chip">🔌 REST + MCP</span>
+      <span class="chip">📜 No code</span>
+      <span class="chip">⏱️ ~10 min</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc">
+    <b>On this page</b>
+    <ol>
+      <li><a href="#what">1. What you'll see</a></li>
+      <li><a href="#can">2. What an agent can do</a></li>
+      <li><a href="#flow">3. The demo flow</a></li>
+      <li><a href="#before">4. Before you start</a></li>
+      <li><a href="#run">5. Run the demo (7 steps)</a></li>
+      <li><a href="#mcp">6. Drive it from Claude (MCP)</a></li>
+      <li><a href="#ref">7. Reference &amp; troubleshooting</a></li>
+    </ol>
+  </nav>
+
+  <!-- 1 -->
+  <h2 id="what"><span class="num">1</span>What you'll see</h2>
+  <p>We extend the <b>CrmErpDemo</b> with one new actor: an <b>AI enrichment agent</b>. When someone creates a contact in the CRM, the agent wakes up, asks Claude to classify it (industry, lead score), <b>invents</b> a brand-new event type <code class="inline">crm.contact.enriched.v1</code> the first time it runs, publishes the enriched result, and the ERP/DataPlatform consumes it — exactly like any coded participant, except it's an LLM.</p>
+  <div class="note info"><span class="h">Why it's interesting</span>The agent never had code written for it. It joins at runtime through a standard <b>REST API</b> (with OpenAPI) and an <b>MCP server</b> — the same way a Claude client would call any tool — and everything it does shows up in the normal dashboard and audit trail.</div>
+
+  <!-- 2 -->
+  <h2 id="can"><span class="num">2</span>What an agent can do</h2>
+  <p>The platform gives an agent six capabilities — the full lifecycle of being on the bus:</p>
+  <div class="caps">
+    <div class="cap"><span class="k">1</span><b>Discover</b><span>list endpoints &amp; event types</span></div>
+    <div class="cap"><span class="k">2</span><b>Define</b><span>register a new event type from a JSON Schema — no C#</span></div>
+    <div class="cap"><span class="k">3</span><b>Subscribe</b><span>express interest in an event type</span></div>
+    <div class="cap"><span class="k">4</span><b>Receive</b><span>pull the next matching message (long-poll)</span></div>
+    <div class="cap"><span class="k">5</span><b>Publish</b><span>send a message, auto-validated against its schema</span></div>
+    <div class="cap"><span class="k">6</span><b>Settle</b><span>mark the work done / failed — tracked end-to-end</span></div>
+  </div>
+
+  <!-- 3 -->
+  <h2 id="flow"><span class="num">3</span>The demo flow</h2>
+  <div class="card">
+    <svg class="diagram" viewBox="0 0 1000 210" role="img" aria-label="CRM to Agent Zone to AI Agent to ERP">
+      <defs>
+        <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#475569"/></marker>
+        <marker id="aa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#b45309"/></marker>
+      </defs>
+      <g><rect x="8" y="46" width="150" height="64" rx="10" fill="#fff" stroke="#cbd5e1"/>
+        <text x="83" y="74" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">CRM</text>
+        <text x="83" y="93" text-anchor="middle" font-size="10" fill="#64748b">contact created</text></g>
+      <g><rect x="220" y="46" width="160" height="64" rx="10" fill="#fff" stroke="#cbd5e1"/>
+        <text x="300" y="71" text-anchor="middle" font-size="13" font-weight="700" fill="#0f172a">Agent Zone</text>
+        <text x="300" y="89" text-anchor="middle" font-size="10" fill="#64748b">parks the event,</text>
+        <text x="300" y="102" text-anchor="middle" font-size="10" fill="#64748b">awaits an agent</text></g>
+      <g><rect x="442" y="36" width="180" height="84" rx="11" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.6"/>
+        <text x="532" y="60" text-anchor="middle" font-size="13.5" font-weight="700" fill="#7c2d12">🤖 AI Agent + Claude</text>
+        <text x="532" y="82" text-anchor="middle" font-size="10.3" fill="#92400e">classify · define type</text>
+        <text x="532" y="98" text-anchor="middle" font-size="10.3" fill="#92400e">publish · settle</text></g>
+      <g><rect x="684" y="46" width="160" height="64" rx="10" fill="#fff" stroke="#cbd5e1"/>
+        <text x="764" y="71" text-anchor="middle" font-size="12.5" font-weight="700" fill="#0f172a">ERP / Data</text>
+        <text x="764" y="89" text-anchor="middle" font-size="10" fill="#64748b">consumes enriched</text></g>
+      <g><rect x="906" y="46" width="86" height="64" rx="10" fill="#fff" stroke="#cbd5e1"/>
+        <text x="949" y="73" text-anchor="middle" font-size="11.5" font-weight="700" fill="#0f172a">Dash-</text>
+        <text x="949" y="88" text-anchor="middle" font-size="11.5" font-weight="700" fill="#0f172a">board</text></g>
+      <line x1="158" y1="78" x2="216" y2="78" stroke="#475569" stroke-width="2" marker-end="url(#ar)"/>
+      <text x="187" y="70" text-anchor="middle" font-size="9" fill="#475569">event</text>
+      <line x1="380" y1="78" x2="438" y2="78" stroke="#b45309" stroke-width="2" marker-end="url(#aa)"/>
+      <text x="409" y="70" text-anchor="middle" font-size="9" fill="#b45309">receive</text>
+      <line x1="622" y1="78" x2="680" y2="78" stroke="#b45309" stroke-width="2" marker-end="url(#aa)"/>
+      <text x="651" y="70" text-anchor="middle" font-size="9" fill="#b45309">publish</text>
+      <line x1="844" y1="78" x2="902" y2="78" stroke="#94a3b8" stroke-width="1.3" stroke-dasharray="3 3" marker-end="url(#ar)"/>
+      <text x="532" y="138" text-anchor="middle" font-size="9.5" fill="#92400e" font-style="italic">crm.contact.enriched.v1 (agent-defined)</text>
+      <rect x="8" y="158" width="984" height="34" rx="9" fill="#f1f5f9" stroke="#cbd5e1"/>
+      <text x="500" y="180" font-size="11" fill="#475569" text-anchor="middle">Every hop — coded service → AI agent → coded service — lands in the <tspan font-weight="700" fill="#0f172a">same audit trail &amp; dashboard</tspan>.</text>
+    </svg>
+  </div>
+
+  <!-- 4 -->
+  <h2 id="before"><span class="num">4</span>Before you start</h2>
+  <div class="card">
+    <ul class="check">
+      <li><b>.NET 10 SDK</b></li>
+      <li><b>Docker Desktop</b> — runs the Azure Service Bus emulator the demo uses.</li>
+      <li><b>Node.js 22</b> — to build the management WebApp UI once.</li>
+      <li><b>(Optional) <code class="inline">ANTHROPIC_API_KEY</code></b> — lets the agent use Claude. Without it, a deterministic classifier runs and the demo still completes.</li>
+      <li><b>On the feature branch</b> — run from the worktree <code class="inline">.claude\worktrees\spec-023-ai-integration-mapper</code> (it carries this demo plus a fix that keeps the agent's long-poll from timing out).</li>
+    </ul>
+  </div>
+
+  <!-- 5 -->
+  <h2 id="run"><span class="num">5</span>Run the demo</h2>
+
+  <div class="step"><div class="n">1</div><div class="body">
+    <h4>(Optional) give the agent a Claude key</h4>
+    <p class="sub">Set it on the app host — it forwards the key to the agent. Skip this to use the deterministic classifier.</p>
+    <pre><code>dotnet user-secrets set "ANTHROPIC_API_KEY" "sk-ant-..." --project samples/CrmErpDemo/CrmErpDemo.AppHost</code></pre>
+  </div></div>
+
+  <div class="step"><div class="n">2</div><div class="body">
+    <h4>Build the UI &amp; launch the app host</h4>
+    <pre><code><span class="cmt"># from the worktree root</span>
+cd src/NimBus.WebApp/ClientApp; npm install; npm run build
+cd ../../..
+dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost</code></pre>
+  </div></div>
+
+  <div class="step"><div class="n">3</div><div class="body">
+    <h4>Open the Aspire dashboard &amp; wait for green</h4>
+    <p class="sub">The console prints a dashboard URL. Wait until these are healthy: <code class="inline">provisioner</code> (builds the topology incl. the <b>Agent Zone</b>), <code class="inline">nimbus-ops</code> (the WebApp), <code class="inline">crm-api</code>, <code class="inline">erp-api</code>, <code class="inline">agent-zone</code> (parks events for the agent), and <code class="inline">enrichment-agent</code>.</p>
+  </div></div>
+
+  <div class="step"><div class="n">4</div><div class="body">
+    <h4>The agent comes online</h4>
+    <p class="sub">In the <code class="inline">enrichment-agent</code> logs you'll see <code class="inline">Subscribed to CrmContactCreated.</code> followed by quiet long-polling — it's waiting for work.</p>
+  </div></div>
+
+  <div class="step"><div class="n">5</div><div class="body">
+    <h4>Create a CRM contact</h4>
+    <p class="sub">Use the CRM web UI (the <code class="inline">crm-api</code> resource in the dashboard), or POST one directly. The exact <code class="inline">Contact</code> fields are in the crm-api OpenAPI/Swagger — adjust the body to match.</p>
+    <pre><code><span class="cmt"># PowerShell — endpoint: POST /api/contacts on crm-api (find its port in the dashboard)</span>
+$body = '{ "firstName":"Ada", "lastName":"Lovelace", "email":"ada@acme.io", "company":"Acme Analytics" }'
+Invoke-RestMethod -Method Post -Uri "http://localhost:&lt;crm-api-port&gt;/api/contacts" -ContentType "application/json" -Body $body</code></pre>
+  </div></div>
+
+  <div class="step"><div class="n">6</div><div class="body">
+    <h4>Watch the agent work</h4>
+    <p class="sub">In the <code class="inline">enrichment-agent</code> logs you'll see the loop: <b>receive</b> the parked <code class="inline">CrmContactCreated</code> → <b>classify</b> (Claude or deterministic) → <b>define</b> <code class="inline">crm.contact.enriched.v1</code> (first run only) → <b>publish</b> the enriched event → <b>settle</b> the original. The ERP/DataPlatform then consumes the enriched event.</p>
+  </div></div>
+
+  <div class="step"><div class="n">7</div><div class="body">
+    <h4>See it in the dashboard</h4>
+    <p class="sub">Open the WebApp (<code class="inline">nimbus-ops</code>). The new <code class="inline">crm.contact.enriched.v1</code> event type appears, and the full chain — <b>coded service → AI agent → coded service</b> — is visible in one audit trail with metrics. 🎉</p>
+  </div></div>
+
+  <div class="note tip"><span class="h">Talking point</span>Nobody wrote or deployed code for the agent. It discovered the platform, defined a new contract at runtime, and participated under the platform's existing ordering, recovery, and audit guarantees — purely through the agent API.</div>
+
+  <!-- 6 -->
+  <h2 id="mcp"><span class="num">6</span>Drive it yourself from Claude (MCP)</h2>
+  <p>The scripted agent uses the REST API, but you can run the same loop by hand from an MCP client (Claude Desktop / Claude Code) pointed at the <code class="inline">NimBus.Mcp</code> server (configured against the running <code class="inline">nimbus-ops</code>). Ask Claude to:</p>
+  <pre><code>discover_topology  →  define_event_type  →  subscribe
+   →  (create a CRM contact)  →  receive_messages  →  publish_event  →  settle_message</code></pre>
+  <p class="sub">Everything Claude does lands in the same dashboard and audit trail under its agent id.</p>
+
+  <!-- 7 -->
+  <h2 id="ref"><span class="num">7</span>Reference &amp; troubleshooting</h2>
+
+  <h3>Agent REST API</h3>
+  <table>
+    <tr><th>Capability</th><th>Endpoint</th></tr>
+    <tr><td>Discover</td><td><code>GET /api/agent/catalog</code></td></tr>
+    <tr><td>Define event type</td><td><code>POST /api/agent/event-types</code></td></tr>
+    <tr><td>Subscribe</td><td><code>POST /api/agent/subscribe</code></td></tr>
+    <tr><td>Receive (long-poll)</td><td><code>GET /api/agent/receive</code></td></tr>
+    <tr><td>Publish (schema-validated)</td><td><code>POST /api/agent/publish</code></td></tr>
+    <tr><td>Settle</td><td><code>POST /api/agent/settle</code></td></tr>
+  </table>
+
+  <h3>MCP tools (7)</h3>
+  <table>
+    <tr><th>Tool</th><th>Maps to</th></tr>
+    <tr><td><code>discover_topology</code></td><td>catalog</td></tr>
+    <tr><td><code>define_event_type</code></td><td>event-types</td></tr>
+    <tr><td><code>subscribe</code> · <code>receive_messages</code></td><td>subscribe · receive</td></tr>
+    <tr><td><code>publish_event</code> · <code>settle_message</code></td><td>publish · settle</td></tr>
+    <tr><td><code>search_failures</code></td><td>message/audit search (diagnostics)</td></tr>
+  </table>
+
+  <h3>Troubleshooting</h3>
+  <table>
+    <tr><th>Symptom</th><th>Fix</th></tr>
+    <tr><td>Agent log spams <code>TimeoutRejectedException</code> on <code>receive</code></td><td>You're on an old build. The long-poll window must stay under the 10s HTTP resilience timeout — the branch ships the fix (5s). Pull latest.</td></tr>
+    <tr><td>First <code>subscribe</code> took ~15s</td><td>Cold start — the WebApp warming its first connection. The standard retry recovers it; it won't recur once warm.</td></tr>
+    <tr><td>Agent uses the deterministic classifier, not Claude</td><td>No <code>ANTHROPIC_API_KEY</code> on the app host — set it (Step 1) and restart. The demo still works without it.</td></tr>
+    <tr><td>Nothing happens after creating a contact</td><td>Check <code>agent-zone</code> and <code>enrichment-agent</code> are healthy, and that the contact actually published <code>CrmContactCreated</code> (visible in the dashboard).</td></tr>
+    <tr><td>Enriched event never reaches ERP</td><td>Confirm the <code>provisioner</code> finished — it creates the Agent&nbsp;Zone → DataPlatform forward that routes <code>crm.contact.enriched.v1</code>.</td></tr>
+  </table>
+
+  <div class="note info"><span class="h">Where this fits</span>Spec 022 is the foundation. The <b>AI Integration Mapper</b> (Spec 023) builds directly on this agent platform — see its one-pager and getting-started guide in the same <code class="inline">docs/</code> folder.</div>
+
+  <footer>
+    <span>● NimBus — Demo Guide · AI Agents as Bus Participants</span>
+    <span>Spec 022 · CrmErpDemo enrichment agent</span>
+  </footer>
+</div>
+
+<script>
+  document.querySelectorAll('pre').forEach(function(pre){
+    var b=document.createElement('button'); b.className='copybtn'; b.textContent='Copy';
+    b.addEventListener('click',function(){
+      navigator.clipboard.writeText(pre.querySelector('code').innerText).then(function(){
+        b.textContent='Copied'; b.classList.add('ok');
+        setTimeout(function(){ b.textContent='Copy'; b.classList.remove('ok'); },1400);
+      });
+    });
+    pre.appendChild(b);
+  });
+</script>
+</body>
+</html>

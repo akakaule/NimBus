@@ -168,6 +168,34 @@ namespace NimBus.SDK.Extensions
         }
 
         /// <summary>
+        /// Registers a single fallback handler invoked for any event type with no specific
+        /// handler. The Mapping Executor uses this to consult the mapping registry per message (spec 023).
+        /// </summary>
+        /// <param name="handlerFactory">Factory that receives the DI container and returns the handler. Must not be null.</param>
+        public NimBusSubscriberBuilder AddDynamicFallbackHandler(Func<IServiceProvider, IEventJsonHandler> handlerFactory)
+        {
+            if (handlerFactory == null) throw new ArgumentNullException(nameof(handlerFactory));
+
+            HandlerRegistrations.Add(new HandlerRegistration
+            {
+                EventTypeId = null,
+                EventType = null,
+                HandlerType = null,
+                IsExplicit = true,
+                Register = (provider, handlerProvider) =>
+                {
+                    // Resolve the handler once (at ISubscriberClient singleton creation) and
+                    // register it as the fallback — same resolution pattern as the SP-aware
+                    // AddDynamicHandler overload, but targeting RegisterFallbackHandler.
+                    var handler = handlerFactory(provider);
+                    handlerProvider.RegisterFallbackHandler(() => handler);
+                }
+            });
+
+            return this;
+        }
+
+        /// <summary>
         /// Configures retry policies for this subscriber.
         /// </summary>
         public NimBusSubscriberBuilder ConfigureRetryPolicies(Action<DefaultRetryPolicyProvider> configure)

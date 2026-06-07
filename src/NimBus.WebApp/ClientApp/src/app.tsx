@@ -25,6 +25,7 @@ const Topology = lazy(() => import("pages/topology"));
 const Insights = lazy(() => import("pages/insights"));
 const Monitor = lazy(() => import("pages/monitor"));
 const AuditsList = lazy(() => import("pages/audits-list"));
+const MappingsPage = lazy(() => import("pages/mappings"));
 
 const navigation: Navigation = [
   {
@@ -104,6 +105,12 @@ const navigation: Navigation = [
     path: "/Admin",
     header: true,
     render: () => <Admin />,
+  },
+  {
+    name: "Mappings",
+    path: "/Mappings",
+    header: true,
+    render: () => <MappingsPage />,
   },
   {
     name: "Front",

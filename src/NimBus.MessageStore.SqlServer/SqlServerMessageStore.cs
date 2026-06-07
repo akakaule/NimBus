@@ -1316,7 +1316,7 @@ WHERE EnqueuedTimeUtc >= @From
         var rows = await conn.QueryAsync(
             $"SELECT * FROM {T("EventMappings")}",
             commandTimeout: _commandTimeout);
-        return rows.Select(r => (EventMapping)MapMappingRow(r)).ToList();
+        return rows.Select(MapMappingRow).Cast<EventMapping>().ToList();
     }
 
     public async Task<EventMapping> SaveMapping(EventMapping mapping)

@@ -1,5 +1,6 @@
 using System;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 
 namespace NimBus.MessageStore.States;
 
@@ -38,6 +39,7 @@ public class EventMapping
     /// <summary>Fingerprint of the source schema at authoring time, for drift detection.</summary>
     public string SourceSchemaHash { get; set; } = string.Empty;
 
+    [JsonConverter(typeof(StringEnumConverter))]
     public MappingState State { get; set; } = MappingState.Draft;
     public int Version { get; set; } = 1;
 

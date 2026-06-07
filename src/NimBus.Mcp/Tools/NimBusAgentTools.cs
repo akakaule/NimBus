@@ -165,7 +165,42 @@ public sealed class NimBusAgentTools
         return "settled";
     }
 
-    // ── 7. search_failures ───────────────────────────────────────────────────
+    // ── 7. propose_mapping ───────────────────────────────────────────────────
+
+    /// <summary>Proposes a declarative JSONata mapping from a source event type to a target event type.</summary>
+    [McpServerTool(Name = "propose_mapping")]
+    [Description("Proposes a declarative JSONata mapping from a registered source event type to a registered target event type. Saved as a Draft for human approval; does NOT affect live traffic until an operator approves it. Returns the stored MappingInfo as JSON. Returns an error if a source/target event type is not registered (404).")]
+    public async Task<string> ProposeMappingAsync(
+        [Description("Source event type id, e.g. 'marketing.lead.created.v1'.")] string sourceEventTypeId,
+        [Description("Target event type id, e.g. 'erp.customer.upsert.v1'.")] string targetEventTypeId,
+        [Description("The JSONata transform mapping source JSON to target JSON.")] string transform,
+        [Description("Fingerprint of the source schema this transform was authored against.")] string sourceSchemaHash,
+        [Description("Optional short rationale shown to the human approver.")] string? rationale = null,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var info = await _api.ProposeMappingAsync(
+                new ProposeMappingRequest(sourceEventTypeId, targetEventTypeId, transform, sourceSchemaHash, rationale),
+                ct).ConfigureAwait(false);
+            return JsonSerializer.Serialize(info, s_json);
+        }
+        catch (NimBusApiException ex) when (ex.StatusCode == 404)
+        {
+            return $"error (404): source or target event type not found. Register both event types with define_event_type before proposing a mapping. " +
+                   $"Server detail: {ex.Body}";
+        }
+    }
+
+    // ── 8. list_mappings ─────────────────────────────────────────────────────
+
+    /// <summary>Lists all NimBus integration mappings and their lifecycle state.</summary>
+    [McpServerTool(Name = "list_mappings")]
+    [Description("Lists all mappings and their lifecycle state (Draft/Active/Paused/Stale/Rejected). Use to check whether a mapping already exists before proposing.")]
+    public async Task<string> ListMappingsAsync(CancellationToken ct = default)
+        => JsonSerializer.Serialize(await _api.ListMappingsAsync(ct).ConfigureAwait(false), s_json);
+
+    // ── 9. search_failures ───────────────────────────────────────────────────
 
     /// <summary>Searches NimBus message and audit records for failures or specific events.</summary>
     [McpServerTool(Name = "search_failures")]

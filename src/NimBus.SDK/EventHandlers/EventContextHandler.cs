@@ -12,6 +12,7 @@ namespace NimBus.SDK.EventHandlers
     public class EventHandlerProvider : IEventContextHandler
     {
         private readonly ConcurrentDictionary<string, Func<IEventJsonHandler>> _handlerBuilders;
+        private Func<IEventJsonHandler>? _fallbackBuilder;
 
         public EventHandlerProvider()
         {
@@ -56,6 +57,16 @@ namespace NimBus.SDK.EventHandlers
         }
 
         /// <summary>
+        /// Registers a fallback handler invoked when no <c>EventTypeId</c>-specific handler is
+        /// registered. Used by the Mapping Executor (spec 023) to handle every message arriving
+        /// at the Mapping Zone and decide from the mapping registry per message.
+        /// </summary>
+        public void RegisterFallbackHandler(Func<IEventJsonHandler> fallbackFactory)
+        {
+            _fallbackBuilder = fallbackFactory ?? throw new ArgumentNullException(nameof(fallbackFactory));
+        }
+
+        /// <summary>
         /// Registers a handler for a <em>dynamically-typed</em> event keyed directly by its
         /// <paramref name="eventTypeId"/> string, with no compiled <see cref="IEvent"/> class.
         /// Used for agent-defined event types (e.g. <c>crm.contact.enriched.v1</c>) whose contract
@@ -73,11 +84,11 @@ namespace NimBus.SDK.EventHandlers
 
         private IEventJsonHandler GetHandler(string eventTypeId)
         {
-            if (!_handlerBuilders.TryGetValue(eventTypeId, out var factory))
-                throw new EventHandlerNotFoundException($"Event handler not registered for Event type {eventTypeId}");
-
-            // Build and return event json handler.
-            return factory.Invoke();
+            if (_handlerBuilders.TryGetValue(eventTypeId, out var factory))
+                return factory.Invoke();
+            if (_fallbackBuilder != null)
+                return _fallbackBuilder.Invoke();
+            throw new EventHandlerNotFoundException($"Event handler not registered for Event type {eventTypeId}");
         }
     }
 }

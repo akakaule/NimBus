@@ -24,9 +24,14 @@ public sealed class AgentLoopWorker : BackgroundService
     public const string EnrichedSchema =
         "{\"type\":\"object\",\"required\":[\"industry\"],\"properties\":{\"contactId\":{\"type\":\"string\"},\"industry\":{\"type\":\"string\"},\"leadScore\":{\"type\":\"integer\"},\"rationale\":{\"type\":\"string\"}}}";
 
-    // Small long-poll window: short enough to react to shutdown promptly, long
-    // enough to avoid hammering the API when the Agent Zone is idle.
-    private const int ReceiveWaitSeconds = 10;
+    // Long-poll window for /api/agent/receive. MUST stay safely BELOW the HTTP client's
+    // standard-resilience attempt timeout (10s — applied to every client by
+    // AddServiceDefaults -> AddStandardResilienceHandler in NimBus.ServiceDefaults).
+    // At 10s the server-side long-poll and the client attempt timeout race, so the
+    // request is cancelled (TimeoutRejectedException) and retried in a tight loop and a
+    // parked message is never delivered. 5s completes well within one attempt (returns
+    // 204 when the zone is idle, then we poll again).
+    private const int ReceiveWaitSeconds = 5;
 
     private readonly IBusGateway _bus;
     private readonly IContactClassifier _classifier;

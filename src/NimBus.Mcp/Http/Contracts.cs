@@ -58,6 +58,24 @@ public sealed record AgentSettleRequest(
     string? ErrorText,
     string? ErrorType);
 
+/// <summary>Request to propose a declarative JSONata mapping between two registered event types.</summary>
+public sealed record ProposeMappingRequest(
+    string SourceEventTypeId,
+    string TargetEventTypeId,
+    string Transform,
+    string SourceSchemaHash,
+    string? Rationale = null);
+
+/// <summary>Describes a NimBus integration mapping and its lifecycle state.</summary>
+public sealed record MappingInfo(
+    string Id,
+    string SourceEventTypeId,
+    string TargetEventTypeId,
+    string Transform,
+    string? Rationale,
+    string State,
+    int Version);
+
 // Search request shapes — minimal bodies sent to /api/messages/search and /api/audits/search.
 // The server accepts a richer filter structure; this MCP adapter sends only freeText via eventTypeId
 // field for v1. A later phase can expose richer filter params as tool arguments.

@@ -115,7 +115,8 @@ public sealed class ClaudeContactClassifier : IContactClassifier, IDisposable
         const string schemaJson = """
             {
               "type": "object",
-              "required": ["industry"],
+              "required": ["industry", "leadScore", "rationale"],
+              "additionalProperties": false,
               "properties": {
                 "industry":  { "type": "string" },
                 "leadScore": { "type": "integer" },

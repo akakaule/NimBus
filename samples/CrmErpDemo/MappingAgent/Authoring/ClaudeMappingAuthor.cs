@@ -109,6 +109,7 @@ public sealed class ClaudeMappingAuthor : IMappingAuthor, IDisposable
             {
               "type": "object",
               "required": ["transform", "rationale"],
+              "additionalProperties": false,
               "properties": {
                 "transform":  { "type": "string" },
                 "rationale":  { "type": "string" }

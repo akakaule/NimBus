@@ -33,7 +33,11 @@ builder.Services.AddHttpClient<SchemaSeeder>(client =>
     client.BaseAddress = new Uri("https+http://nimbus-ops");
     client.DefaultRequestHeaders.Add("X-Agent-Id", "marketing-api");
 });
-builder.Services.AddHostedService<SchemaSeeder>();
+// Resolve the hosted service through the typed-client registration above so it
+// receives the HttpClient configured with BaseAddress. AddHostedService<SchemaSeeder>()
+// would activate a separate singleton, bypassing the typed client and yielding an
+// HttpClient with no BaseAddress (relative PostAsync then throws).
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SchemaSeeder>());
 
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));

@@ -23,7 +23,11 @@ public sealed class RestMappingGateway : IMappingBusGateway
         await EnsureSuccessAsync(response, "GetCatalog", ct);
 
         var json = await response.Content.ReadAsStringAsync(ct);
-        var entries = JsonConvert.DeserializeObject<List<CatalogEntry>>(json);
+        // GET /api/agent/catalog returns an AgentCatalog object — { "endpoints": [...],
+        // "eventTypes": [...] } — not a bare array. Extract the eventTypes list.
+        var root = JObject.Parse(json);
+        var eventTypes = root["eventTypes"] as JArray ?? root["EventTypes"] as JArray;
+        var entries = eventTypes?.ToObject<List<CatalogEntry>>();
         return entries ?? new List<CatalogEntry>();
     }
 

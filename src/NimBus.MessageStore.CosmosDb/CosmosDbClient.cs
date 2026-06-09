@@ -159,7 +159,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         return new EndpointStateCount
         {
             EndpointId = endpointId,
-            EventTime = DateTime.Now,
+            EventTime = DateTime.UtcNow,
             DeferredCount = resultDict.ContainsKey(DeferredStatus) ? resultDict[DeferredStatus] : 0,
             PendingCount = resultDict.ContainsKey(PendingStatus) ? resultDict[PendingStatus] : 0,
             FailedCount = resultDict.ContainsKey(FailedStatus) ? resultDict[FailedStatus] : 0,

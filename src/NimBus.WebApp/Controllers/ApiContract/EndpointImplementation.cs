@@ -75,16 +75,22 @@ public class EndpointImplementation : IEndpointApiController
     {
         var endpointIds = platform.Endpoints
             .Where(endpoint => _authorizationService.IsManagerOfEndpoint(endpoint.Id) && ShowEndpoint(endpoint.Id))
-            .Select(e => e.Id);
+            .Select(e => e.Id)
+            .ToList();
 
-        var endpointStateCounts = new List<EndpointStateCount>();
+        // Each count is an independent storage aggregate query (~100-500ms against
+        // Cosmos); run them concurrently (bounded) rather than serially so a
+        // 40-endpoint list doesn't block for many seconds. Results go into a
+        // pre-sized array by index to preserve endpoint order.
+        var endpointStateCounts = new EndpointStateCount[endpointIds.Count];
 
         try
         {
-            foreach (var endpointId in endpointIds)
+            var countOptions = new ParallelOptions { MaxDegreeOfParallelism = Math.Min(System.Environment.ProcessorCount, 4) };
+            await Parallel.ForEachAsync(Enumerable.Range(0, endpointIds.Count), countOptions, async (i, _) =>
             {
-                endpointStateCounts.Add(await cosmosClient.DownloadEndpointStateCount(endpointId));
-            }
+                endpointStateCounts[i] = await cosmosClient.DownloadEndpointStateCount(endpointIds[i]);
+            });
         }
         catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {

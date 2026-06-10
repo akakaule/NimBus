@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import DataTable from "./data-table-new";
 import type { ITableHeadCell, ITableRow } from "./types";
@@ -10,6 +10,14 @@ import type { ITableHeadCell, ITableRow } from "./types";
 vi.mock("components/ui/toast", () => ({
   useToast: () => ({ addToast: () => {} }),
 }));
+
+// Spy on useNavigate so row-click navigation is observable; everything else
+// (MemoryRouter included) stays real.
+const navigateSpy = vi.fn();
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return { ...actual, useNavigate: () => navigateSpy };
+});
 
 const headCells: ITableHeadCell[] = [
   { id: "name", label: "Name", numeric: false },
@@ -54,5 +62,96 @@ describe("DataTable (smoke)", () => {
     // Header still renders; body is empty — the noDataMessage default is
     // "No data" but the exact wording isn't part of this smoke contract.
     expect(screen.getByText("Name")).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Row navigation (ported from DIS 5adc92b7) — plain click navigates in place;
+// Ctrl/Cmd-click and middle-click open the row's route in a new tab.
+// ---------------------------------------------------------------------------
+describe("DataTable row navigation", () => {
+  const ROUTE = "/Message/Index/Bob/event-1/0";
+
+  const routedRows: ITableRow[] = [
+    {
+      id: "row-1",
+      route: ROUTE,
+      data: new Map([
+        ["name", { value: "AliceSaidHello", searchValue: "AliceSaidHello" }],
+        ["count", { value: 1, searchValue: 1 }],
+      ]),
+    },
+  ];
+
+  let openedTab: { opener: unknown };
+
+  beforeEach(() => {
+    navigateSpy.mockReset();
+    openedTab = { opener: {} };
+    vi.stubGlobal("open", vi.fn(() => openedTab));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function getRow(): HTMLElement {
+    renderTable(
+      <DataTable headCells={headCells} rows={routedRows} withToolbar={false} />,
+    );
+    return screen.getByText("AliceSaidHello").closest("tr") as HTMLElement;
+  }
+
+  function auxClick(row: HTMLElement, button: number) {
+    fireEvent(
+      row,
+      new MouseEvent("auxclick", { bubbles: true, cancelable: true, button }),
+    );
+  }
+
+  it("navigates in the same tab on a plain click", () => {
+    const row = getRow();
+
+    fireEvent.click(row);
+
+    expect(navigateSpy).toHaveBeenCalledWith(ROUTE);
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
+  it("opens a new tab on Ctrl+click and nulls the opener", () => {
+    const row = getRow();
+
+    fireEvent.click(row, { ctrlKey: true });
+
+    expect(window.open).toHaveBeenCalledWith(ROUTE, "_blank");
+    expect(openedTab.opener).toBeNull();
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  it("opens a new tab on Cmd+click (metaKey)", () => {
+    const row = getRow();
+
+    fireEvent.click(row, { metaKey: true });
+
+    expect(window.open).toHaveBeenCalledWith(ROUTE, "_blank");
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  it("opens a new tab on middle-click", () => {
+    const row = getRow();
+
+    auxClick(row, 1);
+
+    expect(window.open).toHaveBeenCalledWith(ROUTE, "_blank");
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  it("ignores a right-button auxclick (button 2)", () => {
+    const row = getRow();
+
+    auxClick(row, 2);
+
+    expect(window.open).not.toHaveBeenCalled();
+    expect(navigateSpy).not.toHaveBeenCalled();
   });
 });

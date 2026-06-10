@@ -8,6 +8,7 @@ import MessageListing, {
   getHandoffResult,
   getHistoryQueueTimeMs,
   getResubmitPayload,
+  getRoutingFromTo,
 } from "./message-listing";
 
 // MessageListing internally constructs an api.Client and queries `getMe()` on
@@ -444,6 +445,189 @@ describe("getHandoffResult", () => {
   it("returns undefined without history", () => {
     expect(getHandoffResult(undefined)).toBeUndefined();
     expect(getHandoffResult([])).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Routing lineage (ported from DIS 5adc92b7) — response messages render
+// From = originating publisher, To = handling endpoint, dropping the internal
+// Resolver hop.
+// ---------------------------------------------------------------------------
+describe("getRoutingFromTo", () => {
+  function lineageEvent(props: Partial<api.IEvent>): api.Event {
+    return api.Event.fromJS(props);
+  }
+
+  function lineageMsg(props: Partial<api.IMessage>): api.Message {
+    return api.Message.fromJS(props);
+  }
+
+  it("shows publisher → handling endpoint for a response, dropping the Resolver", () => {
+    // Response handled by Bob; the originating EventRequest was published by
+    // Alice (carried on the request's originatingFrom). The response's own
+    // `from`/`originatingFrom` only know about the handling endpoint (Bob).
+    const result = getRoutingFromTo(
+      lineageEvent({
+        messageType: "ResolutionResponse",
+        from: "Bob",
+        to: "Resolver",
+        originatingFrom: "Bob",
+        originatingMessageId: "AliceSaidHello-1",
+      }),
+      [
+        lineageMsg({
+          messageId: "AliceSaidHello-1",
+          messageType: "EventRequest",
+          from: "Bob",
+          to: "Bob",
+          originatingFrom: "Alice",
+        }),
+      ],
+    );
+
+    expect(result).toEqual({ from: "Alice", to: "Bob" });
+  });
+
+  it("uses the originating request's literal from when it has no originatingFrom", () => {
+    const result = getRoutingFromTo(
+      lineageEvent({
+        messageType: "ResolutionResponse",
+        from: "Bob",
+        to: "Resolver",
+        originatingMessageId: "AliceSaidHello-1",
+      }),
+      [
+        lineageMsg({
+          messageId: "AliceSaidHello-1",
+          messageType: "EventRequest",
+          from: "Alice",
+          to: "Bob",
+        }),
+      ],
+    );
+
+    expect(result).toEqual({ from: "Alice", to: "Bob" });
+  });
+
+  it('falls through an empty-string originatingFrom (SQL Server null→"") to from', () => {
+    // SQL Server stores a missing originatingFrom as "", which `??` would keep
+    // (rendering a blank From). It must fall through to the request's `from`.
+    const result = getRoutingFromTo(
+      lineageEvent({
+        messageType: "ResolutionResponse",
+        from: "Bob",
+        to: "Resolver",
+        originatingFrom: "",
+        originatingMessageId: "AliceSaidHello-1",
+      }),
+      [
+        lineageMsg({
+          messageId: "AliceSaidHello-1",
+          messageType: "EventRequest",
+          from: "Alice",
+          to: "Bob",
+          originatingFrom: "",
+        }),
+      ],
+    );
+
+    expect(result).toEqual({ from: "Alice", to: "Bob" });
+  });
+
+  it("treats the 'self' sentinel as no publisher and falls through to from", () => {
+    const result = getRoutingFromTo(
+      lineageEvent({
+        messageType: "ResolutionResponse",
+        from: "Bob",
+        to: "Resolver",
+        originatingMessageId: "AliceSaidHello-1",
+      }),
+      [
+        lineageMsg({
+          messageId: "AliceSaidHello-1",
+          messageType: "EventRequest",
+          from: "Alice",
+          to: "Bob",
+          originatingFrom: "self",
+        }),
+      ],
+    );
+
+    expect(result).toEqual({ from: "Alice", to: "Bob" });
+  });
+
+  it("applies to every response message type", () => {
+    const messages = [
+      lineageMsg({
+        messageId: "AliceSaidHello-1",
+        messageType: "EventRequest",
+        from: "Bob",
+        originatingFrom: "Alice",
+      }),
+    ];
+    for (const messageType of [
+      "ErrorResponse",
+      "SkipResponse",
+      "DeferralResponse",
+      "UnsupportedResponse",
+      "PendingHandoffResponse",
+    ]) {
+      expect(
+        getRoutingFromTo(
+          lineageEvent({
+            messageType,
+            from: "Bob",
+            to: "Resolver",
+            originatingMessageId: "AliceSaidHello-1",
+          }),
+          messages,
+        ),
+      ).toEqual({ from: "Alice", to: "Bob" });
+    }
+  });
+
+  it("falls back to the event's own fields when the originating message is missing", () => {
+    const result = getRoutingFromTo(
+      lineageEvent({
+        messageType: "ResolutionResponse",
+        from: "Bob",
+        to: "Resolver",
+        originatingFrom: "Alice",
+        originatingMessageId: "AliceSaidHello-1",
+      }),
+      [],
+    );
+
+    expect(result).toEqual({ from: "Alice", to: "Bob" });
+  });
+
+  it("falls back to the handling endpoint when nothing else is known", () => {
+    const result = getRoutingFromTo(
+      lineageEvent({
+        messageType: "ResolutionResponse",
+        from: "Bob",
+        to: "Resolver",
+      }),
+    );
+
+    expect(result).toEqual({ from: "Bob", to: "Bob" });
+  });
+
+  it("leaves non-response messages untouched", () => {
+    const result = getRoutingFromTo(
+      lineageEvent({
+        messageType: "EventRequest",
+        from: "Alice",
+        to: "Bob",
+        originatingFrom: "Alice",
+      }),
+    );
+
+    expect(result).toEqual({ from: "Alice", to: "Bob" });
+  });
+
+  it("handles an undefined event", () => {
+    expect(getRoutingFromTo(undefined)).toEqual({ from: "", to: "" });
   });
 });
 

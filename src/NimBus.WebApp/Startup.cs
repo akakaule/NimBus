@@ -493,8 +493,25 @@ namespace NimBus.WebApp
 
             app.UseRouting();
 
+            // Serve the Brotli/gzip siblings the Vite build emits next to each
+            // asset, before the SPA static-file middleware. When the client
+            // accepts the encoding and the sibling exists on disk the request
+            // is rewritten to it and Content-Encoding/Vary are set; otherwise
+            // the request falls through and the plain asset is served (with
+            // dynamic response compression above as the fallback).
+            var spaAssetRoot = System.IO.Path.Combine(env.ContentRootPath, "ClientApp", "build", "public");
+            if (System.IO.Directory.Exists(spaAssetRoot))
+            {
+                app.UseMiddleware<PrecompressedStaticFileMiddleware>(
+                    (Microsoft.Extensions.FileProviders.IFileProvider)new Microsoft.Extensions.FileProviders.PhysicalFileProvider(spaAssetRoot));
+            }
+
             app.UseSpaStaticFiles(new StaticFileOptions
             {
+                // Resolve the rewritten `.js.br` / `.css.gz` paths back to the
+                // underlying asset's Content-Type so precompressed responses
+                // keep their real type instead of application/octet-stream.
+                ContentTypeProvider = new PrecompressedContentTypeProvider(),
                 OnPrepareResponse = ctx =>
                 {
                     var path = ctx.Context.Request.Path.Value ?? string.Empty;

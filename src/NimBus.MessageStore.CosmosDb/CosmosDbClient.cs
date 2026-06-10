@@ -6,6 +6,7 @@ using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Cosmos.Linq;
 using Newtonsoft.Json;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -110,6 +111,17 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 {
     private readonly ICosmosClientAdapter _cosmosClient;
     private readonly ILogger _logger;
+
+    // Cosmos container handles are lightweight client-side proxies the SDK
+    // recommends caching for the client's lifetime. Every data operation used to
+    // call CreateContainerIfNotExistsAsync, which issues a control-plane
+    // round-trip on each call even when the container already exists. Cache the
+    // resolved handle (running the one-time "ensure exists" once per container)
+    // so steady-state reads/writes skip that round-trip. Keyed by container id,
+    // which is unique per physical container in the database. Entries are evicted
+    // when a container is deleted (PurgeMessages) so the next access recreates it.
+    private readonly ConcurrentDictionary<string, Task<ICosmosContainerAdapter>> _containerCache = new();
+
     private const string DatabaseId = "MessageDatabase";
 
     private const string PendingStatus = "Pending";
@@ -526,6 +538,10 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             var container = await GetEndpointContainer(endpointId);
 
             await container.DeleteContainerAsync();
+            // Drop the cached handle so the next access re-runs "ensure exists"
+            // and recreates the now-deleted container instead of reusing a stale
+            // handle that would only throw NotFound.
+            _containerCache.TryRemove(endpointId, out _);
             _logger?.LogInformation("COSMOS PURGE: Deleted all messages on endpoint {EndpointId}", endpointId);
 
             return true;
@@ -947,8 +963,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     public async Task<IEnumerable<EndpointSubscription>> GetSubscriptionsOnEndpoint(string endpointId)
     {
         var subscriptions = new List<EndpointSubscription>();
-        var db = _cosmosClient.GetDatabase(DatabaseId);
-        var subscriptionContainer = await db.CreateContainerIfNotExistsAsync(SubscriptionsContainer, "/id");
+        var subscriptionContainer = await GetSubscriptionsContainer();
 
         var queryDefinition = new QueryDefinition("SELECT * FROM c WHERE c.endpointId = @endpointId")
             .WithParameter("@endpointId", endpointId);
@@ -970,8 +985,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         string eventType, string payload, string errorText)
     {
         var subscriptions = new List<EndpointSubscription>();
-        var db = _cosmosClient.GetDatabase(DatabaseId);
-        var subscriptionContainer = await db.CreateContainerIfNotExistsAsync(SubscriptionsContainer, "/id");
+        var subscriptionContainer = await GetSubscriptionsContainer();
 
         var sqlQuery = "SELECT * FROM c WHERE c.endpointId = @endpointId";
 
@@ -1139,27 +1153,48 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         Status = projection.Status,
     };
 
-    private async Task<ICosmosContainerAdapter> GetEndpointContainer(string endpointId)
+    // Resolves a container handle through _containerCache, running "ensure
+    // exists" exactly once per container id and caching the resulting handle.
+    // A faulted creation is never left cached: the faulted entry is evicted
+    // (key + value match, so a newer good entry is never removed) and the
+    // next caller retries.
+    private async Task<ICosmosContainerAdapter> GetCachedContainerAsync(string containerId, string partitionKeyPath)
+    {
+        var containerTask = _containerCache.GetOrAdd(containerId, id => EnsureContainerExistsAsync(id, partitionKeyPath));
+        try
+        {
+            return await containerTask;
+        }
+        catch
+        {
+            _containerCache.TryRemove(new KeyValuePair<string, Task<ICosmosContainerAdapter>>(containerId, containerTask));
+            throw;
+        }
+    }
+
+    private async Task<ICosmosContainerAdapter> EnsureContainerExistsAsync(string containerId, string partitionKeyPath)
+    {
+        var db = _cosmosClient.GetDatabase(DatabaseId);
+        return await db.CreateContainerIfNotExistsAsync(containerId, partitionKeyPath);
+    }
+
+    private Task<ICosmosContainerAdapter> GetEndpointContainer(string endpointId)
     {
         if (string.IsNullOrEmpty(endpointId))
         {
             throw new ArgumentNullException(nameof(endpointId), "EndpointId cannot be null or empty");
         }
-        var db = _cosmosClient.GetDatabase(DatabaseId);
-        return await db.CreateContainerIfNotExistsAsync(endpointId, "/id");
+        return GetCachedContainerAsync(endpointId, "/id");
     }
 
-    private async Task<ICosmosContainerAdapter> GetMessagesContainer()
-    {
-        var db = _cosmosClient.GetDatabase(DatabaseId);
-        return await db.CreateContainerIfNotExistsAsync(MessagesContainer, "/eventId");
-    }
+    private Task<ICosmosContainerAdapter> GetSubscriptionsContainer() =>
+        GetCachedContainerAsync(SubscriptionsContainer, "/id");
 
-    private async Task<ICosmosContainerAdapter> GetAuditsContainer()
-    {
-        var db = _cosmosClient.GetDatabase(DatabaseId);
-        return await db.CreateContainerIfNotExistsAsync(AuditsContainer, "/eventId");
-    }
+    private Task<ICosmosContainerAdapter> GetMessagesContainer() =>
+        GetCachedContainerAsync(MessagesContainer, "/eventId");
+
+    private Task<ICosmosContainerAdapter> GetAuditsContainer() =>
+        GetCachedContainerAsync(AuditsContainer, "/eventId");
 
     public async Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount)
     {

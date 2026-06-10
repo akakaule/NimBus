@@ -245,8 +245,14 @@ const EventsPanel = (props: EventsPanelProps) => {
   const params = useParams();
   const endpointId = props.endpointId || params.id!;
 
-  const { applied, applyFilters, resetFilters, setFiltersWithoutHistory } =
-    useUrlFilters<EndpointFilterParams>(DEFAULT_ENDPOINT_FILTER_PARAMS);
+  // Filters live in the URL (shareable, Back/forward-safe) and are mirrored to
+  // sessionStorage per endpoint, so navigating away and back through the
+  // sidebar restores the operator's last-used filters. URL params always win
+  // over the stored copy.
+  const { applied, applyFilters, resetFilters } =
+    useUrlFilters<EndpointFilterParams>(DEFAULT_ENDPOINT_FILTER_PARAMS, {
+      persistKey: `endpoint-events-filter:${endpointId}`,
+    });
 
   // Bumped on every explicit Search click. The fetch effect is keyed on the URL
   // filter (`applied`), which does not change when Search is clicked without
@@ -294,17 +300,11 @@ const EventsPanel = (props: EventsPanelProps) => {
     setProjectContext: setEventFilter,
   };
 
-  // Materialise the default failed-message statuses into the URL on
-  // first mount when the URL has no status param. This makes the operator's
-  // default landing state explicit in the URL — essential for browser Back from
-  // a message-detail page to land back on the *same* filter the user saw.
-  React.useEffect(() => {
-    const url = new URL(window.location.href);
-    if (!url.searchParams.has("status")) {
-      setFiltersWithoutHistory(applied);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // NOTE: the defaults are no longer materialised into the URL on first mount.
+  // A clean URL re-derives the same default filter deterministically, and the
+  // hook's sessionStorage hydration (persistKey above) now owns the "restore
+  // last-used filters on a clean URL" concern — an explicit default write here
+  // would clobber it.
 
   // Re-fetch whenever the applied (URL) filter changes. Covers initial mount,
   // Search, Reset, browser Back/forward, and direct bookmark loads.

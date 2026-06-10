@@ -150,11 +150,28 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new BadRequestResult();
             }
 
+            // Resubmit must replay the original event payload. For a failed
+            // hand-off the lastMessageId points at the terminal ErrorResponse,
+            // whose MessageContent carries no usable event JSON — so source the
+            // payload (and, when missing, the event type) from the latest REQUEST
+            // message that actually carries it (the original EventRequest, or a
+            // later Resubmission/Retry/Continuation/ProcessDeferredRequest). Falls
+            // back to the resolved message so non-hand-off resubmits are
+            // unchanged. Same source as the frontend's resubmit prefill and the
+            // resubmit-with-changes event-type resolution below.
+            var history = await cosmosClient.GetEventHistory(eventId);
+            MessageEntity? latestRequest = LatestRequestMessageWithPayload(history);
+            MessageEntity requestMessage = latestRequest ?? errorResponse;
+
             eventTypeId = errorResponse.EventTypeId;
             if (string.IsNullOrEmpty(eventTypeId))
             {
-                MessageEntity origMessage = await GetMessageWithFallback(eventId, errorResponse.OriginatingMessageId);
-                eventTypeId = origMessage.EventTypeId;
+                MessageEntity typeSource = latestRequest
+                    ?? await GetMessageWithFallback(eventId, errorResponse.OriginatingMessageId)
+                    ?? errorResponse;
+                eventTypeId = !string.IsNullOrWhiteSpace(typeSource.EventTypeId)
+                    ? typeSource.EventTypeId
+                    : typeSource.MessageContent?.EventContent?.EventTypeId!;
             }
 
             if (errorResponse.OriginatingMessageId.Equals("self", StringComparison.Ordinal))
@@ -166,7 +183,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 endpoint = errorResponse.From;
             }
 
-            var eventJson = errorResponse.MessageContent.EventContent.EventJson;
+            var eventJson = requestMessage.MessageContent?.EventContent?.EventJson!;
 
             if (!authorizationService.IsManagerOfEndpoint(endpoint))
             {

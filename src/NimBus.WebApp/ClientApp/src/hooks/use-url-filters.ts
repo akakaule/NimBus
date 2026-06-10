@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 
 /**
@@ -26,6 +26,20 @@ interface UseUrlFiltersResult<T extends FilterValues> {
 }
 
 /**
+ * Options for {@link useUrlFilters}.
+ */
+export interface UseUrlFiltersOptions {
+  /**
+   * When set, the applied filters are mirrored to `sessionStorage[persistKey]`
+   * on every change, and restored on first mount IF the URL carries none of the
+   * owned filter params. The URL always wins when present (so reload / Back /
+   * shared links behave normally); sessionStorage only fills the gap when the
+   * page is re-entered with a clean URL (e.g. via the sidebar).
+   */
+  persistKey?: string;
+}
+
+/**
  * Source-of-truth for filter state via the URL query string.
  *
  * Browser Back works for free — when the URL is restored, `applied` re-derives from the URL.
@@ -34,8 +48,10 @@ interface UseUrlFiltersResult<T extends FilterValues> {
  */
 export function useUrlFilters<T extends FilterValues>(
   defaults: T,
+  options?: UseUrlFiltersOptions,
 ): UseUrlFiltersResult<T> {
   const [params, setParams] = useSearchParams();
+  const persistKey = options?.persistKey;
 
   const applied = useMemo<T>(() => {
     const result = { ...defaults } as T;
@@ -117,8 +133,81 @@ export function useUrlFilters<T extends FilterValues>(
         out.append(k, v);
       }
     }
+    if (persistKey) {
+      try {
+        sessionStorage.removeItem(persistKey);
+      } catch {
+        /* storage unavailable — ignore */
+      }
+    }
     setParams(out);
-  }, [params, defaults, setParams]);
+  }, [params, defaults, setParams, persistKey]);
+
+  // Snapshot the persisted filters ONCE during the first render, before the
+  // mirror effect below can overwrite sessionStorage with the (default) initial
+  // `applied`. `null` = not yet captured; `{}` = captured but absent/invalid.
+  const savedSnapshotRef = useRef<Partial<T> | null>(null);
+  if (persistKey && savedSnapshotRef.current === null) {
+    try {
+      const raw = sessionStorage.getItem(persistKey);
+      savedSnapshotRef.current = raw ? (JSON.parse(raw) as Partial<T>) : {};
+    } catch {
+      savedSnapshotRef.current = {};
+    }
+  }
+
+  const isAllDefault = useCallback(
+    (vals: T): boolean =>
+      (Object.keys(defaults) as (keyof T & string)[]).every((key) => {
+        const def = defaults[key];
+        const val = vals[key];
+        if (Array.isArray(def)) {
+          const arr = (Array.isArray(val) ? val : def) as string[];
+          return (
+            arr.length === def.length &&
+            arr.every((v, i) => v === (def as string[])[i])
+          );
+        }
+        return (
+          ((val as string | undefined) ?? "") ===
+          ((def as string | undefined) ?? "")
+        );
+      }),
+    [defaults],
+  );
+
+  // Mirror NON-default applied filters to sessionStorage so they survive a full
+  // navigation away and back (the URL only survives reload / Back). Defaults are
+  // never stored — they are the fallback anyway, so a reset cleanly forgets.
+  useEffect(() => {
+    if (!persistKey) return;
+    try {
+      if (isAllDefault(applied)) {
+        sessionStorage.removeItem(persistKey);
+      } else {
+        sessionStorage.setItem(persistKey, JSON.stringify(applied));
+      }
+    } catch {
+      /* quota / private mode — ignore */
+    }
+  }, [persistKey, applied, isAllDefault]);
+
+  // On first mount, if the URL has none of our owned params, rehydrate the
+  // last-used filters (from the render-time snapshot) by writing them to the
+  // URL (no history entry). The URL takes precedence whenever it carries a param.
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (!persistKey || hydratedRef.current) return;
+    hydratedRef.current = true;
+    const saved = savedSnapshotRef.current;
+    if (!saved || Object.keys(saved).length === 0) return;
+    const hasOwnedParam = (Object.keys(defaults) as string[]).some((k) =>
+      params.has(k),
+    );
+    if (hasOwnedParam) return;
+    setParams(buildNextParams(saved), { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return { applied, applyFilters, resetFilters, setFiltersWithoutHistory };
 }

@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NimBus · Live Platform Data Flow</title>
+<style>
+  :root{
+    --bg:#0b1220; --panel:#111a2c; --panel2:#0e1626; --border:#1e2a44;
+    --text:#e2e8f0; --muted:#8aa0bf; --faint:#5b7299;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font:14px/1.45 "Segoe UI",system-ui,-apple-system,sans-serif;}
+  body{min-width:1280px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:14px 22px;border-bottom:1px solid var(--border);background:var(--panel2)}
+  header h1{margin:0;font-size:19px;font-weight:650;letter-spacing:.2px}
+  header h1 .nb{color:#60a5fa}
+  header p{margin:2px 0 0;font-size:12px;color:var(--muted)}
+  .controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .controls button{background:#1b2a47;border:1px solid #2c3e63;color:var(--text);
+    padding:6px 12px;border-radius:8px;font-size:12.5px;cursor:pointer}
+  .controls button:hover{background:#23365a}
+  .controls button.armed{background:#5b1d1d;border-color:#f87171;color:#fecaca}
+  .controls label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .controls input[type=range]{width:110px;accent-color:#60a5fa}
+  main{display:flex;gap:0;align-items:stretch}
+  .canvas{flex:1;min-width:0;padding:10px 6px 16px 14px}
+  svg{width:100%;height:auto;display:block}
+  aside{width:392px;flex:none;border-left:1px solid var(--border);background:var(--panel);
+    padding:14px 16px;display:flex;flex-direction:column;gap:12px;
+    height:calc(100vh - 67px);overflow-y:auto;position:sticky;top:0}
+  aside h2{margin:0;font-size:14px;font-weight:650}
+  aside h2 small{color:var(--muted);font-weight:400}
+  aside h3{margin:8px 0 2px;font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint)}
+  .gauges{display:flex;gap:8px}
+  .gauge{flex:1;background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:8px 10px}
+  .gauge b{display:block;font-size:20px;font-weight:650}
+  .gauge span{font-size:10.5px;color:var(--muted)}
+  .srow{display:grid;grid-template-columns:96px 34px 1fr;align-items:center;gap:8px;margin:3px 0;font-size:12px}
+  .srow .cnt{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+  .bar{height:7px;border-radius:4px;background:#1a2640;overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:4px;width:0%;transition:width .35s}
+  #blocked .empty{font-size:12px;color:var(--faint);padding:6px 2px}
+  .brow{display:flex;justify-content:space-between;align-items:center;gap:8px;
+    background:#1c1426;border:1px solid #4c2a35;border-radius:9px;padding:7px 10px;margin:5px 0;font-size:12px}
+  .brow b{color:#fca5a5}
+  .brow span{color:var(--muted);font-size:11px}
+  .bbtns{display:flex;gap:5px}
+  .bbtns button{background:#1b2a47;border:1px solid #2c3e63;color:var(--text);
+    font-size:11px;padding:3px 8px;border-radius:6px;cursor:pointer}
+  .bbtns button:hover{background:#23365a}
+  #log{flex:1;min-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:1px}
+  .lrow{display:flex;gap:7px;align-items:baseline;font-size:11.5px;padding:2.5px 4px;border-radius:5px}
+  .lrow:nth-child(odd){background:rgba(255,255,255,.025)}
+  .lrow time{color:var(--faint);font-variant-numeric:tabular-nums;flex:none;font-size:10.5px}
+  .lrow .chip{flex:none;font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+    padding:1px 5px;border-radius:4px;background:rgba(255,255,255,.06)}
+  .lrow .bullet{flex:none;width:7px;height:7px;border-radius:50%;display:inline-block;position:relative;top:0}
+  .lrow .msg{color:#c7d4e8;min-width:0}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 16px;padding:8px 6px 0;font-size:11px;color:var(--muted)}
+  .legend .grp{font-weight:600;color:var(--faint);text-transform:uppercase;font-size:10px;letter-spacing:.6px;align-self:center}
+  .legend .it{display:flex;align-items:center;gap:5px}
+  .legend .dot{width:9px;height:9px;border-radius:50%}
+  .footnote{font-size:11px;color:var(--faint);margin:8px 6px 0;max-width:1100px}
+  /* SVG */
+  .busbox{fill:#0d1830;stroke:#22335a;stroke-width:1.2;rx:14}
+  .bustitle{fill:#9db4d8;font-size:14px;font-weight:650}
+  .bussub{fill:#5b7299;font-size:10.5px}
+  .node{fill:#131e33;stroke-width:1.4;rx:11}
+  .node.producer{stroke:#3b82f6}
+  .node.endpoint{stroke:#2dd4bf}
+  .node.agent{stroke:#a78bfa;fill:#171430}
+  .node.platform{stroke:#64748b}
+  .ntag{font-size:9px;font-weight:700;letter-spacing:1px}
+  .ntag.producer{fill:#60a5fa}.ntag.endpoint{fill:#2dd4bf}.ntag.agent{fill:#c4b5fd}.ntag.platform{fill:#94a3b8}
+  .ntitle{fill:#e8eefb;font-size:15px;font-weight:650}
+  .nsub{fill:#8aa0bf;font-size:10.5px}
+  .chiprect{fill:#16233c;stroke:#2c3e63;stroke-width:1.1;rx:9}
+  .chiprect.resolver{stroke:#818cf8;fill:#161a38}
+  .chiprect.manager{stroke:#f472b6;fill:#1d1530}
+  .chiplabel{fill:#d7e2f4;font-size:13px;font-weight:600}
+  .chipnote{fill:#5b7299;font-size:9.5px}
+  .edge{fill:none;stroke:#36486c;stroke-width:1.4;stroke-opacity:.5;transition:stroke .25s,stroke-opacity .25s,stroke-width .25s}
+  .edge.dashed{stroke-dasharray:5 5;stroke:#43536f}
+  .edge.on{stroke:#7dd3fc;stroke-opacity:.95;stroke-width:2}
+  .parkstrip{fill:none;stroke:#fbbf24;stroke-opacity:.45;stroke-dasharray:3 4;stroke-width:1;rx:7}
+  .parklabel{fill:#b9933a;font-size:9px}
+  .parkdot{fill:#fbbf24;animation:parkpulse 1.4s ease-in-out infinite}
+  @keyframes parkpulse{0%,100%{opacity:.55}50%{opacity:1}}
+  .pulse{animation:nodepulse .6s ease-out}
+  @keyframes nodepulse{0%{stroke-width:5;filter:drop-shadow(0 0 6px currentColor)}100%{stroke-width:1.4}}
+  .msgdot{filter:drop-shadow(0 0 4px currentColor)}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1><span class="nb">NimBus</span> · Live Platform Data Flow</h1>
+    <p>CRM · ERP · Storefront → Azure Service Bus → endpoints &amp; AI agents, with session blocking, deferral, AI remediation and the Resolver audit trail. Simulated traffic over the real NimBus topology.</p>
+  </div>
+  <div class="controls">
+    <button id="btnPause">⏸ Pause</button>
+    <label>Speed <input type="range" id="speed" min="0.5" max="3" step="0.25" value="1"><span id="speedVal">1.0×</span></label>
+    <button id="btnOrder">🛒 Publish order</button>
+    <button id="btnFail">💥 Inject payment failure</button>
+    <label><input type="checkbox" id="aiTog" checked> ✦ Ops Agent auto-remediation</label>
+  </div>
+</header>
+<main>
+  <section class="canvas">
+    <svg id="viz" viewBox="0 0 1280 890" aria-label="NimBus platform data flow diagram"></svg>
+    <div class="legend" id="legend"></div>
+    <p class="footnote">
+      Topology mirrors real NimBus conventions: one Service Bus topic per endpoint (topic name = endpoint id),
+      event-type forward subscriptions route copies to each subscriber's endpoint topic, and
+      <code>[SessionKey]</code>-ordered sessions block on failure — successors park on the endpoint's
+      <em>Deferred</em> subscription. Every handler outcome flows through the central <em>Resolver</em> topic into
+      Cosmos DB (ResolutionStatus: Pending · Deferred · Failed · DeadLettered · Completed · Skipped), where the
+      WebApp and the Ops Triage AI agent act on blocked sessions via the <em>Manager</em> topic.
+      The AI agents are illustrative consumers — they are not part of the NimBus codebase.
+    </p>
+  </section>
+  <aside>
+    <h2>NimBus WebApp <small>· live dashboard (SignalR)</small></h2>
+    <div class="gauges">
+      <div class="gauge"><b id="gInflight">0</b><span>messages in flight</span></div>
+      <div class="gauge"><b id="gBlocked">0</b><span>blocked sessions</span></div>
+      <div class="gauge"><b id="gParked">0</b><span>parked on Deferred</span></div>
+    </div>
+    <h3>Resolver state counts</h3>
+    <div id="stats"></div>
+    <h3>Blocked sessions</h3>
+    <div id="blocked"></div>
+    <h3>Live audit log</h3>
+    <div id="log"></div>
+  </aside>
+</main>
+<script>
+'use strict';
+/* ---------- static model ---------- */
+const NODES = {
+  crm:           {x:20,  y:80,  w:200, h:84, kind:'producer', tag:'BUSINESS SYSTEM', title:'CRM',
+                  sub:['Customer master data','publishes CustomerRegistered']},
+  erp:           {x:20,  y:210, w:200, h:84, kind:'producer', tag:'BUSINESS SYSTEM', title:'ERP',
+                  sub:['Finance & inventory','publishes InventoryReserved']},
+  storefront:    {x:20,  y:340, w:200, h:84, kind:'producer', tag:'BUSINESS SYSTEM', title:'Storefront',
+                  sub:['E-commerce front end','publishes OrderPlaced']},
+  billing:       {x:800, y:80,  w:200, h:84, kind:'endpoint', tag:'ENDPOINT', title:'Billing',
+                  sub:['handles OrderPlaced','publishes PaymentCaptured']},
+  warehouse:     {x:800, y:200, w:200, h:84, kind:'endpoint', tag:'ENDPOINT', title:'Warehouse',
+                  sub:['handles OrderPlaced','publishes ShipmentDispatched']},
+  notifications: {x:800, y:320, w:200, h:84, kind:'endpoint', tag:'ENDPOINT', title:'Notifications',
+                  sub:['handles 3 event types','publishes CustomerNotified']},
+  analytics:     {x:800, y:440, w:200, h:84, kind:'endpoint', tag:'ENDPOINT', title:'Analytics',
+                  sub:['consumes every event','KPI aggregation']},
+  forecast:      {x:1050,y:436, w:210, h:92, kind:'agent', tag:'✦ AI AGENT', title:'Demand Forecast Agent',
+                  sub:['LLM agent on the event stream','reads orders, stock & signups']},
+  opsAgent:      {x:320, y:740, w:220, h:92, kind:'agent', tag:'✦ AI AGENT', title:'Ops Triage Agent',
+                  sub:['watches failed sessions','resubmits / skips via Manager']},
+  webapp:        {x:40,  y:740, w:240, h:92, kind:'platform', tag:'PLATFORM', title:'NimBus WebApp',
+                  sub:['operator dashboard · SignalR','resubmit / skip / audit trail']},
+  resolverWorker:{x:620, y:740, w:220, h:92, kind:'platform', tag:'PLATFORM', title:'Resolver Worker',
+                  sub:['tracks outcome of every message','ResolutionStatus state machine']},
+  cosmos:        {x:900, y:740, w:210, h:92, kind:'platform', tag:'PLATFORM', title:'Cosmos DB',
+                  sub:['per-endpoint containers','full audit trail']},
+};
+const CHIP_X=330, CHIP_W=320, CHIP_H=44;
+const CHIPS = {
+  t_crm:      {y:84,  label:'CrmEndpoint'},
+  t_erp:      {y:142, label:'ErpEndpoint'},
+  t_store:    {y:200, label:'StorefrontEndpoint'},
+  t_billing:  {y:258, label:'BillingEndpoint'},
+  t_warehouse:{y:316, label:'WarehouseEndpoint'},
+  t_notif:    {y:374, label:'NotificationEndpoint'},
+  t_analytics:{y:432, label:'AnalyticsEndpoint'},
+  t_resolver: {y:506, label:'Resolver', cls:'resolver', note:'outcome stream'},
+  t_manager:  {y:564, label:'Manager',  cls:'manager',  note:'recovery commands'},
+};
+const ALL = {};
+Object.entries(NODES).forEach(([id,n])=>ALL[id]=n);
+Object.entries(CHIPS).forEach(([id,c])=>ALL[id]={x:CHIP_X,y:c.y,w:CHIP_W,h:CHIP_H});
+
+const EV = {
+  OrderPlaced:        {name:'OrderPlaced',        color:'#60a5fa'},
+  CustomerRegistered: {name:'CustomerRegistered', color:'#f472b6'},
+  PaymentCaptured:    {name:'PaymentCaptured',    color:'#2dd4bf'},
+  ShipmentDispatched: {name:'ShipmentDispatched', color:'#fb923c'},
+  InventoryReserved:  {name:'InventoryReserved',  color:'#a3e635'},
+  CustomerNotified:   {name:'CustomerNotified',   color:'#e879f9'},
+};
+const ST = {
+  published:   {label:'Published',    color:'#60a5fa'},
+  completed:   {label:'Completed',    color:'#34d399'},
+  failed:      {label:'Failed',       color:'#f87171'},
+  deferred:    {label:'Deferred',     color:'#fbbf24'},
+  resubmitted: {label:'Resubmitted',  color:'#22d3ee'},
+  skipped:     {label:'Skipped',      color:'#94a3b8'},
+  deadlettered:{label:'Dead-lettered',color:'#c084fc'},
+};
+const counters = Object.fromEntries(Object.keys(ST).map(k=>[k,0]));
+
+/* edges: [fromId, fromSide, fromOff, toId, toSide, toOff, opts] */
+const EDGE_DEFS = [
+  ['crm','right',0,        't_crm','left',0,        {tip:'CRM publishes CustomerRegistered to the CrmEndpoint topic'}],
+  ['erp','right',0,        't_erp','left',0,        {tip:'ERP publishes InventoryReserved to the ErpEndpoint topic'}],
+  ['storefront','right',0, 't_store','left',0,      {tip:'Storefront publishes OrderPlaced to the StorefrontEndpoint topic'}],
+  // forward subscriptions (topic -> topic)
+  ['t_crm','right',-6,     't_notif','right',-8,    {tip:'Forward sub: CustomerRegistered → NotificationEndpoint'}],
+  ['t_crm','right',2,      't_analytics','right',-4,{tip:'Forward sub: CustomerRegistered → AnalyticsEndpoint'}],
+  ['t_erp','right',0,      't_analytics','right',0, {tip:'Forward sub: InventoryReserved → AnalyticsEndpoint'}],
+  ['t_store','right',-8,   't_billing','right',-10, {tip:'Forward sub: OrderPlaced → BillingEndpoint'}],
+  ['t_store','right',0,    't_warehouse','right',-6,{tip:'Forward sub: OrderPlaced → WarehouseEndpoint'}],
+  ['t_store','right',8,    't_analytics','right',4, {tip:'Forward sub: OrderPlaced → AnalyticsEndpoint'}],
+  ['t_billing','right',-4, 't_notif','right',-2,    {tip:'Forward sub: PaymentCaptured → NotificationEndpoint'}],
+  ['t_billing','right',2,  't_analytics','right',8, {tip:'Forward sub: PaymentCaptured → AnalyticsEndpoint'}],
+  ['t_warehouse','right',2,'t_notif','right',4,     {tip:'Forward sub: ShipmentDispatched → NotificationEndpoint'}],
+  ['t_warehouse','right',8,'t_analytics','right',12,{tip:'Forward sub: ShipmentDispatched → AnalyticsEndpoint'}],
+  ['t_notif','right',10,   't_analytics','right',16,{tip:'Forward sub: CustomerNotified → AnalyticsEndpoint'}],
+  // deliveries (topic -> subscriber, main subscription with sessions on)
+  ['t_billing','right',-16,  'billing','left',-20,      {tip:'Main subscription (sessions on) → Billing handler'}],
+  ['t_warehouse','right',-16,'warehouse','left',-20,    {tip:'Main subscription (sessions on) → Warehouse handler'}],
+  ['t_notif','right',-16,    'notifications','left',-20,{tip:'Main subscription (sessions on) → Notifications handler'}],
+  ['t_analytics','right',-16,'analytics','left',-12,    {tip:'Main subscription (sessions on) → Analytics handler'}],
+  ['t_analytics','right',-10,'forecast','left',-20,     {tip:'ForecastAgent subscription → Demand Forecast Agent', bow:-70}],
+  // publish-back (subscriber publishes to its own endpoint topic)
+  ['billing','left',8,       't_billing','right',8,     {tip:'Billing publishes PaymentCaptured'}],
+  ['warehouse','left',8,     't_warehouse','right',14,  {tip:'Warehouse publishes ShipmentDispatched'}],
+  ['notifications','left',8, 't_notif','right',16,      {tip:'Notifications publishes CustomerNotified'}],
+  // outcome legs (handler -> Resolver topic)
+  ['billing','left',28,      't_resolver','right',-12,  {tip:'Handler outcome → Resolver topic', k:[80,130]}],
+  ['warehouse','left',28,    't_resolver','right',-6,   {tip:'Handler outcome → Resolver topic', k:[80,130]}],
+  ['notifications','left',28,'t_resolver','right',0,    {tip:'Handler outcome → Resolver topic', k:[80,130]}],
+  ['analytics','left',28,    't_resolver','right',6,    {tip:'Handler outcome → Resolver topic', k:[80,130]}],
+  ['forecast','left',38,     't_resolver','right',12,   {tip:'Agent outcome → Resolver topic', k:[120,150], bow:18}],
+  // platform plumbing
+  ['t_resolver','bottom',0,  'resolverWorker','top',0,  {tip:'Service Bus trigger → Resolver Worker'}],
+  ['resolverWorker','right',0,'cosmos','left',0,        {tip:'StoreMessage + UpdateState → Cosmos DB'}],
+  ['cosmos','bottom',0,      'webapp','bottom',0,       {tip:'Queries + SignalR push to the WebApp', dashed:true}],
+  ['webapp','right',0,       'opsAgent','left',0,       {tip:'Ops Agent polls the WebApp API for blocked sessions', dashed:true}],
+  ['webapp','top',0,         't_manager','left',0,      {tip:'Operator resubmit / skip → Manager topic', dashed:true}],
+  ['opsAgent','top',0,       't_manager','bottom',0,    {tip:'AI agent resubmit / skip → Manager topic', dashed:true}],
+  ['t_manager','right',0,    't_billing','right',14,    {tip:'Manager forward sub → recovery command to BillingEndpoint', dashed:true}],
+];
+
+/* ---------- svg construction ---------- */
+const NSVG='http://www.w3.org/2000/svg';
+const svg=document.getElementById('viz');
+function el(tag,attrs,parent){const e=document.createElementNS(NSVG,tag);
+  for(const[k,v]of Object.entries(attrs||{}))e.setAttribute(k,v);
+  if(parent)parent.appendChild(e);return e;}
+function txt(parent,x,y,str,cls,anchorPos){const t=el('text',{x,y,class:cls},parent);
+  if(anchorPos)t.setAttribute('text-anchor',anchorPos);t.textContent=str;return t;}
+
+const defs=el('defs',{},svg);
+const marker=el('marker',{id:'arrow',viewBox:'0 0 10 10',refX:'9',refY:'5',
+  markerWidth:'6.5',markerHeight:'6.5',orient:'auto-start-reverse'},defs);
+el('path',{d:'M0,0 L10,5 L0,10 z',fill:'#46618f'},marker);
+
+const gBus=el('g',{},svg), gEdges=el('g',{},svg), gChips=el('g',{},svg),
+      gNodes=el('g',{},svg), gPark=el('g',{},svg), gDots=el('g',{},svg);
+
+el('rect',{x:300,y:24,width:430,height:620,rx:14,class:'busbox'},gBus);
+txt(gBus,320,52,'Azure Service Bus','bustitle');
+txt(gBus,320,69,'declarative topology · one topic per endpoint · event-type forward subscriptions','bussub');
+
+function anchor(id,side,off=0){const n=ALL[id];
+  if(side==='left') return{x:n.x,        y:n.y+n.h/2+off};
+  if(side==='right')return{x:n.x+n.w,    y:n.y+n.h/2+off};
+  if(side==='top')  return{x:n.x+n.w/2+off,y:n.y};
+  return{x:n.x+n.w/2+off,y:n.y+n.h};}
+function ext(p,side,k){
+  if(side==='left') return{x:p.x-k,y:p.y};
+  if(side==='right')return{x:p.x+k,y:p.y};
+  if(side==='top')  return{x:p.x,y:p.y-k};
+  return{x:p.x,y:p.y+k};}
+
+const EDGES={};
+for(const[f,fs,fo,t,ts,to,opts={}]of EDGE_DEFS){
+  const p1=anchor(f,fs,fo), p2=anchor(t,ts,to);
+  const dist=Math.hypot(p2.x-p1.x,p2.y-p1.y);
+  let k1,k2;
+  if(opts.k){[k1,k2]=opts.k;}
+  else if(fs==='right'&&ts==='right'){k1=k2=60+Math.abs(p2.y-p1.y)*0.12;}
+  else if(fs==='bottom'&&ts==='bottom'){k1=k2=55;}
+  else{k1=k2=Math.min(150,Math.max(40,dist*0.35));}
+  const c1=ext(p1,fs,k1), c2=ext(p2,ts,k2);
+  if(opts.bow){c1.y+=opts.bow;c2.y+=opts.bow;}
+  const d=`M${p1.x},${p1.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${p2.x},${p2.y}`;
+  const pe=el('path',{d,class:'edge'+(opts.dashed?' dashed':''),'marker-end':'url(#arrow)'},gEdges);
+  if(opts.tip){const ti=el('title',{},pe);ti.textContent=opts.tip;}
+  EDGES[`${f}>${t}`]={el:pe,len:pe.getTotalLength(),active:0};
+}
+
+const chipNotes={};
+for(const[id,c]of Object.entries(CHIPS)){
+  el('rect',{x:CHIP_X,y:c.y,width:CHIP_W,height:CHIP_H,rx:9,
+    class:'chiprect'+(c.cls?' '+c.cls:'')},gChips);
+  txt(gChips,CHIP_X+14,c.y+27,c.label,'chiplabel');
+  chipNotes[id]=txt(gChips,CHIP_X+CHIP_W-12,c.y+27,c.note||'sessions on','chipnote','end');
+}
+/* deferred parking strip beside BillingEndpoint */
+const bil=CHIPS.t_billing;
+el('rect',{x:658,y:bil.y+5,width:64,height:34,rx:7,class:'parkstrip'},gChips);
+const parkLabel=txt(gChips,690,bil.y+52,'Deferred','parklabel','middle');
+
+const nodeRects={};
+for(const[id,n]of Object.entries(NODES)){
+  const g=el('g',{},gNodes);
+  nodeRects[id]=el('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:11,class:'node '+n.kind},g);
+  txt(g,n.x+14,n.y+19,n.tag,'ntag '+n.kind);
+  txt(g,n.x+14,n.y+41,n.title,'ntitle');
+  txt(g,n.x+14,n.y+58,n.sub[0],'nsub');
+  if(n.sub[1])txt(g,n.x+14,n.y+72,n.sub[1],'nsub');
+}
+
+/* ---------- legend & stats panel ---------- */
+const legend=document.getElementById('legend');
+legend.innerHTML =
+  '<span class="grp">Events</span>'+
+  Object.values(EV).map(e=>`<span class="it"><span class="dot" style="background:${e.color}"></span>${e.name}</span>`).join('')+
+  '<span class="grp" style="margin-left:18px">Outcomes</span>'+
+  ['completed','failed','deferred','resubmitted','skipped','deadlettered']
+    .map(k=>`<span class="it"><span class="dot" style="background:${ST[k].color}"></span>${ST[k].label}</span>`).join('');
+
+const statsHost=document.getElementById('stats');
+statsHost.innerHTML=Object.entries(ST).map(([k,s])=>
+  `<div class="srow"><span style="color:${s.color}">${s.label}</span>`+
+  `<span class="cnt" id="cnt_${k}">0</span>`+
+  `<div class="bar"><i id="bar_${k}" style="background:${s.color}"></i></div></div>`).join('');
+
+/* ---------- virtual clock, timers, dots ---------- */
+let vt=0,last=performance.now(),paused=false,speed=1;
+const timers=[],dots=[];
+function after(ms,fn){timers.push({at:vt+ms,fn});}
+function sleep(ms){return new Promise(r=>after(ms,r));}
+function ease(t){return t*t*(3-2*t);}
+
+function go(key,{color='#60a5fa',dur,r=6}={}){
+  const e=EDGES[key];
+  if(!e){console.warn('missing edge',key);return Promise.resolve();}
+  dur=dur??Math.max(420,e.len*2.2);
+  const c=el('circle',{r,fill:color,class:'msgdot',style:`color:${color}`},gDots);
+  e.active++;e.el.classList.add('on');
+  return new Promise(res=>{
+    dots.push({e,c,start:vt,dur,res});
+  });
+}
+function updateDots(){
+  for(let i=dots.length-1;i>=0;i--){
+    const d=dots[i],t=(vt-d.start)/d.dur;
+    if(t>=1){
+      d.c.remove();d.e.active--;
+      if(d.e.active<=0){d.e.active=0;d.e.el.classList.remove('on');}
+      dots.splice(i,1);d.res();continue;
+    }
+    const p=d.e.el.getPointAtLength(ease(Math.max(0,t))*d.e.len);
+    d.c.setAttribute('cx',p.x);d.c.setAttribute('cy',p.y);
+  }
+}
+function runTimers(){
+  for(let i=timers.length-1;i>=0;i--){
+    if(vt>=timers[i].at){const f=timers[i].fn;timers.splice(i,1);f();}
+  }
+}
+let lastStats=0;
+function tick(now){
+  const dt=Math.min(64,now-last);last=now;
+  if(!paused){vt+=dt*speed;updateDots();runTimers();
+    if(vt-lastStats>250){lastStats=vt;document.getElementById('gInflight').textContent=dots.length;}}
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+function pulseNode(id){const r=nodeRects[id];if(!r)return;
+  r.classList.remove('pulse');void r.getBBox();r.classList.add('pulse');
+  setTimeout(()=>r.classList.remove('pulse'),700);}
+async function process(id,ms){pulseNode(id);await sleep(ms);}
+
+/* ---------- dashboard ---------- */
+function refreshStats(){
+  const max=Math.max(1,...Object.keys(ST).map(k=>counters[k]));
+  for(const k of Object.keys(ST)){
+    document.getElementById('cnt_'+k).textContent=counters[k];
+    document.getElementById('bar_'+k).style.width=(counters[k]/max*100)+'%';
+  }
+  document.getElementById('gBlocked').textContent=blocked.size;
+  document.getElementById('gParked').textContent=parkedCount();
+}
+const logHost=document.getElementById('log');
+function log(text,status=null,bulletColor=null){
+  const row=document.createElement('div');row.className='lrow';
+  const t=document.createElement('time');
+  t.textContent=new Date().toLocaleTimeString([],{hour12:false});
+  row.appendChild(t);
+  if(bulletColor){const b=document.createElement('span');b.className='bullet';
+    b.style.background=bulletColor;row.appendChild(b);}
+  if(status){const c=document.createElement('span');c.className='chip';
+    c.style.color=ST[status].color;c.textContent=ST[status].label;row.appendChild(c);}
+  const m=document.createElement('span');m.className='msg';m.textContent=text;row.appendChild(m);
+  logHost.prepend(row);
+  while(logHost.children.length>80)logHost.lastChild.remove();
+}
+
+/* ---------- sessions, blocking, parking ---------- */
+const blocked=new Map();
+function hex(n){let s='';while(s.length<n)s+=Math.random().toString(16).slice(2);
+  return s.slice(0,n).toUpperCase();}
+function parkedCount(){let n=0;blocked.forEach(s=>n+=s.parked.length);return n;}
+function makeParkDot(session){
+  const c=el('circle',{r:5,class:'parkdot'},gPark);
+  const ti=el('title',{},c);
+  ti.textContent=`OrderPlaced (update) · ${session.id} — parked on Deferred subscription`;
+  return c;}
+function layoutPark(){
+  const all=[];blocked.forEach(s=>all.push(...s.parked));
+  all.forEach((c,i)=>{
+    if(i<4){c.setAttribute('cx',668+i*14);c.setAttribute('cy',bil.y+22);c.setAttribute('visibility','visible');}
+    else c.setAttribute('visibility','hidden');});
+  parkLabel.textContent=all.length?`Deferred · ${all.length}`:'Deferred';
+}
+function refreshBlocked(){
+  const host=document.getElementById('blocked');
+  if(!blocked.size){host.innerHTML='<div class="empty">none — all sessions healthy</div>';}
+  else{host.innerHTML=[...blocked.values()].map(s=>
+    `<div class="brow"><div><b>${s.id}</b> · blocked by failed OrderPlaced<br>`+
+    `<span>${s.parked.length} message(s) parked on Deferred</span></div>`+
+    `<div class="bbtns"><button data-s="${s.id}" data-a="resubmit">Resubmit</button>`+
+    `<button data-s="${s.id}" data-a="skip">Skip</button></div></div>`).join('');}
+  chipNotes.t_billing.textContent=blocked.size?`🔒 ${blocked.size} blocked`:'sessions on';
+  chipNotes.t_billing.setAttribute('fill',blocked.size?'#f87171':'#5b7299');
+  refreshStats();
+}
+document.getElementById('blocked').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  const s=blocked.get(b.dataset.s);if(s)remediate(s,b.dataset.a,'webapp');
+});
+
+/* ---------- message flows ---------- */
+async function outcomeLegs(from,status){
+  counters[status]++;refreshStats();
+  const c=ST[status].color;
+  await go(`${from}>t_resolver`,{color:c,r:5});
+  await go('t_resolver>resolverWorker',{color:c,r:5});
+  pulseNode('resolverWorker');
+  await go('resolverWorker>cosmos',{color:c,r:5});
+  pulseNode('cosmos');
+  go('cosmos>webapp',{color:'#64748b',r:3}); // SignalR push, fire & forget
+}
+
+async function analyticsLeg(fromChip,ev,sid,toForecast=true){
+  await go(`${fromChip}>t_analytics`,{color:ev.color});
+  (async()=>{
+    await go('t_analytics>analytics',{color:ev.color});
+    await process('analytics',350);
+    await outcomeLegs('analytics','completed');
+  })();
+  if(toForecast)(async()=>{
+    await go('t_analytics>forecast',{color:ev.color});
+    await process('forecast',650);
+    forecastSeen++;
+    if(forecastSeen%4===0)
+      log(`✦ Forecast Agent re-ran demand model — ${forecastSeen} events ingested`,'completed');
+    await outcomeLegs('forecast','completed');
+  })();
+}
+let forecastSeen=0,armedFail=false;
+
+async function orderFlow({session=null,update=false,forceFail=false}={}){
+  session=session??{id:'ORD-'+hex(4),blocked:false,remediating:false,parked:[]};
+  counters.published++;refreshStats();
+  log(`Storefront published OrderPlaced${update?' (update)':''} · session ${session.id}`,null,EV.OrderPlaced.color);
+  await go('storefront>t_store',{color:EV.OrderPlaced.color});
+  billingLeg(session,update,forceFail);
+  if(!update){warehouseLeg(session);analyticsLeg('t_store',EV.OrderPlaced,session.id);}
+}
+
+async function billingLeg(session,update,forceFail){
+  await go('t_store>t_billing',{color:EV.OrderPlaced.color});
+  if(session.blocked){
+    counters.deferred++;
+    session.parked.push(makeParkDot(session));
+    layoutPark();refreshBlocked();
+    log(`OrderPlaced (update) · ${session.id} parked on Deferred — session blocked`,'deferred');
+    return;
+  }
+  await go('t_billing>billing',{color:EV.OrderPlaced.color});
+  await process('billing',520);
+  let fail=forceFail;
+  if(armedFail){fail=true;armedFail=false;syncFailBtn();}
+  if(!fail&&!update&&Math.random()<0.03){
+    log(`OrderPlaced · ${session.id} → poison message, moved to dead-letter queue`,'deadlettered');
+    await outcomeLegs('billing','deadlettered');
+    return;
+  }
+  fail=fail||(!update&&Math.random()<0.13);
+  if(fail){
+    session.blocked=true;blocked.set(session.id,session);
+    refreshBlocked();
+    log(`Billing handler failed for OrderPlaced · ${session.id} — session blocked (BlockedByEventId set)`,'failed');
+    await outcomeLegs('billing','failed');
+    after(1500,()=>orderFlow({session,update:true}));
+    if(Math.random()<0.6)after(3000,()=>orderFlow({session,update:true}));
+    after(4500+Math.random()*2500,()=>{
+      if(aiTog.checked&&session.blocked&&!session.remediating)
+        remediate(session,Math.random()<0.8?'resubmit':'skip','agent');
+    });
+  }else{
+    if(!update)log(`Billing handled OrderPlaced · ${session.id}`,'completed');
+    await outcomeLegs('billing','completed');
+    if(!update)paymentFlow(session);
+  }
+}
+
+async function warehouseLeg(session){
+  await go('t_store>t_warehouse',{color:EV.OrderPlaced.color});
+  await go('t_warehouse>warehouse',{color:EV.OrderPlaced.color});
+  await process('warehouse',550);
+  await outcomeLegs('warehouse','completed');
+  counters.published++;refreshStats();
+  log(`Warehouse published ShipmentDispatched · ${session.id}`,null,EV.ShipmentDispatched.color);
+  await go('warehouse>t_warehouse',{color:EV.ShipmentDispatched.color});
+  (async()=>{
+    await go('t_warehouse>t_notif',{color:EV.ShipmentDispatched.color});
+    await go('t_notif>notifications',{color:EV.ShipmentDispatched.color});
+    await process('notifications',380);
+    await outcomeLegs('notifications','completed');
+  })();
+  analyticsLeg('t_warehouse',EV.ShipmentDispatched,session.id);
+}
+
+async function paymentFlow(session){
+  counters.published++;refreshStats();
+  log(`Billing published PaymentCaptured · ${session.id}`,null,EV.PaymentCaptured.color);
+  await go('billing>t_billing',{color:EV.PaymentCaptured.color});
+  (async()=>{
+    await go('t_billing>t_notif',{color:EV.PaymentCaptured.color});
+    await go('t_notif>notifications',{color:EV.PaymentCaptured.color});
+    await process('notifications',420);
+    await outcomeLegs('notifications','completed');
+    customerNotifiedFlow(session.id);
+  })();
+  analyticsLeg('t_billing',EV.PaymentCaptured,session.id);
+}
+
+async function customerNotifiedFlow(sid){
+  counters.published++;refreshStats();
+  log(`Notifications published CustomerNotified · ${sid}`,null,EV.CustomerNotified.color);
+  await go('notifications>t_notif',{color:EV.CustomerNotified.color});
+  analyticsLeg('t_notif',EV.CustomerNotified,sid);
+}
+
+async function customerFlow(){
+  const sid='CUS-'+hex(4);
+  counters.published++;refreshStats();
+  log(`CRM published CustomerRegistered · session ${sid}`,null,EV.CustomerRegistered.color);
+  await go('crm>t_crm',{color:EV.CustomerRegistered.color});
+  (async()=>{
+    await go('t_crm>t_notif',{color:EV.CustomerRegistered.color});
+    await go('t_notif>notifications',{color:EV.CustomerRegistered.color});
+    await process('notifications',420);
+    await outcomeLegs('notifications','completed');
+    if(Math.random()<0.6)customerNotifiedFlow(sid);
+  })();
+  analyticsLeg('t_crm',EV.CustomerRegistered,sid);
+}
+
+async function inventoryFlow(){
+  const sid='ORD-'+hex(4);
+  counters.published++;refreshStats();
+  log(`ERP published InventoryReserved · session ${sid}`,null,EV.InventoryReserved.color);
+  await go('erp>t_erp',{color:EV.InventoryReserved.color});
+  analyticsLeg('t_erp',EV.InventoryReserved,sid);
+}
+
+/* ---------- remediation (AI agent or operator) ---------- */
+async function remediate(session,action,source){
+  if(!session.blocked||session.remediating)return;
+  session.remediating=true;
+  const stKey=action==='resubmit'?'resubmitted':'skipped';
+  const col=ST[stKey].color;
+  if(source==='agent'){
+    go('cosmos>webapp',{color:'#64748b',r:3});
+    await go('webapp>opsAgent',{color:'#94a3b8',r:4});
+    await process('opsAgent',900);
+    log(`✦ Ops Triage Agent: ${session.id} blocked by failed OrderPlaced → decided to ${action.toUpperCase()}`,stKey);
+    await go('opsAgent>t_manager',{color:col});
+  }else{
+    log(`Operator via WebApp: ${action.toUpperCase()} session ${session.id}`,stKey);
+    await go('webapp>t_manager',{color:col});
+  }
+  await go('t_manager>t_billing',{color:col});
+  counters[stKey]++;
+  session.blocked=false;session.remediating=false;blocked.delete(session.id);
+  const parkedEls=session.parked.splice(0);
+  layoutPark();refreshBlocked();
+  if(action==='resubmit'){
+    (async()=>{
+      await go('t_billing>billing',{color:col});
+      await process('billing',520);
+      log(`Billing handled OrderPlaced · ${session.id} after resubmit`,'completed');
+      await outcomeLegs('billing','completed');
+      paymentFlow(session);
+    })();
+  }else{
+    log(`OrderPlaced · ${session.id} marked Skipped — session released`,'skipped');
+  }
+  if(parkedEls.length)
+    log(`${parkedEls.length} deferred message(s) for ${session.id} released from Deferred subscription`,'completed');
+  for(const d of parkedEls){
+    d.remove();
+    (async()=>{
+      await go('t_billing>billing',{color:ST.deferred.color});
+      await process('billing',420);
+      await outcomeLegs('billing','completed');
+    })();
+    await sleep(280);
+  }
+}
+
+/* ---------- controls ---------- */
+const aiTog=document.getElementById('aiTog');
+aiTog.addEventListener('change',()=>{
+  if(!aiTog.checked)return;
+  blocked.forEach(s=>{
+    if(!s.remediating)after(800+Math.random()*1500,()=>{
+      if(aiTog.checked&&s.blocked&&!s.remediating)remediate(s,'resubmit','agent');});
+  });
+});
+const btnPause=document.getElementById('btnPause');
+btnPause.addEventListener('click',()=>{
+  paused=!paused;btnPause.textContent=paused?'▶ Resume':'⏸ Pause';});
+const speedEl=document.getElementById('speed');
+speedEl.addEventListener('input',()=>{
+  speed=parseFloat(speedEl.value);
+  document.getElementById('speedVal').textContent=speed.toFixed(speed%1?2:1).replace(/0$/,'')+'×';});
+document.getElementById('btnOrder').addEventListener('click',()=>orderFlow({}));
+const btnFail=document.getElementById('btnFail');
+function syncFailBtn(){
+  btnFail.classList.toggle('armed',armedFail);
+  btnFail.textContent=armedFail?'💥 Failure armed — next order':'💥 Inject payment failure';}
+btnFail.addEventListener('click',()=>{
+  armedFail=!armedFail;syncFailBtn();
+  if(armedFail)log('Fault injection armed: next OrderPlaced will fail in Billing','failed');});
+
+/* ---------- kick off ---------- */
+refreshBlocked();refreshStats();
+log('NimBus topology provisioned — simulated traffic starting');
+after(400,()=>orderFlow({}));
+after(1100,customerFlow);
+after(1900,inventoryFlow);
+after(2600,()=>orderFlow({forceFail:true})); // early demo of block → defer → AI remediation
+(async function spawnLoop(){
+  for(;;){
+    await sleep(950+Math.random()*1700);
+    if(dots.length>=60)continue;
+    const r=Math.random();
+    if(r<0.5)orderFlow({});
+    else if(r<0.78)customerFlow();
+    else inventoryFlow();
+  }
+})();
+</script>
+</body>
+</html>

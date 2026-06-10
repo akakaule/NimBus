@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Serialization;
@@ -23,8 +24,26 @@ public class EnumMemberModelBinderProvider : IModelBinderProvider
 public class EnumMemberModelBinder : IModelBinder
 {
     private readonly Type _enumType;
+    private readonly Dictionary<string, object> _valueMap;
 
-    public EnumMemberModelBinder(Type enumType) => _enumType = enumType;
+    public EnumMemberModelBinder(Type enumType)
+    {
+        _enumType = enumType;
+
+        // The binder is cached per model type by MVC, so reflect once here instead
+        // of on every bind. Insertion order mirrors the original per-field scan
+        // (EnumMember value before field name, fields in declaration order), so
+        // first-match-wins semantics are preserved by TryAdd.
+        _valueMap = new Dictionary<string, object>(StringComparer.Ordinal);
+        foreach (var field in enumType.GetFields(BindingFlags.Public | BindingFlags.Static))
+        {
+            var enumValue = field.GetValue(null);
+            var attr = field.GetCustomAttribute<EnumMemberAttribute>();
+            if (attr?.Value != null)
+                _valueMap.TryAdd(attr.Value, enumValue);
+            _valueMap.TryAdd(field.Name, enumValue);
+        }
+    }
 
     public Task BindModelAsync(ModelBindingContext bindingContext)
     {
@@ -32,14 +51,10 @@ public class EnumMemberModelBinder : IModelBinder
         if (string.IsNullOrEmpty(value))
             return Task.CompletedTask;
 
-        foreach (var field in _enumType.GetFields(BindingFlags.Public | BindingFlags.Static))
+        if (_valueMap.TryGetValue(value, out var mapped))
         {
-            var attr = field.GetCustomAttribute<EnumMemberAttribute>();
-            if (attr?.Value == value || field.Name == value)
-            {
-                bindingContext.Result = ModelBindingResult.Success(field.GetValue(null));
-                return Task.CompletedTask;
-            }
+            bindingContext.Result = ModelBindingResult.Success(mapped);
+            return Task.CompletedTask;
         }
 
         if (Enum.TryParse(_enumType, value, ignoreCase: true, out var parsed))

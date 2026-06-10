@@ -15,11 +15,15 @@ export function extractErrorCategory(
   errorText: string | undefined | null,
 ): string {
   if (!errorText) return "Unknown";
-  if (errorText.startsWith("[")) {
-    const end = errorText.indexOf("]");
-    if (end > 0) return errorText.substring(0, end + 1);
+  // Strip GUIDs first so messages that differ only by an embedded id
+  // (e.g. "Job with JobID {GUID} not found") collapse into one category
+  // instead of one row per id.
+  const text = errorText.replace(GUID_PATTERN, "<id>");
+  if (text.startsWith("[")) {
+    const end = text.indexOf("]");
+    if (end > 0) return text.substring(0, end + 1);
   }
-  const colon = errorText.indexOf(":");
-  if (colon > 0 && colon < 100) return errorText.substring(0, colon);
-  return errorText.length > 100 ? errorText.substring(0, 100) : errorText;
+  const colon = text.indexOf(":");
+  if (colon > 0 && colon < 100) return text.substring(0, colon);
+  return text.length > 100 ? text.substring(0, 100) : text;
 }

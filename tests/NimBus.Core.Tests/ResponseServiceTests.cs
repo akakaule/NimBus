@@ -74,7 +74,25 @@ public class ResponseServiceTests
         Assert.AreEqual(Constants.ResolverId, msg.To);
         Assert.AreEqual(MessageType.ErrorResponse, msg.MessageType);
         Assert.AreEqual("boom", msg.MessageContent.ErrorContent.ErrorText);
-        Assert.AreEqual(typeof(InvalidOperationException).FullName, msg.MessageContent.ErrorContent.ErrorType);
+        Assert.AreEqual(nameof(InvalidOperationException), msg.MessageContent.ErrorContent.ErrorType,
+            "ErrorType should be the simple type name (no namespace) for WebApp readability");
+    }
+
+    [TestMethod]
+    public async Task SendErrorResponse_WrappedHandlerException_ReportsInnerExceptionType()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        // StrictMessageHandler wraps handler failures in EventContextHandlerException
+        // before calling SendErrorResponse. The operator wants the actual handler
+        // exception type in the WebApp's Error type field, not the SDK wrapper.
+        var ex = new EventContextHandlerException(new SomeCustomException("handler blew up"));
+
+        await sut.SendErrorResponse(CreateContext(), ex);
+
+        var msg = sender.SentMessages.Single();
+        Assert.AreEqual(nameof(SomeCustomException), msg.MessageContent.ErrorContent.ErrorType);
+        Assert.AreEqual("handler blew up", msg.MessageContent.ErrorContent.ErrorText);
     }
 
     // ── SendDeadLetterResponse ──────────────────────────────────────────
@@ -439,6 +457,13 @@ public class ResponseServiceTests
     }
 
     // ── Fakes ────────────────────────────────────────────────────────────
+
+    private sealed class SomeCustomException : Exception
+    {
+        public SomeCustomException(string message) : base(message)
+        {
+        }
+    }
 
     private sealed class RecordingSender : ISender
     {

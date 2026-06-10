@@ -106,7 +106,7 @@ public class InMemoryMessageStore : INimBusMessageStore
         return Task.FromResult(new SearchResponse { Events = results });
     }
 
-    public Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId)
+    public virtual Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId)
     {
         var grouped = _events.Values.Where(e => e.EndpointId == endpointId).GroupBy(e => e.ResolutionStatus).ToDictionary(g => g.Key, g => g.Count());
         return Task.FromResult(new EndpointStateCount

@@ -149,18 +149,28 @@ namespace NimBus.Core.Messages
             };
 
 
-        private static MessageContent CreateErrorContent(Exception exception, IMessageContext messageContext) =>
-            new MessageContent()
+        private static MessageContent CreateErrorContent(Exception exception, IMessageContext messageContext)
+        {
+            // For ErrorType the operator wants the actual handler exception
+            // (e.g. SampleApiException) — not the generic
+            // EventContextHandlerException wrapper the SDK puts around it.
+            // Simple Name (no namespace) keeps the field readable in the WebApp.
+            var reported = exception is EventContextHandlerException wrapper && wrapper.InnerException != null
+                ? wrapper.InnerException
+                : exception;
+
+            return new MessageContent()
             {
                 ErrorContent = new ErrorContent()
                 {
                     ErrorText = exception.Message,
-                    ErrorType = exception.GetType().FullName,
+                    ErrorType = reported.GetType().Name,
                     ExceptionStackTrace = null,
                     ExceptionSource = null,
                 },
                 EventContent = messageContext.MessageContent.EventContent
             };
+        }
 
         public async Task SendToDeferredSubscription(IMessageContext messageContext, int deferralSequence, CancellationToken cancellationToken = default)
         {

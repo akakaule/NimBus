@@ -1,6 +1,7 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { compression } from 'vite-plugin-compression2';
 import path from 'path';
 import fs from 'fs';
 
@@ -19,7 +20,18 @@ const apiTarget =
   'https://localhost:28375';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // Emit `.br` + `.gz` siblings for every text asset (js/css/html/svg/json)
+    // over 1 KB. The PrecompressedStaticFileMiddleware in Startup.cs serves
+    // the precompressed file when the client's Accept-Encoding allows it;
+    // otherwise it falls back to dynamic response compression. Skipped under
+    // `vite dev`; runs on `build`. (vite-plugin-compression2 rather than
+    // DIS's vite-plugin-compression: under Vite 8/rolldown the latter's
+    // two-instance setup emits no .gz because its module-level mtime cache
+    // makes the second instance skip every file.)
+    compression({ algorithms: ['brotliCompress', 'gzip'], threshold: 1024 }),
+  ],
   resolve: {
     alias: {
       'api-client': path.resolve(__dirname, './src/api-client'),

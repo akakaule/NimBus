@@ -23,6 +23,21 @@ namespace NimBus.WebApp.Controllers.ApiContract
 {
     public class EventImplementation : IEventApiController
     {
+        // Payload-carrying request message types — the ones that actually carry
+        // the original event JSON to be re-delivered on resubmit. Handoff control
+        // requests (HandoffCompleted/FailedRequest) and SkipRequest carry no
+        // payload; terminal *Response messages may carry a stale/empty payload
+        // (notably a failed hand-off's ErrorResponse). Mirrored by the frontend's
+        // PAYLOAD_REQUEST_TYPES in message-listing.tsx.
+        private static readonly Core.Messages.MessageType[] PayloadCarryingRequestTypes =
+        {
+            Core.Messages.MessageType.EventRequest,
+            Core.Messages.MessageType.ResubmissionRequest,
+            Core.Messages.MessageType.RetryRequest,
+            Core.Messages.MessageType.ContinuationRequest,
+            Core.Messages.MessageType.ProcessDeferredRequest,
+        };
+
         private readonly IPlatform platform;
         private readonly ILogger<EventImplementation> logger;
         private readonly INimBusMessageStore cosmosClient;
@@ -135,11 +150,28 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new BadRequestResult();
             }
 
+            // Resubmit must replay the original event payload. For a failed
+            // hand-off the lastMessageId points at the terminal ErrorResponse,
+            // whose MessageContent carries no usable event JSON — so source the
+            // payload (and, when missing, the event type) from the latest REQUEST
+            // message that actually carries it (the original EventRequest, or a
+            // later Resubmission/Retry/Continuation/ProcessDeferredRequest). Falls
+            // back to the resolved message so non-hand-off resubmits are
+            // unchanged. Same source as the frontend's resubmit prefill and the
+            // resubmit-with-changes event-type resolution below.
+            var history = await cosmosClient.GetEventHistory(eventId);
+            MessageEntity? latestRequest = LatestRequestMessageWithPayload(history);
+            MessageEntity requestMessage = latestRequest ?? errorResponse;
+
             eventTypeId = errorResponse.EventTypeId;
             if (string.IsNullOrEmpty(eventTypeId))
             {
-                MessageEntity origMessage = await GetMessageWithFallback(eventId, errorResponse.OriginatingMessageId);
-                eventTypeId = origMessage.EventTypeId;
+                MessageEntity typeSource = latestRequest
+                    ?? await GetMessageWithFallback(eventId, errorResponse.OriginatingMessageId)
+                    ?? errorResponse;
+                eventTypeId = !string.IsNullOrWhiteSpace(typeSource.EventTypeId)
+                    ? typeSource.EventTypeId
+                    : typeSource.MessageContent?.EventContent?.EventTypeId!;
             }
 
             if (errorResponse.OriginatingMessageId.Equals("self", StringComparison.Ordinal))
@@ -151,7 +183,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 endpoint = errorResponse.From;
             }
 
-            var eventJson = errorResponse.MessageContent.EventContent.EventJson;
+            var eventJson = requestMessage.MessageContent?.EventContent?.EventJson!;
 
             if (!authorizationService.IsManagerOfEndpoint(endpoint))
             {
@@ -577,8 +609,21 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
                 if (string.IsNullOrEmpty(eventTypeId))
                 {
-                    MessageEntity origMessage = await GetMessageWithFallback(eventId, errorResponse.OriginatingMessageId);
-                    eventTypeId = origMessage.EventTypeId;
+                    // Same source as the frontend's resubmit prefill: the latest
+                    // request message that carries the event payload (the original
+                    // EventRequest, or a later resubmission/retry). For a failed
+                    // hand-off the terminal ErrorResponse carries no event type,
+                    // so resolve it from the request history rather than the
+                    // originating message. Falls back to the originating-message
+                    // lookup when no request message carries a payload, and
+                    // finally to the terminal message itself.
+                    var history = await cosmosClient.GetEventHistory(eventId);
+                    MessageEntity requestMessage = LatestRequestMessageWithPayload(history)
+                        ?? await GetMessageWithFallback(eventId, errorResponse.OriginatingMessageId)
+                        ?? errorResponse;
+                    eventTypeId = !string.IsNullOrWhiteSpace(requestMessage.EventTypeId)
+                        ? requestMessage.EventTypeId
+                        : requestMessage.MessageContent?.EventContent?.EventTypeId!;
                 }
             }
 
@@ -796,6 +841,19 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return null;
             }
         }
+
+        // The latest request message that still carries the event payload — the
+        // "latest request message sent". Lets resubmit-with-changes resolve the
+        // event type from the original EventRequest (or a later Resubmission/
+        // Retry/Continuation/ProcessDeferredRequest) rather than the terminal
+        // ErrorResponse, which for a failed hand-off carries neither payload nor
+        // event type. Internal for unit tests (InternalsVisibleTo).
+        internal static MessageEntity? LatestRequestMessageWithPayload(IEnumerable<MessageEntity> history) =>
+            history
+                .Where(m => PayloadCarryingRequestTypes.Contains(m.MessageType)
+                         && !string.IsNullOrEmpty(m.MessageContent?.EventContent?.EventJson))
+                .OrderByDescending(m => m.EnqueuedTimeUtc)
+                .FirstOrDefault();
 
         private async Task<MessageEntity> GetMessageWithFallback(string eventId, string messageId)
         {

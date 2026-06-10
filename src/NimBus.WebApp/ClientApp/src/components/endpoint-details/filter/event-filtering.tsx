@@ -1,18 +1,9 @@
 import * as React from "react";
 import * as api from "api-client";
 import { Button } from "components/ui/button";
-import {
-  Accordion,
-  AccordionItem,
-  AccordionTrigger,
-  AccordionContent,
-} from "components/ui/accordion";
 import EventTypeFiltering from "./eventType-filtering";
 import FilterContext from "./filtering-context";
 import SessionFiltering from "./session-filtering";
-import EnqueuedFiltering from "./enqueued-filtering";
-import UpdatedFiltering from "./updated-filtering";
-import PayloadFiltering from "./payload-filtering";
 import StatusFiltering from "./status-filtering";
 import EventIdFiltering from "./eventId-filtering";
 
@@ -142,34 +133,6 @@ const EventFiltering = (props: EventFilteringProps) => {
           >
             Search
           </Button>
-        </div>
-        <div className="pt-3 col-span-full">
-          <Accordion>
-            <AccordionItem id="advanced-filters">
-              <AccordionTrigger
-                itemId="advanced-filters"
-                className="bg-muted rounded-md"
-              >
-                <span className="flex-1 text-center">Advanced Filters</span>
-              </AccordionTrigger>
-              <AccordionContent
-                itemId="advanced-filters"
-                className="bg-muted rounded-b-md"
-              >
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="col-span-1">
-                    <EnqueuedFiltering />
-                  </div>
-                  <div className="col-span-1">
-                    <UpdatedFiltering />
-                  </div>
-                  <div className="col-span-1">
-                    <PayloadFiltering />
-                  </div>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
         </div>
       </div>
     </>

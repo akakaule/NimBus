@@ -148,6 +148,129 @@ export function getHistoryQueueTimeMs(
   return span;
 }
 
+// Lowercase a messageType so comparisons tolerate transport casing (same
+// rule getHistoryQueueTimeMs applies inline).
+function normalizeMessageType(rawType: unknown): string {
+  return typeof rawType === "string" ? rawType.toLowerCase() : "";
+}
+
+function isResponseMessageType(messageType: unknown): boolean {
+  return normalizeMessageType(messageType).endsWith("response");
+}
+
+// Stores persist an absent `originatingFrom` inconsistently — Cosmos leaves it
+// null, SQL Server normalises it to "" — and the wire default is the literal
+// "self" sentinel. None of those is a usable publisher name, so collapse them
+// all to empty.
+function cleanSender(value: string | undefined): string {
+  const trimmed = (value ?? "").trim();
+  return trimmed.toLowerCase() === "self" ? "" : trimmed;
+}
+
+// A message's sender: prefer `originatingFrom` (the original publisher when
+// stamped), fall back to the literal `from`. Uses truthy `||` (not `??`) so an
+// empty/"self" originatingFrom falls through to `from` instead of rendering
+// blank.
+function senderOf(message: api.Message | undefined): string {
+  return cleanSender(message?.originatingFrom) || cleanSender(message?.from);
+}
+
+// Response messages (ResolutionResponse, ErrorResponse, SkipResponse, …) are
+// addressed `To` the platform Resolver — an internal auditing hop, not a
+// meaningful routing leg. The operator-relevant lineage is "where the event
+// came from → which endpoint handled it". The publisher lives on the
+// originating EventRequest message in the history; the response's own `from`
+// is the handling endpoint. So for responses we render From = <publisher> and
+// To = <handling endpoint>, and never surface the Resolver. Non-response
+// messages keep their literal from/to.
+export function getRoutingFromTo(
+  event:
+    | Pick<
+        api.Event,
+        "from" | "to" | "originatingFrom" | "originatingMessageId" | "messageType"
+      >
+    | undefined,
+  messages?: api.Message[],
+): { from: string; to: string } {
+  const from = event?.from ?? "";
+  const to = event?.to ?? "";
+  if (!isResponseMessageType(event?.messageType)) {
+    return { from, to };
+  }
+
+  const originatingMessage = event?.originatingMessageId
+    ? messages?.find((m) => m.messageId === event.originatingMessageId)
+    : undefined;
+  // Prefer the originating EventRequest's sender (the true publisher); fall
+  // back to the event's own originatingFrom, then to its from, so partial
+  // histories still render something meaningful. `||` so empty/"self" values
+  // fall through rather than rendering a blank From.
+  const publisher =
+    senderOf(originatingMessage) || cleanSender(event?.originatingFrom) || from;
+  return { from: publisher, to: from };
+}
+
+// Request message types that carry the original event payload — mirrors the
+// backend's resubmit source selection
+// (EventImplementation.LatestRequestMessageWithPayload). Handoff control
+// requests (HandoffCompleted/FailedRequest) and SkipRequest carry no payload;
+// terminal *Response messages may carry a stale/empty payload (notably a
+// failed hand-off's ErrorResponse). "processdeferredrequest" exists in Core
+// but is folded to Unknown by the current API contract — kept here so the
+// filter stays correct if the contract ever surfaces it.
+const PAYLOAD_REQUEST_TYPES = new Set([
+  "eventrequest",
+  "resubmissionrequest",
+  "retryrequest",
+  "continuationrequest",
+  "processdeferredrequest",
+]);
+
+// The payload that Resubmit replays: the latest request message that actually
+// carries event content — the same rule the backend uses. For a failed
+// hand-off the event's own payload is the empty terminal ErrorResponse, so
+// both the Payload section and the "Resubmit with changes" modal must use the
+// original request payload instead. Returns undefined when no such message is
+// in the loaded history (caller falls back to the event payload).
+export function getResubmitPayload(
+  messages?: api.Message[],
+): string | undefined {
+  if (!messages?.length) return undefined;
+  return messages
+    .filter(
+      (m) =>
+        PAYLOAD_REQUEST_TYPES.has(normalizeMessageType(m.messageType)) &&
+        !!m.eventContent,
+    )
+    .sort(
+      (a, b) =>
+        (b.enqueuedTimeUtc?.valueOf() ?? 0) -
+        (a.enqueuedTimeUtc?.valueOf() ?? 0),
+    )[0]?.eventContent;
+}
+
+// A completed hand-off carries the external system's optional result details
+// on the HandoffCompletedRequest's event content (the original request
+// payload lives elsewhere). Surface it as a separate "Handoff result" block.
+// Returns undefined when there is no completed hand-off or it carried no
+// details.
+export function getHandoffResult(
+  messages?: api.Message[],
+): string | undefined {
+  if (!messages?.length) return undefined;
+  return messages
+    .filter(
+      (m) =>
+        normalizeMessageType(m.messageType) === "handoffcompletedrequest" &&
+        !!m.eventContent,
+    )
+    .sort(
+      (a, b) =>
+        (b.enqueuedTimeUtc?.valueOf() ?? 0) -
+        (a.enqueuedTimeUtc?.valueOf() ?? 0),
+    )[0]?.eventContent;
+}
+
 function statusToBadgeVariant(
   status: string | undefined,
 ):
@@ -253,9 +376,22 @@ export default function MessageListing(props: IMessageListingProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const deleteBtn: IButtonState = { isDisabled: false, text: "Delete" };
   const [deleteButton, setDeleteButton] = useState(deleteBtn);
-  const [textAreaValue, setTextAreaValue] = useState(
-    props.eventDetails?.messageContent?.eventContent?.eventJson,
-  );
+  // The original event payload: the latest payload-carrying request message
+  // in the loaded history, falling back to the event's own (server-resolved)
+  // payload. For a failed hand-off the event's own content is the empty
+  // terminal ErrorResponse, so the Payload section and the
+  // resubmit-with-changes modal must render/prefill the request payload.
+  const resubmitPayload =
+    getResubmitPayload(props.messages) ??
+    props.eventDetails?.messageContent?.eventContent?.eventJson;
+  // A completed hand-off's optional external result details (separate from
+  // the original payload), shown in its own block when present.
+  const handoffResult = getHandoffResult(props.messages);
+  // Routing lineage: for response messages, From = the originating publisher
+  // (resolved from the EventRequest in the history) and To = the handling
+  // endpoint — never the internal Resolver hop.
+  const routing = getRoutingFromTo(props.eventDetails, props.messages);
+  const [textAreaValue, setTextAreaValue] = useState(resubmitPayload);
   const [eventTypeIdValue, setEventTypeIdValue] = useState(
     props.eventDetails?.eventTypeId,
   );
@@ -280,10 +416,14 @@ export default function MessageListing(props: IMessageListingProps) {
   const [operatorName, setOperatorName] = useState<string>("operator");
   const [piiRevealed, setPiiRevealed] = useState(false);
 
+  // The textarea prefill tracks the resolved request payload — `messages`
+  // loads asynchronously after `eventDetails`, so keying on the payload (not
+  // the event object) picks up the request payload once the history arrives.
   useEffect(() => {
-    setTextAreaValue(
-      props.eventDetails?.messageContent?.eventContent?.eventJson,
-    );
+    setTextAreaValue(resubmitPayload);
+  }, [resubmitPayload]);
+
+  useEffect(() => {
     setShowErrorDetails(false);
     // Reset handoff UI when navigating to a different event.
     setHeroOverride(null);
@@ -437,8 +577,10 @@ export default function MessageListing(props: IMessageListingProps) {
     }
   };
 
-  const payloadJson = props.eventDetails?.messageContent?.eventContent?.eventJson;
-  const hasPii = !!payloadJson && /\$piiMasked"\s*:\s*true/i.test(payloadJson);
+  // PII gate evaluates the payload actually rendered below (the resolved
+  // request payload), so a masked request payload stays blurred by default.
+  const hasPii =
+    !!resubmitPayload && /\$piiMasked"\s*:\s*true/i.test(resubmitPayload);
 
   const reprocessBtn: IButtonState = { isDisabled: false, text: "Reprocess" };
   const [reprocessButton, setReprocessButton] = useState(reprocessBtn);
@@ -726,17 +868,32 @@ export default function MessageListing(props: IMessageListingProps) {
             }
           />
           <PropertyRow
-            label="Source Endpoint"
+            label="From"
             value={
-              (props.eventDetails?.originatingFrom ||
-                props.eventDetails?.from) && (
+              routing.from ? (
                 <Link
-                  to={`/Endpoints/Details/${props.eventDetails?.originatingFrom || props.eventDetails?.from}`}
+                  to={`/Endpoints/Details/${routing.from}`}
                   className="text-status-info font-semibold no-underline hover:underline"
                 >
-                  {props.eventDetails?.originatingFrom ||
-                    props.eventDetails?.from}
+                  {routing.from}
                 </Link>
+              ) : (
+                "—"
+              )
+            }
+          />
+          <PropertyRow
+            label="To"
+            value={
+              routing.to ? (
+                <Link
+                  to={`/Endpoints/Details/${routing.to}`}
+                  className="text-status-info font-semibold no-underline hover:underline"
+                >
+                  {routing.to}
+                </Link>
+              ) : (
+                "—"
               )
             }
           />
@@ -871,7 +1028,11 @@ export default function MessageListing(props: IMessageListingProps) {
         </>
       )}
 
-      {payloadJson && (
+      {/* Payload — the original event content (the latest request message's
+          payload, falling back to the event's own). For a hand-off this is
+          the EventRequest, not the terminal settlement message which carries
+          no original payload. */}
+      {resubmitPayload && (
         <div className="mt-4">
           {/* Masked payloads carry "$piiMasked": true. Keep the (already
               server-hashed) values blurred by default so PII tokens aren't
@@ -904,9 +1065,20 @@ export default function MessageListing(props: IMessageListingProps) {
                 `/Messages?eventId=${_guid}`
               }
             >
-              {safeFormatJson(payloadJson)}
+              {safeFormatJson(resubmitPayload)}
             </CodeBlock>
           </div>
+        </div>
+      )}
+
+      {/* Handoff result — the external system's completion details, when the
+          handler supplied any on CompleteHandoff (a HandoffCompletedRequest's
+          eventContent). Distinct from the event payload above. */}
+      {handoffResult && (
+        <div className="mt-4">
+          <CodeBlock title="Handoff result" subtitle="application/json">
+            {safeFormatJson(handoffResult)}
+          </CodeBlock>
         </div>
       )}
 
@@ -918,11 +1090,7 @@ export default function MessageListing(props: IMessageListingProps) {
               Original event:
             </label>
             <pre className="bg-muted p-4 rounded text-sm overflow-x-auto max-h-96">
-              {props.eventDetails?.messageContent?.eventContent?.eventJson
-                ? safeFormatJson(
-                    props.eventDetails.messageContent.eventContent.eventJson,
-                  )
-                : ""}
+              {resubmitPayload ? safeFormatJson(resubmitPayload) : ""}
             </pre>
           </div>
           <div className="mb-4">

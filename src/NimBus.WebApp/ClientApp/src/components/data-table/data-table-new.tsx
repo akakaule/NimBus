@@ -449,9 +449,45 @@ function SortIcon({ direction }: { direction: false | "asc" | "desc" }) {
   );
 }
 
+// Open a row's route in a new browser tab. No window-features string -> the
+// browser opens a tab (a features string would force a popup window instead).
+// Null out `opener` to avoid reverse-tabnabbing.
+function openRowInNewTab(route: string) {
+  const opened = window.open(route, "_blank");
+  if (opened) opened.opener = null;
+}
+
+// True when the click landed on an interactive element inside the row —
+// row-level navigation must not hijack those.
+function isInteractiveTarget(e: React.MouseEvent): boolean {
+  const target = e.target as HTMLElement;
+  return !!target.closest(
+    'input, button, a, [role="button"], [role="checkbox"]',
+  );
+}
+
 // Table row component with proper navigation handling
 function TableRow({ row, rowData }: { row: any; rowData: ITableRow }) {
   const navigate = useNavigate();
+
+  const handleRowClick = (e: React.MouseEvent) => {
+    if (!rowData.route || isInteractiveTarget(e)) return;
+    // Ctrl (Win/Linux) or Cmd (macOS) click -> open in a new tab, like a
+    // real link.
+    if (e.ctrlKey || e.metaKey) {
+      openRowInNewTab(rowData.route);
+      return;
+    }
+    navigate(rowData.route);
+  };
+
+  // Middle-click never fires onClick; handle it here. Guard button === 1 so a
+  // right-click (context menu) is left alone.
+  const handleRowAuxClick = (e: React.MouseEvent) => {
+    if (!rowData.route || e.button !== 1 || isInteractiveTarget(e)) return;
+    e.preventDefault();
+    openRowInNewTab(rowData.route);
+  };
 
   return (
     <tr
@@ -460,22 +496,8 @@ function TableRow({ row, rowData }: { row: any; rowData: ITableRow }) {
         row.getIsSelected() && "bg-primary-50 dark:bg-primary/10",
         rowData.route && "cursor-pointer",
       )}
-      onClick={
-        rowData.route
-          ? (e: React.MouseEvent) => {
-              // Don't navigate if clicking interactive elements
-              const target = e.target as HTMLElement;
-              if (
-                target.closest(
-                  'input, button, a, [role="button"], [role="checkbox"]',
-                )
-              ) {
-                return;
-              }
-              navigate(rowData.route!);
-            }
-          : undefined
-      }
+      onClick={rowData.route ? handleRowClick : undefined}
+      onAuxClick={rowData.route ? handleRowAuxClick : undefined}
       title={rowData.hoverText}
     >
       {row.getVisibleCells().map((cell: any) => (

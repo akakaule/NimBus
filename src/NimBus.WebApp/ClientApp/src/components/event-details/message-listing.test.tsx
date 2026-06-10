@@ -5,7 +5,10 @@ import moment from "moment";
 import * as api from "api-client";
 import MessageListing, {
   diffMs,
+  getHandoffResult,
   getHistoryQueueTimeMs,
+  getResubmitPayload,
+  getRoutingFromTo,
 } from "./message-listing";
 
 // MessageListing internally constructs an api.Client and queries `getMe()` on
@@ -292,5 +295,416 @@ describe("MessageListing — Blocked by row (spec 006)", () => {
   it("does not render 'Blocked by' for a non-deferred event even when blockedByEventId is provided", () => {
     spec006RenderListing(spec006BuildEvent({ resolutionStatus: "Completed" }), SPEC_006_BLOCKED_BY);
     expect(screen.queryByText("Blocked by")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Original-request payload resolution (ported from DIS 678f1cb3 / c555093d).
+// ---------------------------------------------------------------------------
+function historyMsg(props: {
+  messageType: api.MessageType | string;
+  enqueuedTimeUtc?: string;
+  eventContent?: string;
+}): api.Message {
+  return {
+    messageType: props.messageType as api.MessageType,
+    enqueuedTimeUtc: props.enqueuedTimeUtc
+      ? moment(props.enqueuedTimeUtc)
+      : undefined,
+    eventContent: props.eventContent,
+  } as api.Message;
+}
+
+describe("getResubmitPayload", () => {
+  it("returns the original EventRequest payload for a failed hand-off", () => {
+    // The terminal ErrorResponse/HandoffFailedRequest carry no event content;
+    // resubmit must replay the EventRequest's payload.
+    const result = getResubmitPayload([
+      historyMsg({
+        messageType: api.MessageType.EventRequest,
+        enqueuedTimeUtc: "2026-06-01T23:36:50.000Z",
+        eventContent: '{"Fail":true}',
+      }),
+      historyMsg({
+        messageType: api.MessageType.PendingHandoffResponse,
+        enqueuedTimeUtc: "2026-06-01T23:36:51.000Z",
+        eventContent: '{"Fail":true}',
+      }),
+      historyMsg({
+        messageType: api.MessageType.HandoffFailedRequest,
+        enqueuedTimeUtc: "2026-06-01T23:37:02.000Z",
+      }),
+      historyMsg({
+        messageType: api.MessageType.ErrorResponse,
+        enqueuedTimeUtc: "2026-06-01T23:37:02.000Z",
+      }),
+    ]);
+
+    expect(result).toBe('{"Fail":true}');
+  });
+
+  it("prefers the latest payload-carrying request (e.g. a prior resubmission)", () => {
+    const result = getResubmitPayload([
+      historyMsg({
+        messageType: api.MessageType.EventRequest,
+        enqueuedTimeUtc: "2026-06-01T10:00:00.000Z",
+        eventContent: '{"v":1}',
+      }),
+      historyMsg({
+        messageType: api.MessageType.ResubmissionRequest,
+        enqueuedTimeUtc: "2026-06-01T11:00:00.000Z",
+        eventContent: '{"v":2}',
+      }),
+    ]);
+
+    expect(result).toBe('{"v":2}');
+  });
+
+  it("ignores response messages even when they carry content", () => {
+    const result = getResubmitPayload([
+      historyMsg({
+        messageType: api.MessageType.EventRequest,
+        enqueuedTimeUtc: "2026-06-01T10:00:00.000Z",
+        eventContent: '{"req":true}',
+      }),
+      historyMsg({
+        messageType: api.MessageType.ErrorResponse,
+        enqueuedTimeUtc: "2026-06-01T10:00:01.000Z",
+        eventContent: '{"resp":true}',
+      }),
+    ]);
+
+    expect(result).toBe('{"req":true}');
+  });
+
+  it("skips payload-less requests and normalises messageType casing", () => {
+    const result = getResubmitPayload([
+      historyMsg({
+        messageType: "EVENTREQUEST",
+        enqueuedTimeUtc: "2026-06-01T10:00:00.000Z",
+        eventContent: '{"req":true}',
+      }),
+      historyMsg({
+        messageType: api.MessageType.RetryRequest,
+        enqueuedTimeUtc: "2026-06-01T10:05:00.000Z",
+        // No eventContent — must not shadow the earlier payload.
+      }),
+    ]);
+
+    expect(result).toBe('{"req":true}');
+  });
+
+  it("returns undefined without history (caller falls back to event payload)", () => {
+    expect(getResubmitPayload(undefined)).toBeUndefined();
+    expect(getResubmitPayload([])).toBeUndefined();
+  });
+});
+
+describe("getHandoffResult", () => {
+  it("returns the completed hand-off's external result details", () => {
+    const result = getHandoffResult([
+      historyMsg({
+        messageType: api.MessageType.EventRequest,
+        enqueuedTimeUtc: "2026-06-01T10:00:00.000Z",
+        eventContent: '{"Fail":false}',
+      }),
+      historyMsg({
+        messageType: api.MessageType.HandoffCompletedRequest,
+        enqueuedTimeUtc: "2026-06-01T10:05:00.000Z",
+        eventContent: '{"batchId":"abc","rows":42}',
+      }),
+    ]);
+
+    expect(result).toBe('{"batchId":"abc","rows":42}');
+  });
+
+  it("returns undefined when the completed hand-off carried no details", () => {
+    expect(
+      getHandoffResult([
+        historyMsg({
+          messageType: api.MessageType.HandoffCompletedRequest,
+          enqueuedTimeUtc: "2026-06-01T10:05:00.000Z",
+        }),
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined for a failed hand-off (no result block)", () => {
+    expect(
+      getHandoffResult([
+        historyMsg({
+          messageType: api.MessageType.EventRequest,
+          eventContent: '{"x":1}',
+        }),
+        historyMsg({ messageType: api.MessageType.HandoffFailedRequest }),
+        historyMsg({ messageType: api.MessageType.ErrorResponse }),
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined without history", () => {
+    expect(getHandoffResult(undefined)).toBeUndefined();
+    expect(getHandoffResult([])).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Routing lineage (ported from DIS 5adc92b7) — response messages render
+// From = originating publisher, To = handling endpoint, dropping the internal
+// Resolver hop.
+// ---------------------------------------------------------------------------
+describe("getRoutingFromTo", () => {
+  function lineageEvent(props: Partial<api.IEvent>): api.Event {
+    return api.Event.fromJS(props);
+  }
+
+  function lineageMsg(props: Partial<api.IMessage>): api.Message {
+    return api.Message.fromJS(props);
+  }
+
+  it("shows publisher → handling endpoint for a response, dropping the Resolver", () => {
+    // Response handled by Bob; the originating EventRequest was published by
+    // Alice (carried on the request's originatingFrom). The response's own
+    // `from`/`originatingFrom` only know about the handling endpoint (Bob).
+    const result = getRoutingFromTo(
+      lineageEvent({
+        messageType: "ResolutionResponse",
+        from: "Bob",
+        to: "Resolver",
+        originatingFrom: "Bob",
+        originatingMessageId: "AliceSaidHello-1",
+      }),
+      [
+        lineageMsg({
+          messageId: "AliceSaidHello-1",
+          messageType: "EventRequest",
+          from: "Bob",
+          to: "Bob",
+          originatingFrom: "Alice",
+        }),
+      ],
+    );
+
+    expect(result).toEqual({ from: "Alice", to: "Bob" });
+  });
+
+  it("uses the originating request's literal from when it has no originatingFrom", () => {
+    const result = getRoutingFromTo(
+      lineageEvent({
+        messageType: "ResolutionResponse",
+        from: "Bob",
+        to: "Resolver",
+        originatingMessageId: "AliceSaidHello-1",
+      }),
+      [
+        lineageMsg({
+          messageId: "AliceSaidHello-1",
+          messageType: "EventRequest",
+          from: "Alice",
+          to: "Bob",
+        }),
+      ],
+    );
+
+    expect(result).toEqual({ from: "Alice", to: "Bob" });
+  });
+
+  it('falls through an empty-string originatingFrom (SQL Server null→"") to from', () => {
+    // SQL Server stores a missing originatingFrom as "", which `??` would keep
+    // (rendering a blank From). It must fall through to the request's `from`.
+    const result = getRoutingFromTo(
+      lineageEvent({
+        messageType: "ResolutionResponse",
+        from: "Bob",
+        to: "Resolver",
+        originatingFrom: "",
+        originatingMessageId: "AliceSaidHello-1",
+      }),
+      [
+        lineageMsg({
+          messageId: "AliceSaidHello-1",
+          messageType: "EventRequest",
+          from: "Alice",
+          to: "Bob",
+          originatingFrom: "",
+        }),
+      ],
+    );
+
+    expect(result).toEqual({ from: "Alice", to: "Bob" });
+  });
+
+  it("treats the 'self' sentinel as no publisher and falls through to from", () => {
+    const result = getRoutingFromTo(
+      lineageEvent({
+        messageType: "ResolutionResponse",
+        from: "Bob",
+        to: "Resolver",
+        originatingMessageId: "AliceSaidHello-1",
+      }),
+      [
+        lineageMsg({
+          messageId: "AliceSaidHello-1",
+          messageType: "EventRequest",
+          from: "Alice",
+          to: "Bob",
+          originatingFrom: "self",
+        }),
+      ],
+    );
+
+    expect(result).toEqual({ from: "Alice", to: "Bob" });
+  });
+
+  it("applies to every response message type", () => {
+    const messages = [
+      lineageMsg({
+        messageId: "AliceSaidHello-1",
+        messageType: "EventRequest",
+        from: "Bob",
+        originatingFrom: "Alice",
+      }),
+    ];
+    for (const messageType of [
+      "ErrorResponse",
+      "SkipResponse",
+      "DeferralResponse",
+      "UnsupportedResponse",
+      "PendingHandoffResponse",
+    ]) {
+      expect(
+        getRoutingFromTo(
+          lineageEvent({
+            messageType,
+            from: "Bob",
+            to: "Resolver",
+            originatingMessageId: "AliceSaidHello-1",
+          }),
+          messages,
+        ),
+      ).toEqual({ from: "Alice", to: "Bob" });
+    }
+  });
+
+  it("falls back to the event's own fields when the originating message is missing", () => {
+    const result = getRoutingFromTo(
+      lineageEvent({
+        messageType: "ResolutionResponse",
+        from: "Bob",
+        to: "Resolver",
+        originatingFrom: "Alice",
+        originatingMessageId: "AliceSaidHello-1",
+      }),
+      [],
+    );
+
+    expect(result).toEqual({ from: "Alice", to: "Bob" });
+  });
+
+  it("falls back to the handling endpoint when nothing else is known", () => {
+    const result = getRoutingFromTo(
+      lineageEvent({
+        messageType: "ResolutionResponse",
+        from: "Bob",
+        to: "Resolver",
+      }),
+    );
+
+    expect(result).toEqual({ from: "Bob", to: "Bob" });
+  });
+
+  it("leaves non-response messages untouched", () => {
+    const result = getRoutingFromTo(
+      lineageEvent({
+        messageType: "EventRequest",
+        from: "Alice",
+        to: "Bob",
+        originatingFrom: "Alice",
+      }),
+    );
+
+    expect(result).toEqual({ from: "Alice", to: "Bob" });
+  });
+
+  it("handles an undefined event", () => {
+    expect(getRoutingFromTo(undefined)).toEqual({ from: "", to: "" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Render integration — the Payload block shows the request payload and a
+// completed hand-off's details get their own "Handoff result" block.
+// ---------------------------------------------------------------------------
+describe("MessageListing payload blocks", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
+  });
+
+  function renderWithHistory(messages: api.Message[]) {
+    stubMe();
+    const event = {
+      eventId: "evt-1",
+      sessionId: "sess-1",
+      lastMessageId: "msg-1",
+      endpointId: "ep-1",
+      eventTypeId: "Demo.Type",
+      resolutionStatus: "Completed",
+    } as unknown as api.Event;
+    return render(
+      <MemoryRouter>
+        <MessageListing
+          eventDetails={event}
+          messages={messages}
+          eventTypes={[]}
+          skipEvent={async () => {}}
+          resubmitEvent={async () => {}}
+          resubmitEventWithChanges={async () => {}}
+        />
+      </MemoryRouter>,
+    );
+  }
+
+  it("renders a 'Handoff result' block for a completed hand-off with details", () => {
+    renderWithHistory([
+      historyMsg({
+        messageType: api.MessageType.EventRequest,
+        enqueuedTimeUtc: "2026-06-01T10:00:00.000Z",
+        eventContent: '{"Fail":false}',
+      }),
+      historyMsg({
+        messageType: api.MessageType.HandoffCompletedRequest,
+        enqueuedTimeUtc: "2026-06-01T10:05:00.000Z",
+        eventContent: '{"batchId":"abc"}',
+      }),
+    ]);
+
+    expect(screen.getByText("Payload")).toBeTruthy();
+    expect(screen.getByText("Handoff result")).toBeTruthy();
+  });
+
+  it("renders the request payload without a result block when no hand-off completed", () => {
+    renderWithHistory([
+      historyMsg({
+        messageType: api.MessageType.EventRequest,
+        enqueuedTimeUtc: "2026-06-01T10:00:00.000Z",
+        eventContent: '{"Fail":true}',
+      }),
+      historyMsg({
+        messageType: api.MessageType.ErrorResponse,
+        enqueuedTimeUtc: "2026-06-01T10:00:01.000Z",
+      }),
+    ]);
+
+    expect(screen.getByText("Payload")).toBeTruthy();
+    expect(screen.queryByText("Handoff result")).toBeNull();
   });
 });

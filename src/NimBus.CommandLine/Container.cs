@@ -161,7 +161,7 @@ static class Container
 
             foreach (var @event in searchResponse.Events)
             {
-                if (@event.UpdatedAt < DateTime.Now.AddMinutes(-10))
+                if (@event.UpdatedAt < DateTime.UtcNow.AddMinutes(-10))
                 {
                     @event.ResolutionStatus = resolutionStatus;
                     @event.MessageType = MessageType.EventRequest;

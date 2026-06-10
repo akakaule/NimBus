@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using NimBus.WebApp.ManagementApi;
+using NimBus.WebApp.Services;
 
 namespace NimBus.WebApp.Controllers.ApiContract;
 
@@ -158,34 +158,11 @@ public class MetricsImplementation : IMetricsApiController
         _ => (13, "hour")
     };
 
-    internal static string ExtractErrorCategory(string errorText)
-    {
-        if (string.IsNullOrEmpty(errorText)) return "Unknown";
-        if (errorText.StartsWith('['))
-        {
-            var end = errorText.IndexOf(']', StringComparison.Ordinal);
-            if (end > 0) return errorText[..(end + 1)];
-        }
-        var colon = errorText.IndexOf(':', StringComparison.Ordinal);
-        if (colon > 0 && colon < 100) return errorText[..colon];
-        return errorText.Length > 100 ? errorText[..100] : errorText;
-    }
+    internal static string ExtractErrorCategory(string errorText) =>
+        ErrorPatternNormalizer.ExtractCategory(errorText);
 
-    private static readonly Regex GuidPattern = new(
-        @"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
-        RegexOptions.Compiled);
-
-    private static readonly Regex ActionSuffix = new(
-        @"\.?\s*Action:.*$",
-        RegexOptions.Compiled);
-
-    internal static string NormalizeErrorPattern(string errorText)
-    {
-        if (string.IsNullOrEmpty(errorText)) return "Unknown";
-        var normalized = GuidPattern.Replace(errorText, "<id>");
-        normalized = ActionSuffix.Replace(normalized, "");
-        return normalized.TrimEnd(' ', '.');
-    }
+    internal static string NormalizeErrorPattern(string errorText) =>
+        ErrorPatternNormalizer.Normalize(errorText);
 
     private static TimeSpan PeriodToTimeSpan(Period period) => period switch
     {

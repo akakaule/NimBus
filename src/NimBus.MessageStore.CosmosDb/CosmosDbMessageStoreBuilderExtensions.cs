@@ -3,6 +3,7 @@ using Azure.Identity;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Extensions;
@@ -38,7 +39,7 @@ public static class CosmosDbMessageStoreBuilderExtensions
         services.AddSingleton<ICosmosDbClient>(sp =>
         {
             var cosmosClient = sp.GetRequiredService<CosmosClient>();
-            return new CosmosDbClient(cosmosClient);
+            return new CosmosDbClient(cosmosClient, sp.GetService<ILogger<CosmosDbClient>>());
         });
 
         RegisterContracts(services);
@@ -53,7 +54,8 @@ public static class CosmosDbMessageStoreBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(cosmosClient);
         builder.Services.AddSingleton(cosmosClient);
-        builder.Services.AddSingleton<ICosmosDbClient>(sp => new CosmosDbClient(cosmosClient));
+        builder.Services.AddSingleton<ICosmosDbClient>(sp =>
+            new CosmosDbClient(cosmosClient, sp.GetService<ILogger<CosmosDbClient>>()));
         RegisterContracts(builder.Services);
         return builder;
     }

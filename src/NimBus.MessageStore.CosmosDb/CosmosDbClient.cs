@@ -1,4 +1,4 @@
-﻿using Serilog;
+﻿using Microsoft.Extensions.Logging;
 using NimBus.Core.Messages;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
@@ -6,6 +6,7 @@ using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Cosmos.Linq;
 using Newtonsoft.Json;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -110,6 +111,17 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 {
     private readonly ICosmosClientAdapter _cosmosClient;
     private readonly ILogger _logger;
+
+    // Cosmos container handles are lightweight client-side proxies the SDK
+    // recommends caching for the client's lifetime. Every data operation used to
+    // call CreateContainerIfNotExistsAsync, which issues a control-plane
+    // round-trip on each call even when the container already exists. Cache the
+    // resolved handle (running the one-time "ensure exists" once per container)
+    // so steady-state reads/writes skip that round-trip. Keyed by container id,
+    // which is unique per physical container in the database. Entries are evicted
+    // when a container is deleted (PurgeMessages) so the next access recreates it.
+    private readonly ConcurrentDictionary<string, Task<ICosmosContainerAdapter>> _containerCache = new();
+
     private const string DatabaseId = "MessageDatabase";
 
     private const string PendingStatus = "Pending";
@@ -126,16 +138,58 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     private const string AuditsContainer = "audits";
     private const string EventSchemasContainer = "eventschemas";
 
-    public CosmosDbClient(CosmosClient cosmosClient, ILogger logger = null)
+    public CosmosDbClient(CosmosClient cosmosClient, ILogger<CosmosDbClient> logger = null)
     {
         _cosmosClient = new CosmosClientAdapter(cosmosClient);
         _logger = logger;
     }
 
-    public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger logger = null)
+    public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient> logger = null)
     {
         _cosmosClient = cosmosClient;
         _logger = logger;
+    }
+
+    [Obsolete("Use the Microsoft.Extensions.Logging constructor — NimBus standardizes on Microsoft.Extensions.Logging (ADR-006). This bridge remains for callers that still pass a Serilog logger.")]
+    public CosmosDbClient(CosmosClient cosmosClient, Serilog.ILogger logger)
+    {
+        _cosmosClient = new CosmosClientAdapter(cosmosClient);
+        _logger = logger is null ? null : new SerilogBridgeLogger(logger);
+    }
+
+    [Obsolete("Use the Microsoft.Extensions.Logging constructor — NimBus standardizes on Microsoft.Extensions.Logging (ADR-006). This bridge remains for callers that still pass a Serilog logger.")]
+    public CosmosDbClient(ICosmosClientAdapter cosmosClient, Serilog.ILogger logger)
+    {
+        _cosmosClient = cosmosClient;
+        _logger = logger is null ? null : new SerilogBridgeLogger(logger);
+    }
+
+    /// <summary>
+    /// Forwards Microsoft.Extensions.Logging calls to a caller-supplied Serilog logger.
+    /// Only used by the obsolete bridge constructors.
+    /// </summary>
+    private sealed class SerilogBridgeLogger : ILogger
+    {
+        private readonly Serilog.ILogger _serilog;
+
+        public SerilogBridgeLogger(Serilog.ILogger serilog) => _serilog = serilog;
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => _serilog.IsEnabled(ToSerilogLevel(logLevel));
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => _serilog.Write(ToSerilogLevel(logLevel), exception, "{Message}", formatter(state, exception));
+
+        private static Serilog.Events.LogEventLevel ToSerilogLevel(LogLevel level) => level switch
+        {
+            LogLevel.Trace => Serilog.Events.LogEventLevel.Verbose,
+            LogLevel.Debug => Serilog.Events.LogEventLevel.Debug,
+            LogLevel.Information => Serilog.Events.LogEventLevel.Information,
+            LogLevel.Warning => Serilog.Events.LogEventLevel.Warning,
+            LogLevel.Error => Serilog.Events.LogEventLevel.Error,
+            _ => Serilog.Events.LogEventLevel.Fatal,
+        };
     }
 
 
@@ -160,7 +214,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         return new EndpointStateCount
         {
             EndpointId = endpointId,
-            EventTime = DateTime.Now,
+            EventTime = DateTime.UtcNow,
             DeferredCount = resultDict.ContainsKey(DeferredStatus) ? resultDict[DeferredStatus] : 0,
             PendingCount = resultDict.ContainsKey(PendingStatus) ? resultDict[PendingStatus] : 0,
             FailedCount = resultDict.ContainsKey(FailedStatus) ? resultDict[FailedStatus] : 0,
@@ -318,12 +372,12 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         }
         catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
         {
-            _logger?.Information($"COSMOS PAGING: Endpoint container not found for '{endpointId}'");
+            _logger?.LogInformation("COSMOS PAGING: Endpoint container not found for '{EndpointId}'", endpointId);
             return null;
         }
         catch (Exception e)
         {
-            _logger?.Error(e, $"COSMOS PAGING-ERROR: Failed to download endpoint state for '{endpointId}'");
+            _logger?.LogError(e, "COSMOS PAGING-ERROR: Failed to download endpoint state for '{EndpointId}'", endpointId);
             throw;
         }
     }
@@ -376,14 +430,14 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         try
         {
             var response = await container.UpsertItemAsync(eventDbo, new PartitionKey(eventDbo.Id));
-            _logger?.Verbose(
-                $"COSMOS UPSERT-RESPONSE: EventId: {eventId}, SessionId: {sessionId}, HttpStatusCode: {response.StatusCode}, Status : {CompletedStatus}");
+            _logger?.LogTrace(
+                "COSMOS UPSERT-RESPONSE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}, Status: {Status}", eventId, sessionId, response.StatusCode, CompletedStatus);
             return true;
         }
         catch (CosmosException e)
         {
-            _logger?.Error(e,
-                $"COSMOS UPSERT-ERROR: EventId: {eventId}, SessionId: {sessionId}, Status : {CompletedStatus}");
+            _logger?.LogError(e,
+                "COSMOS UPSERT-ERROR: EventId: {EventId}, SessionId: {SessionId}, Status: {Status}", eventId, sessionId, CompletedStatus);
 
             if (e.StatusCode == HttpStatusCode.TooManyRequests)
             {
@@ -414,8 +468,8 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                     updateEvent.Deleted = true;
                     updateEvent.TimeToLive = 60; // 1 Minute
                     var response = await container.UpsertItemAsync<EventDbo>(updateEvent, new PartitionKey(updateEvent.Id));
-                    _logger?.Verbose(
-                        $"COSMOS REMOVE-MESSAGE: EventId: {eventId}, SessionId: {sessionId}, HttpStatusCode: {response.StatusCode}");
+                    _logger?.LogTrace(
+                        "COSMOS REMOVE-MESSAGE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}", eventId, sessionId, response.StatusCode);
                     return true;
                 }
             }
@@ -424,8 +478,8 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         }
         catch (CosmosException e)
         {
-            _logger?.Error(e,
-                $"COSMOS REMOVE-MESSAGE: EventId: {eventId}, SessionId: {sessionId}, HttpStatusCode: {e.StatusCode}");
+            _logger?.LogError(e,
+                "COSMOS REMOVE-MESSAGE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}", eventId, sessionId, e.StatusCode);
 
             if (e.StatusCode == HttpStatusCode.NotFound)
             {
@@ -446,28 +500,34 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         try
         {
             var container = await GetEndpointContainer(endpointId);
-            var queryDefinition = new QueryDefinition("SELECT * FROM c WHERE c.sessionId = @sessionId")
+            // Only the id is needed for the deletes — don't pull whole EventDbo
+            // documents (the EventJson payload dominates the response size).
+            var queryDefinition = new QueryDefinition("SELECT c.id FROM c WHERE c.sessionId = @sessionId")
                 .WithParameter("@sessionId", sessionId);
-            var result = container.GetItemQueryIterator<EventDbo>(queryDefinition);
+            var result = container.GetItemQueryIterator<IdProjection>(queryDefinition);
 
-            _logger?.Information(
-                $"COSMOS PURGE: Deleted all messages on endpoint {endpointId} in session {sessionId}");
+            _logger?.LogInformation(
+                "COSMOS PURGE: Deleted all messages on endpoint {EndpointId} in session {SessionId}", endpointId, sessionId);
+            // The container is partitioned by /id, so each document lives in its own
+            // logical partition and a TransactionalBatch (single-partition only) can't
+            // apply. The deletes are independent — run them concurrently (bounded)
+            // instead of one round-trip at a time.
+            var deleteOptions = new ParallelOptions { MaxDegreeOfParallelism = 8 };
             while (result.HasMoreResults)
             {
-                var eventDbo = await result.ReadNextAsync();
-                if (eventDbo.Any())
+                var page = await result.ReadNextAsync();
+                await Parallel.ForEachAsync(page, deleteOptions, async (item, _) =>
                 {
-                    foreach (var queryResult in eventDbo)
-                        await container.DeleteItemAsync<EventDbo>(queryResult.Id, new PartitionKey(queryResult.Id));
-                }
+                    await container.DeleteItemAsync<EventDbo>(item.Id, new PartitionKey(item.Id));
+                });
             }
 
             return true;
         }
         catch (Exception e)
         {
-            _logger?.Error(e,
-                $"COSMOS PURGE: Couldn't delete all messages on endpoint {endpointId} in session {sessionId}");
+            _logger?.LogError(e,
+                "COSMOS PURGE: Couldn't delete all messages on endpoint {EndpointId} in session {SessionId}", endpointId, sessionId);
             return false;
         }
     }
@@ -479,13 +539,17 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             var container = await GetEndpointContainer(endpointId);
 
             await container.DeleteContainerAsync();
-            _logger?.Information($"COSMOS PURGE: Deleted all messages on endpoint {endpointId}");
+            // Drop the cached handle so the next access re-runs "ensure exists"
+            // and recreates the now-deleted container instead of reusing a stale
+            // handle that would only throw NotFound.
+            _containerCache.TryRemove(endpointId, out _);
+            _logger?.LogInformation("COSMOS PURGE: Deleted all messages on endpoint {EndpointId}", endpointId);
 
             return true;
         }
         catch (Exception e)
         {
-            _logger?.Error(e, $"COSMOS PURGE: Couldn't delete all messages on endpoint {endpointId}");
+            _logger?.LogError(e, "COSMOS PURGE: Couldn't delete all messages on endpoint {EndpointId}", endpointId);
             return false;
         }
     }
@@ -730,8 +794,10 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     public async Task<IEnumerable<UnresolvedEvent>> GetCompletedEventsOnEndpoint(string endpointId)
     {
         var container = await GetEndpointContainer(endpointId);
-        var sqlQuery = $"SELECT * FROM c WHERE c.status ='{CompletedStatus}'";
-        var result = container.GetItemQueryIterator<EventDbo>(sqlQuery, null, new QueryRequestOptions { });
+        // Parameterized rather than interpolated so the SDK can cache the query plan.
+        var queryDefinition = new QueryDefinition("SELECT * FROM c WHERE c.status = @status")
+            .WithParameter("@status", CompletedStatus);
+        var result = container.GetItemQueryIterator<EventDbo>(queryDefinition, null, new QueryRequestOptions { });
         var unresolvedEvents = new List<UnresolvedEvent>();
 
         while (result.HasMoreResults)
@@ -754,29 +820,23 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         var container = await GetEndpointContainer(endpointId);
 
+        // Only four fields feed BlockedMessageEvent — project them server-side
+        // instead of reading whole EventDbo documents (large EventJson payloads).
         var pageQuery = new QueryDefinition(
-            "SELECT * FROM c WHERE c.sessionId = @sessionId AND c.status IN (@pendingStatus, @deferredStatus) AND (NOT IS_DEFINED(c.deleted) or c.deleted != true) ORDER BY c.event.UpdatedAt DESC OFFSET @skip LIMIT @take")
+            "SELECT c.status, c.event.EventId AS eventId, c.event.OriginatingMessageId AS originatingMessageId, c.event.LastMessageId AS lastMessageId FROM c WHERE c.sessionId = @sessionId AND c.status IN (@pendingStatus, @deferredStatus) AND (NOT IS_DEFINED(c.deleted) or c.deleted != true) ORDER BY c.event.UpdatedAt DESC OFFSET @skip LIMIT @take")
             .WithParameter("@sessionId", sessionId)
             .WithParameter("@pendingStatus", PendingStatus)
             .WithParameter("@deferredStatus", DeferredStatus)
             .WithParameter("@skip", safeSkip)
             .WithParameter("@take", safeTake);
-        var pageIterator = container.GetItemQueryIterator<EventDbo>(pageQuery);
+        var pageIterator = container.GetItemQueryIterator<BlockedEventProjection>(pageQuery);
         var items = new List<BlockedMessageEvent>();
         while (pageIterator.HasMoreResults)
         {
-            var eventDbo = await pageIterator.ReadNextAsync();
-            foreach (var queryResult in eventDbo)
+            var page = await pageIterator.ReadNextAsync();
+            foreach (var queryResult in page)
             {
-                items.Add(new BlockedMessageEvent
-                {
-                    EventId = queryResult.Event.EventId,
-                    OriginatingId =
-                        queryResult.Event.OriginatingMessageId.Equals("self", StringComparison.OrdinalIgnoreCase)
-                            ? queryResult.Event.LastMessageId
-                            : queryResult.Event.OriginatingMessageId,
-                    Status = queryResult.Status
-                });
+                items.Add(ToBlockedMessageEvent(queryResult));
             }
         }
 
@@ -826,12 +886,12 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         }
         catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
         {
-            _logger?.Information($"COSMOS PENDING-EVENTS: Endpoint container not found for '{endpointId}'");
+            _logger?.LogInformation("COSMOS PENDING-EVENTS: Endpoint container not found for '{EndpointId}'", endpointId);
             return null;
         }
         catch (Exception e)
         {
-            _logger?.Error(e, $"COSMOS PENDING-EVENTS-ERROR: Failed to get pending events for endpoint '{endpointId}'");
+            _logger?.LogError(e, "COSMOS PENDING-EVENTS-ERROR: Failed to get pending events for endpoint '{EndpointId}'", endpointId);
             throw;
         }
 
@@ -841,25 +901,20 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     public async Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId)
     {
         var container = await GetEndpointContainer(endpointId);
-        var sqlQuery =
-            $"SELECT * FROM c WHERE c.event.EndpointRole = '{PublisherRole}' AND (NOT IS_DEFINED(c.deleted) or c.deleted != true)";
-        var result = container.GetItemQueryIterator<EventDbo>(sqlQuery);
+        // Parameterized for query-plan caching; projected because only four fields
+        // feed BlockedMessageEvent (full documents carry the EventJson payload).
+        var queryDefinition = new QueryDefinition(
+            "SELECT c.status, c.event.EventId AS eventId, c.event.OriginatingMessageId AS originatingMessageId, c.event.LastMessageId AS lastMessageId FROM c WHERE c.event.EndpointRole = @publisherRole AND (NOT IS_DEFINED(c.deleted) or c.deleted != true)")
+            .WithParameter("@publisherRole", PublisherRole);
+        var result = container.GetItemQueryIterator<BlockedEventProjection>(queryDefinition);
         var invalidMessageEvents = new List<BlockedMessageEvent>();
 
         while (result.HasMoreResults)
         {
-            var eventDbo = await result.ReadNextAsync();
-            foreach (var queryResult in eventDbo)
+            var page = await result.ReadNextAsync();
+            foreach (var queryResult in page)
             {
-                invalidMessageEvents.Add(new BlockedMessageEvent
-                {
-                    EventId = queryResult.Event.EventId,
-                    OriginatingId =
-                        queryResult.Event.OriginatingMessageId.Equals("self", StringComparison.OrdinalIgnoreCase)
-                            ? queryResult.Event.LastMessageId
-                            : queryResult.Event.OriginatingMessageId,
-                    Status = queryResult.Status
-                });
+                invalidMessageEvents.Add(ToBlockedMessageEvent(queryResult));
             }
         }
 
@@ -896,21 +951,20 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         if (response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.Created)
         {
-            _logger?.Verbose(
-                $"COSMOS SUBSCRIPTION: endpointId: {subscription.EndpointId}, SubscriptionId: {subscription.Id}, HttpStatusCode: {response.StatusCode}");
+            _logger?.LogTrace(
+                "COSMOS SUBSCRIPTION: endpointId: {EndpointId}, SubscriptionId: {SubscriptionId}, HttpStatusCode: {StatusCode}", subscription.EndpointId, subscription.Id, response.StatusCode);
             return subscription;
         }
 
-        _logger?.Error(
-            $"COSMOS SUBSCRIPTION ERROR: endpointId: {subscription.EndpointId}, SubscriptionId: {subscription.Id}, HttpStatusCode: {response.StatusCode}");
+        _logger?.LogError(
+            "COSMOS SUBSCRIPTION ERROR: endpointId: {EndpointId}, SubscriptionId: {SubscriptionId}, HttpStatusCode: {StatusCode}", subscription.EndpointId, subscription.Id, response.StatusCode);
         return null; //Return error?
     }
 
     public async Task<IEnumerable<EndpointSubscription>> GetSubscriptionsOnEndpoint(string endpointId)
     {
         var subscriptions = new List<EndpointSubscription>();
-        var db = _cosmosClient.GetDatabase(DatabaseId);
-        var subscriptionContainer = await db.CreateContainerIfNotExistsAsync(SubscriptionsContainer, "/id");
+        var subscriptionContainer = await GetSubscriptionsContainer();
 
         var queryDefinition = new QueryDefinition("SELECT * FROM c WHERE c.endpointId = @endpointId")
             .WithParameter("@endpointId", endpointId);
@@ -932,8 +986,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         string eventType, string payload, string errorText)
     {
         var subscriptions = new List<EndpointSubscription>();
-        var db = _cosmosClient.GetDatabase(DatabaseId);
-        var subscriptionContainer = await db.CreateContainerIfNotExistsAsync(SubscriptionsContainer, "/id");
+        var subscriptionContainer = await GetSubscriptionsContainer();
 
         var sqlQuery = "SELECT * FROM c WHERE c.endpointId = @endpointId";
 
@@ -985,14 +1038,14 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         try
         {
             var response = await subscriptionContainer.DeleteItemAsync<SubscriptionDbo>(subscriptionId, new PartitionKey(subscriptionId));
-            _logger?.Verbose(
-                $"COSMOS REMOVE-SUBSCRIPTION: SubscriptionId: {subscriptionId}, HttpStatusCode: {response.StatusCode}");
+            _logger?.LogTrace(
+                "COSMOS REMOVE-SUBSCRIPTION: SubscriptionId: {SubscriptionId}, HttpStatusCode: {StatusCode}", subscriptionId, response.StatusCode);
             return true;
         }
         catch (Exception e)
         {
-            _logger?.Error(
-                $"COSMOS REMOVE-SUBSCRIPTION: SubscriptionId: {subscriptionId}, Exception: {e.Message}");
+            _logger?.LogError(e,
+                "COSMOS REMOVE-SUBSCRIPTION: SubscriptionId: {SubscriptionId}", subscriptionId);
             return false;
         }
     }
@@ -1005,14 +1058,14 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         try
         {
             var response = await subscriptionContainer.DeleteItemAsync<SubscriptionDbo>(id, new PartitionKey(id));
-            _logger?.Verbose(
-                $"COSMOS REMOVE-SUBSCRIPTION: endpointId: {endpointId}, SubscriptionId: {id}, HttpStatusCode: {response.StatusCode}");
+            _logger?.LogTrace(
+                "COSMOS REMOVE-SUBSCRIPTION: endpointId: {EndpointId}, SubscriptionId: {SubscriptionId}, HttpStatusCode: {StatusCode}", endpointId, id, response.StatusCode);
             return true;
         }
         catch (Exception e)
         {
-            _logger?.Error(
-                $"COSMOS REMOVE-SUBSCRIPTION: endpointId: {endpointId}, SubscriptionId: {id}, Exception: {e.Message}");
+            _logger?.LogError(e,
+                "COSMOS REMOVE-SUBSCRIPTION: endpointId: {EndpointId}, SubscriptionId: {SubscriptionId}", endpointId, id);
             return false;
         }
     }
@@ -1044,8 +1097,8 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         }
         catch (Exception e)
         {
-            _logger?.Error(e,
-                $"COSMOS UPDATE-SUBSCRIPTION: Endpoint: {subscription.EndpointId}, SubscriptionId: {subscription.Id}, Exception: {e.Message}");
+            _logger?.LogError(e,
+                "COSMOS UPDATE-SUBSCRIPTION: Endpoint: {EndpointId}, SubscriptionId: {SubscriptionId}", subscription.EndpointId, subscription.Id);
             return false;
         }
     }
@@ -1056,10 +1109,12 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         // Only the id is used by the caller — project it server-side instead of
         // reading whole EventDbo documents (large EventJson / stack traces), which
         // cut RU and payload by 10-50x. Accumulate then join once (no O(n^2) concat).
-        var sqlQuery =
-            $"SELECT c.id FROM c WHERE c.status IN ('{FailedStatus}', '{DeferredStatus}') AND (NOT IS_DEFINED(c.deleted) or c.deleted != true)";
+        var queryDefinition = new QueryDefinition(
+            "SELECT c.id FROM c WHERE c.status IN (@failedStatus, @deferredStatus) AND (NOT IS_DEFINED(c.deleted) or c.deleted != true)")
+            .WithParameter("@failedStatus", FailedStatus)
+            .WithParameter("@deferredStatus", DeferredStatus);
 
-        var result = container.GetItemQueryIterator<IdProjection>(sqlQuery);
+        var result = container.GetItemQueryIterator<IdProjection>(queryDefinition);
         var ids = new List<string>();
         while (result.HasMoreResults)
         {
@@ -1079,27 +1134,68 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         [JsonProperty("id")] public string Id { get; set; }
     }
 
-    private async Task<ICosmosContainerAdapter> GetEndpointContainer(string endpointId)
+    /// <summary>
+    /// Server-side projection of the four fields that feed <see cref="BlockedMessageEvent"/>.
+    /// </summary>
+    private sealed class BlockedEventProjection
+    {
+        [JsonProperty("status")] public string Status { get; set; }
+        [JsonProperty("eventId")] public string EventId { get; set; }
+        [JsonProperty("originatingMessageId")] public string OriginatingMessageId { get; set; }
+        [JsonProperty("lastMessageId")] public string LastMessageId { get; set; }
+    }
+
+    private static BlockedMessageEvent ToBlockedMessageEvent(BlockedEventProjection projection) => new()
+    {
+        EventId = projection.EventId,
+        OriginatingId = projection.OriginatingMessageId.Equals("self", StringComparison.OrdinalIgnoreCase)
+            ? projection.LastMessageId
+            : projection.OriginatingMessageId,
+        Status = projection.Status,
+    };
+
+    // Resolves a container handle through _containerCache, running "ensure
+    // exists" exactly once per container id and caching the resulting handle.
+    // A faulted creation is never left cached: the faulted entry is evicted
+    // (key + value match, so a newer good entry is never removed) and the
+    // next caller retries.
+    private async Task<ICosmosContainerAdapter> GetCachedContainerAsync(string containerId, string partitionKeyPath)
+    {
+        var containerTask = _containerCache.GetOrAdd(containerId, id => EnsureContainerExistsAsync(id, partitionKeyPath));
+        try
+        {
+            return await containerTask;
+        }
+        catch
+        {
+            _containerCache.TryRemove(new KeyValuePair<string, Task<ICosmosContainerAdapter>>(containerId, containerTask));
+            throw;
+        }
+    }
+
+    private async Task<ICosmosContainerAdapter> EnsureContainerExistsAsync(string containerId, string partitionKeyPath)
+    {
+        var db = _cosmosClient.GetDatabase(DatabaseId);
+        return await db.CreateContainerIfNotExistsAsync(containerId, partitionKeyPath);
+    }
+
+    private Task<ICosmosContainerAdapter> GetEndpointContainer(string endpointId)
     {
         if (string.IsNullOrEmpty(endpointId))
         {
             throw new ArgumentNullException(nameof(endpointId), "EndpointId cannot be null or empty");
         }
-        var db = _cosmosClient.GetDatabase(DatabaseId);
-        return await db.CreateContainerIfNotExistsAsync(endpointId, "/id");
+        return GetCachedContainerAsync(endpointId, "/id");
     }
 
-    private async Task<ICosmosContainerAdapter> GetMessagesContainer()
-    {
-        var db = _cosmosClient.GetDatabase(DatabaseId);
-        return await db.CreateContainerIfNotExistsAsync(MessagesContainer, "/eventId");
-    }
+    private Task<ICosmosContainerAdapter> GetSubscriptionsContainer() =>
+        GetCachedContainerAsync(SubscriptionsContainer, "/id");
 
-    private async Task<ICosmosContainerAdapter> GetAuditsContainer()
-    {
-        var db = _cosmosClient.GetDatabase(DatabaseId);
-        return await db.CreateContainerIfNotExistsAsync(AuditsContainer, "/eventId");
-    }
+    private Task<ICosmosContainerAdapter> GetMessagesContainer() =>
+        GetCachedContainerAsync(MessagesContainer, "/eventId");
+
+    private Task<ICosmosContainerAdapter> GetAuditsContainer() =>
+        GetCachedContainerAsync(AuditsContainer, "/eventId");
 
     private async Task<ICosmosContainerAdapter> GetEventSchemasContainer()
     {
@@ -1299,7 +1395,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         }
         catch (CosmosException e)
         {
-            _logger?.Error(e, $"COSMOS STORE-MESSAGE-ERROR: EventId: {message.EventId}, MessageId: {message.MessageId}");
+            _logger?.LogError(e, "COSMOS STORE-MESSAGE-ERROR: EventId: {EventId}, MessageId: {MessageId}", message.EventId, message.MessageId);
 
             if (e.StatusCode == HttpStatusCode.TooManyRequests)
             {
@@ -1443,7 +1539,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         }
         catch (CosmosException e)
         {
-            _logger?.Error(e, $"COSMOS STORE-AUDIT-ERROR: EventId: {eventId}");
+            _logger?.LogError(e, "COSMOS STORE-AUDIT-ERROR: EventId: {EventId}", eventId);
 
             if (e.StatusCode == HttpStatusCode.TooManyRequests)
             {
@@ -1584,7 +1680,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         }
         catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
         {
-            _logger?.Verbose($"COSMOS ARCHIVE-FAILED: Event not found. EventId: {eventId}, SessionId: {sessionId}, EndpointId: {endpointId}");
+            _logger?.LogTrace("COSMOS ARCHIVE-FAILED: Event not found. EventId: {EventId}, SessionId: {SessionId}, EndpointId: {EndpointId}", eventId, sessionId, endpointId);
         }
     }
 
@@ -1607,14 +1703,14 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         try
         {
             var response = await container.UpsertItemAsync(eventDbo, new PartitionKey(eventDbo.Id));
-            _logger?.Verbose(
-                $"COSMOS UPSERT-RESPONSE: EventId: {eventId}, SessionId: {sessionId}, HttpStatusCode: {response.StatusCode}, Status : {status}");
+            _logger?.LogTrace(
+                "COSMOS UPSERT-RESPONSE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}, Status: {Status}", eventId, sessionId, response.StatusCode, status);
             return true;
         }
         catch (CosmosException e)
         {
-            _logger?.Error(e,
-                $"COSMOS UPSERT-ERROR: EventId: {eventId}, SessionId: {sessionId}, Status : {status}, HttpStatusCode: {e.StatusCode}");
+            _logger?.LogError(e,
+                "COSMOS UPSERT-ERROR: EventId: {EventId}, SessionId: {SessionId}, Status: {Status}, HttpStatusCode: {StatusCode}", eventId, sessionId, status, e.StatusCode);
 
             if (e.StatusCode == HttpStatusCode.TooManyRequests)
             {
@@ -1660,19 +1756,19 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         }
         catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
         {
-            _logger?.Information($"COSMOS METADATAS: Some endpoints not found in metadata container");
+            _logger?.LogInformation("COSMOS METADATAS: Some endpoints not found in metadata container");
             return null;
         }
         catch (Exception e)
         {
-            _logger?.Error(e, $"COSMOS METADATAS-ERROR: Failed to get metadatas for endpoints");
+            _logger?.LogError(e, "COSMOS METADATAS-ERROR: Failed to get metadatas for endpoints");
             throw;
         }
     }
 
     public async Task<List<EndpointMetadata>> GetMetadatas()
     {
-        var sqlQuery = $"SELECT * FROM c";
+        var sqlQuery = "SELECT * FROM c";
         var metadatas = await GetMetadatasByFilter(sqlQuery);
 
         return metadatas;
@@ -1703,14 +1799,14 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         {
             var response =
                 await container.UpsertItemAsync(endpointMetadata, new PartitionKey(endpointMetadata.EndpointId));
-            _logger?.Verbose(
-                $"COSMOS UPSERT-RESPONSE: Metadata upsert. Id: {endpointMetadata.EndpointId}, HttpStatusCode: {response.StatusCode}");
+            _logger?.LogTrace(
+                "COSMOS UPSERT-RESPONSE: Metadata upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointMetadata.EndpointId, response.StatusCode);
             return true;
         }
         catch (CosmosException e)
         {
-            _logger?.Error(e,
-                $"COSMOS UPSERT-ERROR: Metadata upsert. Id: {endpointMetadata.EndpointId}, HttpStatusCode: {e.StatusCode}");
+            _logger?.LogError(e,
+                "COSMOS UPSERT-ERROR: Metadata upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointMetadata.EndpointId, e.StatusCode);
 
             if (e.StatusCode == HttpStatusCode.TooManyRequests)
             {

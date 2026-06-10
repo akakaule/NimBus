@@ -398,6 +398,29 @@ public abstract class MessageTrackingStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task PurgeMessages_removes_only_the_target_session()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-purge");
+        var purgedPendingId = Id("purge-pending");
+        var purgedDeferredId = Id("purge-deferred");
+        var keptId = Id("purge-kept");
+        await store.UploadPendingMessage(purgedPendingId, "session-purged", endpointId, SampleEvent(endpointId, purgedPendingId, "session-purged"));
+        await store.UploadDeferredMessage(purgedDeferredId, "session-purged", endpointId, SampleEvent(endpointId, purgedDeferredId, "session-purged"));
+        await store.UploadPendingMessage(keptId, "session-kept", endpointId, SampleEvent(endpointId, keptId, "session-kept"));
+
+        var purged = await store.PurgeMessages(endpointId, "session-purged");
+
+        Assert.IsTrue(purged);
+        var purgedPage = await store.GetBlockedEventsOnSession(endpointId, "session-purged", 0, 100);
+        Assert.AreEqual(0, purgedPage.Total);
+        Assert.AreEqual(0, purgedPage.Items.Count);
+        var keptPage = await store.GetBlockedEventsOnSession(endpointId, "session-kept", 0, 100);
+        Assert.AreEqual(1, keptPage.Total);
+        Assert.IsTrue(keptPage.Items.Any(e => e.EventId == keptId));
+    }
+
+    [TestMethod]
     public async Task GetBlockedEventsOnSession_pages_results_and_reports_total()
     {
         var store = CreateStore();

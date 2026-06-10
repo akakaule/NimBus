@@ -161,11 +161,11 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         public SerilogBridgeLogger(Serilog.ILogger serilog) => _serilog = serilog;
 
-        public IDisposable BeginScope<TState>(TState state) => null;
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
         public bool IsEnabled(LogLevel logLevel) => _serilog.IsEnabled(ToSerilogLevel(logLevel));
 
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
             => _serilog.Write(ToSerilogLevel(logLevel), exception, "{Message}", formatter(state, exception));
 
         private static Serilog.Events.LogEventLevel ToSerilogLevel(LogLevel level) => level switch

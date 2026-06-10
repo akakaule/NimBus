@@ -29,17 +29,91 @@ public sealed class CosmosDbClientUnitTests
             $"EventTime {state.EventTime:O} should be within a minute of DateTime.UtcNow.");
     }
 
+    [TestMethod]
+    public async Task GetEndpointContainer_caches_handle_so_ensure_exists_runs_once_per_endpoint()
+    {
+        var adapter = new FakeCosmosClientAdapter();
+        var client = new CosmosDbClient(adapter);
+
+        // Repeated operations on the same endpoint should resolve the container
+        // once; the cached handle skips the control-plane round-trip after.
+        for (var i = 0; i < 3; i++)
+        {
+            await client.DownloadEndpointStateCount("endpoint-1");
+        }
+
+        Assert.AreEqual(1, adapter.Database.GetCreateContainerCallCount("endpoint-1"),
+            "CreateContainerIfNotExistsAsync must run once per container; subsequent accesses reuse the cached handle.");
+    }
+
+    [TestMethod]
+    public async Task PurgeMessages_evicts_cached_handle_so_next_access_recreates_container()
+    {
+        var adapter = new FakeCosmosClientAdapter();
+        var client = new CosmosDbClient(adapter);
+
+        await client.DownloadEndpointStateCount("endpoint-1");
+
+        // Purge deletes the container and must evict the cache, so the next
+        // access re-runs "ensure exists" instead of reusing a stale handle.
+        var purged = await client.PurgeMessages("endpoint-1");
+        await client.DownloadEndpointStateCount("endpoint-1");
+
+        Assert.IsTrue(purged, "PurgeMessages should succeed against the fake adapter.");
+        Assert.AreEqual(2, adapter.Database.GetCreateContainerCallCount("endpoint-1"),
+            "After a purge the cached handle is stale; the next access must re-ensure the container exists.");
+    }
+
+    [TestMethod]
+    public async Task GetEndpointContainer_does_not_cache_faulted_creation_so_next_access_retries()
+    {
+        var adapter = new FakeCosmosClientAdapter();
+        adapter.Database.CreateFailuresRemaining = 1;
+        var client = new CosmosDbClient(adapter);
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => client.DownloadEndpointStateCount("endpoint-1"));
+
+        // The faulted creation must not be cached — the retry should run
+        // "ensure exists" again and succeed.
+        await client.DownloadEndpointStateCount("endpoint-1");
+
+        Assert.AreEqual(2, adapter.Database.GetCreateContainerCallCount("endpoint-1"),
+            "A failed creation must be evicted so the next caller retries CreateContainerIfNotExistsAsync.");
+    }
+
     private sealed class FakeCosmosClientAdapter : ICosmosClientAdapter
     {
-        public ICosmosDatabaseAdapter GetDatabase(string id) => new FakeDatabaseAdapter();
+        public FakeDatabaseAdapter Database { get; } = new FakeDatabaseAdapter();
+
+        public ICosmosDatabaseAdapter GetDatabase(string id) => Database;
     }
 
     private sealed class FakeDatabaseAdapter : ICosmosDatabaseAdapter
     {
+        private readonly Dictionary<string, int> _createContainerCalls = new(StringComparer.Ordinal);
+
+        public int CreateFailuresRemaining { get; set; }
+
+        public int GetCreateContainerCallCount(string id) => _createContainerCalls.GetValueOrDefault(id);
+
         public ICosmosContainerAdapter GetContainer(string id) => new FakeContainerAdapter();
 
         public Task<ICosmosContainerAdapter> CreateContainerIfNotExistsAsync(string id, string partitionKeyPath)
-            => Task.FromResult<ICosmosContainerAdapter>(new FakeContainerAdapter());
+        {
+            _createContainerCalls[id] = _createContainerCalls.GetValueOrDefault(id) + 1;
+            if (CreateFailuresRemaining > 0)
+            {
+                CreateFailuresRemaining--;
+                throw new InvalidOperationException("Simulated container creation failure.");
+            }
+
+            return Task.FromResult<ICosmosContainerAdapter>(new FakeContainerAdapter());
+        }
+    }
+
+    private sealed class FakeContainerResponse : ContainerResponse
+    {
     }
 
     private sealed class FakeContainerAdapter : ICosmosContainerAdapter
@@ -75,7 +149,7 @@ public sealed class CosmosDbClientUnitTests
             => throw new NotSupportedException();
 
         public Task<ContainerResponse> DeleteContainerAsync()
-            => throw new NotSupportedException();
+            => Task.FromResult<ContainerResponse>(new FakeContainerResponse());
 
         public Task<FeedResponse<T>> ReadManyItemsAsync<T>(IReadOnlyList<(string id, PartitionKey partitionKey)> items)
             => throw new NotSupportedException();

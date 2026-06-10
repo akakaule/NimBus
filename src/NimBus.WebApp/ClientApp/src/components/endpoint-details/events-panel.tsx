@@ -1,14 +1,20 @@
 import * as React from "react";
 import * as api from "api-client";
+import moment from "moment";
 import DataTable, {
   ITableHeadAction,
   ITableRow,
   ITableBodyAction,
   ITableHeadCell,
 } from "components/data-table";
+import ColumnChooser from "components/data-table/column-chooser";
 import { useParams } from "react-router-dom";
 import { formatMoment } from "functions/endpoint.functions";
 import EventFiltering from "./filter/event-filtering";
+import type { AdvancedFilters } from "./filter/advanced-filters";
+import AdvancedFiltersPopover, {
+  AdvancedFilterChips,
+} from "./filter/advanced-filters-popover";
 import FilterContext, { IFilterContext } from "./filter/filtering-context";
 import TruncatedGuid from "components/common/truncated-guid";
 import ErrorGroupedView from "./error-grouped-view";
@@ -84,9 +90,10 @@ function isAllStatusesSentinel(status: string[]): boolean {
   return status.length === 1 && status[0] === STATUS_ALL_SENTINEL;
 }
 
-// URL-driven filter shape. Only the most-visible fields are persisted; advanced
-// filters (payload, enqueued, updated) live in the FilterContext as draft state
-// only and are picked up at Search-time. The default `status` set of
+// URL-driven filter shape. Basic fields come from the filter bar; the advanced
+// fields (Updated/Added ranges + payload) come from the Advanced-filters
+// popover and round-trip through the URL like everything else, so a bookmarked
+// or Back-navigated URL restores them. The default `status` set of
 // "Failed + DeadLettered + Unsupported + Pending" matches the operator UX where
 // the page opens pre-filtered to messages that need attention (failed states)
 // plus in-flight Pending entries — most importantly Pending+Handoff rows, which
@@ -98,6 +105,11 @@ type EndpointFilterParams = {
   eventTypeId: string[];
   eventId: string;
   sessionId: string;
+  updatedFrom: string;
+  updatedTo: string;
+  addedFrom: string;
+  addedTo: string;
+  payload: string;
   viewMode: string;
   maxResults: string;
 };
@@ -112,9 +124,75 @@ const DEFAULT_ENDPOINT_FILTER_PARAMS: EndpointFilterParams = {
   eventTypeId: [],
   eventId: "",
   sessionId: "",
+  updatedFrom: "",
+  updatedTo: "",
+  addedFrom: "",
+  addedTo: "",
+  payload: "",
   viewMode: "list",
   maxResults: "100",
 };
+
+// Canonical column set for the events table, in render order. This single list
+// drives both the table header (headCells) and the column chooser. The identity
+// column (Event Id) is locked — always visible — so a row is never reduced to
+// anonymous cells. Exported so the chooser invariants can be unit-tested
+// without rendering.
+export type EventColumn = ITableHeadCell & { locked?: boolean };
+
+export const EVENT_COLUMNS: EventColumn[] = [
+  { id: "eventId", label: "Event Id", numeric: false, width: "10%", locked: true },
+  { id: "pendingCount", label: "Pending", numeric: true, width: "6%" },
+  { id: "deferredCount", label: "Deferred", numeric: true, width: "7%" },
+  { id: "status", label: "Status", numeric: false, width: "8%" },
+  { id: "sessionId", label: "Session Id", numeric: false, width: "10%" },
+  { id: "eventTypeId", label: "Event Type", numeric: false, width: "15%" },
+  { id: "updated", label: "Updated", numeric: false, width: "12%" },
+  { id: "added", label: "Added", numeric: false, width: "12%" },
+];
+
+// Visible columns after applying the operator's hidden-column choices, in
+// canonical order. Locked columns are always visible. DataTable looks each body
+// cell up by headCell id (row.data.get(id)), so filtering the headCells alone
+// keeps header and body aligned.
+export function getVisibleColumns(hidden: Set<string>): EventColumn[] {
+  return EVENT_COLUMNS.filter((c) => c.locked || !hidden.has(c.id));
+}
+
+// Hidden-column choices persist across endpoints and sessions: it's a personal
+// display preference, not a shareable filter (those live in the URL). Stored as
+// a JSON array of column ids; locked ids are never written. Exported for tests.
+export const HIDDEN_COLUMNS_STORAGE_KEY = "endpoint-events:hidden-columns";
+
+export function loadHiddenColumns(): Set<string> {
+  try {
+    const raw = window.localStorage?.getItem(HIDDEN_COLUMNS_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? new Set(parsed.filter((x): x is string => typeof x === "string"))
+      : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function saveHiddenColumns(hidden: Set<string>): void {
+  try {
+    window.localStorage?.setItem(
+      HIDDEN_COLUMNS_STORAGE_KEY,
+      JSON.stringify([...hidden]),
+    );
+  } catch {
+    // Storage can be unavailable in hardened browsers or test runners.
+  }
+}
+
+const parseLocalDateTime = (value: string): moment.Moment | undefined =>
+  value ? moment(value, "YYYY-MM-DDTHH:mm") : undefined;
+
+const formatLocalDateTime = (value: moment.Moment | undefined): string =>
+  value ? value.format("YYYY-MM-DDTHH:mm") : "";
 
 function buildEventFilterFromParams(
   params: EndpointFilterParams,
@@ -129,6 +207,14 @@ function buildEventFilterFromParams(
   if (params.eventTypeId.length) filter.eventTypeId = [...params.eventTypeId];
   if (params.eventId) filter.eventId = params.eventId;
   if (params.sessionId) filter.sessionId = params.sessionId;
+  // "Updated" → UpdatedAt (note the contract's misspelled `updateAtFrom`);
+  // "Added" → EnqueuedTimeUtc — the same fields the old accordion sub-filters
+  // wrote to the FilterContext draft.
+  if (params.updatedFrom) filter.updateAtFrom = parseLocalDateTime(params.updatedFrom);
+  if (params.updatedTo) filter.updatedAtTo = parseLocalDateTime(params.updatedTo);
+  if (params.addedFrom) filter.enqueuedAtFrom = parseLocalDateTime(params.addedFrom);
+  if (params.addedTo) filter.enqueuedAtTo = parseLocalDateTime(params.addedTo);
+  if (params.payload) filter.payload = params.payload;
   return filter;
 }
 
@@ -144,6 +230,11 @@ function paramsFromEventFilter(
     eventTypeId: (filter.eventTypeId ?? []) as string[],
     eventId: filter.eventId ?? "",
     sessionId: filter.sessionId ?? "",
+    updatedFrom: formatLocalDateTime(filter.updateAtFrom),
+    updatedTo: formatLocalDateTime(filter.updatedAtTo),
+    addedFrom: formatLocalDateTime(filter.enqueuedAtFrom),
+    addedTo: formatLocalDateTime(filter.enqueuedAtTo),
+    payload: filter.payload ?? "",
     viewMode: current.viewMode,
     maxResults: current.maxResults,
   };
@@ -175,6 +266,10 @@ const EventsPanel = (props: EventsPanelProps) => {
   const [currentFilter, setCurrentFilter] = React.useState<
     api.EventFilter | undefined
   >();
+  // Columns the operator has chosen to hide via the column chooser (persisted;
+  // locked columns are never included).
+  const [hiddenCols, setHiddenCols] =
+    React.useState<Set<string>>(loadHiddenColumns);
 
   const maxResults = Number(applied.maxResults) || 100;
   const viewMode = (applied.viewMode === "grouped" ? "grouped" : "list") as
@@ -591,16 +686,36 @@ const EventsPanel = (props: EventsPanelProps) => {
     applyFilters({ ...applied, viewMode: next });
   };
 
-  const headCells: ITableHeadCell[] = [
-    { id: "eventId", label: "Event Id", numeric: false, width: "10%" },
-    { id: "pendingCount", label: "Pending", numeric: true, width: "6%" },
-    { id: "deferredCount", label: "Deferred", numeric: true, width: "7%" },
-    { id: "status", label: "Status", numeric: false, width: "8%" },
-    { id: "sessionId", label: "Session Id", numeric: false, width: "10%" },
-    { id: "eventTypeId", label: "Event Type", numeric: false, width: "15%" },
-    { id: "updated", label: "Updated", numeric: false, width: "12%" },
-    { id: "added", label: "Added", numeric: false, width: "12%" },
-  ];
+  // Commit the advanced filters from the popover (Updated/Added ranges +
+  // Payload), leaving the basic filters untouched. Changing these applied
+  // params triggers the fetch effect, so no extra refresh nonce is needed.
+  const handleApplyAdvanced = (next: AdvancedFilters): void => {
+    applyFilters({ ...applied, ...next });
+  };
+
+  const toggleColumn = (id: string): void => {
+    setHiddenCols((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      saveHiddenColumns(next);
+      return next;
+    });
+  };
+
+  const resetColumns = (): void => {
+    const cleared = new Set<string>();
+    saveHiddenColumns(cleared);
+    setHiddenCols(cleared);
+  };
+
+  // Visible columns after applying the operator's hidden-column choices; this
+  // drives the table header. DataTable resolves each body cell by headCell id,
+  // so the rows themselves need no filtering.
+  const headCells: ITableHeadCell[] = React.useMemo(
+    () => getVisibleColumns(hiddenCols),
+    [hiddenCols],
+  );
 
   const headActions: ITableHeadAction[] = [
     {
@@ -668,11 +783,26 @@ const EventsPanel = (props: EventsPanelProps) => {
     return { completed, failed, deferred, pending };
   }, [events]);
 
+  // Applied advanced filters, surfaced through the Advanced-filters popover
+  // (next to the column chooser) and the chip row below the view controls.
+  const advancedValue: AdvancedFilters = {
+    updatedFrom: applied.updatedFrom,
+    updatedTo: applied.updatedTo,
+    addedFrom: applied.addedFrom,
+    addedTo: applied.addedTo,
+    payload: applied.payload,
+  };
+
   const hasActiveFilters =
     !isAllStatusesSentinel(applied.status) ||
     applied.eventTypeId.length > 0 ||
     applied.eventId.length > 0 ||
-    applied.sessionId.length > 0;
+    applied.sessionId.length > 0 ||
+    applied.updatedFrom.length > 0 ||
+    applied.updatedTo.length > 0 ||
+    applied.addedFrom.length > 0 ||
+    applied.addedTo.length > 0 ||
+    applied.payload.length > 0;
 
   const segBtn = (active: boolean) =>
     cn(
@@ -751,7 +881,26 @@ const EventsPanel = (props: EventsPanelProps) => {
               Grouped by Error
             </button>
           </div>
+          <div className="ml-auto flex items-center gap-3">
+            {viewMode === "list" && (
+              <ColumnChooser
+                columns={EVENT_COLUMNS}
+                hidden={hiddenCols}
+                onToggle={toggleColumn}
+                onReset={resetColumns}
+              />
+            )}
+            <AdvancedFiltersPopover
+              value={advancedValue}
+              onApply={handleApplyAdvanced}
+              align="right"
+            />
+          </div>
         </div>
+        <AdvancedFilterChips
+          value={advancedValue}
+          onApply={handleApplyAdvanced}
+        />
 
         {viewMode === "grouped" ? (
           <ErrorGroupedView

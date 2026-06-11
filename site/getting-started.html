@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NimBus — Getting started</title>
+<meta name="description" content="From zero to a session-ordered event flow in eight steps: define an event, publish, handle, provision, run with Aspire, and operate it in the WebApp.">
+<style>
+  :root {
+    --bg: #181818;
+    --panel: #1E1E1E;
+    --panel-2: #262626;
+    --border: #333;
+    --text: #E2E8F0;
+    --muted: #94A3B8;
+    --dev: #2B9AFF;
+    --plat: #E5C07B;
+    --ok: #98C379;
+    --err: #E06C75;
+    --code-bg: #21252B;
+    --c-publisher: #0078D4;
+    --c-bus: #E5C07B;
+    --c-subscriber: #61AFEF;
+    --c-resolver: #C678DD;
+    --c-cosmos: #E5C07B;
+    --c-webapp: #98C379;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 24px 64px;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 36px 0 12px; color: var(--text); }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+  .sub a, .foot a { color: var(--dev); text-decoration: none; }
+  .sub a:hover, .foot a:hover { text-decoration: underline; }
+  code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 13px; color: #61AFEF; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+
+  /* ── architecture strip ─────────────────────────── */
+  .arch { display: flex; align-items: stretch; gap: 0; overflow-x: auto; padding: 8px 0; }
+  .comp {
+    flex: 1 1 0; min-width: 118px; text-align: center;
+    background: var(--panel-2); border: 2px solid var(--border); border-radius: 10px;
+    padding: 14px 8px; transition: border-color .3s, box-shadow .3s, transform .3s;
+  }
+  .comp .ico { font-size: 26px; display: block; margin-bottom: 6px; }
+  .comp .nm { font-weight: 600; font-size: 13.5px; }
+  .comp .dt { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+  .comp.c-publisher  { border-bottom: 3px solid color-mix(in srgb, var(--c-publisher) 55%, transparent); }
+  .comp.c-bus        { border-bottom: 3px solid color-mix(in srgb, var(--c-bus) 55%, transparent); }
+  .comp.c-subscriber { border-bottom: 3px solid color-mix(in srgb, var(--c-subscriber) 55%, transparent); }
+  .comp.c-resolver   { border-bottom: 3px solid color-mix(in srgb, var(--c-resolver) 55%, transparent); }
+  .comp.c-cosmos     { border-bottom: 3px solid color-mix(in srgb, var(--c-cosmos) 55%, transparent); }
+  .comp.c-webapp     { border-bottom: 3px solid color-mix(in srgb, var(--c-webapp) 55%, transparent); }
+  .comp.active { border-color: var(--ok); box-shadow: 0 0 18px rgba(152, 195, 121, .25); transform: translateY(-2px); }
+  .comp.active.d-act { border-color: var(--dev); box-shadow: 0 0 18px rgba(43, 154, 255, .3); }
+  .comp.active.p-act { border-color: var(--plat); box-shadow: 0 0 18px rgba(229, 192, 123, .3); }
+  .link {
+    flex: 0 0 54px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 10.5px; gap: 2px; text-align: center;
+  }
+  .link .ar { font-size: 18px; letter-spacing: -2px; color: #5C6370; }
+  .archnote { text-align: center; color: var(--muted); font-size: 13px; margin-top: 14px; }
+  .archnote b { color: var(--ok); }
+  .prereq { text-align: center; color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+
+  /* ── stepper ────────────────────────────────────── */
+  .grid { display: grid; grid-template-columns: 1fr 1.55fr; gap: 20px; align-items: start; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .controls { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .controls button {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 16px; font-size: 14px; cursor: pointer;
+  }
+  .controls button:hover { border-color: var(--dev); }
+  .controls .pos { margin-left: auto; color: var(--muted); font-size: 12.5px; }
+  .steps { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+  .steps li {
+    padding: 10px 12px; border-left: 3px solid var(--border); margin-bottom: 4px;
+    cursor: pointer; border-radius: 0 8px 8px 0; font-size: 13.5px; color: var(--muted);
+    transition: background .25s, border-color .25s;
+  }
+  .steps li::before { counter-increment: step; content: counter(step) " · "; color: #5C6370; font-weight: 700; }
+  .steps li:hover { background: var(--panel-2); }
+  .steps li.on { background: var(--panel-2); color: var(--text); }
+  .steps li.on.act-d { border-left-color: var(--dev); }
+  .steps li.on.act-p { border-left-color: var(--plat); }
+  .steps li.done { color: #64748B; }
+  .steps li.done::after { content: " \2713"; color: var(--ok); }
+
+  .who { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  .who.d { color: var(--dev); } .who.p { color: var(--plat); }
+  .stepbody h3 { margin: 4px 0 10px; font-size: 17px; }
+  .stepbody p { margin: 0 0 12px; font-size: 14px; }
+  .note { font-size: 12.5px; color: var(--muted); border-left: 3px solid var(--border); padding: 6px 10px; margin: 12px 0 0; }
+  .logline { font-family: Consolas, monospace; font-size: 12.5px; color: var(--ok); margin-top: 12px; }
+
+  .cfgwrap { position: relative; margin: 6px 0; }
+  .cfg {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; font-family: Consolas, Monaco, monospace; font-size: 13px;
+    color: #ABB2BF; overflow-x: auto; white-space: pre; margin: 0; line-height: 1.55;
+  }
+  .copy {
+    position: absolute; top: 8px; right: 8px;
+    background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
+    border-radius: 6px; padding: 3px 10px; font-size: 11.5px; cursor: pointer;
+  }
+  .copy:hover { color: var(--text); border-color: var(--dev); }
+
+  /* checklist */
+  .check { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+  .check li { padding: 7px 0; border-bottom: 1px solid var(--border); color: var(--muted); }
+  .check li:last-child { border-bottom: none; }
+  .check b { color: var(--text); font-weight: 600; }
+  .check .ok { color: var(--ok); margin-right: 8px; }
+
+  .foot { margin-top: 40px; text-align: center; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>NimBus <span style="color:#5C6370">·</span> <span style="font-weight:400">getting started</span></h1>
+  <p class="sub">From zero to a session-ordered event flow in eight steps: define an event, publish it, handle it, provision the topology,
+  run the whole platform with Aspire, then watch — and deliberately break — a message in the management WebApp.
+  To see messages move through the runtime, open the <a href="demo/">live demo</a>; the full written guide is
+  <a href="https://github.com/akakaule/NimBus/blob/master/docs/getting-started.md">docs/getting-started.md</a>.</p>
+
+  <h2>What you're building</h2>
+  <div class="panel">
+    <div class="arch">
+      <div class="comp c-publisher" id="g-pub"><span class="ico">&#128228;</span><span class="nm">Publisher</span><div class="dt">your HTTP API<br>/publish/order</div></div>
+      <div class="link"><span class="ar">&rarr;</span><span>topic</span></div>
+      <div class="comp c-bus" id="g-bus"><span class="ico">&#128652;</span><span class="nm">Service Bus</span><div class="dt">topics + sessions<br>FIFO per session ID</div></div>
+      <div class="link"><span class="ar">&rarr;</span><span>subscription</span></div>
+      <div class="comp c-subscriber" id="g-sub"><span class="ico">&#9881;&#65039;</span><span class="nm">Subscriber</span><div class="dt">OrderPlacedHandler<br>+ middleware pipeline</div></div>
+      <div class="link"><span class="ar">&rarr;</span><span>outcomes</span></div>
+      <div class="comp c-resolver" id="g-res"><span class="ico">&#129517;</span><span class="nm">Resolver</span><div class="dt">tracks every<br>message outcome</div></div>
+      <div class="link"><span class="ar">&rarr;</span><span>state</span></div>
+      <div class="comp c-cosmos" id="g-cos"><span class="ico">&#128451;&#65039;</span><span class="nm">Cosmos DB</span><div class="dt">audit trail +<br>message state</div></div>
+      <div class="link"><span class="ar">&#8644;</span><span>REST · SignalR</span></div>
+      <div class="comp c-webapp" id="g-web"><span class="ico">&#128421;&#65039;</span><span class="nm">WebApp</span><div class="dt">resubmit · skip<br>inspect · audit</div></div>
+    </div>
+    <div class="archnote"><code>[SessionKey]</code> makes ordering an entity-level guarantee: every message with the same session ID is processed <b>FIFO</b>.
+    When a handler fails, the session blocks and later messages defer — <b>Resubmit</b> in the WebApp replays them in original order.</div>
+    <div class="prereq">You'll need: .NET 10 SDK &nbsp;·&nbsp; an Azure Service Bus namespace &nbsp;·&nbsp; an Azure Cosmos DB account &nbsp;·&nbsp; Docker Desktop (for the Aspire dashboard)</div>
+  </div>
+
+  <h2>Eight steps, click through</h2>
+  <div class="grid">
+    <div class="panel">
+      <div class="controls">
+        <button id="prev">&lsaquo; Prev</button>
+        <button id="next">Next &rsaquo;</button>
+        <span class="pos" id="pos"></span>
+      </div>
+      <ol class="steps" id="steps"></ol>
+    </div>
+    <div class="panel">
+      <div class="stepbody" id="stepbody"></div>
+    </div>
+  </div>
+
+  <h2>You're running when…</h2>
+  <div class="panel">
+    <ul class="check">
+      <li><span class="ok">&#10003;</span>The <b>Aspire dashboard</b> shows <code>provisioner</code> finished and <code>resolver</code>, <code>webapp</code>, <code>publisher</code>, <code>subscriber</code> running.</li>
+      <li><span class="ok">&#10003;</span><code>curl -X POST …/publish/order</code> returns <code>{ "orderId": …, "status": "Published" }</code>.</li>
+      <li><span class="ok">&#10003;</span>The subscriber log shows <b>Order … received, amount 42.50 EUR</b> — your handler ran.</li>
+      <li><span class="ok">&#10003;</span>The WebApp <b>Endpoints</b> page lists StorefrontEndpoint and BillingEndpoint with live counts.</li>
+      <li><span class="ok">&#10003;</span>Event Details &rarr; <b>Flow</b> tab draws the full lifecycle timeline: Published &rarr; Received &rarr; Handled.</li>
+      <li><span class="ok">&#10003;</span><code>/publish/order-failed</code> turns an event <b>Failed</b>, defers the session's followers, and <b>Resubmit</b> replays them in order.</li>
+    </ul>
+  </div>
+
+  <p class="foot"><a href="./">&larr; NimBus overview</a> &nbsp;·&nbsp; <a href="demo/">live demo</a> &nbsp;·&nbsp; <a href="https://github.com/akakaule/NimBus">GitHub</a></p>
+</div>
+
+<script>
+const STEPS = [
+  { actor:"d", who:"You · code", title:"Define an event",
+    desc:"Events are plain C# classes extending <code>Event</code>. <code>[SessionKey]</code> declares the ordering key — every message with the same <code>OrderId</code> travels in one FIFO lane. <code>[Description]</code> and <code>[Required]</code> feed schema generation and the validation middleware.",
+    cfg:"[Description(\"Published when a customer places a new order.\")]\n[SessionKey(nameof(OrderId))]\npublic class OrderPlaced : Event\n{\n    [Required] public Guid OrderId { get; set; }\n    [Required] public Guid CustomerId { get; set; }\n    [Required] public string CurrencyCode { get; set; }\n\n    [Range(0.01, 1000000)]\n    public decimal TotalAmount { get; set; }\n}",
+    log:"session id = OrderId → one order, one FIFO lane",
+    comps:["g-pub","g-sub"],
+    note:"Prefer a method? Override GetSessionId() instead of [SessionKey] — same effect. The publisher can still override the session ID at publish time." },
+
+  { actor:"d", who:"You · code", title:"Create the publisher",
+    desc:"Any web app or worker becomes a publisher with one registration. The endpoint name — <b>StorefrontEndpoint</b> — is the Service Bus topic the events land on. <code>IPublisherClient</code> comes straight out of DI.",
+    cfg:"builder.AddAzureServiceBusClient(\"servicebus\");\nbuilder.Services.AddNimBusPublisher(\"StorefrontEndpoint\");\n\napp.MapPost(\"/publish/order\", async (IPublisherClient publisher) =>\n{\n    await publisher.Publish(new OrderPlaced\n    {\n        OrderId = Guid.NewGuid(),\n        CustomerId = Guid.NewGuid(),\n        CurrencyCode = \"EUR\",\n        TotalAmount = 42.50m,\n    });\n    return Results.Ok();\n});",
+    log:"Publish(order) → topic StorefrontEndpoint · session 7d3f…",
+    comps:["g-pub","g-bus"],
+    note:null },
+
+  { actor:"d", who:"You · code", title:"Create the subscriber",
+    desc:"A handler implements <code>IEventHandler&lt;T&gt;</code> — standard constructor DI, no base class. Register the middleware pipeline, scan the assembly for handlers, and point the receiver at the Service Bus subscription.",
+    cfg:"public class OrderPlacedHandler : IEventHandler<OrderPlaced>\n{\n    public Task Handle(OrderPlaced message,\n        IEventHandlerContext context, CancellationToken ct)\n    {\n        // business logic — NimBus handles retries,\n        // ordering and dead-lettering for you\n        return Task.CompletedTask;\n    }\n}\n\nbuilder.Services.AddNimBus(nimbus =>\n{\n    nimbus.AddPipelineBehavior<LoggingMiddleware>();\n    nimbus.AddPipelineBehavior<ValidationMiddleware>();\n});\nbuilder.Services.AddNimBusSubscriber(\"BillingEndpoint\",\n    sub => sub.AddHandlersFromAssemblyContaining<OrderPlacedHandler>());\nbuilder.Services.AddNimBusReceiver(opts =>\n{\n    opts.TopicName = \"BillingEndpoint\";\n    opts.SubscriptionName = \"BillingEndpoint\";\n});",
+    log:"1 handler registered: OrderPlaced → OrderPlacedHandler",
+    comps:["g-bus","g-sub"],
+    note:"Need retries? sub.ConfigureRetryPolicies(…) adds per-event-type backoff (exponential, capped)." },
+
+  { actor:"d", who:"You · terminal", title:"Provision the topology",
+    desc:"Topics, subscriptions and routing rules are declared in code and applied declaratively with the <code>nb</code> CLI — no portal clicking, repeatable per environment.",
+    cfg:"nb topology apply --solution-id nimbus --environment dev --resource-group rg-nimbus-dev\n\n# or just export the config to inspect it\nnb topology export -o platform-config.json",
+    log:"topics: StorefrontEndpoint, BillingEndpoint · subscriptions + rules applied",
+    comps:["g-bus"],
+    note:"Running with Aspire? You can skip this step — the provisioner runs automatically inside the AppHost." },
+
+  { actor:"d", who:"You · terminal", title:"Run everything with Aspire",
+    desc:"Set the two connection strings once as user secrets, then start the AppHost. It launches the provisioner (runs once), the Resolver, the management WebApp and the sample publisher/subscriber — plus the Aspire dashboard for logs, traces and metrics.",
+    cfg:"cd src/NimBus.AppHost\ndotnet user-secrets set \"ConnectionStrings:servicebus\" \"Endpoint=sb://<ns>.servicebus.windows.net/;…\"\ndotnet user-secrets set \"ConnectionStrings:cosmos\" \"AccountEndpoint=https://<acct>.documents.azure.com:443/;…\"\ndotnet run",
+    log:"Aspire dashboard → https://localhost:17xxx · provisioner ✓ resolver ✓ webapp ✓",
+    comps:["g-pub","g-bus","g-sub","g-res","g-cos","g-web"],
+    note:null },
+
+  { actor:"d", who:"You · terminal", title:"Publish a test message",
+    desc:"Find the publisher URL on the Aspire dashboard and POST to it. The event hits the <b>StorefrontEndpoint</b> topic, the subscription forwards it, your handler runs, and the Resolver records every hop in Cosmos DB.",
+    cfg:"curl -X POST https://localhost:<publisher-port>/publish/order",
+    log:"{ \"orderId\": \"c9e1…\", \"status\": \"Published\" } · subscriber: Order c9e1… received, 42.50 EUR",
+    comps:["g-pub","g-bus","g-sub","g-res","g-cos"],
+    note:null },
+
+  { actor:"d", who:"You · browser", title:"Watch it in the WebApp",
+    desc:"Open the WebApp from the dashboard. <b>Endpoints</b> shows live counts per endpoint; click through to your event and the <b>Flow</b> tab draws the complete lifecycle timeline — with identifiers, payload, audit log and action buttons.",
+    cfg:"Endpoints ▸ BillingEndpoint ▸ OrderPlaced c9e1…\n  Message   identifiers · payload · Resubmit / Skip / Delete\n  Flow      Published → Received → Handled ✓\n  Blocked   events waiting on this session",
+    log:"BillingEndpoint: 1 completed · 0 failed · 0 deferred",
+    comps:["g-cos","g-web"],
+    note:null },
+
+  { actor:"p", who:"NimBus · platform", title:"Break it — and recover",
+    desc:"Publish the failing variant. The handler throws; the Resolver marks the event <b>Failed</b> and <b>blocks the session</b> — every later message for the same OrderId is deferred, untouched, in order. Hit <b>Resubmit</b> in the WebApp: the original replays, the session unblocks, and the deferred messages replay in their original FIFO order.",
+    cfg:"curl -X POST https://localhost:<publisher-port>/publish/order-failed\n\nWebApp ▸ Event Details\n  status    Failed — InvalidOperationException (full stack trace)\n  session   c9e1… BLOCKED · 2 events deferred\n\n  [ Resubmit ]   [ Skip ]   [ Delete ]",
+    log:"Failed → session blocked → Resubmit → replayed in order ✓",
+    comps:["g-sub","g-res","g-cos","g-web"],
+    note:"Other sessions never notice — they keep processing in parallel. That recovery loop is the platform's core design (ADR-001: session-based ordering)." },
+];
+
+const ALL_COMPS = ["g-pub","g-bus","g-sub","g-res","g-cos","g-web"];
+const $ = (id) => document.getElementById(id);
+let cur = 0;
+
+const list = $("steps");
+STEPS.forEach((s, i) => {
+  const li = document.createElement("li");
+  li.innerHTML = s.title;
+  li.onclick = () => go(i);
+  list.appendChild(li);
+});
+
+function esc(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+
+function render() {
+  const s = STEPS[cur];
+  list.querySelectorAll("li").forEach((li, i) => {
+    li.className = i === cur ? `on act-${s.actor}` : (i < cur ? "done" : "");
+  });
+  $("pos").textContent = `step ${cur + 1} of ${STEPS.length}`;
+
+  $("stepbody").innerHTML =
+    `<span class="who ${s.actor}">${s.who}</span>` +
+    `<h3>${s.title}</h3>` +
+    `<p>${s.desc}</p>` +
+    `<div class="cfgwrap"><button class="copy" onclick="copyCfg(this)">copy</button><pre class="cfg">${esc(s.cfg)}</pre></div>` +
+    (s.note ? `<div class="note">${s.note}</div>` : "") +
+    `<div class="logline">&rsaquo; ${esc(s.log)}</div>`;
+
+  ALL_COMPS.forEach((id) => {
+    const el = $(id);
+    el.classList.toggle("active", s.comps.includes(id));
+    el.classList.toggle("d-act", s.comps.includes(id) && s.actor === "d");
+    el.classList.toggle("p-act", s.comps.includes(id) && s.actor === "p");
+  });
+}
+
+function copyCfg(btn) {
+  navigator.clipboard.writeText(btn.nextElementSibling.textContent).then(() => {
+    btn.textContent = "copied ✓";
+    setTimeout(() => { btn.textContent = "copy"; }, 1200);
+  });
+}
+
+function go(i) { cur = Math.max(0, Math.min(STEPS.length - 1, i)); render(); }
+$("prev").onclick = () => go(cur - 1);
+$("next").onclick = () => go(cur + 1);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowRight") go(cur + 1);
+  if (e.key === "ArrowLeft") go(cur - 1);
+});
+
+render();
+</script>
+</body>
+</html>

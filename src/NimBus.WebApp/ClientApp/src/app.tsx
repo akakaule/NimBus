@@ -22,6 +22,7 @@ const MessagesList = lazy(() => import("pages/messages-list"));
 const Admin = lazy(() => import("pages/admin"));
 const Metrics = lazy(() => import("pages/metrics"));
 const Topology = lazy(() => import("pages/topology"));
+const Flow = lazy(() => import("pages/flow"));
 const Insights = lazy(() => import("pages/insights"));
 const Monitor = lazy(() => import("pages/monitor"));
 const AuditsList = lazy(() => import("pages/audits-list"));
@@ -80,6 +81,12 @@ const navigation: Navigation = [
     path: "/Topology",
     header: true,
     render: () => <Topology />,
+  },
+  {
+    name: "Flow",
+    path: "/Flow",
+    header: true,
+    render: () => <Flow />,
   },
   {
     name: "Monitor",

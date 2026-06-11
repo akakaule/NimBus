@@ -16,12 +16,14 @@ internal static class Program
 
         var sbConnectionString = new CommandOption("-sbc|--sb-connection-string", CommandOptionType.SingleValue)
         {
-            Description = $"Overrides environment variable '{CommandRunner.SbConnectionStringEnvName}'"
+            Description = "Service Bus connection string, or a fully qualified namespace (e.g. mybus.servicebus.windows.net) to authenticate with Entra ID (DefaultAzureCredential). " +
+                $"Overrides environment variable '{CommandRunner.SbConnectionStringEnvName}'"
         };
 
         var dbConnectionString = new CommandOption("-dbc|--db-connection-string", CommandOptionType.SingleValue)
         {
-            Description = $"Overrides environment variable '{CommandRunner.DbConnectionStringEnvName}'"
+            Description = "Cosmos DB connection string, or an account endpoint URI (e.g. https://myaccount.documents.azure.com/) to authenticate with Entra ID (DefaultAzureCredential). " +
+                $"Overrides environment variable '{CommandRunner.DbConnectionStringEnvName}'"
         };
 
         app.HelpOption(inherited: true);
@@ -498,7 +500,7 @@ internal static class Program
                             return 1;
                         }
 
-                        using var cosmosClient = new Microsoft.Azure.Cosmos.CosmosClient(connStr);
+                        using var cosmosClient = CommandRunner.CreateCosmosClient(connStr);
                         await Container.DeleteMessages(cosmosClient, toArg.Value!);
                         return 0;
                     });

@@ -20,8 +20,8 @@ dotnet run --project src/NimBus.CommandLine -- <command>
 
 | Option | Description |
 |---|---|
-| `-sbc`, `--sb-connection-string` | Azure Service Bus connection string (overrides `AzureServiceBus_ConnectionString` env var) |
-| `-dbc`, `--db-connection-string` | Cosmos DB connection string (overrides `CosmosDb_ConnectionString` env var) |
+| `-sbc`, `--sb-connection-string` | Azure Service Bus connection string, or a fully qualified namespace for Entra ID auth (overrides `AzureServiceBus_ConnectionString` env var) |
+| `-dbc`, `--db-connection-string` | Cosmos DB connection string, or an account endpoint URI for Entra ID auth (overrides `CosmosDb_ConnectionString` env var) |
 | `-h`, `--help` | Show help for any command |
 
 Connection strings can be set via environment variables instead of passing them on every call:
@@ -30,6 +30,21 @@ Connection strings can be set via environment variables instead of passing them 
 export AzureServiceBus_ConnectionString="Endpoint=sb://..."
 export CosmosDb_ConnectionString="AccountEndpoint=https://..."
 ```
+
+### Entra ID / managed identity
+
+Instead of a connection string, pass a fully qualified Service Bus namespace or a Cosmos DB
+account endpoint. The CLI then authenticates with `DefaultAzureCredential` (`az login`,
+managed identity, environment credentials, etc.) — the same heuristic the WebApp and
+Resolver use, so no keys need to be distributed:
+
+```bash
+export AzureServiceBus_ConnectionString="mybus.servicebus.windows.net"
+export CosmosDb_ConnectionString="https://myaccount.documents.azure.com/"
+```
+
+The signed-in identity needs `Azure Service Bus Data Owner` on the namespace and a Cosmos
+DB data-plane role (e.g. `Cosmos DB Built-in Data Contributor`) on the account.
 
 ---
 

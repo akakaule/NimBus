@@ -191,6 +191,14 @@ namespace NimBus.WebApp
                 }).AddMicrosoftIdentityUI();
             }
 
+            // The NSwag-generated controllers cannot carry per-action attributes,
+            // so the stats endpoint's anonymous exemption is applied via an
+            // application-model convention instead of a class-level
+            // [AllowAnonymous] (which would silently exempt every action on the
+            // controller, e.g. /api/me).
+            services.Configure<Microsoft.AspNetCore.Mvc.MvcOptions>(options =>
+                options.Conventions.Add(new AllowAnonymousActionsConvention()));
+
             // Entra/OIDC parity with the Identity cookie's clean-401 behaviour
             // (spec 010 FR-011/FR-012). When an anonymous, non-bearer request to
             // the SignalR hub or /api/* is challenged, the policy scheme forwards

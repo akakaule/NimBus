@@ -15,7 +15,9 @@ using NimBus.Core;
 using NimBus.WebApp.Services;
 
 // Webhook endpoints are anonymous because Azure Event Grid cannot authenticate via cookies/tokens.
-// Security is enforced via a shared webhook key validated on every request.
+// Security is enforced via a shared webhook key validated on every request — sent in the
+// X-Webhook-Key header (preferred; configure as an Event Grid custom delivery header) or the
+// legacy ?key= query parameter.
 namespace NimBus.WebApp.ManagementApi
 {
     [AllowAnonymous]
@@ -26,6 +28,14 @@ namespace NimBus.WebApp.Controllers
 {
     public class StorageHookImplementation : IStorageHookApiController
     {
+        /// <summary>
+        /// Header carrying the webhook key. Preferred over the legacy ?key=
+        /// query parameter because query strings end up in proxy and gateway
+        /// access logs; Event Grid subscriptions can send it via custom
+        /// delivery headers.
+        /// </summary>
+        public const string WebhookKeyHeaderName = "X-Webhook-Key";
+
         private readonly IHubContext<GridEventsHub> _hubContext;
         private readonly ILogger<StorageHookImplementation> _logger;
         private readonly INimBusMessageStore _cosmosClient;
@@ -79,10 +89,13 @@ namespace NimBus.WebApp.Controllers
         }
 
         /// <summary>
-        /// Validates the webhook key from the request query string against the configured key.
-        /// In Development, missing config falls back to a warning + allow so a local
-        /// dashboard can run without Event Grid wiring; in any other environment a
-        /// missing key fails closed to avoid leaving an anonymous endpoint open.
+        /// Validates the webhook key from the X-Webhook-Key header (preferred) or,
+        /// for existing Event Grid subscriptions, the legacy ?key= query parameter.
+        /// Keys are compared in fixed time so the comparison does not leak key
+        /// bytes through response timing. In Development, missing config falls
+        /// back to a warning + allow so a local dashboard can run without Event
+        /// Grid wiring; in any other environment a missing key fails closed to
+        /// avoid leaving an anonymous endpoint open.
         /// </summary>
         private bool ValidateWebhookKey()
         {
@@ -98,8 +111,14 @@ namespace NimBus.WebApp.Controllers
                 return false;
             }
 
-            var requestKey = _httpContextAccessor.HttpContext?.Request.Query["key"].ToString();
-            if (string.IsNullOrEmpty(requestKey) || !string.Equals(requestKey, _webhookKey, StringComparison.Ordinal))
+            var request = _httpContextAccessor.HttpContext?.Request;
+            var requestKey = request?.Headers[WebhookKeyHeaderName].ToString();
+            if (string.IsNullOrEmpty(requestKey))
+            {
+                requestKey = request?.Query["key"].ToString();
+            }
+
+            if (string.IsNullOrEmpty(requestKey) || !FixedTimeEquals(requestKey, _webhookKey))
             {
                 _logger.LogWarning("Webhook request rejected: invalid or missing webhook key");
                 return false;
@@ -107,5 +126,10 @@ namespace NimBus.WebApp.Controllers
 
             return true;
         }
+
+        private static bool FixedTimeEquals(string left, string right)
+            => System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                System.Text.Encoding.UTF8.GetBytes(left),
+                System.Text.Encoding.UTF8.GetBytes(right));
     }
 }

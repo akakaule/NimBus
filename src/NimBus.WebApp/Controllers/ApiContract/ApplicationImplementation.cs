@@ -1,7 +1,6 @@
 ﻿using NimBus.MessageStore.Abstractions;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using System;
@@ -13,15 +12,11 @@ using System.Threading.Tasks;
 
 namespace NimBus.WebApp.Controllers.ApiContract
 {
-    // Application status endpoint is intentionally anonymous to support health checks
-    // and status monitoring without authentication.
-    // The endpoint only returns non-sensitive information (environment name and version).
-    namespace NimBus.WebApp.ManagementApi
-    {
-        [AllowAnonymous]
-        public partial class ApplicationApiController : Controller { }
-    }
-
+    // The stats endpoint is intentionally anonymous (health checks / status
+    // monitoring); that exemption is applied per-action by
+    // AllowAnonymousActionsConvention rather than class-level [AllowAnonymous],
+    // so the other actions on ApplicationApiController (e.g. /api/me) stay
+    // behind the global authorization filter.
     public class ApplicationImplementation : IApplicationApiController
     {
         private readonly IConfiguration _config;

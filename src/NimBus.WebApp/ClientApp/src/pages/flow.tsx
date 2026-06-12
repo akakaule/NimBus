@@ -20,7 +20,7 @@ import type {
   FlowNode,
   StatusSnapshot,
 } from "components/flow/types";
-import type { TopologyData, TopologyNode } from "components/topology/types";
+import type { TopologyNode } from "components/topology/types";
 import { FLOW_KIND_VERB, useFlowData } from "hooks/use-flow-data";
 
 // Live Flow page (spec 020, Phase 1). React owns the static scene — nodes,
@@ -156,24 +156,18 @@ export default function Flow() {
     [effectiveSelection],
   );
 
-  // Event-type filtering happens BEFORE layout: drop non-matching flowEdges
-  // from a shallow copy so the layout engine simply never sees those routes.
-  const filteredData = useMemo<TopologyData | undefined>(() => {
-    if (topology === undefined || eventType === "") return topology;
-    return {
-      ...topology,
-      flowEdges: topology.flowEdges.filter((e) =>
-        e.eventTypeIds.includes(eventType),
-      ),
-    };
-  }, [topology, eventType]);
-
+  // The engine owns event-type filtering: it narrows producers/topics/consumers
+  // and their routes to the selected type's flow (role-aware, so no orphaned
+  // nodes). Empty string = the full catalog.
   const layout = useMemo<FlowLayout | undefined>(() => {
-    if (filteredData === undefined || filteredData.nodes.length === 0) {
+    if (topology === undefined || topology.nodes.length === 0) {
       return undefined;
     }
-    return buildFlowLayout(filteredData, { visibleEndpointIds: visibleSet });
-  }, [filteredData, visibleSet]);
+    return buildFlowLayout(topology, {
+      visibleEndpointIds: visibleSet,
+      eventType: eventType || undefined,
+    });
+  }, [topology, visibleSet, eventType]);
   layoutRef.current = layout;
 
   const eventTypeOptions = useMemo(() => {

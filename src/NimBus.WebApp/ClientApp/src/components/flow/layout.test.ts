@@ -311,6 +311,39 @@ describe("buildFlowLayout", () => {
     expect(buildFlowLayout(topo([])).serviceBus).toBeUndefined();
   });
 
+  it("narrows the whole diagram to one event type's flow", () => {
+    // CustomerRegistered rides only crm -> audit. erp (publisher of the other
+    // types) and crm-as-consumer drop out entirely.
+    const layout = buildFlowLayout(canonical(), {
+      eventType: "CustomerRegistered",
+    });
+    expect(layout.nodes.map((n) => n.id).sort()).toEqual([
+      "consumer::audit",
+      "platform::resolver",
+      "producer::crm",
+      "topic::crm",
+    ]);
+    const routeIds = layout.routes.map((r) => r.id);
+    expect(routeIds).toContain("publish::producer::crm::topic::crm");
+    expect(routeIds).toContain("deliver::topic::crm::consumer::audit");
+    expect(routeIds).toContain("outcome::consumer::audit::platform::resolver");
+    expect(routeIds).not.toContain("deliver::topic::erp::consumer::audit");
+    expect(Object.keys(layout.byEndpoint)).toEqual(["audit"]);
+  });
+
+  it("keeps the full catalog when the event type filter is empty", () => {
+    expect(buildFlowLayout(canonical(), { eventType: "" })).toEqual(
+      buildFlowLayout(canonical()),
+    );
+  });
+
+  it("renders only the Resolver for an event type nobody carries", () => {
+    const layout = buildFlowLayout(canonical(), { eventType: "Nope" });
+    expect(layout.nodes.map((n) => n.id)).toEqual(["platform::resolver"]);
+    expect(layout.serviceBus).toBeUndefined();
+    expect(layout.byEndpoint).toEqual({});
+  });
+
   it("describes endpoint roles in subtitles and titles topics by endpoint id", () => {
     const layout = buildFlowLayout(canonical());
     const byId = new Map(layout.nodes.map((n) => [n.id, n]));

@@ -18,6 +18,12 @@ import type {
 export interface LayoutOptions {
   /** Endpoints to render; undefined = all. Both producer and consumer roles of a visible endpoint render. */
   visibleEndpointIds?: ReadonlySet<string>;
+  /**
+   * When set to a non-empty event type, narrows the WHOLE diagram to that
+   * event type's flow: only its publishers, their topics, its handlers, and the
+   * routes carrying it. Empty/undefined renders the full catalog.
+   */
+  eventType?: string;
 }
 
 // Fixed column geometry. The canvas is an SVG viewBox, so these absolute
@@ -57,18 +63,37 @@ export function buildFlowLayout(
   const isVisible = (id: string): boolean =>
     visible === undefined || visible.has(id);
 
+  // Event-type filter: restrict everything to one event type's flow. The
+  // carrying edges drive which endpoints participate — publishers are the
+  // edges' `from`, handlers their `to` — so non-participating nodes drop out
+  // entirely instead of lingering as orphaned boxes.
+  const eventType =
+    opts?.eventType !== undefined && opts.eventType !== ""
+      ? opts.eventType
+      : undefined;
+  const edges =
+    eventType === undefined
+      ? data.flowEdges
+      : data.flowEdges.filter((e) => e.eventTypeIds.includes(eventType));
+  const publishesType = new Set(edges.map((e) => e.from));
+  const handlesType = new Set(edges.map((e) => e.to));
+  const publishesInType = (id: string): boolean =>
+    eventType === undefined || publishesType.has(id);
+  const handlesInType = (id: string): boolean =>
+    eventType === undefined || handlesType.has(id);
+
   // An endpoint with both roles appears in BOTH columns (the convention
   // proven by topology-flow.tsx), so the two populations are derived
   // independently rather than partitioning the catalog. Sort by the
   // role-relevant traffic so the busiest endpoints surface at the top where
   // the operator's eye lands first; ties fall back to name for stability.
   const producers = data.nodes
-    .filter((n) => n.publishCount > 0 && isVisible(n.id))
+    .filter((n) => n.publishCount > 0 && isVisible(n.id) && publishesInType(n.id))
     .sort(
       (a, b) => b.publishedMessages - a.publishedMessages || compareByName(a, b),
     );
   const consumers = data.nodes
-    .filter((n) => n.subscribeCount > 0 && isVisible(n.id))
+    .filter((n) => n.subscribeCount > 0 && isVisible(n.id) && handlesInType(n.id))
     .sort(
       (a, b) => b.handledMessages - a.handledMessages || compareByName(a, b),
     );
@@ -137,7 +162,7 @@ export function buildFlowLayout(
   // concrete event-type ids to a producing endpoint; types nobody subscribes
   // to simply don't decorate the route.
   const eventTypesByProducer = new Map<string, Set<string>>();
-  for (const edge of data.flowEdges) {
+  for (const edge of edges) {
     let set = eventTypesByProducer.get(edge.from);
     if (!set) {
       set = new Set<string>();
@@ -163,7 +188,7 @@ export function buildFlowLayout(
   const producerIds = new Set(producers.map((n) => n.id));
   const consumerIds = new Set(consumers.map((n) => n.id));
   const deliverRoutes: FlowRoute[] = [];
-  for (const edge of data.flowEdges) {
+  for (const edge of edges) {
     if (!producerIds.has(edge.from) || !consumerIds.has(edge.to)) continue;
     deliverRoutes.push(
       makeRoute(

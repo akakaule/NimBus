@@ -117,6 +117,11 @@ export interface FlowLayout {
   width: number;
   height: number;
   byEndpoint: Record<string, EndpointRouteIndex>;
+  /**
+   * "Azure Service Bus" container framing the topic column — the chips are the
+   * real per-endpoint SB topics. Absent when there are no topics to frame.
+   */
+  serviceBus?: { x: number; y: number; w: number; h: number };
 }
 
 // ---------------------------------------------------------------------------

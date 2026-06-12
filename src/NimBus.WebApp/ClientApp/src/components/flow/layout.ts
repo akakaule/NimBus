@@ -35,6 +35,11 @@ const GAP = 16;
 const CANVAS_W = 1240;
 const MIN_CANVAS_H = 600;
 
+// "Azure Service Bus" container around the topic column: a header band above
+// the chips for the title/subtitle, and padding around the chip stack.
+const SB_HEADER_H = 40;
+const SB_PAD = 12;
+
 // Well-known node id for the Resolver — the single platform fixture, rendered
 // to the right of the consuming endpoints where every outcome converges.
 const RESOLVER_PLATFORM = "platform::resolver";
@@ -96,12 +101,26 @@ export function buildFlowLayout(
   const platformNodes: FlowNode[] = [platformNode(RESOLVER_PLATFORM, "Resolver")];
 
   stackColumn(producerNodes);
-  stackColumn(topicNodes);
+  // Topic chips start below the Service Bus header band that frames them.
+  stackColumn(topicNodes, TOP_MARGIN + SB_HEADER_H);
   stackColumn(consumerNodes);
   stackColumn(platformNodes);
   // Sit the lone Resolver fixture beside the consumer column it collects
   // outcomes from, rather than pinned to the top margin.
   centerColumn(platformNodes, columnCenter(consumerNodes));
+
+  // The Service Bus container wraps the topic chips with padding plus the
+  // header band; only present when there are topics to frame.
+  let serviceBus: FlowLayout["serviceBus"];
+  if (topicNodes.length > 0) {
+    const last = topicNodes[topicNodes.length - 1];
+    serviceBus = {
+      x: COL_X.topic - SB_PAD,
+      y: TOP_MARGIN,
+      w: COL_W.topic + SB_PAD * 2,
+      h: last.y + last.h + SB_PAD - TOP_MARGIN,
+    };
+  }
 
   const nodes: FlowNode[] = [
     ...producerNodes,
@@ -190,9 +209,10 @@ export function buildFlowLayout(
   // a squashed band when the SVG scales to its container.
   let maxBottom = 0;
   for (const n of nodes) maxBottom = Math.max(maxBottom, n.y + n.h);
+  if (serviceBus) maxBottom = Math.max(maxBottom, serviceBus.y + serviceBus.h);
   const height = Math.max(MIN_CANVAS_H, maxBottom + TOP_MARGIN);
 
-  return { nodes, routes, width: CANVAS_W, height, byEndpoint };
+  return { nodes, routes, width: CANVAS_W, height, byEndpoint, serviceBus };
 }
 
 /**
@@ -256,8 +276,8 @@ function platformNode(id: string, title: string): FlowNode {
  * safe because every node was created inside buildFlowLayout, never
  * caller-owned.
  */
-function stackColumn(column: FlowNode[]): void {
-  let y = TOP_MARGIN;
+function stackColumn(column: FlowNode[], startY: number = TOP_MARGIN): void {
+  let y = startY;
   for (const node of column) {
     node.y = y;
     y += node.h + GAP;

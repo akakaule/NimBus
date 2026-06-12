@@ -144,9 +144,10 @@ describe("buildFlowLayout", () => {
     // Consumers: crm (500 handled) above audit (200).
     expect(byId.get("consumer::crm")!.y).toBe(20);
     expect(byId.get("consumer::audit")!.y).toBe(100);
-    // Topics mirror producer order — no platform chips anymore.
-    expect(byId.get("topic::erp")!.y).toBe(20);
-    expect(byId.get("topic::crm")!.y).toBe(76); // 20 + 40 + 16
+    // Topics mirror producer order, shifted down by the Service Bus header
+    // band (20 margin + 40 header). No platform chips anymore.
+    expect(byId.get("topic::erp")!.y).toBe(60);
+    expect(byId.get("topic::crm")!.y).toBe(116); // 60 + 40 + 16
     // Platform column: the lone Resolver, centered against the consumer
     // column (center 92, half-height 36 → y 56).
     expect(byId.get("platform::resolver")!.y).toBe(56);
@@ -200,8 +201,9 @@ describe("buildFlowLayout", () => {
     );
     const publish = layout.routes.find((r) => r.kind === "publish");
     // producer::erp anchor (20+220, 20+32) = (240, 52); topic::erp anchor
-    // (330, 20+20) = (330, 40); dx = clamp((330−240)/2, 40, 120) = 45.
-    expect(publish!.d).toBe("M 240 52 C 285 52, 285 40, 330 40");
+    // (330, 60+20) = (330, 80) — topics sit below the SB header band;
+    // dx = clamp((330−240)/2, 40, 120) = 45.
+    expect(publish!.d).toBe("M 240 52 C 285 52, 285 80, 330 80");
   });
 
   it("produces only finite, non-negative geometry and NaN-free paths", () => {
@@ -288,6 +290,25 @@ describe("buildFlowLayout", () => {
       h: 72,
       health: "good",
     });
+  });
+
+  it("frames the topic column in a Service Bus container with header room", () => {
+    const layout = buildFlowLayout(canonical());
+    expect(layout.serviceBus).toBeDefined();
+    const sb = layout.serviceBus!;
+    const topics = layout.nodes.filter((n) => n.kind === "topic");
+    // Box brackets the topic column horizontally (padding on both sides)...
+    expect(sb.x).toBeLessThan(Math.min(...topics.map((t) => t.x)));
+    expect(sb.x + sb.w).toBeGreaterThan(
+      Math.max(...topics.map((t) => t.x + t.w)),
+    );
+    // ...and leaves a header band above the first chip for the title.
+    expect(sb.y).toBe(20);
+    expect(Math.min(...topics.map((t) => t.y))).toBeGreaterThan(sb.y);
+  });
+
+  it("omits the Service Bus box when there are no topics", () => {
+    expect(buildFlowLayout(topo([])).serviceBus).toBeUndefined();
   });
 
   it("describes endpoint roles in subtitles and titles topics by endpoint id", () => {

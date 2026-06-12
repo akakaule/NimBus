@@ -329,6 +329,67 @@ export default function Flow() {
                   role="img"
                   aria-label="Live message flow diagram"
                 >
+                  {/* Glow filters give dots and active edges the demo's vivid,
+                      "alive" look. Per-element filter regions stay small, so
+                      the GPU cost holds even at the in-flight dot cap. */}
+                  <defs>
+                    <filter
+                      id="flowDotGlow"
+                      x="-75%"
+                      y="-75%"
+                      width="250%"
+                      height="250%"
+                    >
+                      <feGaussianBlur stdDeviation="2.2" result="b" />
+                      <feMerge>
+                        <feMergeNode in="b" />
+                        <feMergeNode in="b" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                    <filter
+                      id="flowRouteGlow"
+                      x="-20%"
+                      y="-20%"
+                      width="140%"
+                      height="140%"
+                    >
+                      <feGaussianBlur stdDeviation="2" result="b" />
+                      <feMerge>
+                        <feMergeNode in="b" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+                  {/* "Azure Service Bus" container behind everything — frames
+                      the topic chips, which ARE the real per-endpoint SB
+                      topics. Routes and chips draw on top. */}
+                  {layout.serviceBus !== undefined && (
+                    <g aria-hidden="true">
+                      <rect
+                        x={layout.serviceBus.x}
+                        y={layout.serviceBus.y}
+                        width={layout.serviceBus.w}
+                        height={layout.serviceBus.h}
+                        rx={12}
+                        className="flow-sb-box"
+                      />
+                      <text
+                        x={layout.serviceBus.x + 14}
+                        y={layout.serviceBus.y + 23}
+                        className="flow-sb-title"
+                      >
+                        Azure Service Bus
+                      </text>
+                      <text
+                        x={layout.serviceBus.x + 14}
+                        y={layout.serviceBus.y + 36}
+                        className="flow-sb-subtitle"
+                      >
+                        one topic per endpoint
+                      </text>
+                    </g>
+                  )}
                   {layout.routes.map((route) => (
                     <path
                       key={route.id}
@@ -517,11 +578,37 @@ const FlowStyles = () => (
       fill: none;
       stroke: rgb(100 116 139 / 0.9);
       stroke-width: 1.5;
-      opacity: 0.22;
-      transition: opacity 0.25s ease;
+      opacity: 0.32;
+      transition: opacity 0.25s ease, stroke 0.2s ease, stroke-width 0.2s ease;
     }
     .flow-route[data-kind="outcome"] { stroke-dasharray: 4 5; }
-    .flow-route-on { opacity: 0.95; }
+    /* Active edges light up teal and glow — reads on both themes, like the
+       demo's bright cyan flow lines. */
+    .flow-route-on {
+      opacity: 1;
+      stroke: #2dd4bf;
+      stroke-width: 2.5;
+      filter: url(#flowRouteGlow);
+    }
+
+    /* Traveling dots glow in their own color (the filter blurs the colored
+       source), so a single dot reads as vividly as the demo's. */
+    .flow-dot { filter: url(#flowDotGlow); }
+
+    /* "Azure Service Bus" container around the topic chips. */
+    .flow-sb-box {
+      fill: rgb(100 116 139 / 0.05);
+      stroke: rgb(100 116 139 / 0.45);
+      stroke-width: 1.25;
+    }
+    .flow-sb-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      fill: currentColor;
+      opacity: 0.75;
+    }
+    .flow-sb-subtitle { font-size: 9px; fill: currentColor; opacity: 0.45; }
 
     .flow-node { stroke-width: 1.25; }
     .flow-node-producer { fill: rgb(14 165 233 / 0.10); stroke: #0ea5e9; }

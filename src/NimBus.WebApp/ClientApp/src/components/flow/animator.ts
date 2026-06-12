@@ -37,11 +37,16 @@ const MAX_FRAME_DT = 64;
 const MIN_SPEED = 0.25;
 const MAX_SPEED = 4;
 
-/** Travel time: never under 420 ms, otherwise 2.2 ms per path unit (demo's tuning). */
-const MIN_TRAVEL_MS = 420;
-const TRAVEL_MS_PER_UNIT = 2.2;
+/**
+ * Travel time: never under 650 ms, otherwise 2.8 ms per path unit. Slower than
+ * the demo's tuning (420 ms / 2.2) on purpose — real traffic is far sparser
+ * than the demo's simulated firehose, so each dot lingers longer to keep the
+ * canvas feeling alive between events.
+ */
+const MIN_TRAVEL_MS = 650;
+const TRAVEL_MS_PER_UNIT = 2.8;
 
-const DEFAULT_DOT_RADIUS = 5;
+const DEFAULT_DOT_RADIUS = 6;
 
 /** smoothstep — gentle ease-in-out so dots launch and land softly. */
 function ease(t: number): number {

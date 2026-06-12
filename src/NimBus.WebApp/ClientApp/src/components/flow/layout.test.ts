@@ -144,14 +144,12 @@ describe("buildFlowLayout", () => {
     // Consumers: crm (500 handled) above audit (200).
     expect(byId.get("consumer::crm")!.y).toBe(20);
     expect(byId.get("consumer::audit")!.y).toBe(100);
-    // Topics mirror producer order, then the two platform chips at the bottom.
+    // Topics mirror producer order — no platform chips anymore.
     expect(byId.get("topic::erp")!.y).toBe(20);
     expect(byId.get("topic::crm")!.y).toBe(76); // 20 + 40 + 16
-    expect(byId.get("topic::__resolver")!.y).toBe(132);
-    expect(byId.get("topic::__manager")!.y).toBe(188);
-    // Platform column: Resolver Worker above Message Store.
-    expect(byId.get("platform::resolver")!.y).toBe(20);
-    expect(byId.get("platform::store")!.y).toBe(108); // 20 + 72 + 16
+    // Platform column: the lone Resolver, centered against the consumer
+    // column (center 92, half-height 36 → y 56).
+    expect(byId.get("platform::resolver")!.y).toBe(56);
     // Canvas: fixed width; height clamps to the 600 minimum for small graphs.
     expect(layout.width).toBe(1240);
     expect(layout.height).toBe(600);
@@ -179,9 +177,9 @@ describe("buildFlowLayout", () => {
     const routeIds = layout.routes.map((r) => r.id);
     expect(routeIds).toContain("publish::producer::erp::topic::erp");
     expect(routeIds).toContain("deliver::topic::erp::consumer::audit");
-    expect(routeIds).toContain("outcome::consumer::audit::topic::__resolver");
-    expect(routeIds).toContain("outcome::topic::__resolver::platform::resolver");
-    expect(routeIds).toContain("outcome::platform::resolver::platform::store");
+    // Each consumer reports straight to the Resolver platform node.
+    expect(routeIds).toContain("outcome::consumer::audit::platform::resolver");
+    expect(routeIds).toContain("outcome::consumer::crm::platform::resolver");
   });
 
   it("unions + sorts publish-route event types from flow edges; deliver routes carry the edge's list verbatim", () => {
@@ -250,14 +248,8 @@ describe("buildFlowLayout", () => {
     expect(nodeIds.has("producer::crm")).toBe(false);
     expect(nodeIds.has("consumer::crm")).toBe(false);
     expect(nodeIds.has("topic::crm")).toBe(false);
-    for (const id of [
-      "topic::__resolver",
-      "topic::__manager",
-      "platform::resolver",
-      "platform::store",
-    ]) {
-      expect(nodeIds.has(id)).toBe(true);
-    }
+    // The Resolver platform fixture always survives filtering.
+    expect(nodeIds.has("platform::resolver")).toBe(true);
     const routeIds = layout.routes.map((r) => r.id);
     expect(routeIds).toContain("deliver::topic::erp::consumer::audit");
     // crm is hidden → its inbound (erp→crm) and outbound (crm→audit) deliver
@@ -278,49 +270,23 @@ describe("buildFlowLayout", () => {
     expect(layout.byEndpoint).toEqual({});
   });
 
-  it("renders a platform-only layout for empty topology data without throwing", () => {
+  it("renders a Resolver-only layout for empty topology data without throwing", () => {
     const layout = buildFlowLayout(topo([]));
-    expect(layout.nodes.map((n) => n.id).sort()).toEqual([
-      "platform::resolver",
-      "platform::store",
-      "topic::__manager",
-      "topic::__resolver",
-    ]);
-    expect(layout.routes.map((r) => r.id)).toEqual([
-      "outcome::topic::__resolver::platform::resolver",
-      "outcome::platform::resolver::platform::store",
-    ]);
+    expect(layout.nodes.map((n) => n.id)).toEqual(["platform::resolver"]);
+    expect(layout.routes).toEqual([]);
     expect(layout.byEndpoint).toEqual({});
     expect(layout.width).toBe(1240);
     expect(layout.height).toBe(600);
   });
 
-  it("labels platform chips and platform nodes per spec", () => {
+  it("labels the Resolver platform node per spec", () => {
     const layout = buildFlowLayout(topo([]));
     const byId = new Map(layout.nodes.map((n) => [n.id, n]));
-    expect(byId.get("topic::__resolver")).toMatchObject({
-      kind: "topic",
-      title: "Resolver",
-      subtitle: "outcome stream",
-      h: 40,
-      health: "good",
-    });
-    expect(byId.get("topic::__manager")).toMatchObject({
-      kind: "topic",
-      title: "Manager",
-      subtitle: "recovery commands",
-      h: 40,
-    });
     expect(byId.get("platform::resolver")).toMatchObject({
       kind: "platform",
-      title: "Resolver Worker",
+      title: "Resolver",
       h: 72,
       health: "good",
-    });
-    expect(byId.get("platform::store")).toMatchObject({
-      kind: "platform",
-      title: "Message Store",
-      h: 72,
     });
   });
 

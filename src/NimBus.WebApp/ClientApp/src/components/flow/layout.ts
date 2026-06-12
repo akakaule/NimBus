@@ -35,12 +35,9 @@ const GAP = 16;
 const CANVAS_W = 1240;
 const MIN_CANVAS_H = 600;
 
-// Well-known node ids for the platform fixtures. The double-underscore prefix
-// keeps the synthetic topic chips out of any real endpoint-id namespace.
-const RESOLVER_TOPIC = "topic::__resolver";
-const MANAGER_TOPIC = "topic::__manager";
+// Well-known node id for the Resolver — the single platform fixture, rendered
+// to the right of the consuming endpoints where every outcome converges.
 const RESOLVER_PLATFORM = "platform::resolver";
-const STORE_PLATFORM = "platform::store";
 
 /**
  * Builds the full flow layout (nodes, routes, byEndpoint index) from the
@@ -81,9 +78,7 @@ export function buildFlowLayout(
   // One topic per producing endpoint is a NimBus platform invariant, so the
   // chip is titled with the endpoint id directly — no separate topic catalog
   // exists to consult. Chips mirror producer order so each chip sits roughly
-  // beside its producer. The Resolver/Manager chips are platform plumbing
-  // present in every deployment, hence appended unconditionally at the bottom
-  // and exempt from endpoint filtering.
+  // beside its producer.
   const topicNodes: FlowNode[] = producers.map((n) => ({
     id: `topic::${n.id}`,
     kind: "topic",
@@ -95,20 +90,18 @@ export function buildFlowLayout(
     h: TOPIC_H,
     health: "good",
   }));
-  topicNodes.push(
-    platformTopicChip(RESOLVER_TOPIC, "Resolver", "outcome stream"),
-    platformTopicChip(MANAGER_TOPIC, "Manager", "recovery commands"),
-  );
 
-  const platformNodes: FlowNode[] = [
-    platformNode(RESOLVER_PLATFORM, "Resolver Worker"),
-    platformNode(STORE_PLATFORM, "Message Store"),
-  ];
+  // The Resolver is the only platform fixture — every consumer's outcomes
+  // converge on it. Present in every deployment and exempt from filtering.
+  const platformNodes: FlowNode[] = [platformNode(RESOLVER_PLATFORM, "Resolver")];
 
   stackColumn(producerNodes);
   stackColumn(topicNodes);
   stackColumn(consumerNodes);
   stackColumn(platformNodes);
+  // Sit the lone Resolver fixture beside the consumer column it collects
+  // outcomes from, rather than pinned to the top margin.
+  centerColumn(platformNodes, columnCenter(consumerNodes));
 
   const nodes: FlowNode[] = [
     ...producerNodes,
@@ -167,19 +160,15 @@ export function buildFlowLayout(
   deliverRoutes.sort(compareStrings((r) => r.id));
   routes.push(...deliverRoutes);
 
-  // outcome: every consumer reports to the Resolver topic, then two static
-  // hops complete the platform story (Resolver topic → worker → store).
-  // Outcome routes carry no event types: outcomes are status records, not
-  // typed business events.
-  const resolverTopic = nodeById.get(RESOLVER_TOPIC)!;
-  const resolverWorker = nodeById.get(RESOLVER_PLATFORM)!;
+  // outcome: every consumer reports to the Resolver, which sits to the right
+  // of the consumer column. Outcome routes carry no event types: outcomes are
+  // status records, not typed business events.
+  const resolver = nodeById.get(RESOLVER_PLATFORM)!;
   for (const n of consumers) {
     routes.push(
-      makeRoute("outcome", nodeById.get(`consumer::${n.id}`)!, resolverTopic, []),
+      makeRoute("outcome", nodeById.get(`consumer::${n.id}`)!, resolver, []),
     );
   }
-  routes.push(makeRoute("outcome", resolverTopic, resolverWorker, []));
-  routes.push(makeRoute("outcome", resolverWorker, nodeById.get(STORE_PLATFORM)!, []));
 
   // byEndpoint: the animator's entry point — it receives semantic events
   // keyed by endpoint id and needs the concrete route ids without scanning
@@ -192,7 +181,7 @@ export function buildFlowLayout(
       deliver: deliverRoutes
         .filter((r) => r.toNodeId === consumerNodeId)
         .map((r) => r.id),
-      outcome: `outcome::${consumerNodeId}::${RESOLVER_TOPIC}`,
+      outcome: `outcome::${consumerNodeId}::${RESOLVER_PLATFORM}`,
     };
   }
 
@@ -249,20 +238,6 @@ function endpointNode(
   };
 }
 
-function platformTopicChip(id: string, title: string, subtitle: string): FlowNode {
-  return {
-    id,
-    kind: "topic",
-    title,
-    subtitle,
-    x: COL_X.topic,
-    y: 0,
-    w: COL_W.topic,
-    h: TOPIC_H,
-    health: "good",
-  };
-}
-
 function platformNode(id: string, title: string): FlowNode {
   return {
     id,
@@ -287,6 +262,29 @@ function stackColumn(column: FlowNode[]): void {
     node.y = y;
     y += node.h + GAP;
   }
+}
+
+/** Vertical center of an already-stacked column; top margin when empty. */
+function columnCenter(column: FlowNode[]): number {
+  if (column.length === 0) return TOP_MARGIN;
+  const top = column[0].y;
+  const last = column[column.length - 1];
+  return (top + last.y + last.h) / 2;
+}
+
+/**
+ * Shifts an already-stacked column so its block centers on `center`, never
+ * rising above the top margin. Mutates y in place — safe because every node
+ * was created inside buildFlowLayout.
+ */
+function centerColumn(column: FlowNode[], center: number): void {
+  if (column.length === 0) return;
+  const top = column[0].y;
+  const last = column[column.length - 1];
+  const blockCenter = (top + last.y + last.h) / 2;
+  const shift = Math.max(center - blockCenter, TOP_MARGIN - top);
+  if (shift === 0) return;
+  for (const node of column) node.y += shift;
 }
 
 function makeRoute(

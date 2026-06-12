@@ -8,7 +8,7 @@ import { EmptyState } from "components/ui/empty-state";
 import { Select } from "components/ui/select";
 import { Spinner } from "components/ui/spinner";
 import { cn } from "lib/utils";
-import { FlowAnimator } from "components/flow/animator";
+import { FlowAnimator, type SpawnChain } from "components/flow/animator";
 import { buildFlowLayout, topEndpointIds } from "components/flow/layout";
 import { ACTIVITY_COLORS, TOP_N_DEFAULT } from "components/flow/types";
 import type {
@@ -111,11 +111,12 @@ export default function Flow() {
 
   /**
    * Resolves semantic activity onto concrete routes and spawns dots:
-   * arrived/released ride the deliver routes (round-robin when an endpoint
-   * has several upstream topics), every outcome kind rides the endpoint →
-   * Resolver route. Events for endpoints that are filtered out or unknown to
-   * the catalog are skipped silently — the hook already recorded them in the
-   * log/counters. The ×N badge goes on the FIRST dot only (FR-009).
+   * arrived/released ride the full inbound journey (producer adapter → topic →
+   * consumer, round-robin when an endpoint has several upstream topics) so the
+   * message reads as sent from the left; every outcome kind rides the single
+   * endpoint → Resolver route. Events for endpoints that are filtered out or
+   * unknown to the catalog are skipped silently — the hook already recorded
+   * them in the log/counters. The ×N badge goes on the FIRST dot only (FR-009).
    */
   const handleActivity = useCallback((events: FlowActivityEvent[]) => {
     const layout = layoutRef.current;
@@ -124,15 +125,18 @@ export default function Flow() {
     for (const event of events) {
       const index = layout.byEndpoint[event.endpointId];
       if (index === undefined) continue;
-      const routes =
+      const journeys =
         event.kind === "arrived" || event.kind === "released"
-          ? index.deliver
-          : [index.outcome];
-      if (routes.length === 0) continue;
+          ? index.journeys
+          : [[index.outcome]];
+      if (journeys.length === 0) continue;
       for (let i = 0; i < event.dots; i++) {
-        animator.spawn(routes[i % routes.length], ACTIVITY_COLORS[event.kind], {
-          multiplier: i === 0 ? event.multiplier : 1,
-        });
+        spawnJourney(
+          animator,
+          journeys[i % journeys.length],
+          ACTIVITY_COLORS[event.kind],
+          i === 0 ? event.multiplier : 1,
+        );
       }
     }
   }, []);
@@ -851,6 +855,39 @@ const ActivityLog = ({
 // ---------------------------------------------------------------------------
 // Small helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Rides one dot across an ordered list of route segments (e.g. publish then
+ * deliver) by chaining each segment to the next through the animator. The ×N
+ * badge travels the whole journey. A single-segment list (outcomes) behaves
+ * exactly like a plain spawn.
+ */
+function spawnJourney(
+  animator: FlowAnimator,
+  segments: string[],
+  color: string,
+  multiplier: number,
+): void {
+  const chain = buildChain(segments, color, multiplier);
+  if (chain === undefined) return;
+  animator.spawn(chain.routeId, chain.color, {
+    multiplier: chain.multiplier,
+    next: chain.next,
+  });
+}
+
+/** Folds an ordered segment list into a nested SpawnChain (first → last). */
+function buildChain(
+  segments: string[],
+  color: string,
+  multiplier: number,
+): SpawnChain | undefined {
+  let chain: SpawnChain | undefined;
+  for (let i = segments.length - 1; i >= 0; i--) {
+    chain = { routeId: segments[i], color, multiplier, next: chain };
+  }
+  return chain;
+}
 
 function formatSpeed(speed: number): string {
   return speed

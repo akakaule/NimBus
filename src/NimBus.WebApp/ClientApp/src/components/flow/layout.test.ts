@@ -164,7 +164,12 @@ describe("buildFlowLayout", () => {
     const producers = buildFlowLayout(tied).nodes.filter(
       (n) => n.kind === "producer",
     );
-    expect(producers.map((n) => n.title)).toEqual(["Alpha", "Zeta"]);
+    // Producer titles read as adapters (the sending side); ordering still
+    // follows the name tiebreak.
+    expect(producers.map((n) => n.title)).toEqual([
+      "Alpha Adapter",
+      "Zeta Adapter",
+    ]);
   });
 
   it("emits routes that reference existing nodes and follow the kind::from::to id scheme", () => {
@@ -221,7 +226,7 @@ describe("buildFlowLayout", () => {
     expect(Number.isFinite(layout.height)).toBe(true);
   });
 
-  it("indexes every consumer in byEndpoint with sorted, existing route ids", () => {
+  it("indexes every consumer in byEndpoint with existing, deliver-sorted journeys", () => {
     const layout = buildFlowLayout(canonical());
     const nodeIds = new Set(layout.nodes.map((n) => n.id));
     const routeIds = new Set(layout.routes.map((r) => r.id));
@@ -230,15 +235,26 @@ describe("buildFlowLayout", () => {
       expect(index.nodeId).toBe(`consumer::${endpointId}`);
       expect(nodeIds.has(index.nodeId)).toBe(true);
       expect(routeIds.has(index.outcome)).toBe(true);
-      for (const id of index.deliver) {
-        expect(routeIds.has(id)).toBe(true);
+      // Every journey is [publish, deliver] and both segments exist.
+      for (const journey of index.journeys) {
+        expect(journey).toHaveLength(2);
+        for (const id of journey) expect(routeIds.has(id)).toBe(true);
       }
-      expect([...index.deliver].sort()).toEqual(index.deliver);
+      // Journeys are ordered by their deliver segment id.
+      const deliverIds = index.journeys.map((j) => j[j.length - 1]);
+      expect([...deliverIds].sort()).toEqual(deliverIds);
     }
-    // audit fans in from both producers; sorted ids put crm before erp.
-    expect(layout.byEndpoint["audit"].deliver).toEqual([
-      "deliver::topic::crm::consumer::audit",
-      "deliver::topic::erp::consumer::audit",
+    // audit fans in from both producers; each journey pairs the publish leg
+    // with its deliver leg, ordered by deliver id (crm before erp).
+    expect(layout.byEndpoint["audit"].journeys).toEqual([
+      [
+        "publish::producer::crm::topic::crm",
+        "deliver::topic::crm::consumer::audit",
+      ],
+      [
+        "publish::producer::erp::topic::erp",
+        "deliver::topic::erp::consumer::audit",
+      ],
     ]);
   });
 
@@ -347,7 +363,7 @@ describe("buildFlowLayout", () => {
   it("describes endpoint roles in subtitles and titles topics by endpoint id", () => {
     const layout = buildFlowLayout(canonical());
     const byId = new Map(layout.nodes.map((n) => [n.id, n]));
-    expect(byId.get("producer::erp")!.title).toBe("ERP");
+    expect(byId.get("producer::erp")!.title).toBe("ERP Adapter");
     expect(byId.get("producer::erp")!.subtitle).toBe("publishes 2 event type(s)");
     expect(byId.get("consumer::audit")!.subtitle).toBe("handles 2 event type(s)");
     // Topic chips carry the endpoint id (one topic per endpoint), not the

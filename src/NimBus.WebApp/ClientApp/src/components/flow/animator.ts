@@ -62,6 +62,27 @@ export interface FlowAnimatorOptions {
   reducedMotion?: boolean;
 }
 
+/**
+ * A queued follow-up spawn that a finished dot hands off to, so one logical
+ * message can ride several route segments back-to-back (producer → topic →
+ * consumer). Each link carries its own color/badge and an optional deeper link;
+ * the chain survives the pulse/cap/filtered fallbacks so later legs still show.
+ */
+export interface SpawnChain {
+  routeId: string;
+  color: string;
+  multiplier?: number;
+  radius?: number;
+  next?: SpawnChain;
+}
+
+/** Options for spawn(): the ×N badge, dot radius, and an optional continuation. */
+export interface SpawnOptions {
+  multiplier?: number;
+  radius?: number;
+  next?: SpawnChain;
+}
+
 /** One dot (and its optional ×N label) currently traveling along a path. */
 interface TravelingDot {
   /** Captured at spawn; if the path unmounts mid-flight the dot finishes early. */
@@ -77,6 +98,8 @@ interface TravelingDot {
   start: number;
   /** Virtual-ms travel duration. */
   dur: number;
+  /** Next segment to spawn when this dot lands — the journey's continuation. */
+  next?: SpawnChain;
 }
 
 export class FlowAnimator {
@@ -191,16 +214,20 @@ export class FlowAnimator {
    * in-flight cap is hit or reduced motion is requested (FR-008/FR-009); a
    * spawn for a filtered-out/unmounted route is a no-op (nothing to draw on).
    */
-  spawn(routeId: string, color: string, opts?: { multiplier?: number; radius?: number }): void {
+  spawn(routeId: string, color: string, opts?: SpawnOptions): void {
     if (this.disposed) {
       return;
     }
     const path = this.getPathEl(routeId);
     if (path === null) {
+      // Segment not currently rendered (filtered/unmounted) — skip it but hand
+      // off so later legs of the journey still animate.
+      this.continueChain(opts?.next);
       return;
     }
     if (this.reducedMotion || this.dots.length >= MAX_INFLIGHT_DOTS) {
       this.pulse(path);
+      this.continueChain(opts?.next);
       return;
     }
 
@@ -208,6 +235,7 @@ export class FlowAnimator {
     if (len <= 0) {
       // Degenerate path (zero-length d) — a pulse still signals activity.
       this.pulse(path);
+      this.continueChain(opts?.next);
       return;
     }
 
@@ -245,6 +273,7 @@ export class FlowAnimator {
       labelDy,
       start: this.vt,
       dur: Math.max(MIN_TRAVEL_MS, len * TRAVEL_MS_PER_UNIT),
+      next: opts?.next,
     });
 
     // Light the route for the duration of the ride (demo's edge.active++).
@@ -325,14 +354,30 @@ export class FlowAnimator {
     const remaining = (this.activeCounts.get(dot.pathEl) ?? 1) - 1;
     if (remaining > 0) {
       this.activeCounts.set(dot.pathEl, remaining);
+    } else {
+      this.activeCounts.delete(dot.pathEl);
+      // Last dot off this path — pulse it off, unless a pending edge pulse is
+      // still holding the glow (its deadline will release the class instead).
+      if (!this.pulseDeadlines.has(dot.pathEl)) {
+        dot.pathEl.classList.remove(ROUTE_ON_CLASS);
+      }
+    }
+    // Hand the journey to its next leg, so the dot reads as one message
+    // continuing producer → topic → consumer. Appending mid-frame is safe: the
+    // update loop iterates backwards, so the new dot animates from next frame.
+    this.continueChain(dot.next);
+  }
+
+  /** Spawns the next leg of a journey, if any. */
+  private continueChain(next: SpawnChain | undefined): void {
+    if (next === undefined) {
       return;
     }
-    this.activeCounts.delete(dot.pathEl);
-    // Last dot off this path — pulse it off, unless a pending edge pulse is
-    // still holding the glow (its deadline will release the class instead).
-    if (!this.pulseDeadlines.has(dot.pathEl)) {
-      dot.pathEl.classList.remove(ROUTE_ON_CLASS);
-    }
+    this.spawn(next.routeId, next.color, {
+      multiplier: next.multiplier,
+      radius: next.radius,
+      next: next.next,
+    });
   }
 
   /** Edge pulse fallback: glow the path now, schedule the off on the virtual clock. */

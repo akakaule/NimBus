@@ -99,7 +99,12 @@ export function buildFlowLayout(
     );
 
   const producerNodes = producers.map((n) =>
-    endpointNode("producer", n, `publishes ${n.publishCount} event type(s)`),
+    endpointNode(
+      "producer",
+      n,
+      `publishes ${n.publishCount} event type(s)`,
+      producerTitle(n.name),
+    ),
   );
   const consumerNodes = consumers.map((n) =>
     endpointNode("consumer", n, `handles ${n.subscribeCount} event type(s)`),
@@ -188,19 +193,26 @@ export function buildFlowLayout(
   const producerIds = new Set(producers.map((n) => n.id));
   const consumerIds = new Set(consumers.map((n) => n.id));
   const deliverRoutes: FlowRoute[] = [];
+  // Each deliver route's matching publish leg (producer → its topic), so the
+  // byEndpoint index can pair them into full producer → topic → consumer
+  // journeys the animator rides with a single dot.
+  const publishByDeliver = new Map<string, string>();
   for (const edge of edges) {
     if (!producerIds.has(edge.from) || !consumerIds.has(edge.to)) continue;
-    deliverRoutes.push(
-      makeRoute(
-        "deliver",
-        nodeById.get(`topic::${edge.from}`)!,
-        nodeById.get(`consumer::${edge.to}`)!,
-        [...edge.eventTypeIds],
-      ),
+    const route = makeRoute(
+      "deliver",
+      nodeById.get(`topic::${edge.from}`)!,
+      nodeById.get(`consumer::${edge.to}`)!,
+      [...edge.eventTypeIds],
+    );
+    deliverRoutes.push(route);
+    publishByDeliver.set(
+      route.id,
+      `publish::producer::${edge.from}::topic::${edge.from}`,
     );
   }
   // Sorting by id makes the output independent of flowEdges array order —
-  // part of the determinism contract — and pre-sorts byEndpoint.deliver.
+  // part of the determinism contract — and pre-sorts byEndpoint journeys.
   deliverRoutes.sort(compareStrings((r) => r.id));
   routes.push(...deliverRoutes);
 
@@ -216,15 +228,17 @@ export function buildFlowLayout(
 
   // byEndpoint: the animator's entry point — it receives semantic events
   // keyed by endpoint id and needs the concrete route ids without scanning
-  // the route list per event.
+  // the route list per event. Each inbound journey pairs the publish leg with
+  // its deliver leg so a dot rides producer → topic → consumer in one go;
+  // deliverRoutes is already id-sorted, so journeys stay deterministic.
   const byEndpoint: Record<string, EndpointRouteIndex> = {};
   for (const n of consumers) {
     const consumerNodeId = `consumer::${n.id}`;
     byEndpoint[n.id] = {
       nodeId: consumerNodeId,
-      deliver: deliverRoutes
+      journeys: deliverRoutes
         .filter((r) => r.toNodeId === consumerNodeId)
-        .map((r) => r.id),
+        .map((r) => [publishByDeliver.get(r.id)!, r.id]),
       outcome: `outcome::${consumerNodeId}::${RESOLVER_PLATFORM}`,
     };
   }
@@ -262,16 +276,28 @@ export function topEndpointIds(data: TopologyData, n: number): string[] {
 
 // ----- internals -----------------------------------------------------------
 
+/**
+ * Left-column label: an endpoint's publishing side is shown as its "adapter" —
+ * the service that sends — e.g. "CrmEndpoint" → "Crm Adapter". Names without
+ * the conventional "Endpoint" suffix just gain the " Adapter" tag so the
+ * producer column reads consistently as the senders.
+ */
+function producerTitle(name: string): string {
+  const base = name.replace(/endpoint$/i, "").trim();
+  return `${base.length > 0 ? base : name} Adapter`;
+}
+
 function endpointNode(
   kind: "producer" | "consumer",
   n: TopologyNode,
   subtitle: string,
+  title: string = n.name,
 ): FlowNode {
   return {
     id: `${kind}::${n.id}`,
     kind,
     endpointId: n.id,
-    title: n.name,
+    title,
     subtitle,
     x: COL_X[kind],
     y: 0, // assigned by stackColumn

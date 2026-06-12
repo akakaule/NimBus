@@ -104,8 +104,14 @@ export interface FlowRoute {
 export interface EndpointRouteIndex {
   /** The consumer-column node for this endpoint. */
   nodeId: string;
-  /** Routes that bring messages INTO the endpoint (topic → consumer). */
-  deliver: string[];
+  /**
+   * Inbound delivery journeys — one per upstream edge, each an ordered list of
+   * route-segment ids the dot chains through: `[publish (producer → topic),
+   * deliver (topic → consumer)]`. Sorted by the deliver segment id for
+   * determinism. Riding the whole journey makes a message read as sent from
+   * its producer adapter, through its Service Bus topic, into this endpoint.
+   */
+  journeys: string[][];
   /** Route carrying outcomes endpoint → Resolver topic. */
   outcome: string;
 }

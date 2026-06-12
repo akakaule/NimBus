@@ -121,6 +121,25 @@ const Icon = {
       />
     </svg>
   ),
+  flow: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
+      <circle cx="3.5" cy="5" r="2" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="12.5" cy="11" r="2" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M5.5 6.5c2.5 1.5 2.5 2.5 5 4"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+      <path
+        d="M8.7 10.9l1.8.4.4-1.8"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
   monitor: (
     <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
       <rect
@@ -169,6 +188,12 @@ const NAV: NavGroup[] = [
         name: "Topology",
         path: "/Topology",
         icon: Icon.topology,
+      },
+      {
+        name: "Flow",
+        path: "/Flow",
+        icon: Icon.flow,
+        badge: "live",
       },
       {
         name: "Monitor",

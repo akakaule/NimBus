@@ -48,6 +48,12 @@ export interface HandoffMode {
   changedAt: string;
 }
 
+export interface ProcessingDelay {
+  enabled: boolean;
+  delayMs: number;
+  changedAt: string;
+}
+
 export interface HandoffJob {
   eventId: string;
   sessionId: string;
@@ -112,6 +118,14 @@ export const api = {
     }).then(json<HandoffMode>),
 
   getHandoffJobs: () => fetch('/api/internal/handoff-jobs').then(json<HandoffJob[]>),
+
+  getProcessingDelay: () => fetch('/api/admin/processing-delay').then(json<ProcessingDelay>),
+  setProcessingDelay: (m: { enabled: boolean; delayMs: number }) =>
+    fetch('/api/admin/processing-delay', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(m),
+    }).then(json<ProcessingDelay>),
 
   listContacts: () => fetch('/api/contacts').then(json<Contact[]>),
   getContact: (id: string) => fetch(`/api/contacts/${id}`).then(json<Contact>),

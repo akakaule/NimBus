@@ -23,6 +23,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: Number(env.PORT) || 5173,
+    // Aspire owns this port and proxies its front-door to it. Without strictPort,
+    // Vite silently falls back to the next free port when the assigned one is briefly
+    // held during a restart, leaving Aspire's proxy pointed at a dead port ("does not
+    // load"). Fail fast instead so Aspire restarts us cleanly on the right port.
+    strictPort: true,
     proxy: {
       '/api': { target: apiTarget, changeOrigin: true, secure: false },
     },

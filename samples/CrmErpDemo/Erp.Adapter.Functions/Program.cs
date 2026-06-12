@@ -51,6 +51,12 @@ builder.Services.AddHttpClient<IHandoffModeClient, HandoffModeClient>(c =>
     c.Timeout = TimeSpan.FromSeconds(2);
 });
 
+builder.Services.AddHttpClient<IProcessingDelayClient, ProcessingDelayClient>(c =>
+{
+    c.BaseAddress = new Uri(ResolveErpApiBaseUrl(builder.Configuration));
+    c.Timeout = TimeSpan.FromSeconds(2);
+});
+
 builder.Services.AddHttpClient<IHandoffJobRegistration, HandoffJobRegistration>(c =>
     c.BaseAddress = new Uri(ResolveErpApiBaseUrl(builder.Configuration)));
 
@@ -59,6 +65,9 @@ builder.Services.AddNimBus(n =>
     n.AddPipelineBehavior<LoggingMiddleware>();
     n.AddPipelineBehavior<ValidationMiddleware>();
     n.AddPipelineBehavior<ServiceModeMiddleware>();
+    // Runs after the service-mode gate: don't delay messages that are being rejected,
+    // but hold the rest for the configured time before their handler runs.
+    n.AddPipelineBehavior<ProcessingDelayMiddleware>();
 });
 
 // The deferred-processor BackgroundService is intentionally NOT registered here —

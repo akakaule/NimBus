@@ -29,6 +29,7 @@ builder.Services.AddDbContext<ErpDbContext>(opt => opt.UseSqlServer(erpConnectio
 
 builder.Services.AddSingleton<ServiceModeState>();
 builder.Services.AddSingleton<ErrorModeState>();
+builder.Services.AddSingleton<ProcessingDelayState>();
 builder.Services.AddSingleton<HandoffModeState>();
 builder.Services.AddSingleton<HandoffJobTracker>();
 

@@ -70,6 +70,11 @@ var webapp = builder.AddProject<Projects.NimBus_WebApp>("webapp")
     .WithExternalHttpEndpoints()
     .WaitFor(provisioner);
 
+// Live Flow / Monitor realtime push (spec 020). Point the Resolver's
+// write-path notifier at the WebApp's storage-hook webhook so endpointupdate
+// broadcasts fire for storage providers without a Change Feed (e.g. SQL).
+resolver.WithEnvironment("NimBus__Flow__WebAppUrl", webapp.GetEndpoint("http"));
+
 // Bind the active storage provider to both runtime services. Each provider package
 // resolves its own connection string at runtime.
 if (storageProvider == "sqlserver")

@@ -163,6 +163,13 @@ else
     nimbusOps.WithEnvironment("EnableLocalDevAuthentication", "true");
 }
 
+// Live Flow / Monitor realtime push (spec 020). SQL storage has no Cosmos
+// Change Feed, so point the Resolver's write-path notifier at the WebApp's
+// storage-hook webhook; the WebApp downloads the counts and broadcasts the
+// endpointupdate that the Flow page animates. Best-effort — failures are
+// swallowed and the pages reconcile via polling.
+resolver.WithEnvironment("NimBus__Flow__WebAppUrl", nimbusOps.GetEndpoint("http"));
+
 // Provider-specific wiring. The WebApp/Resolver pick their backend off NimBus__StorageProvider;
 // we set it explicitly so the AppHost CLI flag wins over the runtime auto-detect fallback.
 if (storageProvider == "sqlserver")

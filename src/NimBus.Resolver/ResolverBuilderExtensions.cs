@@ -26,6 +26,7 @@ namespace NimBus.Resolver
             var services = builder.Services;
 
             services.AddSingleton<IMessageHandler, ResolverService>();
+            services.AddFlowStateChangeNotifier();
 
             services.AddSingleton(sp =>
             {

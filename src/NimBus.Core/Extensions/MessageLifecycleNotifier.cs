@@ -61,5 +61,15 @@ namespace NimBus.Core.Extensions
                 await observer.OnMessageDeadLettered(lifecycleContext, reason, exception, cancellationToken);
             }
         }
+
+        public async Task NotifySessionBlocked(IMessageContext context, string blockedByEventId, CancellationToken cancellationToken = default)
+        {
+            if (!HasObservers) return;
+            var lifecycleContext = MessageLifecycleContext.FromMessageContext(context);
+            foreach (var observer in _observers)
+            {
+                await observer.OnSessionBlocked(lifecycleContext, blockedByEventId, cancellationToken);
+            }
+        }
     }
 }

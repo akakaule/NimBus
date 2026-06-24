@@ -142,6 +142,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "DataPlatform", "DataPlatfor
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.WebApp.Tests", "..\tests\NimBus.WebApp.Tests\NimBus.WebApp.Tests.csproj", "{07664C1B-9AD9-4D52-86AC-F707EAFBE380}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.Extensions.Notifications.Tests", "..\tests\NimBus.Extensions.Notifications.Tests\NimBus.Extensions.Notifications.Tests.csproj", "{A6255E01-F833-4B6C-B359-FE5884B5294B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -680,6 +682,18 @@ Global
 		{07664C1B-9AD9-4D52-86AC-F707EAFBE380}.Release|x64.Build.0 = Release|Any CPU
 		{07664C1B-9AD9-4D52-86AC-F707EAFBE380}.Release|x86.ActiveCfg = Release|Any CPU
 		{07664C1B-9AD9-4D52-86AC-F707EAFBE380}.Release|x86.Build.0 = Release|Any CPU
+		{A6255E01-F833-4B6C-B359-FE5884B5294B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A6255E01-F833-4B6C-B359-FE5884B5294B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A6255E01-F833-4B6C-B359-FE5884B5294B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A6255E01-F833-4B6C-B359-FE5884B5294B}.Debug|x64.Build.0 = Debug|Any CPU
+		{A6255E01-F833-4B6C-B359-FE5884B5294B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A6255E01-F833-4B6C-B359-FE5884B5294B}.Debug|x86.Build.0 = Debug|Any CPU
+		{A6255E01-F833-4B6C-B359-FE5884B5294B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A6255E01-F833-4B6C-B359-FE5884B5294B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A6255E01-F833-4B6C-B359-FE5884B5294B}.Release|x64.ActiveCfg = Release|Any CPU
+		{A6255E01-F833-4B6C-B359-FE5884B5294B}.Release|x64.Build.0 = Release|Any CPU
+		{A6255E01-F833-4B6C-B359-FE5884B5294B}.Release|x86.ActiveCfg = Release|Any CPU
+		{A6255E01-F833-4B6C-B359-FE5884B5294B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

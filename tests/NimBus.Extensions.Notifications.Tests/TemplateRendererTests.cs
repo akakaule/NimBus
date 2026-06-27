@@ -46,4 +46,31 @@ public class TemplateRendererTests
 
         Assert.AreEqual("[]", result);
     }
+
+    [TestMethod]
+    public void Render_JsonEncode_EscapesValuesSoTemplateStaysValidJson()
+    {
+        var notification = TestNotifications.Build(
+            title: "Order \"42\" failed",
+            errorDetails: "line1\nline2\tC:\\temp");
+
+        const string template = "{\"summary\":\"{Title}\",\"error\":\"{ErrorDetails}\"}";
+
+        var result = TemplateRenderer.Render(template, notification, jsonEncodeValues: true);
+
+        // The rendered payload must round-trip as valid JSON with the original values intact.
+        var parsed = Newtonsoft.Json.Linq.JObject.Parse(result);
+        Assert.AreEqual("Order \"42\" failed", (string)parsed["summary"]);
+        Assert.AreEqual("line1\nline2\tC:\\temp", (string)parsed["error"]);
+    }
+
+    [TestMethod]
+    public void Render_WithoutJsonEncode_LeavesValuesRaw()
+    {
+        var notification = TestNotifications.Build(title: "a\"b");
+
+        var result = TemplateRenderer.Render("{Title}", notification);
+
+        Assert.AreEqual("a\"b", result);
+    }
 }

@@ -35,7 +35,7 @@ namespace NimBus.Extensions.Notifications
         public async Task SendAsync(Notification notification, CancellationToken cancellationToken = default)
         {
             var body = _options.Template != null
-                ? TemplateRenderer.Render(_options.Template, notification)
+                ? TemplateRenderer.Render(_options.Template, notification, jsonEncodeValues: true)
                 : BuildAdaptiveCard(notification);
 
             using var content = new StringContent(body, Encoding.UTF8, "application/json");

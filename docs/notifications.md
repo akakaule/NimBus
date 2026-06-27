@@ -155,6 +155,11 @@ empty string.
 `{Severity}` · `{Title}` · `{Message}` · `{EventId}` · `{EventTypeId}` · `{MessageId}` ·
 `{CorrelationId}` · `{ErrorDetails}`
 
+For the JSON channels (Webhook, Teams) substituted values are automatically JSON-string-escaped, so
+a title or error message containing quotes, backslashes or newlines keeps the rendered payload valid
+JSON — write the placeholder inside a quoted string, e.g. `{"title":"{Title}"}`. The Email channel
+substitutes values verbatim (plain-text body).
+
 ### Configuration validation (fail fast)
 
 Each channel validates its required options at registration time (not on first send):

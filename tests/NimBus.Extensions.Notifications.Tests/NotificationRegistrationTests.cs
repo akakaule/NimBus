@@ -121,6 +121,36 @@ public class NotificationRegistrationTests
         Assert.IsNull(sp.GetService<INotificationRouter>(), "Legacy path does not register a router.");
     }
 
+    // ── Fluent path with no channels falls back to console instead of dropping ──
+
+    [TestMethod]
+    public void AddNimBusNotifications_FluentPathWithNoChannels_FallsBackToConsole()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNimBus();
+        services.AddNimBusNotifications(n => n.WithRateLimit(maxPerMinute: 10, burstCapacity: 20));
+
+        var sp = services.BuildServiceProvider();
+
+        var registration = sp.GetServices<ChannelRegistration>().Single();
+        Assert.IsInstanceOfType(registration.Channel, typeof(ConsoleNotificationChannel),
+            "A fluent registration with no channels must fall back to the console channel, not drop notifications.");
+        Assert.IsInstanceOfType(sp.GetServices<INotificationChannel>().Single(), typeof(ConsoleNotificationChannel));
+        Assert.IsNotNull(sp.GetService<INotificationRouter>());
+    }
+
+    [TestMethod]
+    public void AddNotifications_FluentEmptyLambda_FallsBackToConsole()
+    {
+        var services = new ServiceCollection();
+        services.AddNimBus(builder => builder.AddNotifications((NotificationChannelBuilder _) => { }));
+
+        var sp = services.BuildServiceProvider();
+
+        Assert.IsInstanceOfType(sp.GetServices<ChannelRegistration>().Single().Channel, typeof(ConsoleNotificationChannel));
+    }
+
     [TestMethod]
     public void AddNotifications_LegacyChannelLambda_StillWorks()
     {

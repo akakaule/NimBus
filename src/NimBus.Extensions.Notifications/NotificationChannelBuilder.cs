@@ -25,6 +25,9 @@ namespace NimBus.Extensions.Notifications
             _routerOptions = routerOptions ?? throw new ArgumentNullException(nameof(routerOptions));
         }
 
+        /// <summary>The number of delivery channels registered through this builder.</summary>
+        internal int ChannelCount => _channelCount;
+
         /// <summary>
         /// Registers a <see cref="WebhookChannel"/> that POSTs notifications to a configured URL.
         /// </summary>

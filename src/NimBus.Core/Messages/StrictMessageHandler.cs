@@ -339,7 +339,7 @@ namespace NimBus.Core.Messages
             if (!await messageContext.IsSessionBlockedByThis(cancellationToken))
             {
                 var blockedBy = await messageContext.GetBlockedByEventId(cancellationToken);
-                throw new SessionBlockedException($"Session {messageContext.SessionId} is blocked by {blockedBy}");
+                throw new SessionBlockedException($"Session {messageContext.SessionId} is blocked by {blockedBy}", blockedBy);
             }
         }
 
@@ -347,7 +347,7 @@ namespace NimBus.Core.Messages
         {
             var blockedBy = await messageContext.GetBlockedByEventId(cancellationToken);
             if (!string.IsNullOrEmpty(blockedBy))
-                throw new SessionBlockedException($"Session {messageContext.SessionId} is blocked by {blockedBy}");
+                throw new SessionBlockedException($"Session {messageContext.SessionId} is blocked by {blockedBy}", blockedBy);
         }
 
         private async Task HandleEventContent(IMessageContext context, CancellationToken cancellationToken = default)

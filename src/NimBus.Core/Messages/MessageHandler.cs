@@ -80,8 +80,16 @@ namespace NimBus.Core.Messages
                         messageContext?.EventId, messageContext.MessageId, messageContext.SessionId);
                 }
             }
-            catch (SessionBlockedException)
+            catch (SessionBlockedException sessionBlocked)
             {
+                // The session is blocked by an earlier failed event; this message has been
+                // deferred (StrictMessageHandler) and is swallowed here so it is not retried.
+                // Surface the block as a lifecycle signal so observers (e.g. notifications)
+                // can alert that the session is now blocked, referencing the blocking event.
+                if (_lifecycleNotifier?.HasObservers == true && messageContext != null)
+                {
+                    await _lifecycleNotifier.NotifySessionBlocked(messageContext, sessionBlocked.BlockedByEventId, cancellationToken);
+                }
             }
             catch (EventContextHandlerException)
             {

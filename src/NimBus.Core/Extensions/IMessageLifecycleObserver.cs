@@ -34,6 +34,13 @@ namespace NimBus.Core.Extensions
         /// </summary>
         Task OnMessageDeadLettered(MessageLifecycleContext context, string reason, Exception exception = null, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+
+        /// <summary>
+        /// Called when a message arrives for a session that is blocked by an earlier failed event.
+        /// The blocking event id is supplied so observers can reference the incident that caused the block.
+        /// </summary>
+        Task OnSessionBlocked(MessageLifecycleContext context, string blockedByEventId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 
     /// <summary>

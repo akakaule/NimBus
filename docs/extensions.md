@@ -329,10 +329,15 @@ The `NimBus.Extensions.Notifications` package ships with the repository as a ref
 
 ### What it does
 
-- Observes message lifecycle events (failures, dead-letters)
+- Observes message lifecycle events (failures, dead-letters, session blocks)
 - Sends notifications through pluggable channels (`INotificationChannel`)
+- Ships production channels — **Webhook**, **Teams**, **Email** (SendGrid/SMTP) — plus per-channel
+  severity routing, rate limiting, and deduplication
 - Ships with a `ConsoleNotificationChannel` for development
-- Configurable via `NotificationOptions`
+- Configurable via `NotificationOptions` and a fluent channel builder
+
+> See [notifications.md](notifications.md) for the full guide to the production channels, severity
+> routing, rate limiting/dedup, and trigger sources (including session blocks).
 
 ### Using it
 

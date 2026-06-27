@@ -24,5 +24,14 @@ namespace NimBus.Extensions.Notifications
         /// Whether to send notifications on successful completion. Default: false.
         /// </summary>
         public bool NotifyOnCompleted { get; set; } = false;
+
+        /// <summary>
+        /// Whether to send a notification when a message arrives for a session that is blocked by an
+        /// earlier failed event. Default: false on the legacy registration paths; the fluent
+        /// channel-builder API (<see cref="NotificationsBuilderExtensions.AddNotifications(NimBus.Core.Extensions.INimBusBuilder, System.Action{NotificationChannelBuilder}, System.Action{NotificationOptions})"/>
+        /// and <c>AddNimBusNotifications</c>) defaults it to <c>true</c> so production deployments
+        /// alert on session blocks out of the box.
+        /// </summary>
+        public bool NotifyOnSessionBlock { get; set; } = false;
     }
 }

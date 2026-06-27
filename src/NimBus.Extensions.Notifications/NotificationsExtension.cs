@@ -70,5 +70,64 @@ namespace NimBus.Extensions.Notifications
         {
             return builder.AddExtension(new NotificationsExtension(configureOptions, configureChannels));
         }
+
+        /// <summary>
+        /// Adds notification support with production channels configured via the fluent
+        /// <see cref="NotificationChannelBuilder"/> (Webhook, Teams, Email), per-channel severity
+        /// routing, and rate limiting / dedup. Notifications are routed through an
+        /// <see cref="INotificationRouter"/>. Session-block notifications are enabled by default on
+        /// this path (override via <paramref name="configureOptions"/>).
+        /// </summary>
+        /// <param name="builder">The NimBus builder.</param>
+        /// <param name="configureChannels">Configures the channels and rate limit.</param>
+        /// <param name="configureOptions">Optionally overrides which lifecycle events trigger notifications.</param>
+        public static INimBusBuilder AddNotifications(
+            this INimBusBuilder builder,
+            Action<NotificationChannelBuilder> configureChannels,
+            Action<NotificationOptions> configureOptions = null)
+        {
+            ArgumentNullException.ThrowIfNull(builder);
+            ArgumentNullException.ThrowIfNull(configureChannels);
+
+            RegisterChannelsAndRouter(builder.Services, configureChannels, configureOptions);
+            builder.AddLifecycleObserver<NotificationLifecycleObserver>();
+            return builder;
+        }
+
+        /// <summary>
+        /// Convenience entry point mirroring the issue's <c>services.AddNimBusNotifications(n =&gt; { … })</c>
+        /// shape. Registers the fluent channels, the router, and the lifecycle observer directly on the
+        /// service collection. Requires <c>services.AddNimBus(...)</c> to have registered the core
+        /// <see cref="MessageLifecycleNotifier"/>. Session-block notifications are enabled by default.
+        /// </summary>
+        public static IServiceCollection AddNimBusNotifications(
+            this IServiceCollection services,
+            Action<NotificationChannelBuilder> configureChannels,
+            Action<NotificationOptions> configureOptions = null)
+        {
+            ArgumentNullException.ThrowIfNull(services);
+            ArgumentNullException.ThrowIfNull(configureChannels);
+
+            RegisterChannelsAndRouter(services, configureChannels, configureOptions);
+            services.AddSingleton<IMessageLifecycleObserver, NotificationLifecycleObserver>();
+            return services;
+        }
+
+        private static void RegisterChannelsAndRouter(
+            IServiceCollection services,
+            Action<NotificationChannelBuilder> configureChannels,
+            Action<NotificationOptions> configureOptions)
+        {
+            var options = new NotificationOptions { NotifyOnSessionBlock = true };
+            configureOptions?.Invoke(options);
+            services.AddSingleton(options);
+
+            var routerOptions = new NotificationRouterOptions();
+            var channelBuilder = new NotificationChannelBuilder(services, routerOptions);
+            configureChannels(channelBuilder);
+
+            services.AddSingleton(routerOptions);
+            services.AddSingleton<INotificationRouter, NotificationRouter>();
+        }
     }
 }

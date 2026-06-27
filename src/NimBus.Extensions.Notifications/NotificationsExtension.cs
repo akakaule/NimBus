@@ -126,6 +126,17 @@ namespace NimBus.Extensions.Notifications
             var channelBuilder = new NotificationChannelBuilder(services, routerOptions);
             configureChannels(channelBuilder);
 
+            if (channelBuilder.ChannelCount == 0)
+            {
+                // The fluent path was used but no channels were added (e.g. an empty lambda or only
+                // WithRateLimit). Fall back to the console channel — matching the legacy default — so
+                // notifications are surfaced for development instead of being silently dropped.
+                var consoleChannel = new ConsoleNotificationChannel();
+                var consoleOptions = new ConsoleChannelOptions { MinSeverity = NotificationSeverity.Information };
+                services.AddSingleton<INotificationChannel>(consoleChannel);
+                services.AddSingleton(new ChannelRegistration(consoleChannel, consoleOptions));
+            }
+
             services.AddSingleton(routerOptions);
             services.AddSingleton<INotificationRouter, NotificationRouter>();
         }

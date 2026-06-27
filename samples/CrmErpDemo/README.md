@@ -407,6 +407,47 @@ The lifecycle is exercised end-to-end by the Playwright suite in [`e2e/`](e2e/):
 - [`e2e/tests/04-pending-handoff-success.spec.ts`](e2e/tests/04-pending-handoff-success.spec.ts) — create handoff + 2 sibling updates → create reaches `Pending+Handoff`, updates Defer, all complete on settlement.
 - [`e2e/tests/05-pending-handoff-failure.spec.ts`](e2e/tests/05-pending-handoff-failure.spec.ts) — handoff fails with a `DMF rejected:` error → operator Skip flips the row to `Skipped`.
 
+## Showcase: Notification alerts (failure → webhook → operator alert)
+
+NimBus's [notifications extension](../../docs/notifications.md) (`NimBus.Extensions.Notifications`)
+turns message-lifecycle events into outbound alerts over production channels (Webhook, Teams,
+Email) with per-channel severity routing, rate limiting and dedup. This demo wires the **Webhook**
+channel onto the ERP adapter so failures are surfaced as live operator alerts — no Teams/SendGrid
+account required.
+
+The loop is fully local:
+
+```
+erp-web (Error mode / Service mode toggle)
+   └─▶ erp-adapter handler fails  →  NimBus lifecycle: Failed / DeadLettered / SessionBlocked
+        └─▶ WebhookChannel POSTs a JSON alert  →  erp-api  /api/webhooks/notifications
+             └─▶ AlertsState (last 50, in-memory)
+                  └─▶ erp-web "Notification alerts" panel polls /api/admin/alerts every 3s
+```
+
+- **Emit** — `Erp.Adapter.Functions/Program.cs` registers `AddNimBusNotifications(...)` with a single
+  `AddWebhook` channel (`MinSeverity = Warning`, so `Error` + `Critical` pass and `Information`
+  noise is skipped) and a JSON `Template`. The webhook URL reuses the same `erp-api` base address
+  the adapter already calls.
+- **Receive** — `Erp.Api/Endpoints/AlertsEndpoints.cs` exposes `POST /api/webhooks/notifications`
+  (the sink), `GET /api/admin/alerts`, and `DELETE /api/admin/alerts`, backed by the in-memory
+  `Erp.Api/AlertsState.cs` (mirrors the other demo state singletons; non-persistent).
+- **Display** — `Erp.Web/src/components/admin/alerts-panel.tsx` renders newest-first,
+  severity-colored cards (Critical → rose, Error → amber).
+
+> The receiver is unauthenticated by design — it's a local demo sink, and the `WebhookChannel`
+> sends no auth header. Don't copy this receiver verbatim into production.
+
+### Manual smoke flow
+
+1. AppHost up → open **erp-web**.
+2. Open **crm-web** → create an account (e.g. "Acme GmbH") to start CRM → ERP traffic.
+3. In **erp-web**, flip **Error mode** ON (header toggle): every inbound ERP handler now throws.
+4. Within a few seconds the **Notification alerts** panel shows an **Error** alert
+   ("Message failed: …") and, once retries are exhausted, a **Critical** **dead-lettered** alert.
+   Flipping **Service mode** ON instead produces **Error** alerts as inbound messages are rejected.
+5. Turn the toggles OFF to stop new alerts; click **Clear** to empty the panel.
+
 ## Out of scope (v1)
 
 No authn/authz, no multi-tenant, no production deployment scripts, no non-Azure transports, no realistic tax/currency/shipping math, no automated browser tests, no UI i18n, no Sales Orders/Products/Inventory.

@@ -54,6 +54,18 @@ export interface ProcessingDelay {
   changedAt: string;
 }
 
+export interface Alert {
+  severity: 'Information' | 'Warning' | 'Error' | 'Critical' | string;
+  title: string;
+  message: string;
+  eventId: string;
+  eventTypeId: string;
+  messageId: string;
+  correlationId: string;
+  errorDetails: string;
+  receivedAt: string;
+}
+
 export interface HandoffJob {
   eventId: string;
   sessionId: string;
@@ -126,6 +138,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(m),
     }).then(json<ProcessingDelay>),
+
+  getAlerts: () => fetch('/api/admin/alerts').then(json<Alert[]>),
+  clearAlerts: () => fetch('/api/admin/alerts', { method: 'DELETE' }).then((res) => {
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  }),
 
   listContacts: () => fetch('/api/contacts').then(json<Contact[]>),
   getContact: (id: string) => fetch(`/api/contacts/${id}`).then(json<Contact>),

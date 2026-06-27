@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NimBus.Core.Extensions;
 using NimBus.Core.Pipeline;
+using NimBus.Extensions.Notifications;
 using NimBus.SDK.Extensions;
 
 var builder = FunctionsApplication.CreateBuilder(args);
@@ -76,6 +77,29 @@ builder.Services.AddNimBus(n =>
 builder.Services.AddNimBusSubscriber("ErpEndpoint", sub =>
 {
     sub.AddHandlersFromAssemblyContaining<CrmAccountCreatedHandler>();
+});
+
+// Demo notifications: when an inbound ERP message fails, dead-letters, or blocks its session,
+// NimBus fires a webhook to the ERP API, which surfaces it as a live operator alert in Erp.Web.
+// Reuses the same erp-api base URL the adapter already calls; AddNimBus above registered the
+// MessageLifecycleNotifier this path depends on. A JSON Template keeps the payload stable (and
+// exercises the channel's JSON-string escaping for quotes/newlines in error text).
+builder.Services.AddNimBusNotifications(channels =>
+{
+    channels.AddWebhook(opts =>
+    {
+        opts.Url = ResolveErpApiBaseUrl(builder.Configuration).TrimEnd('/') + "/api/webhooks/notifications";
+        opts.MinSeverity = NotificationSeverity.Warning; // passes Error + Critical, skips Info noise
+        opts.Template =
+            "{\"severity\":\"{Severity}\",\"title\":\"{Title}\",\"message\":\"{Message}\"," +
+            "\"eventId\":\"{EventId}\",\"eventTypeId\":\"{EventTypeId}\",\"messageId\":\"{MessageId}\"," +
+            "\"correlationId\":\"{CorrelationId}\",\"errorDetails\":\"{ErrorDetails}\"}";
+    });
+}, options =>
+{
+    options.NotifyOnFailure = true;      // Error    (service-mode reject, handler throw)
+    options.NotifyOnDeadLetter = true;   // Critical (retries exhausted)
+    options.NotifyOnSessionBlock = true; // Critical (default-on for this path anyway)
 });
 
 builder.Build().Run();

@@ -9,6 +9,10 @@ routing, rate limiting, and deduplication so a cascading outage cannot bury the 
 > `NotificationSeverity` enum, and `NotificationLifecycleObserver`) already shipped. This document
 > covers the production delivery channels and the routing/throttling layer added on top of them.
 
+> **Live example:** the [CRM/ERP sample](../samples/CrmErpDemo/README.md#showcase-notification-alerts-failure--webhook--operator-alert)
+> wires the Webhook channel onto its ERP adapter — flip a failure toggle and watch alerts appear in
+> the web UI.
+
 ## Quick start
 
 ```csharp

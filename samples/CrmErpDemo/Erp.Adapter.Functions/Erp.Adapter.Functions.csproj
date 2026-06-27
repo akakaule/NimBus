@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\NimBus.SDK\NimBus.SDK.csproj" />
+    <ProjectReference Include="..\..\..\src\NimBus.Extensions.Notifications\NimBus.Extensions.Notifications.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.ServiceDefaults\NimBus.ServiceDefaults.csproj" />
     <ProjectReference Include="..\CrmErpDemo.Contracts\CrmErpDemo.Contracts.csproj" />
   </ItemGroup>

@@ -2,6 +2,8 @@
 
 NimBus includes a middleware pipeline that wraps message processing, allowing cross-cutting concerns like logging, metrics, validation, and error enrichment without modifying handler code.
 
+> **Deciding whether to use middleware at all?** See [Middleware Guidelines](middleware-guidelines.md) for *when*, *why*, and *what for* — including when a concern belongs in a lifecycle observer, a handler, or the retry/DLQ layer instead. This page is the how-to reference.
+
 ## How It Works
 
 Middleware behaviors implement `IMessagePipelineBehavior` and execute in registration order, each wrapping the next. The innermost step is the actual message handler (`StrictMessageHandler`).

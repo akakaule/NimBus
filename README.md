@@ -373,6 +373,7 @@ The pipeline uses `nb setup` to run all deployment steps (`infra apply` → `top
 | [Error Handling](docs/error-handling.md) | Adapter error-handling reference (transient, retry, dead-letter, classification) |
 | [Deferred Messages](docs/deferred-messages.md) | Session blocking and deferral mechanics with Mermaid diagrams |
 | [Pipeline Middleware](docs/pipeline-middleware.md) | Built-in middleware, custom behaviors, and lifecycle observers |
+| [Middleware Guidelines](docs/middleware-guidelines.md) | Decision guide: when, why, and what to use pipeline middleware for (vs. observers, handlers, instrumentation, retry) |
 | [Testing Guide](docs/testing.md) | Test layers, conformance suites, OpenTelemetry coverage, and diagrams |
 | [CLI Reference](docs/cli.md) | All `nb` commands: infra, topology, deploy, endpoint, container, catalog |
 | [SDK API Reference](docs/sdk-api-reference.md) | Interfaces: IPublisherClient, IEventHandler, RetryPolicy, IOutbox |

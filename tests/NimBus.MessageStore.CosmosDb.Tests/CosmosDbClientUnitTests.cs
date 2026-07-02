@@ -168,6 +168,9 @@ public sealed class CosmosDbClientUnitTests
         public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default)
             => throw UpsertException ?? new NotSupportedException();
 
+        public Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default)
+            => throw new NotSupportedException();
+
         public Task<ItemResponse<T>> DeleteItemAsync<T>(string id, PartitionKey partitionKey)
             => throw new NotSupportedException();
 

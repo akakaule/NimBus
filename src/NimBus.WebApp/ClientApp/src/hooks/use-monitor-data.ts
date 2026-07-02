@@ -105,6 +105,13 @@ export interface UseMonitorDataResult {
  * Designed to keep working on a fixed schedule even if individual fetches
  * fail (we just keep the last good snapshot and flip `isStale` once the gap
  * crosses STALE_AFTER_MS).
+ *
+ * Polling pauses while the tab is hidden (no point burning API + store
+ * round-trips for a wall nobody sees) and refreshes immediately on resume.
+ * Staleness is measured from the later of last-refresh and resume, so a
+ * long-hidden tab doesn't flash the "connection lost" banner while its
+ * catch-up fetch is in flight — real failures still surface after
+ * STALE_AFTER_MS of visible, failing polls.
  */
 export function useMonitorData(): UseMonitorDataResult {
   const [endpoints, setEndpoints] = useState<MonitorEndpoint[]>([]);
@@ -113,6 +120,9 @@ export function useMonitorData(): UseMonitorDataResult {
   const [error, setError] = useState<string | undefined>();
   const [now, setNow] = useState(Date.now());
   const [ticker, setTicker] = useState<TickerEvent[]>([]);
+  // Wall-clock ms when the tab last became visible again; staleness is
+  // measured from max(lastRefreshAt, resumedAt) so resume doesn't false-flag.
+  const [resumedAt, setResumedAt] = useState(0);
 
   // Per-endpoint derived state we maintain across refreshes. Stored in refs
   // because they change on every poll tick but only need to bake into the
@@ -277,11 +287,23 @@ export function useMonitorData(): UseMonitorDataResult {
     };
     void run();
     const handle = window.setInterval(() => {
+      // Hidden tab: skip the tick — the wall isn't visible and browsers
+      // throttle timers anyway; the visibilitychange handler below catches up.
+      if (document.hidden) return;
       void run();
     }, REFRESH_MS);
+    const onVisibilityChange = () => {
+      if (document.hidden) return;
+      // Refresh immediately on resume and mark the resume time so the
+      // staleness banner doesn't fire while the catch-up fetch runs.
+      setResumedAt(Date.now());
+      void run();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       cancelled = true;
       window.clearInterval(handle);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [fetchOnce]);
 
@@ -294,7 +316,8 @@ export function useMonitorData(): UseMonitorDataResult {
   }, []);
 
   const isStale =
-    lastRefreshAt !== undefined && now - lastRefreshAt > STALE_AFTER_MS;
+    lastRefreshAt !== undefined &&
+    now - Math.max(lastRefreshAt, resumedAt) > STALE_AFTER_MS;
 
   const decoratedEndpoints: MonitorEndpoint[] = endpoints.map((e) => ({
     ...e,

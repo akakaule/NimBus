@@ -188,3 +188,31 @@ describe("Mappings page (spec 023)", () => {
     });
   });
 });
+
+describe("describeActionError", () => {
+  it("shows schema-drift guidance for a 409 SwaggerException", async () => {
+    const { describeActionError } = await import("./mappings");
+    const err = new api.SwaggerException("Conflict", 409, "", {}, null);
+    expect(describeActionError(err)).toBe(
+      "Mapping has drifted since proposal — reject and re-propose.",
+    );
+  });
+
+  it("shows the numeric status for a non-409 SwaggerException", async () => {
+    const { describeActionError } = await import("./mappings");
+    const err = new api.SwaggerException("Server error", 500, "", {}, null);
+    expect(describeActionError(err)).toBe("Action failed (500).");
+  });
+
+  it("falls back to the message for a plain Error", async () => {
+    const { describeActionError } = await import("./mappings");
+    expect(describeActionError(new Error("boom"))).toBe(
+      "Action failed (boom).",
+    );
+  });
+
+  it("handles a non-Error thrown value", async () => {
+    const { describeActionError } = await import("./mappings");
+    expect(describeActionError("nope")).toBe("Action failed (unknown).");
+  });
+});

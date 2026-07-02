@@ -57,6 +57,30 @@ function parseWorkedExamples(json: string | undefined): WorkedExample[] {
   }
 }
 
+/**
+ * Maps an error thrown by a mapping-lifecycle action to a user-facing toast
+ * description. The NSwag-generated {@link api.SwaggerException} extends `Error`
+ * but carries the numeric HTTP `status`, so it must be detected *before* the
+ * generic `Error` branch — otherwise a real 409 is read as a message string and
+ * the schema-drift guidance is never shown.
+ */
+export function describeActionError(err: unknown): string {
+  if (
+    err !== null &&
+    typeof err === "object" &&
+    api.SwaggerException.isSwaggerException(err)
+  ) {
+    if (err.status === 409) {
+      return "Mapping has drifted since proposal — reject and re-propose.";
+    }
+    return `Action failed (${err.status}).`;
+  }
+  if (err instanceof Error) {
+    return `Action failed (${err.message}).`;
+  }
+  return "Action failed (unknown).";
+}
+
 // ── sub-components ───────────────────────────────────────────────────────────
 
 function MappingDetailPanel({
@@ -77,17 +101,11 @@ function MappingDetailPanel({
         addToast({ variant: "success", title: successMsg });
         onRefresh();
       } catch (err: unknown) {
-        const status =
-          err instanceof Error
-            ? err.message
-            : typeof err === "object" && err !== null && "status" in err
-              ? String((err as { status: unknown }).status)
-              : "unknown";
-        const description =
-          status === "409"
-            ? "Mapping has drifted since proposal — reject and re-propose."
-            : `Action failed (${status}).`;
-        addToast({ variant: "error", title: "Action failed", description });
+        addToast({
+          variant: "error",
+          title: "Action failed",
+          description: describeActionError(err),
+        });
       } finally {
         setActing(false);
       }

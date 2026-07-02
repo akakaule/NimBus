@@ -88,7 +88,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IEventMappingStore
         return match == null ? throw new EndpointNotFoundException(endpointId) : Task.FromResult(match);
     }
 
-    public Task<UnresolvedEvent> GetEvent(string endpointId, string eventId)
+    public virtual Task<UnresolvedEvent> GetEvent(string endpointId, string eventId)
     {
         var match = _events.Values.Where(e => e.EndpointId == endpointId && e.EventId == eventId).OrderByDescending(e => e.UpdatedAt).FirstOrDefault();
         return match == null ? throw new EndpointNotFoundException(endpointId) : Task.FromResult(match);

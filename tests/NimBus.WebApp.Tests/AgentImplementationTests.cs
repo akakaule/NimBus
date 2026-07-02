@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -146,23 +147,42 @@ namespace NimBus.WebApp.Tests
 
         private static (AgentImplementation Impl, InMemoryMessageStore Store, CapturingPublisher Publisher, CapturingManagerClient Manager, AgentSubscriptionRegistry Registry) BuildAgent(
             params string[] endpointIds)
+            => BuildAgent(httpContextAccessor: null, endpointIds);
+
+        private static (AgentImplementation Impl, InMemoryMessageStore Store, CapturingPublisher Publisher, CapturingManagerClient Manager, AgentSubscriptionRegistry Registry) BuildAgent(
+            IHttpContextAccessor? httpContextAccessor,
+            params string[] endpointIds)
         {
             var store = new InMemoryMessageStore();
             var platform = new FakePlatform(endpointIds);
             var publisher = new CapturingPublisher();
             var manager = new CapturingManagerClient();
             var registry = new AgentSubscriptionRegistry();
+            // Real audit + settlement services over the same in-memory store, so settle
+            // tests can assert the audit row the shared HandoffSettlementService writes.
+            var audit = new AuditLogService(NullLogger<AuditLogService>.Instance, store);
+            var settlement = new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance);
             var impl = new AgentImplementation(
                 store,
                 platform,
                 publisher,
                 store,
                 manager,
+                settlement,
                 registry,
                 config: null,                 // -> AgentZone default zone id
-                httpContextAccessor: null,    // -> CurrentAgentId() falls back to "demo-agent"
+                httpContextAccessor,          // null -> CurrentAgentId() falls back to "demo-agent"
                 NullLogger<AgentImplementation>.Instance);
             return (impl, store, publisher, manager, registry);
+        }
+
+        // An accessor whose request carries the X-Agent-Id header, so CurrentAgentId()
+        // (and therefore the settle audit's auditor name) resolves to the given agent.
+        private static IHttpContextAccessor AgentContext(string agentId)
+        {
+            var ctx = new DefaultHttpContext();
+            ctx.Request.Headers["X-Agent-Id"] = agentId;
+            return new HttpContextAccessor { HttpContext = ctx };
         }
 
         // Seeds a Pending+Handoff event under the Agent Zone endpoint, exactly as Task 7's
@@ -484,12 +504,14 @@ namespace NimBus.WebApp.Tests
             // The Cosmos store returns null (not empty) when the zone container is missing.
             // Receive must null-guard and report 204, never NRE into a 500.
             var store = new NullPendingStore();
+            var audit = new AuditLogService(NullLogger<AuditLogService>.Instance, store);
             var impl = new AgentImplementation(
                 store,
                 new FakePlatform(),
                 new CapturingPublisher(),
                 store,
                 new CapturingManagerClient(),
+                new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance),
                 new AgentSubscriptionRegistry(),
                 config: null,
                 httpContextAccessor: null,
@@ -632,6 +654,113 @@ namespace NimBus.WebApp.Tests
 
             Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult), "Non-pending-handoff event must yield 400");
             Assert.AreEqual(0, manager.CompleteCount);
+        }
+
+        // ── PostAgentSettleAsync — audit trail (finding 6) ───────────────────
+
+        // A store whose GetEvent raises a non-not-found exception, standing in for a
+        // transient Cosmos fault (throttling 429, connectivity). Such faults must NOT be
+        // mistaken for "handoff gone" (404) — they must propagate to a 500.
+        private sealed class ThrowingGetEventStore : InMemoryMessageStore
+        {
+            public override Task<UnresolvedEvent> GetEvent(string endpointId, string eventId)
+                => throw new InvalidOperationException("transient store fault");
+        }
+
+        [TestMethod]
+        public async Task PostAgentSettle_complete_writes_audit_row_attributed_to_agent()
+        {
+            var (impl, store, _, manager, _) = BuildAgent(AgentContext("agent-alice"));
+            await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}", messageId: "msg-99");
+
+            var result = await impl.PostAgentSettleAsync(
+                SettleRequest("evt-1", AgentSettleRequestOutcome.Complete, result: "{\"importedId\":42}"));
+
+            Assert.IsInstanceOfType(result, typeof(OkResult), "Complete settle must yield 200");
+            Assert.AreEqual(1, manager.CompleteCount, "CompleteHandoff must be called once");
+
+            var rows = (await store.GetMessageAudits("evt-1")).ToList();
+            Assert.AreEqual(1, rows.Count, "An agent-settled complete must write exactly one audit row (ADR-002)");
+            Assert.AreEqual(NimBus.MessageStore.MessageAuditType.CompleteHandoff, rows[0].AuditType);
+            Assert.AreEqual("agent-alice", rows[0].AuditorName,
+                "Auditor must be the settling agent (X-Agent-Id), not anonymous");
+        }
+
+        [TestMethod]
+        public async Task PostAgentSettle_fail_writes_audit_row_attributed_to_agent()
+        {
+            var (impl, store, _, manager, _) = BuildAgent(AgentContext("agent-bob"));
+            await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+
+            var result = await impl.PostAgentSettleAsync(
+                SettleRequest("evt-1", AgentSettleRequestOutcome.Fail, errorText: "boom", errorType: "RuntimeError"));
+
+            Assert.IsInstanceOfType(result, typeof(OkResult), "Fail settle must yield 200");
+            Assert.AreEqual(1, manager.FailCount, "FailHandoff must be called once");
+
+            var rows = (await store.GetMessageAudits("evt-1")).ToList();
+            Assert.AreEqual(1, rows.Count, "An agent-settled fail must write exactly one audit row (ADR-002)");
+            Assert.AreEqual(NimBus.MessageStore.MessageAuditType.FailHandoff, rows[0].AuditType);
+            Assert.AreEqual("agent-bob", rows[0].AuditorName,
+                "Auditor must be the settling agent (X-Agent-Id), not anonymous");
+        }
+
+        [TestMethod]
+        public async Task PostAgentSettle_event_not_found_writes_no_audit_row()
+        {
+            var (impl, store, _, manager, _) = BuildAgent();
+
+            var result = await impl.PostAgentSettleAsync(
+                SettleRequest("missing-evt", AgentSettleRequestOutcome.Complete));
+
+            Assert.IsInstanceOfType(result, typeof(NotFoundObjectResult), "Unknown event must yield 404");
+            Assert.AreEqual(0, manager.CompleteCount, "Nothing must settle for an unknown event");
+            var audits = await store.GetMessageAudits("missing-evt");
+            Assert.IsTrue(audits == null || !audits.Any(), "A 404 settle must not write an audit row");
+        }
+
+        [TestMethod]
+        public async Task PostAgentSettle_transient_store_fault_propagates_not_swallowed_to_404()
+        {
+            var store = new ThrowingGetEventStore();
+            var audit = new AuditLogService(NullLogger<AuditLogService>.Instance, store);
+            var manager = new CapturingManagerClient();
+            var impl = new AgentImplementation(
+                store, new FakePlatform(), new CapturingPublisher(), store, manager,
+                new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance),
+                new AgentSubscriptionRegistry(), config: null, httpContextAccessor: null,
+                NullLogger<AgentImplementation>.Instance);
+
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+                () => impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete)),
+                "A transient store fault must surface (500), not be swallowed into a 404");
+            Assert.AreEqual(0, manager.CompleteCount, "Nothing must settle on a transient fault");
+        }
+
+        [TestMethod]
+        public async Task HandoffSettlementService_writes_audit_row_with_given_auditor()
+        {
+            // The single core the operator (EventImplementation) and agent paths both funnel
+            // through. Proving it writes the audit row here is the operator-path regression:
+            // the operator can no longer skip the audit because it delegates to this service.
+            var store = new InMemoryMessageStore();
+            await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
+            var audit = new AuditLogService(NullLogger<AuditLogService>.Instance, store);
+            var svc = new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance);
+
+            var settled = 0;
+            var result = await svc.SettleAsync(
+                ZoneId, "evt-1", "msg-1",
+                NimBus.MessageStore.MessageAuditType.CompleteHandoff, "note", "operator-carol",
+                httpContext: null,
+                (entry, auditor) => { settled++; return Task.CompletedTask; });
+
+            Assert.IsInstanceOfType(result, typeof(OkResult));
+            Assert.AreEqual(1, settled, "The settle action must be invoked exactly once");
+            var rows = (await store.GetMessageAudits("evt-1")).ToList();
+            Assert.AreEqual(1, rows.Count, "The shared core must always write the audit row");
+            Assert.AreEqual(NimBus.MessageStore.MessageAuditType.CompleteHandoff, rows[0].AuditType);
+            Assert.AreEqual("operator-carol", rows[0].AuditorName, "The given auditor must be recorded");
         }
 
         // ── PostAgentPublishAsync ────────────────────────────────────────────

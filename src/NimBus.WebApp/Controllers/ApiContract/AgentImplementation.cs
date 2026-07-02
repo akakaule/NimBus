@@ -20,7 +20,6 @@ using CoreMessage = NimBus.Core.Messages.Message;
 using CoreMessageType = NimBus.Core.Messages.MessageType;
 using CoreMessageContent = NimBus.Core.Messages.MessageContent;
 using CoreEventContent = NimBus.Core.Messages.EventContent;
-using StoreResolutionStatus = NimBus.MessageStore.ResolutionStatus;
 
 namespace NimBus.WebApp.Controllers.ApiContract
 {
@@ -39,6 +38,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
         private readonly IAgentEventPublisher _publisher;
         private readonly INimBusMessageStore _store;
         private readonly IManagerClient _managerClient;
+        private readonly IHandoffSettlementService _settlement;
         private readonly IAgentSubscriptionRegistry _subscriptions;
         private readonly IConfiguration _config;
         private readonly IHttpContextAccessor _httpContextAccessor;
@@ -50,6 +50,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             IAgentEventPublisher publisher,
             INimBusMessageStore store,
             IManagerClient managerClient,
+            IHandoffSettlementService settlement,
             IAgentSubscriptionRegistry subscriptions,
             IConfiguration config,
             IHttpContextAccessor httpContextAccessor,
@@ -60,6 +61,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             _publisher = publisher;
             _store = store;
             _managerClient = managerClient;
+            _settlement = settlement;
             _subscriptions = subscriptions;
             _config = config;
             _httpContextAccessor = httpContextAccessor;
@@ -312,62 +314,44 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new BadRequestObjectResult("coordinates.eventId is required.");
 
             var zoneId = AgentZone.ResolveEndpointId(_config);
-
-            UnresolvedEvent pending;
-            try
-            {
-                pending = await _store.GetEvent(zoneId, coords.EventId);
-            }
-            catch (Exception e)
-            {
-                _logger.LogWarning("Agent settle: event not found. ZoneId: {ZoneId}, EventId: {EventId}, Ex: {Exception}", zoneId, coords.EventId, e.Message);
-                return new NotFoundObjectResult("Event not found");
-            }
-
-            if (pending == null)
-                return new NotFoundObjectResult("Event not found");
-
-            if (pending.ResolutionStatus != StoreResolutionStatus.Pending
-                || !string.Equals(pending.PendingSubStatus, HandoffSubStatus, StringComparison.Ordinal))
-            {
-                _logger.LogWarning(
-                    "Agent settle rejected: event is not a pending handoff. ZoneId: {ZoneId}, EventId: {EventId}, Status: {Status}, SubStatus: {SubStatus}",
-                    zoneId, coords.EventId, pending.ResolutionStatus, pending.PendingSubStatus ?? "<null>");
-                return new BadRequestObjectResult("Event is not a pending handoff.");
-            }
-
-            var pendingEntry = new MessageEntity
-            {
-                EventId = pending.EventId,
-                MessageId = coords.MessageId,
-                SessionId = pending.SessionId,
-                CorrelationId = pending.CorrelationId,
-                OriginatingMessageId = pending.OriginatingMessageId,
-                EventTypeId = pending.EventTypeId,
-                PendingSubStatus = pending.PendingSubStatus,
-            };
+            // Auditor for the settlement is the agent, not a request principal — the X-Agent-Id
+            // header stand-in (spec 022). Recorded on the CompleteHandoff/FailHandoff audit row.
+            var auditor = CurrentAgentId();
+            var httpContext = _httpContextAccessor?.HttpContext;
 
             if (body.Outcome == AgentSettleRequestOutcome.Complete)
             {
-                _logger.LogInformation("Agent settle (complete). ZoneId: {ZoneId}, EventId: {EventId}", zoneId, coords.EventId);
+                // The load → PendingHandoff guard → settle → audit core is shared with the
+                // operator path via IHandoffSettlementService, so an agent-settled handoff
+                // always leaves the same audit trail (ADR-002).
+                return await _settlement.SettleAsync(
+                    zoneId, coords.EventId, coords.MessageId,
+                    MessageAuditType.CompleteHandoff, body.Result, auditor, httpContext,
+                    (pendingEntry, _) =>
+                    {
 #pragma warning disable CS0618 // Manager-side settlement: the WebApp *is* the Manager. The
-                // [Obsolete] hint steers adapters toward IHandoffClient; the manager path
-                // takes the endpoint as a parameter and reuses the ServiceBusClient registered
-                // in DI (mirrors EventImplementation.PostHandoffCompleteAsync).
-                await _managerClient.CompleteHandoff(pendingEntry, zoneId, body.Result);
+                        // [Obsolete] hint steers adapters toward IHandoffClient; the manager path
+                        // takes the endpoint as a parameter and reuses the ServiceBusClient registered
+                        // in DI (mirrors EventImplementation.PostHandoffCompleteAsync).
+                        return _managerClient.CompleteHandoff(pendingEntry, zoneId, body.Result);
 #pragma warning restore CS0618
-                return new OkResult();
+                    });
             }
 
-            // Fail outcome
+            // Fail outcome. Validate the reason up front (400) — mirrors the operator path's
+            // PostHandoffFailAsync, which rejects a missing reason before loading the event.
             if (string.IsNullOrWhiteSpace(body.ErrorText))
                 return new BadRequestObjectResult("errorText is required when outcome is 'fail'.");
 
-            _logger.LogInformation("Agent settle (fail). ZoneId: {ZoneId}, EventId: {EventId}, ErrorType: {ErrorType}", zoneId, coords.EventId, body.ErrorType);
+            return await _settlement.SettleAsync(
+                zoneId, coords.EventId, coords.MessageId,
+                MessageAuditType.FailHandoff, body.ErrorText, auditor, httpContext,
+                (pendingEntry, _) =>
+                {
 #pragma warning disable CS0618 // See above — manager-side settlement.
-            await _managerClient.FailHandoff(pendingEntry, zoneId, body.ErrorText, body.ErrorType);
+                    return _managerClient.FailHandoff(pendingEntry, zoneId, body.ErrorText, body.ErrorType);
 #pragma warning restore CS0618
-            return new OkResult();
+                });
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────

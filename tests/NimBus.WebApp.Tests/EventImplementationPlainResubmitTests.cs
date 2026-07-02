@@ -166,6 +166,7 @@ public sealed class EventImplementationPlainResubmitTests
             adminService: null!,
             serviceBusClient: null!,
             new NoOpAuditLogService(),
+            handoffSettlement: null!,   // resubmit/skip paths never touch handoff settlement
             new HttpContextAccessor { HttpContext = new DefaultHttpContext() });
 
     private sealed class CapturingManagerClient : IManagerClient
@@ -201,6 +202,7 @@ public sealed class EventImplementationPlainResubmitTests
             string? eventId = null,
             string? endpointId = null,
             string? eventTypeId = null,
+            string? auditorNameOverride = null,
             System.Threading.CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 

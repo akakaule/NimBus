@@ -47,6 +47,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
         private readonly IAdminService adminService;
         private readonly ServiceBusClient serviceBusClient;
         private readonly IAuditLogService auditLogService;
+        private readonly IHandoffSettlementService handoffSettlement;
         private readonly IHttpContextAccessor httpContextAccessor;
 
         public EventImplementation(
@@ -59,6 +60,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             IAdminService adminService,
             ServiceBusClient serviceBusClient,
             IAuditLogService auditLogService,
+            IHandoffSettlementService handoffSettlement,
             IHttpContextAccessor httpContextAccessor)
         {
             this.platform = platform;
@@ -70,6 +72,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             this.adminService = adminService;
             this.serviceBusClient = serviceBusClient;
             this.auditLogService = auditLogService;
+            this.handoffSettlement = handoffSettlement;
             this.httpContextAccessor = httpContextAccessor;
         }
         public async Task<ActionResult<Message>> GetEventIdsAsync(string eventId, string messageId)
@@ -280,11 +283,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 });
         }
 
-        // Shared body for the two handoff-settlement operator actions. Loads the
-        // pending event, verifies it really is parked in PendingHandoff, publishes
-        // the settlement control message via the supplied action, then records an
-        // audit row. The Pending → Completed/Failed transition itself happens
-        // asynchronously when the owning subscriber processes the control message.
+        // Operator entry to the two handoff-settlement actions. Does the operator-only
+        // pre-checks (endpoint exists, caller manages it) and then delegates the load →
+        // PendingHandoff guard → settle → audit core to the shared IHandoffSettlementService,
+        // which the agent settle path also uses so neither can skip the audit row.
         private async Task<IActionResult> SettlePendingHandoffAsync(
             string endpointId,
             string eventId,
@@ -303,51 +305,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpointId}'.");
             }
 
-            UnresolvedEvent pendingEvent;
-            try
-            {
-                pendingEvent = await cosmosClient.GetEvent(endpointId, eventId);
-            }
-            catch (Exception e)
-            {
-                logger.LogWarning("Handoff settle: event not found. EndpointId: {EndpointId}, EventId: {EventId}, Ex: {Exception}", endpointId, eventId, e.Message);
-                return new NotFoundObjectResult("Event not found");
-            }
-
-            if (pendingEvent == null)
-                return new NotFoundObjectResult("Event not found");
-
-            if (pendingEvent.ResolutionStatus != MessageStore.ResolutionStatus.Pending
-                || !string.Equals(pendingEvent.PendingSubStatus, "Handoff", StringComparison.Ordinal))
-            {
-                logger.LogWarning(
-                    "Handoff settle rejected: event is not a pending handoff. EndpointId: {EndpointId}, EventId: {EventId}, Status: {Status}, SubStatus: {SubStatus}",
-                    endpointId, eventId, pendingEvent.ResolutionStatus, pendingEvent.PendingSubStatus ?? "<null>");
-                return new BadRequestObjectResult("Event is not a pending handoff.");
-            }
-
-            var pendingEntry = new MessageEntity
-            {
-                EventId = pendingEvent.EventId,
-                MessageId = messageId,
-                SessionId = pendingEvent.SessionId,
-                CorrelationId = pendingEvent.CorrelationId,
-                OriginatingMessageId = pendingEvent.OriginatingMessageId,
-                EventTypeId = pendingEvent.EventTypeId,
-                PendingSubStatus = pendingEvent.PendingSubStatus,
-            };
-
-            logger.LogInformation(
-                "Handoff settle ({AuditType}). EndpointId: {EndpointId}, EventId: {EventId}, MessageId: {MessageId}",
-                auditType, endpointId, eventId, messageId);
-
             var auditorName = AuditLogService.ResolveAuditorName(httpContextAccessor.HttpContext);
-            await settle(pendingEntry, auditorName);
-            await auditLogService.LogAuditAsync(auditType, httpContextAccessor.HttpContext,
-                data: auditComment, eventId: eventId, endpointId: endpointId,
-                eventTypeId: pendingEvent.EventTypeId);
-
-            return new OkResult();
+            return await handoffSettlement.SettleAsync(
+                endpointId, eventId, messageId, auditType, auditComment, auditorName,
+                httpContextAccessor.HttpContext, settle);
         }
 
         public async Task<ActionResult<DeferredReprocessResult>> PostReprocessDeferredAsync(string endpointId, string sessionId)

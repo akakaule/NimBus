@@ -132,12 +132,15 @@ namespace NimBus.WebApp.Tests
             var publisher = new CapturingPublisher();
             var manager = new CapturingManagerClient();
             var registry = new AgentSubscriptionRegistry();
+            var audit = new AuditLogService(NullLogger<AuditLogService>.Instance, store);
+            var settlement = new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance);
             var impl = new AgentImplementation(
                 store,
                 platform,
                 publisher,
                 store,
                 manager,
+                settlement,
                 registry,
                 config: null,              // -> AgentZone.DefaultAgentZoneEndpointId
                 httpContextAccessor: null, // -> CurrentAgentId() falls back to "demo-agent"

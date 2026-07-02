@@ -29,6 +29,24 @@ namespace NimBus.SDK
         IEnumerable<IEnumerable<IEvent>> GetBatches(List<IEvent> events);
 
         /// <summary>
+        /// Publishes any number of events, automatically split into pages that
+        /// fit the Azure Service Bus batch size. Preferred over
+        /// <see cref="GetBatches"/> + <see cref="PublishBatch"/> — the
+        /// <see cref="PublisherClient"/> implementation builds and serializes
+        /// each event exactly once. This default implementation delegates to
+        /// GetBatches + PublishBatch so existing test doubles keep working.
+        /// </summary>
+        /// <param name="events">Events to publish, in order.</param>
+        /// <param name="correlationId">Correlation id applied to every message; a new GUID when null.</param>
+        async Task PublishBatches(IEnumerable<IEvent> events, string correlationId = null)
+        {
+            foreach (var batch in GetBatches(new List<IEvent>(events)))
+            {
+                await PublishBatch(batch, correlationId);
+            }
+        }
+
+        /// <summary>
         /// Sends a request and awaits a typed response with timeout.
         /// Uses Azure Service Bus sessions for reply correlation.
         /// </summary>

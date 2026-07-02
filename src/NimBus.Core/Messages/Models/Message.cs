@@ -111,6 +111,16 @@ namespace NimBus.Core.Messages
         /// means no deadline (operator manages indefinitely).
         /// </summary>
         DateTime? ExpectedBy => null;
+
+        /// <summary>
+        /// Pre-serialized <see cref="MessageContent"/> JSON, set by publish
+        /// paths that already serialized the content for batch sizing so the
+        /// transport doesn't serialize it a second time. Null (the default)
+        /// means the transport serializes <see cref="MessageContent"/> itself.
+        /// Treat as a cache only: it must always equal
+        /// <c>JsonConvert.SerializeObject(MessageContent)</c> at send time.
+        /// </summary>
+        string SerializedMessageContent => null;
     }
 
     public class Message : IMessage
@@ -148,5 +158,14 @@ namespace NimBus.Core.Messages
         public string HandoffReason { get; set; }
         public string ExternalJobId { get; set; }
         public DateTime? ExpectedBy { get; set; }
+
+        /// <summary>
+        /// See <see cref="IMessage.SerializedMessageContent"/>. JsonIgnore is
+        /// mandatory: OutboxSender serializes the whole <see cref="Message"/>
+        /// into the outbox Payload column — persisting this cache would double
+        /// the payload and round-trip a potentially stale body.
+        /// </summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public string SerializedMessageContent { get; set; }
     }
 }

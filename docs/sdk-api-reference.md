@@ -66,6 +66,7 @@ public interface IPublisherClient
     Task Publish(IEvent @event, string sessionId, string correlationId);
     Task Publish(IEvent @event, string sessionId, string correlationId, string messageId);
     Task PublishBatch(IEnumerable<IEvent> events);
+    Task PublishBatches(IEnumerable<IEvent> events, string correlationId = null);
 }
 ```
 
@@ -75,6 +76,7 @@ public interface IPublisherClient
 | `Publish(event, sessionId, correlationId)` | Publish with explicit session and correlation IDs. Overrides `GetSessionId()`. |
 | `Publish(event, sessionId, correlationId, messageId)` | Publish with all IDs explicit (for deterministic deduplication). |
 | `PublishBatch(events)` | Publish multiple events as a Service Bus batch. Respect batch size limits. |
+| `PublishBatches(events, correlationId)` | **Preferred for bulk publish.** Publishes any number of events, automatically paged to the Service Bus batch size; each event is built and serialized exactly once. |
 
 **Session ID controls ordering.** By default, `Publish(event)` uses the event's `GetSessionId()` method. The explicit overloads let the publisher control ordering independently:
 

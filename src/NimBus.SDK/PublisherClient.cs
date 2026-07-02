@@ -20,6 +20,12 @@ public class PublisherClient : IPublisherClient
     private readonly string _publisherEndpoint;
     private ServiceBusClient _serviceBusClient;
 
+    // There is a 256 KB limit per message sent on Azure Service Bus (Standard
+    // tier; 1 MB on Premium) and a 64 KB header limit. Our user properties are
+    // significant, so half the remaining size is reserved for them as well.
+    // https://docs.microsoft.com/en-us/azure/service-bus-messaging/service-bus-quotas
+    internal const long MaxBatchBodyBytes = 256000 - 64000 - 128000;
+
     /// <summary>
     /// Creates a new PublisherClient with the specified sender.
     /// Preferred for DI registration via <see cref="Extensions.ServiceCollectionExtensions.AddNimBusPublisher(Microsoft.Extensions.DependencyInjection.IServiceCollection, string)"/>.
@@ -125,6 +131,51 @@ public class PublisherClient : IPublisherClient
     }
 
     /// <summary>
+    /// Publishes any number of events, automatically split into pages that fit
+    /// the Azure Service Bus batch size. Preferred over
+    /// <see cref="GetBatches"/> + <see cref="PublishBatch"/>: each event is
+    /// built and serialized exactly once — the serialized body is used for
+    /// page sizing and stashed on the message so the transport reuses it.
+    /// </summary>
+    /// <param name="events">Events to publish, in order.</param>
+    /// <param name="correlationId">Correlation id applied to every message; a new GUID when null.</param>
+    public async Task PublishBatches(IEnumerable<IEvent> events, string correlationId = null)
+    {
+        correlationId ??= Guid.NewGuid().ToString();
+
+        var page = new List<IMessage>();
+        var pageSize = 0L;
+        foreach (var @event in events)
+        {
+            // GetMessage validates the event and serializes it once; the body
+            // (serialized MessageContent) is serialized once more here and
+            // reused for both sizing and the wire payload.
+            var message = (Message)GetMessage(@event, correlationId);
+            var serializedContent = JsonConvert.SerializeObject(message.MessageContent);
+            message.SerializedMessageContent = serializedContent;
+            var size = (long)System.Text.Encoding.UTF8.GetByteCount(serializedContent);
+
+            // Greedy first-fit paging. An oversized single event still goes out
+            // as its own page — Service Bus rejects it at send time, matching
+            // GetBatchesStatic's contract.
+            if (page.Count > 0 && pageSize + size > MaxBatchBodyBytes)
+            {
+                await _sender.Send(page);
+                page = new List<IMessage>();
+                pageSize = 0;
+            }
+
+            page.Add(message);
+            pageSize += size;
+        }
+
+        if (page.Count > 0)
+        {
+            await _sender.Send(page);
+        }
+    }
+
+    /// <summary>
     /// Schedules an event for delivery at the specified time.
     /// Returns a sequence number that can be used to cancel the scheduled message.
     /// </summary>
@@ -209,35 +260,46 @@ public class PublisherClient : IPublisherClient
     /// <returns>Batches of events</returns>
     public static IEnumerable<IEnumerable<IEvent>> GetBatchesStatic(List<IEvent> events)
     {
-        // There is a 256 KB limit per message sent on Azure Service Bus.
-        // We will divide it into messages block lower or equal to 256 KB.
-        // Maximum message size: 256 KB for Standard tier, 1 MB for Premium tier.
-        // Maximum header size: 64 KB.
-        // Our user properties are pretty significant, so we'll leave half the size for that as well.
-        // https://docs.microsoft.com/en-us/azure/service-bus-messaging/service-bus-quotas
-        var maxBatchSize = 256000 - 64000 - 128000;
+        // Each probe builds + serializes the event once (validation included,
+        // preserving the per-event Validate contract). The size of the event
+        // that overflows a page is carried to the next page so no event is
+        // measured twice, and no ServiceBusMessage/body-copy is materialized
+        // just for sizing.
+        var carriedSize = -1L;
         do
         {
             var pageSize = 0L;
             var page = events.TakeWhile(@event =>
             {
-                var messageToPublish = MessageHelper.ToServiceBusMessage(GetMessageStatic(@event));
-                if (pageSize + messageToPublish.Body.ToArray().Length > maxBatchSize)
+                var size = carriedSize >= 0 ? carriedSize : MeasureBodyBytes(@event);
+                carriedSize = -1L;
+                if (pageSize + size > MaxBatchBodyBytes)
+                {
+                    carriedSize = size;
                     return false;
+                }
 
-                pageSize += messageToPublish.Body.ToArray().Length;
+                pageSize += size;
                 return true;
             }).ToList();
 
             if (page.Count == 0 && events.Count > 0)
             {
-                // Oversized event — yield as single-item batch, let Service Bus reject at send time
+                // Oversized event — yield as single-item batch, let Service Bus reject at send time.
+                // The carried measurement belongs to this event, so drop it.
                 page = new List<IEvent> { events[0] };
+                carriedSize = -1L;
             }
 
             events.RemoveRange(0, page.Count);
             yield return page;
         } while (events.Any());
+    }
+
+    private static long MeasureBodyBytes(IEvent @event)
+    {
+        var message = GetMessageStatic(@event);
+        return System.Text.Encoding.UTF8.GetByteCount(JsonConvert.SerializeObject(message.MessageContent));
     }
 
     private IMessage GetMessage(IEvent @event, string correlationId = null, string messageId = null, string sessionId = null)

@@ -84,7 +84,10 @@ namespace NimBus.ServiceBus
                 result.ApplicationProperties[W3CMessagePropagator.TraceStateHeader] = traceState;
 
             result.ScheduledEnqueueTime = DateTime.UtcNow.AddMinutes(messageEnqueueDelay);
-            var messageContentSerialized = JsonConvert.SerializeObject(message.MessageContent);
+            // Publish paths that already serialized the content (batch sizing)
+            // stash it on the message so it isn't serialized a second time here.
+            var messageContentSerialized = message.SerializedMessageContent
+                ?? JsonConvert.SerializeObject(message.MessageContent);
             result.Body = new BinaryData(Encoding.UTF8.GetBytes(messageContentSerialized));
             if (!string.IsNullOrWhiteSpace(message.MessageId))
                 result.MessageId = message.MessageId;

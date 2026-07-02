@@ -1,3 +1,4 @@
+using System.Net;
 using MappingAgent.Authoring;
 using MappingAgent.Bus;
 using Newtonsoft.Json;
@@ -38,6 +39,10 @@ public sealed class MappingAgentLoopWorker : BackgroundService
     private readonly JsonataTransformEngine _engine;
     private readonly ILogger<MappingAgentLoopWorker> _logger;
 
+    // Guards the "already proposed, skipping" Debug line so it is emitted once per skip streak
+    // rather than every 60s loop iteration.
+    private bool _skipLogged;
+
     public MappingAgentLoopWorker(
         IMappingBusGateway bus,
         IMappingAuthor author,
@@ -75,6 +80,30 @@ public sealed class MappingAgentLoopWorker : BackgroundService
         _logger.LogInformation(
             "Found schemas for {SourceEventTypeId} and {TargetEventTypeId} in catalog.",
             SourceEventTypeId, TargetEventTypeId);
+
+        // ── 1b. Short-circuit if a live proposal already exists ───────────────
+        // The mapping is authored once, then an operator approves it. Re-authoring and re-POSTing
+        // every loop would demote an approved mapping (now server-side 409) and spam the reviewer,
+        // so skip while a Draft/Active/Paused mapping for this source→target is already present.
+        // Only re-propose when none exists or the prior one was Rejected/Stale (re-author flow).
+        var existingMappings = await _bus.GetMappingsAsync(ct);
+        var current = existingMappings.FirstOrDefault(m =>
+            string.Equals(m.SourceEventTypeId, SourceEventTypeId, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(m.TargetEventTypeId, TargetEventTypeId, StringComparison.OrdinalIgnoreCase));
+        if (current is not null && IsLiveProposal(current.State))
+        {
+            if (!_skipLogged)
+            {
+                _logger.LogDebug(
+                    "Mapping {Source} → {Target} already exists in {State}; skipping re-authoring " +
+                    "until it is rejected or drifts.",
+                    SourceEventTypeId, TargetEventTypeId, current.State);
+                _skipLogged = true;
+            }
+            return true;
+        }
+
+        _skipLogged = false;
 
         // ── 2. Pull sample source payloads ────────────────────────────────────
         var samples = await _bus.GetSamplePayloadsAsync(SourceEventTypeId, maxCount: 3, ct);
@@ -130,21 +159,42 @@ public sealed class MappingAgentLoopWorker : BackgroundService
         var sourceSchemaHash = SchemaHash.Of(sourceEntry.JsonSchema);
 
         // ── 6. Submit proposal ────────────────────────────────────────────────
-        var mappingId = await _bus.ProposeMappingAsync(
-            SourceEventTypeId,
-            TargetEventTypeId,
-            proposal.Transform,
-            proposal.Rationale,
-            sourceSchemaHash,
-            workedExamplesJson,
-            ct);
+        try
+        {
+            var mappingId = await _bus.ProposeMappingAsync(
+                SourceEventTypeId,
+                TargetEventTypeId,
+                proposal.Transform,
+                proposal.Rationale,
+                sourceSchemaHash,
+                workedExamplesJson,
+                ct);
 
-        _logger.LogInformation(
-            "Proposed mapping {MappingId} (Draft). An operator must approve it via the WebApp before it is applied.",
-            mappingId);
+            _logger.LogInformation(
+                "Proposed mapping {MappingId} (Draft). An operator must approve it via the WebApp before it is applied.",
+                mappingId);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Conflict)
+        {
+            // Raced with an operator-approved mapping (or a concurrent proposal): the WebApp guards
+            // duplicates with 409. Treat as already-proposed — no error, no retry storm.
+            _logger.LogDebug(
+                "Proposal for {Source} → {Target} returned 409 (already proposed or operator-approved); " +
+                "treating as already proposed.",
+                SourceEventTypeId, TargetEventTypeId);
+        }
 
         return true;
     }
+
+    /// <summary>
+    /// A mapping in one of these states is a live proposal or approved artifact the operator owns;
+    /// the agent must not re-author over it. Rejected/Stale mappings are re-authorable.
+    /// </summary>
+    private static bool IsLiveProposal(string state) =>
+        state.Equals(nameof(MappingState.Draft), StringComparison.OrdinalIgnoreCase) ||
+        state.Equals(nameof(MappingState.Active), StringComparison.OrdinalIgnoreCase) ||
+        state.Equals(nameof(MappingState.Paused), StringComparison.OrdinalIgnoreCase);
 
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

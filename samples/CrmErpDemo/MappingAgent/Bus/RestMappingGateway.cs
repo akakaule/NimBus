@@ -76,6 +76,42 @@ public sealed class RestMappingGateway : IMappingBusGateway
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<MappingSummary>> GetMappingsAsync(CancellationToken ct = default)
+    {
+        using var response = await _http.GetAsync("/api/agent/mappings", ct);
+
+        // 404/204 → none registered yet — return empty rather than throw.
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.NoContent)
+            return Array.Empty<MappingSummary>();
+        if (!response.IsSuccessStatusCode)
+            return Array.Empty<MappingSummary>();
+
+        var json = await response.Content.ReadAsStringAsync(ct);
+        var result = new List<MappingSummary>();
+        try
+        {
+            // GET /api/agent/mappings returns a bare array of MappingInfo objects.
+            var array = JArray.Parse(json);
+            foreach (var m in array)
+            {
+                var id = m["id"]?.ToString() ?? m["Id"]?.ToString() ?? string.Empty;
+                var src = m["sourceEventTypeId"]?.ToString() ?? m["SourceEventTypeId"]?.ToString() ?? string.Empty;
+                var tgt = m["targetEventTypeId"]?.ToString() ?? m["TargetEventTypeId"]?.ToString() ?? string.Empty;
+                var state = m["state"]?.ToString() ?? m["State"]?.ToString() ?? string.Empty;
+                result.Add(new MappingSummary(id, src, tgt, state));
+            }
+        }
+        catch
+        {
+            // Best-effort: on parse failure return empty so the agent proposes and the WebApp
+            // (which now 409s duplicates) remains the source of truth for conflicts.
+            return Array.Empty<MappingSummary>();
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc/>
     public async Task<string> ProposeMappingAsync(
         string sourceEventTypeId,
         string targetEventTypeId,

@@ -19,6 +19,13 @@ public interface IMappingBusGateway
     Task<IReadOnlyList<string>> GetSamplePayloadsAsync(string eventTypeId, int maxCount, CancellationToken ct = default);
 
     /// <summary>
+    /// Returns the current mappings from <c>GET /api/agent/mappings</c> so the agent can avoid
+    /// re-proposing over a mapping that is already Draft/Active/Paused. Returns an empty list
+    /// when none exist rather than throwing.
+    /// </summary>
+    Task<IReadOnlyList<MappingSummary>> GetMappingsAsync(CancellationToken ct = default);
+
+    /// <summary>
     /// Submits a new Draft mapping proposal via <c>POST /api/agent/mappings</c>.
     /// Returns the created mapping id.
     /// </summary>
@@ -31,6 +38,13 @@ public interface IMappingBusGateway
         string? workedExamplesJson,
         CancellationToken ct = default);
 }
+
+/// <summary>A lightweight view of an existing mapping returned by <c>GET /api/agent/mappings</c>.</summary>
+/// <param name="Id">Stable mapping id ("{source}->{target}").</param>
+/// <param name="SourceEventTypeId">The source event type the mapping maps FROM.</param>
+/// <param name="TargetEventTypeId">The target event type the mapping maps TO.</param>
+/// <param name="State">Lifecycle state name (Draft, Active, Paused, Stale, Rejected).</param>
+public sealed record MappingSummary(string Id, string SourceEventTypeId, string TargetEventTypeId, string State);
 
 /// <summary>A schema catalog entry returned by <c>GET /api/agent/catalog</c>.</summary>
 /// <param name="EventTypeId">The event type id (e.g. "marketing.lead.created.v1").</param>

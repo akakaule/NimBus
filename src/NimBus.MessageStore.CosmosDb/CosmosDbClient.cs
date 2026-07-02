@@ -36,6 +36,7 @@ public interface ICosmosDbClient
     Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount);
     Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId);
     Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default);
+    Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds);
     Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId);
     Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId);
     Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId);
@@ -582,6 +583,40 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             {
                 return eventDbo.First().Event;
             }
+        }
+
+        return null;
+    }
+
+    public async Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds)
+    {
+        var container = await GetEndpointContainer(endpointId);
+        // Bound to a single row and filter status/sub-status/event-type server-side so the agent
+        // receive long-poll no longer materialises every pending event. Container is partitioned
+        // per endpoint, so this stays within one partition. Event types are passed via
+        // ARRAY_CONTAINS over a parameter to keep the SQL parameterised.
+        var sql = @"SELECT TOP 1 * FROM c
+                    WHERE c.event.PendingSubStatus = 'Handoff'
+                      AND c.status = @status
+                      AND (NOT IS_DEFINED(c.deleted) OR c.deleted != true)";
+        var types = eventTypeIds?.Where(t => !string.IsNullOrEmpty(t)).ToArray();
+        if (types is { Length: > 0 })
+            sql += " AND ARRAY_CONTAINS(@eventTypeIds, c.event.EventTypeId)";
+        sql += " ORDER BY c.event.EnqueuedTimeUtc ASC";
+
+        var queryDefinition = new QueryDefinition(sql).WithParameter("@status", PendingStatus);
+        if (types is { Length: > 0 })
+            queryDefinition = queryDefinition.WithParameter("@eventTypeIds", types);
+
+        var result = container.GetItemQueryIterator<EventDbo>(
+            queryDefinition,
+            requestOptions: new QueryRequestOptions { MaxItemCount = 1 });
+
+        if (result.HasMoreResults)
+        {
+            var eventDbo = await result.ReadNextAsync();
+            if (eventDbo.Any())
+                return eventDbo.First().Event;
         }
 
         return null;

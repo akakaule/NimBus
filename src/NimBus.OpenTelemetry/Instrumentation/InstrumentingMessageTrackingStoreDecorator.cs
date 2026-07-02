@@ -135,6 +135,9 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default) =>
         InstrumentAsync(nameof(GetPendingHandoffByExternalJobId), () => _inner.GetPendingHandoffByExternalJobId(endpointId, externalJobId, cancellationToken));
 
+    public Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds) =>
+        InstrumentAsync(nameof(GetNextPendingHandoffEvent), () => _inner.GetNextPendingHandoffEvent(endpointId, eventTypeIds));
+
     public Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId) =>
         InstrumentAsync(nameof(GetFailedEvent), () => _inner.GetFailedEvent(endpointId, eventId, sessionId));
 

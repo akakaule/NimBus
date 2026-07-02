@@ -64,6 +64,19 @@ public class InMemoryMessageStore : INimBusMessageStore, IEventMappingStore
             && e.ExternalJobId == externalJobId);
         return Task.FromResult(match);
     }
+
+    public virtual Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds)
+    {
+        var hasFilter = eventTypeIds is { Count: > 0 };
+        var match = _events.Values
+            .Where(e => e.EndpointId == endpointId
+                && e.ResolutionStatus == ResolutionStatus.Pending
+                && e.PendingSubStatus == "Handoff"
+                && (!hasFilter || eventTypeIds!.Contains(e.EventTypeId)))
+            .OrderBy(e => e.EnqueuedTimeUtc)
+            .FirstOrDefault();
+        return Task.FromResult<UnresolvedEvent?>(match);
+    }
     public Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.Failed);
     public Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.Deferred);
     public Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.DeadLettered);

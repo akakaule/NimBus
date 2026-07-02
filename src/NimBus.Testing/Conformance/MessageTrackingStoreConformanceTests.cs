@@ -95,6 +95,67 @@ public abstract class MessageTrackingStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task GetNextPendingHandoffEvent_returns_only_the_handoff_row()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-next");
+
+        // A plain pending event (no sub-status) and a failed event must be ignored;
+        // only the single Pending+Handoff row should come back.
+        var plain = SampleEvent(endpointId, Id("e-plain"), "s1");
+        await store.UploadPendingMessage(plain.EventId, "s1", endpointId, plain);
+
+        var failed = SampleEvent(endpointId, Id("e-failed"), "s2");
+        failed.PendingSubStatus = "Handoff";
+        await store.UploadFailedMessage(failed.EventId, "s2", endpointId, failed);
+
+        var handoff = SampleEvent(endpointId, Id("e-handoff"), "s3");
+        handoff.PendingSubStatus = "Handoff";
+        handoff.ExternalJobId = Id("job");
+        await store.UploadPendingMessage(handoff.EventId, "s3", endpointId, handoff);
+
+        var fetched = await store.GetNextPendingHandoffEvent(endpointId, null);
+
+        Assert.IsNotNull(fetched);
+        Assert.AreEqual(handoff.EventId, fetched.EventId);
+        Assert.AreEqual("Handoff", fetched.PendingSubStatus);
+    }
+
+    [TestMethod]
+    public async Task GetNextPendingHandoffEvent_returns_null_when_no_handoff()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-next-miss");
+
+        var plain = SampleEvent(endpointId, Id("e-plain"), "s1");
+        await store.UploadPendingMessage(plain.EventId, "s1", endpointId, plain);
+
+        var fetched = await store.GetNextPendingHandoffEvent(endpointId, null);
+
+        Assert.IsNull(fetched);
+    }
+
+    [TestMethod]
+    public async Task GetNextPendingHandoffEvent_respects_eventTypeIds_filter()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-next-filter");
+
+        var handoff = SampleEvent(endpointId, Id("e-handoff"), "s1");
+        handoff.PendingSubStatus = "Handoff";
+        handoff.EventTypeId = "OrderPlaced";
+        await store.UploadPendingMessage(handoff.EventId, "s1", endpointId, handoff);
+
+        // A non-matching type filter finds nothing.
+        Assert.IsNull(await store.GetNextPendingHandoffEvent(endpointId, new[] { "SomethingElse" }));
+
+        // A matching type filter finds the row.
+        var matched = await store.GetNextPendingHandoffEvent(endpointId, new[] { "OrderPlaced", "AnotherType" });
+        Assert.IsNotNull(matched);
+        Assert.AreEqual(handoff.EventId, matched.EventId);
+    }
+
+    [TestMethod]
     public async Task UploadStatus_is_idempotent_under_repeated_writes()
     {
         var store = CreateStore();

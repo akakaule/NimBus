@@ -562,6 +562,34 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         return row == null ? null : MapUnresolvedEventRow(row);
     }
 
+    // Cap the event-type filter so a caller can't blow the parameter budget; agents subscribe to a
+    // handful of types, well under this.
+    private const int MaxEventTypeFilter = 64;
+
+    public async Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds)
+    {
+        await using var conn = Open();
+        var types = eventTypeIds?.Where(t => !string.IsNullOrEmpty(t)).Take(MaxEventTypeFilter).ToArray();
+        var p = new DynamicParameters();
+        p.Add("E", endpointId);
+        // Bound to TOP 1 and filter status/sub-status/event-type server-side so the agent receive
+        // long-poll no longer streams every pending row. Oldest-first (EnqueuedTimeUtc) gives FIFO.
+        var sql = $@"SELECT TOP 1 * FROM {T("UnresolvedEvents")}
+                     WHERE EndpointId = @E
+                       AND PendingSubStatus = 'Handoff'
+                       AND Status = 'Pending'
+                       AND Deleted = 0";
+        if (types is { Length: > 0 })
+        {
+            sql += " AND EventTypeId IN @Types";
+            p.Add("Types", types);
+        }
+        sql += " ORDER BY EnqueuedTimeUtc ASC";
+
+        var row = await conn.QueryFirstOrDefaultAsync(sql, p, commandTimeout: _commandTimeout);
+        return row == null ? null : MapUnresolvedEventRow(row);
+    }
+
     public Task<UnresolvedEvent> GetEventById(string endpointId, string id)
         => GetEvent(endpointId, id);
 

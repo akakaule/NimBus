@@ -187,6 +187,7 @@ internal sealed class ThrowingStore : IMessageTrackingStore
     // to stub them (return values aren't asserted).
     public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId) => _passthrough.GetPendingEvent(endpointId, eventId, sessionId);
     public Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, System.Threading.CancellationToken cancellationToken = default) => _passthrough.GetPendingHandoffByExternalJobId(endpointId, externalJobId, cancellationToken);
+    public Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds) => _passthrough.GetNextPendingHandoffEvent(endpointId, eventTypeIds);
     public Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId) => _passthrough.GetFailedEvent(endpointId, eventId, sessionId);
     public Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId) => _passthrough.GetDeferredEvent(endpointId, eventId, sessionId);
     public Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) => _passthrough.GetDeadletteredEvent(endpointId, eventId, sessionId);

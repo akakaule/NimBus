@@ -54,12 +54,19 @@ public class RestAgentBusGatewayTests
     }
 
     [TestMethod]
-    public async Task DefineEventTypeAsync_409Conflict_IsSwallowed()
+    public async Task DefineEventTypeAsync_409Conflict_SurfacesAsConfigurationError()
     {
-        var (gw, _) = NewGateway(Resp(HttpStatusCode.Conflict, "{\"detail\":\"already defined\"}"));
+        var (gw, _) = NewGateway(Resp(HttpStatusCode.Conflict, "{\"detail\":\"schema conflict\"}"));
 
-        // Must not throw — a 409 means "already defined with a different schema" and is tolerated.
-        await gw.DefineEventTypeAsync("out.v1", "{}", null, null, null, CancellationToken.None);
+        // 409 means "already defined with a DIFFERENT schema" (identical redefinitions
+        // return 200), so it must throw — swallowing it would let an upgraded agent keep
+        // running against a stale output contract.
+        var ex = await Assert.ThrowsExceptionAsync<HttpRequestException>(
+            () => gw.DefineEventTypeAsync("out.v1", "{}", null, null, null, CancellationToken.None));
+
+        Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
+        StringAssert.Contains(ex.Message, "different schema");
+        StringAssert.Contains(ex.Message, "out.v1");
     }
 
     [TestMethod]

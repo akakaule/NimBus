@@ -29,10 +29,19 @@ internal sealed class RestAgentBusGateway : IAgentBusGateway
             JsonBody(new { eventTypeId, jsonSchema, name, description, sessionKeyPath }),
             ct).ConfigureAwait(false);
 
-        // 409 = already defined with a different schema. Callers pass a fixed schema, so this only
-        // happens across stale runs and is harmless; treat as "already defined".
+        // 409 = already defined with a DIFFERENT schema. An identical redefinition returns
+        // 200 with the stored schema, so a Conflict always means a real contract mismatch
+        // (e.g. an upgraded agent shipping a changed schema against the immutable stored
+        // one). Swallowing it would let the agent keep running against a stale contract —
+        // surface it as a fatal configuration error instead.
         if (response.StatusCode == HttpStatusCode.Conflict)
-            return;
+        {
+            throw new HttpRequestException(
+                $"Define event type '{eventTypeId}' failed: it is already defined with a different schema (409 Conflict). " +
+                "Schemas are immutable — align the agent's schema with the stored definition, or publish under a new event type id.",
+                inner: null,
+                statusCode: HttpStatusCode.Conflict);
+        }
 
         await EnsureSuccessAsync(response, $"Define event type '{eventTypeId}'", ct).ConfigureAwait(false);
     }

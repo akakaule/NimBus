@@ -40,16 +40,19 @@ namespace NimBus.SDK.Hosting
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation(
-                "Deferred-processor hosted service enabled on topic '{Topic}' (subscription '{Subscription}'). " +
+                "Deferred-processor hosted service enabled on topic '{Topic}' (subscription '{Subscription}', MaxConcurrentCalls {MaxConcurrentCalls}). " +
                 "Set NimBusSubscriberOptions.DisableDeferredProcessorHostedService = true to opt out.",
-                _options.TopicName, _options.SubscriptionName);
+                _options.TopicName, _options.SubscriptionName, _options.MaxConcurrentCalls);
 
             var processor = _serviceBusClient.CreateProcessor(
                 _options.TopicName,
                 _options.SubscriptionName,
                 new ServiceBusProcessorOptions
                 {
-                    MaxConcurrentCalls = 1,
+                    // Default 1: the trigger subscription is non-session, so
+                    // serial processing is the only ordering mechanism. See
+                    // DeferredMessageProcessorHostedServiceOptions.MaxConcurrentCalls.
+                    MaxConcurrentCalls = _options.MaxConcurrentCalls,
                     AutoCompleteMessages = false,
                 });
 

@@ -307,20 +307,30 @@ namespace NimBus.SDK.Extensions
         /// <param name="services">The service collection.</param>
         /// <param name="endpoint">The endpoint (topic name) whose deferred parking subscription is drained when the trigger fires.</param>
         /// <param name="subscriptionName">Name of the non-session trigger subscription. Default <c>"deferredprocessor"</c>.</param>
+        /// <param name="maxConcurrentCalls">
+        /// Concurrent trigger deliveries the processor handles. Default 1.
+        /// <b>WARNING:</b> the trigger subscription is non-session, so 1 is the
+        /// only ordering mechanism — raise this only when deferred triggers may
+        /// replay out of order for this endpoint.
+        /// </param>
         /// <returns>The service collection for chaining.</returns>
         public static IServiceCollection AddNimBusDeferredProcessorHostedService(
             this IServiceCollection services,
             string endpoint,
-            string subscriptionName = "deferredprocessor")
+            string subscriptionName = "deferredprocessor",
+            int maxConcurrentCalls = 1)
         {
             if (string.IsNullOrEmpty(endpoint))
                 throw new ArgumentException("Endpoint must be specified.", nameof(endpoint));
             if (string.IsNullOrEmpty(subscriptionName))
                 throw new ArgumentException("Subscription name must be specified.", nameof(subscriptionName));
+            if (maxConcurrentCalls < 1)
+                throw new ArgumentOutOfRangeException(nameof(maxConcurrentCalls), maxConcurrentCalls, "MaxConcurrentCalls must be at least 1.");
 
             services.TryAddSingleton(new DeferredMessageProcessorHostedServiceOptions(
                 TopicName: endpoint,
-                SubscriptionName: subscriptionName));
+                SubscriptionName: subscriptionName,
+                MaxConcurrentCalls: maxConcurrentCalls));
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, DeferredMessageProcessorHostedService>());
             return services;
         }

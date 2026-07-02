@@ -44,7 +44,8 @@ internal static class SqlServerStoreTestHarness
             TRUNCATE TABLE [{schema}].[MessageAudits];
             TRUNCATE TABLE [{schema}].[EndpointSubscriptions];
             TRUNCATE TABLE [{schema}].[EndpointMetadata];
-            TRUNCATE TABLE [{schema}].[EventSchemas];";
+            TRUNCATE TABLE [{schema}].[EventSchemas];
+            TRUNCATE TABLE [{schema}].[EventMappings];";
         await using var cmd = new SqlCommand(sql, conn);
         await cmd.ExecuteNonQueryAsync();
     }

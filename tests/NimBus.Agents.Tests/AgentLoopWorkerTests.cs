@@ -139,6 +139,46 @@ public class AgentLoopWorkerTests
         Assert.AreEqual(2, bus.Settles.Count);
     }
 
+    [TestMethod]
+    public async Task ExecuteAsync_NoMessage_WaitsIdleBackoffBeforePollingAgain()
+    {
+        // Empty inbox: every receive yields nothing. A long idle backoff means that after the
+        // first empty poll the loop parks in the delay instead of spinning to a second poll.
+        var bus = new SignalGateway(signalSettleAt: int.MaxValue);
+        var handler = new DelegateHandler(_ => AgentResult.Done());
+        var options = Options();
+        options.IdleBackoff = TimeSpan.FromSeconds(30);
+        var worker = NewWorker(bus, handler, options);
+
+        await worker.StartAsync(CancellationToken.None);
+        await bus.FirstReceived;
+        // Cancel while the loop is parked in IdleBackoff; the delay throws and the loop exits.
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, bus.ReceiveCount,
+            "An idle agent must wait IdleBackoff between polls, not receive back-to-back.");
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_ProcessesQueuedMessages_WithoutWaitingIdleBackoffBetweenThem()
+    {
+        // Two queued messages then empty. With a 30s idle backoff, both must still settle promptly:
+        // successful receives loop immediately and only an empty receive triggers the backoff.
+        var bus = new SignalGateway(signalSettleAt: 2, Msg(), Msg());
+        var handler = new DelegateHandler(_ => AgentResult.Done());
+        var options = Options();
+        options.IdleBackoff = TimeSpan.FromSeconds(30);
+        var worker = NewWorker(bus, handler, options);
+
+        await worker.StartAsync(CancellationToken.None);
+
+        var winner = await Task.WhenAny(bus.SignalReached, Task.Delay(TimeSpan.FromSeconds(5)));
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.AreSame(bus.SignalReached, winner,
+            "Both queued handoffs must settle without waiting IdleBackoff between successful receives.");
+    }
+
     private sealed class DelegateHandler : IAgentHandler<Ping>
     {
         private readonly Func<AgentContext<Ping>, AgentResult> _impl;
@@ -192,6 +232,50 @@ public class AgentLoopWorkerTests
             if (SettleThrowStatus is { } code)
                 throw new HttpRequestException("settle failed", null, code);
             Settles.Add((success, result, errorText, errorType));
+            return Task.CompletedTask;
+        }
+    }
+
+    // Gateway that signals via TaskCompletionSource so loop-level tests observe progress
+    // deterministically (no wall-clock assertions). Counters use Interlocked; they are read only
+    // after the worker has stopped.
+    private sealed class SignalGateway : IAgentBusGateway
+    {
+        private readonly Queue<AgentReceivedMessage?> _inbox;
+        private readonly int _signalSettleAt;
+        private int _receiveCount;
+        private int _settleCount;
+        private readonly TaskCompletionSource _signal = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _firstReceive = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public SignalGateway(int signalSettleAt, params AgentReceivedMessage?[] inbox)
+        {
+            _signalSettleAt = signalSettleAt;
+            _inbox = new Queue<AgentReceivedMessage?>(inbox);
+        }
+
+        public int ReceiveCount => Volatile.Read(ref _receiveCount);
+        public Task FirstReceived => _firstReceive.Task;
+        public Task SignalReached => _signal.Task;
+
+        public Task SubscribeAsync(string eventTypeId, CancellationToken ct) => Task.CompletedTask;
+
+        public Task DefineEventTypeAsync(string eventTypeId, string jsonSchema, string? name, string? description, string? sessionKeyPath, CancellationToken ct)
+            => Task.CompletedTask;
+
+        public Task<AgentReceivedMessage?> ReceiveAsync(string? eventTypeId, int waitSeconds, CancellationToken ct)
+        {
+            Interlocked.Increment(ref _receiveCount);
+            _firstReceive.TrySetResult();
+            return Task.FromResult(_inbox.Count > 0 ? _inbox.Dequeue() : null);
+        }
+
+        public Task PublishAsync(string eventTypeId, string payloadJson, string? sessionId, CancellationToken ct) => Task.CompletedTask;
+
+        public Task SettleAsync(HandoffCoordinates coordinates, bool success, string? result, string? errorText, string? errorType, CancellationToken ct)
+        {
+            if (Interlocked.Increment(ref _settleCount) >= _signalSettleAt)
+                _signal.TrySetResult();
             return Task.CompletedTask;
         }
     }

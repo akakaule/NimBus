@@ -53,7 +53,13 @@ internal sealed class AgentLoopWorker<TInput> : BackgroundService
         {
             try
             {
-                await ProcessNextAsync(stoppingToken).ConfigureAwait(false);
+                var processed = await ProcessNextAsync(stoppingToken).ConfigureAwait(false);
+                if (!processed)
+                {
+                    // Nothing parked: back off briefly so an idle agent doesn't poll the receive
+                    // endpoint back-to-back. A successful receive skips this and loops immediately.
+                    await Task.Delay(_options.IdleBackoff, stoppingToken).ConfigureAwait(false);
+                }
             }
             catch (OperationCanceledException)
             {

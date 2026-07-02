@@ -26,6 +26,13 @@ public sealed class AgentOptions
     /// <summary>Delay after a failed loop iteration before retrying. Defaults to 1 second.</summary>
     public TimeSpan ErrorBackoff { get; set; } = TimeSpan.FromSeconds(1);
 
+    /// <summary>
+    /// Delay after a receive that returned nothing before polling again, so an idle agent doesn't
+    /// hammer the receive endpoint back-to-back. Successful receives loop immediately. Defaults to
+    /// 2 seconds.
+    /// </summary>
+    public TimeSpan IdleBackoff { get; set; } = TimeSpan.FromSeconds(2);
+
     /// <summary>The source event type the agent subscribes to and receives. Set via <see cref="Subscribe"/>.</summary>
     public string? SourceEventTypeId { get; private set; }
 

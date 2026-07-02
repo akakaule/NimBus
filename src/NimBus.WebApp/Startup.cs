@@ -449,6 +449,11 @@ namespace NimBus.WebApp
             {
                 healthChecks.AddCosmosDbHealthCheck();
             }
+            // Short-TTL cache for hot read-only store results (status counts,
+            // metrics aggregates). Singleton is required: the consuming
+            // controllers are transient, so a shorter lifetime would never hit.
+            services.AddMemoryCache();
+            services.AddSingleton<IStoreResultCache, StoreResultCache>();
             services.AddScoped<IEndpointAuthorizationService, EndpointAuthorizationService>();
             // Spec 008: centralized audit-write contract. Scoped so the captured
             // INimBusMessageStore lifetime matches the request, consistent with

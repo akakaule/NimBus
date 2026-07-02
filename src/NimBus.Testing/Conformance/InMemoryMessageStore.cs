@@ -353,7 +353,7 @@ public class InMemoryMessageStore : INimBusMessageStore
         return Task.FromResult(true);
     }
 
-    public Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from)
+    public virtual Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from)
     {
         var messages = _messages.Values.Where(m => m.EnqueuedTimeUtc >= from).ToList();
         return Task.FromResult(new EndpointMetricsResult
@@ -364,7 +364,7 @@ public class InMemoryMessageStore : INimBusMessageStore
         });
     }
 
-    public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from)
+    public virtual Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from)
     {
         var outcomeTypes = new HashSet<MessageType>
         {
@@ -407,7 +407,7 @@ public class InMemoryMessageStore : INimBusMessageStore
         return Task.FromResult(results);
     }
 
-    public Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+    public virtual Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
     {
         var buckets = GenerateBucketKeys(from, DateTime.UtcNow, substringLength)
             .ToDictionary(k => k, k => new TimeSeriesBucket { Timestamp = k });

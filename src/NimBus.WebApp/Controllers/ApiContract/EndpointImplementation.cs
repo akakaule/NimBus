@@ -38,9 +38,15 @@ public class EndpointImplementation : IEndpointApiController
     private readonly HttpContext _context;
     private readonly ILogger<EndpointImplementation> _logger;
     private readonly IAuditLogService _auditLogService;
+    private readonly IStoreResultCache _storeResultCache;
     private const int InitialEvents = 40;
     private const int PagingEvents = 40;
     private const int SqlInvalidObjectNameErrorNumber = 208;
+
+    // Status counts back the Monitor wall, which polls every few seconds per
+    // client; a 5s TTL collapses that fan-in to at most one store round-trip
+    // per endpoint per window without visibly staling the UI.
+    private static readonly TimeSpan StatusCountTtl = TimeSpan.FromSeconds(5);
 
     public EndpointImplementation(
         IHttpContextAccessor contextAccessor,
@@ -50,7 +56,8 @@ public class EndpointImplementation : IEndpointApiController
         IServiceBusManagement serviceBusManagement,
         IEndpointAuthorizationService authorizationService,
         ILogger<EndpointImplementation> logger,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        IStoreResultCache storeResultCache)
     {
         this.platform = platform;
         this.configuration = configuration;
@@ -60,6 +67,7 @@ public class EndpointImplementation : IEndpointApiController
         _context = contextAccessor.HttpContext;
         _logger = logger;
         _auditLogService = auditLogService;
+        _storeResultCache = storeResultCache;
     }
 
     public async Task<ActionResult<IEnumerable<string>>> EndpointIdsAllAsync()
@@ -241,7 +249,14 @@ public class EndpointImplementation : IEndpointApiController
     {
         try
         {
-            var endpointStateCount = await cosmosClient.DownloadEndpointStateCount(endpointId);
+            // Cached below the per-user IsManagerOfEndpoint filtering (which
+            // happens at the call sites above): the cached value is the
+            // endpoint-scoped raw count, identical for every authorized user.
+            // Failures propagate uncached, so the stub branches below stay live.
+            var endpointStateCount = await _storeResultCache.GetOrCreateAsync(
+                $"endpoint-state-count:{endpointId}",
+                StatusCountTtl,
+                () => cosmosClient.DownloadEndpointStateCount(endpointId));
             return Mapper.EndpointStatusCountFromEndpointStateCount(endpointStateCount);
         }
         catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)

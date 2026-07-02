@@ -192,6 +192,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpoint}'.");
             }
 
+            // Deliberately sequential — do not parallelize. ArchiveFailedEvent
+            // soft-deletes the event (deleted=true + 30d TTL); if the publish
+            // fails, the event must remain visible in the failed list. Running
+            // these concurrently would archive events whose resubmit never left.
             await managerClient.Resubmit(errorResponse, endpoint, eventTypeId, eventJson);
             await cosmosClient.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
             await auditLogService.LogAuditAsync(MessageAuditType.Resubmit, httpContextAccessor.HttpContext,
@@ -635,6 +639,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpoint}'.");
             }
 
+            // Deliberately sequential — do not parallelize. ArchiveFailedEvent
+            // soft-deletes the event (deleted=true + 30d TTL); if the publish
+            // fails, the event must remain visible in the failed list.
             await managerClient.Resubmit(errorResponse, endpoint, eventTypeId, body.EventContent);
             await cosmosClient.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
             await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext,

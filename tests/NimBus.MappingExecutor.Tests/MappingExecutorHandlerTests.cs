@@ -63,6 +63,21 @@ public class MappingExecutorHandlerTests
     }
 
     [TestMethod]
+    public async Task Unparseable_target_schema_parks_with_reason_and_does_not_publish()
+    {
+        var store = new InMemoryMessageStore();
+        var (handler, pub, park) = await Build(store, MappingState.Active,
+            transform: "{ \"customerId\": leadId }",
+            targetSchema: "{ this is not valid json schema");
+
+        await handler.Handle(MessageContextStub.ForEventType(Src, "{ \"leadId\": \"L-1\" }"));
+
+        Assert.AreEqual(0, pub.Count, "An unparseable target schema must not publish");
+        Assert.AreEqual(1, park.Count, "An unparseable target schema must park for recovery, not throw");
+        StringAssert.Contains(park.LastReason, Tgt, "Park reason must name the offending target event type");
+    }
+
+    [TestMethod]
     public async Task Paused_mapping_parks_and_does_not_publish()
     {
         var store = new InMemoryMessageStore();

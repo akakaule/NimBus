@@ -101,8 +101,24 @@ public sealed class MappingExecutorHandler : IEventJsonHandler
             return;
         }
 
-        var jsonSchema = await NJsonSchema.JsonSchema.FromJsonAsync(targetSchema.JsonSchema);
-        var errors = jsonSchema.Validate(output);
+        NJsonSchema.JsonSchema jsonSchema;
+        System.Collections.Generic.ICollection<NJsonSchema.Validation.ValidationError> errors;
+        try
+        {
+            jsonSchema = await NJsonSchema.JsonSchema.FromJsonAsync(targetSchema.JsonSchema);
+            errors = jsonSchema.Validate(output);
+        }
+        // NJsonSchema throws assorted undocumented exception types on bad schema JSON
+        // (JsonReaderException, InvalidOperationException, etc.). Schemas are immutable, so a
+        // stored-but-unparseable target schema can never be fixed by retrying — park the message
+        // for operator recovery instead of letting the pipeline mark it Failed / block the session.
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Target schema for {TargetEventTypeId} is not valid JSON Schema (mapping {MappingId})", active.TargetEventTypeId, active.Id);
+            await _park.Park(context, $"Target schema for '{active.TargetEventTypeId}' is not valid JSON Schema: {ex.Message}", cancellationToken);
+            return;
+        }
+
         if (errors.Count > 0)
         {
             _logger.LogWarning("Transformed output for mapping {MappingId} failed target schema ({ErrorCount} error(s))", active.Id, errors.Count);

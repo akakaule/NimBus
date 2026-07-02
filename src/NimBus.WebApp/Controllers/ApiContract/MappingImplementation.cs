@@ -43,6 +43,19 @@ public class MappingImplementation : IAgentMappingsApiController
 
         var id = $"{body.SourceEventTypeId}->{body.TargetEventTypeId}";
         var existing = await _mappings.GetMapping(id);
+
+        // Guard the approval gate: an operator-approved mapping (Active or Paused) must not be
+        // silently demoted back to Draft by a fresh proposal. The operator has to pause/reject it
+        // first. Re-proposing over an absent/Draft/Rejected/Stale record is allowed (re-author flow).
+        if (existing is not null && (existing.State == MappingState.Active || existing.State == MappingState.Paused))
+        {
+            _logger.LogInformation(
+                "Rejected re-proposal of {Id}: existing mapping is {State} (operator-approved).", id, existing.State);
+            return new ConflictObjectResult(
+                $"Mapping {id} is {existing.State} and operator-approved; it cannot be overwritten by a new proposal. " +
+                "Reject it (or pause then reject an Active mapping) before re-proposing.");
+        }
+
         var mapping = new EventMapping
         {
             Id = id,
@@ -75,25 +88,46 @@ public class MappingImplementation : IAgentMappingsApiController
     // ── POST /api/agent/mappings/{id}/reject ──────────────────────────────────
 
     public Task<IActionResult> PostAgentMappingRejectAsync(string id)
-        => TransitionAsync(id, MappingState.Rejected, approve: false);
+        => TransitionAsync(id, MappingState.Rejected, approve: false,
+            allowedFrom: new[] { MappingState.Draft, MappingState.Stale });
 
     // ── POST /api/agent/mappings/{id}/pause ───────────────────────────────────
 
     public Task<IActionResult> PostAgentMappingPauseAsync(string id)
-        => TransitionAsync(id, MappingState.Paused, approve: false);
+        => TransitionAsync(id, MappingState.Paused, approve: false,
+            allowedFrom: new[] { MappingState.Active });
 
     // ── POST /api/agent/mappings/{id}/resume ──────────────────────────────────
 
     public Task<IActionResult> PostAgentMappingResumeAsync(string id)
-        => TransitionAsync(id, MappingState.Active, approve: false);
+        => TransitionAsync(id, MappingState.Active, approve: false,
+            allowedFrom: new[] { MappingState.Paused });
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private async Task<IActionResult> TransitionAsync(string id, MappingState target, bool approve)
+    /// <summary>
+    /// Transitions a mapping to <paramref name="target"/>. When <paramref name="allowedFrom"/> is
+    /// non-null the current state must be one of the listed states, otherwise the call is a 409 —
+    /// this keeps the approval gate intact (e.g. resume is Paused→Active only, so a Draft can never
+    /// be activated without approval; pause is Active-only so a Draft→Paused→Resume path can't
+    /// smuggle an unapproved mapping into Active). The approve endpoint passes no guard so its
+    /// existing semantics are preserved.
+    /// </summary>
+    private async Task<IActionResult> TransitionAsync(
+        string id, MappingState target, bool approve, MappingState[]? allowedFrom = null)
     {
         var mapping = await _mappings.GetMapping(id);
         if (mapping is null)
             return new NotFoundObjectResult("Unknown mapping.");
+
+        if (allowedFrom is not null && Array.IndexOf(allowedFrom, mapping.State) < 0)
+        {
+            _logger.LogInformation(
+                "Rejected transition of {Id} to {Target}: current state {State} not in {Allowed}.",
+                id, target, mapping.State, string.Join("/", allowedFrom));
+            return new ConflictObjectResult(
+                $"Mapping {id} is {mapping.State}; this operation requires it to be {string.Join(" or ", allowedFrom)}.");
+        }
 
         if (approve)
         {

@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import * as api from "api-client";
+// Type-only import: the api-client module (345KB, pulls in moment) must not
+// land in the eager entry chunk — the runtime module is loaded on demand
+// inside getApplicationStatus via dynamic import.
+import type * as api from "api-client";
 
 // Module-level cache for static app status (never changes during runtime)
 let cachedStatus: api.ApplicationStatus | null = null;
@@ -28,13 +31,23 @@ export const getApplicationStatus = async () => {
     return pendingRequest;
   }
 
-  // Make single request and cache result
-  const client = new api.Client(api.CookieAuth());
-  pendingRequest = client.getApiAppStats().then((status) => {
-    cachedStatus = status;
-    pendingRequest = null;
-    return status;
-  });
+  // Make single request and cache result. The async IIFE is assigned to
+  // pendingRequest synchronously (before any await), so concurrent callers
+  // still dedupe onto the same in-flight promise while the api-client module
+  // itself loads lazily. pendingRequest is cleared in finally — success AND
+  // failure — so a transient fetch error doesn't pin a rejected promise as
+  // the answer for the rest of the page's lifetime; the next call retries.
+  pendingRequest = (async () => {
+    try {
+      const apiMod = await import("api-client");
+      const client = new apiMod.Client(apiMod.CookieAuth());
+      const status = await client.getApiAppStats();
+      cachedStatus = status;
+      return status;
+    } finally {
+      pendingRequest = null;
+    }
+  })();
 
   return pendingRequest;
 };

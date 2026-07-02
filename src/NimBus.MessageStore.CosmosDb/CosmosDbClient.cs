@@ -125,6 +125,11 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
     private const string DatabaseId = "MessageDatabase";
 
+    // Hot-path writes only ever inspect StatusCode on the response; skipping the
+    // response body (which echoes the whole document, EventJson included) saves
+    // egress bytes and response-deserialization on every tracked message.
+    private static readonly ItemRequestOptions SuppressContentOnWrite = new() { EnableContentResponseOnWrite = false };
+
     private const string PendingStatus = "Pending";
     private const string FailedStatus = "Failed";
     private const string DeferredStatus = "Deferred";
@@ -430,7 +435,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         try
         {
-            var response = await container.UpsertItemAsync(eventDbo, new PartitionKey(eventDbo.Id));
+            var response = await container.UpsertItemAsync(eventDbo, new PartitionKey(eventDbo.Id), SuppressContentOnWrite);
             _logger?.LogTrace(
                 "COSMOS UPSERT-RESPONSE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}, Status: {Status}", eventId, sessionId, response.StatusCode, CompletedStatus);
             return true;
@@ -555,6 +560,23 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         }
     }
 
+    /// <summary>
+    /// <c>c.status</c> (the write-side authority) is not mirrored into the
+    /// embedded event document on upsert, so reads must hydrate
+    /// <see cref="UnresolvedEvent.ResolutionStatus"/> from it — otherwise every
+    /// Cosmos read reports the enum default. The SQL and in-memory providers
+    /// map status on read the same way.
+    /// </summary>
+    private static UnresolvedEvent HydrateResolutionStatus(EventDbo dbo)
+    {
+        if (dbo?.Event != null && Enum.TryParse<ResolutionStatus>(dbo.Status, out var status))
+        {
+            dbo.Event.ResolutionStatus = status;
+        }
+
+        return dbo?.Event;
+    }
+
     public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId) =>
         GetEvent(endpointId, eventId, sessionId, PendingStatus);
 
@@ -580,7 +602,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             var eventDbo = await result.ReadNextAsync(cancellationToken);
             if (eventDbo.Any())
             {
-                return eventDbo.First().Event;
+                return HydrateResolutionStatus(eventDbo.First());
             }
         }
 
@@ -652,7 +674,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             var eventDbo = await result.ReadNextAsync();
             if (eventDbo.Any())
             {
-                return eventDbo.First().Event;
+                return HydrateResolutionStatus(eventDbo.First());
             }
         }
 
@@ -675,7 +697,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             var eventDbo = await result.ReadNextAsync();
             if (eventDbo.Any())
             {
-                return eventDbo.First().Event;
+                return HydrateResolutionStatus(eventDbo.First());
             }
         }
 
@@ -688,7 +710,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         try
         {
             var rel = await container.ReadItemAsync<EventDbo>(id, new PartitionKey(id), new ItemRequestOptions() { });
-            return rel.Resource?.Event;
+            return HydrateResolutionStatus(rel.Resource);
         }
         catch (CosmosException e)
         {
@@ -717,7 +739,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 var items = batch.Select(id => (id, new PartitionKey(id))).ToList();
                 var response = await container.ReadManyItemsAsync<EventDbo>(items);
                 if (response.Resource != null)
-                    results.AddRange(response.Resource.Select(e => e.Event));
+                    results.AddRange(response.Resource.Select(HydrateResolutionStatus));
             }
             return results;
         }
@@ -762,17 +784,21 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 .Where(x => filter.EventTypeId.Contains(x.EventType));
 
 
+        // ID-like fields use case-insensitive PREFIX matching. The Cosmos LINQ
+        // provider translates StartsWith with OrdinalIgnoreCase (and only that
+        // comparison) to index-served STARTSWITH(x, y, true); Contains would be
+        // a full-scan CONTAINS. Free-text To/From/Payload keep Contains.
         if (filter.EndPointId != null)
             query = query
-                .Where(x => x.Event.EndpointId.Contains(filter.EndPointId));
+                .Where(x => x.Event.EndpointId.StartsWith(filter.EndPointId, StringComparison.OrdinalIgnoreCase));
 
         if (filter.EventId != null)
             query = query
-                .Where(x => x.Id.Contains(filter.EventId));
+                .Where(x => x.Id.StartsWith(filter.EventId, StringComparison.OrdinalIgnoreCase));
 
         if (filter.SessionId != null)
             query = query
-                .Where(x => x.SessionId.Contains(filter.SessionId));
+                .Where(x => x.SessionId.StartsWith(filter.SessionId, StringComparison.OrdinalIgnoreCase));
 
         if (filter.To != null)
             query = query
@@ -794,7 +820,64 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             query = query
                 .Where(x => x.Event.MessageContent.EventContent.EventJson.Contains(filter.Payload));
 
-        var result = query.OrderByDescending(e => e.Event.UpdatedAt).ToFeedIterator();
+        // Server-side projection: every UnresolvedEvent property EXCEPT the heavy
+        // EventJson payload (search results never surface it; the detail view
+        // fetches it on demand via GetLatestEventRequestMessage). ErrorContent is
+        // projected whole (the error-grouped search view reads ErrorText).
+        // Drift guard: MessageTrackingStoreConformanceTests reflects over
+        // UnresolvedEvent's properties and fails when a new property is missing
+        // from search results — extend this member-init when adding properties.
+        var result = query
+            .OrderByDescending(e => e.Event.UpdatedAt)
+            .Select(x => new EventDbo
+            {
+                Id = x.Id,
+                Status = x.Status,
+                EventType = x.EventType,
+                SessionId = x.SessionId,
+                Deleted = x.Deleted,
+                Event = new UnresolvedEvent
+                {
+                    UpdatedAt = x.Event.UpdatedAt,
+                    EnqueuedTimeUtc = x.Event.EnqueuedTimeUtc,
+                    EventId = x.Event.EventId,
+                    SessionId = x.Event.SessionId,
+                    CorrelationId = x.Event.CorrelationId,
+                    ResolutionStatus = x.Event.ResolutionStatus,
+                    EndpointRole = x.Event.EndpointRole,
+                    EndpointId = x.Event.EndpointId,
+                    RetryCount = x.Event.RetryCount,
+                    RetryLimit = x.Event.RetryLimit,
+                    MessageType = x.Event.MessageType,
+                    DeadLetterReason = x.Event.DeadLetterReason,
+                    DeadLetterErrorDescription = x.Event.DeadLetterErrorDescription,
+                    LastMessageId = x.Event.LastMessageId,
+                    OriginatingMessageId = x.Event.OriginatingMessageId,
+                    ParentMessageId = x.Event.ParentMessageId,
+                    Reason = x.Event.Reason,
+                    OriginatingFrom = x.Event.OriginatingFrom,
+                    EventTypeId = x.Event.EventTypeId,
+                    To = x.Event.To,
+                    From = x.Event.From,
+                    MessageContent = new MessageContent
+                    {
+                        // EventJson deliberately omitted — the sole purpose of
+                        // this projection.
+                        EventContent = new EventContent
+                        {
+                            EventTypeId = x.Event.MessageContent.EventContent.EventTypeId,
+                        },
+                        ErrorContent = x.Event.MessageContent.ErrorContent,
+                    },
+                    QueueTimeMs = x.Event.QueueTimeMs,
+                    ProcessingTimeMs = x.Event.ProcessingTimeMs,
+                    PendingSubStatus = x.Event.PendingSubStatus,
+                    HandoffReason = x.Event.HandoffReason,
+                    ExternalJobId = x.Event.ExternalJobId,
+                    ExpectedBy = x.Event.ExpectedBy,
+                },
+            })
+            .ToFeedIterator();
         var events = new List<UnresolvedEvent>();
         var token = "";
         var effectiveLimit = PaginationLimits.Resolve(maxSearchItemsCount);
@@ -804,7 +887,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             token = eventDbo.ContinuationToken;
             foreach (var queryResult in eventDbo)
             {
-                var ev = queryResult.Event;
+                var ev = HydrateResolutionStatus(queryResult);
                 // Search results never surface the full request payload — the detail
                 // view fetches it on demand via GetLatestEventRequestMessage — so drop
                 // the heavy EventJson blob, which otherwise dominates the response on a
@@ -840,7 +923,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             var eventDbo = await result.ReadNextAsync();
             foreach (var queryResult in eventDbo)
             {
-                unresolvedEvents.Add(queryResult.Event);
+                unresolvedEvents.Add(HydrateResolutionStatus(queryResult));
             }
         }
 
@@ -857,41 +940,57 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         // Only four fields feed BlockedMessageEvent — project them server-side
         // instead of reading whole EventDbo documents (large EventJson payloads).
-        var pageQuery = new QueryDefinition(
-            "SELECT c.status, c.event.EventId AS eventId, c.event.OriginatingMessageId AS originatingMessageId, c.event.LastMessageId AS lastMessageId FROM c WHERE c.sessionId = @sessionId AND c.status IN (@pendingStatus, @deferredStatus) AND (NOT IS_DEFINED(c.deleted) or c.deleted != true) ORDER BY c.event.UpdatedAt DESC OFFSET @skip LIMIT @take")
-            .WithParameter("@sessionId", sessionId)
-            .WithParameter("@pendingStatus", PendingStatus)
-            .WithParameter("@deferredStatus", DeferredStatus)
-            .WithParameter("@skip", safeSkip)
-            .WithParameter("@take", safeTake);
-        var pageIterator = container.GetItemQueryIterator<BlockedEventProjection>(pageQuery);
-        var items = new List<BlockedMessageEvent>();
-        while (pageIterator.HasMoreResults)
+        // The page query and the total count are independent — drain them
+        // concurrently so the blocked-events dialog costs one round-trip's latency.
+        async Task<List<BlockedMessageEvent>> DrainPageAsync()
         {
-            var page = await pageIterator.ReadNextAsync();
-            foreach (var queryResult in page)
+            var pageQuery = new QueryDefinition(
+                "SELECT c.status, c.event.EventId AS eventId, c.event.OriginatingMessageId AS originatingMessageId, c.event.LastMessageId AS lastMessageId FROM c WHERE c.sessionId = @sessionId AND c.status IN (@pendingStatus, @deferredStatus) AND (NOT IS_DEFINED(c.deleted) or c.deleted != true) ORDER BY c.event.UpdatedAt DESC OFFSET @skip LIMIT @take")
+                .WithParameter("@sessionId", sessionId)
+                .WithParameter("@pendingStatus", PendingStatus)
+                .WithParameter("@deferredStatus", DeferredStatus)
+                .WithParameter("@skip", safeSkip)
+                .WithParameter("@take", safeTake);
+            var pageIterator = container.GetItemQueryIterator<BlockedEventProjection>(pageQuery);
+            var items = new List<BlockedMessageEvent>();
+            while (pageIterator.HasMoreResults)
             {
-                items.Add(ToBlockedMessageEvent(queryResult));
+                var page = await pageIterator.ReadNextAsync();
+                foreach (var queryResult in page)
+                {
+                    items.Add(ToBlockedMessageEvent(queryResult));
+                }
             }
+
+            return items;
         }
 
-        var countQuery = new QueryDefinition(
-            "SELECT VALUE COUNT(1) FROM c WHERE c.sessionId = @sessionId AND c.status IN (@pendingStatus, @deferredStatus) AND (NOT IS_DEFINED(c.deleted) or c.deleted != true)")
-            .WithParameter("@sessionId", sessionId)
-            .WithParameter("@pendingStatus", PendingStatus)
-            .WithParameter("@deferredStatus", DeferredStatus);
-        var countIterator = container.GetItemQueryIterator<int>(countQuery);
-        var total = 0;
-        while (countIterator.HasMoreResults)
+        async Task<int> DrainCountAsync()
         {
-            var countResponse = await countIterator.ReadNextAsync();
-            foreach (var c in countResponse) total += c;
+            var countQuery = new QueryDefinition(
+                "SELECT VALUE COUNT(1) FROM c WHERE c.sessionId = @sessionId AND c.status IN (@pendingStatus, @deferredStatus) AND (NOT IS_DEFINED(c.deleted) or c.deleted != true)")
+                .WithParameter("@sessionId", sessionId)
+                .WithParameter("@pendingStatus", PendingStatus)
+                .WithParameter("@deferredStatus", DeferredStatus);
+            var countIterator = container.GetItemQueryIterator<int>(countQuery);
+            var total = 0;
+            while (countIterator.HasMoreResults)
+            {
+                var countResponse = await countIterator.ReadNextAsync();
+                foreach (var c in countResponse) total += c;
+            }
+
+            return total;
         }
+
+        var itemsTask = DrainPageAsync();
+        var totalTask = DrainCountAsync();
+        await Task.WhenAll(itemsTask, totalTask);
 
         return new BlockedMessageEventPage
         {
-            Items = items,
-            Total = total,
+            Items = await itemsTask,
+            Total = await totalTask,
         };
     }
 
@@ -915,7 +1014,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 var eventDbo = await queryResult.ReadNextAsync();
                 foreach (var pendingEvent in eventDbo)
                 {
-                    blockedMessageEvents.Add(pendingEvent.Event);
+                    blockedMessageEvents.Add(HydrateResolutionStatus(pendingEvent));
                 }
             }
         }
@@ -1298,6 +1397,51 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         }
     }
 
+    /// <summary>
+    /// Projection for <see cref="SearchMessages"/>: every <see cref="MessageEntity"/>
+    /// property EXCEPT the heavy <c>EventContent.EventJson</c> payload (the list
+    /// and palette views never read it; detail views fetch it on demand via
+    /// <see cref="GetMessage"/> / <see cref="GetLatestEventRequestMessage"/>).
+    /// <c>ErrorContent</c> is projected whole. <c>From</c>/<c>To</c> need bracket
+    /// notation (reserved keywords). Drift guard: a unit test reflects over
+    /// <see cref="MessageEntity"/>'s properties and fails when a new property is
+    /// missing from this string — extend it when adding properties.
+    /// </summary>
+    internal const string MessageSearchProjection =
+        "SELECT c.id, c.eventId, c.endpointId, " +
+        "{" +
+        "\"EventId\": c.message.EventId, " +
+        "\"MessageId\": c.message.MessageId, " +
+        "\"EventTypeId\": c.message.EventTypeId, " +
+        "\"OriginatingMessageId\": c.message.OriginatingMessageId, " +
+        "\"ParentMessageId\": c.message.ParentMessageId, " +
+        "\"From\": c.message[\"From\"], " +
+        "\"To\": c.message[\"To\"], " +
+        "\"OriginatingFrom\": c.message.OriginatingFrom, " +
+        "\"SessionId\": c.message.SessionId, " +
+        "\"CorrelationId\": c.message.CorrelationId, " +
+        "\"EnqueuedTimeUtc\": c.message.EnqueuedTimeUtc, " +
+        "\"MessageContent\": {" +
+        "\"EventContent\": {\"EventTypeId\": c.message.MessageContent.EventContent.EventTypeId}, " +
+        "\"ErrorContent\": c.message.MessageContent.ErrorContent" +
+        "}, " +
+        "\"MessageType\": c.message.MessageType, " +
+        "\"EndpointRole\": c.message.EndpointRole, " +
+        "\"EndpointId\": c.message.EndpointId, " +
+        "\"RetryCount\": c.message.RetryCount, " +
+        "\"RetryLimit\": c.message.RetryLimit, " +
+        "\"DeadLetterReason\": c.message.DeadLetterReason, " +
+        "\"DeadLetterErrorDescription\": c.message.DeadLetterErrorDescription, " +
+        "\"OriginalSessionId\": c.message.OriginalSessionId, " +
+        "\"DeferralSequence\": c.message.DeferralSequence, " +
+        "\"QueueTimeMs\": c.message.QueueTimeMs, " +
+        "\"ProcessingTimeMs\": c.message.ProcessingTimeMs, " +
+        "\"PendingSubStatus\": c.message.PendingSubStatus, " +
+        "\"HandoffReason\": c.message.HandoffReason, " +
+        "\"ExternalJobId\": c.message.ExternalJobId, " +
+        "\"ExpectedBy\": c.message.ExpectedBy" +
+        "} AS message FROM c";
+
     public async Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount)
     {
         var container = await GetMessagesContainer();
@@ -1307,31 +1451,35 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         string NextParam() => $"@p{paramIndex++}";
 
+        // ID-like fields use case-insensitive PREFIX matching: STARTSWITH with
+        // ignoreCase can be served from the range index, whereas CONTAINS (and
+        // any LOWER() wrapper) forces a full scan of the container. Free-text
+        // fields (From/To below) keep CONTAINS.
         if (!string.IsNullOrEmpty(filter.EndpointId))
         {
             var p = NextParam();
-            conditions.Add($"CONTAINS(LOWER(c.endpointId), {p})");
-            parameters[p] = filter.EndpointId.ToLowerInvariant();
+            conditions.Add($"STARTSWITH(c.endpointId, {p}, true)");
+            parameters[p] = filter.EndpointId;
         }
 
         if (!string.IsNullOrEmpty(filter.EventId))
         {
             var p = NextParam();
-            conditions.Add($"CONTAINS(c.eventId, {p})");
+            conditions.Add($"STARTSWITH(c.eventId, {p}, true)");
             parameters[p] = filter.EventId;
         }
 
         if (!string.IsNullOrEmpty(filter.MessageId))
         {
             var p = NextParam();
-            conditions.Add($"CONTAINS(c.id, {p})");
+            conditions.Add($"STARTSWITH(c.id, {p}, true)");
             parameters[p] = filter.MessageId;
         }
 
         if (!string.IsNullOrEmpty(filter.SessionId))
         {
             var p = NextParam();
-            conditions.Add($"CONTAINS(c.message.SessionId, {p})");
+            conditions.Add($"STARTSWITH(c.message.SessionId, {p}, true)");
             parameters[p] = filter.SessionId;
         }
 
@@ -1378,7 +1526,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             parameters[p] = filter.EnqueuedAtTo.Value;
         }
 
-        var sql = "SELECT * FROM c";
+        var sql = MessageSearchProjection;
         if (conditions.Any())
             sql += " WHERE " + string.Join(" AND ", conditions);
         sql += " ORDER BY c.message.EnqueuedTimeUtc DESC";
@@ -1423,7 +1571,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         try
         {
-            await container.UpsertItemAsync(doc, new PartitionKey(doc.EventId));
+            await container.UpsertItemAsync(doc, new PartitionKey(doc.EventId), SuppressContentOnWrite);
         }
         catch (CosmosException e)
         {
@@ -1470,7 +1618,11 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         var container = await GetMessagesContainer();
         var query = new QueryDefinition("SELECT * FROM c WHERE c.eventId = @eventId")
             .WithParameter("@eventId", eventId);
-        var result = container.GetItemQueryIterator<MessageDocument>(query);
+        // Bound page size so an event with a long history streams in pages
+        // instead of one oversized response (documents carry the full EventJson
+        // payload). The loop still drains every match.
+        var result = container.GetItemQueryIterator<MessageDocument>(query, null,
+            new QueryRequestOptions { MaxItemCount = 100 });
         var messages = new List<MessageEntity>();
 
         while (result.HasMoreResults)
@@ -1567,7 +1719,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         try
         {
-            await container.UpsertItemAsync(doc, new PartitionKey(doc.EventId));
+            await container.UpsertItemAsync(doc, new PartitionKey(doc.EventId), SuppressContentOnWrite);
         }
         catch (CosmosException e)
         {
@@ -1587,7 +1739,10 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         var container = await GetAuditsContainer();
         var query = new QueryDefinition("SELECT * FROM c WHERE c.eventId = @eventId ORDER BY c.createdAt DESC")
             .WithParameter("@eventId", eventId);
-        var result = container.GetItemQueryIterator<AuditDocument>(query);
+        // Bound page size so heavily-audited events stream in pages rather than
+        // one huge response. The loop still drains every match.
+        var result = container.GetItemQueryIterator<AuditDocument>(query, null,
+            new QueryRequestOptions { MaxItemCount = 1000 });
         var audits = new List<MessageAuditEntity>();
 
         while (result.HasMoreResults)
@@ -1611,39 +1766,48 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         string NextParam() => $"@p{paramIndex++}";
 
+        // Case-insensitive PREFIX matching — index-served, unlike CONTAINS/LOWER
+        // which force a full container scan. See SearchMessages.
         if (!string.IsNullOrEmpty(filter.EventId))
         {
             var p = NextParam();
-            conditions.Add($"CONTAINS(c.eventId, {p})");
+            conditions.Add($"STARTSWITH(c.eventId, {p}, true)");
             parameters[p] = filter.EventId;
         }
 
         if (!string.IsNullOrEmpty(filter.EndpointId))
         {
             var p = NextParam();
-            conditions.Add($"CONTAINS(LOWER(c.endpointId), {p})");
-            parameters[p] = filter.EndpointId.ToLowerInvariant();
+            conditions.Add($"STARTSWITH(c.endpointId, {p}, true)");
+            parameters[p] = filter.EndpointId;
         }
 
         if (!string.IsNullOrEmpty(filter.AuditorName))
         {
             var p = NextParam();
-            conditions.Add($"CONTAINS(LOWER(c.audit.auditorName), {p})");
-            parameters[p] = filter.AuditorName.ToLowerInvariant();
+            // MessageAuditEntity serializes with PascalCase property names (no
+            // [JsonProperty] attributes) - the path is c.audit.AuditorName; the
+            // previous lowercase path never matched anything on Cosmos.
+            conditions.Add($"STARTSWITH(c.audit.AuditorName, {p}, true)");
+            parameters[p] = filter.AuditorName;
         }
 
         if (!string.IsNullOrEmpty(filter.EventTypeId))
         {
             var p = NextParam();
-            conditions.Add($"CONTAINS(LOWER(c.eventTypeId), {p})");
-            parameters[p] = filter.EventTypeId.ToLowerInvariant();
+            conditions.Add($"STARTSWITH(c.eventTypeId, {p}, true)");
+            parameters[p] = filter.EventTypeId;
         }
 
         if (filter.AuditType != null)
         {
             var p = NextParam();
-            conditions.Add($"c.audit.auditType = {p}");
-            parameters[p] = filter.AuditType.Value.ToString();
+            // PascalCase path (see AuditorName above); the enum serializes as its
+            // NUMERIC value (no StringEnumConverter on MessageAuditType), so the
+            // comparison must be numeric too - the previous string compare never
+            // matched anything on Cosmos.
+            conditions.Add($"c.audit.AuditType = {p}");
+            parameters[p] = (int)filter.AuditType.Value;
         }
 
         if (filter.CreatedAtFrom != null)
@@ -1734,7 +1898,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         try
         {
-            var response = await container.UpsertItemAsync(eventDbo, new PartitionKey(eventDbo.Id));
+            var response = await container.UpsertItemAsync(eventDbo, new PartitionKey(eventDbo.Id), SuppressContentOnWrite);
             _logger?.LogTrace(
                 "COSMOS UPSERT-RESPONSE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}, Status: {Status}", eventId, sessionId, response.StatusCode, status);
             return true;
@@ -1854,32 +2018,36 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         var container = await GetMessagesContainer();
         var fromIso = from.ToString("o");
 
-        var published = await RunEventTypeCountQuery(container,
+        // The three aggregates are independent — run them concurrently so the
+        // endpoint overview costs one round-trip's latency instead of three.
+        var publishedTask = RunEventTypeCountQuery(container,
             "SELECT COUNT(1) AS count, c.message[\"From\"] AS endpointId, c.message.EventTypeId FROM c " +
             "WHERE c.message.MessageType = 'EventRequest' " +
             "AND c.message.EnqueuedTimeUtc >= @from " +
             "GROUP BY c.message[\"From\"], c.message.EventTypeId",
             fromIso);
 
-        var failed = await RunEventTypeCountQuery(container,
+        var failedTask = RunEventTypeCountQuery(container,
             "SELECT COUNT(1) AS count, c.endpointId, c.message.EventTypeId FROM c " +
             "WHERE c.message.MessageType = 'ErrorResponse' " +
             "AND c.message.EnqueuedTimeUtc >= @from " +
             "GROUP BY c.endpointId, c.message.EventTypeId",
             fromIso);
 
-        var handled = await RunEventTypeCountQuery(container,
+        var handledTask = RunEventTypeCountQuery(container,
             "SELECT COUNT(1) AS count, c.endpointId, c.message.EventTypeId FROM c " +
             "WHERE c.message.MessageType = 'ResolutionResponse' " +
             "AND c.message.EnqueuedTimeUtc >= @from " +
             "GROUP BY c.endpointId, c.message.EventTypeId",
             fromIso);
 
+        await Task.WhenAll(publishedTask, failedTask, handledTask);
+
         return new EndpointMetricsResult
         {
-            Published = published,
-            Handled = handled,
-            Failed = failed
+            Published = await publishedTask,
+            Handled = await handledTask,
+            Failed = await failedTask
         };
     }
 
@@ -1900,7 +2068,9 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             " c.message.MessageType = 'DeferralResponse' OR " +
             " c.message.MessageType = 'UnsupportedResponse')";
 
-        var queueRows = await RunLatencyAggregateQuery(container,
+        // Queue-time and processing-time aggregates are independent — run them
+        // concurrently and stitch the results below.
+        var queueRowsTask = RunLatencyAggregateQuery(container,
             "SELECT c.endpointId, c.message.EventTypeId, " +
             "       COUNT(1) AS count, " +
             "       AVG(c.message.QueueTimeMs) AS avg, " +
@@ -1914,7 +2084,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             "GROUP BY c.endpointId, c.message.EventTypeId",
             fromIso);
 
-        var processingRows = await RunLatencyAggregateQuery(container,
+        var processingRowsTask = RunLatencyAggregateQuery(container,
             "SELECT c.endpointId, c.message.EventTypeId, " +
             "       COUNT(1) AS count, " +
             "       AVG(c.message.ProcessingTimeMs) AS avg, " +
@@ -1927,6 +2097,10 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             "AND c.message.ProcessingTimeMs != null " +
             "GROUP BY c.endpointId, c.message.EventTypeId",
             fromIso);
+
+        await Task.WhenAll(queueRowsTask, processingRowsTask);
+        var queueRows = await queueRowsTask;
+        var processingRows = await processingRowsTask;
 
         // Merge by (endpointId, eventTypeId). One side may be missing rows
         // (e.g. processing time not captured pre-fix); leaves that side at
@@ -2023,26 +2197,32 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         var container = await GetMessagesContainer();
         var fromIso = from.ToString("o");
 
-        var publishedBuckets = await RunBucketCountQuery(container,
+        // The three bucket aggregates are independent — run them concurrently.
+        var publishedBucketsTask = RunBucketCountQuery(container,
             $"SELECT COUNT(1) AS count, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
             "FROM c WHERE c.message.MessageType = 'EventRequest' " +
             "AND c.message.EnqueuedTimeUtc >= @from " +
             $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
             fromIso);
 
-        var handledBuckets = await RunBucketCountQuery(container,
+        var handledBucketsTask = RunBucketCountQuery(container,
             $"SELECT COUNT(1) AS count, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
             "FROM c WHERE c.message.MessageType = 'ResolutionResponse' " +
             "AND c.message.EnqueuedTimeUtc >= @from " +
             $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
             fromIso);
 
-        var failedBuckets = await RunBucketCountQuery(container,
+        var failedBucketsTask = RunBucketCountQuery(container,
             $"SELECT COUNT(1) AS count, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
             "FROM c WHERE c.message.MessageType = 'ErrorResponse' " +
             "AND c.message.EnqueuedTimeUtc >= @from " +
             $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
             fromIso);
+
+        await Task.WhenAll(publishedBucketsTask, handledBucketsTask, failedBucketsTask);
+        var publishedBuckets = await publishedBucketsTask;
+        var handledBuckets = await handledBucketsTask;
+        var failedBuckets = await failedBucketsTask;
 
         var allBucketKeys = GenerateBucketKeys(from, DateTime.UtcNow, substringLength)
             .Concat(publishedBuckets.Keys)

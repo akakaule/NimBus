@@ -626,7 +626,10 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual("DMF import in progress", fetched.HandoffReason);
         Assert.AreEqual("DMF-JOB-42", fetched.ExternalJobId);
         Assert.IsNotNull(fetched.ExpectedBy);
-        Assert.AreEqual(expectedBy, fetched.ExpectedBy.Value.ToUniversalTime());
+        // Tick comparison, not ToUniversalTime(): SQL Server returns datetime2 as
+        // Kind=Unspecified, and ToUniversalTime() on Unspecified applies the local
+        // machine's offset — the assertion would only pass on UTC machines.
+        Assert.AreEqual(expectedBy, fetched.ExpectedBy.Value);
     }
 
     [TestMethod]
@@ -726,4 +729,266 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.IsTrue(items[0].Audit.AccessDenied);
         Assert.AreEqual("context-payload", items[0].Audit.Data);
     }
+
+    // ───── Prefix-search semantics (cross-provider contract) ─────
+    // ID-like filter fields match by case-insensitive PREFIX on every provider:
+    // Cosmos STARTSWITH(x, y, true), SQL Server LIKE 'y%' (CI collation),
+    // in-memory StartsWith(OrdinalIgnoreCase). Mid-string fragments do NOT match.
+
+    [TestMethod]
+    public async Task SearchMessages_matches_eventId_by_case_insensitive_prefix()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-prefix");
+        var eventId = Id("prefix-event-abc");
+        var t = DateTime.UtcNow;
+        await store.StoreMessage(new MessageEntity { EventId = eventId, MessageId = Id("pm1"), EndpointId = endpointId, EnqueuedTimeUtc = t, MessageContent = new MessageContent() });
+        await store.StoreMessage(new MessageEntity { EventId = Id("other-event"), MessageId = Id("pm2"), EndpointId = endpointId, EnqueuedTimeUtc = t, MessageContent = new MessageContent() });
+
+        var prefix = eventId[..(_scope.Length + 8)];
+        var byPrefix = await store.SearchMessages(new MessageFilter { EventId = prefix }, null, 50);
+        Assert.AreEqual(1, byPrefix.Messages.Count(), "A leading fragment of the event id must match (prefix semantics).");
+        Assert.AreEqual(eventId, byPrefix.Messages.Single().EventId);
+
+        var byUppercasePrefix = await store.SearchMessages(new MessageFilter { EventId = prefix.ToUpperInvariant() }, null, 50);
+        Assert.AreEqual(1, byUppercasePrefix.Messages.Count(), "Prefix matching must be case-insensitive.");
+
+        var midFragment = eventId[4..12];
+        var byMidFragment = await store.SearchMessages(new MessageFilter { EventId = midFragment }, null, 50);
+        Assert.AreEqual(0, byMidFragment.Messages.Count(), "A mid-string fragment must NOT match (no substring semantics).");
+    }
+
+    [TestMethod]
+    public async Task GetEventsByFilter_matches_eventId_by_case_insensitive_prefix()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-evprefix");
+        var eventId = Id("prefix-ev-abc");
+        await store.UploadFailedMessage(eventId, "s1", endpointId, SampleEvent(endpointId, eventId, "s1"));
+        await store.UploadFailedMessage(Id("other-ev"), "s1", endpointId, SampleEvent(endpointId, Id("other-ev"), "s1"));
+
+        var prefix = eventId[..(_scope.Length + 8)];
+        var byPrefix = await store.GetEventsByFilter(new EventFilter { EndPointId = endpointId, EventId = prefix }, null!, 50);
+        Assert.AreEqual(1, byPrefix.Events.Count(), "A leading fragment of the event id must match (prefix semantics).");
+        Assert.AreEqual(eventId, byPrefix.Events.Single().EventId);
+
+        var byUppercasePrefix = await store.GetEventsByFilter(new EventFilter { EndPointId = endpointId, EventId = prefix.ToUpperInvariant() }, null!, 50);
+        Assert.AreEqual(1, byUppercasePrefix.Events.Count(), "Prefix matching must be case-insensitive.");
+
+        var midFragment = eventId[4..12];
+        var byMidFragment = await store.GetEventsByFilter(new EventFilter { EndPointId = endpointId, EventId = midFragment }, null!, 50);
+        Assert.AreEqual(0, byMidFragment.Events.Count(), "A mid-string fragment must NOT match (no substring semantics).");
+    }
+
+    [TestMethod]
+    public async Task SearchAudits_matches_auditor_by_case_insensitive_prefix()
+    {
+        var store = CreateStore();
+        var auditor = Id("prefix-alice");
+        await store.StoreMessageAudit(Id("evt-pa1"), new MessageAuditEntity { AuditorName = auditor, AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Resubmit });
+        await store.StoreMessageAudit(Id("evt-pa2"), new MessageAuditEntity { AuditorName = Id("someone-else"), AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Skip });
+
+        var prefix = auditor[..(_scope.Length + 8)];
+        var byPrefix = await store.SearchAudits(new AuditFilter { AuditorName = prefix }, null, 50);
+        Assert.AreEqual(1, byPrefix.Audits.Count(), "A leading fragment of the auditor name must match (prefix semantics).");
+
+        var byUppercasePrefix = await store.SearchAudits(new AuditFilter { AuditorName = prefix.ToUpperInvariant() }, null, 50);
+        Assert.AreEqual(1, byUppercasePrefix.Audits.Count(), "Prefix matching must be case-insensitive.");
+
+        var midFragment = auditor[4..12];
+        var byMidFragment = await store.SearchAudits(new AuditFilter { AuditorName = midFragment }, null, 50);
+        Assert.AreEqual(0, byMidFragment.Audits.Count(), "A mid-string fragment must NOT match (no substring semantics).");
+    }
+
+    // ───── Search projection contract: everything round-trips EXCEPT EventJson ─────
+
+    /// <summary>
+    /// Drift guard (load-bearing): reflects over every <see cref="UnresolvedEvent"/>
+    /// property so that a future property silently missing from a provider's search
+    /// projection (e.g. the Cosmos server-side member-init) fails here instead of
+    /// shipping truncated search results.
+    /// </summary>
+    [TestMethod]
+    public async Task GetEventsByFilter_roundtrips_every_property_except_EventJson()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-drift");
+        var eventId = Id("drift-1");
+        const string sessionId = "session-drift";
+
+        var stored = FullySetEvent(endpointId, eventId, sessionId);
+        await store.UploadFailedMessage(eventId, sessionId, endpointId, stored);
+
+        var resp = await store.GetEventsByFilter(new EventFilter { EndPointId = endpointId, EventId = eventId }, null!, 50);
+        var fetched = resp.Events.Single();
+
+        // Provider-stamped on upload — value equality is not part of the contract.
+        var exempt = new HashSet<string> { nameof(UnresolvedEvent.UpdatedAt), nameof(UnresolvedEvent.ResolutionStatus) };
+
+        foreach (var prop in typeof(UnresolvedEvent).GetProperties())
+        {
+            if (exempt.Contains(prop.Name)) continue;
+
+            if (prop.Name == nameof(UnresolvedEvent.MessageContent))
+            {
+                Assert.IsNull(fetched.MessageContent?.EventContent?.EventJson,
+                    "Search results must omit the heavy EventJson payload.");
+                Assert.AreEqual(stored.MessageContent.EventContent.EventTypeId, fetched.MessageContent?.EventContent?.EventTypeId,
+                    "EventContent.EventTypeId must survive the search projection.");
+                Assert.AreEqual(stored.MessageContent.ErrorContent.ErrorText, fetched.MessageContent?.ErrorContent?.ErrorText,
+                    "ErrorContent must survive the search projection (the error-grouped view reads it).");
+                Assert.AreEqual(stored.MessageContent.ErrorContent.ErrorType, fetched.MessageContent?.ErrorContent?.ErrorType);
+                Assert.AreEqual(stored.MessageContent.ErrorContent.ExceptionStackTrace, fetched.MessageContent?.ErrorContent?.ExceptionStackTrace);
+                continue;
+            }
+
+            // DateTime values compare by ticks (Kind-insensitive) — SQL Server
+            // returns datetime2 as Kind=Unspecified with unchanged UTC ticks.
+            var expectedValue = prop.GetValue(stored);
+            var actualValue = prop.GetValue(fetched);
+            Assert.AreEqual(expectedValue, actualValue,
+                $"UnresolvedEvent.{prop.Name} did not round-trip through search — is it missing from a provider's search projection?");
+        }
+    }
+
+    [TestMethod]
+    public async Task Search_results_omit_EventJson_without_corrupting_the_stored_event()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-nomut");
+        var eventId = Id("nomut-1");
+        const string sessionId = "session-nomut";
+
+        await store.UploadFailedMessage(eventId, sessionId, endpointId, FullySetEvent(endpointId, eventId, sessionId));
+
+        var searched = await store.GetEventsByFilter(new EventFilter { EndPointId = endpointId, EventId = eventId }, null!, 50);
+        Assert.IsNull(searched.Events.Single().MessageContent?.EventContent?.EventJson);
+
+        var direct = await store.GetFailedEvent(endpointId, eventId, sessionId);
+        Assert.AreEqual("{\"secret\":\"payload\"}", direct.MessageContent?.EventContent?.EventJson,
+            "Stripping EventJson from SEARCH results must not corrupt the stored event (in-memory must clone).");
+    }
+
+    /// <summary>
+    /// Drift guard for the message search projection: reflects over every
+    /// <see cref="MessageEntity"/> property. See the Cosmos
+    /// <c>MessageSearchProjection</c> constant.
+    /// </summary>
+    [TestMethod]
+    public async Task SearchMessages_roundtrips_every_property_except_EventJson()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-msgdrift");
+        var eventId = Id("msgdrift-1");
+
+        var stored = new MessageEntity
+        {
+            EventId = eventId,
+            MessageId = Id("msgdrift-m1"),
+            EventTypeId = "OrderPlaced",
+            OriginatingMessageId = "origin-1",
+            ParentMessageId = "parent-1",
+            From = "publisher-1",
+            To = "subscriber-1",
+            OriginatingFrom = "adapter-1",
+            SessionId = "session-msgdrift",
+            CorrelationId = "corr-msgdrift",
+            EnqueuedTimeUtc = new DateTime(2026, 5, 1, 8, 30, 0, DateTimeKind.Utc),
+            MessageType = MessageType.ErrorResponse,
+            EndpointRole = EndpointRole.Subscriber,
+            EndpointId = endpointId,
+            RetryCount = 3,
+            RetryLimit = 7,
+            DeadLetterReason = "dl-reason",
+            DeadLetterErrorDescription = "dl-description",
+            OriginalSessionId = "orig-session",
+            DeferralSequence = 5,
+            QueueTimeMs = 111,
+            ProcessingTimeMs = 222,
+            PendingSubStatus = "Handoff",
+            HandoffReason = "external work",
+            ExternalJobId = "JOB-9",
+            ExpectedBy = new DateTime(2026, 6, 1, 9, 0, 0, DateTimeKind.Utc),
+            MessageContent = new MessageContent
+            {
+                EventContent = new EventContent { EventTypeId = "OrderPlaced", EventJson = "{\"secret\":\"payload\"}" },
+                ErrorContent = new ErrorContent { ErrorText = "boom", ErrorType = "System.InvalidOperationException", ExceptionStackTrace = "at X" },
+            },
+        };
+        await store.StoreMessage(stored);
+
+        var resp = await store.SearchMessages(new MessageFilter { EventId = eventId }, null, 50);
+        var fetched = resp.Messages.Single();
+
+        // Handoff metadata is carried on the UnresolvedEvents row, not the
+        // per-message history row — the SQL provider's Messages table has no
+        // columns for these four, so their round-trip is not part of the
+        // message-search contract. (Covered for events by the UnresolvedEvent
+        // drift guard above.)
+        var exempt = new HashSet<string>
+        {
+            nameof(MessageEntity.PendingSubStatus),
+            nameof(MessageEntity.HandoffReason),
+            nameof(MessageEntity.ExternalJobId),
+            nameof(MessageEntity.ExpectedBy),
+        };
+
+        foreach (var prop in typeof(MessageEntity).GetProperties())
+        {
+            if (exempt.Contains(prop.Name)) continue;
+
+            if (prop.Name == nameof(MessageEntity.MessageContent))
+            {
+                Assert.IsNull(fetched.MessageContent?.EventContent?.EventJson,
+                    "Message search results must omit the heavy EventJson payload.");
+                Assert.AreEqual(stored.MessageContent.EventContent.EventTypeId, fetched.MessageContent?.EventContent?.EventTypeId);
+                Assert.AreEqual(stored.MessageContent.ErrorContent.ErrorText, fetched.MessageContent?.ErrorContent?.ErrorText,
+                    "ErrorContent must survive the message search projection.");
+                continue;
+            }
+
+            // DateTime values compare by ticks (Kind-insensitive) — see the
+            // UnresolvedEvent drift guard.
+            var expectedValue = prop.GetValue(stored);
+            var actualValue = prop.GetValue(fetched);
+            Assert.AreEqual(expectedValue, actualValue,
+                $"MessageEntity.{prop.Name} did not round-trip through message search — is it missing from a provider's projection?");
+        }
+    }
+
+    private static UnresolvedEvent FullySetEvent(string endpointId, string eventId, string sessionId) => new()
+    {
+        UpdatedAt = new DateTime(2026, 5, 1, 8, 0, 0, DateTimeKind.Utc),
+        EnqueuedTimeUtc = new DateTime(2026, 5, 1, 7, 59, 0, DateTimeKind.Utc),
+        EventId = eventId,
+        SessionId = sessionId,
+        CorrelationId = "corr-drift",
+        ResolutionStatus = ResolutionStatus.Failed,
+        EndpointRole = EndpointRole.Subscriber,
+        EndpointId = endpointId,
+        RetryCount = 3,
+        RetryLimit = 7,
+        MessageType = MessageType.ErrorResponse,
+        DeadLetterReason = "dl-reason",
+        DeadLetterErrorDescription = "dl-description",
+        LastMessageId = "last-1",
+        OriginatingMessageId = "origin-1",
+        ParentMessageId = "parent-1",
+        Reason = "reason-1",
+        OriginatingFrom = "adapter-1",
+        EventTypeId = "OrderPlaced",
+        To = "subscriber-1",
+        From = "publisher-1",
+        MessageContent = new MessageContent
+        {
+            EventContent = new EventContent { EventTypeId = "OrderPlaced", EventJson = "{\"secret\":\"payload\"}" },
+            ErrorContent = new ErrorContent { ErrorText = "boom", ErrorType = "System.InvalidOperationException", ExceptionStackTrace = "at X" },
+        },
+        QueueTimeMs = 111,
+        ProcessingTimeMs = 222,
+        PendingSubStatus = "Handoff",
+        HandoffReason = "external work",
+        ExternalJobId = "JOB-9",
+        ExpectedBy = new DateTime(2026, 6, 1, 9, 0, 0, DateTimeKind.Utc),
+    };
 }

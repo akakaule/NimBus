@@ -161,6 +161,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.Agents", "NimBus.Age
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.Agents.Tests", "..\tests\NimBus.Agents.Tests\NimBus.Agents.Tests.csproj", "{9AEBBD6D-AD9D-4B46-AF6C-CDC0752B6E6B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.Outbox.SqlServer.Tests", "..\tests\NimBus.Outbox.SqlServer.Tests\NimBus.Outbox.SqlServer.Tests.csproj", "{0C04FB4D-4250-4384-98C0-99775A65A782}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -807,6 +809,18 @@ Global
 		{9AEBBD6D-AD9D-4B46-AF6C-CDC0752B6E6B}.Release|x64.Build.0 = Release|Any CPU
 		{9AEBBD6D-AD9D-4B46-AF6C-CDC0752B6E6B}.Release|x86.ActiveCfg = Release|Any CPU
 		{9AEBBD6D-AD9D-4B46-AF6C-CDC0752B6E6B}.Release|x86.Build.0 = Release|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Debug|x64.Build.0 = Debug|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Debug|x86.Build.0 = Debug|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Release|x64.ActiveCfg = Release|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Release|x64.Build.0 = Release|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Release|x86.ActiveCfg = Release|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

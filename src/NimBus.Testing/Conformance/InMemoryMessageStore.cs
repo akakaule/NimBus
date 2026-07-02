@@ -107,16 +107,49 @@ public class InMemoryMessageStore : INimBusMessageStore
     public Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount)
     {
         IEnumerable<UnresolvedEvent> q = _events.Values;
-        if (!string.IsNullOrEmpty(filter.EndPointId)) q = q.Where(e => e.EndpointId == filter.EndPointId);
-        if (!string.IsNullOrEmpty(filter.EventId)) q = q.Where(e => e.EventId == filter.EventId);
-        if (!string.IsNullOrEmpty(filter.SessionId)) q = q.Where(e => e.SessionId == filter.SessionId);
+        // ID-like fields use case-insensitive PREFIX matching, converging with
+        // the Cosmos (STARTSWITH) and SQL Server (LIKE 'value%') providers.
+        if (!string.IsNullOrEmpty(filter.EndPointId)) q = q.Where(e => HasPrefix(e.EndpointId, filter.EndPointId));
+        if (!string.IsNullOrEmpty(filter.EventId)) q = q.Where(e => HasPrefix(e.EventId, filter.EventId));
+        if (!string.IsNullOrEmpty(filter.SessionId)) q = q.Where(e => HasPrefix(e.SessionId, filter.SessionId));
         if (filter.ResolutionStatus is { Count: > 0 })
         {
             var statuses = new HashSet<string>(filter.ResolutionStatus);
             q = q.Where(e => statuses.Contains(e.ResolutionStatus.ToString()));
         }
-        var results = q.OrderByDescending(e => e.UpdatedAt).Take(maxSearchItemsCount > 0 ? maxSearchItemsCount : 100).ToList();
+        // Search results never surface the full request payload (cross-provider
+        // contract). This store hands out its STORED instances elsewhere, so the
+        // results must be clones — nulling EventJson in place would corrupt the
+        // stored event.
+        var results = q.OrderByDescending(e => e.UpdatedAt)
+            .Take(maxSearchItemsCount > 0 ? maxSearchItemsCount : 100)
+            .Select(CloneWithoutEventJson)
+            .ToList();
         return Task.FromResult(new SearchResponse { Events = results });
+    }
+
+    private static UnresolvedEvent CloneWithoutEventJson(UnresolvedEvent source)
+    {
+        var clone = Newtonsoft.Json.JsonConvert.DeserializeObject<UnresolvedEvent>(
+            Newtonsoft.Json.JsonConvert.SerializeObject(source));
+        if (clone?.MessageContent?.EventContent != null)
+        {
+            clone.MessageContent.EventContent.EventJson = null;
+        }
+
+        return clone!;
+    }
+
+    private static MessageEntity CloneWithoutEventJson(MessageEntity source)
+    {
+        var clone = Newtonsoft.Json.JsonConvert.DeserializeObject<MessageEntity>(
+            Newtonsoft.Json.JsonConvert.SerializeObject(source));
+        if (clone?.MessageContent?.EventContent != null)
+        {
+            clone.MessageContent.EventContent.EventJson = null;
+        }
+
+        return clone!;
     }
 
     public virtual Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId)
@@ -267,13 +300,18 @@ public class InMemoryMessageStore : INimBusMessageStore
     public Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount)
     {
         IEnumerable<MessageEntity> q = _messages.Values;
-        if (!string.IsNullOrEmpty(filter.EndpointId)) q = q.Where(m => m.EndpointId == filter.EndpointId);
-        if (!string.IsNullOrEmpty(filter.EventId)) q = q.Where(m => m.EventId == filter.EventId);
-        if (!string.IsNullOrEmpty(filter.MessageId)) q = q.Where(m => m.MessageId == filter.MessageId);
-        if (!string.IsNullOrEmpty(filter.SessionId)) q = q.Where(m => m.SessionId == filter.SessionId);
+        // ID-like fields use case-insensitive PREFIX matching — see GetEventsByFilter.
+        if (!string.IsNullOrEmpty(filter.EndpointId)) q = q.Where(m => HasPrefix(m.EndpointId, filter.EndpointId));
+        if (!string.IsNullOrEmpty(filter.EventId)) q = q.Where(m => HasPrefix(m.EventId, filter.EventId));
+        if (!string.IsNullOrEmpty(filter.MessageId)) q = q.Where(m => HasPrefix(m.MessageId, filter.MessageId));
+        if (!string.IsNullOrEmpty(filter.SessionId)) q = q.Where(m => HasPrefix(m.SessionId, filter.SessionId));
         if (!string.IsNullOrEmpty(filter.From)) q = q.Where(m => m.From == filter.From);
         if (!string.IsNullOrEmpty(filter.To)) q = q.Where(m => m.To == filter.To);
-        var results = q.OrderByDescending(m => m.EnqueuedTimeUtc).Take(maxItemCount > 0 ? maxItemCount : 100).ToList();
+        // Clone + strip EventJson — see GetEventsByFilter.
+        var results = q.OrderByDescending(m => m.EnqueuedTimeUtc)
+            .Take(maxItemCount > 0 ? maxItemCount : 100)
+            .Select(CloneWithoutEventJson)
+            .ToList();
         return Task.FromResult(new MessageSearchResult { Messages = results });
     }
 
@@ -294,12 +332,16 @@ public class InMemoryMessageStore : INimBusMessageStore
             Audit = a,
             CreatedAt = a.AuditTimestamp,
         }));
-        if (!string.IsNullOrEmpty(filter.EventId)) allAudits = allAudits.Where(a => a.EventId == filter.EventId);
-        if (!string.IsNullOrEmpty(filter.AuditorName)) allAudits = allAudits.Where(a => a.Audit.AuditorName == filter.AuditorName);
+        // ID-like fields use case-insensitive PREFIX matching — see GetEventsByFilter.
+        if (!string.IsNullOrEmpty(filter.EventId)) allAudits = allAudits.Where(a => HasPrefix(a.EventId, filter.EventId));
+        if (!string.IsNullOrEmpty(filter.AuditorName)) allAudits = allAudits.Where(a => HasPrefix(a.Audit.AuditorName, filter.AuditorName));
         if (filter.AuditType.HasValue) allAudits = allAudits.Where(a => a.Audit.AuditType == filter.AuditType.Value);
         var results = allAudits.OrderByDescending(a => a.CreatedAt).Take(maxItemCount > 0 ? maxItemCount : 100).ToList();
         return Task.FromResult(new AuditSearchResult { Audits = results });
     }
+
+    private static bool HasPrefix(string? value, string prefix)
+        => value != null && value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
 
     public Task<string> GetEndpointErrorList(string endpointId)
     {
@@ -383,7 +425,7 @@ public class InMemoryMessageStore : INimBusMessageStore
         return Task.FromResult(true);
     }
 
-    public Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from)
+    public virtual Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from)
     {
         var messages = _messages.Values.Where(m => m.EnqueuedTimeUtc >= from).ToList();
         return Task.FromResult(new EndpointMetricsResult
@@ -394,7 +436,7 @@ public class InMemoryMessageStore : INimBusMessageStore
         });
     }
 
-    public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from)
+    public virtual Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from)
     {
         var outcomeTypes = new HashSet<MessageType>
         {
@@ -437,7 +479,7 @@ public class InMemoryMessageStore : INimBusMessageStore
         return Task.FromResult(results);
     }
 
-    public Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+    public virtual Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
     {
         var buckets = GenerateBucketKeys(from, DateTime.UtcNow, substringLength)
             .ToDictionary(k => k, k => new TimeSeriesBucket { Timestamp = k });

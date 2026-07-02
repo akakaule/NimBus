@@ -167,8 +167,9 @@ await publisher.Publish(
 | `Publish(IEvent)` | Publish one event using the event's session ID and a new correlation ID |
 | `Publish(event, sessionId, correlationId)` | Override the session and correlation IDs |
 | `Publish(event, sessionId, correlationId, messageId)` | Also provide an explicit idempotency-oriented `MessageId` |
-| `PublishBatch(IEnumerable<IEvent>, correlationId)` | Send multiple events in one Service Bus batch, subject to transport size limits |
-| `GetBatches(List<IEvent>)` | Split a list into transport-sized batches before publishing |
+| `PublishBatches(IEnumerable<IEvent>, correlationId)` | **Preferred for bulk publish.** Sends any number of events, automatically paged to the Service Bus batch size; each event is serialized exactly once |
+| `PublishBatch(IEnumerable<IEvent>, correlationId)` | Send multiple events in one Service Bus batch — the caller must respect transport size limits |
+| `GetBatches(List<IEvent>)` | Split a list into transport-sized batches before publishing (legacy pairing with `PublishBatch`; prefer `PublishBatches`) |
 | `Request<TRequest,TResponse>(...)` | Request/response over Service Bus sessions; requires a `PublisherClient` created with a `ServiceBusClient` |
 
 `PublisherClient` also has concrete `Schedule(...)` and `CancelScheduled(...)`

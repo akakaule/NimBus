@@ -12,6 +12,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="NimBus.Outbox.SqlServer.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\NimBus.Core\NimBus.Core.csproj" />
   </ItemGroup>
 

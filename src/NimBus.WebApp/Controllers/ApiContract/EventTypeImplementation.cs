@@ -43,41 +43,41 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new NotFoundObjectResult("Endpoint not found");
             }
 
-            var eventTypeDetails = new List<EventTypeDetails>();
-
             IEndpoint endpoint = platform.Endpoints.FirstOrDefault(e => e.Name.Equals(endpointId, StringComparison.OrdinalIgnoreCase));
             if (endpoint == null)
             {
                 return new NotFoundObjectResult($"Endpoint '{endpointId}' not found");
             }
 
-            foreach (var eventType in endpoint.EventTypesConsumed)
+            // Map each event type exactly once (mapping walks the type's
+            // properties and probes producers/consumers per type); the
+            // groupings below reuse the already-mapped EventTypes instead of
+            // re-mapping the whole list a second time.
+            EventTypeDetails CreateDetails(IEventType eventType) => new EventTypeDetails
             {
-                eventTypeDetails.Add(new EventTypeDetails
-                {
-                    EventType = Mapper.EventTypeFromIEventType(eventType),
-                    CodeRepoLink = codeRepoService.GetSearchUrl(eventType.Name, eventType.Namespace),
-                    Producers = platform.GetProducers(eventType).Select(x => x.Name).ToList(),
-                    Consumers = platform.GetConsumers(eventType).Select(x => x.Name).ToList(),
-                });
-            }
+                EventType = Mapper.EventTypeFromIEventType(eventType),
+                CodeRepoLink = codeRepoService.GetSearchUrl(eventType.Name, eventType.Namespace),
+                Producers = platform.GetProducers(eventType).Select(x => x.Name).ToList(),
+                Consumers = platform.GetConsumers(eventType).Select(x => x.Name).ToList(),
+            };
 
-            foreach (var eventType in endpoint.EventTypesProduced)
-            {
-                eventTypeDetails.Add(new EventTypeDetails
-                {
-                    EventType = Mapper.EventTypeFromIEventType(eventType),
-                    CodeRepoLink = codeRepoService.GetSearchUrl(eventType.Name, eventType.Namespace),
-                    Producers = platform.GetProducers(eventType).Select(x => x.Name).ToList(),
-                    Consumers = platform.GetConsumers(eventType).Select(x => x.Name).ToList(),
-                });
-            }
-            
+            // Ordering invariants: details list consumed types first, then
+            // produced; a type in both directions appears once per direction.
+            var consumedDetails = endpoint.EventTypesConsumed.Select(CreateDetails).ToList();
+            var producedDetails = endpoint.EventTypesProduced.Select(CreateDetails).ToList();
+
+            static List<EventTypeGrouping> GroupByNamespace(IEnumerable<EventTypeDetails> details) =>
+                details
+                    .Select(d => d.EventType)
+                    .GroupBy(e => e.Namespace)
+                    .Select(g => new EventTypeGrouping() { Namespace = g.Key, Events = g.ToList() })
+                    .ToList();
+
             return new Response
             {
-                Consumes = endpoint.EventTypesConsumed.Select(Mapper.EventTypeFromIEventType).GroupBy(e => e.Namespace).Select(g => new EventTypeGrouping() { Namespace = g.Key, Events = g.ToList() }).ToList(),
-                Produces = endpoint.EventTypesProduced.Select(Mapper.EventTypeFromIEventType).GroupBy(e => e.Namespace).Select(g => new EventTypeGrouping() { Namespace = g.Key, Events = g.ToList() }).ToList(),
-                EventTypeDetails = eventTypeDetails
+                Consumes = GroupByNamespace(consumedDetails),
+                Produces = GroupByNamespace(producedDetails),
+                EventTypeDetails = consumedDetails.Concat(producedDetails).ToList()
             };
         }
 

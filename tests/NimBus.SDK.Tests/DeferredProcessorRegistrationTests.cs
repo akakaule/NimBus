@@ -57,6 +57,34 @@ public class DeferredProcessorRegistrationTests
         var resolved = provider.GetRequiredService<DeferredMessageProcessorHostedServiceOptions>();
         Assert.AreEqual("EndpointA", resolved.TopicName);
         Assert.AreEqual("deferredprocessor", resolved.SubscriptionName);
+        Assert.AreEqual(1, resolved.MaxConcurrentCalls,
+            "Default must stay 1 — the non-session trigger subscription has no other ordering mechanism.");
+    }
+
+    [TestMethod]
+    public void Custom_max_concurrent_calls_flows_into_hosted_service_options()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new ServiceBusClient(FakeConnection));
+        services.AddNimBusSubscriber("EndpointA", _ => { });
+
+        services.AddNimBusDeferredProcessorHostedService("EndpointA", maxConcurrentCalls: 4);
+
+        using var provider = services.BuildServiceProvider();
+        var resolved = provider.GetRequiredService<DeferredMessageProcessorHostedServiceOptions>();
+        Assert.AreEqual(4, resolved.MaxConcurrentCalls);
+    }
+
+    [TestMethod]
+    public void Non_positive_max_concurrent_calls_throws()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new ServiceBusClient(FakeConnection));
+
+        Assert.ThrowsException<System.ArgumentOutOfRangeException>(
+            () => services.AddNimBusDeferredProcessorHostedService("EndpointA", maxConcurrentCalls: 0));
+        Assert.ThrowsException<System.ArgumentOutOfRangeException>(
+            () => services.AddNimBusDeferredProcessorHostedService("EndpointA", maxConcurrentCalls: -1));
     }
 
     [TestMethod]

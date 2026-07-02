@@ -1,0 +1,25 @@
+{
+    "repoPath":  ".",
+    "stateDir":  "",
+    "afBaseUrl":  "http://localhost:8787",
+    "afWorkspace":  "nimbus",
+    "statuses":  [
+                     "open"
+                 ],
+    "minSeverity":  "high",
+    "minConfidence":  "high",
+    "includeCategories":  [
+
+                          ],
+    "excludeCategories":  [
+                              "docs-gap",
+                              "maintainability",
+                              "test-gap"
+                          ],
+    "autoQueue":  true,
+    "entryStage":  "implementation",
+    "lowConfidenceStage":  "description",
+    "maxCreatesPerRun":  20,
+    "maxChars":  8000,
+    "runReview":  false
+}

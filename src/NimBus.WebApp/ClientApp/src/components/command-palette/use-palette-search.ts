@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import * as api from "api-client";
+// Type-only import: the api-client module (345KB, pulls in moment) must not
+// land in the eager entry chunk — the runtime module is loaded on demand
+// inside the effects below via dynamic import.
+import type * as api from "api-client";
 
 // 8-4-4-4-12 hex layout OR 32 contiguous hex chars (Service Bus session keys).
 const GUID_DASHED = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -70,11 +73,14 @@ export function usePaletteSearch(
     if (endpoints !== undefined && eventTypes !== undefined) return;
     let cancelled = false;
     setCatalogLoading(true);
-    const client = new api.Client(api.CookieAuth());
-    Promise.all([
-      client.getEndpointsAll().catch((): string[] => []),
-      client.getEventTypes().catch((): api.EventType[] => []),
-    ])
+    (async () => {
+      const apiMod = await import("api-client");
+      const client = new apiMod.Client(apiMod.CookieAuth());
+      return Promise.all([
+        client.getEndpointsAll().catch((): string[] => []),
+        client.getEventTypes().catch((): api.EventType[] => []),
+      ]);
+    })()
       .then(([eps, types]) => {
         if (cancelled) return;
         setEndpoints(eps);
@@ -106,16 +112,17 @@ export function usePaletteSearch(
 
     const ticket = ++remoteTicket.current;
     const timer = window.setTimeout(async () => {
-      const client = new api.Client(api.CookieAuth());
+      const apiMod = await import("api-client");
+      const client = new apiMod.Client(apiMod.CookieAuth());
       setRemoteSearching(true);
       setRemoteError(undefined);
       try {
-        const byEvent = new api.MessageSearchRequest();
-        byEvent.filter = api.MessageSearchFilter.fromJS({ eventId: trimmed });
+        const byEvent = new apiMod.MessageSearchRequest();
+        byEvent.filter = apiMod.MessageSearchFilter.fromJS({ eventId: trimmed });
         byEvent.maxItemCount = MAX_REMOTE_RESULTS;
 
-        const bySession = new api.MessageSearchRequest();
-        bySession.filter = api.MessageSearchFilter.fromJS({
+        const bySession = new apiMod.MessageSearchRequest();
+        bySession.filter = apiMod.MessageSearchFilter.fromJS({
           sessionId: trimmed,
         });
         bySession.maxItemCount = MAX_REMOTE_RESULTS;

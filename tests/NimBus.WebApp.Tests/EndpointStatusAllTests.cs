@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -85,7 +86,8 @@ public sealed class EndpointStatusAllTests
             serviceBusManagement: null,
             new AllowAllAuthorizationService(),
             NullLogger<EndpointImplementation>.Instance,
-            auditLogService: null);
+            auditLogService: null,
+            new StoreResultCache(new MemoryCache(new MemoryCacheOptions())));
     }
 
     /// <summary>

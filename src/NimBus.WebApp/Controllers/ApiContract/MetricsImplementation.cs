@@ -14,16 +14,29 @@ namespace NimBus.WebApp.Controllers.ApiContract;
 public class MetricsImplementation : IMetricsApiController
 {
     private readonly INimBusMessageStore _cosmosClient;
+    private readonly IStoreResultCache _storeResultCache;
 
-    public MetricsImplementation(INimBusMessageStore cosmosClient)
+    // Metrics aggregates are period-keyed and carry no per-user data, so a 30s
+    // TTL bounds the (RU-expensive) cross-partition aggregate queries to at
+    // most one run per period per window regardless of how many dashboards poll.
+    private static readonly TimeSpan MetricsTtl = TimeSpan.FromSeconds(30);
+
+    public MetricsImplementation(INimBusMessageStore cosmosClient, IStoreResultCache storeResultCache)
     {
         _cosmosClient = cosmosClient;
+        _storeResultCache = storeResultCache;
     }
 
     public async Task<ActionResult<MetricsOverview>> GetMetricsOverviewAsync(Period period)
     {
-        var from = DateTime.UtcNow - PeriodToTimeSpan(period);
-        var result = await _cosmosClient.GetEndpointMetrics(from);
+        var result = await _storeResultCache.GetOrCreateAsync(
+            $"metrics:overview:{period}",
+            MetricsTtl,
+            () =>
+            {
+                var from = DateTime.UtcNow - PeriodToTimeSpan(period);
+                return _cosmosClient.GetEndpointMetrics(from);
+            });
 
         return new MetricsOverview
         {
@@ -57,8 +70,14 @@ public class MetricsImplementation : IMetricsApiController
         // raw values, and AVG/MIN/MAX gives enough signal for an operator
         // dashboard. Tail latency monitoring lives with the OpenTelemetry
         // histograms (nimbus.message.queue_wait, nimbus.pipeline.duration).
-        var from = DateTime.UtcNow - PeriodToTimeSpan(period);
-        var result = await _cosmosClient.GetEndpointLatencyMetrics(from);
+        var result = await _storeResultCache.GetOrCreateAsync(
+            $"metrics:latency:{period}",
+            MetricsTtl,
+            () =>
+            {
+                var from = DateTime.UtcNow - PeriodToTimeSpan(period);
+                return _cosmosClient.GetEndpointLatencyMetrics(from);
+            });
 
         return new LatencyOverview
         {
@@ -130,9 +149,15 @@ public class MetricsImplementation : IMetricsApiController
 
     public async Task<ActionResult<TimeSeriesOverview>> GetMetricsTimeseriesAsync(Period period)
     {
-        var from = DateTime.UtcNow - PeriodToTimeSpan(period);
-        var (substringLength, bucketLabel) = PeriodToBucketConfig(period);
-        var result = await _cosmosClient.GetTimeSeriesMetrics(from, substringLength, bucketLabel);
+        var result = await _storeResultCache.GetOrCreateAsync(
+            $"metrics:timeseries:{period}",
+            MetricsTtl,
+            () =>
+            {
+                var from = DateTime.UtcNow - PeriodToTimeSpan(period);
+                var (substringLength, bucketLabel) = PeriodToBucketConfig(period);
+                return _cosmosClient.GetTimeSeriesMetrics(from, substringLength, bucketLabel);
+            });
 
         return new TimeSeriesOverview
         {

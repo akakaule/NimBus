@@ -138,3 +138,6 @@ src/NimBus.WebApp/wwwroot/
 *.dotnet/*
 *.dotnet
 /.claude/plans
+logs/
+.worktrees/
+.clawpatch/

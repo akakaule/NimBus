@@ -83,6 +83,12 @@ export default defineConfig({
           if (/node_modules[\\/](react|react-dom|react-router-dom)[\\/]/.test(id)) {
             return 'vendor';
           }
+          // The NSwag-generated api-client (and moment, which only it pulls in)
+          // is dynamic-imported from the entry chain; pin its chunk name and
+          // composition so it stays cache-stable across deploys.
+          if (/[\\/]src[\\/]api-client[\\/]/.test(id) || /node_modules[\\/]moment[\\/]/.test(id)) {
+            return 'api';
+          }
           // Keep page-specific heavy libs out of the eager vendor/main chunk so
           // they only load with the route that uses them (Insights / Topology).
           if (/node_modules[\\/]recharts[\\/]/.test(id)) {

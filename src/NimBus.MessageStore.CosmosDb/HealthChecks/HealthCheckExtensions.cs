@@ -7,6 +7,9 @@ public static class HealthCheckExtensions
 {
     public static IHealthChecksBuilder AddCosmosDbHealthCheck(this IHealthChecksBuilder builder)
     {
+        // The singleton registration is load-bearing: without it AddCheck<T>
+        // activates a fresh instance per probe and the 30s result cache never hits.
+        builder.Services.AddSingleton<CosmosDbHealthCheck>();
         return builder.AddCheck<CosmosDbHealthCheck>(
             "cosmosdb",
             failureStatus: HealthStatus.Unhealthy,

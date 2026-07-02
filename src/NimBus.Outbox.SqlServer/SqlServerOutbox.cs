@@ -91,21 +91,26 @@ namespace NimBus.Outbox.SqlServer
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        // 12 parameters per row; 100 rows = 1,200 parameters, comfortably under
+        // SQL Server's 2,100-per-command limit. Matches the batch size used by
+        // MarkAsDispatchedAsync.
+        internal const int InsertBatchSize = 100;
+
         public async Task StoreBatchAsync(IEnumerable<OutboxMessage> messages, CancellationToken cancellationToken = default)
         {
+            var list = messages as IReadOnlyList<OutboxMessage> ?? new List<OutboxMessage>(messages);
+            if (list.Count == 0)
+            {
+                return;
+            }
+
             var ambient = SqlServerOutboxAmbientTransaction.Current;
             if (ambient.HasValue)
             {
-                foreach (var message in messages)
+                for (var offset = 0; offset < list.Count; offset += InsertBatchSize)
                 {
-                    var ambientSql = $@"
-                        INSERT INTO {_options.FullTableName}
-                            ([Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [ScheduledEnqueueTimeUtc], [CreatedAtUtc], [TraceParent], [TraceState])
-                        VALUES
-                            (@Id, @MessageId, @To, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @ScheduledEnqueueTimeUtc, @CreatedAtUtc, @TraceParent, @TraceState)";
-
-                    await using var ambientCommand = new SqlCommand(ambientSql, ambient.Value.Connection, ambient.Value.Transaction);
-                    AddOutboxMessageParameters(ambientCommand, message);
+                    var count = Math.Min(InsertBatchSize, list.Count - offset);
+                    await using var ambientCommand = CreateBatchInsertCommand(ambient.Value.Connection, ambient.Value.Transaction, list, offset, count);
                     await ambientCommand.ExecuteNonQueryAsync(cancellationToken);
                 }
                 return;
@@ -117,16 +122,10 @@ namespace NimBus.Outbox.SqlServer
 
             try
             {
-                foreach (var message in messages)
+                for (var offset = 0; offset < list.Count; offset += InsertBatchSize)
                 {
-                    var sql = $@"
-                        INSERT INTO {_options.FullTableName}
-                            ([Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [ScheduledEnqueueTimeUtc], [CreatedAtUtc], [TraceParent], [TraceState])
-                        VALUES
-                            (@Id, @MessageId, @To, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @ScheduledEnqueueTimeUtc, @CreatedAtUtc, @TraceParent, @TraceState)";
-
-                    await using var command = new SqlCommand(sql, connection, transaction);
-                    AddOutboxMessageParameters(command, message);
+                    var count = Math.Min(InsertBatchSize, list.Count - offset);
+                    await using var command = CreateBatchInsertCommand(connection, transaction, list, offset, count);
                     await command.ExecuteNonQueryAsync(cancellationToken);
                 }
 
@@ -137,6 +136,37 @@ namespace NimBus.Outbox.SqlServer
                 await transaction.RollbackAsync(cancellationToken);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Builds one multi-row INSERT for <paramref name="count"/> messages
+        /// starting at <paramref name="offset"/>, with per-row suffixed parameter
+        /// names. One round-trip per <see cref="InsertBatchSize"/> rows instead of
+        /// one per message.
+        /// </summary>
+        internal SqlCommand CreateBatchInsertCommand(SqlConnection connection, SqlTransaction transaction, IReadOnlyList<OutboxMessage> messages, int offset, int count)
+        {
+            var command = new SqlCommand
+            {
+                Connection = connection,
+                Transaction = transaction,
+            };
+
+            var rows = new string[count];
+            for (var i = 0; i < count; i++)
+            {
+                var suffix = i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                rows[i] = $"(@Id{suffix}, @MessageId{suffix}, @To{suffix}, @EventTypeId{suffix}, @SessionId{suffix}, @CorrelationId{suffix}, @Payload{suffix}, @EnqueueDelayMinutes{suffix}, @ScheduledEnqueueTimeUtc{suffix}, @CreatedAtUtc{suffix}, @TraceParent{suffix}, @TraceState{suffix})";
+                AddOutboxMessageParameters(command, messages[offset + i], suffix);
+            }
+
+            command.CommandText = $@"
+                INSERT INTO {_options.FullTableName}
+                    ([Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [ScheduledEnqueueTimeUtc], [CreatedAtUtc], [TraceParent], [TraceState])
+                VALUES
+                    {string.Join(",\n                    ", rows)}";
+
+            return command;
         }
 
         public async Task<IReadOnlyList<OutboxMessage>> GetPendingAsync(int batchSize, CancellationToken cancellationToken = default)
@@ -261,20 +291,20 @@ namespace NimBus.Outbox.SqlServer
                 throw new ArgumentException($"SQL identifier '{parameterName}' contains characters that are not allowed (], ', ;, or --).", parameterName);
         }
 
-        private static void AddOutboxMessageParameters(SqlCommand command, OutboxMessage message)
+        private static void AddOutboxMessageParameters(SqlCommand command, OutboxMessage message, string suffix = "")
         {
-            command.Parameters.AddWithValue("@Id", message.Id);
-            command.Parameters.AddWithValue("@MessageId", message.MessageId);
-            command.Parameters.AddWithValue("@To", (object)message.To ?? DBNull.Value);
-            command.Parameters.AddWithValue("@EventTypeId", (object)message.EventTypeId ?? DBNull.Value);
-            command.Parameters.AddWithValue("@SessionId", (object)message.SessionId ?? DBNull.Value);
-            command.Parameters.AddWithValue("@CorrelationId", (object)message.CorrelationId ?? DBNull.Value);
-            command.Parameters.AddWithValue("@Payload", message.Payload);
-            command.Parameters.AddWithValue("@EnqueueDelayMinutes", message.EnqueueDelayMinutes);
-            command.Parameters.AddWithValue("@ScheduledEnqueueTimeUtc", (object?)message.ScheduledEnqueueTimeUtc ?? DBNull.Value);
-            command.Parameters.AddWithValue("@CreatedAtUtc", message.CreatedAtUtc);
-            command.Parameters.AddWithValue("@TraceParent", (object)message.TraceParent ?? DBNull.Value);
-            command.Parameters.AddWithValue("@TraceState", (object)message.TraceState ?? DBNull.Value);
+            command.Parameters.AddWithValue($"@Id{suffix}", message.Id);
+            command.Parameters.AddWithValue($"@MessageId{suffix}", message.MessageId);
+            command.Parameters.AddWithValue($"@To{suffix}", (object)message.To ?? DBNull.Value);
+            command.Parameters.AddWithValue($"@EventTypeId{suffix}", (object)message.EventTypeId ?? DBNull.Value);
+            command.Parameters.AddWithValue($"@SessionId{suffix}", (object)message.SessionId ?? DBNull.Value);
+            command.Parameters.AddWithValue($"@CorrelationId{suffix}", (object)message.CorrelationId ?? DBNull.Value);
+            command.Parameters.AddWithValue($"@Payload{suffix}", message.Payload);
+            command.Parameters.AddWithValue($"@EnqueueDelayMinutes{suffix}", message.EnqueueDelayMinutes);
+            command.Parameters.AddWithValue($"@ScheduledEnqueueTimeUtc{suffix}", (object?)message.ScheduledEnqueueTimeUtc ?? DBNull.Value);
+            command.Parameters.AddWithValue($"@CreatedAtUtc{suffix}", message.CreatedAtUtc);
+            command.Parameters.AddWithValue($"@TraceParent{suffix}", (object)message.TraceParent ?? DBNull.Value);
+            command.Parameters.AddWithValue($"@TraceState{suffix}", (object)message.TraceState ?? DBNull.Value);
         }
     }
 }

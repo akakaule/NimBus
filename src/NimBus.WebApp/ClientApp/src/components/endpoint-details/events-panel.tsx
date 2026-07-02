@@ -241,7 +241,9 @@ function paramsFromEventFilter(
 }
 
 const EventsPanel = (props: EventsPanelProps) => {
-  const client = new api.Client(api.CookieAuth());
+  // Stable client instance — constructing per render churns an object every
+  // keystroke/render. Never add it to a dependency array.
+  const client = React.useMemo(() => new api.Client(api.CookieAuth()), []);
   const params = useParams();
   const endpointId = props.endpointId || params.id!;
 

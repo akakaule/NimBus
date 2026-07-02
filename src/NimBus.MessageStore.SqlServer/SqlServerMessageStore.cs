@@ -346,10 +346,12 @@ VALUES (@EventId, @EndpointId, @EventTypeId, @AuditorName, @AuditTimestamp, @Aud
         var where = new List<string> { "1 = 1" };
         var p = new DynamicParameters();
 
-        if (!string.IsNullOrEmpty(filter.EventId)) { where.Add("EventId = @EventId"); p.Add("EventId", filter.EventId); }
-        if (!string.IsNullOrEmpty(filter.EndpointId)) { where.Add("EndpointId = @EndpointId"); p.Add("EndpointId", filter.EndpointId); }
-        if (!string.IsNullOrEmpty(filter.AuditorName)) { where.Add("AuditorName = @AuditorName"); p.Add("AuditorName", filter.AuditorName); }
-        if (!string.IsNullOrEmpty(filter.EventTypeId)) { where.Add("EventTypeId = @EventTypeId"); p.Add("EventTypeId", filter.EventTypeId); }
+        // Prefix matching on ID-like fields — see SearchMessages for the
+        // cross-provider semantics and collation note.
+        if (!string.IsNullOrEmpty(filter.EventId)) { where.Add(@"EventId LIKE @EventId ESCAPE '\'"); p.Add("EventId", LikePrefix(filter.EventId)); }
+        if (!string.IsNullOrEmpty(filter.EndpointId)) { where.Add(@"EndpointId LIKE @EndpointId ESCAPE '\'"); p.Add("EndpointId", LikePrefix(filter.EndpointId)); }
+        if (!string.IsNullOrEmpty(filter.AuditorName)) { where.Add(@"AuditorName LIKE @AuditorName ESCAPE '\'"); p.Add("AuditorName", LikePrefix(filter.AuditorName)); }
+        if (!string.IsNullOrEmpty(filter.EventTypeId)) { where.Add(@"EventTypeId LIKE @EventTypeId ESCAPE '\'"); p.Add("EventTypeId", LikePrefix(filter.EventTypeId)); }
         if (filter.AuditType.HasValue) { where.Add("AuditType = @AuditType"); p.Add("AuditType", filter.AuditType.Value.ToString()); }
         if (filter.CreatedAtFrom.HasValue) { where.Add("CreatedAtUtc >= @CreatedAtFrom"); p.Add("CreatedAtFrom", filter.CreatedAtFrom.Value); }
         if (filter.CreatedAtTo.HasValue) { where.Add("CreatedAtUtc <= @CreatedAtTo"); p.Add("CreatedAtTo", filter.CreatedAtTo.Value); }
@@ -596,9 +598,11 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         var where = new List<string> { "Deleted = 0" };
         var p = new DynamicParameters();
 
-        if (!string.IsNullOrEmpty(filter.EndPointId)) { where.Add("EndpointId = @EndpointId"); p.Add("EndpointId", filter.EndPointId); }
-        if (!string.IsNullOrEmpty(filter.EventId)) { where.Add("EventId = @EventId"); p.Add("EventId", filter.EventId); }
-        if (!string.IsNullOrEmpty(filter.SessionId)) { where.Add("SessionId = @SessionId"); p.Add("SessionId", filter.SessionId); }
+        // Prefix matching on ID-like fields — see SearchMessages for the
+        // cross-provider semantics and collation note.
+        if (!string.IsNullOrEmpty(filter.EndPointId)) { where.Add(@"EndpointId LIKE @EndpointId ESCAPE '\'"); p.Add("EndpointId", LikePrefix(filter.EndPointId)); }
+        if (!string.IsNullOrEmpty(filter.EventId)) { where.Add(@"EventId LIKE @EventId ESCAPE '\'"); p.Add("EventId", LikePrefix(filter.EventId)); }
+        if (!string.IsNullOrEmpty(filter.SessionId)) { where.Add(@"SessionId LIKE @SessionId ESCAPE '\'"); p.Add("SessionId", LikePrefix(filter.SessionId)); }
         if (!string.IsNullOrEmpty(filter.To)) { where.Add("ToAddress = @ToAddress"); p.Add("ToAddress", filter.To); }
         if (!string.IsNullOrEmpty(filter.From)) { where.Add("FromAddress = @FromAddress"); p.Add("FromAddress", filter.From); }
         if (filter.UpdatedAtFrom.HasValue) { where.Add("UpdatedAtUtc >= @UpdatedAtFrom"); p.Add("UpdatedAtFrom", filter.UpdatedAtFrom.Value); }
@@ -623,11 +627,37 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         var rows = await conn.QueryAsync(sql, p, commandTimeout: _commandTimeout);
         var events = rows.Select(MapUnresolvedEventRow).ToList();
 
+        // Search results never surface the full request payload (cross-provider
+        // contract — the detail view fetches it on demand). Rows are freshly
+        // mapped, so nulling here mutates nothing shared.
+        foreach (UnresolvedEvent ev in events)
+        {
+            if (ev?.MessageContent?.EventContent != null)
+            {
+                ev.MessageContent.EventContent.EventJson = null;
+            }
+        }
+
         return new SearchResponse
         {
             Events = events,
             ContinuationToken = events.Count == pageSize ? EncodeOffset(offset + pageSize) : null!,
         };
+    }
+
+    /// <summary>
+    /// Escapes LIKE wildcards (<c>\ % _ [</c>) in a user-supplied value and
+    /// appends <c>%</c>, producing a safe prefix pattern for
+    /// <c>LIKE @p ESCAPE '\'</c> filters.
+    /// </summary>
+    private static string LikePrefix(string value)
+    {
+        var escaped = value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal)
+            .Replace("[", "\\[", StringComparison.Ordinal);
+        return escaped + "%";
     }
 
     private static int DecodeOffset(string? token)
@@ -818,10 +848,14 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         var where = new List<string> { "1 = 1" };
         var p = new DynamicParameters();
 
-        if (!string.IsNullOrEmpty(filter.EndpointId)) { where.Add("EndpointId = @EndpointId"); p.Add("EndpointId", filter.EndpointId); }
-        if (!string.IsNullOrEmpty(filter.EventId)) { where.Add("EventId = @EventId"); p.Add("EventId", filter.EventId); }
-        if (!string.IsNullOrEmpty(filter.MessageId)) { where.Add("MessageId = @MessageId"); p.Add("MessageId", filter.MessageId); }
-        if (!string.IsNullOrEmpty(filter.SessionId)) { where.Add("SessionId = @SessionId"); p.Add("SessionId", filter.SessionId); }
+        // ID-like fields use PREFIX matching (LIKE 'value%') to converge with the
+        // Cosmos provider's STARTSWITH semantics. Case-insensitivity relies on the
+        // column collation being case-insensitive (the SQL Server default and what
+        // the schema scripts assume).
+        if (!string.IsNullOrEmpty(filter.EndpointId)) { where.Add(@"EndpointId LIKE @EndpointId ESCAPE '\'"); p.Add("EndpointId", LikePrefix(filter.EndpointId)); }
+        if (!string.IsNullOrEmpty(filter.EventId)) { where.Add(@"EventId LIKE @EventId ESCAPE '\'"); p.Add("EventId", LikePrefix(filter.EventId)); }
+        if (!string.IsNullOrEmpty(filter.MessageId)) { where.Add(@"MessageId LIKE @MessageId ESCAPE '\'"); p.Add("MessageId", LikePrefix(filter.MessageId)); }
+        if (!string.IsNullOrEmpty(filter.SessionId)) { where.Add(@"SessionId LIKE @SessionId ESCAPE '\'"); p.Add("SessionId", LikePrefix(filter.SessionId)); }
         if (!string.IsNullOrEmpty(filter.From)) { where.Add("FromAddress = @FromAddress"); p.Add("FromAddress", filter.From); }
         if (!string.IsNullOrEmpty(filter.To)) { where.Add("ToAddress = @ToAddress"); p.Add("ToAddress", filter.To); }
         if (filter.MessageType.HasValue) { where.Add("MessageType = @MessageType"); p.Add("MessageType", filter.MessageType.Value.ToString()); }
@@ -841,6 +875,17 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         await using var conn = Open();
         var rows = await conn.QueryAsync(sql, p, commandTimeout: _commandTimeout);
         var messages = rows.Select(r => (MessageEntity)MapMessageRow(r)).ToList();
+
+        // Search results never surface the full request payload (cross-provider
+        // contract — detail views fetch it via GetMessage). Freshly mapped rows,
+        // so nulling here mutates nothing shared.
+        foreach (var message in messages)
+        {
+            if (message?.MessageContent?.EventContent != null)
+            {
+                message.MessageContent.EventContent.EventJson = null;
+            }
+        }
 
         return new MessageSearchResult
         {

@@ -52,6 +52,15 @@ public interface IMessageTrackingStore
     Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default);
 
     // Filtered queries
+
+    /// <summary>
+    /// Filtered event search. ID-like string filters (endpoint id, event id,
+    /// session id) match by case-insensitive PREFIX on every provider; free-text
+    /// filters (To/From/Payload) keep provider-specific substring semantics.
+    /// Results omit <c>MessageContent.EventContent.EventJson</c> — detail views
+    /// fetch the payload on demand via <see cref="GetLatestEventRequestMessage"/>;
+    /// <c>ErrorContent</c> is kept (the error-grouped view reads it).
+    /// </summary>
     Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount);
 
     // State counts
@@ -85,11 +94,25 @@ public interface IMessageTrackingStore
     Task<MessageEntity> GetFailedMessage(string eventId, string endpointId);
     Task<MessageEntity> GetDeadletteredMessage(string eventId, string endpointId);
     Task RemoveStoredMessage(string eventId, string messageId);
+
+    /// <summary>
+    /// Filtered message search. ID-like string filters (endpoint id, event id,
+    /// message id, session id) match by case-insensitive PREFIX on every
+    /// provider. Results omit <c>MessageContent.EventContent.EventJson</c> —
+    /// detail views fetch the payload via <see cref="GetMessage"/>;
+    /// <c>ErrorContent</c> is kept.
+    /// </summary>
     Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount);
 
     // Audit trail
     Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity, string? endpointId = null, string? eventTypeId = null);
     Task<IEnumerable<MessageAuditEntity>> GetMessageAudits(string eventId);
+
+    /// <summary>
+    /// Filtered audit search. ID-like string filters (event id, endpoint id,
+    /// auditor name, event type id) match by case-insensitive PREFIX on every
+    /// provider.
+    /// </summary>
     Task<AuditSearchResult> SearchAudits(AuditFilter filter, string? continuationToken, int maxItemCount);
 
     // Endpoint diagnostics

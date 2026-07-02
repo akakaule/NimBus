@@ -27,4 +27,8 @@
     <ProjectReference Include="..\NimBus.OpenTelemetry\NimBus.OpenTelemetry.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="NimBus.MessageStore.CosmosDb.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -34,14 +34,19 @@ export const getApplicationStatus = async () => {
   // Make single request and cache result. The async IIFE is assigned to
   // pendingRequest synchronously (before any await), so concurrent callers
   // still dedupe onto the same in-flight promise while the api-client module
-  // itself loads lazily.
+  // itself loads lazily. pendingRequest is cleared in finally — success AND
+  // failure — so a transient fetch error doesn't pin a rejected promise as
+  // the answer for the rest of the page's lifetime; the next call retries.
   pendingRequest = (async () => {
-    const apiMod = await import("api-client");
-    const client = new apiMod.Client(apiMod.CookieAuth());
-    const status = await client.getApiAppStats();
-    cachedStatus = status;
-    pendingRequest = null;
-    return status;
+    try {
+      const apiMod = await import("api-client");
+      const client = new apiMod.Client(apiMod.CookieAuth());
+      const status = await client.getApiAppStats();
+      cachedStatus = status;
+      return status;
+    } finally {
+      pendingRequest = null;
+    }
   })();
 
   return pendingRequest;

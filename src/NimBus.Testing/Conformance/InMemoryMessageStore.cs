@@ -21,7 +21,7 @@ namespace NimBus.Testing.Conformance;
 /// transitions, message persistence, and basic queries the conformance suite cares
 /// about. Search/pagination methods return empty results.
 /// </summary>
-public class InMemoryMessageStore : INimBusMessageStore, IEventMappingStore
+public class InMemoryMessageStore : INimBusMessageStore
 {
     private readonly ConcurrentDictionary<(string Endpoint, string EventId, string Session), UnresolvedEvent> _events = new();
     private readonly ConcurrentDictionary<(string EventId, string MessageId), MessageEntity> _messages = new();
@@ -29,7 +29,6 @@ public class InMemoryMessageStore : INimBusMessageStore, IEventMappingStore
     private readonly ConcurrentDictionary<string, EndpointSubscription> _subscriptions = new();
     private readonly ConcurrentDictionary<string, EndpointMetadata> _metadata = new();
     private readonly ConcurrentDictionary<string, EventSchema> _schemas = new();
-    private readonly ConcurrentDictionary<string, EventMapping> _mappings = new();
 
     private (string, string, string) Key(string endpoint, string eventId, string session) => (endpoint, eventId, session ?? string.Empty);
 
@@ -364,22 +363,6 @@ public class InMemoryMessageStore : INimBusMessageStore, IEventMappingStore
         if (!ReferenceEquals(existing, schema) && !SchemaJson.Equal(existing.JsonSchema, schema.JsonSchema))
             throw new SchemaConflictException(schema.EventTypeId);
         return Task.FromResult(existing);
-    }
-
-    public Task<EventMapping?> GetMapping(string id)
-        => Task.FromResult(_mappings.TryGetValue(id, out var m) ? m : (EventMapping?)null);
-
-    public Task<EventMapping?> GetActiveMappingForSource(string sourceEventTypeId)
-        => Task.FromResult(_mappings.Values.FirstOrDefault(
-            m => m.SourceEventTypeId == sourceEventTypeId && m.State == MappingState.Active));
-
-    public Task<IReadOnlyList<EventMapping>> GetMappings()
-        => Task.FromResult<IReadOnlyList<EventMapping>>(_mappings.Values.ToList());
-
-    public Task<EventMapping> SaveMapping(EventMapping mapping)
-    {
-        _mappings[mapping.Id] = mapping;
-        return Task.FromResult(mapping);
     }
 
     public Task<EndpointMetadata> GetEndpointMetadata(string endpointId)

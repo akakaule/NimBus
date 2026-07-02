@@ -100,22 +100,6 @@ public sealed class NimBusAgentApiClient : INimBusAgentApi
         return $"{{\"messages\":{msgJson},\"audits\":{auditJson}}}";
     }
 
-    /// <inheritdoc/>
-    public async Task<MappingInfo?> ProposeMappingAsync(ProposeMappingRequest req, CancellationToken ct = default)
-    {
-        using var response = await _http.PostAsJsonAsync("api/agent/mappings", req, s_jsonOptions, ct).ConfigureAwait(false);
-        await EnsureSuccessAsync(response, ct).ConfigureAwait(false);
-        return await response.Content.ReadFromJsonAsync<MappingInfo>(s_jsonOptions, ct).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc/>
-    public async Task<IReadOnlyList<MappingInfo>> ListMappingsAsync(CancellationToken ct = default)
-    {
-        using var response = await _http.GetAsync("api/agent/mappings", ct).ConfigureAwait(false);
-        await EnsureSuccessAsync(response, ct).ConfigureAwait(false);
-        return await response.Content.ReadFromJsonAsync<MappingInfo[]>(s_jsonOptions, ct).ConfigureAwait(false) ?? [];
-    }
-
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private static string BuildReceiveUrl(string? eventTypeId, int? waitSeconds)

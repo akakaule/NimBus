@@ -159,42 +159,6 @@ const Icon = {
       />
     </svg>
   ),
-  mappings: (
-    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
-      <path
-        d="M2 4h5M9 4h5"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-      <path
-        d="M11 2l2 2-2 2"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M2 12h5M9 12h5"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-      <path
-        d="M5 10l-2 2 2 2"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M7 8h2"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-    </svg>
-  ),
 };
 
 const NAV: NavGroup[] = [
@@ -250,7 +214,6 @@ const NAV: NavGroup[] = [
     label: "Manage",
     items: [
       { name: "Admin", path: "/Admin", icon: Icon.admin },
-      { name: "Mappings", path: "/Mappings", icon: Icon.mappings },
     ],
   },
 ];

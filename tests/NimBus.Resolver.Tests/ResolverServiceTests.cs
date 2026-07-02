@@ -544,11 +544,6 @@ public class ResolverServiceTests
         public Task<NimBus.MessageStore.States.EventSchema?> GetSchema(string eventTypeId) => throw new NotSupportedException();
         public Task<System.Collections.Generic.IReadOnlyList<NimBus.MessageStore.States.EventSchema>> GetSchemas() => throw new NotSupportedException();
         public Task<NimBus.MessageStore.States.EventSchema> DefineEventType(NimBus.MessageStore.States.EventSchema schema) => throw new NotSupportedException();
-
-        public Task<NimBus.MessageStore.States.EventMapping?> GetMapping(string id) => throw new NotSupportedException();
-        public Task<NimBus.MessageStore.States.EventMapping?> GetActiveMappingForSource(string sourceEventTypeId) => throw new NotSupportedException();
-        public Task<System.Collections.Generic.IReadOnlyList<NimBus.MessageStore.States.EventMapping>> GetMappings() => throw new NotSupportedException();
-        public Task<NimBus.MessageStore.States.EventMapping> SaveMapping(NimBus.MessageStore.States.EventMapping mapping) => throw new NotSupportedException();
     }
 
     internal sealed record UploadCall(string EventId, string SessionId, string EndpointId, UnresolvedEvent Content);

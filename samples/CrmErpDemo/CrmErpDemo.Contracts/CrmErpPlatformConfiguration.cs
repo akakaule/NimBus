@@ -12,10 +12,6 @@ public class CrmErpPlatformConfiguration : Platform
     [
         // Spec 022: enriched CRM contacts flow from Agent Zone to DataPlatform.
         new DynamicForward("AgentZoneEndpoint", "crm.contact.enriched.v1", "DataPlatformEndpoint"),
-        // Spec 023: Marketing leads are routed to the Mapping Zone for AI-authored translation.
-        new DynamicForward("MarketingEndpoint", "marketing.lead.created.v1", "MappingZoneEndpoint"),
-        // Spec 023: Mapping Zone output (translated ERP customers) forwarded to DataPlatform.
-        new DynamicForward("MappingZoneEndpoint", "erp.customer.upsert.v1", "DataPlatformEndpoint"),
     ];
 
     public override IReadOnlyList<DynamicForward> DynamicForwards => _dynamicForwards;
@@ -26,7 +22,5 @@ public class CrmErpPlatformConfiguration : Platform
         AddEndpoint(new ErpEndpoint());
         AddEndpoint(new DataPlatformEndpoint());
         AddEndpoint(new AgentZoneEndpoint());
-        AddEndpoint(new MarketingEndpoint());
-        AddEndpoint(new MappingZoneEndpoint());
     }
 }

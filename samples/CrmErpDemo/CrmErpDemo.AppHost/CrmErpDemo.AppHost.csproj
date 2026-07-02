@@ -27,6 +27,9 @@
     <ProjectReference Include="..\DataPlatform.Adapter.Functions\DataPlatform.Adapter.Functions.csproj" />
     <ProjectReference Include="..\CrmErpDemo.AgentZone\CrmErpDemo.AgentZone.csproj" />
     <ProjectReference Include="..\EnrichmentAgent\EnrichmentAgent.csproj" />
+    <ProjectReference Include="..\Marketing.Api\Marketing.Api.csproj" />
+    <ProjectReference Include="..\CrmErpDemo.MappingZone\CrmErpDemo.MappingZone.csproj" />
+    <ProjectReference Include="..\MappingAgent\MappingAgent.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.Resolver\NimBus.Resolver.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.WebApp\NimBus.WebApp.csproj" />
   </ItemGroup>

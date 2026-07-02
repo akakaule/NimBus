@@ -40,4 +40,10 @@ public interface INimBusAgentApi
     /// Returns a combined JSON string with both results.
     /// </summary>
     Task<string> SearchFailuresAsync(string query, CancellationToken ct = default);
+
+    /// <summary>POST /api/agent/mappings — propose (author) a mapping. Throws <see cref="NimBusApiException"/> on 404 (unknown source/target).</summary>
+    Task<MappingInfo?> ProposeMappingAsync(ProposeMappingRequest req, CancellationToken ct = default);
+
+    /// <summary>GET /api/agent/mappings — list all mappings.</summary>
+    Task<IReadOnlyList<MappingInfo>> ListMappingsAsync(CancellationToken ct = default);
 }

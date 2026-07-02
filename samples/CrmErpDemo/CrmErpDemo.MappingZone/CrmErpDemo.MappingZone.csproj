@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>CrmErpDemo.MappingZone</RootNamespace>
+    <AssemblyName>CrmErpDemo.MappingZone</AssemblyName>
+    <SuppressCheckGrpcNetClientFactoryVersion>true</SuppressCheckGrpcNetClientFactoryVersion>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Azure.Messaging.ServiceBus" Version="13.4.3" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\NimBus.MappingExecutor\NimBus.MappingExecutor.csproj" />
+    <ProjectReference Include="..\..\..\src\NimBus.ServiceDefaults\NimBus.ServiceDefaults.csproj" />
+    <!-- Message store: wired via the same NimBus storage provider as the rest of the demo. -->
+    <ProjectReference Include="..\..\..\src\NimBus.MessageStore.SqlServer\NimBus.MessageStore.SqlServer.csproj" />
+    <ProjectReference Include="..\..\..\src\NimBus.MessageStore.CosmosDb\NimBus.MessageStore.CosmosDb.csproj" />
+  </ItemGroup>
+
+</Project>

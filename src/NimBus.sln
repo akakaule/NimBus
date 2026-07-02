@@ -144,6 +144,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.WebApp.Tests", "..\t
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.Extensions.Notifications.Tests", "..\tests\NimBus.Extensions.Notifications.Tests\NimBus.Extensions.Notifications.Tests.csproj", "{A6255E01-F833-4B6C-B359-FE5884B5294B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.Outbox.SqlServer.Tests", "..\tests\NimBus.Outbox.SqlServer.Tests\NimBus.Outbox.SqlServer.Tests.csproj", "{0C04FB4D-4250-4384-98C0-99775A65A782}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -694,6 +696,18 @@ Global
 		{A6255E01-F833-4B6C-B359-FE5884B5294B}.Release|x64.Build.0 = Release|Any CPU
 		{A6255E01-F833-4B6C-B359-FE5884B5294B}.Release|x86.ActiveCfg = Release|Any CPU
 		{A6255E01-F833-4B6C-B359-FE5884B5294B}.Release|x86.Build.0 = Release|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Debug|x64.Build.0 = Debug|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Debug|x86.Build.0 = Debug|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Release|x64.ActiveCfg = Release|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Release|x64.Build.0 = Release|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Release|x86.ActiveCfg = Release|Any CPU
+		{0C04FB4D-4250-4384-98C0-99775A65A782}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -293,6 +293,108 @@ public class ToolMappingTests
         Assert.AreEqual("order.created", fake.CapturedSearchQuery);
         Assert.AreEqual(expectedJson, result);
     }
+
+    // ── 8. propose_mapping ────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task ProposeMapping_CallsProposeMappingAsync_WithCorrectArgs_AndReturnsJson()
+    {
+        var mappingInfo = new MappingInfo(
+            "map-1",
+            "marketing.lead.created.v1",
+            "erp.customer.upsert.v1",
+            "$$.name",
+            "Initial mapping",
+            "Draft",
+            1);
+        var fake = new FakeApi { ProposeMappingResult = mappingInfo };
+        var tools = new NimBusAgentTools(fake);
+
+        var result = await tools.ProposeMappingAsync(
+            sourceEventTypeId: "marketing.lead.created.v1",
+            targetEventTypeId: "erp.customer.upsert.v1",
+            transform: "$$.name",
+            sourceSchemaHash: "abc123",
+            rationale: "Initial mapping");
+
+        Assert.IsNotNull(fake.CapturedProposeMappingRequest, "ProposeMappingAsync should have been called");
+        Assert.AreEqual("marketing.lead.created.v1", fake.CapturedProposeMappingRequest!.SourceEventTypeId);
+        Assert.AreEqual("erp.customer.upsert.v1", fake.CapturedProposeMappingRequest.TargetEventTypeId);
+        Assert.AreEqual("$$.name", fake.CapturedProposeMappingRequest.Transform);
+        Assert.AreEqual("abc123", fake.CapturedProposeMappingRequest.SourceSchemaHash);
+        Assert.AreEqual("Initial mapping", fake.CapturedProposeMappingRequest.Rationale);
+
+        using var doc = JsonDocument.Parse(result);
+        Assert.IsTrue(doc.RootElement.TryGetProperty("id", out _), "JSON should contain 'id'");
+        Assert.IsTrue(doc.RootElement.TryGetProperty("state", out _), "JSON should contain 'state'");
+    }
+
+    [TestMethod]
+    public async Task ProposeMapping_404_ReturnsFriendlyErrorMessage()
+    {
+        var fake = new FakeApi
+        {
+            ProposeMappingException = new NimBusApiException(404, "Source event type not found")
+        };
+        var tools = new NimBusAgentTools(fake);
+
+        // Should NOT throw — must return a friendly error
+        var result = await tools.ProposeMappingAsync(
+            sourceEventTypeId: "unknown.type",
+            targetEventTypeId: "erp.customer.upsert.v1",
+            transform: "$$",
+            sourceSchemaHash: "abc123");
+
+        StringAssert.Contains(result, "404", "Result should include the status code");
+        StringAssert.Contains(result, "Source event type not found", "Result should include the server error detail");
+        StringAssert.Contains(result, "define_event_type", "Result should guide the agent to register the event type first");
+    }
+
+    [TestMethod]
+    public async Task ProposeMapping_OptionalRationaleDefaultsToNull()
+    {
+        var fake = new FakeApi { ProposeMappingResult = new MappingInfo("m1", "src", "tgt", "$$", null, "Draft", 1) };
+        var tools = new NimBusAgentTools(fake);
+
+        await tools.ProposeMappingAsync("src", "tgt", "$$", "hash123");
+
+        Assert.IsNull(fake.CapturedProposeMappingRequest!.Rationale);
+    }
+
+    // ── 9. list_mappings ──────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task ListMappings_CallsListMappingsAsync_AndReturnsJson()
+    {
+        var mappings = new[]
+        {
+            new MappingInfo("map-1", "src.event.v1", "tgt.event.v1", "$$", null, "Draft", 1),
+            new MappingInfo("map-2", "a.event.v1", "b.event.v1", "$$.id", "reason", "Active", 2)
+        };
+        var fake = new FakeApi { ListMappingsResult = mappings };
+        var tools = new NimBusAgentTools(fake);
+
+        var result = await tools.ListMappingsAsync();
+
+        Assert.IsTrue(fake.ListMappingsCalled, "ListMappingsAsync should have been called");
+        using var doc = JsonDocument.Parse(result);
+        Assert.AreEqual(JsonValueKind.Array, doc.RootElement.ValueKind, "Result should be a JSON array");
+        Assert.AreEqual(2, doc.RootElement.GetArrayLength());
+    }
+
+    [TestMethod]
+    public async Task ListMappings_WhenEmpty_ReturnsEmptyJsonArray()
+    {
+        var fake = new FakeApi { ListMappingsResult = [] };
+        var tools = new NimBusAgentTools(fake);
+
+        var result = await tools.ListMappingsAsync();
+
+        Assert.IsTrue(fake.ListMappingsCalled);
+        using var doc = JsonDocument.Parse(result);
+        Assert.AreEqual(JsonValueKind.Array, doc.RootElement.ValueKind);
+        Assert.AreEqual(0, doc.RootElement.GetArrayLength());
+    }
 }
 
 // ── Fake INimBusAgentApi ──────────────────────────────────────────────────────
@@ -310,6 +412,9 @@ internal sealed class FakeApi : INimBusAgentApi
     public AgentReceivedMessage? ReceiveResult { get; set; }
     public NimBusApiException? PublishException { get; set; }
     public string SearchResult { get; set; } = "{}";
+    public MappingInfo? ProposeMappingResult { get; set; }
+    public NimBusApiException? ProposeMappingException { get; set; }
+    public IReadOnlyList<MappingInfo> ListMappingsResult { get; set; } = [];
 
     // ── captured args ───────────────────────────────────────────────────────
 
@@ -325,6 +430,8 @@ internal sealed class FakeApi : INimBusAgentApi
     public AgentSettleRequest? CapturedSettleRequest { get; private set; }
     public bool SearchCalled { get; private set; }
     public string? CapturedSearchQuery { get; private set; }
+    public ProposeMappingRequest? CapturedProposeMappingRequest { get; private set; }
+    public bool ListMappingsCalled { get; private set; }
 
     // ── INimBusAgentApi ─────────────────────────────────────────────────────
 
@@ -383,5 +490,22 @@ internal sealed class FakeApi : INimBusAgentApi
         SearchCalled = true;
         CapturedSearchQuery = query;
         return Task.FromResult(SearchResult);
+    }
+
+    public Task<MappingInfo?> ProposeMappingAsync(ProposeMappingRequest req, CancellationToken ct = default)
+    {
+        CapturedProposeMappingRequest = req;
+        if (ProposeMappingException is not null)
+        {
+            throw ProposeMappingException;
+        }
+
+        return Task.FromResult(ProposeMappingResult);
+    }
+
+    public Task<IReadOnlyList<MappingInfo>> ListMappingsAsync(CancellationToken ct = default)
+    {
+        ListMappingsCalled = true;
+        return Task.FromResult(ListMappingsResult);
     }
 }

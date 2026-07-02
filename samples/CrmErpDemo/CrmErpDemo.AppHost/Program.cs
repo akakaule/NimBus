@@ -270,4 +270,49 @@ builder.AddProject<Projects.EnrichmentAgent>("enrichment-agent")
     .WaitFor(nimbusOps)
     .WithEnvironment("ANTHROPIC_API_KEY", builder.Configuration["ANTHROPIC_API_KEY"] ?? "");
 
+// Marketing source (spec 023). Publishes marketing.lead.created.v1 as a classless
+// dynamic event onto MarketingEndpoint. Also seeds marketing.lead.created.v1 and
+// erp.customer.upsert.v1 schemas into the NimBus registry via the agent REST API
+// so the AI Integration Mapper can reference both event types when authoring a mapping.
+var marketingApi = builder.AddProject<Projects.Marketing_Api>("marketing-api")
+    .WithReference(servicebus)
+    .WithReference(nimbusOps)
+    .WaitFor(nimbusOps)
+    .WithEndpoint("http", e => e.Port = 5085)
+    .WithExternalHttpEndpoints();
+if (provisioner is not null) marketingApi.WaitFor(provisioner);
+
+// Mapping Zone (spec 023). Subscribes to MappingZoneEndpoint and runs the Mapping Executor
+// per message: consults the mapping registry, applies the JSONata transform (when Active),
+// publishes to the target topic, or parks as Pending+Handoff (when Paused/Stale/no mapping).
+// Mirrors the agent-zone resource above.
+var mappingZone = builder.AddProject<Projects.CrmErpDemo_MappingZone>("mapping-zone")
+    .WithReference(servicebus)
+    .WithEnvironment("NimBus__StorageProvider", storageProvider);
+
+if (storageProvider == "sqlserver")
+{
+    mappingZone
+        .WithReference(nimbusDb!)
+        .WithEnvironment("ConnectionStrings__sqlserver", nimbusDb!.Resource.ConnectionStringExpression)
+        .WaitFor(nimbusDb);
+}
+else
+{
+    var cosmos = builder.AddConnectionString("cosmos");
+    mappingZone.WithReference(cosmos);
+}
+
+if (provisioner is not null) mappingZone.WaitFor(provisioner);
+
+// MappingAgent (spec 023). Reads both schemas from the catalog, samples source messages,
+// authors a JSONata transform (Claude when key is present, deterministic otherwise), and
+// submits a Draft mapping proposal via POST /api/agent/mappings. An operator then approves
+// the Draft in the WebApp, which transitions it to Active and triggers the executor.
+// Mirrors the enrichment-agent resource above.
+builder.AddProject<Projects.MappingAgent>("mapping-agent")
+    .WithReference(nimbusOps)
+    .WaitFor(nimbusOps)
+    .WithEnvironment("ANTHROPIC_API_KEY", builder.Configuration["ANTHROPIC_API_KEY"] ?? "");
+
 builder.Build().Run();

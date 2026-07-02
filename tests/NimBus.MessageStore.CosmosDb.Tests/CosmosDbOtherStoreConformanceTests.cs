@@ -32,3 +32,10 @@ public sealed class CosmosDbEventSchemaStoreConformanceTests : EventSchemaStoreC
     protected override IEventSchemaStore CreateStore()
         => CosmosDbStoreTestHarness.CreateStore();
 }
+
+[TestClass]
+public sealed class CosmosDbEventMappingStoreConformanceTests : EventMappingStoreConformanceTests
+{
+    protected override IEventMappingStore CreateStore()
+        => CosmosDbStoreTestHarness.CreateStore();
+}

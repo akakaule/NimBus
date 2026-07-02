@@ -105,6 +105,110 @@ public sealed class EmulatorTopologyConfigBuilderTests
         Assert.IsNotNull(erpForwardSub, "Compiled forward subscription CrmEndpoint → ErpEndpoint must still exist");
     }
 
+    // ── Spec 023: Marketing source → Mapping Zone ─────────────────────────────
+
+    [TestMethod]
+    public void Build_DynamicForward_MarketingEndpoint_HasForwardSubscriptionToMappingZone()
+    {
+        using var doc = BuildConfig();
+        var topic = FindTopic(doc, "MarketingEndpoint");
+
+        Assert.IsNotNull(topic, "MarketingEndpoint topic not found in generated config");
+
+        var sub = FindSubscription(topic.Value, "AgentDyn-MappingZoneEndpoint");
+        Assert.IsNotNull(sub, "Subscription 'AgentDyn-MappingZoneEndpoint' not found on MarketingEndpoint topic");
+    }
+
+    [TestMethod]
+    public void Build_DynamicForward_MarketingEndpoint_SubscriptionForwardsToMappingZoneEndpoint()
+    {
+        using var doc = BuildConfig();
+        var topic = FindTopic(doc, "MarketingEndpoint");
+        var sub = FindSubscription(topic!.Value, "AgentDyn-MappingZoneEndpoint");
+
+        var forwardTo = sub!.Value
+            .GetProperty("Properties")
+            .GetProperty("ForwardTo")
+            .GetString();
+
+        Assert.AreEqual("MappingZoneEndpoint", forwardTo,
+            "ForwardTo on AgentDyn-MappingZoneEndpoint subscription must point to MappingZoneEndpoint");
+    }
+
+    [TestMethod]
+    public void Build_DynamicForward_MarketingEndpoint_RuleFilterMatchesMarketingLeadEventType()
+    {
+        using var doc = BuildConfig();
+        var topic = FindTopic(doc, "MarketingEndpoint");
+        var sub = FindSubscription(topic!.Value, "AgentDyn-MappingZoneEndpoint");
+
+        var rule = FindRule(sub!.Value, "dyn-marketing.lead.created.v1");
+        Assert.IsNotNull(rule, "Rule 'dyn-marketing.lead.created.v1' not found in AgentDyn-MappingZoneEndpoint subscription");
+
+        var sqlFilter = rule.Value
+            .GetProperty("Properties")
+            .GetProperty("SqlFilter")
+            .GetProperty("SqlExpression")
+            .GetString();
+
+        StringAssert.Contains(sqlFilter, "user.EventTypeId = 'marketing.lead.created.v1'",
+            "Filter must match on marketing.lead.created.v1 EventTypeId");
+        StringAssert.Contains(sqlFilter, "user.From IS NULL",
+            "Filter must include 'user.From IS NULL' loop-prevention guard");
+    }
+
+    // ── Spec 023: Mapping Zone → DataPlatform ─────────────────────────────────
+
+    [TestMethod]
+    public void Build_DynamicForward_MappingZoneEndpoint_HasForwardSubscriptionToDataPlatform()
+    {
+        using var doc = BuildConfig();
+        var topic = FindTopic(doc, "MappingZoneEndpoint");
+
+        Assert.IsNotNull(topic, "MappingZoneEndpoint topic not found in generated config");
+
+        var sub = FindSubscription(topic.Value, "AgentDyn-DataPlatformEndpoint");
+        Assert.IsNotNull(sub, "Subscription 'AgentDyn-DataPlatformEndpoint' not found on MappingZoneEndpoint topic");
+    }
+
+    [TestMethod]
+    public void Build_DynamicForward_MappingZoneEndpoint_SubscriptionForwardsToDataPlatformEndpoint()
+    {
+        using var doc = BuildConfig();
+        var topic = FindTopic(doc, "MappingZoneEndpoint");
+        var sub = FindSubscription(topic!.Value, "AgentDyn-DataPlatformEndpoint");
+
+        var forwardTo = sub!.Value
+            .GetProperty("Properties")
+            .GetProperty("ForwardTo")
+            .GetString();
+
+        Assert.AreEqual("DataPlatformEndpoint", forwardTo,
+            "ForwardTo on AgentDyn-DataPlatformEndpoint subscription (MappingZone) must point to DataPlatformEndpoint");
+    }
+
+    [TestMethod]
+    public void Build_DynamicForward_MappingZoneEndpoint_RuleFilterMatchesErpCustomerUpsertEventType()
+    {
+        using var doc = BuildConfig();
+        var topic = FindTopic(doc, "MappingZoneEndpoint");
+        var sub = FindSubscription(topic!.Value, "AgentDyn-DataPlatformEndpoint");
+
+        var rule = FindRule(sub!.Value, "dyn-erp.customer.upsert.v1");
+        Assert.IsNotNull(rule, "Rule 'dyn-erp.customer.upsert.v1' not found in AgentDyn-DataPlatformEndpoint subscription on MappingZoneEndpoint");
+
+        var sqlFilter = rule.Value
+            .GetProperty("Properties")
+            .GetProperty("SqlFilter")
+            .GetProperty("SqlExpression")
+            .GetString();
+
+        StringAssert.Contains(sqlFilter, "user.EventTypeId = 'erp.customer.upsert.v1'",
+            "Filter must match on erp.customer.upsert.v1 EventTypeId");
+        StringAssert.Contains(sqlFilter, "user.From IS NULL",
+            "Filter must include 'user.From IS NULL' loop-prevention guard");
+    }
+
     // ── Two forwards, same (source, target), different event types ────────────
 
     [TestMethod]

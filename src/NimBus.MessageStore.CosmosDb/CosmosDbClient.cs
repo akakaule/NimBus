@@ -124,6 +124,11 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
     private const string DatabaseId = "MessageDatabase";
 
+    // Hot-path writes only ever inspect StatusCode on the response; skipping the
+    // response body (which echoes the whole document, EventJson included) saves
+    // egress bytes and response-deserialization on every tracked message.
+    private static readonly ItemRequestOptions SuppressContentOnWrite = new() { EnableContentResponseOnWrite = false };
+
     private const string PendingStatus = "Pending";
     private const string FailedStatus = "Failed";
     private const string DeferredStatus = "Deferred";
@@ -428,7 +433,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         try
         {
-            var response = await container.UpsertItemAsync(eventDbo, new PartitionKey(eventDbo.Id));
+            var response = await container.UpsertItemAsync(eventDbo, new PartitionKey(eventDbo.Id), SuppressContentOnWrite);
             _logger?.LogTrace(
                 "COSMOS UPSERT-RESPONSE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}, Status: {Status}", eventId, sessionId, response.StatusCode, CompletedStatus);
             return true;
@@ -821,41 +826,57 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         // Only four fields feed BlockedMessageEvent — project them server-side
         // instead of reading whole EventDbo documents (large EventJson payloads).
-        var pageQuery = new QueryDefinition(
-            "SELECT c.status, c.event.EventId AS eventId, c.event.OriginatingMessageId AS originatingMessageId, c.event.LastMessageId AS lastMessageId FROM c WHERE c.sessionId = @sessionId AND c.status IN (@pendingStatus, @deferredStatus) AND (NOT IS_DEFINED(c.deleted) or c.deleted != true) ORDER BY c.event.UpdatedAt DESC OFFSET @skip LIMIT @take")
-            .WithParameter("@sessionId", sessionId)
-            .WithParameter("@pendingStatus", PendingStatus)
-            .WithParameter("@deferredStatus", DeferredStatus)
-            .WithParameter("@skip", safeSkip)
-            .WithParameter("@take", safeTake);
-        var pageIterator = container.GetItemQueryIterator<BlockedEventProjection>(pageQuery);
-        var items = new List<BlockedMessageEvent>();
-        while (pageIterator.HasMoreResults)
+        // The page query and the total count are independent — drain them
+        // concurrently so the blocked-events dialog costs one round-trip's latency.
+        async Task<List<BlockedMessageEvent>> DrainPageAsync()
         {
-            var page = await pageIterator.ReadNextAsync();
-            foreach (var queryResult in page)
+            var pageQuery = new QueryDefinition(
+                "SELECT c.status, c.event.EventId AS eventId, c.event.OriginatingMessageId AS originatingMessageId, c.event.LastMessageId AS lastMessageId FROM c WHERE c.sessionId = @sessionId AND c.status IN (@pendingStatus, @deferredStatus) AND (NOT IS_DEFINED(c.deleted) or c.deleted != true) ORDER BY c.event.UpdatedAt DESC OFFSET @skip LIMIT @take")
+                .WithParameter("@sessionId", sessionId)
+                .WithParameter("@pendingStatus", PendingStatus)
+                .WithParameter("@deferredStatus", DeferredStatus)
+                .WithParameter("@skip", safeSkip)
+                .WithParameter("@take", safeTake);
+            var pageIterator = container.GetItemQueryIterator<BlockedEventProjection>(pageQuery);
+            var items = new List<BlockedMessageEvent>();
+            while (pageIterator.HasMoreResults)
             {
-                items.Add(ToBlockedMessageEvent(queryResult));
+                var page = await pageIterator.ReadNextAsync();
+                foreach (var queryResult in page)
+                {
+                    items.Add(ToBlockedMessageEvent(queryResult));
+                }
             }
+
+            return items;
         }
 
-        var countQuery = new QueryDefinition(
-            "SELECT VALUE COUNT(1) FROM c WHERE c.sessionId = @sessionId AND c.status IN (@pendingStatus, @deferredStatus) AND (NOT IS_DEFINED(c.deleted) or c.deleted != true)")
-            .WithParameter("@sessionId", sessionId)
-            .WithParameter("@pendingStatus", PendingStatus)
-            .WithParameter("@deferredStatus", DeferredStatus);
-        var countIterator = container.GetItemQueryIterator<int>(countQuery);
-        var total = 0;
-        while (countIterator.HasMoreResults)
+        async Task<int> DrainCountAsync()
         {
-            var countResponse = await countIterator.ReadNextAsync();
-            foreach (var c in countResponse) total += c;
+            var countQuery = new QueryDefinition(
+                "SELECT VALUE COUNT(1) FROM c WHERE c.sessionId = @sessionId AND c.status IN (@pendingStatus, @deferredStatus) AND (NOT IS_DEFINED(c.deleted) or c.deleted != true)")
+                .WithParameter("@sessionId", sessionId)
+                .WithParameter("@pendingStatus", PendingStatus)
+                .WithParameter("@deferredStatus", DeferredStatus);
+            var countIterator = container.GetItemQueryIterator<int>(countQuery);
+            var total = 0;
+            while (countIterator.HasMoreResults)
+            {
+                var countResponse = await countIterator.ReadNextAsync();
+                foreach (var c in countResponse) total += c;
+            }
+
+            return total;
         }
+
+        var itemsTask = DrainPageAsync();
+        var totalTask = DrainCountAsync();
+        await Task.WhenAll(itemsTask, totalTask);
 
         return new BlockedMessageEventPage
         {
-            Items = items,
-            Total = total,
+            Items = await itemsTask,
+            Total = await totalTask,
         };
     }
 
@@ -1321,7 +1342,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         try
         {
-            await container.UpsertItemAsync(doc, new PartitionKey(doc.EventId));
+            await container.UpsertItemAsync(doc, new PartitionKey(doc.EventId), SuppressContentOnWrite);
         }
         catch (CosmosException e)
         {
@@ -1368,7 +1389,11 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         var container = await GetMessagesContainer();
         var query = new QueryDefinition("SELECT * FROM c WHERE c.eventId = @eventId")
             .WithParameter("@eventId", eventId);
-        var result = container.GetItemQueryIterator<MessageDocument>(query);
+        // Bound page size so an event with a long history streams in pages
+        // instead of one oversized response (documents carry the full EventJson
+        // payload). The loop still drains every match.
+        var result = container.GetItemQueryIterator<MessageDocument>(query, null,
+            new QueryRequestOptions { MaxItemCount = 100 });
         var messages = new List<MessageEntity>();
 
         while (result.HasMoreResults)
@@ -1465,7 +1490,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         try
         {
-            await container.UpsertItemAsync(doc, new PartitionKey(doc.EventId));
+            await container.UpsertItemAsync(doc, new PartitionKey(doc.EventId), SuppressContentOnWrite);
         }
         catch (CosmosException e)
         {
@@ -1485,7 +1510,10 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         var container = await GetAuditsContainer();
         var query = new QueryDefinition("SELECT * FROM c WHERE c.eventId = @eventId ORDER BY c.createdAt DESC")
             .WithParameter("@eventId", eventId);
-        var result = container.GetItemQueryIterator<AuditDocument>(query);
+        // Bound page size so heavily-audited events stream in pages rather than
+        // one huge response. The loop still drains every match.
+        var result = container.GetItemQueryIterator<AuditDocument>(query, null,
+            new QueryRequestOptions { MaxItemCount = 1000 });
         var audits = new List<MessageAuditEntity>();
 
         while (result.HasMoreResults)
@@ -1632,7 +1660,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         try
         {
-            var response = await container.UpsertItemAsync(eventDbo, new PartitionKey(eventDbo.Id));
+            var response = await container.UpsertItemAsync(eventDbo, new PartitionKey(eventDbo.Id), SuppressContentOnWrite);
             _logger?.LogTrace(
                 "COSMOS UPSERT-RESPONSE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}, Status: {Status}", eventId, sessionId, response.StatusCode, status);
             return true;
@@ -1752,32 +1780,36 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         var container = await GetMessagesContainer();
         var fromIso = from.ToString("o");
 
-        var published = await RunEventTypeCountQuery(container,
+        // The three aggregates are independent — run them concurrently so the
+        // endpoint overview costs one round-trip's latency instead of three.
+        var publishedTask = RunEventTypeCountQuery(container,
             "SELECT COUNT(1) AS count, c.message[\"From\"] AS endpointId, c.message.EventTypeId FROM c " +
             "WHERE c.message.MessageType = 'EventRequest' " +
             "AND c.message.EnqueuedTimeUtc >= @from " +
             "GROUP BY c.message[\"From\"], c.message.EventTypeId",
             fromIso);
 
-        var failed = await RunEventTypeCountQuery(container,
+        var failedTask = RunEventTypeCountQuery(container,
             "SELECT COUNT(1) AS count, c.endpointId, c.message.EventTypeId FROM c " +
             "WHERE c.message.MessageType = 'ErrorResponse' " +
             "AND c.message.EnqueuedTimeUtc >= @from " +
             "GROUP BY c.endpointId, c.message.EventTypeId",
             fromIso);
 
-        var handled = await RunEventTypeCountQuery(container,
+        var handledTask = RunEventTypeCountQuery(container,
             "SELECT COUNT(1) AS count, c.endpointId, c.message.EventTypeId FROM c " +
             "WHERE c.message.MessageType = 'ResolutionResponse' " +
             "AND c.message.EnqueuedTimeUtc >= @from " +
             "GROUP BY c.endpointId, c.message.EventTypeId",
             fromIso);
 
+        await Task.WhenAll(publishedTask, failedTask, handledTask);
+
         return new EndpointMetricsResult
         {
-            Published = published,
-            Handled = handled,
-            Failed = failed
+            Published = await publishedTask,
+            Handled = await handledTask,
+            Failed = await failedTask
         };
     }
 
@@ -1798,7 +1830,9 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             " c.message.MessageType = 'DeferralResponse' OR " +
             " c.message.MessageType = 'UnsupportedResponse')";
 
-        var queueRows = await RunLatencyAggregateQuery(container,
+        // Queue-time and processing-time aggregates are independent — run them
+        // concurrently and stitch the results below.
+        var queueRowsTask = RunLatencyAggregateQuery(container,
             "SELECT c.endpointId, c.message.EventTypeId, " +
             "       COUNT(1) AS count, " +
             "       AVG(c.message.QueueTimeMs) AS avg, " +
@@ -1812,7 +1846,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             "GROUP BY c.endpointId, c.message.EventTypeId",
             fromIso);
 
-        var processingRows = await RunLatencyAggregateQuery(container,
+        var processingRowsTask = RunLatencyAggregateQuery(container,
             "SELECT c.endpointId, c.message.EventTypeId, " +
             "       COUNT(1) AS count, " +
             "       AVG(c.message.ProcessingTimeMs) AS avg, " +
@@ -1825,6 +1859,10 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             "AND c.message.ProcessingTimeMs != null " +
             "GROUP BY c.endpointId, c.message.EventTypeId",
             fromIso);
+
+        await Task.WhenAll(queueRowsTask, processingRowsTask);
+        var queueRows = await queueRowsTask;
+        var processingRows = await processingRowsTask;
 
         // Merge by (endpointId, eventTypeId). One side may be missing rows
         // (e.g. processing time not captured pre-fix); leaves that side at
@@ -1921,26 +1959,32 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         var container = await GetMessagesContainer();
         var fromIso = from.ToString("o");
 
-        var publishedBuckets = await RunBucketCountQuery(container,
+        // The three bucket aggregates are independent — run them concurrently.
+        var publishedBucketsTask = RunBucketCountQuery(container,
             $"SELECT COUNT(1) AS count, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
             "FROM c WHERE c.message.MessageType = 'EventRequest' " +
             "AND c.message.EnqueuedTimeUtc >= @from " +
             $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
             fromIso);
 
-        var handledBuckets = await RunBucketCountQuery(container,
+        var handledBucketsTask = RunBucketCountQuery(container,
             $"SELECT COUNT(1) AS count, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
             "FROM c WHERE c.message.MessageType = 'ResolutionResponse' " +
             "AND c.message.EnqueuedTimeUtc >= @from " +
             $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
             fromIso);
 
-        var failedBuckets = await RunBucketCountQuery(container,
+        var failedBucketsTask = RunBucketCountQuery(container,
             $"SELECT COUNT(1) AS count, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
             "FROM c WHERE c.message.MessageType = 'ErrorResponse' " +
             "AND c.message.EnqueuedTimeUtc >= @from " +
             $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
             fromIso);
+
+        await Task.WhenAll(publishedBucketsTask, handledBucketsTask, failedBucketsTask);
+        var publishedBuckets = await publishedBucketsTask;
+        var handledBuckets = await handledBucketsTask;
+        var failedBuckets = await failedBucketsTask;
 
         var allBucketKeys = GenerateBucketKeys(from, DateTime.UtcNow, substringLength)
             .Concat(publishedBuckets.Keys)

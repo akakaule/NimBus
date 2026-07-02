@@ -121,12 +121,17 @@ export default class EndpointsList extends React.Component<
     const cookie = Cookies.get(this.cookieName)?.split(",");
 
     this.client = new api.Client(api.CookieAuth());
-    // If we didn't rehydrate with endpoint states, call the api to get them
-    const endPointIds = this.props.endpointIds
-      ? this.props.endpointIds
-      : await this.client.getEndpointsAll();
+    // If we didn't rehydrate with endpoint states, call the api to get them.
+    // The endpoint list and the app status are independent — fetch them in
+    // parallel instead of serially on mount.
+    const [endPointIds, appStatus] = await Promise.all([
+      this.props.endpointIds
+        ? Promise.resolve(this.props.endpointIds)
+        : this.client.getEndpointsAll(),
+      getApplicationStatus(),
+    ]);
     let filteredEndpointIds: Array<string>;
-    this.env = (await getApplicationStatus()).env;
+    this.env = appStatus.env;
 
     if (cookie) {
       filteredEndpointIds = cookie;

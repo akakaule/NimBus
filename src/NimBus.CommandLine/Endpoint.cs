@@ -2,6 +2,7 @@ using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using McMaster.Extensions.CommandLineUtils;
 using NimBus.CommandLine.Models;
+using NimBus.Core;
 using NimBus.Core.Messages;
 using NimBus.MessageStore;
 using NimBus.MessageStore.States;
@@ -199,7 +200,7 @@ static class Endpoint
         AnsiConsole.MarkupLine($"\n[green]Purge complete. Total messages removed: {totalCompleted}[/]");
     }
 
-    static TopicDto GetIsDeprecatedTopic(TopicDto expectedTopic, TopicDto actualTopic)
+    internal static TopicDto GetIsDeprecatedTopic(TopicDto expectedTopic, TopicDto actualTopic)
     {
         var expectedRules = expectedTopic.Subscriptions.SelectMany(x => x.Rules);
 
@@ -293,9 +294,11 @@ static class Endpoint
         return root;
     }
 
-    static TopicDto GetExpectedTopic(string endpointName)
+    static TopicDto GetExpectedTopic(string endpointName) =>
+        GetExpectedTopic(endpointName, new PlatformConfiguration());
+
+    internal static TopicDto GetExpectedTopic(string endpointName, IPlatform platform)
     {
-        var platform = new PlatformConfiguration();
         var expectedEndpoint = platform.Endpoints.First(x => x.Name.ToLower() == endpointName);
         var expectedTopic = new TopicDto
         {
@@ -373,6 +376,44 @@ static class Endpoint
             }
         }
         expectedTopic.Subscriptions.AddRange(createdSubscriptions);
+
+        // Dynamic-forward subscriptions (spec 022 D5). For each declared
+        // DynamicForward whose source is this topic, the provisioner creates an
+        // "AgentDyn-{target}" forward subscription carrying a "dyn-{eventTypeId}"
+        // rule (see ServiceBusTopologyProvisioner). These cannot be derived from
+        // the compiled event loop above, so without consulting DynamicForwards the
+        // audit would flag them deprecated and RemoveDeprecated would delete them —
+        // silently dropping every dynamically-typed event on that path. Names are
+        // lowercased to match GetActualTopic, which lowercases everything it reads.
+        var dynamicSubscriptions = new List<SubscriptionDto>();
+        foreach (var forward in platform.DynamicForwards
+            .Where(f => string.Equals(f.SourceEndpoint, endpointName, StringComparison.OrdinalIgnoreCase)))
+        {
+            var subName = $"agentdyn-{forward.TargetEndpoint.ToLowerInvariant()}";
+            var ruleName = $"dyn-{forward.EventTypeId.ToLowerInvariant()}";
+
+            var subscription = dynamicSubscriptions.FirstOrDefault(x => x.Name == subName);
+            if (subscription != null)
+            {
+                if (!subscription.Rules.Any(r => r.Name == ruleName))
+                {
+                    subscription.Rules.Add(new RuleDto { Name = ruleName, SubscriptionName = subName });
+                }
+            }
+            else
+            {
+                dynamicSubscriptions.Add(new SubscriptionDto
+                {
+                    TopicName = endpointName.ToLowerInvariant(),
+                    Name = subName,
+                    Rules = new List<RuleDto>
+                    {
+                        new RuleDto { Name = ruleName, SubscriptionName = subName }
+                    }
+                });
+            }
+        }
+        expectedTopic.Subscriptions.AddRange(dynamicSubscriptions);
 
         return expectedTopic;
     }

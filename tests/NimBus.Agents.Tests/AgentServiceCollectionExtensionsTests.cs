@@ -69,4 +69,29 @@ public class AgentServiceCollectionExtensionsTests
             provider.GetServices<IHostedService>().Any(h => h is AgentLoopWorker<Ping>),
             "The agent loop should be registered as a hosted service.");
     }
+
+    [TestMethod]
+    public void AddNimBusAgent_CalledTwice_Throws()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddNimBusAgent<TestHandler, Ping>(o =>
+        {
+            o.AgentId = "first-agent";
+            o.Subscribe("Ping");
+            o.BaseAddress = "http://nimbus-ops.test";
+        });
+
+        var ex = Assert.ThrowsException<InvalidOperationException>(() =>
+            services.AddNimBusAgent<TestHandler, Ping>(o =>
+            {
+                o.AgentId = "second-agent";
+                o.Subscribe("Ping");
+                o.BaseAddress = "http://other.test";
+            }));
+
+        StringAssert.Contains(ex.Message, "first-agent");
+        StringAssert.Contains(ex.Message, "second-agent");
+    }
 }

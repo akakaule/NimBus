@@ -1198,17 +1198,11 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     private Task<ICosmosContainerAdapter> GetAuditsContainer() =>
         GetCachedContainerAsync(AuditsContainer, "/eventId");
 
-    private async Task<ICosmosContainerAdapter> GetEventSchemasContainer()
-    {
-        var db = _cosmosClient.GetDatabase(DatabaseId);
-        return await db.CreateContainerIfNotExistsAsync(EventSchemasContainer, "/id");
-    }
+    private Task<ICosmosContainerAdapter> GetEventSchemasContainer() =>
+        GetCachedContainerAsync(EventSchemasContainer, "/id");
 
-    private async Task<ICosmosContainerAdapter> GetEventMappingsContainer()
-    {
-        var db = _cosmosClient.GetDatabase(DatabaseId);
-        return await db.CreateContainerIfNotExistsAsync(EventMappingsContainer, "/id");
-    }
+    private Task<ICosmosContainerAdapter> GetEventMappingsContainer() =>
+        GetCachedContainerAsync(EventMappingsContainer, "/id");
 
     // ── IEventSchemaStore ──────────────────────────────────────────────────────
 

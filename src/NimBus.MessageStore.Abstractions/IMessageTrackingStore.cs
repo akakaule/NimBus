@@ -51,6 +51,22 @@ public interface IMessageTrackingStore
     /// </summary>
     Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns the single oldest (or, for providers that cannot cheaply order, any) pending
+    /// event on <paramref name="endpointId"/> whose <c>PendingSubStatus</c> is <c>"Handoff"</c>,
+    /// optionally restricted to the given <paramref name="eventTypeIds"/>. Returns null when none.
+    ///
+    /// <para>Backs the agent receive long-poll, which previously materialised every pending event
+    /// (full <c>EventJson</c>) and filtered client-side. All filters (status, sub-status, event
+    /// type) are applied server-side and the query is bounded to a single result so the poll stays
+    /// cheap on Cosmos.</para>
+    /// </summary>
+    /// <param name="endpointId">The endpoint (partition) that owns the handoff.</param>
+    /// <param name="eventTypeIds">
+    /// Restrict to these event types; null or empty matches any event type.
+    /// </param>
+    Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds);
+
     // Filtered queries
 
     /// <summary>

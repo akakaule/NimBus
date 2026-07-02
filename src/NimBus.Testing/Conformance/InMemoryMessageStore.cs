@@ -28,6 +28,7 @@ public class InMemoryMessageStore : INimBusMessageStore
     private readonly ConcurrentDictionary<string, List<MessageAuditEntity>> _audits = new();
     private readonly ConcurrentDictionary<string, EndpointSubscription> _subscriptions = new();
     private readonly ConcurrentDictionary<string, EndpointMetadata> _metadata = new();
+    private readonly ConcurrentDictionary<string, EventSchema> _schemas = new();
 
     private (string, string, string) Key(string endpoint, string eventId, string session) => (endpoint, eventId, session ?? string.Empty);
 
@@ -62,6 +63,19 @@ public class InMemoryMessageStore : INimBusMessageStore
             && e.ExternalJobId == externalJobId);
         return Task.FromResult(match);
     }
+
+    public virtual Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds)
+    {
+        var hasFilter = eventTypeIds is { Count: > 0 };
+        var match = _events.Values
+            .Where(e => e.EndpointId == endpointId
+                && e.ResolutionStatus == ResolutionStatus.Pending
+                && e.PendingSubStatus == "Handoff"
+                && (!hasFilter || eventTypeIds!.Contains(e.EventTypeId)))
+            .OrderBy(e => e.EnqueuedTimeUtc)
+            .FirstOrDefault();
+        return Task.FromResult<UnresolvedEvent?>(match);
+    }
     public Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.Failed);
     public Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.Deferred);
     public Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.DeadLettered);
@@ -73,7 +87,7 @@ public class InMemoryMessageStore : INimBusMessageStore
         return match == null ? throw new EndpointNotFoundException(endpointId) : Task.FromResult(match);
     }
 
-    public Task<UnresolvedEvent> GetEvent(string endpointId, string eventId)
+    public virtual Task<UnresolvedEvent> GetEvent(string endpointId, string eventId)
     {
         var match = _events.Values.Where(e => e.EndpointId == endpointId && e.EventId == eventId).OrderByDescending(e => e.UpdatedAt).FirstOrDefault();
         return match == null ? throw new EndpointNotFoundException(endpointId) : Task.FromResult(match);
@@ -213,7 +227,7 @@ public class InMemoryMessageStore : INimBusMessageStore
         });
     }
 
-    public Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId)
+    public virtual Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId)
         => Task.FromResult<IEnumerable<UnresolvedEvent>>(_events.Values.Where(e => e.EndpointId == endpointId && e.ResolutionStatus == ResolutionStatus.Pending).ToList());
 
     public Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId)
@@ -376,6 +390,22 @@ public class InMemoryMessageStore : INimBusMessageStore
 
     public Task<bool> DeleteSubscription(string subscriptionId)
         => Task.FromResult(_subscriptions.TryRemove(subscriptionId, out _));
+
+    public Task<EventSchema?> GetSchema(string eventTypeId)
+        => Task.FromResult(_schemas.TryGetValue(eventTypeId, out var s) ? s : (EventSchema?)null);
+
+    public Task<IReadOnlyList<EventSchema>> GetSchemas()
+        => Task.FromResult<IReadOnlyList<EventSchema>>(_schemas.Values.ToList());
+
+    public Task<EventSchema> DefineEventType(EventSchema schema)
+    {
+        if (string.IsNullOrWhiteSpace(schema?.EventTypeId)) throw new ArgumentException("schema.EventTypeId is required.", nameof(schema));
+        if (string.IsNullOrWhiteSpace(schema?.JsonSchema)) throw new ArgumentException("schema.JsonSchema is required.", nameof(schema));
+        var existing = _schemas.GetOrAdd(schema.EventTypeId, schema);
+        if (!ReferenceEquals(existing, schema) && !SchemaJson.Equal(existing.JsonSchema, schema.JsonSchema))
+            throw new SchemaConflictException(schema.EventTypeId);
+        return Task.FromResult(existing);
+    }
 
     public Task<EndpointMetadata> GetEndpointMetadata(string endpointId)
         => _metadata.TryGetValue(endpointId, out var m) ? Task.FromResult(m) : throw new EndpointNotFoundException(endpointId);

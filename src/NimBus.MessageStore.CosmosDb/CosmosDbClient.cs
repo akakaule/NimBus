@@ -36,6 +36,7 @@ public interface ICosmosDbClient
     Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount);
     Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId);
     Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default);
+    Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds);
     Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId);
     Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId);
     Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId);
@@ -141,6 +142,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     private const string SubscriptionsContainer = "subscriptions";
     private const string MessagesContainer = "messages";
     private const string AuditsContainer = "audits";
+    private const string EventSchemasContainer = "eventschemas";
 
     public CosmosDbClient(CosmosClient cosmosClient, ILogger<CosmosDbClient> logger = null)
     {
@@ -602,6 +604,40 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             {
                 return HydrateResolutionStatus(eventDbo.First());
             }
+        }
+
+        return null;
+    }
+
+    public async Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds)
+    {
+        var container = await GetEndpointContainer(endpointId);
+        // Bound to a single row and filter status/sub-status/event-type server-side so the agent
+        // receive long-poll no longer materialises every pending event. Container is partitioned
+        // per endpoint, so this stays within one partition. Event types are passed via
+        // ARRAY_CONTAINS over a parameter to keep the SQL parameterised.
+        var sql = @"SELECT TOP 1 * FROM c
+                    WHERE c.event.PendingSubStatus = 'Handoff'
+                      AND c.status = @status
+                      AND (NOT IS_DEFINED(c.deleted) OR c.deleted != true)";
+        var types = eventTypeIds?.Where(t => !string.IsNullOrEmpty(t)).ToArray();
+        if (types is { Length: > 0 })
+            sql += " AND ARRAY_CONTAINS(@eventTypeIds, c.event.EventTypeId)";
+        sql += " ORDER BY c.event.EnqueuedTimeUtc ASC";
+
+        var queryDefinition = new QueryDefinition(sql).WithParameter("@status", PendingStatus);
+        if (types is { Length: > 0 })
+            queryDefinition = queryDefinition.WithParameter("@eventTypeIds", types);
+
+        var result = container.GetItemQueryIterator<EventDbo>(
+            queryDefinition,
+            requestOptions: new QueryRequestOptions { MaxItemCount = 1 });
+
+        if (result.HasMoreResults)
+        {
+            var eventDbo = await result.ReadNextAsync();
+            if (eventDbo.Any())
+                return eventDbo.First().Event;
         }
 
         return null;
@@ -1294,6 +1330,72 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
     private Task<ICosmosContainerAdapter> GetAuditsContainer() =>
         GetCachedContainerAsync(AuditsContainer, "/eventId");
+
+    private Task<ICosmosContainerAdapter> GetEventSchemasContainer() =>
+        GetCachedContainerAsync(EventSchemasContainer, "/id");
+
+    // ── IEventSchemaStore ──────────────────────────────────────────────────────
+
+    public async Task<EventSchema?> GetSchema(string eventTypeId)
+    {
+        var container = await GetEventSchemasContainer();
+        try
+        {
+            var resp = await container.ReadItemAsync<EventSchema>(eventTypeId, new PartitionKey(eventTypeId));
+            return resp.Resource;
+        }
+        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
+    public async Task<IReadOnlyList<EventSchema>> GetSchemas()
+    {
+        var container = await GetEventSchemasContainer();
+        var results = new List<EventSchema>();
+        using var iterator = container.GetItemQueryIterator<EventSchema>("SELECT * FROM c");
+        while (iterator.HasMoreResults)
+            results.AddRange(await iterator.ReadNextAsync());
+        return results;
+    }
+
+    public async Task<EventSchema> DefineEventType(EventSchema schema)
+    {
+        if (string.IsNullOrWhiteSpace(schema?.EventTypeId))
+            throw new ArgumentException("schema.EventTypeId is required.", nameof(schema));
+        if (string.IsNullOrWhiteSpace(schema?.JsonSchema))
+            throw new ArgumentException("schema.JsonSchema is required.", nameof(schema));
+
+        var existing = await GetSchema(schema.EventTypeId);
+        if (existing != null)
+        {
+            if (!SchemaJson.Equal(existing.JsonSchema, schema.JsonSchema))
+                throw new SchemaConflictException(schema.EventTypeId);
+            return existing;
+        }
+
+        var container = await GetEventSchemasContainer();
+        try
+        {
+            // Atomic create-or-409: never an upsert, so a concurrent create of a
+            // DIFFERENT schema for the same new id can't silently overwrite.
+            var resp = await container.CreateItemAsync(schema, new PartitionKey(schema.EventTypeId));
+            return resp.Resource;
+        }
+        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.Conflict)
+        {
+            // Lost the create race. Re-read the winner; surface a conflict only if it
+            // differs (schemas are immutable), otherwise the create was idempotent.
+            var raced = await GetSchema(schema.EventTypeId);
+            if (raced is null)
+                throw new InvalidOperationException(
+                    $"Event type '{schema.EventTypeId}' reported a create conflict but could not be re-read.");
+            if (!SchemaJson.Equal(raced.JsonSchema, schema.JsonSchema))
+                throw new SchemaConflictException(schema.EventTypeId);
+            return raced;
+        }
+    }
 
     /// <summary>
     /// Projection for <see cref="SearchMessages"/>: every <see cref="MessageEntity"/>

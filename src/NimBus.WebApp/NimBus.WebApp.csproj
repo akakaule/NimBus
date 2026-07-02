@@ -20,6 +20,9 @@
     <PackageReference Include="Jering.Javascript.NodeJS" Version="7.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.SpaServices.Extensions" Version="10.0.0-preview.1.25120.3" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <!-- Used directly in production code (AgentImplementation JSON-schema validation, spec 022).
+         Pinned explicitly rather than relying on NSwag's transitive graph. -->
+    <PackageReference Include="NJsonSchema" Version="11.5.2" />
     <PackageReference Include="NSwag.AspNetCore" Version="14.6.3" />
     <PackageReference Include="NSwag.MSBuild" Version="14.6.3">
       <PrivateAssets>all</PrivateAssets>

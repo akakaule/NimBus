@@ -45,12 +45,15 @@ public sealed class AuditLogService : IAuditLogService
         string? eventId = null,
         string? endpointId = null,
         string? eventTypeId = null,
+        string? auditorNameOverride = null,
         CancellationToken cancellationToken = default)
     {
         // Build the entity upfront so both sinks see the same payload.
         var entity = new MessageAuditEntity
         {
-            AuditorName = ResolveAuditorName(context),
+            AuditorName = string.IsNullOrWhiteSpace(auditorNameOverride)
+                ? ResolveAuditorName(context)
+                : auditorNameOverride,
             AuditTimestamp = DateTime.UtcNow,
             AuditType = type,
             AccessDenied = accessDenied,

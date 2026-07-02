@@ -36,6 +36,10 @@ public interface IAuditLogService
     /// <param name="eventId">Event id the audit row is associated with, when known.</param>
     /// <param name="endpointId">Endpoint id the audit row is associated with, when known.</param>
     /// <param name="eventTypeId">Event-type id the audit row is associated with, when known.</param>
+    /// <param name="auditorNameOverride">When non-empty, recorded as the auditor instead of the
+    /// principal resolved from <paramref name="context"/>. Used by non-interactive callers such as
+    /// the agent settle path, whose actor identity (the agent id) is not carried on the request
+    /// principal. When null/empty the auditor is resolved from <paramref name="context"/> as usual.</param>
     /// <param name="cancellationToken">Token observed by the underlying store write.</param>
     Task LogAuditAsync(
         MessageAuditType type,
@@ -45,5 +49,6 @@ public interface IAuditLogService
         string? eventId = null,
         string? endpointId = null,
         string? eventTypeId = null,
+        string? auditorNameOverride = null,
         CancellationToken cancellationToken = default);
 }

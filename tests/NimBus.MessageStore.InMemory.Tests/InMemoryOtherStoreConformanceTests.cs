@@ -22,3 +22,9 @@ public sealed class InMemoryMetricsStoreTests : MetricsStoreConformanceTests
 {
     protected override INimBusMessageStore CreateStore() => new InMemoryMessageStore();
 }
+
+[TestClass]
+public sealed class InMemoryEventSchemaStoreConformanceTests : EventSchemaStoreConformanceTests
+{
+    protected override IEventSchemaStore CreateStore() => new InMemoryMessageStore();
+}

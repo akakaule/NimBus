@@ -56,6 +56,44 @@ public class ResolverServiceTests
     }
 
     [TestMethod]
+    public async Task Handle_DynamicallyTypedEvent_RecordsPendingThenCompleted_KeyedByEventTypeId()
+    {
+        // Spec 022 Phase 0: the Resolver/audit trail must work for an event identified only by a
+        // dynamic EventTypeId string (e.g. "crm.contact.enriched.v1") with no compiled C# IEvent.
+        // The Resolver keys purely off strings, so the agent zone's dynamically-typed events are
+        // first-class in the audit trail with no special casing.
+        const string dynamicEventTypeId = "crm.contact.enriched.v1";
+        var cosmos = new FakeCosmosDbClient();
+        var service = CreateService(cosmos);
+
+        var request = CreateMessageContext(
+            messageType: MessageType.EventRequest,
+            to: "AgentZoneEndpoint",
+            from: "CrmEndpoint",
+            eventTypeId: dynamicEventTypeId);
+
+        await service.Handle(request);
+
+        Assert.AreEqual(1, cosmos.StoredMessages.Count);
+        Assert.AreEqual(dynamicEventTypeId, cosmos.StoredMessages[0].EventTypeId, "Audit row must carry the dynamic EventTypeId.");
+        Assert.AreEqual("AgentZoneEndpoint", cosmos.StoredMessages[0].EndpointId);
+        Assert.AreEqual(1, cosmos.PendingUploads.Count);
+        Assert.AreEqual(ResolutionStatus.Pending, cosmos.PendingUploads[0].Content.ResolutionStatus);
+
+        // The subscriber's ResolutionResponse flips the same dynamic event to Completed.
+        var response = CreateMessageContext(
+            messageType: MessageType.ResolutionResponse,
+            to: "Resolver",
+            from: "AgentZoneEndpoint",
+            eventTypeId: dynamicEventTypeId);
+
+        await service.Handle(response);
+
+        Assert.AreEqual(1, cosmos.CompletedUploads.Count);
+        Assert.AreEqual("event-1", cosmos.CompletedUploads[0].EventId);
+    }
+
+    [TestMethod]
     public async Task Handle_RetryRequest_StoresAuditBeforePersistingMessage()
     {
         var cosmos = new FakeCosmosDbClient();
@@ -256,7 +294,8 @@ public class ResolverServiceTests
         MessageType messageType,
         string to = "AnalyticsEndpoint",
         string from = "StorefrontEndpoint",
-        int throttleRetryCount = 0)
+        int throttleRetryCount = 0,
+        string eventTypeId = "OrderPlaced")
     {
         return new FakeMessageContext
         {
@@ -274,11 +313,11 @@ public class ResolverServiceTests
             {
                 EventContent = new EventContent
                 {
-                    EventTypeId = "OrderPlaced",
+                    EventTypeId = eventTypeId,
                     EventJson = "{}",
                 },
             },
-            EventTypeId = "OrderPlaced",
+            EventTypeId = eventTypeId,
             EnqueuedTimeUtc = new DateTime(2026, 03, 06, 12, 00, 00, DateTimeKind.Utc),
             ThrottleRetryCount = throttleRetryCount,
         };
@@ -430,6 +469,7 @@ public class ResolverServiceTests
         public Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount) => throw new NotSupportedException();
         public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
         public Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, System.Threading.CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds) => throw new NotSupportedException();
         public Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
         public Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
         public Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
@@ -500,6 +540,10 @@ public class ResolverServiceTests
         }
 
         public Task<AuditSearchResult> SearchAudits(AuditFilter filter, string? continuationToken, int maxItemCount) => throw new NotSupportedException();
+
+        public Task<NimBus.MessageStore.States.EventSchema?> GetSchema(string eventTypeId) => throw new NotSupportedException();
+        public Task<System.Collections.Generic.IReadOnlyList<NimBus.MessageStore.States.EventSchema>> GetSchemas() => throw new NotSupportedException();
+        public Task<NimBus.MessageStore.States.EventSchema> DefineEventType(NimBus.MessageStore.States.EventSchema schema) => throw new NotSupportedException();
     }
 
     internal sealed record UploadCall(string EventId, string SessionId, string EndpointId, UnresolvedEvent Content);

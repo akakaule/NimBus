@@ -123,6 +123,9 @@ public sealed class CosmosDbClientWriteOptionsTests
             return Task.FromResult<ItemResponse<T>>(null);
         }
 
+        public Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default)
+            => throw new NotSupportedException();
+
         public Task<ItemResponse<T>> DeleteItemAsync<T>(string id, PartitionKey partitionKey)
             => throw new NotSupportedException();
 

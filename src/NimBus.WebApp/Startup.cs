@@ -459,6 +459,9 @@ namespace NimBus.WebApp
             // INimBusMessageStore lifetime matches the request, consistent with
             // every other message-store consumer in this file.
             services.AddScoped<IAuditLogService, AuditLogService>();
+            // Shared hand-off settlement core used by both the operator (EventImplementation)
+            // and agent (AgentImplementation) settle endpoints so neither can skip the audit row.
+            services.AddScoped<IHandoffSettlementService, HandoffSettlementService>();
             services.AddTransient<IEndpointApiController, EndpointImplementation>();
             services.AddTransient<IStorageHookApiController, StorageHookImplementation>();
             services.AddTransient<IEventApiController, EventImplementation>();
@@ -470,6 +473,9 @@ namespace NimBus.WebApp
             services.AddTransient<IMetricsApiController, MetricsImplementation>();
             services.AddTransient<IAuditApiController, AuditImplementation>();
             services.AddTransient<IDevApiController, DevImplementation>();
+            services.AddTransient<IAgentApiController, AgentImplementation>();
+            services.AddSingleton<IAgentEventPublisher, AgentEventPublisher>();
+            services.AddSingleton<IAgentSubscriptionRegistry, AgentSubscriptionRegistry>();
             services.AddScoped<SeedDataService>();
         }
 

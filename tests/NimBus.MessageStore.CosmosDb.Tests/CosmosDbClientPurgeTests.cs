@@ -90,6 +90,9 @@ public sealed class CosmosDbClientPurgeTests
         public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions requestOptions = null)
             => throw new NotSupportedException();
 
+        public Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default)
+            => throw new NotSupportedException();
+
         public async Task<ItemResponse<T>> DeleteItemAsync<T>(string id, PartitionKey partitionKey)
         {
             var inFlight = Interlocked.Increment(ref _inFlightDeletes);

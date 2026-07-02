@@ -77,6 +77,125 @@ namespace NimBus.SDK.Extensions
         }
 
         /// <summary>
+        /// Registers a handler for a dynamically-typed event keyed by its string EventTypeId
+        /// (e.g. "crm.contact.enriched.v1") with no compiled IEvent class. The factory typically
+        /// returns a DelegateEventJsonHandler reading context.MessageContent.EventContent.EventJson.
+        /// Spec 022 — the hosted-subscriber counterpart to AddHandler&lt;TEvent,THandler&gt;.
+        /// </summary>
+        /// <param name="eventTypeId">The wire EventTypeId string (e.g. "crm.contact.enriched.v1"). Must not be null or whitespace.</param>
+        /// <param name="handlerFactory">Factory invoked per message to create the handler. Must not be null.</param>
+        public NimBusSubscriberBuilder AddDynamicHandler(string eventTypeId, Func<IEventJsonHandler> handlerFactory)
+        {
+            if (string.IsNullOrWhiteSpace(eventTypeId))
+                throw new ArgumentException("Event type id must not be null or empty.", nameof(eventTypeId));
+            if (handlerFactory == null) throw new ArgumentNullException(nameof(handlerFactory));
+
+            // Symmetric to AddHandlerRegistration's dedup: two handlers (dynamic or
+            // typed) claiming the same wire EventTypeId can't both win the dispatch
+            // table, so fail loudly rather than let the later Register() overwrite
+            // the earlier one at provider-construction time.
+            var existing = HandlerRegistrations.SingleOrDefault(r => r.EventTypeId == eventTypeId);
+            if (existing != null)
+            {
+                throw new InvalidOperationException(
+                    $"EventTypeId '{eventTypeId}' is already registered as a " +
+                    $"{(existing.EventType is null ? "dynamic" : "typed")} handler " +
+                    $"('{existing.HandlerType?.FullName ?? "<dynamic>"}'); " +
+                    "cannot also register a dynamic handler for it. " +
+                    "Register only one handler per EventTypeId.");
+            }
+
+            HandlerRegistrations.Add(new HandlerRegistration
+            {
+                EventTypeId = eventTypeId,
+                EventType = null,
+                HandlerType = null,
+                IsExplicit = true,
+                Register = (_, handlerProvider) =>
+                {
+                    handlerProvider.RegisterHandler(eventTypeId, handlerFactory);
+                }
+            });
+
+            return this;
+        }
+
+        /// <summary>
+        /// Registers a handler for a dynamically-typed event keyed by its string EventTypeId,
+        /// with a DI-aware factory that receives the <see cref="IServiceProvider"/> at registration
+        /// time. This is the DI-integrated counterpart to
+        /// <see cref="AddDynamicHandler(string, Func{IEventJsonHandler})"/> — the
+        /// <paramref name="handlerFactory"/> is called once when the
+        /// <see cref="ISubscriberClient"/> singleton is resolved, so it behaves like a singleton
+        /// handler (appropriate for handlers whose dependencies are themselves singletons).
+        /// </summary>
+        /// <param name="eventTypeId">The wire EventTypeId string (e.g. "crm.contact.enriched.v1"). Must not be null or whitespace.</param>
+        /// <param name="handlerFactory">Factory that receives the DI container and returns the handler. Must not be null.</param>
+        public NimBusSubscriberBuilder AddDynamicHandler(string eventTypeId, Func<IServiceProvider, IEventJsonHandler> handlerFactory)
+        {
+            if (string.IsNullOrWhiteSpace(eventTypeId))
+                throw new ArgumentException("Event type id must not be null or empty.", nameof(eventTypeId));
+            if (handlerFactory == null) throw new ArgumentNullException(nameof(handlerFactory));
+
+            var existing = HandlerRegistrations.SingleOrDefault(r => r.EventTypeId == eventTypeId);
+            if (existing != null)
+            {
+                throw new InvalidOperationException(
+                    $"EventTypeId '{eventTypeId}' is already registered as a " +
+                    $"{(existing.EventType is null ? "dynamic" : "typed")} handler " +
+                    $"('{existing.HandlerType?.FullName ?? "<dynamic>"}'); " +
+                    "cannot also register a dynamic handler for it. " +
+                    "Register only one handler per EventTypeId.");
+            }
+
+            HandlerRegistrations.Add(new HandlerRegistration
+            {
+                EventTypeId = eventTypeId,
+                EventType = null,
+                HandlerType = null,
+                IsExplicit = true,
+                Register = (provider, handlerProvider) =>
+                {
+                    // Resolve the handler once (at ISubscriberClient singleton creation) and
+                    // register it as a constant factory — this mirrors how AddHandler<TEvent,THandler>
+                    // resolves from IServiceProvider, but for the DI-aware dynamic variant.
+                    var handler = handlerFactory(provider);
+                    handlerProvider.RegisterHandler(eventTypeId, () => handler);
+                }
+            });
+
+            return this;
+        }
+
+        /// <summary>
+        /// Registers a single fallback handler invoked for any event type with no specific
+        /// handler. The Mapping Executor uses this to consult the mapping registry per message (spec 023).
+        /// </summary>
+        /// <param name="handlerFactory">Factory that receives the DI container and returns the handler. Must not be null.</param>
+        public NimBusSubscriberBuilder AddDynamicFallbackHandler(Func<IServiceProvider, IEventJsonHandler> handlerFactory)
+        {
+            if (handlerFactory == null) throw new ArgumentNullException(nameof(handlerFactory));
+
+            HandlerRegistrations.Add(new HandlerRegistration
+            {
+                EventTypeId = null,
+                EventType = null,
+                HandlerType = null,
+                IsExplicit = true,
+                Register = (provider, handlerProvider) =>
+                {
+                    // Resolve the handler once (at ISubscriberClient singleton creation) and
+                    // register it as the fallback — same resolution pattern as the SP-aware
+                    // AddDynamicHandler overload, but targeting RegisterFallbackHandler.
+                    var handler = handlerFactory(provider);
+                    handlerProvider.RegisterFallbackHandler(() => handler);
+                }
+            });
+
+            return this;
+        }
+
+        /// <summary>
         /// Configures retry policies for this subscriber.
         /// </summary>
         public NimBusSubscriberBuilder ConfigureRetryPolicies(Action<DefaultRetryPolicyProvider> configure)
@@ -119,6 +238,18 @@ namespace NimBus.SDK.Extensions
             var existing = HandlerRegistrations.SingleOrDefault(r => r.EventTypeId == eventTypeId);
             if (existing != null)
             {
+                if (existing.EventType is null)
+                {
+                    // The existing entry is a DYNAMIC (string-keyed) registration —
+                    // AddDynamicHandler stores no CLR EventType. A dynamic handler
+                    // and a typed handler claiming the same wire EventTypeId is a
+                    // genuine conflict the dispatch table can't resolve, so fail
+                    // loudly rather than NRE on existing.EventType below.
+                    throw new InvalidOperationException(
+                        $"EventTypeId '{eventTypeId}' is already registered as a dynamic handler; " +
+                        $"cannot also register a typed handler ('{handlerType.FullName}') for it. " +
+                        "Register only one handler per EventTypeId.");
+                }
                 if (existing.EventType != eventType)
                 {
                     // Distinct CLR types collapsing onto the same wire id —
@@ -127,7 +258,7 @@ namespace NimBus.SDK.Extensions
                     // silently overwrite the other.
                     throw new InvalidOperationException(
                         $"Two distinct event types map to the same EventTypeId '{eventTypeId}': " +
-                        $"'{existing.EventType.FullName}' and '{eventType.FullName}'. " +
+                        $"'{existing.EventType?.FullName ?? "<dynamic>"}' and '{eventType.FullName}'. " +
                         "EventTypeId is derived from the unqualified type name and must be unique across the subscriber. " +
                         "Rename one of the events to disambiguate.");
                 }
@@ -143,7 +274,7 @@ namespace NimBus.SDK.Extensions
                 {
                     throw new InvalidOperationException(
                         $"Multiple handlers were discovered for event type '{eventType.FullName}': " +
-                        $"'{existing.HandlerType.FullName}' and '{handlerType.FullName}'. " +
+                        $"'{existing.HandlerType?.FullName ?? "<dynamic>"}' and '{handlerType.FullName}'. " +
                         "Register one handler explicitly with AddHandler<TEvent,THandler>() to choose the handler.");
                 }
             }
@@ -195,8 +326,19 @@ namespace NimBus.SDK.Extensions
         internal class HandlerRegistration
         {
             public string EventTypeId { get; set; }
-            public Type EventType { get; set; }
-            public Type HandlerType { get; set; }
+
+            /// <summary>
+            /// The CLR event type for a typed handler, or <c>null</c> for a
+            /// dynamic (string-keyed) registration added via
+            /// <see cref="AddDynamicHandler(string, Func{IEventJsonHandler})"/> that has no compiled IEvent class.
+            /// </summary>
+            public Type? EventType { get; set; }
+
+            /// <summary>
+            /// The CLR handler type for a typed handler, or <c>null</c> for a
+            /// dynamic registration whose handler is produced by a factory.
+            /// </summary>
+            public Type? HandlerType { get; set; }
             public bool IsExplicit { get; set; }
             public Action<IServiceProvider, EventHandlerProvider> Register { get; set; }
         }

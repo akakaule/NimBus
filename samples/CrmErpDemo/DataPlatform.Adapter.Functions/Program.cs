@@ -26,9 +26,19 @@ builder.Services.AddSingleton<ServiceBusClient>(sp =>
     return new ServiceBusClient(connection);
 });
 
+// Register EnrichedContactHandler for DI resolution. The SP-factory below resolves it
+// ONCE at ISubscriberClient construction and captures it for the lifetime of the host, so
+// Singleton is the honest lifetime (its only dependency, ILogger<T>, is itself a singleton).
+builder.Services.AddSingleton<EnrichedContactHandler>();
+
 builder.Services.AddNimBusSubscriber("DataPlatformEndpoint", sub =>
 {
     sub.AddHandler<ErpCustomerCreated, ErpCustomerCreatedHandler>();
+
+    // Spec 022 Phase 3 Task D — consume the AI-agent enriched-contact event on this endpoint.
+    // The event has no compiled IEvent class; it is identified only by its EventTypeId string.
+    // Use the DI-aware overload so EnrichedContactHandler receives its ILogger from the container.
+    sub.AddDynamicHandler("crm.contact.enriched.v1", sp => sp.GetRequiredService<EnrichedContactHandler>());
 });
 
 builder.Build().Run();

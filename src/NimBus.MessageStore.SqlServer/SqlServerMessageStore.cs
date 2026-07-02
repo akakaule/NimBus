@@ -564,6 +564,34 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         return row == null ? null : MapUnresolvedEventRow(row);
     }
 
+    // Cap the event-type filter so a caller can't blow the parameter budget; agents subscribe to a
+    // handful of types, well under this.
+    private const int MaxEventTypeFilter = 64;
+
+    public async Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds)
+    {
+        await using var conn = Open();
+        var types = eventTypeIds?.Where(t => !string.IsNullOrEmpty(t)).Take(MaxEventTypeFilter).ToArray();
+        var p = new DynamicParameters();
+        p.Add("E", endpointId);
+        // Bound to TOP 1 and filter status/sub-status/event-type server-side so the agent receive
+        // long-poll no longer streams every pending row. Oldest-first (EnqueuedTimeUtc) gives FIFO.
+        var sql = $@"SELECT TOP 1 * FROM {T("UnresolvedEvents")}
+                     WHERE EndpointId = @E
+                       AND PendingSubStatus = 'Handoff'
+                       AND Status = 'Pending'
+                       AND Deleted = 0";
+        if (types is { Length: > 0 })
+        {
+            sql += " AND EventTypeId IN @Types";
+            p.Add("Types", types);
+        }
+        sql += " ORDER BY EnqueuedTimeUtc ASC";
+
+        var row = await conn.QueryFirstOrDefaultAsync(sql, p, commandTimeout: _commandTimeout);
+        return row == null ? null : MapUnresolvedEventRow(row);
+    }
+
     public Task<UnresolvedEvent> GetEventById(string endpointId, string id)
         => GetEvent(endpointId, id);
 
@@ -1273,4 +1301,63 @@ WHERE EnqueuedTimeUtc >= @From
 
     private static string CompositeEventId(UnresolvedEvent @event)
         => $"{@event.EventId}_{@event.SessionId ?? string.Empty}";
+
+    // ───────── Event schema store ─────────
+
+    public async Task<EventSchema?> GetSchema(string eventTypeId)
+    {
+        await using var conn = Open();
+        return await conn.QuerySingleOrDefaultAsync<EventSchema>(
+            $"SELECT * FROM {T("EventSchemas")} WHERE [EventTypeId] = @eventTypeId",
+            new { eventTypeId },
+            commandTimeout: _commandTimeout);
+    }
+
+    public async Task<IReadOnlyList<EventSchema>> GetSchemas()
+    {
+        await using var conn = Open();
+        var rows = await conn.QueryAsync<EventSchema>(
+            $"SELECT * FROM {T("EventSchemas")}",
+            commandTimeout: _commandTimeout);
+        return rows.ToList();
+    }
+
+    public async Task<EventSchema> DefineEventType(EventSchema schema)
+    {
+        if (string.IsNullOrWhiteSpace(schema?.EventTypeId))
+            throw new ArgumentException("schema.EventTypeId is required.", nameof(schema));
+        if (string.IsNullOrWhiteSpace(schema?.JsonSchema))
+            throw new ArgumentException("schema.JsonSchema is required.", nameof(schema));
+
+        var existing = await GetSchema(schema.EventTypeId);
+        if (existing != null)
+        {
+            if (!SchemaJson.Equal(existing.JsonSchema, schema.JsonSchema))
+                throw new SchemaConflictException(schema.EventTypeId);
+            return existing;
+        }
+
+        await using var conn = Open();
+        try
+        {
+            await conn.ExecuteAsync(
+                $@"INSERT INTO {T("EventSchemas")}
+                   ([EventTypeId],[Name],[JsonSchema],[Description],[SessionKeyPath],[Version],[AgentId],[CreatedBy],[CreatedUtc])
+                   VALUES (@EventTypeId,@Name,@JsonSchema,@Description,@SessionKeyPath,@Version,@AgentId,@CreatedBy,@CreatedUtc)",
+                schema,
+                commandTimeout: _commandTimeout);
+            return schema;
+        }
+        catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
+        {
+            // PK / unique violation from a concurrent insert race — re-read and validate
+            var raced = await GetSchema(schema.EventTypeId);
+            if (raced is null)
+                throw new InvalidOperationException(
+                    $"Event type '{schema.EventTypeId}' reported a unique violation but could not be re-read.");
+            if (!SchemaJson.Equal(raced.JsonSchema, schema.JsonSchema))
+                throw new SchemaConflictException(schema.EventTypeId);
+            return raced;
+        }
+    }
 }

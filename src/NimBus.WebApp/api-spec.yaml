@@ -1742,6 +1742,111 @@ paths:
                 $ref: '#/components/schemas/TimeSeriesOverview'
       tags:
         - Metrics
+  /api/agent/catalog:
+    get:
+      summary: Get agent catalog
+      operationId: get-agent-catalog
+      tags:
+        - Agent
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentCatalog'
+  /api/agent/event-types:
+    post:
+      summary: Define or retrieve an event type
+      operationId: post-agent-event-types
+      tags:
+        - Agent
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DefineEventTypeRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventTypeInfo'
+        '409':
+          description: Event type already exists with a different schema
+  /api/agent/subscribe:
+    post:
+      summary: Subscribe to an event type
+      operationId: post-agent-subscribe
+      tags:
+        - Agent
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentSubscribeRequest'
+      responses:
+        '200':
+          description: OK
+  /api/agent/receive:
+    get:
+      summary: Receive the next available event
+      operationId: get-agent-receive
+      tags:
+        - Agent
+      parameters:
+        - name: eventTypeId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: waitSeconds
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentReceivedMessage'
+        '204':
+          description: No message available in the wait window
+  /api/agent/publish:
+    post:
+      summary: Publish an event
+      operationId: post-agent-publish
+      tags:
+        - Agent
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentPublishRequest'
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Payload failed schema validation
+        '404':
+          description: Unknown eventTypeId
+  /api/agent/settle:
+    post:
+      summary: Settle a received event
+      operationId: post-agent-settle
+      tags:
+        - Agent
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentSettleRequest'
+      responses:
+        '200':
+          description: OK
 components:
   schemas:
     OldEvent:
@@ -2107,6 +2212,13 @@ components:
             - comment
             - completeHandoff
             - failHandoff
+            - searchEvents
+            - getEventDetails
+            - getEndpointDetails
+            - enableEndpoint
+            - disableEndpoint
+            - purgeMessages
+            - compose
         comment:
           type: string
           nullable: true
@@ -2902,6 +3014,13 @@ components:
             - comment
             - completeHandoff
             - failHandoff
+            - searchEvents
+            - getEventDetails
+            - getEndpointDetails
+            - enableEndpoint
+            - disableEndpoint
+            - purgeMessages
+            - compose
         createdAtFrom:
           type: string
           format: date-time
@@ -3056,12 +3175,127 @@ components:
             - comment
             - completeHandoff
             - failHandoff
+            - searchEvents
+            - getEventDetails
+            - getEndpointDetails
+            - enableEndpoint
+            - disableEndpoint
+            - purgeMessages
+            - compose
         comment:
           type: string
           nullable: true
         createdAt:
           type: string
           format: date-time
+    AgentCatalog:
+      title: AgentCatalog
+      type: object
+      properties:
+        endpoints:
+          type: array
+          items:
+            type: string
+        eventTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventTypeInfo'
+    EventTypeInfo:
+      title: EventTypeInfo
+      type: object
+      properties:
+        eventTypeId:
+          type: string
+        name:
+          type: string
+        jsonSchema:
+          type: string
+        description:
+          type: string
+    DefineEventTypeRequest:
+      title: DefineEventTypeRequest
+      type: object
+      required:
+        - eventTypeId
+        - jsonSchema
+      properties:
+        eventTypeId:
+          type: string
+        name:
+          type: string
+        jsonSchema:
+          type: string
+        description:
+          type: string
+        sessionKeyPath:
+          type: string
+    AgentSubscribeRequest:
+      title: AgentSubscribeRequest
+      type: object
+      required:
+        - eventTypeId
+      properties:
+        eventTypeId:
+          type: string
+    HandoffCoordinates:
+      title: HandoffCoordinates
+      type: object
+      properties:
+        eventId:
+          type: string
+        sessionId:
+          type: string
+        messageId:
+          type: string
+        eventTypeId:
+          type: string
+        correlationId:
+          type: string
+        originatingMessageId:
+          type: string
+    AgentReceivedMessage:
+      title: AgentReceivedMessage
+      type: object
+      properties:
+        eventTypeId:
+          type: string
+        payload:
+          type: string
+        coordinates:
+          $ref: '#/components/schemas/HandoffCoordinates'
+    AgentPublishRequest:
+      title: AgentPublishRequest
+      type: object
+      required:
+        - eventTypeId
+        - payload
+      properties:
+        eventTypeId:
+          type: string
+        payload:
+          type: string
+        sessionId:
+          type: string
+    AgentSettleRequest:
+      title: AgentSettleRequest
+      type: object
+      required:
+        - coordinates
+        - outcome
+      properties:
+        coordinates:
+          $ref: '#/components/schemas/HandoffCoordinates'
+        outcome:
+          type: string
+          enum:
+            - complete
+            - fail
+        result:
+          type: string
+        errorText:
+          type: string
+        errorType:
+          type: string
 tags:
   - name: Event
   - name: EventType
@@ -3074,3 +3308,4 @@ tags:
   - name: Audit
   - name: Dev
   - name: Metrics
+  - name: Agent

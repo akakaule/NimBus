@@ -215,6 +215,45 @@ public partial class AdminService
         }
 
         snapshot.Subscriptions.AddRange(createdSubscriptions);
+
+        // Dynamic-forward subscriptions (spec 022 D5). For each declared
+        // DynamicForward whose source is this topic, the provisioner creates an
+        // "AgentDyn-{target}" forward subscription carrying a "dyn-{eventTypeId}"
+        // rule (see ServiceBusTopologyProvisioner). These cannot be derived from
+        // the compiled event loop above, so without consulting DynamicForwards the
+        // audit would flag them deprecated and RemoveDeprecatedTopologyAsync would
+        // delete them — silently dropping every dynamically-typed event on the path.
+        var dynamicSubscriptions = new List<SubscriptionSnapshot>();
+        foreach (var forward in _platform.DynamicForwards
+            .Where(f => f.SourceEndpoint.Equals(endpointName, StringComparison.OrdinalIgnoreCase)))
+        {
+            var subName = $"agentdyn-{forward.TargetEndpoint.ToLowerInvariant()}";
+            var ruleName = $"dyn-{forward.EventTypeId.ToLowerInvariant()}";
+
+            var existing = dynamicSubscriptions
+                .FirstOrDefault(x => x.Name.Equals(subName, StringComparison.OrdinalIgnoreCase));
+
+            if (existing != null)
+            {
+                if (!existing.Rules.Any(r => r.Name.Equals(ruleName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    existing.Rules.Add(new RuleSnapshot { Name = ruleName, SubscriptionName = subName });
+                }
+            }
+            else
+            {
+                dynamicSubscriptions.Add(new SubscriptionSnapshot
+                {
+                    Name = subName,
+                    Rules = new List<RuleSnapshot>
+                    {
+                        new RuleSnapshot { Name = ruleName, SubscriptionName = subName }
+                    }
+                });
+            }
+        }
+
+        snapshot.Subscriptions.AddRange(dynamicSubscriptions);
         return snapshot;
     }
 

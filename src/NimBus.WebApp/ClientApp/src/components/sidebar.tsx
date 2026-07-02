@@ -212,7 +212,9 @@ const NAV: NavGroup[] = [
   },
   {
     label: "Manage",
-    items: [{ name: "Admin", path: "/Admin", icon: Icon.admin }],
+    items: [
+      { name: "Admin", path: "/Admin", icon: Icon.admin },
+    ],
   },
 ];
 

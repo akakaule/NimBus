@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <AssemblyName>EnrichmentAgent.Tests</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <NoWarn>$(NoWarn);CA1707;CA2007</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageReference Include="MSTest.TestAdapter" Version="2.2.10" />
+    <PackageReference Include="MSTest.TestFramework" Version="2.2.10" />
+    <!-- Same JSON Schema validator the WebApp uses (AgentImplementation.PostAgentPublishAsync)
+         so the in-memory smoke validates the agent's published payload exactly as production does. -->
+    <PackageReference Include="NJsonSchema" Version="11.5.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\samples\CrmErpDemo\EnrichmentAgent\EnrichmentAgent.csproj" />
+    <!-- Real in-memory IEventSchemaStore (NimBus.Testing.Conformance.InMemoryMessageStore). -->
+    <ProjectReference Include="..\..\src\NimBus.Testing\NimBus.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

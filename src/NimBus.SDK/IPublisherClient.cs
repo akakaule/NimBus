@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using NimBus.Core.Events;
+using NimBus.Core.Messages;
 using System.Threading.Tasks;
 
 namespace NimBus.SDK
@@ -9,6 +10,12 @@ namespace NimBus.SDK
     public interface IPublisherClient
     {
         Task Publish(IEvent @event);
+
+        /// <summary>
+        /// Publishes a pre-built, dynamically-typed message (no compiled IEvent). The caller sets
+        /// EventTypeId + MessageContent.EventContent. Used by the agent REST API (spec 022).
+        /// </summary>
+        Task Publish(IMessage message, CancellationToken cancellationToken = default);
 
         Task Publish(IEvent @event, string sessionId, string correlationId);
 

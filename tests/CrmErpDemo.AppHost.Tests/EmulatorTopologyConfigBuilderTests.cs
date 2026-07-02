@@ -1,7 +1,13 @@
 #pragma warning disable CA1707, CA2007
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using CrmErpDemo.Contracts;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Core;
+using NimBus.Core.Endpoints;
+using NimBus.Core.Events;
 
 namespace CrmErpDemo.AppHost.Tests;
 
@@ -47,8 +53,8 @@ public sealed class EmulatorTopologyConfigBuilderTests
         var topic = FindTopic(doc, "AgentZoneEndpoint");
         var sub = FindSubscription(topic!.Value, "AgentDyn-DataPlatformEndpoint");
 
-        var rule = FindRule(sub!.Value, "crm.contact.enriched.v1");
-        Assert.IsNotNull(rule, "Rule 'crm.contact.enriched.v1' not found in AgentDyn-DataPlatformEndpoint subscription");
+        var rule = FindRule(sub!.Value, "dyn-crm.contact.enriched.v1");
+        Assert.IsNotNull(rule, "Rule 'dyn-crm.contact.enriched.v1' not found in AgentDyn-DataPlatformEndpoint subscription");
 
         var sqlFilter = rule.Value
             .GetProperty("Properties")
@@ -68,7 +74,7 @@ public sealed class EmulatorTopologyConfigBuilderTests
         using var doc = BuildConfig();
         var topic = FindTopic(doc, "AgentZoneEndpoint");
         var sub = FindSubscription(topic!.Value, "AgentDyn-DataPlatformEndpoint");
-        var rule = FindRule(sub!.Value, "crm.contact.enriched.v1");
+        var rule = FindRule(sub!.Value, "dyn-crm.contact.enriched.v1");
 
         var action = rule!.Value
             .GetProperty("Properties")
@@ -136,8 +142,8 @@ public sealed class EmulatorTopologyConfigBuilderTests
         var topic = FindTopic(doc, "MarketingEndpoint");
         var sub = FindSubscription(topic!.Value, "AgentDyn-MappingZoneEndpoint");
 
-        var rule = FindRule(sub!.Value, "marketing.lead.created.v1");
-        Assert.IsNotNull(rule, "Rule 'marketing.lead.created.v1' not found in AgentDyn-MappingZoneEndpoint subscription");
+        var rule = FindRule(sub!.Value, "dyn-marketing.lead.created.v1");
+        Assert.IsNotNull(rule, "Rule 'dyn-marketing.lead.created.v1' not found in AgentDyn-MappingZoneEndpoint subscription");
 
         var sqlFilter = rule.Value
             .GetProperty("Properties")
@@ -188,8 +194,8 @@ public sealed class EmulatorTopologyConfigBuilderTests
         var topic = FindTopic(doc, "MappingZoneEndpoint");
         var sub = FindSubscription(topic!.Value, "AgentDyn-DataPlatformEndpoint");
 
-        var rule = FindRule(sub!.Value, "erp.customer.upsert.v1");
-        Assert.IsNotNull(rule, "Rule 'erp.customer.upsert.v1' not found in AgentDyn-DataPlatformEndpoint subscription on MappingZoneEndpoint");
+        var rule = FindRule(sub!.Value, "dyn-erp.customer.upsert.v1");
+        Assert.IsNotNull(rule, "Rule 'dyn-erp.customer.upsert.v1' not found in AgentDyn-DataPlatformEndpoint subscription on MappingZoneEndpoint");
 
         var sqlFilter = rule.Value
             .GetProperty("Properties")
@@ -201,6 +207,72 @@ public sealed class EmulatorTopologyConfigBuilderTests
             "Filter must match on erp.customer.upsert.v1 EventTypeId");
         StringAssert.Contains(sqlFilter, "user.From IS NULL",
             "Filter must include 'user.From IS NULL' loop-prevention guard");
+    }
+
+    // ── Two forwards, same (source, target), different event types ────────────
+
+    [TestMethod]
+    public void Build_TwoDynamicForwards_SameSourceAndTarget_ProduceOneSubscriptionWithBothRules()
+    {
+        // Regression: the dynamic-forward pass keyed dedup on the AgentDyn-{target}
+        // subscription name and `continue`d once that name was added, silently
+        // dropping a SECOND forward for the same (source, target) pair with a
+        // different EventTypeId. ServiceBusTopologyProvisioner instead adds one rule
+        // per forward to the same forward subscription — this must match.
+        var platform = new TwoForwardPlatform();
+
+        using var doc = JsonDocument.Parse(EmulatorTopologyConfigBuilder.Build(platform));
+        var topic = FindTopic(doc, "SourceEndpoint");
+        Assert.IsNotNull(topic, "SourceEndpoint topic not found");
+
+        // Exactly one AgentDyn-TargetEndpoint subscription — not one per forward.
+        var agentDynCount = topic!.Value.GetProperty("Subscriptions").EnumerateArray()
+            .Count(s => s.GetProperty("Name").GetString() == "AgentDyn-TargetEndpoint");
+        Assert.AreEqual(1, agentDynCount, "Both forwards must collapse onto a single AgentDyn-TargetEndpoint subscription");
+
+        var sub = FindSubscription(topic.Value, "AgentDyn-TargetEndpoint");
+        Assert.IsNotNull(FindRule(sub!.Value, "dyn-evt.one.v1"), "First forward's rule 'dyn-evt.one.v1' must be present");
+        Assert.IsNotNull(FindRule(sub.Value, "dyn-evt.two.v1"), "Second forward's rule 'dyn-evt.two.v1' must not be dropped");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Test platform: two dynamic forwards sharing source + target
+    // ---------------------------------------------------------------------------
+
+    private sealed class TwoForwardPlatform : Platform
+    {
+        private static readonly IReadOnlyList<DynamicForward> Forwards = new[]
+        {
+            new DynamicForward("SourceEndpoint", "evt.one.v1", "TargetEndpoint"),
+            new DynamicForward("SourceEndpoint", "evt.two.v1", "TargetEndpoint"),
+        };
+
+        public TwoForwardPlatform()
+        {
+            AddEndpoint(new TestEndpoint("SourceEndpoint"));
+            AddEndpoint(new TestEndpoint("TargetEndpoint"));
+        }
+
+        public override IReadOnlyList<DynamicForward> DynamicForwards => Forwards;
+    }
+
+    private sealed class TestEndpoint : IEndpoint
+    {
+        public TestEndpoint(string id)
+        {
+            Id = id;
+            Name = id;
+        }
+
+        public string Id { get; }
+        public string Name { get; }
+        public string Description => string.Empty;
+        public string Namespace => "Tests";
+        public string SecurityGroupName => string.Empty;
+        public ISystem System => null!;
+        public IEnumerable<IEventType> EventTypesProduced => Array.Empty<IEventType>();
+        public IEnumerable<IEventType> EventTypesConsumed => Array.Empty<IEventType>();
+        public IEnumerable<IRoleAssignment> RoleAssignments => Array.Empty<IRoleAssignment>();
     }
 
     // ---------------------------------------------------------------------------

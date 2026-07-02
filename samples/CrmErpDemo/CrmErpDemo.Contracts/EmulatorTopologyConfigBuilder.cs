@@ -170,31 +170,48 @@ public static class EmulatorTopologyConfigBuilder
         // on this topic. Subscription name uses the "AgentDyn-<target>" convention to
         // avoid colliding with the compiled forward subscriptions (named after the
         // consumer endpoint id) when the dynamic target is the same consumer.
-        var addedDynamicSubNames = new HashSet<string>(StringComparer.Ordinal);
+        //
+        // Multiple forwards for the same (source, target) with different event types all
+        // land on the ONE AgentDyn-<target> subscription, each contributing its own
+        // "dyn-<eventTypeId>" rule — mirroring ServiceBusTopologyProvisioner, which calls
+        // EnsureRuleAsync per forward against the same forward subscription. The "dyn-"
+        // rule-name prefix keeps the CLI provisioner, the emulator, and the topology
+        // audits in agreement.
+        var dynamicByTarget = new Dictionary<string, (List<object> Rules, HashSet<string> RuleNames)>(StringComparer.Ordinal);
+        var dynamicTargetOrder = new List<string>();
 
         foreach (var fwd in dynamicForwards)
         {
             if (!string.Equals(fwd.SourceEndpoint, endpoint.Id, StringComparison.Ordinal))
                 continue;
 
-            var subName = $"AgentDyn-{fwd.TargetEndpoint}";
+            if (!dynamicByTarget.TryGetValue(fwd.TargetEndpoint, out var entry))
+            {
+                entry = (new List<object>(), new HashSet<string>(StringComparer.Ordinal));
+                dynamicByTarget[fwd.TargetEndpoint] = entry;
+                dynamicTargetOrder.Add(fwd.TargetEndpoint);
+            }
 
-            // Guard against duplicates if DynamicForwards has more than one entry for
-            // the same (source, target) pair.
-            if (!addedDynamicSubNames.Add(subName))
+            var ruleName = $"dyn-{fwd.EventTypeId}";
+
+            // Skip a duplicate (source, target, eventType) triple so we never emit two
+            // identically-named rules on the same subscription.
+            if (!entry.RuleNames.Add(ruleName))
                 continue;
 
+            entry.Rules.Add(Rule(
+                ruleName,
+                $"user.EventTypeId = '{fwd.EventTypeId}' AND user.From IS NULL",
+                $"SET user.From = '{fwd.SourceEndpoint}'; SET user.EventId = newid(); SET user.To = '{fwd.TargetEndpoint}';"));
+        }
+
+        foreach (var target in dynamicTargetOrder)
+        {
             subscriptions.Add(new
             {
-                Name = subName,
-                Properties = ForwardSubscriptionProperties(fwd.TargetEndpoint),
-                Rules = new object[]
-                {
-                    Rule(
-                        fwd.EventTypeId,
-                        $"user.EventTypeId = '{fwd.EventTypeId}' AND user.From IS NULL",
-                        $"SET user.From = '{fwd.SourceEndpoint}'; SET user.EventId = newid(); SET user.To = '{fwd.TargetEndpoint}';"),
-                },
+                Name = $"AgentDyn-{target}",
+                Properties = ForwardSubscriptionProperties(target),
+                Rules = dynamicByTarget[target].Rules.ToArray(),
             });
         }
 

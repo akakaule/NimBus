@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json.Linq;
 using NimBus.Core;
 using NimBus.Manager;
 using NimBus.MessageStore;
@@ -95,6 +96,25 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             if (string.IsNullOrWhiteSpace(body.JsonSchema))
                 return new BadRequestObjectResult("jsonSchema is required.");
+
+            // Reject an unparseable JSON Schema at define time. Schemas are immutable (409 on
+            // redefine), so a bad one stored here would break every subsequent publish and
+            // mapping that references it, with no way to fix it — fail fast instead.
+            try
+            {
+                await NJsonSchema.JsonSchema.FromJsonAsync(body.JsonSchema);
+            }
+            // NJsonSchema throws assorted undocumented exception types on bad schema JSON
+            // (JsonReaderException, InvalidOperationException, etc.) — catch-all is intentional.
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Rejected event type {EventTypeId}: jsonSchema is not valid JSON Schema", body.EventTypeId);
+                return new BadRequestObjectResult($"jsonSchema is not a valid JSON Schema: {ex.Message}");
+            }
+
+            // A declared sessionKeyPath must be a plausible JSONPath (starts with '$').
+            if (!string.IsNullOrWhiteSpace(body.SessionKeyPath) && !body.SessionKeyPath.TrimStart().StartsWith('$'))
+                return new BadRequestObjectResult("sessionKeyPath must be a JSONPath expression starting with '$'.");
 
             var agentId = CurrentAgentId();
             var schema = new EventSchema
@@ -264,7 +284,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 To = body.EventTypeId,
                 EventTypeId = body.EventTypeId,
-                SessionId = string.IsNullOrWhiteSpace(body.SessionId) ? Guid.NewGuid().ToString() : body.SessionId,
+                SessionId = ResolveSessionId(body, schema),
                 CorrelationId = Guid.NewGuid().ToString(),
                 MessageId = Guid.NewGuid().ToString(),
                 RetryCount = 0,
@@ -351,6 +371,57 @@ namespace NimBus.WebApp.Controllers.ApiContract
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────
+
+        // Resolves the session id that drives ADR-001 ordered processing. Precedence:
+        //   1. An explicit sessionId on the request always wins.
+        //   2. Else, if the schema declares a sessionKeyPath, derive the key from the
+        //      (already schema-valid) payload via JSONPath so events sharing a business
+        //      key land on the same session and preserve FIFO ordering.
+        //   3. Else — no path, or the path resolves to no scalar value — fall back to a
+        //      fresh GUID. A missing key degrades to unordered rather than failing publish.
+        private string ResolveSessionId(AgentPublishRequest body, EventSchema schema)
+        {
+            if (!string.IsNullOrWhiteSpace(body.SessionId))
+                return body.SessionId;
+
+            if (!string.IsNullOrWhiteSpace(schema.SessionKeyPath))
+            {
+                var derived = TryDeriveSessionKey(body.Payload, schema.SessionKeyPath, body.EventTypeId);
+                if (!string.IsNullOrEmpty(derived))
+                    return derived;
+            }
+
+            return Guid.NewGuid().ToString();
+        }
+
+        // Evaluates the schema's JSONPath against the payload, returning the scalar value at
+        // the path or null when there is none. A missing/null/object/array token or a
+        // malformed path yields null so the caller can fall back to a random session — a bad
+        // path must never surface as a 500.
+        private string? TryDeriveSessionKey(string payload, string sessionKeyPath, string eventTypeId)
+        {
+            try
+            {
+                var token = JToken.Parse(payload).SelectToken(sessionKeyPath);
+                if (token == null
+                    || token.Type == JTokenType.Null
+                    || token.Type == JTokenType.Object
+                    || token.Type == JTokenType.Array)
+                {
+                    return null;
+                }
+
+                var value = token.ToString();
+                return string.IsNullOrEmpty(value) ? null : value;
+            }
+            // SelectToken throws on a malformed JSONPath expression; a bad stored path must
+            // degrade to the GUID fallback, not 500. Catch-all matches this file's style.
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not derive session key via '{Path}' for {EventTypeId}; using a random session", sessionKeyPath, eventTypeId);
+                return null;
+            }
+        }
 
         // Demo-grade agent identity: read the X-Agent-Id header, defaulting to
         // "demo-agent" when absent. Full API-key auth is deferred (spec 022).

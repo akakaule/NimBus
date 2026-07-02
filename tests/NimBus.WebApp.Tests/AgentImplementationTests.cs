@@ -379,6 +379,38 @@ namespace NimBus.WebApp.Tests
                 "Empty jsonSchema must yield 400");
         }
 
+        [TestMethod]
+        public async Task PostAgentEventTypes_unparseable_jsonSchema_returns_400()
+        {
+            var (impl, store) = Build();
+            var req = ValidRequest(eventTypeId: "bad.schema.v1", jsonSchema: "{ this is not valid json schema");
+
+            var result = await impl.PostAgentEventTypesAsync(req);
+
+            Assert.IsInstanceOfType(result.Result, typeof(BadRequestObjectResult),
+                "An unparseable JSON Schema must be rejected at define time (400), not stored");
+            // Nothing must have been persisted.
+            Assert.IsNull(await store.GetSchema("bad.schema.v1"), "A rejected schema must not be stored");
+        }
+
+        [TestMethod]
+        public async Task PostAgentEventTypes_sessionKeyPath_not_starting_with_dollar_returns_400()
+        {
+            var (impl, store) = Build();
+            var req = new DefineEventTypeRequest
+            {
+                EventTypeId = "crm.contact.v1",
+                JsonSchema = "{\"type\":\"object\"}",
+                SessionKeyPath = "contactId", // missing leading '$'
+            };
+
+            var result = await impl.PostAgentEventTypesAsync(req);
+
+            Assert.IsInstanceOfType(result.Result, typeof(BadRequestObjectResult),
+                "A sessionKeyPath that is not a JSONPath (no leading '$') must yield 400");
+            Assert.IsNull(await store.GetSchema("crm.contact.v1"), "A rejected schema must not be stored");
+        }
+
         // ── PostAgentSubscribeAsync ──────────────────────────────────────────
 
         [TestMethod]
@@ -607,13 +639,14 @@ namespace NimBus.WebApp.Tests
         private const string IndustrySchema =
             "{\"type\":\"object\",\"required\":[\"industry\"],\"properties\":{\"industry\":{\"type\":\"string\"}}}";
 
-        private static async Task SeedSchema(InMemoryMessageStore store, string eventTypeId, string jsonSchema)
+        private static async Task SeedSchema(InMemoryMessageStore store, string eventTypeId, string jsonSchema, string? sessionKeyPath = null)
         {
             await store.DefineEventType(new NimBus.MessageStore.States.EventSchema
             {
                 EventTypeId = eventTypeId,
                 Name = eventTypeId,
                 JsonSchema = jsonSchema,
+                SessionKeyPath = sessionKeyPath,
                 Version = 1,
                 AgentId = "test",
                 CreatedUtc = DateTime.UtcNow,
@@ -717,6 +750,79 @@ namespace NimBus.WebApp.Tests
             Assert.IsInstanceOfType(result, typeof(OkResult));
             Assert.IsFalse(string.IsNullOrWhiteSpace(publisher.Published?.SessionId),
                 "A sessionId must be generated when none is supplied");
+        }
+
+        // ── PostAgentPublishAsync — sessionKeyPath derivation (finding 4) ────
+
+        // Schema with an optional (not required) contactId used to derive the session key.
+        private const string ContactSchema =
+            "{\"type\":\"object\",\"properties\":{\"contactId\":{\"type\":\"string\"}}}";
+
+        [TestMethod]
+        public async Task PostAgentPublish_derives_sessionId_from_sessionKeyPath_and_is_stable()
+        {
+            var (impl, store, publisher) = BuildWithPublisher();
+            await SeedSchema(store, "crm.contact.v1", ContactSchema, sessionKeyPath: "$.contactId");
+
+            AgentPublishRequest Req() => new AgentPublishRequest
+            {
+                EventTypeId = "crm.contact.v1",
+                Payload = "{\"contactId\":\"c-1\"}",
+            };
+
+            var first = await impl.PostAgentPublishAsync(Req());
+            var firstSession = publisher.Published?.SessionId;
+            var second = await impl.PostAgentPublishAsync(Req());
+            var secondSession = publisher.Published?.SessionId;
+
+            Assert.IsInstanceOfType(first, typeof(OkResult));
+            Assert.IsInstanceOfType(second, typeof(OkResult));
+            Assert.AreEqual("c-1", firstSession, "sessionId must be derived from the payload via sessionKeyPath");
+            Assert.AreEqual(firstSession, secondSession,
+                "Same business key must map to the same session so ordering is preserved");
+        }
+
+        [TestMethod]
+        public async Task PostAgentPublish_explicit_sessionId_overrides_sessionKeyPath()
+        {
+            var (impl, store, publisher) = BuildWithPublisher();
+            await SeedSchema(store, "crm.contact.v1", ContactSchema, sessionKeyPath: "$.contactId");
+
+            var result = await impl.PostAgentPublishAsync(new AgentPublishRequest
+            {
+                EventTypeId = "crm.contact.v1",
+                Payload = "{\"contactId\":\"c-1\"}",
+                SessionId = "explicit-session",
+            });
+
+            Assert.IsInstanceOfType(result, typeof(OkResult));
+            Assert.AreEqual("explicit-session", publisher.Published?.SessionId,
+                "An explicit sessionId must win over sessionKeyPath derivation");
+        }
+
+        [TestMethod]
+        public async Task PostAgentPublish_missing_sessionKey_value_falls_back_to_random_session()
+        {
+            var (impl, store, publisher) = BuildWithPublisher();
+            // Schema declares a sessionKeyPath but does NOT require the field, so a payload
+            // without it is schema-valid yet has no session key -> GUID fallback (unordered).
+            await SeedSchema(store, "crm.contact.v1", ContactSchema, sessionKeyPath: "$.contactId");
+
+            AgentPublishRequest Req() => new AgentPublishRequest
+            {
+                EventTypeId = "crm.contact.v1",
+                Payload = "{\"note\":\"no contact id here\"}",
+            };
+
+            var first = await impl.PostAgentPublishAsync(Req());
+            var firstSession = publisher.Published?.SessionId;
+            var second = await impl.PostAgentPublishAsync(Req());
+            var secondSession = publisher.Published?.SessionId;
+
+            Assert.IsInstanceOfType(first, typeof(OkResult), "A missing key must degrade to unordered, not fail");
+            Assert.IsTrue(Guid.TryParse(firstSession, out _), "The fallback session must be a fresh GUID");
+            Assert.AreNotEqual(firstSession, secondSession,
+                "Without a key each publish gets its own random session");
         }
 
         [TestMethod]

@@ -31,7 +31,6 @@ namespace NimBus.WebApp.Controllers.ApiContract
         private const string DefaultAgentId = "demo-agent";
 
         // The pending sub-status discriminator the Agent Zone subscriber parks events under.
-        private const string HandoffSubStatus = "Handoff";
 
         private readonly IEventSchemaStore _schemas;
         private readonly IPlatform _platform;
@@ -184,26 +183,23 @@ namespace NimBus.WebApp.Controllers.ApiContract
             var ct = _httpContextAccessor?.HttpContext?.RequestAborted ?? CancellationToken.None;
 
             // Build the type filter once: explicit query param wins; otherwise fall back
-            // to the agent's registered subscriptions; otherwise match anything.
+            // to the agent's registered subscriptions; otherwise match anything (null).
             var subscribed = _subscriptions.GetSubscriptions(CurrentAgentId());
-            Func<string, bool> matches;
+            IReadOnlyCollection<string>? eventTypeIds;
             if (!string.IsNullOrWhiteSpace(eventTypeId))
-                matches = t => string.Equals(t, eventTypeId, StringComparison.Ordinal);
+                eventTypeIds = new[] { eventTypeId };
             else if (subscribed.Count > 0)
-                matches = t => t != null && subscribed.Contains(t);
+                eventTypeIds = subscribed;
             else
-                matches = _ => true;
+                eventTypeIds = null;
 
             do
             {
-                // The Cosmos store returns null (not an empty sequence) when the zone
-                // container doesn't exist yet — coalesce so the query can't NRE → 500.
-                // A nothing-parked result simply falls through to 204. Genuine store
-                // faults (throttling, connectivity) are left to propagate as 500.
-                var parked = (await _store.GetPendingEventsOnSession(zoneId) ?? Enumerable.Empty<UnresolvedEvent>())
-                    .Where(e => string.Equals(e.PendingSubStatus, HandoffSubStatus, StringComparison.Ordinal))
-                    .Where(e => matches(e.EventTypeId))
-                    .FirstOrDefault();
+                // Bounded, server-side-filtered query: a single Pending+Handoff row for
+                // the zone (optionally restricted by event type), instead of draining
+                // every pending event just to long-poll. Genuine store faults
+                // (throttling, connectivity) are left to propagate as 500.
+                var parked = await _store.GetNextPendingHandoffEvent(zoneId, eventTypeIds);
 
                 if (parked != null)
                 {

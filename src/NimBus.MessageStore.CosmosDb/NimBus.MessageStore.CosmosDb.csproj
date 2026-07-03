@@ -4,7 +4,13 @@
 	  <TargetFramework>net10.0</TargetFramework>
     <EnableNETAnalyzers>false</EnableNETAnalyzers>
     <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <IsPackable>true</IsPackable>
+    <Description>Cosmos DB-backed implementation of the NimBus message store contracts, with per-endpoint containers (ADR-008).</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.17.1" />

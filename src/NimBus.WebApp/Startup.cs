@@ -492,10 +492,6 @@ namespace NimBus.WebApp
                 // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
                 app.UseHsts();
             }
-            app.UseCors(o =>
-            {
-                o.AllowCredentials().AllowAnyHeader().AllowAnyMethod().WithOrigins("login.microsoftonline.com").Build();
-            });
 
             app.UseHttpsRedirection();
 

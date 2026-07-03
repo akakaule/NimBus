@@ -27,9 +27,28 @@ internal sealed class InfrastructureDeployer
         }
 
         var existingLocations = await DiscoverExistingLocationsAsync(options.ResourceGroupName, cancellationToken).ConfigureAwait(false);
+        var existingPlans = await DiscoverExistingPlansAsync(options.ResourceGroupName, cancellationToken).ConfigureAwait(false);
+
+        // An existing deployment pins its plan choices (like the location pins):
+        // EP <-> Flex cannot convert in place, and re-runs must not silently
+        // rescale the management plan. Explicit CLI flags still win.
+        existingPlans.TryGetValue(names.CoreAppServicePlanName, out var existingCorePlan);
+        existingPlans.TryGetValue(names.ManagementAppServicePlanName, out var existingManagementPlan);
+
+        var resolverPlan = PlanSelection.ResolveResolverPlan(options.ResolverPlan, existingCorePlan?.Tier);
+        if (options.ResolverPlan is null && existingCorePlan is not null)
+        {
+            CliOutput.WriteLine($"Pinning resolver plan to the existing '{names.CoreAppServicePlanName}' plan type ({resolverPlan}).");
+        }
+
+        var managementPlanSku = PlanSelection.ResolveManagementPlanSku(options.ManagementPlanSku, existingManagementPlan?.SkuName, names.Environment);
+        if (string.IsNullOrWhiteSpace(options.ManagementPlanSku) && existingManagementPlan is not null)
+        {
+            CliOutput.WriteLine($"Pinning management plan SKU to the existing '{names.ManagementAppServicePlanName}' SKU ({managementPlanSku}).");
+        }
 
         CliOutput.WriteLine("Deploying core infrastructure...");
-        await DeployCoreInfrastructureAsync(options, names, existingLocations, cancellationToken).ConfigureAwait(false);
+        await DeployCoreInfrastructureAsync(options, names, resolverPlan, managementPlanSku, existingLocations, cancellationToken).ConfigureAwait(false);
 
         CliOutput.WriteLine("Preparing web app infrastructure inputs...");
         await _az.EnsureExtensionAsync("application-insights", cancellationToken).ConfigureAwait(false);
@@ -74,6 +93,7 @@ internal sealed class InfrastructureDeployer
             cosmosAccountEndpoint,
             sqlConnectionString,
             serviceBusFullyQualifiedNamespace,
+            PlanSelection.SupportsAlwaysOn(managementPlanSku),
             existingLocations,
             cancellationToken).ConfigureAwait(false);
     }
@@ -124,6 +144,50 @@ internal sealed class InfrastructureDeployer
         return locations;
     }
 
+    private async Task<Dictionary<string, ExistingAppServicePlan>> DiscoverExistingPlansAsync(string resourceGroupName, CancellationToken cancellationToken)
+    {
+        // The generic `az resource list` does not reliably populate sku, so ask the
+        // Web resource provider directly; one call covers both NimBus plans.
+        var plans = new Dictionary<string, ExistingAppServicePlan>(StringComparer.OrdinalIgnoreCase);
+        var result = await _az.TryRunAsync(
+            new[]
+            {
+                "appservice", "plan", "list",
+                "--resource-group", resourceGroupName,
+                "--query", "[].{name:name, skuName:sku.name, tier:sku.tier}",
+                "--output", "json",
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        if (!result.Succeeded || string.IsNullOrWhiteSpace(result.StandardOutput))
+        {
+            return plans;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(result.StandardOutput);
+            foreach (var element in doc.RootElement.EnumerateArray())
+            {
+                var name = element.TryGetProperty("name", out var nameElement) ? nameElement.GetString() : null;
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+
+                var skuName = element.TryGetProperty("skuName", out var skuElement) ? skuElement.GetString() : null;
+                var tier = element.TryGetProperty("tier", out var tierElement) ? tierElement.GetString() : null;
+                plans[name] = new ExistingAppServicePlan(skuName ?? string.Empty, tier ?? string.Empty);
+            }
+        }
+        catch (JsonException)
+        {
+            // Resource group is empty or the response isn't JSON-shaped — proceed with no pins.
+        }
+
+        return plans;
+    }
+
     private static void AddPinnedLocation(List<string> arguments, IReadOnlyDictionary<string, string> existingLocations, string resourceName, string bicepParamName, List<(string Name, string Location)> pinned)
     {
         if (existingLocations.TryGetValue(resourceName, out var location) && !string.IsNullOrWhiteSpace(location))
@@ -159,11 +223,11 @@ internal sealed class InfrastructureDeployer
             ? names.SqlServerName
             : options.SqlServerName!.ToLowerInvariant();
 
-    private async Task DeployCoreInfrastructureAsync(InfrastructureOptions options, DeploymentNames names, IReadOnlyDictionary<string, string> existingLocations, CancellationToken cancellationToken)
+    private async Task DeployCoreInfrastructureAsync(InfrastructureOptions options, DeploymentNames names, ResolverPlanChoice resolverPlan, string managementPlanSku, IReadOnlyDictionary<string, string> existingLocations, CancellationToken cancellationToken)
     {
         var storageProviderParam = options.StorageProvider == StorageProviderChoice.SqlServer ? "sqlserver" : "cosmos";
         var sqlModeParam = options.SqlMode == SqlProvisioningMode.External ? "external" : "provision";
-        var resolverPlanParam = options.ResolverPlan == ResolverPlanChoice.FlexConsumption ? "FlexConsumption" : "ElasticPremium";
+        var resolverPlanParam = resolverPlan == ResolverPlanChoice.FlexConsumption ? "FlexConsumption" : "ElasticPremium";
 
         var arguments = new List<string>
         {
@@ -178,6 +242,7 @@ internal sealed class InfrastructureDeployer
             $"storageProvider={storageProviderParam}",
             $"sqlMode={sqlModeParam}",
             $"resolverPlan={resolverPlanParam}",
+            $"managementPlanSku={managementPlanSku}",
         };
 
         if (options.StorageProvider == StorageProviderChoice.SqlServer && options.SqlMode == SqlProvisioningMode.Provision)
@@ -231,6 +296,7 @@ internal sealed class InfrastructureDeployer
         string cosmosAccountEndpoint,
         string sqlConnectionString,
         string serviceBusFullyQualifiedNamespace,
+        bool alwaysOnEnabled,
         IReadOnlyDictionary<string, string> existingLocations,
         CancellationToken cancellationToken)
     {
@@ -249,6 +315,7 @@ internal sealed class InfrastructureDeployer
             $"cosmosAccountEndpoint={cosmosAccountEndpoint}",
             $"sqlConnectionString={sqlConnectionString}",
             $"serviceBusFullyQualifiedNamespace={serviceBusFullyQualifiedNamespace}",
+            $"alwaysOnEnabled={(alwaysOnEnabled ? "true" : "false")}",
         };
 
         if (!string.IsNullOrWhiteSpace(options.IdentityAdminEmail))
@@ -330,4 +397,6 @@ internal sealed class InfrastructureDeployer
 
     private static string GetServiceBusFullyQualifiedNamespace(string namespaceName) =>
         $"{namespaceName}.servicebus.windows.net";
+
+    private sealed record ExistingAppServicePlan(string SkuName, string Tier);
 }

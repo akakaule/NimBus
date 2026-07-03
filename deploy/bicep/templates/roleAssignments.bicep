@@ -11,9 +11,10 @@ param storageProvider string = 'cosmos'
 // When the resolver runs on Flex Consumption, it needs identity-based access to
 // the function-app storage account: the AzureWebJobsStorage host runtime AND the
 // deployment package container (functionAppConfig.deployment.storage with
-// SystemAssignedIdentity) both require Storage Blob Data Contributor.
+// SystemAssignedIdentity). Storage Blob Data Owner is the documented minimum for
+// identity-based host storage — the host key store lives in blobs.
 param funcStorageAccountName string = ''
-param grantFuncStorageBlobDataContributor bool = false
+param grantFuncStorageBlobAccess bool = false
 
 // ----------------------------------------------------------------------------
 // Service Bus Data Owner — required regardless of storage provider so the
@@ -59,22 +60,22 @@ resource cosmosRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssi
 }
 
 // ----------------------------------------------------------------------------
-// Storage Blob Data Contributor on the function storage account — only when the
+// Storage Blob Data Owner on the function storage account — only when the
 // resolver runs on Flex Consumption (which uses SystemAssignedIdentity for both
 // AzureWebJobsStorage and the app-package container).
 // ----------------------------------------------------------------------------
 
-var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+var storageBlobDataOwnerRoleId = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
 
-resource funcStorageAccount 'Microsoft.Storage/storageAccounts@2021-09-01' existing = if (grantFuncStorageBlobDataContributor) {
+resource funcStorageAccount 'Microsoft.Storage/storageAccounts@2021-09-01' existing = if (grantFuncStorageBlobAccess) {
   name: funcStorageAccountName
 }
 
-resource funcStorageBlobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (grantFuncStorageBlobDataContributor) {
-  name: guid(funcStorageAccount.id, principalId, storageBlobDataContributorRoleId)
+resource funcStorageBlobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (grantFuncStorageBlobAccess) {
+  name: guid(funcStorageAccount.id, principalId, storageBlobDataOwnerRoleId)
   scope: funcStorageAccount
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataOwnerRoleId)
     principalId: principalId
     principalType: 'ServicePrincipal'
   }

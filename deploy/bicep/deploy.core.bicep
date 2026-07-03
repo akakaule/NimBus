@@ -42,14 +42,19 @@ param sqlAdminPassword string = ''
 // Empty means "use the default sql-{solutionId}-{environment}".
 param sqlServerName string = ''
 
-// Resolver Function App hosting plan. 'ElasticPremium' (default, EP1, Windows)
-// preserves the existing behavior. 'FlexConsumption' provisions a Flex Consumption
-// plan (FC1, Linux) that scales to zero — significantly cheaper for dev/test.
+// Resolver Function App hosting plan. 'FlexConsumption' (default, FC1, Linux)
+// scales to zero and is significantly cheaper. 'ElasticPremium' (EP1, Windows)
+// remains available for workloads that need it. The CLI pins the plan type of an
+// existing deployment because Azure cannot convert between the two in place.
 @allowed([
   'ElasticPremium'
   'FlexConsumption'
 ])
-param resolverPlan string = 'ElasticPremium'
+param resolverPlan string = 'FlexConsumption'
+
+// SKU for the management App Service Plan hosting the WebApp. Empty means
+// "environment default": B1 for dev/development, S1 otherwise.
+param managementPlanSku string = ''
 
 //##############################################
 // Define names Azure resource names
@@ -91,6 +96,15 @@ var funcStorageAccountName = 'st${toLower(solutionId)}${toLower(environment)}fun
 
 var appInsightsName = 'ai-${toLower(solutionId)}-${toLower(environment)}-global-tracelog'
 
+var isDevelopmentEnvironment = contains([
+  'dev'
+  'development'
+], toLower(environment))
+
+var effectiveManagementPlanSku = empty(managementPlanSku)
+  ? (isDevelopmentEnvironment ? 'B1' : 'S1')
+  : managementPlanSku
+
 //##############################################
 //# Create Service Bus namespace
 //##############################################
@@ -106,8 +120,6 @@ module serviceBusNamespace 'templates/servicebusNamespace.bicep' = {
 //##############################################
 //# Create Application Insights (for global trace log)
 //##############################################
-
-//TODO: MANGLER API KEY
 
 module applicationinsights 'templates/applicationInsights.bicep' = {
   name: 'AppinsightsDeploy'
@@ -169,7 +181,7 @@ module appserviceplan 'templates/appServicePlan.bicep' = {
   name: 'ManagementPlanDeploy'
   params: {
     name: managementAppServicePlanName
-    skuName: 'S1'
+    skuName: effectiveManagementPlanSku
     location: effectiveManagementAppServicePlanLocation
   }
 }
@@ -211,6 +223,16 @@ var elasticPremiumExtraSettings = resolverPlan == 'ElasticPremium' ? [
   }
 ] : []
 
+// The Elastic Premium template injects APPINSIGHTS_INSTRUMENTATIONKEY itself; the
+// Flex template does not, so wire platform telemetry here via the (non-deprecated)
+// connection-string setting.
+var flexExtraSettings = resolverPlan == 'FlexConsumption' ? [
+  {
+    name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+    value: applicationinsights.outputs.connectionString
+  }
+] : []
+
 var cosmosResolverSetting = storageProvider == 'cosmos' ? [
   {
     name: 'CosmosAccountEndpoint'
@@ -225,7 +247,7 @@ var sqlResolverSetting = storageProvider == 'sqlserver' && sqlMode == 'provision
   }
 ] : []
 
-var resolverappsettings = concat(sharedResolverSettings, elasticPremiumExtraSettings, cosmosResolverSetting, sqlResolverSetting)
+var resolverappsettings = concat(sharedResolverSettings, elasticPremiumExtraSettings, flexExtraSettings, cosmosResolverSetting, sqlResolverSetting)
 
 //##############################################
 //# Resolver: Hosting plan + Function App (Elastic Premium branch)
@@ -289,8 +311,9 @@ var resolverPrincipalId = resolverPlan == 'FlexConsumption'
 // Service Bus RBAC must always be granted to the resolver identity (managed-identity
 // access to receive/complete messages). Cosmos role assignment is gated inside the
 // module so SQL deployments don't try to create Cosmos sqlRoleAssignments resources.
-// Flex Consumption additionally needs Storage Blob Data Contributor on the function
-// storage account for the deployment package + AzureWebJobsStorage host runtime.
+// Flex Consumption additionally needs Storage Blob Data Owner on the function
+// storage account for the deployment package + AzureWebJobsStorage host runtime
+// (the host key store lives in blobs and requires Owner, not Contributor).
 module resolverRoleAssignments 'templates/roleAssignments.bicep' = {
   name: 'resolverRoleAssignmentsDeploy'
   params: {
@@ -299,6 +322,6 @@ module resolverRoleAssignments 'templates/roleAssignments.bicep' = {
     principalId: resolverPrincipalId
     storageProvider: storageProvider
     funcStorageAccountName: funcStorageAccountName
-    grantFuncStorageBlobDataContributor: resolverPlan == 'FlexConsumption'
+    grantFuncStorageBlobAccess: resolverPlan == 'FlexConsumption'
   }
 }

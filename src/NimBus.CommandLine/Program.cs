@@ -82,16 +82,6 @@ internal static class Program
         };
     }
 
-    private static ResolverPlanChoice ParseResolverPlan(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return ResolverPlanChoice.ElasticPremium;
-        return value.Replace("-", "", StringComparison.Ordinal).ToLowerInvariant() switch
-        {
-            "elasticpremium" or "ep1" or "premium" => ResolverPlanChoice.ElasticPremium,
-            "flexconsumption" or "flex" or "fc1" => ResolverPlanChoice.FlexConsumption,
-            _ => throw new InvalidOperationException($"Unknown --resolver-plan value '{value}'. Expected 'ElasticPremium' or 'FlexConsumption'."),
-        };
-    }
 
     private static void ConfigureInfraCommands(CommandLineApplication app)
     {
@@ -118,7 +108,8 @@ internal static class Program
                 var sqlAdminLogin = applyCommand.Option("--sql-admin-login <VALUE>", "SQL admin login when --sql-mode is 'provision'.", CommandOptionType.SingleValue);
                 var sqlAdminPassword = applyCommand.Option("--sql-admin-password <VALUE>", "SQL admin password when --sql-mode is 'provision'.", CommandOptionType.SingleValue);
                 var sqlServerName = applyCommand.Option("--sql-server-name <NAME>", "Override the SQL server name (default: 'sql-{solution-id}-{environment}'). Use this when the default DNS name is held in Azure's global namespace from a recent delete (24-72h cooldown).", CommandOptionType.SingleValue);
-                var resolverPlan = applyCommand.Option("--resolver-plan <PLAN>", "Hosting plan for the resolver Function App: ElasticPremium | FlexConsumption. Defaults to 'ElasticPremium' (EP1, Windows). 'FlexConsumption' is the cheaper scale-to-zero Linux option suited for dev/test.", CommandOptionType.SingleValue);
+                var resolverPlan = applyCommand.Option("--resolver-plan <PLAN>", "Hosting plan for the resolver Function App: ElasticPremium | FlexConsumption. Defaults to the existing plan when one is deployed, otherwise 'FlexConsumption' (FC1, scale-to-zero Linux). 'ElasticPremium' (EP1, Windows) remains available.", CommandOptionType.SingleValue);
+                var managementPlanSku = applyCommand.Option("--management-plan-sku <SKU>", "SKU for the management App Service Plan hosting the WebApp. Defaults to the existing plan's SKU when one is deployed, otherwise 'B1' for dev/development and 'S1' for other environments.", CommandOptionType.SingleValue);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
@@ -128,7 +119,7 @@ internal static class Program
 
                     var providerChoice = ParseStorageProvider(storageProvider.Value());
                     var sqlProvisioningMode = ParseSqlMode(sqlMode.Value());
-                    var resolverPlanChoice = ParseResolverPlan(resolverPlan.Value());
+                    var resolverPlanChoice = PlanSelection.ParseResolverPlanOption(resolverPlan.Value());
 
                     if (providerChoice == StorageProviderChoice.SqlServer)
                     {
@@ -152,7 +143,8 @@ internal static class Program
                         sqlAdminLogin.Value(),
                         sqlAdminPassword.Value(),
                         sqlServerName.Value(),
-                        resolverPlanChoice);
+                        resolverPlanChoice,
+                        ManagementPlanSku: managementPlanSku.Value());
 
                     await deployer.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
                     return 0;
@@ -257,7 +249,8 @@ internal static class Program
             var resourceNamePostfix = setupCommand.Option("--resource-name-postfix <VALUE>", "Reserved for compatibility with the legacy pipeline scripts.", CommandOptionType.SingleValue);
             var webAppVersion = setupCommand.Option("--webapp-version <VALUE>", "Version string stored in the web app settings.", CommandOptionType.SingleValue);
             var configuration = setupCommand.Option("--configuration <NAME>", "Build configuration passed to dotnet publish.", CommandOptionType.SingleValue);
-            var setupResolverPlan = setupCommand.Option("--resolver-plan <PLAN>", "Hosting plan for the resolver Function App: ElasticPremium | FlexConsumption. Defaults to 'ElasticPremium'. Use 'FlexConsumption' for cheaper dev/test.", CommandOptionType.SingleValue);
+            var setupResolverPlan = setupCommand.Option("--resolver-plan <PLAN>", "Hosting plan for the resolver Function App: ElasticPremium | FlexConsumption. Defaults to the existing plan when one is deployed, otherwise 'FlexConsumption' (FC1, scale-to-zero Linux).", CommandOptionType.SingleValue);
+            var setupManagementPlanSku = setupCommand.Option("--management-plan-sku <SKU>", "SKU for the management App Service Plan hosting the WebApp. Defaults to the existing plan's SKU when one is deployed, otherwise 'B1' for dev/development and 'S1' for other environments.", CommandOptionType.SingleValue);
             var setupStorageProvider = setupCommand.Option("--storage-provider <PROVIDER>", "Storage provider for NimBus message persistence: cosmos | sqlserver. Defaults to 'cosmos' for backwards compatibility.", CommandOptionType.SingleValue);
             var setupSqlMode = setupCommand.Option("--sql-mode <MODE>", "When --storage-provider is sqlserver: 'provision' deploys a new Azure SQL resource; 'external' uses --sql-connection-string.", CommandOptionType.SingleValue);
             var setupSqlConnectionString = setupCommand.Option("--sql-connection-string <VALUE>", "Pre-existing SQL Server connection string. Required when --sql-mode is 'external'.", CommandOptionType.SingleValue);
@@ -305,9 +298,10 @@ internal static class Program
                     setupSqlAdminLogin.Value(),
                     setupSqlAdminPassword.Value(),
                     setupSqlServerName.Value(),
-                    ParseResolverPlan(setupResolverPlan.Value()),
+                    PlanSelection.ParseResolverPlanOption(setupResolverPlan.Value()),
                     setupIdentityAdminEmail.Value(),
-                    setupIdentityAdminPassword.Value());
+                    setupIdentityAdminPassword.Value(),
+                    setupManagementPlanSku.Value());
 
                 var topologyOptions = new TopologyOptions(solutionId.Value(), environment.Value(), resourceGroup.Value());
                 var appOptions = new AppDeploymentOptions(

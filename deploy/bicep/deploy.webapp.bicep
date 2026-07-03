@@ -37,6 +37,10 @@ param webAppLocation string = ''
 // the global default.
 param managementAppServicePlanLocation string = ''
 
+// Always On keeps the WebApp warm. Supported on Basic and above; the CLI passes
+// false when the management plan runs on a Free/Shared SKU (F1/D1).
+param alwaysOnEnabled bool = true
+
 //##############################################
 // Define names Azure resource names
 //##############################################
@@ -164,7 +168,7 @@ module webAppModule 'templates/webApp.bicep' = {
     appName:managementWebAppName
     appServicePlanId:'/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Web/serverfarms/${appServicePlanName}'
     location:effectiveWebAppLocation
-    alwaysOn: true
+    alwaysOn: alwaysOnEnabled
     settings:webappsettings
   }
 }

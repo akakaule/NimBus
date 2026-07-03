@@ -121,9 +121,10 @@ internal sealed record InfrastructureOptions(
     string? SqlAdminLogin = null,
     string? SqlAdminPassword = null,
     string? SqlServerName = null,
-    ResolverPlanChoice ResolverPlan = ResolverPlanChoice.ElasticPremium,
+    ResolverPlanChoice? ResolverPlan = null,
     string? IdentityAdminEmail = null,
-    string? IdentityAdminPassword = null);
+    string? IdentityAdminPassword = null,
+    string? ManagementPlanSku = null);
 
 internal enum StorageProviderChoice
 {

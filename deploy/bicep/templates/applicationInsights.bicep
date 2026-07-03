@@ -12,3 +12,4 @@ resource ai 'Microsoft.Insights/components@2020-02-02-preview' = {
 
 output instrumentationKey string = ai.properties.InstrumentationKey
 output appId string = ai.properties.AppId
+output connectionString string = ai.properties.ConnectionString

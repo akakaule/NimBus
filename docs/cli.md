@@ -4,10 +4,18 @@ Command-line tool for provisioning Azure infrastructure, managing Service Bus to
 
 ## Installation
 
-The CLI is distributed as a .NET tool:
+The CLI is distributed as a .NET tool (package `Akaule.NimBus.CommandLine` — the bare
+`NimBus.*` prefix is reserved on nuget.org, assemblies and namespaces stay `NimBus.*`):
 
 ```bash
-dotnet tool install --global NimBus.CommandLine
+dotnet tool install --global Akaule.NimBus.CommandLine
+```
+
+Or run it npx-style without installing, via `dnx` (ships with the .NET 10 SDK). The `--`
+separator is required so tool options aren't picked up by `dnx` itself:
+
+```bash
+dnx Akaule.NimBus.CommandLine -- <command> [options]
 ```
 
 Or run directly from source:
@@ -15,6 +23,21 @@ Or run directly from source:
 ```bash
 dotnet run --project src/NimBus.CommandLine -- <command>
 ```
+
+### One-command cloud install
+
+From a repository clone (the CLI needs the bicep templates and app sources), a single
+command provisions the infrastructure, applies the Service Bus topology, and deploys
+the resolver + management WebApp:
+
+```bash
+git clone https://github.com/akakaule/NimBus && cd NimBus
+dnx Akaule.NimBus.CommandLine -- setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
+```
+
+Prerequisites: .NET 10 SDK (provides `dnx`), Node.js 22 (the WebApp SPA builds during
+`dotnet publish`), and Azure CLI ≥ 2.70 logged in via `az login` (older versions have
+Flex Consumption zip-deploy bugs).
 
 ## Global Options
 
@@ -72,11 +95,14 @@ nb infra apply --solution-id nimbus --environment dev --resource-group rg-nimbus
 | `--sql-admin-login` | Conditional | Required when `--sql-mode provision` |
 | `--sql-admin-password` | Conditional | Required when `--sql-mode provision` |
 | `--sql-server-name` | No | Override the SQL server name (default: `sql-{solution-id}-{environment}`). Useful when the default DNS name is held in Azure's global namespace from a recent delete (24–72h cooldown). |
-| `--resolver-plan` | No | Resolver Function App hosting plan: `ElasticPremium` (default, EP1 Windows) or `FlexConsumption` (scale-to-zero Linux, cheaper for dev/test) |
+| `--resolver-plan` | No | Resolver Function App hosting plan: `FlexConsumption` (default for new deployments; FC1, scale-to-zero Linux) or `ElasticPremium` (EP1 Windows). Existing deployments keep their current plan type unless this flag is passed. |
+| `--management-plan-sku` | No | SKU for the management App Service Plan hosting the WebApp. Default for new deployments: `B1` for `dev`/`development`, `S1` otherwise. Existing deployments keep their current SKU unless this flag is passed. |
 
 Deploys core infrastructure (Service Bus, App Insights, and either Cosmos DB or Azure SQL depending on `--storage-provider`) and the web app infrastructure via bicep. The provisioned SQL path uses AAD managed-identity auth (`Authentication=Active Directory Default`); the external path uses the supplied connection string verbatim. Automatically creates an Application Insights API key and resolves required resource endpoints/namespace settings.
 
 **Existing-resource location pinning.** Before deploying, the CLI lists the resources already in the target resource group and pins each known NimBus resource (Service Bus, App Insights, Cosmos, SQL Server, function storage, app service plans, function app, web app) to its current location. This avoids the `InvalidResourceLocation` error Azure raises when a same-named resource already exists in another region. Net-new resources still use `--location` (or `westeurope` if unset). To actually move a resource between regions, delete it first.
+
+**Existing-plan pinning.** The same applies to hosting plans: an existing core App Service Plan pins the resolver plan type (Azure cannot convert between Elastic Premium and Flex Consumption in place), and an existing management plan pins its SKU so re-runs never silently rescale it. Explicit `--resolver-plan` / `--management-plan-sku` flags win; a `--resolver-plan` that conflicts with the existing plan type fails with guidance (delete both the resolver Function App and the core plan first).
 
 ---
 
@@ -136,7 +162,7 @@ nb deploy apps --solution-id nimbus --environment dev --resource-group rg-nimbus
 | `--repo-root` | No | Repository root (auto-detected) |
 | `--configuration` | No | Build configuration (default: `Release`) |
 
-Publishes the resolver (Azure Function) and web app, packages as ZIP, and deploys via Azure CLI.
+Publishes the resolver (Azure Function) and web app, packages as ZIP, and deploys via Azure CLI. On a Flex Consumption resolver the zip is deployed directly (the app must stay running — the Azure CLI verifies host health after publishing); on Elastic Premium the app is stopped for the deployment and restarted afterwards.
 
 ---
 
@@ -148,7 +174,7 @@ Run infrastructure, topology, and app deployment in sequence.
 nb setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
-Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-connection-string`, `--sql-admin-login`, `--sql-admin-password`, `--sql-server-name`, and `--resolver-plan`.
+Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-connection-string`, `--sql-admin-login`, `--sql-admin-password`, `--sql-server-name`, `--resolver-plan`, and `--management-plan-sku`.
 
 ---
 

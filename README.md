@@ -113,9 +113,12 @@ Next steps:
 
 ### Install
 
+Packages publish under the `Akaule.NimBus.*` prefix (the bare `NimBus.*` prefix is
+reserved on nuget.org); assemblies and namespaces stay `NimBus.*`:
+
 ```shell
-dotnet add package NimBus.SDK
-dotnet tool install -g NimBus.CommandLine
+dotnet add package Akaule.NimBus.SDK
+dotnet tool install -g Akaule.NimBus.CommandLine
 ```
 
 ### Publishing
@@ -172,7 +175,7 @@ Alternatively, install it as a local dotnet tool:
 
 ```powershell
 dotnet pack .\src\NimBus.CommandLine
-dotnet tool install --global --add-source .\src\NimBus.CommandLine\nupkg NimBus.CommandLine
+dotnet tool install --global --add-source .\src\NimBus.CommandLine\nupkg Akaule.NimBus.CommandLine
 nb <command> [options]
 ```
 
@@ -195,6 +198,18 @@ dotnet run --project .\src\NimBus.CommandLine -- setup `
 ```
 
 This runs `infra apply`, `topology apply`, and `deploy apps` in sequence.
+
+Or npx-style from a fresh clone, without building anything first (`dnx` ships with the .NET 10 SDK):
+
+```powershell
+git clone https://github.com/akakaule/NimBus; cd NimBus
+dnx Akaule.NimBus.CommandLine -- setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
+```
+
+New deployments default to the cheapest sensible hosting: the resolver runs on a Flex Consumption
+plan (FC1, scales to zero) and the management WebApp plan is `B1` for `dev`/`development`
+(`S1` for other environments). Existing deployments keep their current plans on re-runs; see
+`--resolver-plan` and `--management-plan-sku` in [docs/cli.md](docs/cli.md).
 
 ### Commands
 

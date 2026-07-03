@@ -8,7 +8,13 @@
     <!-- CA1848 (LoggerMessage delegates) / CA1873 (log-arg evaluation) are perf analyzers; the
          SDK's low-frequency lifecycle logging doesn't warrant source-gen delegates. -->
     <NoWarn>$(NoWarn);CA1848;CA1873</NoWarn>
+    <IsPackable>true</IsPackable>
+    <Description>REST-gateway agent SDK for NimBus: build an AI/agent bus participant from a single IAgentHandler with zero Service Bus or topology code.</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />

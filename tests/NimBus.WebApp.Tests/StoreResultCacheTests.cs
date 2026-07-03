@@ -81,7 +81,7 @@ public sealed class StoreResultCacheTests
                 : Task.FromResult(7);
         }
 
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => cache.GetOrCreateAsync("k", TimeSpan.FromMinutes(1), FailingThenSucceeding));
         var second = await cache.GetOrCreateAsync("k", TimeSpan.FromMinutes(1), FailingThenSucceeding);
 

@@ -21,7 +21,7 @@ public class DeferredMessageProcessorTests
     [TestMethod]
     public void Constructor_NullClient_ThrowsArgumentNullException()
     {
-        Assert.ThrowsException<ArgumentNullException>(() => new DeferredMessageProcessor(null!));
+        Assert.ThrowsExactly<ArgumentNullException>(() => new DeferredMessageProcessor(null!));
     }
 
     [TestMethod]
@@ -41,7 +41,7 @@ public class DeferredMessageProcessorTests
     {
         var sut = new DeferredMessageProcessor(new RecordingServiceBusClient());
 
-        await Assert.ThrowsExceptionAsync<ArgumentException>(
+        await Assert.ThrowsExactlyAsync<ArgumentException>(
             () => sut.ProcessDeferredMessagesAsync(null!, "my-topic"));
     }
 
@@ -50,7 +50,7 @@ public class DeferredMessageProcessorTests
     {
         var sut = new DeferredMessageProcessor(new RecordingServiceBusClient());
 
-        await Assert.ThrowsExceptionAsync<ArgumentException>(
+        await Assert.ThrowsExactlyAsync<ArgumentException>(
             () => sut.ProcessDeferredMessagesAsync("", "my-topic"));
     }
 
@@ -59,7 +59,7 @@ public class DeferredMessageProcessorTests
     {
         var sut = new DeferredMessageProcessor(new RecordingServiceBusClient());
 
-        await Assert.ThrowsExceptionAsync<ArgumentException>(
+        await Assert.ThrowsExactlyAsync<ArgumentException>(
             () => sut.ProcessDeferredMessagesAsync("session-1", null!));
     }
 
@@ -68,7 +68,7 @@ public class DeferredMessageProcessorTests
     {
         var sut = new DeferredMessageProcessor(new RecordingServiceBusClient());
 
-        await Assert.ThrowsExceptionAsync<ArgumentException>(
+        await Assert.ThrowsExactlyAsync<ArgumentException>(
             () => sut.ProcessDeferredMessagesAsync("session-1", ""));
     }
 
@@ -335,7 +335,7 @@ public class DeferredMessageProcessorTests
             new ServiceBusException("busy", ServiceBusFailureReason.ServiceBusy);
         var sut = new DeferredMessageProcessor(client);
 
-        var ex = await Assert.ThrowsExceptionAsync<TransientException>(
+        var ex = await Assert.ThrowsExactlyAsync<TransientException>(
             () => sut.ProcessDeferredMessagesAsync("session-1", "my-topic"));
 
         Assert.IsInstanceOfType(ex.InnerException, typeof(ServiceBusException));
@@ -366,7 +366,7 @@ public class DeferredMessageProcessorTests
         using var capture = ReplayTelemetryCapture.Start();
         var sut = new DeferredMessageProcessor(client);
 
-        await Assert.ThrowsExceptionAsync<OperationCanceledException>(
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(
             () => sut.ProcessDeferredMessagesAsync("session-1", "billing", cts.Token));
 
         Assert.AreEqual(1, client.Sender.SentMessages.Count, "Only the first message should have been republished");
@@ -521,7 +521,7 @@ public class DeferredMessageProcessorTests
             new ServiceBusException("busy", ServiceBusFailureReason.ServiceBusy);
         var sut = new DeferredMessageProcessor(client);
 
-        await Assert.ThrowsExceptionAsync<TransientException>(
+        await Assert.ThrowsExactlyAsync<TransientException>(
             () => sut.ProcessDeferredMessagesAsync("session-1", "billing"));
 
         var span = capture.Activities.Single(a => a.OperationName == "NimBus.DeferredProcessor.Replay");

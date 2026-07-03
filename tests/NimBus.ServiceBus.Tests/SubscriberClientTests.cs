@@ -18,21 +18,21 @@ public class SubscriberClientTests
     [TestMethod]
     public void CreateAsync_NullClient_ThrowsArgumentNullException()
     {
-        Assert.ThrowsException<ArgumentNullException>(() =>
+        Assert.ThrowsExactly<ArgumentNullException>(() =>
             SubscriberClient.CreateAsync(null!, "endpoint").GetAwaiter().GetResult());
     }
 
     [TestMethod]
     public void CreateAsync_NullEndpoint_ThrowsArgumentException()
     {
-        Assert.ThrowsException<ArgumentException>(() =>
+        Assert.ThrowsExactly<ArgumentException>(() =>
             SubscriberClient.CreateAsync(new RecordingServiceBusClient(), null!).GetAwaiter().GetResult());
     }
 
     [TestMethod]
     public void CreateAsync_EmptyEndpoint_ThrowsArgumentException()
     {
-        Assert.ThrowsException<ArgumentException>(() =>
+        Assert.ThrowsExactly<ArgumentException>(() =>
             SubscriberClient.CreateAsync(new RecordingServiceBusClient(), "").GetAwaiter().GetResult());
     }
 
@@ -133,14 +133,14 @@ public class SubscriberClientTests
     [TestMethod]
     public void ObsoleteConstructor_NullClient_ThrowsArgumentNullException()
     {
-        Assert.ThrowsException<ArgumentNullException>(() =>
+        Assert.ThrowsExactly<ArgumentNullException>(() =>
             new SubscriberClient(null!, "orders"));
     }
 
     [TestMethod]
     public void ObsoleteConstructor_EmptyEndpoint_ThrowsArgumentException()
     {
-        Assert.ThrowsException<ArgumentException>(() =>
+        Assert.ThrowsExactly<ArgumentException>(() =>
             new SubscriberClient(new RecordingServiceBusClient(), ""));
     }
 

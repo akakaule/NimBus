@@ -57,7 +57,7 @@ public sealed class StoreDecoratorTests
             new ThrowingStore(new InvalidOperationException("store down")),
             "test");
 
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => sut.UploadFailedMessage("event-1", "session-1", "ep-1", new UnresolvedEvent()));
         meterProvider.ForceFlush();
 
@@ -127,7 +127,7 @@ public sealed class StoreDecoratorTests
         var sut = NimBusOpenTelemetryDecorators.InstrumentMessageTrackingStore(
             new ThrowingStore(new InvalidOperationException("nope")), "test", options);
 
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => sut.UploadCompletedMessage("e", "s", "ep", new UnresolvedEvent()));
         tracer.ForceFlush();
 

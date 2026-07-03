@@ -87,11 +87,10 @@ public class SessionKeyAttributeTests
     }
 
     [TestMethod]
-    [ExpectedException(typeof(InvalidOperationException))]
     public void GetSessionId_AttributeReferencesNonExistentProperty_Throws()
     {
         var evt = new OrderWithBadAttribute { OrderId = Guid.NewGuid() };
-        evt.GetSessionId();
+        Assert.ThrowsExactly<InvalidOperationException>(() => evt.GetSessionId());
     }
 
     [TestMethod]

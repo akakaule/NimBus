@@ -116,7 +116,7 @@ public class NimBusAgentApiClientTests
     {
         var (client, _) = CreateClient(HttpStatusCode.Conflict, "Schema conflict");
 
-        var ex = await Assert.ThrowsExceptionAsync<NimBusApiException>(
+        var ex = await Assert.ThrowsExactlyAsync<NimBusApiException>(
             () => client.DefineEventTypeAsync(
                 new DefineEventTypeRequest("order.created", "{}", null, null, null)));
 
@@ -234,7 +234,7 @@ public class NimBusAgentApiClientTests
     {
         var (client, _) = CreateClient(HttpStatusCode.BadRequest, "Schema validation failed");
 
-        var ex = await Assert.ThrowsExceptionAsync<NimBusApiException>(
+        var ex = await Assert.ThrowsExactlyAsync<NimBusApiException>(
             () => client.PublishAsync(new AgentPublishRequest("order.created", "{}", null)));
 
         Assert.AreEqual(400, ex.StatusCode);
@@ -246,7 +246,7 @@ public class NimBusAgentApiClientTests
     {
         var (client, _) = CreateClient(HttpStatusCode.NotFound, "Event type not found");
 
-        var ex = await Assert.ThrowsExceptionAsync<NimBusApiException>(
+        var ex = await Assert.ThrowsExactlyAsync<NimBusApiException>(
             () => client.PublishAsync(new AgentPublishRequest("unknown.type", "{}", null)));
 
         Assert.AreEqual(404, ex.StatusCode);

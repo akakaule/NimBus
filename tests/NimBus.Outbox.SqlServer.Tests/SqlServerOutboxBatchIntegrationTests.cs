@@ -73,7 +73,7 @@ public sealed class SqlServerOutboxBatchIntegrationTests
         TraceState = null,
     };
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(1)]
     [DataRow(100)]
     [DataRow(101)]
@@ -100,7 +100,7 @@ public sealed class SqlServerOutboxBatchIntegrationTests
         var messages = Enumerable.Range(0, 150).Select(i => NewMessage(i)).ToList();
         messages[120] = NewMessage(0); // duplicate primary key "id-0"
 
-        await Assert.ThrowsExceptionAsync<SqlException>(() => outbox.StoreBatchAsync(messages));
+        await Assert.ThrowsExactlyAsync<SqlException>(() => outbox.StoreBatchAsync(messages));
 
         var pending = await outbox.GetPendingAsync(500);
         Assert.AreEqual(0, pending.Count,

@@ -1,5 +1,5 @@
 using NimBus;
-using NimBus.CommandLine;
+using NimBus.ServiceBus.Provisioning;
 
 var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__servicebus")
     ?? throw new InvalidOperationException("ConnectionStrings__servicebus is required.");

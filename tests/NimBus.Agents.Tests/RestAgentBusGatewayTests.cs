@@ -61,7 +61,7 @@ public class RestAgentBusGatewayTests
         // 409 means "already defined with a DIFFERENT schema" (identical redefinitions
         // return 200), so it must throw — swallowing it would let an upgraded agent keep
         // running against a stale output contract.
-        var ex = await Assert.ThrowsExceptionAsync<HttpRequestException>(
+        var ex = await Assert.ThrowsExactlyAsync<HttpRequestException>(
             () => gw.DefineEventTypeAsync("out.v1", "{}", null, null, null, CancellationToken.None));
 
         Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
@@ -121,7 +121,7 @@ public class RestAgentBusGatewayTests
     {
         var (gw, _) = NewGateway(Resp(HttpStatusCode.BadRequest, "{\"detail\":\"schema invalid\"}"));
 
-        var ex = await Assert.ThrowsExceptionAsync<HttpRequestException>(
+        var ex = await Assert.ThrowsExactlyAsync<HttpRequestException>(
             () => gw.PublishAsync("out.v1", "{}", null, CancellationToken.None));
         Assert.AreEqual(HttpStatusCode.BadRequest, ex.StatusCode);
     }

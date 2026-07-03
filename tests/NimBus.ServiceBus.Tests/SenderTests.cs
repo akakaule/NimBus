@@ -17,13 +17,13 @@ public class SenderTests
     [TestMethod]
     public void Constructor_NullServiceBusSender_ThrowsArgumentNullException()
     {
-        Assert.ThrowsException<ArgumentNullException>(() => new Sender(null!));
+        Assert.ThrowsExactly<ArgumentNullException>(() => new Sender(null!));
     }
 
     [TestMethod]
     public void SenderManager_Constructor_NullServiceBusSender_ThrowsArgumentNullException()
     {
-        Assert.ThrowsException<ArgumentNullException>(() => new SenderManager(null!));
+        Assert.ThrowsExactly<ArgumentNullException>(() => new SenderManager(null!));
     }
 
     // ── Send single ─────────────────────────────────────────────────────

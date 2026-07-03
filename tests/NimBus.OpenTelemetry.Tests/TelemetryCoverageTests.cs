@@ -206,7 +206,7 @@ public sealed class ConsumerInstrumentationTests
             .AddInMemoryExporter(metrics)
             .Build()!;
 
-        var exception = await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
             NimBusConsumerInstrumentation.RunAsync(
                 new TestMessageContext(), MessagingSystem.ServiceBus,
                 _ => throw new InvalidOperationException("boom")));

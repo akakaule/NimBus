@@ -47,7 +47,7 @@ public class FallbackHandlerTests
     public async Task No_handler_and_no_fallback_still_throws()
     {
         var provider = new EventHandlerProvider();
-        await Assert.ThrowsExceptionAsync<NimBus.Core.Messages.Exceptions.EventHandlerNotFoundException>(
+        await Assert.ThrowsExactlyAsync<NimBus.Core.Messages.Exceptions.EventHandlerNotFoundException>(
             () => provider.Handle(MessageContextStub.ForEventType("nothing.v1", "{}")));
     }
 }

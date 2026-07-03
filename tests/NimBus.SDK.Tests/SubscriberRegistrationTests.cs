@@ -28,7 +28,7 @@ public class SubscriberRegistrationTests
         services.AddSingleton(new ServiceBusClient(FakeConnection));
         services.AddNimBusSubscriber("EndpointA", _ => { });
 
-        var ex = Assert.ThrowsException<InvalidOperationException>(() =>
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
             services.AddNimBusSubscriber("EndpointB", _ => { }));
 
         StringAssert.Contains(ex.Message, "EndpointA");

@@ -110,7 +110,7 @@ public class BatchAndValidationTests
         var invalidEvent = new InvalidEvent(); // RequiredField is null
 
         // Act & Assert — PublisherClient.Publish calls event.Validate() which throws
-        await Assert.ThrowsExceptionAsync<System.ComponentModel.DataAnnotations.ValidationException>(
+        await Assert.ThrowsExactlyAsync<System.ComponentModel.DataAnnotations.ValidationException>(
             () => fixture.Publisher.Publish(invalidEvent));
     }
 

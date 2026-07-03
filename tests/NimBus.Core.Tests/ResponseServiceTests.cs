@@ -373,7 +373,7 @@ public class ResponseServiceTests
     [TestMethod]
     public void Constructor_NullSender_ThrowsArgumentNullException()
     {
-        Assert.ThrowsException<ArgumentNullException>(() => new ResponseService(null!));
+        Assert.ThrowsExactly<ArgumentNullException>(() => new ResponseService(null!));
     }
 
     // ── Park instrumentation (Phase 4.2 §2) ─────────────────────────────
@@ -411,7 +411,7 @@ public class ResponseServiceTests
         var ctx = CreateContext();
         ctx.To = "BillingEndpoint";
 
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => sut.SendToDeferredSubscription(ctx, deferralSequence: 1));
 
         var span = capture.Activities.Single(a => a.OperationName == "NimBus.DeferredProcessor.Park");

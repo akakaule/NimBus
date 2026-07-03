@@ -55,7 +55,7 @@ public class WebhookChannelTests
         var options = new WebhookChannelOptions { Url = "https://example.com/hook" };
         var channel = new WebhookChannel(options, new HttpClient(handler));
 
-        await Assert.ThrowsExceptionAsync<NotificationDeliveryException>(
+        await Assert.ThrowsExactlyAsync<NotificationDeliveryException>(
             () => channel.SendAsync(TestNotifications.Build()));
     }
 }

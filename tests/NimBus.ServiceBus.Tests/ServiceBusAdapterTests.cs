@@ -59,7 +59,7 @@ public class ServiceBusAdapterTests
         var sut = new ServiceBusAdapter(new ThrowingMessageHandler());
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(messageId: "message-1", sessionId: "session-1");
 
-        var exception = await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
             sut.Handle(message, new RecordingServiceBusSessionReceiver()));
 
         Assert.AreEqual("boom", exception.Message);

@@ -108,7 +108,7 @@ public class DeferredMessageDispatcherTests
         };
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(sessionId: "session-1");
 
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
             DeferredMessageDispatcher.ProcessAsync(message, processor, "EndpointA"));
     }
 

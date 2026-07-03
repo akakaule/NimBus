@@ -18,7 +18,7 @@ namespace NimBus.WebApp.Tests;
 [TestClass]
 public sealed class NimBusCookieAuthenticationEventsTests
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("/hubs/gridevents", true)]
     [DataRow("/hubs/gridevents/negotiate", true)]
     [DataRow("/HUBS/GRIDEVENTS", true)]

@@ -153,7 +153,7 @@ public class SdkAndManagerTests
             PendingSubStatus = null,
         };
 
-        var ex = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+        var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => sut.CompleteHandoff(pendingEntry, "billing", "{}"));
 
         StringAssert.Contains(ex.Message, "CompleteHandoff requires PendingSubStatus='Handoff'");
@@ -163,7 +163,7 @@ public class SdkAndManagerTests
         Assert.AreEqual(0, client.Sender.SentMessages.Count);
 
         pendingEntry.PendingSubStatus = "Other";
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => sut.CompleteHandoff(pendingEntry, "billing", "{}"));
         Assert.AreEqual(0, client.Sender.SentMessages.Count);
     }
@@ -220,7 +220,7 @@ public class SdkAndManagerTests
             PendingSubStatus = "Other",
         };
 
-        var ex = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+        var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => sut.FailHandoff(pendingEntry, "billing", "boom", "Some.Error"));
 
         StringAssert.Contains(ex.Message, "FailHandoff requires PendingSubStatus='Handoff'");

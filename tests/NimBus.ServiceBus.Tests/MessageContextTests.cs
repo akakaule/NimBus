@@ -17,14 +17,14 @@ public class MessageContextTests
     [TestMethod]
     public void Constructor_NullMessage_ThrowsArgumentNull()
     {
-        Assert.ThrowsException<ArgumentNullException>(() =>
+        Assert.ThrowsExactly<ArgumentNullException>(() =>
             new MessageContext(null, new FakeServiceBusSession()));
     }
 
     [TestMethod]
     public void Constructor_NullSession_ThrowsArgumentNull()
     {
-        Assert.ThrowsException<ArgumentNullException>(() =>
+        Assert.ThrowsExactly<ArgumentNullException>(() =>
             new MessageContext(new FakeServiceBusMessage(), null));
     }
 
@@ -58,7 +58,7 @@ public class MessageContextTests
         var session = new FakeServiceBusSession();
         var ctx = new MessageContext(msg, session);
 
-        Assert.ThrowsException<InvalidMessageException>(() => ctx.From);
+        Assert.ThrowsExactly<InvalidMessageException>(() => ctx.From);
     }
 
     [TestMethod]
@@ -96,7 +96,7 @@ public class MessageContextTests
         var session = new FakeServiceBusSession();
         var ctx = new MessageContext(msg, session);
 
-        Assert.ThrowsException<InvalidMessageException>(() => ctx.MessageType);
+        Assert.ThrowsExactly<InvalidMessageException>(() => ctx.MessageType);
     }
 
     [TestMethod]
@@ -159,7 +159,7 @@ public class MessageContextTests
         SetDefaultProperties(msg);
         var ctx = new MessageContext(msg, new FakeServiceBusSession());
 
-        Assert.ThrowsException<InvalidMessageException>(() => ctx.MessageId);
+        Assert.ThrowsExactly<InvalidMessageException>(() => ctx.MessageId);
     }
 
     [TestMethod]
@@ -179,7 +179,7 @@ public class MessageContextTests
         SetDefaultProperties(msg);
         var ctx = new MessageContext(msg, new FakeServiceBusSession());
 
-        Assert.ThrowsException<InvalidMessageException>(() => ctx.SessionId);
+        Assert.ThrowsExactly<InvalidMessageException>(() => ctx.SessionId);
     }
 
     [TestMethod]
@@ -468,7 +468,7 @@ public class MessageContextTests
         };
         var ctx = CreateMessageContext(session: session);
 
-        await Assert.ThrowsExceptionAsync<TransientException>(() => ctx.Complete());
+        await Assert.ThrowsExactlyAsync<TransientException>(() => ctx.Complete());
     }
 
     [TestMethod]
@@ -480,7 +480,7 @@ public class MessageContextTests
         };
         var ctx = CreateMessageContext(session: session);
 
-        await Assert.ThrowsExceptionAsync<TransientException>(() => ctx.Complete());
+        await Assert.ThrowsExactlyAsync<TransientException>(() => ctx.Complete());
     }
 
     [TestMethod]
@@ -544,7 +544,7 @@ public class MessageContextTests
     {
         var ctx = CreateMessageContext(isDeferred: true);
 
-        await Assert.ThrowsExceptionAsync<NotSupportedException>(() => ctx.Defer());
+        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => ctx.Defer());
     }
 
     [TestMethod]
@@ -564,7 +564,7 @@ public class MessageContextTests
     {
         var ctx = CreateMessageContext(isDeferred: true);
 
-        await Assert.ThrowsExceptionAsync<NotSupportedException>(() => ctx.DeferOnly());
+        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => ctx.DeferOnly());
     }
 
     [TestMethod]

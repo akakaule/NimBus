@@ -74,7 +74,7 @@ public sealed class CosmosDbClientUnitTests
         adapter.CreateFailuresRemaining = 1;
         var client = new CosmosDbClient(adapter);
 
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => client.DownloadEndpointStateCount("endpoint-1"));
 
         // The faulted creation must not be cached — the retry should run
@@ -95,7 +95,7 @@ public sealed class CosmosDbClientUnitTests
         };
         var client = new CosmosDbClient(new FakeCosmosClientAdapter(container), logger);
 
-        await Assert.ThrowsExceptionAsync<RequestLimitException>(
+        await Assert.ThrowsExactlyAsync<RequestLimitException>(
             () => client.SetEndpointMetadata(new EndpointMetadata { EndpointId = "ep-1" }));
 
         Assert.IsTrue(logger.Entries.Any(e => e.Level == LogLevel.Error && e.Exception is CosmosException),

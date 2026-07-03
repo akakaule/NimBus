@@ -15,10 +15,9 @@ namespace NimBus.Core.Tests;
 public class OutboxSenderTests
 {
     [TestMethod]
-    [ExpectedException(typeof(ArgumentNullException))]
     public void Constructor_NullOutbox_Throws()
     {
-        new OutboxSender(null);
+        Assert.ThrowsExactly<ArgumentNullException>(() => new OutboxSender(null));
     }
 
     [TestMethod]
@@ -96,13 +95,12 @@ public class OutboxSenderTests
     }
 
     [TestMethod]
-    [ExpectedException(typeof(NotSupportedException))]
     public async Task CancelScheduledMessage_ThrowsNotSupported()
     {
         var outbox = new InMemoryOutbox();
         var sender = new OutboxSender(outbox);
 
-        await sender.CancelScheduledMessage(42);
+        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => sender.CancelScheduledMessage(42));
     }
 
     [TestMethod]
@@ -155,17 +153,15 @@ public class OutboxSenderTests
 public class OutboxDispatcherTests
 {
     [TestMethod]
-    [ExpectedException(typeof(ArgumentNullException))]
     public void Constructor_NullOutbox_Throws()
     {
-        new OutboxDispatcher(null, new RecordingSender());
+        Assert.ThrowsExactly<ArgumentNullException>(() => new OutboxDispatcher(null, new RecordingSender()));
     }
 
     [TestMethod]
-    [ExpectedException(typeof(ArgumentNullException))]
     public void Constructor_NullSender_Throws()
     {
-        new OutboxDispatcher(new InMemoryOutbox(), null);
+        Assert.ThrowsExactly<ArgumentNullException>(() => new OutboxDispatcher(new InMemoryOutbox(), null));
     }
 
     [TestMethod]

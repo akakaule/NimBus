@@ -112,7 +112,7 @@ namespace NimBus.SDK.Tests
         {
             var builder = new NimBusSubscriberBuilder(new ServiceCollection());
 
-            Assert.ThrowsException<ArgumentException>(() =>
+            Assert.ThrowsExactly<ArgumentException>(() =>
                 builder.AddDynamicHandler(
                     null!,
                     () => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
@@ -123,7 +123,7 @@ namespace NimBus.SDK.Tests
         {
             var builder = new NimBusSubscriberBuilder(new ServiceCollection());
 
-            Assert.ThrowsException<ArgumentException>(() =>
+            Assert.ThrowsExactly<ArgumentException>(() =>
                 builder.AddDynamicHandler(
                     "",
                     () => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
@@ -134,7 +134,7 @@ namespace NimBus.SDK.Tests
         {
             var builder = new NimBusSubscriberBuilder(new ServiceCollection());
 
-            Assert.ThrowsException<ArgumentException>(() =>
+            Assert.ThrowsExactly<ArgumentException>(() =>
                 builder.AddDynamicHandler(
                     "   ",
                     () => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
@@ -145,7 +145,7 @@ namespace NimBus.SDK.Tests
         {
             var builder = new NimBusSubscriberBuilder(new ServiceCollection());
 
-            Assert.ThrowsException<ArgumentNullException>(() =>
+            Assert.ThrowsExactly<ArgumentNullException>(() =>
                 builder.AddDynamicHandler(EventTypeId, (Func<IEventJsonHandler>)null!));
         }
 
@@ -165,7 +165,7 @@ namespace NimBus.SDK.Tests
                 nameof(DynamicCollisionEvent),
                 () => new DelegateEventJsonHandler((_, _) => Task.CompletedTask));
 
-            var ex = Assert.ThrowsException<InvalidOperationException>(() =>
+            var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
                 builder.AddHandler<DynamicCollisionEvent, DynamicCollisionEventHandler>());
 
             StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent));
@@ -178,7 +178,7 @@ namespace NimBus.SDK.Tests
             var builder = new NimBusSubscriberBuilder(new ServiceCollection());
             builder.AddHandler<DynamicCollisionEvent, DynamicCollisionEventHandler>();
 
-            var ex = Assert.ThrowsException<InvalidOperationException>(() =>
+            var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
                 builder.AddDynamicHandler(
                     nameof(DynamicCollisionEvent),
                     () => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
@@ -195,7 +195,7 @@ namespace NimBus.SDK.Tests
                 EventTypeId,
                 () => new DelegateEventJsonHandler((_, _) => Task.CompletedTask));
 
-            var ex = Assert.ThrowsException<InvalidOperationException>(() =>
+            var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
                 builder.AddDynamicHandler(
                     EventTypeId,
                     () => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
@@ -250,7 +250,7 @@ namespace NimBus.SDK.Tests
         {
             var builder = new NimBusSubscriberBuilder(new ServiceCollection());
 
-            Assert.ThrowsException<ArgumentNullException>(() =>
+            Assert.ThrowsExactly<ArgumentNullException>(() =>
                 builder.AddDynamicHandler(EventTypeId, (Func<IServiceProvider, IEventJsonHandler>)null!));
         }
 
@@ -259,7 +259,7 @@ namespace NimBus.SDK.Tests
         {
             var builder = new NimBusSubscriberBuilder(new ServiceCollection());
 
-            Assert.ThrowsException<ArgumentException>(() =>
+            Assert.ThrowsExactly<ArgumentException>(() =>
                 builder.AddDynamicHandler("", p => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
         }
 
@@ -269,7 +269,7 @@ namespace NimBus.SDK.Tests
             var builder = new NimBusSubscriberBuilder(new ServiceCollection());
             builder.AddHandler<DynamicCollisionEvent, DynamicCollisionEventHandler>();
 
-            var ex = Assert.ThrowsException<InvalidOperationException>(() =>
+            var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
                 builder.AddDynamicHandler(
                     nameof(DynamicCollisionEvent),
                     p => new DelegateEventJsonHandler((_, _) => Task.CompletedTask)));
@@ -286,7 +286,7 @@ namespace NimBus.SDK.Tests
                 nameof(DynamicCollisionEvent),
                 p => new DelegateEventJsonHandler((_, _) => Task.CompletedTask));
 
-            var ex = Assert.ThrowsException<InvalidOperationException>(() =>
+            var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
                 builder.AddHandler<DynamicCollisionEvent, DynamicCollisionEventHandler>());
 
             StringAssert.Contains(ex.Message, nameof(DynamicCollisionEvent));

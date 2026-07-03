@@ -27,7 +27,7 @@ public class ServiceBusSessionTests
             "session-1");
         var message = new Azure.Messaging.ServiceBus.ServiceBusMessage("payload");
 
-        await Assert.ThrowsExceptionAsync<CreateSenderProbeException>(() =>
+        await Assert.ThrowsExactlyAsync<CreateSenderProbeException>(() =>
             sut.SendScheduledMessageAsync(message, DateTimeOffset.UtcNow.AddMinutes(1)));
 
         Assert.AreEqual("orders", client.LastSenderEntityPath);
@@ -92,7 +92,7 @@ public class ServiceBusSessionTests
             entityPath: null!,
             sessionId: "session-1");
 
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
             sut.SendScheduledMessageAsync(new Azure.Messaging.ServiceBus.ServiceBusMessage("payload"), DateTimeOffset.UtcNow.AddMinutes(1)));
     }
 
@@ -106,6 +106,6 @@ public class ServiceBusSessionTests
             entityPath: null!,
             sessionId: "session-1");
 
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => sut.ReceiveDeferredMessageAsync(5));
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => sut.ReceiveDeferredMessageAsync(5));
     }
 }

@@ -172,23 +172,23 @@ public class RetryPolicyProviderTests
     // ── Validation ──────────────────────────────────────────────────
 
     [TestMethod]
-    [ExpectedException(typeof(ArgumentNullException))]
     public void AddEventTypePolicy_NullPolicy_Throws()
     {
-        new DefaultRetryPolicyProvider().AddEventTypePolicy("OrderPlaced", null);
+        Assert.ThrowsExactly<ArgumentNullException>(() =>
+            new DefaultRetryPolicyProvider().AddEventTypePolicy("OrderPlaced", null));
     }
 
     [TestMethod]
-    [ExpectedException(typeof(ArgumentNullException))]
     public void AddExceptionRule_NullContains_Throws()
     {
-        new DefaultRetryPolicyProvider().AddExceptionRule(null, MakePolicy());
+        Assert.ThrowsExactly<ArgumentNullException>(() =>
+            new DefaultRetryPolicyProvider().AddExceptionRule(null, MakePolicy()));
     }
 
     [TestMethod]
-    [ExpectedException(typeof(ArgumentNullException))]
     public void AddExceptionRule_NullPolicy_Throws()
     {
-        new DefaultRetryPolicyProvider().AddExceptionRule("timeout", null);
+        Assert.ThrowsExactly<ArgumentNullException>(() =>
+            new DefaultRetryPolicyProvider().AddExceptionRule("timeout", null));
     }
 }

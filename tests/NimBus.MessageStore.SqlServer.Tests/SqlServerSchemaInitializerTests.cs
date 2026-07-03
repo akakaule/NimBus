@@ -18,7 +18,7 @@ public sealed class SqlServerSchemaInitializerTests
         var schema = NewSchemaName();
         var initializer = CreateInitializer(schema, SchemaProvisioningMode.VerifyOnly);
 
-        var ex = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+        var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => initializer.StartAsync(CancellationToken.None));
 
         StringAssert.Contains(ex.Message, "Missing artifacts");

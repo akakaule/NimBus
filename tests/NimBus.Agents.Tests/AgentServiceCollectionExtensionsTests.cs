@@ -23,7 +23,7 @@ public class AgentServiceCollectionExtensionsTests
     public void AddNimBusAgent_MissingAgentId_Throws()
     {
         var services = new ServiceCollection();
-        Assert.ThrowsException<ArgumentException>(() =>
+        Assert.ThrowsExactly<ArgumentException>(() =>
             services.AddNimBusAgent<TestHandler, Ping>(o => o.Subscribe("Ping")));
     }
 
@@ -31,7 +31,7 @@ public class AgentServiceCollectionExtensionsTests
     public void AddNimBusAgent_MissingSubscribe_Throws()
     {
         var services = new ServiceCollection();
-        Assert.ThrowsException<ArgumentException>(() =>
+        Assert.ThrowsExactly<ArgumentException>(() =>
             services.AddNimBusAgent<TestHandler, Ping>(o => o.AgentId = "a"));
     }
 
@@ -39,7 +39,7 @@ public class AgentServiceCollectionExtensionsTests
     public void AddNimBusAgent_WaitSecondsOutOfRange_Throws()
     {
         var services = new ServiceCollection();
-        Assert.ThrowsException<ArgumentException>(() =>
+        Assert.ThrowsExactly<ArgumentException>(() =>
             services.AddNimBusAgent<TestHandler, Ping>(o =>
             {
                 o.AgentId = "a";
@@ -83,7 +83,7 @@ public class AgentServiceCollectionExtensionsTests
             o.BaseAddress = "http://nimbus-ops.test";
         });
 
-        var ex = Assert.ThrowsException<InvalidOperationException>(() =>
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
             services.AddNimBusAgent<TestHandler, Ping>(o =>
             {
                 o.AgentId = "second-agent";

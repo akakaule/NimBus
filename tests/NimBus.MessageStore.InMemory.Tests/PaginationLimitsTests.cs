@@ -7,7 +7,7 @@ namespace NimBus.MessageStore.InMemory.Tests;
 [TestClass]
 public class PaginationLimitsTests
 {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(0, PaginationLimits.DefaultPageSize)]   // unset -> default
     [DataRow(-1, PaginationLimits.DefaultPageSize)]  // negative -> default
     [DataRow(-1000, PaginationLimits.DefaultPageSize)]

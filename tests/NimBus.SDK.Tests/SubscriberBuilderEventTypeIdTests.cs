@@ -27,7 +27,7 @@ namespace NimBus.SDK.Tests
 
             builder.AddHandler<NamespaceA.OrderPlaced, NamespaceA.OrderPlacedHandler>();
 
-            var ex = Assert.ThrowsException<InvalidOperationException>(() =>
+            var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
                 builder.AddHandler<NamespaceB.OrderPlaced, NamespaceB.OrderPlacedHandler>());
 
             // Error must call out both CLR types and the shared wire id so the

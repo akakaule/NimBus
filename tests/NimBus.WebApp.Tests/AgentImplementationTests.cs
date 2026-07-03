@@ -731,7 +731,7 @@ namespace NimBus.WebApp.Tests
                 new AgentSubscriptionRegistry(), config: null, httpContextAccessor: null,
                 NullLogger<AgentImplementation>.Instance);
 
-            await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            await Assert.ThrowsExactlyAsync<InvalidOperationException>(
                 () => impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete)),
                 "A transient store fault must surface (500), not be swallowed into a 404");
             Assert.AreEqual(0, manager.CompleteCount, "Nothing must settle on a transient fault");

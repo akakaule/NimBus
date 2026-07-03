@@ -55,7 +55,7 @@ public class EmailChannelTests
         };
         var channel = new EmailChannel(options, new HttpClient(handler));
 
-        await Assert.ThrowsExceptionAsync<NotificationDeliveryException>(
+        await Assert.ThrowsExactlyAsync<NotificationDeliveryException>(
             () => channel.SendAsync(TestNotifications.Build()));
     }
 

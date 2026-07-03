@@ -71,7 +71,7 @@ public class AgentLoopWorkerTests
         var handler = new DelegateHandler(_ => throw new InvalidOperationException("handler boom"));
         var worker = NewWorker(bus, handler);
 
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => worker.ProcessNextAsync(CancellationToken.None));
 
         Assert.AreEqual(0, bus.Publishes.Count, "Nothing should be published when the handler throws.");

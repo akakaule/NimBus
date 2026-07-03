@@ -94,7 +94,7 @@ public sealed class NimBusSubscriberBuilderScanningTests
         var duplicateAssembly = CreateDynamicHandlerAssembly(typeof(DuplicateScannedEvent), handlerCount: 2);
         var builder = new NimBusSubscriberBuilder(new ServiceCollection());
 
-        var ex = Assert.ThrowsException<InvalidOperationException>(() =>
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
             builder.AddHandlersFromAssembly(duplicateAssembly));
 
         StringAssert.Contains(ex.Message, nameof(DuplicateScannedEvent));

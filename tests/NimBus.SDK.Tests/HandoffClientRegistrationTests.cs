@@ -113,7 +113,7 @@ public class HandoffClientRegistrationTests
             CorrelationId: null!,   // intentionally weakened lineage
             OriginatingMessageId: "origin-1");
 
-        await Assert.ThrowsExceptionAsync<ArgumentException>(() => client.CompleteAsync(coords));
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => client.CompleteAsync(coords));
     }
 
     [TestMethod]
@@ -128,7 +128,7 @@ public class HandoffClientRegistrationTests
             CorrelationId: "corr-1",
             OriginatingMessageId: null!);
 
-        await Assert.ThrowsExceptionAsync<ArgumentException>(() => client.CompleteAsync(coords));
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => client.CompleteAsync(coords));
     }
 
     /// <summary>

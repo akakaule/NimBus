@@ -7,7 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\NimBus.CommandLine\NimBus.CommandLine.csproj" />
+    <ProjectReference Include="..\..\..\src\NimBus.ServiceBus\NimBus.ServiceBus.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus\NimBus.csproj" />
   </ItemGroup>
 

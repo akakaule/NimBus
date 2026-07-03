@@ -112,7 +112,7 @@ public class LoggingMiddlewareTests
         var middleware = new LoggingMiddleware(logger);
         var context = new TestMessageContext();
 
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
             middleware.Handle(context, (ctx, ct) => throw new InvalidOperationException("boom")));
 
         Assert.IsTrue(logger.Entries.Any(e => e.Contains("Failed")));
@@ -140,7 +140,7 @@ public class LoggingMiddlewareTests
         var middleware = new LoggingMiddleware(logger);
         var context = new TestMessageContext();
 
-        var ex = await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+        var ex = await Assert.ThrowsExactlyAsync<ArgumentException>(() =>
             middleware.Handle(context, (ctx, ct) => throw new ArgumentException("original")));
 
         Assert.AreEqual("original", ex.Message);
@@ -172,7 +172,7 @@ public class ValidationMiddlewareTests
         var context = new TestMessageContext { EventId = "" };
         var called = false;
 
-        await Assert.ThrowsExceptionAsync<MessageAlreadyDeadLetteredException>(() =>
+        await Assert.ThrowsExactlyAsync<MessageAlreadyDeadLetteredException>(() =>
             middleware.Handle(context, (ctx, ct) => { called = true; return Task.CompletedTask; }));
 
         Assert.IsFalse(called, "Handler should not be called");
@@ -186,7 +186,7 @@ public class ValidationMiddlewareTests
         var context = new TestMessageContext { EventId = null };
         var called = false;
 
-        await Assert.ThrowsExceptionAsync<MessageAlreadyDeadLetteredException>(() =>
+        await Assert.ThrowsExactlyAsync<MessageAlreadyDeadLetteredException>(() =>
             middleware.Handle(context, (ctx, ct) => { called = true; return Task.CompletedTask; }));
 
         Assert.IsFalse(called);
@@ -205,7 +205,7 @@ public class ValidationMiddlewareTests
         };
         var called = false;
 
-        await Assert.ThrowsExceptionAsync<MessageAlreadyDeadLetteredException>(() =>
+        await Assert.ThrowsExactlyAsync<MessageAlreadyDeadLetteredException>(() =>
             middleware.Handle(context, (ctx, ct) => { called = true; return Task.CompletedTask; }));
 
         Assert.IsFalse(called);
@@ -311,7 +311,7 @@ public class PipelineWiringTests
         var context = new TestMessageContext { EventId = "" };
         var called = false;
 
-        await Assert.ThrowsExceptionAsync<MessageAlreadyDeadLetteredException>(() =>
+        await Assert.ThrowsExactlyAsync<MessageAlreadyDeadLetteredException>(() =>
             pipeline.Execute(context, (ctx, ct) => { called = true; return Task.CompletedTask; }));
 
         Assert.IsFalse(called, "Validation should reject message with empty EventId");

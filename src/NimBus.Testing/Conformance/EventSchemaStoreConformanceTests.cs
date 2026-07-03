@@ -65,7 +65,7 @@ public abstract class EventSchemaStoreConformanceTests
         var store = CreateStore();
         var id = $"ct.{Guid.NewGuid():N}.v1";
         await store.DefineEventType(Sample(id, "{\"type\":\"object\"}"));
-        await Assert.ThrowsExceptionAsync<SchemaConflictException>(
+        await Assert.ThrowsExactlyAsync<SchemaConflictException>(
             () => store.DefineEventType(Sample(id, "{\"type\":\"object\",\"required\":[\"x\"]}")));
     }
 
@@ -73,7 +73,7 @@ public abstract class EventSchemaStoreConformanceTests
     public async Task DefineEventType_null_or_empty_schema_throws()
     {
         var store = CreateStore();
-        await Assert.ThrowsExceptionAsync<ArgumentException>(
+        await Assert.ThrowsExactlyAsync<ArgumentException>(
             () => store.DefineEventType(new EventSchema { EventTypeId = $"ct.{Guid.NewGuid():N}.v1", Name = "x", JsonSchema = "", AgentId = "a" }));
     }
 
@@ -81,7 +81,7 @@ public abstract class EventSchemaStoreConformanceTests
     public async Task DefineEventType_null_or_empty_eventTypeId_throws()
     {
         var store = CreateStore();
-        await Assert.ThrowsExceptionAsync<ArgumentException>(
+        await Assert.ThrowsExactlyAsync<ArgumentException>(
             () => store.DefineEventType(new EventSchema { EventTypeId = "", Name = "x", JsonSchema = "{\"type\":\"object\"}", AgentId = "a" }));
     }
 

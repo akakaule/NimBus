@@ -135,7 +135,7 @@ public class InstrumentingSenderDecoratorTests
         var sut = NimBusOpenTelemetryDecorators.InstrumentSender(inner, MessagingSystem.InMemory);
 
         var message = new Message { EventId = "e", MessageId = "m", To = "t", EventTypeId = "T" };
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => sut.Send(message));
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => sut.Send(message));
         meterProvider.ForceFlush();
         tracer.ForceFlush();
 

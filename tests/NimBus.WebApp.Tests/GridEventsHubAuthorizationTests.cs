@@ -102,7 +102,7 @@ public sealed class GridEventsHubAuthorizationTests
         await using var harness = await HubAuthorizationTestServer.CreateAsync();
         await using var connection = harness.BuildHubConnection(authenticated: false);
 
-        var ex = await Assert.ThrowsExceptionAsync<HttpRequestException>(
+        var ex = await Assert.ThrowsExactlyAsync<HttpRequestException>(
             () => connection.StartAsync(),
             "Anonymous Start() must throw — the connection cannot proceed past the negotiate POST.");
 

@@ -81,9 +81,9 @@ public class DeferredProcessorRegistrationTests
         var services = new ServiceCollection();
         services.AddSingleton(new ServiceBusClient(FakeConnection));
 
-        Assert.ThrowsException<System.ArgumentOutOfRangeException>(
+        Assert.ThrowsExactly<System.ArgumentOutOfRangeException>(
             () => services.AddNimBusDeferredProcessorHostedService("EndpointA", maxConcurrentCalls: 0));
-        Assert.ThrowsException<System.ArgumentOutOfRangeException>(
+        Assert.ThrowsExactly<System.ArgumentOutOfRangeException>(
             () => services.AddNimBusDeferredProcessorHostedService("EndpointA", maxConcurrentCalls: -1));
     }
 

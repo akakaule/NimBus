@@ -36,8 +36,10 @@ dnx Akaule.NimBus.CommandLine -- setup --solution-id nimbus --environment dev --
 ```
 
 Prerequisites: .NET 10 SDK (provides `dnx`), Node.js 22 (the WebApp SPA builds during
-`dotnet publish`), and Azure CLI ≥ 2.70 logged in via `az login` (older versions have
-Flex Consumption zip-deploy bugs).
+`dotnet publish`), and Azure CLI ≥ 2.60.0 logged in via `az login` (≥ 2.70 recommended).
+2.60.0 is the Microsoft-documented minimum for Flex Consumption: older versions push to
+the legacy Kudu zipdeploy endpoint and fail with a misleading SSL/proxy error, so `nb`
+refuses to deploy to a Flex Consumption plan with an older az.
 
 ## Global Options
 

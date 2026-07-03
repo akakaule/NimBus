@@ -1,9 +1,13 @@
 using System.IO.Compression;
+using System.Text.Json;
 
 namespace NimBus.CommandLine;
 
 internal sealed class AppDeploymentService
 {
+    private static readonly Version MinimumFlexConsumptionAzureCliVersion = new(2, 60, 0);
+    private static readonly string[] AzureCliVersionArguments = ["version", "--output", "json"];
+
     private readonly CommandContext _context;
     private readonly AzureCliRunner _az;
     private readonly ProcessRunner _processRunner = new();
@@ -19,6 +23,12 @@ internal sealed class AppDeploymentService
         var names = NamingConventions.Build(options.SolutionId, options.Environment);
 
         await _az.EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false);
+
+        var isFlexConsumption = await IsFlexConsumptionResolverAsync(options.ResourceGroupName, names.CoreAppServicePlanName, cancellationToken).ConfigureAwait(false);
+        if (isFlexConsumption)
+        {
+            await EnsureAzureCliSupportsFlexConsumptionAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         var publishRoot = Path.Combine(Path.GetTempPath(), "nb", $"{names.SolutionId}-{names.Environment}", DateTime.UtcNow.ToString("yyyyMMddHHmmss"));
         var resolverPublish = Path.Combine(publishRoot, "resolver");
@@ -40,7 +50,7 @@ internal sealed class AppDeploymentService
             "--src", resolverZip,
         };
 
-        if (await IsFlexConsumptionResolverAsync(options.ResourceGroupName, names.CoreAppServicePlanName, cancellationToken).ConfigureAwait(false))
+        if (isFlexConsumption)
         {
             // Flex Consumption deployments must run against a STARTED app: after
             // publishing, the az CLI polls the host status endpoint and reports the
@@ -105,6 +115,27 @@ internal sealed class AppDeploymentService
             $"Failed to read the core App Service Plan '{coreAppServicePlanName}'. Run 'nb infra apply' first.").ConfigureAwait(false);
 
         return string.Equals(tier.Trim(), "FlexConsumption", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task EnsureAzureCliSupportsFlexConsumptionAsync(CancellationToken cancellationToken)
+    {
+        using var versionDocument = await _az.CaptureJsonAsync(
+            AzureCliVersionArguments,
+            cancellationToken,
+            "Failed to read the Azure CLI version.").ConfigureAwait(false);
+
+        var rawVersion = versionDocument.RootElement.TryGetProperty("azure-cli", out var azureCliVersion)
+            ? azureCliVersion.GetString()
+            : null;
+
+        // Pre-2.60 CLIs push Flex Consumption zips to the legacy Kudu zipdeploy
+        // endpoint, which the Flex SCM front-end rejects at the TLS layer — the
+        // resulting SSLEOFError blames a proxy and hides the real cause.
+        if (Version.TryParse(rawVersion, out var installedVersion) && installedVersion < MinimumFlexConsumptionAzureCliVersion)
+        {
+            throw new CommandException(
+                $"Azure CLI {rawVersion} cannot deploy to Flex Consumption function apps; version {MinimumFlexConsumptionAzureCliVersion} or later is required. Upgrade with 'az upgrade' (or 'winget upgrade Microsoft.AzureCLI') and retry.");
+        }
     }
 
     private async Task PublishAsync(string projectPath, string outputPath, string configuration, CancellationToken cancellationToken)

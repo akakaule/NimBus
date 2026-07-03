@@ -23,9 +23,11 @@ Every path ultimately performs the same three layers, in order:
 
 ## Prerequisites (all paths)
 
+> Full reference for governance review — complete resource inventory, resource provider registrations, and the role-assignment matrix: **[Azure Infrastructure Requirements](azure-requirements.md)**.
+
 **Tooling**
 
-- Azure CLI ≥ 2.70 recommended (older versions have Flex Consumption zip-deploy bugs; `.bicepparam` support needs ≥ 2.53)
+- Azure CLI ≥ 2.60.0 **required** for Flex Consumption deploys ([Microsoft-documented minimum](https://learn.microsoft.com/azure/azure-functions/flex-consumption-how-to); `nb` checks this before publishing). ≥ 2.70 recommended; `.bicepparam` support needs ≥ 2.53
 - .NET 10 SDK and Node.js 22 wherever the apps are built (pipelines set these up themselves)
 
 **RBAC for the deploying identity.** The Bicep creates role assignments (`Microsoft.Authorization/roleAssignments`: Azure Service Bus Data Owner and, on Flex Consumption, Storage Blob Data Owner), and plain **Contributor cannot write role assignments**. On the target resource group, grant the pipeline/service principal either:
@@ -35,11 +37,15 @@ Every path ultimately performs the same three layers, in order:
 
 Cosmos data-plane role assignments (`Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments`) live under the DocumentDB provider and are covered by Contributor.
 
-**Resource provider registration.** `nb infra apply` tries to register `Microsoft.EventGrid` (used only by the optional storage-hook webhooks). Registration is subscription-scoped, so a resource-group-scoped identity cannot do it — the CLI warns and continues. If you plan to use Event Grid storage hooks, pre-register once per subscription with an admin account:
+**Resource provider registration.** On a fresh subscription, all providers the deployment uses must be registered — ARM auto-registers them only when the deploying identity has subscription-scope permission, which resource-group-scoped pipeline identities lack. Pre-register once per subscription with an admin account ([full provider list](azure-requirements.md#resource-provider-registrations)):
 
 ```bash
-az provider register --namespace Microsoft.EventGrid
+for ns in Microsoft.ServiceBus Microsoft.Web Microsoft.Storage Microsoft.Insights Microsoft.DocumentDB Microsoft.EventGrid; do
+  az provider register --namespace $ns
+done
 ```
+
+`Microsoft.EventGrid` backs only the optional storage-hook webhooks; `nb infra apply` tries to register it and warns-and-continues when the identity lacks permission.
 
 ## Path 1: One command from a clone
 
@@ -177,5 +183,6 @@ Both must run from a repository clone (`nb deploy apps` publishes the resolver a
 | `InvalidResourceLocation` / region errors | A same-named resource exists in another region. The CLI pins existing resources automatically; raw-Bicep users must pass the per-resource `*Location` override params. To actually move a resource, delete it first. |
 | `Failed to register Azure provider` warning | The identity lacks subscription-level `/register` permission. Harmless unless you use Event Grid storage hooks — then pre-register once per subscription (see Prerequisites). |
 | SQL server name conflict after deleting an environment | Azure SQL server DNS names are held globally for 24–72 h after deletion. Use `--sql-server-name` (or the `sqlServerName` param) to pick a fresh name. |
+| Flex Consumption zip deploy fails with `SSLEOFError` / "Certificate verification failed … behind a proxy" against `<app>.scm.azurewebsites.net` | The local Azure CLI is < 2.60.0 and pushed to the legacy Kudu zipdeploy endpoint — the proxy/certificate hint is a red herring. Run `az upgrade` (or `winget upgrade Microsoft.AzureCLI`) and retry. `nb` fails fast on this before publishing. |
 | Resolver zip deploy reports failure on Flex Consumption | Update the Azure CLI (≥ 2.70 recommended). Do not stop the app before deploying — the CLI health-checks the running host after publishing. |
 | Role assignment errors during Bicep deployment | The deploying identity lacks `Microsoft.Authorization/roleAssignments/write`. See [Prerequisites](#prerequisites-all-paths). |

@@ -72,6 +72,7 @@ docs/
   deferred-messages.md     # Deferred message processing guide
   cli.md                   # CLI command reference
   deployment.md            # Deployment guide (one-command, GitHub Actions OIDC, Azure DevOps, raw Bicep, RBAC)
+  azure-requirements.md    # Azure requirements reference (resource inventory, provider registrations, RBAC matrix)
   extensions.md            # Extension framework
   azure-functions-hosting.md
 ```

@@ -159,7 +159,7 @@ It handles Azure infrastructure provisioning, Service Bus topology setup, and ap
 
 ### Prerequisites
 
-- Azure CLI (`az`) installed and on `PATH`
+- Azure CLI (`az`) ≥ 2.60.0 installed and on `PATH` (required for Flex Consumption deploys; see [docs/deployment.md](docs/deployment.md#prerequisites-all-paths))
 - `az login` completed for the target subscription
 - Permissions to create and deploy resources in the target resource group
 
@@ -374,6 +374,7 @@ The **[Deployment Guide](docs/deployment.md)** covers the full setup for every p
 |-------|-------------|
 | [Getting Started](docs/getting-started.md) | Step-by-step tutorial: create a publisher, subscriber, and run with Aspire |
 | [Deployment Guide](docs/deployment.md) | All deployment paths: one-command, GitHub Actions (OIDC), Azure DevOps, raw Bicep + required RBAC |
+| [Azure Infrastructure Requirements](docs/azure-requirements.md) | Reference for governance review: resource inventory, provider registrations, RBAC matrix for pipeline identity, apps, and operators |
 | [Building Adapters](docs/building-adapters.md) | Detailed guide for adapter authors — publisher, subscriber, middleware, hosting choice |
 | [Azure Functions Hosting](docs/azure-functions-hosting.md) | Production hosting with Service Bus session triggers and DeferredProcessor |
 | [Message Flows](docs/message-flows.md) | All 12 message flow patterns with mermaid diagrams |

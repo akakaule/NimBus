@@ -12,6 +12,10 @@
     <PackageReference Include="Aspire.Hosting.AppHost" Version="13.4.3" />
     <PackageReference Include="Aspire.Hosting.SqlServer" Version="13.4.3" />
     <PackageReference Include="CommunityToolkit.Aspire.Hosting.DbGate" Version="9.7.0" />
+    <!-- Force the patched MessagePack over Aspire's vulnerable transitive 2.5.192
+         (CVE-2026-48109 et al., patched in 2.5.301). Dev-only host, not shipped,
+         but the NuGetAudit gate fails the Release build without this bump. -->
+    <PackageReference Include="MessagePack" Version="2.5.302" />
   </ItemGroup>
 
   <ItemGroup>

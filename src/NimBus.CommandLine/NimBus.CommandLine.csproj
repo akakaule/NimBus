@@ -8,7 +8,6 @@
     <AssemblyName>nb</AssemblyName>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>nb</ToolCommandName>
-    <PackageId>NimBus.CommandLine</PackageId>
     <IsPackable>true</IsPackable>
     <Description>CLI tool for Azure infrastructure provisioning, Service Bus topology setup, and deployment for the NimBus platform.</Description>
   </PropertyGroup>

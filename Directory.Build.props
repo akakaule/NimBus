@@ -49,6 +49,10 @@
   <!-- NuGet package defaults (opt-in per project via IsPackable=true) -->
   <PropertyGroup Label="NuGet defaults">
     <IsPackable>false</IsPackable>
+    <!-- Published under the Akaule.NimBus.* prefix: the bare Nimbus.* ID prefix is
+         reserved by another owner on nuget.org, so NimBus.* packages are rejected.
+         Assemblies and namespaces stay NimBus.*; only the NuGet package ID changes. -->
+    <PackageId>Akaule.$(MSBuildProjectName)</PackageId>
     <Version>0.0.0</Version>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/nicenimbus/NimBus</PackageProjectUrl>

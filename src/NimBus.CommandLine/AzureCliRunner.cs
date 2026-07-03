@@ -21,12 +21,6 @@ internal sealed class AzureCliRunner
             cancellationToken,
             $"Failed to install or update Azure CLI extension '{extensionName}'.");
 
-    public Task RegisterProviderAsync(string providerNamespace, CancellationToken cancellationToken) =>
-        EnsureSuccessAsync(
-            new[] { "provider", "register", "--namespace", providerNamespace },
-            cancellationToken,
-            $"Failed to register Azure provider '{providerNamespace}'.");
-
     public Task EnsureSuccessAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string failureMessage) =>
         EnsureSuccessAsync(arguments, workingDirectory: null, cancellationToken, failureMessage);
 

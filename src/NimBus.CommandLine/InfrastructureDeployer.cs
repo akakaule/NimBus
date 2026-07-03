@@ -19,7 +19,18 @@ internal sealed class InfrastructureDeployer
         var names = NamingConventions.Build(options.SolutionId, options.Environment);
 
         await _az.EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false);
-        await _az.RegisterProviderAsync("Microsoft.EventGrid", cancellationToken).ConfigureAwait(false);
+
+        // Provider registration is subscription-scoped, so an RG-scoped pipeline
+        // identity cannot perform it — and nothing in the bicep deploys Event Grid
+        // resources (the provider only backs optional storage-hook webhooks).
+        // Warn instead of failing the whole deployment.
+        var eventGridRegistration = await _az.TryRunAsync(
+            new[] { "provider", "register", "--namespace", "Microsoft.EventGrid" },
+            cancellationToken).ConfigureAwait(false);
+        if (!eventGridRegistration.Succeeded)
+        {
+            CliOutput.WriteLine("Warning: could not register the Microsoft.EventGrid provider (requires subscription-level permission). Pre-register it once per subscription if you plan to use Event Grid storage hooks.");
+        }
 
         if (!string.IsNullOrWhiteSpace(options.ResourceNamePostFix))
         {

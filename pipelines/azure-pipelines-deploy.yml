@@ -13,6 +13,18 @@ parameters:
   - name: azureServiceConnection
     displayName: "Azure service connection name"
     type: string
+  - name: resolverPlan
+    displayName: "Resolver hosting plan: ElasticPremium | FlexConsumption (empty = existing plan, else FlexConsumption)"
+    type: string
+    default: ""
+  - name: managementPlanSku
+    displayName: "Management App Service Plan SKU (empty = existing SKU, else B1 for dev, S1 otherwise)"
+    type: string
+    default: ""
+  - name: location
+    displayName: "Azure region for new resources (empty = westeurope; existing resources keep their region)"
+    type: string
+    default: ""
 
 pool:
   vmImage: ubuntu-latest
@@ -34,13 +46,22 @@ steps:
 
   - task: AzureCLI@2
     displayName: "Deploy: infra → topology → apps"
+    env:
+      NB_RESOLVER_PLAN: ${{ parameters.resolverPlan }}
+      NB_MANAGEMENT_PLAN_SKU: ${{ parameters.managementPlanSku }}
+      NB_LOCATION: ${{ parameters.location }}
     inputs:
       azureSubscription: ${{ parameters.azureServiceConnection }}
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
+        EXTRA_ARGS=()
+        if [ -n "$NB_RESOLVER_PLAN" ]; then EXTRA_ARGS+=(--resolver-plan "$NB_RESOLVER_PLAN"); fi
+        if [ -n "$NB_MANAGEMENT_PLAN_SKU" ]; then EXTRA_ARGS+=(--management-plan-sku "$NB_MANAGEMENT_PLAN_SKU"); fi
+        if [ -n "$NB_LOCATION" ]; then EXTRA_ARGS+=(--location "$NB_LOCATION"); fi
         dotnet run --project src/NimBus.CommandLine --no-build -c Release -- \
           setup \
           --solution-id "${{ parameters.solutionId }}" \
           --environment "${{ parameters.environment }}" \
-          --resource-group "${{ parameters.resourceGroup }}"
+          --resource-group "${{ parameters.resourceGroup }}" \
+          "${EXTRA_ARGS[@]}"

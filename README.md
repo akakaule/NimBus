@@ -359,29 +359,21 @@ Full architecture diagrams, message flows, topology details, and a v2 domains ba
 
 ## CI/CD
 
-### GitHub Actions
+Ready-to-use deployment pipelines ship with the repository — both run `infra apply` → `topology apply` → `deploy apps` and accept optional `resolver-plan` / `management-plan-sku` / `location` inputs:
 
-The repository includes a [`deploy.yml`](.github/workflows/deploy.yml) workflow triggered manually via `workflow_dispatch`.
+- **GitHub Actions**: [`deploy.yml`](.github/workflows/deploy.yml), manually triggered, authenticates with OIDC (no stored secrets)
+- **Azure DevOps**: [`azure-pipelines-deploy.yml`](pipelines/azure-pipelines-deploy.yml), manually triggered, uses a workload-identity service connection
 
-1. **Configure OIDC** — set up [workload identity federation](https://learn.microsoft.com/entra/workload-id/workload-identity-federation) for your GitHub repo
-2. **Set repository variables**: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
-3. **Trigger** the `Deploy NimBus` workflow from the Actions tab with your solution ID, environment, and resource group
+Teams that provision infrastructure with their own tooling can drive the Bicep templates directly using the sample parameter files in [`deploy/bicep/parameters/`](deploy/bicep/parameters/).
 
-### Azure DevOps
-
-The repository includes an [`azure-pipelines-deploy.yml`](pipelines/azure-pipelines-deploy.yml) pipeline triggered manually.
-
-1. **Create a service connection** for Azure in your Azure DevOps project
-2. **Import the pipeline** from `pipelines/azure-pipelines-deploy.yml`
-3. **Run the pipeline** with your solution ID, environment, resource group, and service connection name
-
-The pipeline uses `nb setup` to run all deployment steps (`infra apply` → `topology apply` → `deploy apps`) in a single `AzureCLI` task.
+The **[Deployment Guide](docs/deployment.md)** covers the full setup for every path: the Entra app + federated credentials for GitHub OIDC, the Azure DevOps service connection, the RBAC the deploying identity needs (the Bicep creates role assignments — plain Contributor is not enough), and the raw-Bicep walkthrough.
 
 ## Documentation
 
 | Guide | Description |
 |-------|-------------|
 | [Getting Started](docs/getting-started.md) | Step-by-step tutorial: create a publisher, subscriber, and run with Aspire |
+| [Deployment Guide](docs/deployment.md) | All deployment paths: one-command, GitHub Actions (OIDC), Azure DevOps, raw Bicep + required RBAC |
 | [Building Adapters](docs/building-adapters.md) | Detailed guide for adapter authors — publisher, subscriber, middleware, hosting choice |
 | [Azure Functions Hosting](docs/azure-functions-hosting.md) | Production hosting with Service Bus session triggers and DeferredProcessor |
 | [Message Flows](docs/message-flows.md) | All 12 message flow patterns with mermaid diagrams |

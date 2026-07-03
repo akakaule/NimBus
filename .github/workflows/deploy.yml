@@ -15,6 +15,21 @@ on:
         description: "Azure resource group name"
         required: true
         type: string
+      resolver-plan:
+        description: "Resolver hosting plan: ElasticPremium | FlexConsumption (empty = existing plan, else FlexConsumption)"
+        required: false
+        type: string
+        default: ""
+      management-plan-sku:
+        description: "Management App Service Plan SKU (empty = existing SKU, else B1 for dev, S1 otherwise)"
+        required: false
+        type: string
+        default: ""
+      location:
+        description: "Azure region for new resources (empty = westeurope; existing resources keep their region)"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   id-token: write
@@ -53,12 +68,20 @@ jobs:
           NB_SOLUTION_ID: ${{ inputs.solution-id }}
           NB_ENVIRONMENT: ${{ inputs.environment }}
           NB_RESOURCE_GROUP: ${{ inputs.resource-group }}
-        run: >
-          dotnet run --project src/NimBus.CommandLine --no-build -c Release --
-          infra apply
-          --solution-id "$NB_SOLUTION_ID"
-          --environment "$NB_ENVIRONMENT"
-          --resource-group "$NB_RESOURCE_GROUP"
+          NB_RESOLVER_PLAN: ${{ inputs.resolver-plan }}
+          NB_MANAGEMENT_PLAN_SKU: ${{ inputs.management-plan-sku }}
+          NB_LOCATION: ${{ inputs.location }}
+        run: |
+          EXTRA_ARGS=()
+          if [ -n "$NB_RESOLVER_PLAN" ]; then EXTRA_ARGS+=(--resolver-plan "$NB_RESOLVER_PLAN"); fi
+          if [ -n "$NB_MANAGEMENT_PLAN_SKU" ]; then EXTRA_ARGS+=(--management-plan-sku "$NB_MANAGEMENT_PLAN_SKU"); fi
+          if [ -n "$NB_LOCATION" ]; then EXTRA_ARGS+=(--location "$NB_LOCATION"); fi
+          dotnet run --project src/NimBus.CommandLine --no-build -c Release -- \
+            infra apply \
+            --solution-id "$NB_SOLUTION_ID" \
+            --environment "$NB_ENVIRONMENT" \
+            --resource-group "$NB_RESOURCE_GROUP" \
+            "${EXTRA_ARGS[@]}"
 
       - name: Provision Service Bus topology
         env:

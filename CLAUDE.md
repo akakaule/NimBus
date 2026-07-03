@@ -71,6 +71,7 @@ docs/
   error-handling.md        # Adapter error-handling reference (exception types, retry vs DLQ)
   deferred-messages.md     # Deferred message processing guide
   cli.md                   # CLI command reference
+  deployment.md            # Deployment guide (one-command, GitHub Actions OIDC, Azure DevOps, raw Bicep, RBAC)
   extensions.md            # Extension framework
   azure-functions-hosting.md
 ```

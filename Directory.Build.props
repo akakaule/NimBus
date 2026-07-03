@@ -55,8 +55,8 @@
     <PackageId>Akaule.$(MSBuildProjectName)</PackageId>
     <Version>0.0.0</Version>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/nicenimbus/NimBus</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/nicenimbus/NimBus</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/akakaule/NimBus</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/akakaule/NimBus</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>azure;servicebus;messaging;nimbus</PackageTags>
     <Copyright>Copyright (c) NimBus</Copyright>

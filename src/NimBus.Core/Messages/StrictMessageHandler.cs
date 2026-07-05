@@ -398,7 +398,7 @@ namespace NimBus.Core.Messages
 
         private async Task CheckForRetry(IMessageContext messageContext, EventContextHandlerException exception, CancellationToken cancellationToken = default)
         {
-            var eventTypeId = messageContext.MessageContent.EventContent.EventTypeId;
+            var eventTypeId = messageContext.EventTypeId;
             var exceptionText = $"{exception?.InnerException} {exception}";
             var retryCount = messageContext.RetryCount ?? 0;
 
@@ -440,13 +440,13 @@ namespace NimBus.Core.Messages
         private void LogInfo(IMessageContext messageContext, string prefixMessage)
         {
             _logger.LogInformation("{Prefix} EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-                prefixMessage, messageContext.MessageContent?.EventContent?.EventTypeId, messageContext.EventId, messageContext.MessageId, messageContext.SessionId);
+                prefixMessage, messageContext.EventTypeId, messageContext.EventId, messageContext.MessageId, messageContext.SessionId);
         }
 
         private void LogError(IMessageContext messageContext, string prefixMessage, Exception exception)
         {
             _logger.LogError(exception, "{Prefix} EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-                prefixMessage, messageContext.MessageContent?.EventContent?.EventTypeId, messageContext.EventId, messageContext.MessageId, messageContext.SessionId);
+                prefixMessage, messageContext.EventTypeId, messageContext.EventId, messageContext.MessageId, messageContext.SessionId);
         }
     }
 }

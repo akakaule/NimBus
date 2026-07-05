@@ -403,6 +403,27 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(0, response.RetryCalls, "Should not retry when retry count is at the limit");
     }
 
+    [TestMethod]
+    public async Task HandleEventRequest_HandlerThrows_RetryLookupUsesUserPropertyEventTypeId()
+    {
+        // EventTypeId is backed by a message user property (no body deserialization
+        // required). CheckForRetry must key the retry-policy lookup off that
+        // authoritative value, NOT off the deserialized body's
+        // MessageContent.EventContent.EventTypeId. Here the two intentionally differ.
+        var ctx = CreateContext(messageType: MessageType.EventRequest, eventTypeId: "UserPropEventType");
+        ctx.MessageContent.EventContent.EventTypeId = "BodyEventType"; // must NOT be used
+        var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
+        var response = new FakeResponseService();
+        var retryProvider = new FakeRetryPolicyProvider();
+        var sut = new StrictMessageHandler(handler, response, NullLogger.Instance, retryProvider);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, retryProvider.GetRetryPolicyCalls, "CheckForRetry must consult the retry policy provider");
+        Assert.AreEqual("UserPropEventType", retryProvider.LastEventTypeId,
+            "Retry lookup must use the user-property EventTypeId, not the deserialized body value");
+    }
+
     // ── HandleRetryRequest ──────────────────────────────────────────────
 
     [TestMethod]
@@ -854,6 +875,20 @@ public class StrictMessageHandlerTests
             PendingHandoffCalls++;
             LastPendingHandoffMetadata = handoff;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeRetryPolicyProvider : IRetryPolicyProvider
+    {
+        public int GetRetryPolicyCalls { get; private set; }
+        public string LastEventTypeId { get; private set; }
+        public RetryPolicy PolicyToReturn { get; set; }
+
+        public RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string endpoint = null)
+        {
+            GetRetryPolicyCalls++;
+            LastEventTypeId = eventTypeId;
+            return PolicyToReturn;
         }
     }
 

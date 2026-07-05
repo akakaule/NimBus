@@ -253,6 +253,63 @@ public class OutboxDispatcherTests
     }
 
     [TestMethod]
+    public async Task DispatchPending_PoisonSession_DoesNotBlockOtherSessions()
+    {
+        var outbox = new InMemoryOutbox();
+        // Session "A" leads with a poison row (payload fails to deserialize),
+        // followed by a healthy row on the SAME session that must stay parked
+        // behind it to preserve per-session FIFO (ADR-001).
+        outbox.AddPending(new OutboxMessage
+        {
+            Id = "out-a-poison",
+            MessageId = "msg-a-poison",
+            SessionId = "A",
+            Payload = "{invalid json",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        outbox.AddPending(new OutboxMessage
+        {
+            Id = "out-a-good",
+            MessageId = "msg-a-good",
+            SessionId = "A",
+            Payload = JsonConvert.SerializeObject(new Message
+            {
+                MessageId = "msg-a-good",
+                To = "Test",
+                SessionId = "A",
+                MessageContent = new MessageContent { EventContent = new EventContent { EventTypeId = "OrderPlaced" } }
+            }),
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        // Session "B" is healthy and must dispatch despite session "A" being stuck.
+        outbox.AddPending(new OutboxMessage
+        {
+            Id = "out-b-good",
+            MessageId = "msg-b-good",
+            SessionId = "B",
+            Payload = JsonConvert.SerializeObject(new Message
+            {
+                MessageId = "msg-b-good",
+                To = "Test",
+                SessionId = "B",
+                MessageContent = new MessageContent { EventContent = new EventContent { EventTypeId = "OrderPlaced" } }
+            }),
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        var sender = new RecordingSender();
+        var dispatcher = new OutboxDispatcher(outbox, sender);
+
+        var count = await dispatcher.DispatchPendingAsync();
+
+        Assert.AreEqual(1, count, "Only session B's healthy row should dispatch");
+        CollectionAssert.Contains(outbox.DispatchedIds, "out-b-good", "Session B must not be blocked by session A's poison row");
+        CollectionAssert.DoesNotContain(outbox.DispatchedIds, "out-a-poison");
+        CollectionAssert.DoesNotContain(outbox.DispatchedIds, "out-a-good", "Session A's later row must stay parked behind its poison row");
+        Assert.AreEqual(1, sender.SentMessages.Count, "Only session B should reach the sender");
+    }
+
+    [TestMethod]
     public async Task DispatchPending_RespectsBatchSize()
     {
         var outbox = new InMemoryOutbox();

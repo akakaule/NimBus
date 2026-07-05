@@ -43,14 +43,33 @@ namespace NimBus.Core.Outbox
             _logger.LogDebug("Outbox dispatch poll found {PendingCount} pending message(s)", pending.Count);
 
             var dispatched = new List<string>();
+            // NimBus's ordering guarantee is FIFO per session (ADR-001), not global.
+            // Halt only the failing session so one poison row cannot stall every
+            // other session's outbound messages. Rows are oldest-first, so once a
+            // session's row fails, later rows for that same session stay parked
+            // behind it this poll and are retried next interval.
+            var failedSessions = new HashSet<string>(StringComparer.Ordinal);
             foreach (var outboxMessage in pending)
             {
+                var sessionId = outboxMessage.SessionId;
+                var hasSession = !string.IsNullOrEmpty(sessionId);
+
+                if (hasSession && failedSessions.Contains(sessionId))
+                {
+                    // A prior row on this session failed this poll; keep it strictly
+                    // ordered behind its stuck row instead of dispatching out of order.
+                    continue;
+                }
+
                 if (!await DispatchOneAsync(outboxMessage, cancellationToken))
                 {
-                    // Stop dispatching on first failure to maintain ordering.
+                    // Block only this session; session-less rows fail independently.
                     // The failed message will be retried on the next poll.
-                    break;
+                    if (hasSession)
+                        failedSessions.Add(sessionId);
+                    continue;
                 }
+
                 dispatched.Add(outboxMessage.Id);
             }
 

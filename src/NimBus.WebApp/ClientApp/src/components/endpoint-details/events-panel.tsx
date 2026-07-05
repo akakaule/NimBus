@@ -266,7 +266,6 @@ const EventsPanel = (props: EventsPanelProps) => {
   const [sessions, setSessions] = React.useState<Record<string, SessionState>>(
     {},
   );
-  const [rows, setRows] = React.useState<ITableRow[]>([]);
   const [continuationToken, setContinuationToken] = React.useState<
     string | undefined
   >();
@@ -316,12 +315,6 @@ const EventsPanel = (props: EventsPanelProps) => {
     fetchEvents(buildEventFilterFromParams(applied, endpointId));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applied, endpointId, searchNonce]);
-
-  // Update rows when events or sessions change
-  React.useEffect(() => {
-    setRows(mapEvents());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events, sessions]);
 
   const isActionableStatus = (status: string | undefined): boolean => {
     if (!status) return false;
@@ -637,6 +630,12 @@ const EventsPanel = (props: EventsPanelProps) => {
       return row;
     });
   };
+
+  // Derive the table rows from the fetched events + hydrated session counts.
+  // Memoised on [events, sessions] so we only re-map when the underlying data
+  // changes — no redundant state mirror + effect (which cost an extra render
+  // per fetch).
+  const rows = React.useMemo(() => mapEvents(), [events, sessions]);
 
   const doActionSelectedRows = (
     selectedRows: ITableRow[],

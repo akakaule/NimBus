@@ -28,6 +28,23 @@ type EventDetailsProps = {
 // Initial blocked-events page size. Server clamps `take` to [1, 200] so this fits comfortably.
 const BLOCKED_PAGE_SIZE = 20;
 
+// Resolve the BlockedEvent ID list into displayable rows (one detail fetch per ID).
+// The server returns only the requested page, so the number of fetches is bounded by
+// the page size, not the full set of blocked siblings on the session. The fetches are
+// independent GETs, so they run concurrently; the server's page order is preserved and
+// rows whose detail fetch resolved to nothing are dropped (same as the previous loop).
+export const enrichBlockedItems = async (
+  client: api.Client,
+  items: api.BlockedEvent[],
+): Promise<BlockedEvent[]> => {
+  const messages = await Promise.all(
+    items.map((event) => client.getEventIds(event.eventId!, event.originatingId!)),
+  );
+  return items
+    .map((event, index) => ({ message: messages[index], status: event.status! }))
+    .filter((entry) => Boolean(entry.message));
+};
+
 const EventDetails = (props: EventDetailsProps) => {
   const client = new api.Client(api.CookieAuth());
   const params = useParams();
@@ -40,20 +57,6 @@ const EventDetails = (props: EventDetailsProps) => {
   const [blockedEvents, setBlockedEvents] = useState<BlockedEvent[]>([]);
   const [blockedTotal, setBlockedTotal] = useState<number>(0);
 
-  // Resolve the BlockedEvent ID list into displayable rows (one detail fetch per ID).
-  // The server now returns only the requested page, so this loop's bound is the page size,
-  // not the full set of blocked siblings on the session.
-  const enrichBlockedItems = async (items: api.BlockedEvent[]): Promise<BlockedEvent[]> => {
-    const enriched: BlockedEvent[] = [];
-    for (const event of items) {
-      const message = await client.getEventIds(event.eventId!, event.originatingId!);
-      if (message) {
-        enriched.push({ message, status: event.status! });
-      }
-    }
-    return enriched;
-  };
-
   useEffect(() => {
     // Reset before re-fetch so clicking a blocked row doesn't render the
     // previous event's data while the new fetch is in flight. The Loading
@@ -65,31 +68,9 @@ const EventDetails = (props: EventDetailsProps) => {
     setBlockedTotal(0);
 
     const fetchData = async () => {
-      const tempCosmosEvent = await client.getEventId(
-        params.id!,
-        params.endpointId!,
-      );
-
-      setCosmosEvent(tempCosmosEvent);
-
-      if (
-        tempCosmosEvent.resolutionStatus?.toLowerCase() === "failed" ||
-        tempCosmosEvent.resolutionStatus?.toLowerCase() === "unsupported" ||
-        tempCosmosEvent.resolutionStatus?.toLowerCase() === "deadlettered"
-      )
-        client
-          .getEventBlockedId(
-            tempCosmosEvent.endpointId!,
-            tempCosmosEvent.sessionId!,
-            0,
-            BLOCKED_PAGE_SIZE,
-          )
-          .then(async (page) => {
-            const enriched = await enrichBlockedItems(page.items ?? []);
-            setBlockedEvents(enriched);
-            setBlockedTotal(page.total ?? enriched.length);
-          });
-
+      // History, audits and event types are keyed off the route params, not the
+      // resolved event, so start them immediately — they run concurrently with
+      // the event fetch instead of waiting for it to resolve first.
       client
         .getEventDetailsHistoryId(params.id!, params.endpointId!)
         .then((res) => {
@@ -103,6 +84,33 @@ const EventDetails = (props: EventDetailsProps) => {
       client.getEventTypes().then((res) => {
         setEventTypes(res);
       });
+
+      const tempCosmosEvent = await client.getEventId(
+        params.id!,
+        params.endpointId!,
+      );
+
+      setCosmosEvent(tempCosmosEvent);
+
+      // Only the blocked-siblings fetch depends on the resolved event (its
+      // endpointId/sessionId and resolutionStatus), so it stays after the await.
+      if (
+        tempCosmosEvent.resolutionStatus?.toLowerCase() === "failed" ||
+        tempCosmosEvent.resolutionStatus?.toLowerCase() === "unsupported" ||
+        tempCosmosEvent.resolutionStatus?.toLowerCase() === "deadlettered"
+      )
+        client
+          .getEventBlockedId(
+            tempCosmosEvent.endpointId!,
+            tempCosmosEvent.sessionId!,
+            0,
+            BLOCKED_PAGE_SIZE,
+          )
+          .then(async (page) => {
+            const enriched = await enrichBlockedItems(client, page.items ?? []);
+            setBlockedEvents(enriched);
+            setBlockedTotal(page.total ?? enriched.length);
+          });
     };
     fetchData();
     // Re-run when the route params change (e.g. clicking a row in the Blocked
@@ -120,7 +128,7 @@ const EventDetails = (props: EventDetailsProps) => {
       skip,
       take,
     );
-    const enriched = await enrichBlockedItems(page.items ?? []);
+    const enriched = await enrichBlockedItems(client, page.items ?? []);
     setBlockedEvents(enriched);
     setBlockedTotal(page.total ?? enriched.length);
   };

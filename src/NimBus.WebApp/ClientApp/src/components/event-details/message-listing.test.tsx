@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import moment from "moment";
 import * as api from "api-client";
@@ -706,5 +706,93 @@ describe("MessageListing payload blocks", () => {
 
     expect(screen.getByText("Payload")).toBeTruthy();
     expect(screen.queryByText("Handoff result")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Payload derivations are memoised: identical rendered output, but the
+// expensive JSON.parse/stringify no longer re-runs on an unrelated re-render
+// while the message history is unchanged.
+// ---------------------------------------------------------------------------
+describe("MessageListing memoised payload derivations", () => {
+  // A masked payload (carries "$piiMasked": true) so the "Reveal PII" control
+  // renders — clicking it flips internal state and re-renders MessageListing
+  // without touching `messages`, the exact "keystroke in a sibling input"
+  // scenario the memo guards against.
+  const maskedPayload = '{"$piiMasked":true,"ssn":"***"}';
+
+  beforeEach(() => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
+  });
+
+  function renderMasked() {
+    stubMe();
+    const event = {
+      eventId: "evt-1",
+      sessionId: "sess-1",
+      lastMessageId: "msg-1",
+      endpointId: "ep-1",
+      eventTypeId: "Demo.Type",
+      resolutionStatus: "Completed",
+    } as unknown as api.Event;
+    return render(
+      <MemoryRouter>
+        <MessageListing
+          eventDetails={event}
+          messages={[
+            historyMsg({
+              messageType: api.MessageType.EventRequest,
+              enqueuedTimeUtc: "2026-06-01T10:00:00.000Z",
+              eventContent: maskedPayload,
+            }),
+          ]}
+          eventTypes={[]}
+          skipEvent={async () => {}}
+          resubmitEvent={async () => {}}
+          resubmitEventWithChanges={async () => {}}
+        />
+      </MemoryRouter>,
+    );
+  }
+
+  it("renders the pretty-printed payload and a Reveal PII control", () => {
+    const { container } = renderMasked();
+
+    expect(screen.getByText("Payload")).toBeTruthy();
+    // Pretty-printed (indented) form of the masked payload, unchanged by memo.
+    expect(container.textContent).toContain('"$piiMasked": true');
+    expect(container.textContent).toContain('"ssn": "***"');
+    expect(
+      screen.getByRole("button", { name: /Reveal PII/ }),
+    ).toBeTruthy();
+  });
+
+  it("formats the payload once and does not reformat on an unrelated re-render", () => {
+    const parseSpy = vi.spyOn(JSON, "parse");
+    try {
+      renderMasked();
+      const payloadParses = () =>
+        parseSpy.mock.calls.filter((c) => c[0] === maskedPayload).length;
+
+      // Computed once and shared by the inline Payload block and the (closed)
+      // resubmit modal, whose children are still evaluated each render.
+      expect(payloadParses()).toBe(1);
+
+      // Toggling PII reveal re-renders MessageListing without changing
+      // `messages` — the memo holds, so the payload is not re-parsed.
+      fireEvent.click(screen.getByRole("button", { name: /Reveal PII/ }));
+      expect(payloadParses()).toBe(1);
+    } finally {
+      parseSpy.mockRestore();
+    }
   });
 });

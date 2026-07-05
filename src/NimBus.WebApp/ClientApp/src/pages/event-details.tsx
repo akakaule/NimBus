@@ -68,6 +68,23 @@ const EventDetails = (props: EventDetailsProps) => {
     setBlockedTotal(0);
 
     const fetchData = async () => {
+      // History, audits and event types are keyed off the route params, not the
+      // resolved event, so start them immediately — they run concurrently with
+      // the event fetch instead of waiting for it to resolve first.
+      client
+        .getEventDetailsHistoryId(params.id!, params.endpointId!)
+        .then((res) => {
+          setHistories(res);
+        });
+
+      client.getMessageAuditsEventId(params.id!).then((res) => {
+        setAudits(res);
+      });
+
+      client.getEventTypes().then((res) => {
+        setEventTypes(res);
+      });
+
       const tempCosmosEvent = await client.getEventId(
         params.id!,
         params.endpointId!,
@@ -75,6 +92,8 @@ const EventDetails = (props: EventDetailsProps) => {
 
       setCosmosEvent(tempCosmosEvent);
 
+      // Only the blocked-siblings fetch depends on the resolved event (its
+      // endpointId/sessionId and resolutionStatus), so it stays after the await.
       if (
         tempCosmosEvent.resolutionStatus?.toLowerCase() === "failed" ||
         tempCosmosEvent.resolutionStatus?.toLowerCase() === "unsupported" ||
@@ -92,20 +111,6 @@ const EventDetails = (props: EventDetailsProps) => {
             setBlockedEvents(enriched);
             setBlockedTotal(page.total ?? enriched.length);
           });
-
-      client
-        .getEventDetailsHistoryId(params.id!, params.endpointId!)
-        .then((res) => {
-          setHistories(res);
-        });
-
-      client.getMessageAuditsEventId(params.id!).then((res) => {
-        setAudits(res);
-      });
-
-      client.getEventTypes().then((res) => {
-        setEventTypes(res);
-      });
     };
     fetchData();
     // Re-run when the route params change (e.g. clicking a row in the Blocked

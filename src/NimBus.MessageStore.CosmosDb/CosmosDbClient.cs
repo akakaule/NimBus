@@ -461,26 +461,19 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         try
         {
-            var queryDefinition = new QueryDefinition("SELECT * FROM c WHERE c.id = @id")
-                .WithParameter("@id", id);
-            var result = container.GetItemQueryIterator<EventDbo>(queryDefinition);
-
-            if (result.HasMoreResults)
+            // The doc id (eventId_sessionId) fully identifies the document and the
+            // container is partitioned by /id, so soft-delete it with a single patch
+            // (mirrors ArchiveFailedEvent) instead of a query + full-document upsert
+            // that would drag the heavy EventJson payload across the wire 3× over 2
+            // round-trips.
+            var response = await container.PatchItemAsync<EventDbo>(id, new PartitionKey(id), new[]
             {
-                var eventDbo = await result.ReadNextAsync();
-                if (eventDbo.Any())
-                {
-                    var updateEvent = eventDbo.First();
-                    updateEvent.Deleted = true;
-                    updateEvent.TimeToLive = 60; // 1 Minute
-                    var response = await container.UpsertItemAsync<EventDbo>(updateEvent, new PartitionKey(updateEvent.Id));
-                    _logger?.LogTrace(
-                        "COSMOS REMOVE-MESSAGE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}", eventId, sessionId, response.StatusCode);
-                    return true;
-                }
-            }
-
-            return false;
+                PatchOperation.Set("/deleted", true),
+                PatchOperation.Set("/ttl", 60) // 1 Minute
+            });
+            _logger?.LogTrace(
+                "COSMOS REMOVE-MESSAGE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}", eventId, sessionId, response.StatusCode);
+            return true;
         }
         catch (CosmosException e)
         {
@@ -489,7 +482,9 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
             if (e.StatusCode == HttpStatusCode.NotFound)
             {
-                return true;
+                // Missing document — nothing to remove (matches the previous
+                // empty-query-result path returning false).
+                return false;
             }
 
             if (e.StatusCode == HttpStatusCode.TooManyRequests)

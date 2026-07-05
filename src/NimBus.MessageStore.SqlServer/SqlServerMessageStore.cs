@@ -645,8 +645,18 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         p.Add("Offset", offset);
         p.Add("PageSize", pageSize);
 
+        // Search results never surface the full request payload (cross-provider
+        // contract — the detail view fetches it on demand). Strip the heavy
+        // NVARCHAR(MAX) EventJson server-side so it never crosses the wire.
         var sql = $@"
-SELECT * FROM {T("UnresolvedEvents")}
+SELECT
+    EventId, SessionId, EndpointId, Status, UpdatedAtUtc, EnqueuedTimeUtc, CorrelationId, EndpointRole,
+    MessageType, RetryCount, RetryLimit, LastMessageId, OriginatingMessageId, ParentMessageId,
+    OriginatingFrom, Reason, DeadLetterReason, DeadLetterErrorDescription, EventTypeId,
+    ToAddress, FromAddress, QueueTimeMs, ProcessingTimeMs,
+    PendingSubStatus, HandoffReason, ExternalJobId, ExpectedBy,
+    JSON_MODIFY(MessageContentJson, '$.EventContent.EventJson', NULL) AS MessageContentJson
+FROM {T("UnresolvedEvents")}
 WHERE {string.Join(" AND ", where)}
 ORDER BY UpdatedAtUtc DESC, Id DESC
 OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
@@ -654,17 +664,6 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync(sql, p, commandTimeout: _commandTimeout);
         var events = rows.Select(MapUnresolvedEventRow).ToList();
-
-        // Search results never surface the full request payload (cross-provider
-        // contract — the detail view fetches it on demand). Rows are freshly
-        // mapped, so nulling here mutates nothing shared.
-        foreach (UnresolvedEvent ev in events)
-        {
-            if (ev?.MessageContent?.EventContent != null)
-            {
-                ev.MessageContent.EventContent.EventJson = null;
-            }
-        }
 
         return new SearchResponse
         {
@@ -894,8 +893,17 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         p.Add("Offset", offset);
         p.Add("PageSize", pageSize);
 
+        // Search results never surface the full request payload (cross-provider
+        // contract — detail views fetch it via GetMessage). Strip the heavy
+        // NVARCHAR(MAX) EventJson server-side so it never crosses the wire.
         var sql = $@"
-SELECT * FROM {T("Messages")}
+SELECT
+    EventId, MessageId, EndpointId, SessionId, CorrelationId, EventTypeId,
+    OriginatingMessageId, ParentMessageId, FromAddress, ToAddress, OriginatingFrom, OriginalSessionId,
+    MessageType, EndpointRole, EnqueuedTimeUtc, RetryCount, RetryLimit, DeferralSequence,
+    QueueTimeMs, ProcessingTimeMs, DeadLetterReason, DeadLetterErrorDescription,
+    JSON_MODIFY(MessageContentJson, '$.EventContent.EventJson', NULL) AS MessageContentJson
+FROM {T("Messages")}
 WHERE {string.Join(" AND ", where)}
 ORDER BY EnqueuedTimeUtc DESC, Id DESC
 OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
@@ -903,17 +911,6 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync(sql, p, commandTimeout: _commandTimeout);
         var messages = rows.Select(r => (MessageEntity)MapMessageRow(r)).ToList();
-
-        // Search results never surface the full request payload (cross-provider
-        // contract — detail views fetch it via GetMessage). Freshly mapped rows,
-        // so nulling here mutates nothing shared.
-        foreach (var message in messages)
-        {
-            if (message?.MessageContent?.EventContent != null)
-            {
-                message.MessageContent.EventContent.EventJson = null;
-            }
-        }
 
         return new MessageSearchResult
         {

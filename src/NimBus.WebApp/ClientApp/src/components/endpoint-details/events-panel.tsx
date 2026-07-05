@@ -266,7 +266,6 @@ const EventsPanel = (props: EventsPanelProps) => {
   const [sessions, setSessions] = React.useState<Record<string, SessionState>>(
     {},
   );
-  const [rows, setRows] = React.useState<ITableRow[]>([]);
   const [continuationToken, setContinuationToken] = React.useState<
     string | undefined
   >();
@@ -274,6 +273,12 @@ const EventsPanel = (props: EventsPanelProps) => {
   const [currentFilter, setCurrentFilter] = React.useState<
     api.EventFilter | undefined
   >();
+  // Bumped on every full fetch (mount, Search, Reset, filter/URL change). A late
+  // out-of-order response — including its background session-status batch — only
+  // commits while its ticket is still current, so a slow older fetch can't
+  // overwrite a newer one. Pagination continues the current generation (see
+  // nextPage), so it reads the ticket without bumping it.
+  const fetchTicket = React.useRef(0);
   // Columns the operator has chosen to hide via the column chooser (persisted;
   // locked columns are never included).
   const [hiddenCols, setHiddenCols] =
@@ -316,12 +321,6 @@ const EventsPanel = (props: EventsPanelProps) => {
     fetchEvents(buildEventFilterFromParams(applied, endpointId));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applied, endpointId, searchNonce]);
-
-  // Update rows when events or sessions change
-  React.useEffect(() => {
-    setRows(mapEvents());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events, sessions]);
 
   const isActionableStatus = (status: string | undefined): boolean => {
     if (!status) return false;
@@ -373,6 +372,7 @@ const EventsPanel = (props: EventsPanelProps) => {
 
   const fetchSessionStatus = async (
     actionableEvents: api.Event[],
+    ticket: number,
   ): Promise<void> => {
     const uniqueSessionIds = [
       ...new Set(
@@ -399,13 +399,16 @@ const EventsPanel = (props: EventsPanelProps) => {
         .reduce((pre, cur) => pre.concat(cur), []);
 
       const tempSessions = getSessions(deferredEvents, pendingEvents);
-      setSessions((prev) => ({ ...prev, ...tempSessions }));
+      if (ticket === fetchTicket.current) {
+        setSessions((prev) => ({ ...prev, ...tempSessions }));
+      }
     } catch {
       console.error("Failed to fetch session statuses in batch");
     }
   };
 
   const fetchEvents = async (filter: api.EventFilter): Promise<void> => {
+    const ticket = ++fetchTicket.current;
     setIsLoading(true);
     try {
       const reqBody = new api.SearchRequest();
@@ -418,23 +421,34 @@ const EventsPanel = (props: EventsPanelProps) => {
       );
       const fetchedEvents = response.events ?? [];
 
-      setEvents(fetchedEvents);
-      setContinuationToken(response.continuationToken);
-      setCurrentFilter(filter);
+      if (ticket === fetchTicket.current) {
+        setEvents(fetchedEvents);
+        setContinuationToken(response.continuationToken);
+        setCurrentFilter(filter);
+      }
 
-      // Fetch session status only for actionable events
+      // Hydrate the per-session count columns in the background so the table
+      // paints immediately. The session batch only fills the Pending/Deferred
+      // counts, so blocking the whole table (and its extra round trip) on it is
+      // needless — fire it un-awaited and let the counts fill in when it
+      // returns. Its commit is ticket-guarded too, so a stale batch can't
+      // overwrite fresher counts. fetchSessionStatus owns its own error handling.
       const actionableEvents = fetchedEvents.filter((e) =>
         isActionableStatus(e.resolutionStatus),
       );
 
       if (actionableEvents.length > 0) {
-        await fetchSessionStatus(actionableEvents);
+        void fetchSessionStatus(actionableEvents, ticket);
       }
     } catch (error) {
-      console.error("Failed to fetch events:", error);
-      setEvents([]);
+      if (ticket === fetchTicket.current) {
+        console.error("Failed to fetch events:", error);
+        setEvents([]);
+      }
     } finally {
-      setIsLoading(false);
+      if (ticket === fetchTicket.current) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -448,6 +462,12 @@ const EventsPanel = (props: EventsPanelProps) => {
       return;
     }
 
+    // Pagination extends the current fetch generation rather than starting a new
+    // one — read the ticket without bumping it, so a concurrent full re-fetch
+    // (filter/URL change) still invalidates this append while this append does
+    // not invalidate the current fetch's session-status batch.
+    const ticket = fetchTicket.current;
+
     try {
       const reqBody = new api.SearchRequest();
       reqBody.eventFilter = currentFilter;
@@ -460,7 +480,9 @@ const EventsPanel = (props: EventsPanelProps) => {
       );
       const newEvents = response.events ?? [];
 
-      setContinuationToken(response.continuationToken);
+      if (ticket === fetchTicket.current) {
+        setContinuationToken(response.continuationToken);
+      }
 
       // Fetch session status for new actionable events
       const actionableEvents = newEvents.filter((e) =>
@@ -468,12 +490,16 @@ const EventsPanel = (props: EventsPanelProps) => {
       );
 
       if (actionableEvents.length > 0) {
-        await fetchSessionStatus(actionableEvents);
+        await fetchSessionStatus(actionableEvents, ticket);
       }
 
-      setEvents((prev) => [...prev, ...newEvents]);
+      if (ticket === fetchTicket.current) {
+        setEvents((prev) => [...prev, ...newEvents]);
+      }
     } catch (error) {
-      console.error("Failed to fetch next page:", error);
+      if (ticket === fetchTicket.current) {
+        console.error("Failed to fetch next page:", error);
+      }
     }
   };
 
@@ -633,6 +659,12 @@ const EventsPanel = (props: EventsPanelProps) => {
       return row;
     });
   };
+
+  // Derive the table rows from the fetched events + hydrated session counts.
+  // Memoised on [events, sessions] so we only re-map when the underlying data
+  // changes — no redundant state mirror + effect (which cost an extra render
+  // per fetch).
+  const rows = React.useMemo(() => mapEvents(), [events, sessions]);
 
   const doActionSelectedRows = (
     selectedRows: ITableRow[],

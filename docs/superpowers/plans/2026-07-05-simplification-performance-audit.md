@@ -3,7 +3,7 @@
 **Created:** 2026-07-05 · **Source:** multi-agent audit (find → adversarial-verify → skeptic).
 **Scope:** 97 verified findings (16 high-impact) across 23 projects. 21 candidate findings were refuted on review and are listed at the end.
 
-**Status:** Waves 1–2 ✅ merged to `master` (16 fixes, 2026-07-05). Wave 3 (frontend) in progress. Waves 4–6 + #840 open.
+**Status:** Waves 1–3 ✅ merged to `master` (22 fixes). Waves 4–6 + #840 open.
 
 Full interactive report: `.claire/nimbus-audit.html`.
 
@@ -72,7 +72,22 @@ Ten store-efficiency fixes, verified against **live** conformance suites (dedica
 
 **Deferred:** #840 (SQL soft-delete purge) — new behavior needing a retention-policy decision, tracked in Wave 6.
 
-## Waves 3-6
+## Wave 3 — completed (✅ merged to `master` 2026-07-06)
+
+Six frontend data-fetching / render fixes, TDD (vitest) per branch and verified together (integrated 49/49 across 7 test files). Grouped by file to stay conflict-free.
+
+| Branch (merge) | Fixes |
+|---|---|
+| `wave3/topology-n1` (`e4eba57`) | kill Topology/Flow N+1 — build details from the catalog response (#94) |
+| `wave3/event-details-parallel` (`580eb7a`) | blocked-events `Promise.all` (#49) + parallelize independent page requests (#68) |
+| `wave3/messages-list-stale-guard` (`f0e081b`) | ticket stale-guard on `fetchMessages` (#152) |
+| `wave3/list-fetch-fixes` (`6fd2196`) | events-table paint before session batch (#431), `useMemo` rows (#321), stale-guards on `fetchEvents`/`fetchAudits` |
+| `wave3/message-listing-memo` (`0f6abe8`) | memoize payload derivations off the keystroke path (#384) |
+| `wave3/endpoints-list` (`d04c6dc`) | `handleCheck` state-mutation + over-fetch fix (#175), dead metadata/helpers removed (#333) |
+
+**Deferred:** `statusToBadgeVariant` dedup (#33) → Wave 5 (spans two files); orphaned `endpoints-list` methods (`stopLoading`/`startLoading`/`this.env`) → minor follow-up.
+
+## Waves 4-6
 
 Enumerated in the catalog below with file:line, evidence and the intended change captured in the audit. Wave 4 deletions are safe removes but must run the **full** `dotnet test src/NimBus.sln` because they touch shared projects.
 

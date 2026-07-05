@@ -94,11 +94,10 @@ public class PublisherClient : IPublisherClient
 
     public async Task Publish(IEvent @event, string sessionId, string correlationId)
     {
-        var eventType = @event.GetEventType();
-        var messagePayload = JsonConvert.SerializeObject(@event);
-        var messageId = $"{eventType.Id}-{DeterministicHash(messagePayload)}";
-
-        await Publish(@event, sessionId, correlationId, messageId);
+        // Pass messageId: null so GetMessageStatic derives the deterministic id
+        // (and serializes the event) exactly once. Passing the same formula here
+        // would serialize the event a second time to no effect.
+        await Publish(@event, sessionId, correlationId, null);
     }
 
     public async Task Publish(IEvent @event, string sessionId, string correlationId, string messageId)

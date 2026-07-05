@@ -1161,12 +1161,25 @@ GROUP BY
 
     public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from)
     {
+        // Aggregate COUNT/AVG/MIN/MAX server-side and GROUP BY (endpoint, eventType)
+        // so the Resolver hot path never streams every outcome row into memory.
+        // COUNT/AVG/MIN/MAX ignore NULLs, replacing the old client-side null filter.
         var sql = $@"
-SELECT EndpointId, EventTypeId, QueueTimeMs, ProcessingTimeMs
+SELECT EndpointId,
+       EventTypeId,
+       COUNT(QueueTimeMs) AS QueueCount,
+       AVG(CAST(QueueTimeMs AS FLOAT)) AS QueueAvg,
+       MIN(QueueTimeMs) AS QueueMin,
+       MAX(QueueTimeMs) AS QueueMax,
+       COUNT(ProcessingTimeMs) AS ProcessingCount,
+       AVG(CAST(ProcessingTimeMs AS FLOAT)) AS ProcessingAvg,
+       MIN(ProcessingTimeMs) AS ProcessingMin,
+       MAX(ProcessingTimeMs) AS ProcessingMax
 FROM {T("Messages")}
 WHERE EnqueuedTimeUtc >= @From
   AND MessageType IN ('ResolutionResponse', 'ErrorResponse', 'SkipResponse', 'DeferralResponse', 'UnsupportedResponse')
-  AND (QueueTimeMs IS NOT NULL OR ProcessingTimeMs IS NOT NULL)";
+  AND (QueueTimeMs IS NOT NULL OR ProcessingTimeMs IS NOT NULL)
+GROUP BY EndpointId, EventTypeId";
 
         return GetEndpointLatencyMetricsCore(sql, from);
     }
@@ -1174,24 +1187,38 @@ WHERE EnqueuedTimeUtc >= @From
     private async Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetricsCore(string sql, DateTime from)
     {
         await using var conn = await OpenAsync();
-        var rows = await conn.QueryAsync<(string EndpointId, string EventTypeId, long? QueueTimeMs, long? ProcessingTimeMs)>(
+        var rows = await conn.QueryAsync<(string EndpointId, string EventTypeId,
+            int QueueCount, double? QueueAvg, long? QueueMin, long? QueueMax,
+            int ProcessingCount, double? ProcessingAvg, long? ProcessingMin, long? ProcessingMax)>(
             sql,
             new { From = from },
             commandTimeout: _commandTimeout);
 
         var latencies = rows
-            .GroupBy(r => (r.EndpointId, r.EventTypeId))
-            .Select(g => new EndpointLatencyAggregate
+            .Select(r => new EndpointLatencyAggregate
             {
-                EndpointId = g.Key.EndpointId,
-                EventTypeId = g.Key.EventTypeId,
-                Queue = AggregateLatency(g.Select(r => r.QueueTimeMs)),
-                Processing = AggregateLatency(g.Select(r => r.ProcessingTimeMs)),
+                EndpointId = r.EndpointId,
+                EventTypeId = r.EventTypeId,
+                Queue = BuildLatency(r.QueueCount, r.QueueAvg, r.QueueMin, r.QueueMax),
+                Processing = BuildLatency(r.ProcessingCount, r.ProcessingAvg, r.ProcessingMin, r.ProcessingMax),
             })
             .ToList();
 
         return new EndpointLatencyMetricsResult { Latencies = latencies };
     }
+
+    // A group whose column is entirely NULL yields COUNT = 0 with NULL avg/min/max;
+    // collapse that to the zeroed aggregate the client-side path used to produce.
+    private static LatencyAggregate BuildLatency(int count, double? avg, long? min, long? max)
+        => count == 0
+            ? new LatencyAggregate()
+            : new LatencyAggregate
+            {
+                Count = count,
+                AvgMs = avg ?? 0,
+                MinMs = min ?? 0,
+                MaxMs = max ?? 0,
+            };
 
     public async Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from)
     {
@@ -1252,20 +1279,6 @@ WHERE EnqueuedTimeUtc >= @From
             BucketSize = bucketLabel,
             DataPoints = buckets.Values.OrderBy(b => b.Timestamp).ToList(),
         };
-    }
-
-    private static LatencyAggregate AggregateLatency(IEnumerable<long?> values)
-    {
-        var captured = values.Where(v => v.HasValue).Select(v => (double)v!.Value).ToList();
-        return captured.Count == 0
-            ? new LatencyAggregate()
-            : new LatencyAggregate
-            {
-                Count = captured.Count,
-                AvgMs = captured.Average(),
-                MinMs = captured.Min(),
-                MaxMs = captured.Max(),
-            };
     }
 
     private static List<string> GenerateBucketKeys(DateTime from, DateTime to, int substringLength)

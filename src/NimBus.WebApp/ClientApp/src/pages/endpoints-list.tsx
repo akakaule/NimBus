@@ -1,5 +1,4 @@
 import * as React from "react";
-import moment from "moment";
 import { Tooltip } from "components/ui/tooltip";
 import * as api from "api-client";
 import {
@@ -10,8 +9,6 @@ import {
 import DataTable, { ITableRow, ITableHeadCell } from "components/data-table";
 import Page from "components/page";
 import { getApplicationStatus } from "hooks/app-status";
-import EndpointPurgeButton from "components/endpoint-list/endpoint-purge-button";
-import EndpointDisableButton from "components/endpoint-list/endpoint-disable-button";
 import Cookies from "js-cookie";
 
 // Status icons
@@ -74,7 +71,6 @@ type EndpointState = {
   // Loaded endpoint statuses keyed by endpoint id. Acts as an accumulating
   // cache so checking/unchecking never refetches a status we already hold.
   statusById: Record<string, api.EndpointStatusCount>;
-  metadatas: api.MetadataShort[];
   loading: boolean;
   // The set of endpoint ids whose checkbox is ticked. Empty means "show all".
   checked: string[];
@@ -109,7 +105,6 @@ export default class EndpointsList extends React.Component<
     this.state = {
       endpointIds: this.props.endpointIds ?? [],
       statusById: this.indexById(mappedProps ?? []),
-      metadatas: [],
       loading: !mappedProps,
       checked: Cookies.get(this.cookieName)
         ? Cookies.get(this.cookieName)!.split(",")
@@ -142,28 +137,23 @@ export default class EndpointsList extends React.Component<
       filteredEndpointIds = endPointIds;
     }
 
-    const [endpointsResult, metadatasResult] = await Promise.allSettled([
-      this.client.postApiEndpointStatusCount(filteredEndpointIds),
-      this.client.postApiMetadatashort(filteredEndpointIds),
-    ]);
-
-    const endpoints =
-      endpointsResult.status === "fulfilled"
-        ? endpointsResult.value
-        : filteredEndpointIds.map(
-            (id) =>
-              new api.EndpointStatusCount({
-                endpointId: id,
-                storageStatus: "unavailable",
-              }),
-          );
-    const metadatas =
-      metadatasResult.status === "fulfilled" ? metadatasResult.value : [];
+    let endpoints: api.EndpointStatusCount[];
+    try {
+      endpoints =
+        await this.client.postApiEndpointStatusCount(filteredEndpointIds);
+    } catch {
+      endpoints = filteredEndpointIds.map(
+        (id) =>
+          new api.EndpointStatusCount({
+            endpointId: id,
+            storageStatus: "unavailable",
+          }),
+      );
+    }
 
     this.setState((prev) => ({
       endpointIds: endPointIds,
       statusById: this.mergeStatuses(prev.statusById, endpoints),
-      metadatas,
       loading: false,
     }));
   }
@@ -196,32 +186,16 @@ export default class EndpointsList extends React.Component<
   refreshEndpoint = async (endpointId: string): Promise<any> => {
     this.client = new api.Client(api.CookieAuth());
 
-    const [endpoint, endpointMetadata] = await Promise.all([
-      this.client.getEndpointStatusCountId(endpointId),
-      this.client.getMetadataEndpoint(endpointId),
-    ]);
-
-    const existingMetadata = [...this.state.metadatas];
-    const metadataIndex = existingMetadata.findIndex(
-      (e) => e.endpointId === endpointId,
-    );
-    existingMetadata[metadataIndex] = endpointMetadata;
+    const endpoint = await this.client.getEndpointStatusCountId(endpointId);
 
     this.setState((prev) => ({
       statusById: this.mergeStatuses(prev.statusById, [endpoint]),
-      metadatas: existingMetadata,
       loading: false,
     }));
   };
 
   render() {
     return <Page title="Endpoints">{this.createTableNew()}</Page>;
-  }
-
-  transformStates(endpoints: api.EndpointStatus[]): api.EndpointStatus[] {
-    const transformedStates = [...(endpoints ?? [])];
-    transformedStates.forEach((x) => (x.eventTime = x.eventTime ?? moment()));
-    return transformedStates;
   }
 
   mapMomentInEndpointStatus(endpointStatus: api.EndpointStatusCount) {
@@ -312,10 +286,6 @@ export default class EndpointsList extends React.Component<
     const pendingEventsCount = endpointStatus.pendingCount || 0;
     const lastUpdated = endpointStatus.eventTime?.fromNow() || "";
     const endpointStatusValue = getEndpointStatus(endpointStatus);
-    const metadata =
-      this.state.metadatas[
-        this.state.metadatas.findIndex((e) => e.endpointId === endpointId)
-      ] || undefined;
 
     return {
       id: endpointStatus.endpointId ?? "",
@@ -368,33 +338,6 @@ export default class EndpointsList extends React.Component<
       ]),
     };
   }
-
-  buildPurgeButton = (endpointId: string): JSX.Element => {
-    const isEnabled = !(this.env === "prod" || this.env === "stag");
-
-    if (isEnabled)
-      return (
-        <EndpointPurgeButton
-          refreshEndpoint={this.refreshEndpoint}
-          stopLoading={this.stopLoading}
-          startLoading={this.startLoading}
-          endpointId={endpointId}
-        />
-      );
-    else return <></>;
-  };
-
-  buildDisableButton = (endpointId: string, status: string): JSX.Element => {
-    return (
-      <EndpointDisableButton
-        refreshEndpoint={this.refreshEndpoint}
-        stopLoading={this.stopLoading}
-        startLoading={this.startLoading}
-        endpointId={endpointId}
-        status={status}
-      />
-    );
-  };
 
   mapStatusToIcon = (status: EndpointStatus): JSX.Element => {
     const colorClass = mapStatusToColor(status);

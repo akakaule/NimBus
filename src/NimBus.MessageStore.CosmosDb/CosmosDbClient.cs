@@ -734,22 +734,25 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     {
         var container = await GetEndpointContainer(endpointId);
         var id = $"{eventId}_{sessionId}";
-        var queryDefinition = new QueryDefinition(
-            "SELECT * FROM c WHERE c.id = @id AND c.status = @status AND (NOT IS_DEFINED(c.deleted) or c.deleted != true)")
-            .WithParameter("@id", id)
-            .WithParameter("@status", status);
-        var result = container.GetItemQueryIterator<EventDbo>(queryDefinition);
-
-        if (result.HasMoreResults)
+        try
         {
-            var eventDbo = await result.ReadNextAsync();
-            if (eventDbo.Any())
+            // The doc id (eventId_sessionId) fully identifies the document and the
+            // container is partitioned by /id, so a point read (mirroring
+            // GetEventById) costs ~1/3 the RU of the equivalent query. The
+            // status + not-deleted filters move in-memory with identical semantics.
+            var rel = await container.ReadItemAsync<EventDbo>(id, new PartitionKey(id));
+            var dbo = rel.Resource;
+            if (dbo.Status != status || (dbo.Deleted ?? false))
             {
-                return HydrateResolutionStatus(eventDbo.First());
+                return null;
             }
-        }
 
-        return null;
+            return HydrateResolutionStatus(dbo);
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
     }
 
     public async Task<UnresolvedEvent> GetEventById(string endpointId, string id)

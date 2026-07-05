@@ -321,6 +321,59 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                             || e.Status.Equals(UnsupportedStatus, StringComparison.OrdinalIgnoreCase))
                 .Where(e => !e.Deleted.HasValue || !e.Deleted.Value)
                 .OrderByDescending(e => e.Event.UpdatedAt)
+                // Server-side projection: every UnresolvedEvent property EXCEPT the
+                // heavy EventJson payload, which dominates the response size and is
+                // never surfaced by the endpoint page list (the detail view fetches
+                // it on demand). Same shape as GetEventsByFilter — keep in sync with
+                // that projection and the UnresolvedEvent drift guard.
+                .Select(x => new EventDbo
+                {
+                    Id = x.Id,
+                    Status = x.Status,
+                    EventType = x.EventType,
+                    SessionId = x.SessionId,
+                    Deleted = x.Deleted,
+                    Event = new UnresolvedEvent
+                    {
+                        UpdatedAt = x.Event.UpdatedAt,
+                        EnqueuedTimeUtc = x.Event.EnqueuedTimeUtc,
+                        EventId = x.Event.EventId,
+                        SessionId = x.Event.SessionId,
+                        CorrelationId = x.Event.CorrelationId,
+                        ResolutionStatus = x.Event.ResolutionStatus,
+                        EndpointRole = x.Event.EndpointRole,
+                        EndpointId = x.Event.EndpointId,
+                        RetryCount = x.Event.RetryCount,
+                        RetryLimit = x.Event.RetryLimit,
+                        MessageType = x.Event.MessageType,
+                        DeadLetterReason = x.Event.DeadLetterReason,
+                        DeadLetterErrorDescription = x.Event.DeadLetterErrorDescription,
+                        LastMessageId = x.Event.LastMessageId,
+                        OriginatingMessageId = x.Event.OriginatingMessageId,
+                        ParentMessageId = x.Event.ParentMessageId,
+                        Reason = x.Event.Reason,
+                        OriginatingFrom = x.Event.OriginatingFrom,
+                        EventTypeId = x.Event.EventTypeId,
+                        To = x.Event.To,
+                        From = x.Event.From,
+                        MessageContent = new MessageContent
+                        {
+                            // EventJson deliberately omitted — the sole purpose of
+                            // this projection.
+                            EventContent = new EventContent
+                            {
+                                EventTypeId = x.Event.MessageContent.EventContent.EventTypeId,
+                            },
+                            ErrorContent = x.Event.MessageContent.ErrorContent,
+                        },
+                        QueueTimeMs = x.Event.QueueTimeMs,
+                        ProcessingTimeMs = x.Event.ProcessingTimeMs,
+                        PendingSubStatus = x.Event.PendingSubStatus,
+                        HandoffReason = x.Event.HandoffReason,
+                        ExternalJobId = x.Event.ExternalJobId,
+                        ExpectedBy = x.Event.ExpectedBy,
+                    },
+                })
                 .ToFeedIterator();
 
             var pendingEvents = new List<string>();
@@ -461,26 +514,19 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         try
         {
-            var queryDefinition = new QueryDefinition("SELECT * FROM c WHERE c.id = @id")
-                .WithParameter("@id", id);
-            var result = container.GetItemQueryIterator<EventDbo>(queryDefinition);
-
-            if (result.HasMoreResults)
+            // The doc id (eventId_sessionId) fully identifies the document and the
+            // container is partitioned by /id, so soft-delete it with a single patch
+            // (mirrors ArchiveFailedEvent) instead of a query + full-document upsert
+            // that would drag the heavy EventJson payload across the wire 3× over 2
+            // round-trips.
+            var response = await container.PatchItemAsync<EventDbo>(id, new PartitionKey(id), new[]
             {
-                var eventDbo = await result.ReadNextAsync();
-                if (eventDbo.Any())
-                {
-                    var updateEvent = eventDbo.First();
-                    updateEvent.Deleted = true;
-                    updateEvent.TimeToLive = 60; // 1 Minute
-                    var response = await container.UpsertItemAsync<EventDbo>(updateEvent, new PartitionKey(updateEvent.Id));
-                    _logger?.LogTrace(
-                        "COSMOS REMOVE-MESSAGE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}", eventId, sessionId, response.StatusCode);
-                    return true;
-                }
-            }
-
-            return false;
+                PatchOperation.Set("/deleted", true),
+                PatchOperation.Set("/ttl", 60) // 1 Minute
+            });
+            _logger?.LogTrace(
+                "COSMOS REMOVE-MESSAGE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}", eventId, sessionId, response.StatusCode);
+            return true;
         }
         catch (CosmosException e)
         {
@@ -489,7 +535,9 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
             if (e.StatusCode == HttpStatusCode.NotFound)
             {
-                return true;
+                // Missing document — nothing to remove (matches the previous
+                // empty-query-result path returning false).
+                return false;
             }
 
             if (e.StatusCode == HttpStatusCode.TooManyRequests)
@@ -686,22 +734,25 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     {
         var container = await GetEndpointContainer(endpointId);
         var id = $"{eventId}_{sessionId}";
-        var queryDefinition = new QueryDefinition(
-            "SELECT * FROM c WHERE c.id = @id AND c.status = @status AND (NOT IS_DEFINED(c.deleted) or c.deleted != true)")
-            .WithParameter("@id", id)
-            .WithParameter("@status", status);
-        var result = container.GetItemQueryIterator<EventDbo>(queryDefinition);
-
-        if (result.HasMoreResults)
+        try
         {
-            var eventDbo = await result.ReadNextAsync();
-            if (eventDbo.Any())
+            // The doc id (eventId_sessionId) fully identifies the document and the
+            // container is partitioned by /id, so a point read (mirroring
+            // GetEventById) costs ~1/3 the RU of the equivalent query. The
+            // status + not-deleted filters move in-memory with identical semantics.
+            var rel = await container.ReadItemAsync<EventDbo>(id, new PartitionKey(id));
+            var dbo = rel.Resource;
+            if (dbo.Status != status || (dbo.Deleted ?? false))
             {
-                return HydrateResolutionStatus(eventDbo.First());
+                return null;
             }
-        }
 
-        return null;
+            return HydrateResolutionStatus(dbo);
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
     }
 
     public async Task<UnresolvedEvent> GetEventById(string endpointId, string id)
@@ -812,9 +863,13 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             query = query
                 .Where(x => filter.ResolutionStatus.Contains(x.Status));
 
+        // MessageType is persisted as a string (StringEnumConverter) and no enum
+        // name is a substring of another, so Contains(ToString()) is equality here —
+        // use plain equality (as SearchMessages does) so the range index can serve
+        // it instead of a full-scan CONTAINS over a computed ToString().
         if (filter.MessageType != null)
             query = query
-                .Where(x => x.Event.MessageType.ToString().Contains(filter.MessageType.ToString()));
+                .Where(x => x.Event.MessageType == filter.MessageType);
 
         if (filter.Payload != null)
             query = query

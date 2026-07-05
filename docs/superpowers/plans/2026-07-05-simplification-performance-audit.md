@@ -3,6 +3,8 @@
 **Created:** 2026-07-05 · **Source:** multi-agent audit (find → adversarial-verify → skeptic).
 **Scope:** 97 verified findings (16 high-impact) across 23 projects. 21 candidate findings were refuted on review and are listed at the end.
 
+**Status:** Wave 1 (6 fixes) ✅ merged to `master` 2026-07-05. Waves 2–6 open.
+
 Full interactive report: `.claire/nimbus-audit.html`.
 
 ## How this plan is organised
@@ -25,7 +27,18 @@ Findings are grouped into six waves by remediation shape, not by subsystem — e
 - **Build gate**: Release build of the touched project (`-c Release` surfaces `TreatWarningsAsErrors` + StyleCop/Sonar/Meziantou) **and** the relevant test project green before commit.
 - **Constraints honoured**: `[Obsolete]` members stay as back-compat bridges; transport stays Azure Service Bus; Newtonsoft.Json remains the serializer; WebApp is enhanced, not rewritten.
 
-## Wave 1 — detailed (in progress this session)
+## Wave 1 — detailed (✅ completed & merged to `master` 2026-07-05)
+
+All six fixes were implemented one-per-worktree with TDD (RED→GREEN), Release-built (0 errors), tested, and merged into `master` via `--no-ff` merge commits. Post-merge verification: Core.Tests 137 passed, ServiceBus.Tests 169 passed, SDK.Tests 56 passed, frontend vitest green.
+
+| Item | Fix commit | Branch |
+|---|---|---|
+| 1.1 Outbox poison-row halt | `2fcf589` | `fix/outbox-poison-per-session` |
+| 1.2 MessageContent memoization | `06daf7e` | `fix/servicebus-messagecontext-memoize` |
+| 1.3 EventTypeId from user property | `641e550` | `fix/core-eventtypeid-userproperty` |
+| 1.4 Publisher single-serialize | `d5cc2bc` | `fix/sdk-publisher-double-serialize` |
+| 1.5 SDK registration bug + fail-fast msg | `7a5d69e` | `fix/sdk-registration` |
+| 1.6 Frontend rejected-promise cache | `e58bf55` | `fix/webapp-eventtypes-rejected-promise` |
 
 Each of these is a contained, unit-testable change on the message hot path or a genuine bug. Worktree branch in parentheses.
 

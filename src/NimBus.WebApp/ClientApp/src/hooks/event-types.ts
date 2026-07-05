@@ -25,8 +25,12 @@ export const getEventTypesByEndpoint = async (
     .getEventtypesByEndpointId(endpointId)
     .then((result) => {
       cachedEventTypes.set(endpointId, result);
-      pendingRequests.delete(endpointId);
       return result;
+    })
+    .finally(() => {
+      // Clear the in-flight entry on success OR failure so a rejected request
+      // isn't cached forever — the next call retries instead.
+      pendingRequests.delete(endpointId);
     });
 
   pendingRequests.set(endpointId, request);

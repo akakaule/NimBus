@@ -23,7 +23,7 @@ import HandoffHero, {
 import { useToast } from "components/ui/toast";
 import { formatMoment } from "functions/endpoint.functions";
 import { Link } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 // Threshold above which we surface an "Above P95" callout next to the timing
 // bar. The number is a UI heuristic, not a server-supplied value — the design
@@ -381,16 +381,28 @@ export default function MessageListing(props: IMessageListingProps) {
   // payload. For a failed hand-off the event's own content is the empty
   // terminal ErrorResponse, so the Payload section and the
   // resubmit-with-changes modal must render/prefill the request payload.
-  const resubmitPayload =
-    getResubmitPayload(props.messages) ??
-    props.eventDetails?.messageContent?.eventContent?.eventJson;
+  // Memoised so these filter+sort derivations don't recompute on every render
+  // (e.g. a keystroke in a controlled input elsewhere in the subtree); the
+  // value only changes when the history or event document does.
+  const resubmitPayload = useMemo(
+    () =>
+      getResubmitPayload(props.messages) ??
+      props.eventDetails?.messageContent?.eventContent?.eventJson,
+    [props.messages, props.eventDetails],
+  );
   // A completed hand-off's optional external result details (separate from
   // the original payload), shown in its own block when present.
-  const handoffResult = getHandoffResult(props.messages);
+  const handoffResult = useMemo(
+    () => getHandoffResult(props.messages),
+    [props.messages],
+  );
   // Routing lineage: for response messages, From = the originating publisher
   // (resolved from the EventRequest in the history) and To = the handling
   // endpoint — never the internal Resolver hop.
-  const routing = getRoutingFromTo(props.eventDetails, props.messages);
+  const routing = useMemo(
+    () => getRoutingFromTo(props.eventDetails, props.messages),
+    [props.eventDetails, props.messages],
+  );
   const [textAreaValue, setTextAreaValue] = useState(resubmitPayload);
   const [eventTypeIdValue, setEventTypeIdValue] = useState(
     props.eventDetails?.eventTypeId,
@@ -579,8 +591,24 @@ export default function MessageListing(props: IMessageListingProps) {
 
   // PII gate evaluates the payload actually rendered below (the resolved
   // request payload), so a masked request payload stays blurred by default.
-  const hasPii =
-    !!resubmitPayload && /\$piiMasked"\s*:\s*true/i.test(resubmitPayload);
+  const hasPii = useMemo(
+    () =>
+      !!resubmitPayload && /\$piiMasked"\s*:\s*true/i.test(resubmitPayload),
+    [resubmitPayload],
+  );
+
+  // Pretty-print the payload / hand-off result once and reuse across the
+  // inline blocks and the resubmit-with-changes modal, so a keystroke
+  // elsewhere in the subtree doesn't re-run JSON.parse/JSON.stringify over
+  // the full payload on every render.
+  const formattedPayload = useMemo(
+    () => (resubmitPayload ? safeFormatJson(resubmitPayload) : ""),
+    [resubmitPayload],
+  );
+  const formattedHandoffResult = useMemo(
+    () => (handoffResult ? safeFormatJson(handoffResult) : ""),
+    [handoffResult],
+  );
 
   const reprocessBtn: IButtonState = { isDisabled: false, text: "Reprocess" };
   const [reprocessButton, setReprocessButton] = useState(reprocessBtn);
@@ -1065,7 +1093,7 @@ export default function MessageListing(props: IMessageListingProps) {
                 `/Messages?eventId=${_guid}`
               }
             >
-              {safeFormatJson(resubmitPayload)}
+              {formattedPayload}
             </CodeBlock>
           </div>
         </div>
@@ -1077,7 +1105,7 @@ export default function MessageListing(props: IMessageListingProps) {
       {handoffResult && (
         <div className="mt-4">
           <CodeBlock title="Handoff result" subtitle="application/json">
-            {safeFormatJson(handoffResult)}
+            {formattedHandoffResult}
           </CodeBlock>
         </div>
       )}
@@ -1090,7 +1118,7 @@ export default function MessageListing(props: IMessageListingProps) {
               Original event:
             </label>
             <pre className="bg-muted p-4 rounded text-sm overflow-x-auto max-h-96">
-              {resubmitPayload ? safeFormatJson(resubmitPayload) : ""}
+              {formattedPayload}
             </pre>
           </div>
           <div className="mb-4">

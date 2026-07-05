@@ -231,18 +231,28 @@ VALUES (
     public async Task<MessageEntity> GetLatestEventRequestMessage(string eventId)
     {
         await using var conn = await OpenAsync();
-        // Narrow to the request-bearing message types in SQL and order newest-first;
+        // Narrow to the request-bearing message types in SQL and order newest-first.
         // EventJson lives inside the serialized MessageContent column, so the
-        // non-empty-payload check happens after mapping. Still far cheaper than
-        // materialising the full event history.
-        var rows = await conn.QueryAsync(
+        // non-empty-payload check happens after mapping. Stream the reader
+        // unbuffered so it stops at the first payload-bearing row instead of
+        // materialising the full request history.
+        var rows = conn.QueryUnbufferedAsync(
             $@"SELECT * FROM {T("Messages")}
                 WHERE EventId = @EventId
                   AND MessageType IN ('EventRequest', 'ResubmissionRequest')
                 ORDER BY EnqueuedTimeUtc DESC",
             new { EventId = eventId }, commandTimeout: _commandTimeout);
-        return rows.Select(MapMessageRow)
-            .FirstOrDefault(m => !string.IsNullOrEmpty(m.MessageContent?.EventContent?.EventJson));
+
+        await foreach (var row in rows)
+        {
+            var message = (MessageEntity)MapMessageRow(row);
+            if (!string.IsNullOrEmpty(message.MessageContent?.EventContent?.EventJson))
+            {
+                return message;
+            }
+        }
+
+        return null;
     }
 
     public async Task<MessageEntity> GetFailedMessage(string eventId, string endpointId)

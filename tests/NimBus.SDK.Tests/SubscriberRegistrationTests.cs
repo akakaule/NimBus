@@ -1,8 +1,17 @@
 #pragma warning disable CA1707, CA2007
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Core.Messages;
+using NimBus.Core.Outbox;
+using NimBus.SDK;
 using NimBus.SDK.Extensions;
 
 namespace NimBus.SDK.Tests;
@@ -45,5 +54,77 @@ public class SubscriberRegistrationTests
         services.AddSingleton(new ServiceBusClient(FakeConnection));
         services.AddNimBusSubscriber("EndpointA", _ => { });
         services.AddNimBusSubscriber("EndpointA", _ => { });
+    }
+
+    [TestMethod]
+    public void AddNimBusSubscriber_wires_registered_PermanentFailureClassifier_without_pipeline_or_lifecycle()
+    {
+        // Regression: a registered IPermanentFailureClassifier used to be silently
+        // dropped when no MessagePipeline and no MessageLifecycleNotifier were
+        // registered — the subscriber factory fell into a narrower StrictMessageHandler
+        // ctor that never forwarded the classifier. Wire it unconditionally instead.
+        var classifier = new SpyPermanentFailureClassifier();
+        var services = new ServiceCollection();
+        services.AddSingleton(new ServiceBusClient(FakeConnection));
+        services.AddSingleton<IPermanentFailureClassifier>(classifier);
+        services.AddNimBusSubscriber("EndpointA", _ => { });
+
+        using var provider = services.BuildServiceProvider();
+        var subscriber = provider.GetRequiredService<ISubscriberClient>();
+
+        // Observe the wiring through the object graph the factory builds:
+        // SubscriberClient -> ServiceBusAdapter -> StrictMessageHandler.
+        var adapter = GetPrivateField(subscriber, "_serviceBusAdapter");
+        var handler = GetPrivateField(adapter, "_messageHandler");
+        var wired = GetPrivateField(handler, "_permanentFailureClassifier");
+
+        Assert.AreSame(classifier, wired,
+            "A registered IPermanentFailureClassifier must be wired into StrictMessageHandler " +
+            "even when no pipeline or lifecycle notifier is registered.");
+    }
+
+    [TestMethod]
+    public void AddNimBusOutboxDispatcher_without_OutboxDispatcherSender_throws_actionable_message()
+    {
+        // The fail-fast message must name the real registration path.
+        // OutboxDispatcherSender is NOT registered by AddNimBusPublisher — the
+        // consumer registers it themselves as a singleton.
+        var services = new ServiceCollection();
+        services.AddSingleton(new ServiceBusClient(FakeConnection));
+        services.AddSingleton<IOutbox>(new NoopOutbox());
+        services.AddNimBusOutboxDispatcher();
+
+        using var provider = services.BuildServiceProvider();
+
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(
+            () => provider.GetServices<IHostedService>().ToList());
+
+        StringAssert.Contains(ex.Message, "OutboxDispatcherSender");
+        Assert.IsFalse(
+            ex.Message.Contains("Register AddNimBusPublisher before", StringComparison.Ordinal),
+            "Message must not claim AddNimBusPublisher registers OutboxDispatcherSender.");
+        StringAssert.Contains(ex.Message, "AddSingleton");
+    }
+
+    private static object GetPrivateField(object target, string fieldName)
+    {
+        var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.IsNotNull(field, $"Expected private field '{fieldName}' on {target.GetType().Name}.");
+        return field.GetValue(target);
+    }
+
+    private sealed class SpyPermanentFailureClassifier : IPermanentFailureClassifier
+    {
+        public bool IsPermanentFailure(Exception exception) => false;
+    }
+
+    private sealed class NoopOutbox : IOutbox
+    {
+        public Task StoreAsync(OutboxMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task StoreBatchAsync(IEnumerable<OutboxMessage> messages, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<IReadOnlyList<OutboxMessage>> GetPendingAsync(int batchSize, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<OutboxMessage>>(Array.Empty<OutboxMessage>());
+        public Task MarkAsDispatchedAsync(string id, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task MarkAsDispatchedAsync(IEnumerable<string> ids, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

@@ -184,24 +184,16 @@ namespace NimBus.SDK.Extensions
                 var logger = sp.GetService<ILogger<StrictMessageHandler>>()
                     ?? (Microsoft.Extensions.Logging.ILogger)NullLogger.Instance;
 
-                // Create StrictMessageHandler with pipeline support
-                IMessageHandler strictMessageHandler;
-                if (pipeline != null || lifecycleNotifier != null)
-                {
-                    strictMessageHandler = new StrictMessageHandler(
-                        eventHandlerProvider, responseService, logger,
-                        retryPolicyProvider, pipeline, lifecycleNotifier, permanentFailureClassifier);
-                }
-                else if (retryPolicyProvider != null)
-                {
-                    strictMessageHandler = new StrictMessageHandler(
-                        eventHandlerProvider, responseService, logger, retryPolicyProvider);
-                }
-                else
-                {
-                    strictMessageHandler = new StrictMessageHandler(
-                        eventHandlerProvider, responseService, logger);
-                }
+                // Build StrictMessageHandler with every resolved dependency. All of
+                // retryPolicyProvider, pipeline, lifecycleNotifier and
+                // permanentFailureClassifier are optional/nullable and the widest
+                // ctor forwards nulls to the base exactly as the narrower ctors did —
+                // so a single unconditional construction is behaviourally identical to
+                // the old branches, and (crucially) never drops a registered
+                // IPermanentFailureClassifier when no pipeline/lifecycle notifier exists.
+                IMessageHandler strictMessageHandler = new StrictMessageHandler(
+                    eventHandlerProvider, responseService, logger,
+                    retryPolicyProvider, pipeline, lifecycleNotifier, permanentFailureClassifier);
 
                 var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, options.EntityPath);
                 return new SubscriberClient(serviceBusAdapter, eventHandlerProvider);
@@ -268,8 +260,9 @@ namespace NimBus.SDK.Extensions
                 var sender = sp.GetService<OutboxDispatcherSender>();
                 if (sender == null)
                     throw new InvalidOperationException(
-                        "OutboxDispatcherSender is not registered. Register AddNimBusPublisher before AddNimBusOutboxDispatcher, " +
-                        "or register OutboxDispatcherSender manually.");
+                        "OutboxDispatcherSender is not registered. AddNimBusPublisher does NOT register it — " +
+                        "register it yourself as a singleton bound to your outbound endpoint before AddNimBusOutboxDispatcher, e.g. " +
+                        "services.AddSingleton(sp => new OutboxDispatcherSender(sp.GetRequiredService<ServiceBusClient>().CreateSender(\"YourEndpoint\"))).");
 
                 var dispatcherLogger = sp.GetService<ILogger<OutboxDispatcher>>();
                 var hostedLogger = sp.GetService<ILogger<OutboxDispatcherHostedService>>();

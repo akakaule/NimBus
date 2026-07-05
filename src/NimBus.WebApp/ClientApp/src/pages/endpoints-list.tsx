@@ -71,10 +71,13 @@ type EndpointProps = {
 };
 type EndpointState = {
   endpointIds: string[];
-  endpointStates: api.EndpointStatusCount[];
+  // Loaded endpoint statuses keyed by endpoint id. Acts as an accumulating
+  // cache so checking/unchecking never refetches a status we already hold.
+  statusById: Record<string, api.EndpointStatusCount>;
   metadatas: api.MetadataShort[];
   loading: boolean;
-  checkedEndpoints: string[];
+  // The set of endpoint ids whose checkbox is ticked. Empty means "show all".
+  checked: string[];
 };
 
 enum ITableData {
@@ -105,10 +108,10 @@ export default class EndpointsList extends React.Component<
 
     this.state = {
       endpointIds: this.props.endpointIds ?? [],
-      endpointStates: mappedProps ?? [],
+      statusById: this.indexById(mappedProps ?? []),
       metadatas: [],
       loading: !mappedProps,
-      checkedEndpoints: Cookies.get(this.cookieName)
+      checked: Cookies.get(this.cookieName)
         ? Cookies.get(this.cookieName)!.split(",")
         : [],
     };
@@ -157,86 +160,29 @@ export default class EndpointsList extends React.Component<
     const metadatas =
       metadatasResult.status === "fulfilled" ? metadatasResult.value : [];
 
-    for (const endpoint of endpoints) {
-      this.state.endpointStates.push(this.mapMomentInEndpointStatus(endpoint));
-    }
-
-    for (const metadata of metadatas) {
-      this.state.metadatas.push(metadata);
-    }
-
-    for (const endpointId of endPointIds) {
-      this.state.endpointIds.push(endpointId);
-    }
-
-    this.setState({ ...this.state, loading: false });
+    this.setState((prev) => ({
+      endpointIds: endPointIds,
+      statusById: this.mergeStatuses(prev.statusById, endpoints),
+      metadatas,
+      loading: false,
+    }));
   }
 
   async handleCheck(endpointId: string, newState: boolean) {
-    let getAll: boolean = true;
-    if (newState) {
-      this.state.checkedEndpoints.push(endpointId);
-      this.setState({ ...this.state });
-    } else {
-      let nCE = this.state.checkedEndpoints.filter((e) => e !== endpointId);
-      let nCEs = this.state.endpointStates.filter(
-        (e) => e.endpointId !== endpointId,
-      );
-      getAll = nCE.length !== 0;
-      if (getAll) {
-        this.setState({
-          ...this.state,
-          endpointStates: nCEs,
-          checkedEndpoints: nCE,
-        });
-      } else {
-        this.state.endpointStates.pop();
-        this.state.checkedEndpoints.pop();
-      }
-    }
+    // Build the next checked set immutably — never push/pop `this.state`.
+    const checked = newState
+      ? this.state.checked.includes(endpointId)
+        ? this.state.checked
+        : [...this.state.checked, endpointId]
+      : this.state.checked.filter((id) => id !== endpointId);
 
-    if (getAll) {
-      let loadedEndpointStates: string[] = [];
-      for (const item of this.state.endpointStates) {
-        loadedEndpointStates.push(item.endpointId!);
-      }
+    // No ticked boxes means "show all"; otherwise show only the ticked ones.
+    // Fetch only the statuses we don't already have cached — unchecking never
+    // discards or refetches statuses that are still on screen.
+    const visibleIds = checked.length > 0 ? checked : this.state.endpointIds;
+    const statusById = await this.loadStatuses(visibleIds, this.state.statusById);
 
-      let endpointStatesToGet = this.state.checkedEndpoints.filter(
-        (item) => loadedEndpointStates.indexOf(item) < 0,
-      );
-      let endpoints =
-        await this.client.postApiEndpointStatusCount(endpointStatesToGet);
-
-      for (const endpoint of endpoints) {
-        this.state.endpointStates.push(
-          this.mapMomentInEndpointStatus(endpoint),
-        );
-      }
-
-      let newStates: api.EndpointStatusCount[] = [];
-      for (const endpointId of this.state.checkedEndpoints) {
-        const toPop = this.state.endpointStates.find(
-          (es) => es.endpointId === endpointId,
-        );
-        if (toPop) {
-          newStates.push(toPop);
-        }
-      }
-
-      this.setState({ ...this.state, endpointStates: newStates });
-    } else {
-      this.setState({ ...this.state, loading: true });
-      const endpoints = await this.client.postApiEndpointStatusCount(
-        this.state.endpointIds,
-      );
-
-      for (const endpoint of endpoints) {
-        this.state.endpointStates.push(
-          this.mapMomentInEndpointStatus(endpoint),
-        );
-      }
-      this.setState({ ...this.state, loading: false });
-    }
+    this.setState({ checked, statusById });
   }
 
   stopLoading = (): void => {
@@ -255,25 +201,17 @@ export default class EndpointsList extends React.Component<
       this.client.getMetadataEndpoint(endpointId),
     ]);
 
-    const mappedEndpoint = this.mapMomentInEndpointStatus(endpoint);
-    const existingEndpoints = [...this.state.endpointStates];
     const existingMetadata = [...this.state.metadatas];
-
-    const endpointIndex = existingEndpoints.findIndex(
-      (e) => e.endpointId === endpointId,
-    );
     const metadataIndex = existingMetadata.findIndex(
       (e) => e.endpointId === endpointId,
     );
-
-    existingEndpoints[endpointIndex] = mappedEndpoint;
     existingMetadata[metadataIndex] = endpointMetadata;
 
-    this.setState({
-      endpointStates: [...existingEndpoints],
-      metadatas: [...existingMetadata],
+    this.setState((prev) => ({
+      statusById: this.mergeStatuses(prev.statusById, [endpoint]),
+      metadatas: existingMetadata,
       loading: false,
-    });
+    }));
   };
 
   render() {
@@ -290,10 +228,54 @@ export default class EndpointsList extends React.Component<
     return api.EndpointStatusCount.fromJS(endpointStatus);
   }
 
+  // Immutably merge freshly fetched statuses into an existing id->status map,
+  // normalising the moment fields on the way in.
+  private mergeStatuses(
+    existing: Record<string, api.EndpointStatusCount>,
+    endpoints: api.EndpointStatusCount[],
+  ): Record<string, api.EndpointStatusCount> {
+    const next = { ...existing };
+    for (const endpoint of endpoints) {
+      const mapped = this.mapMomentInEndpointStatus(endpoint);
+      if (mapped.endpointId) {
+        next[mapped.endpointId] = mapped;
+      }
+    }
+    return next;
+  }
+
+  private indexById(
+    endpoints: api.EndpointStatusCount[],
+  ): Record<string, api.EndpointStatusCount> {
+    return this.mergeStatuses({}, endpoints);
+  }
+
+  // Ensure the given ids are present in the status map, fetching only the ones
+  // we don't already hold. Returns the same map reference untouched when there
+  // is nothing to fetch.
+  private async loadStatuses(
+    ids: string[],
+    existing: Record<string, api.EndpointStatusCount>,
+  ): Promise<Record<string, api.EndpointStatusCount>> {
+    const missing = ids.filter((id) => !(id in existing));
+    if (missing.length === 0) {
+      return existing;
+    }
+    const endpoints = await this.client.postApiEndpointStatusCount(missing);
+    return this.mergeStatuses(existing, endpoints);
+  }
+
   createTableNew(): JSX.Element {
-    const tableData = this.state.endpointStates?.map((x) =>
-      this.mapEndpointStatusToTableRow(x),
-    );
+    // Derive the visible rows from the status cache: the checked endpoints, or
+    // the whole list when nothing is checked. Rows are re-sorted by the table.
+    const visibleIds =
+      this.state.checked.length > 0 ? this.state.checked : this.state.endpointIds;
+    const tableData = visibleIds
+      .map((id) => this.state.statusById[id])
+      .filter(
+        (status): status is api.EndpointStatusCount => status !== undefined,
+      )
+      .map((x) => this.mapEndpointStatusToTableRow(x));
 
     const headCells: ITableHeadCell[] = [
       { id: ITableData.name, label: "Name", numeric: false },
@@ -315,7 +297,7 @@ export default class EndpointsList extends React.Component<
         dataRowsPerPage={20}
         count={tableData.length}
         endpointIds={this.state.endpointIds || []}
-        checkedEndpointIds={this.state.checkedEndpoints}
+        checkedEndpointIds={this.state.checked}
         checked={this.handleCheck}
       />
     );

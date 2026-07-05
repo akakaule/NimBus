@@ -42,10 +42,10 @@ public sealed class SqlServerMessageStore : INimBusMessageStore
         _commandTimeout = _options.CommandTimeoutSeconds;
     }
 
-    private SqlConnection Open()
+    private async Task<SqlConnection> OpenAsync()
     {
         var conn = new SqlConnection(_options.ConnectionString);
-        conn.Open();
+        await conn.OpenAsync().ConfigureAwait(false);
         return conn;
     }
 
@@ -126,7 +126,7 @@ VALUES (
     @PendingSubStatus, @HandoffReason, @ExternalJobId, @ExpectedBy,
     @MessageContentJson);";
 
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.ExecuteAsync(sql, new
         {
             EventId = eventId,
@@ -179,7 +179,7 @@ VALUES (
     @MessageType, @EndpointRole, @EnqueuedTimeUtc, @RetryCount, @RetryLimit, @DeferralSequence,
     @QueueTimeMs, @ProcessingTimeMs, @DeadLetterReason, @DeadLetterErrorDescription, @MessageContentJson);";
 
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         await conn.ExecuteAsync(sql, new
         {
             message.EventId,
@@ -210,7 +210,7 @@ VALUES (
 
     public async Task<MessageEntity> GetMessage(string eventId, string messageId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var row = await conn.QueryFirstOrDefaultAsync(
             $"SELECT * FROM {T("Messages")} WHERE EventId = @EventId AND MessageId = @MessageId",
             new { EventId = eventId, MessageId = messageId }, commandTimeout: _commandTimeout);
@@ -221,7 +221,7 @@ VALUES (
 
     public async Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync(
             $"SELECT * FROM {T("Messages")} WHERE EventId = @EventId ORDER BY EnqueuedTimeUtc",
             new { EventId = eventId }, commandTimeout: _commandTimeout);
@@ -230,24 +230,34 @@ VALUES (
 
     public async Task<MessageEntity> GetLatestEventRequestMessage(string eventId)
     {
-        await using var conn = Open();
-        // Narrow to the request-bearing message types in SQL and order newest-first;
+        await using var conn = await OpenAsync();
+        // Narrow to the request-bearing message types in SQL and order newest-first.
         // EventJson lives inside the serialized MessageContent column, so the
-        // non-empty-payload check happens after mapping. Still far cheaper than
-        // materialising the full event history.
-        var rows = await conn.QueryAsync(
+        // non-empty-payload check happens after mapping. Stream the reader
+        // unbuffered so it stops at the first payload-bearing row instead of
+        // materialising the full request history.
+        var rows = conn.QueryUnbufferedAsync(
             $@"SELECT * FROM {T("Messages")}
                 WHERE EventId = @EventId
                   AND MessageType IN ('EventRequest', 'ResubmissionRequest')
                 ORDER BY EnqueuedTimeUtc DESC",
             new { EventId = eventId }, commandTimeout: _commandTimeout);
-        return rows.Select(MapMessageRow)
-            .FirstOrDefault(m => !string.IsNullOrEmpty(m.MessageContent?.EventContent?.EventJson));
+
+        await foreach (var row in rows)
+        {
+            var message = (MessageEntity)MapMessageRow(row);
+            if (!string.IsNullOrEmpty(message.MessageContent?.EventContent?.EventJson))
+            {
+                return message;
+            }
+        }
+
+        return null;
     }
 
     public async Task<MessageEntity> GetFailedMessage(string eventId, string endpointId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var row = await conn.QueryFirstOrDefaultAsync(
             $@"SELECT TOP 1 m.* FROM {T("Messages")} m
                 WHERE m.EventId = @EventId AND m.EndpointId = @EndpointId
@@ -261,7 +271,7 @@ VALUES (
 
     public async Task RemoveStoredMessage(string eventId, string messageId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         await conn.ExecuteAsync(
             $"DELETE FROM {T("Messages")} WHERE EventId = @EventId AND MessageId = @MessageId",
             new { EventId = eventId, MessageId = messageId }, commandTimeout: _commandTimeout);
@@ -304,7 +314,7 @@ VALUES (
         var sql = $@"
 INSERT INTO {T("MessageAudits")} (EventId, EndpointId, EventTypeId, AuditorName, AuditTimestamp, AuditType, Comment, AccessDenied, Data)
 VALUES (@EventId, @EndpointId, @EventTypeId, @AuditorName, @AuditTimestamp, @AuditType, @Comment, @AccessDenied, @Data)";
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         await conn.ExecuteAsync(sql, new
         {
             EventId = eventId,
@@ -321,7 +331,7 @@ VALUES (@EventId, @EndpointId, @EventTypeId, @AuditorName, @AuditTimestamp, @Aud
 
     public async Task<IEnumerable<MessageAuditEntity>> GetMessageAudits(string eventId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync(
             $"SELECT * FROM {T("MessageAudits")} WHERE EventId = @EventId ORDER BY AuditTimestamp",
             new { EventId = eventId }, commandTimeout: _commandTimeout);
@@ -366,7 +376,7 @@ WHERE {string.Join(" AND ", where)}
 ORDER BY CreatedAtUtc DESC, Id DESC
 OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync(sql, p, commandTimeout: _commandTimeout);
 
         var items = rows.Select(r => new AuditSearchItem
@@ -404,7 +414,7 @@ SELECT Status, COUNT(*) AS Count
 FROM {T("UnresolvedEvents")}
 WHERE EndpointId = @EndpointId AND Deleted = 0
 GROUP BY Status";
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync<(string Status, int Count)>(sql, new { EndpointId = endpointId }, commandTimeout: _commandTimeout);
         var dict = rows.ToDictionary(r => r.Status, r => r.Count);
         return new EndpointStateCount
@@ -427,7 +437,7 @@ FROM {T("UnresolvedEvents")}
 WHERE EndpointId = @EndpointId AND SessionId = @SessionId
   AND Status IN ('Pending','Deferred') AND Deleted = 0
 ORDER BY UpdatedAtUtc DESC, Id DESC";
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = (await conn.QueryAsync<(string EventId, string? SessionId, string Status)>(
             sql,
             new { EndpointId = endpointId, SessionId = sessionId },
@@ -451,7 +461,7 @@ FROM {T("UnresolvedEvents")}
 WHERE EndpointId = @EndpointId AND SessionId IN @Ids
   AND Status IN ('Pending','Deferred') AND Deleted = 0
 ORDER BY SessionId, UpdatedAtUtc DESC, Id DESC";
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = (await conn.QueryAsync<(string EventId, string? SessionId, string Status)>(
             sql,
             new { EndpointId = endpointId, Ids = ids },
@@ -489,7 +499,7 @@ WHERE EndpointId = @EndpointId
 ORDER BY UpdatedAtUtc DESC, Id DESC
 OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = (await conn.QueryAsync(
             sql,
             new { EndpointId = endpointId, Offset = offset, PageSize = effectivePageSize },
@@ -529,7 +539,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
     private async Task<UnresolvedEvent> GetEventByStatus(string endpointId, string eventId, string sessionId, string status)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var row = await conn.QueryFirstOrDefaultAsync(
             $"SELECT * FROM {T("UnresolvedEvents")} WHERE EndpointId = @E AND EventId = @V AND SessionId = @S AND Status = @St AND Deleted = 0",
             new { E = endpointId, V = eventId, S = sessionId, St = status }, commandTimeout: _commandTimeout);
@@ -538,7 +548,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
     public async Task<UnresolvedEvent> GetEvent(string endpointId, string eventId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var row = await conn.QueryFirstOrDefaultAsync(
             $"SELECT TOP 1 * FROM {T("UnresolvedEvents")} WHERE EndpointId = @E AND EventId = @V AND Deleted = 0 ORDER BY UpdatedAtUtc DESC",
             new { E = endpointId, V = eventId }, commandTimeout: _commandTimeout);
@@ -548,7 +558,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
     public async Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(externalJobId)) return null;
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         // Restrict to the pending-handoff slice so the filtered index in
         // 0011_HandoffLookup.sql is hit and we don't return stale failed/completed
         // rows where ExternalJobId may linger.
@@ -570,7 +580,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
     public async Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var types = eventTypeIds?.Where(t => !string.IsNullOrEmpty(t)).Take(MaxEventTypeFilter).ToArray();
         var p = new DynamicParameters();
         p.Add("E", endpointId);
@@ -599,7 +609,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
     {
         var ids = eventIds.ToArray();
         if (ids.Length == 0) return new List<UnresolvedEvent>();
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync(
             $@"SELECT * FROM {T("UnresolvedEvents")}
                WHERE EndpointId = @E
@@ -611,7 +621,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
     public async Task<IEnumerable<UnresolvedEvent>> GetCompletedEventsOnEndpoint(string endpointId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync(
             $"SELECT * FROM {T("UnresolvedEvents")} WHERE EndpointId = @E AND Status = 'Completed' AND Deleted = 0",
             new { E = endpointId }, commandTimeout: _commandTimeout);
@@ -645,26 +655,25 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         p.Add("Offset", offset);
         p.Add("PageSize", pageSize);
 
+        // Search results never surface the full request payload (cross-provider
+        // contract — the detail view fetches it on demand). Strip the heavy
+        // NVARCHAR(MAX) EventJson server-side so it never crosses the wire.
         var sql = $@"
-SELECT * FROM {T("UnresolvedEvents")}
+SELECT
+    EventId, SessionId, EndpointId, Status, UpdatedAtUtc, EnqueuedTimeUtc, CorrelationId, EndpointRole,
+    MessageType, RetryCount, RetryLimit, LastMessageId, OriginatingMessageId, ParentMessageId,
+    OriginatingFrom, Reason, DeadLetterReason, DeadLetterErrorDescription, EventTypeId,
+    ToAddress, FromAddress, QueueTimeMs, ProcessingTimeMs,
+    PendingSubStatus, HandoffReason, ExternalJobId, ExpectedBy,
+    JSON_MODIFY(MessageContentJson, '$.EventContent.EventJson', NULL) AS MessageContentJson
+FROM {T("UnresolvedEvents")}
 WHERE {string.Join(" AND ", where)}
 ORDER BY UpdatedAtUtc DESC, Id DESC
 OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync(sql, p, commandTimeout: _commandTimeout);
         var events = rows.Select(MapUnresolvedEventRow).ToList();
-
-        // Search results never surface the full request payload (cross-provider
-        // contract — the detail view fetches it on demand). Rows are freshly
-        // mapped, so nulling here mutates nothing shared.
-        foreach (UnresolvedEvent ev in events)
-        {
-            if (ev?.MessageContent?.EventContent != null)
-            {
-                ev.MessageContent.EventContent.EventJson = null;
-            }
-        }
 
         return new SearchResponse
         {
@@ -700,7 +709,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
     public async Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync(
             $"SELECT * FROM {T("UnresolvedEvents")} WHERE EndpointId = @E AND Status = 'Pending' AND Deleted = 0",
             new { E = endpointId }, commandTimeout: _commandTimeout);
@@ -718,7 +727,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         var safeSkip = skip < 0 ? 0 : skip;
         var safeTake = take <= 0 ? int.MaxValue : take;
 
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         using var multi = await conn.QueryMultipleAsync(
             $@"SELECT EventId, LastMessageId, OriginatingMessageId, Status
                FROM {T("UnresolvedEvents")}
@@ -750,7 +759,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
     private async Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSessionCore(string endpointId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync(
             $@"SELECT EventId, LastMessageId, OriginatingMessageId, Status
                FROM {T("UnresolvedEvents")}
@@ -835,7 +844,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
     public async Task<bool> RemoveMessage(string eventId, string sessionId, string endpointId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.ExecuteAsync(
             $"UPDATE {T("UnresolvedEvents")} SET Deleted = 1 WHERE EndpointId = @E AND EventId = @V AND SessionId = @S",
             new { E = endpointId, V = eventId, S = sessionId }, commandTimeout: _commandTimeout);
@@ -844,7 +853,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
     public async Task<bool> PurgeMessages(string endpointId, string sessionId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.ExecuteAsync(
             $"UPDATE {T("UnresolvedEvents")} SET Deleted = 1 WHERE EndpointId = @E AND SessionId = @S",
             new { E = endpointId, S = sessionId }, commandTimeout: _commandTimeout);
@@ -853,7 +862,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
     public async Task<bool> PurgeMessages(string endpointId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.ExecuteAsync(
             $"UPDATE {T("UnresolvedEvents")} SET Deleted = 1 WHERE EndpointId = @E",
             new { E = endpointId }, commandTimeout: _commandTimeout);
@@ -862,7 +871,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
     public async Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         await conn.ExecuteAsync(
             $"UPDATE {T("UnresolvedEvents")} SET Deleted = 1 WHERE EndpointId = @E AND EventId = @V AND SessionId = @S",
             new { E = endpointId, V = eventId, S = sessionId }, commandTimeout: _commandTimeout);
@@ -894,26 +903,24 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         p.Add("Offset", offset);
         p.Add("PageSize", pageSize);
 
+        // Search results never surface the full request payload (cross-provider
+        // contract — detail views fetch it via GetMessage). Strip the heavy
+        // NVARCHAR(MAX) EventJson server-side so it never crosses the wire.
         var sql = $@"
-SELECT * FROM {T("Messages")}
+SELECT
+    EventId, MessageId, EndpointId, SessionId, CorrelationId, EventTypeId,
+    OriginatingMessageId, ParentMessageId, FromAddress, ToAddress, OriginatingFrom, OriginalSessionId,
+    MessageType, EndpointRole, EnqueuedTimeUtc, RetryCount, RetryLimit, DeferralSequence,
+    QueueTimeMs, ProcessingTimeMs, DeadLetterReason, DeadLetterErrorDescription,
+    JSON_MODIFY(MessageContentJson, '$.EventContent.EventJson', NULL) AS MessageContentJson
+FROM {T("Messages")}
 WHERE {string.Join(" AND ", where)}
 ORDER BY EnqueuedTimeUtc DESC, Id DESC
 OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync(sql, p, commandTimeout: _commandTimeout);
         var messages = rows.Select(r => (MessageEntity)MapMessageRow(r)).ToList();
-
-        // Search results never surface the full request payload (cross-provider
-        // contract — detail views fetch it via GetMessage). Freshly mapped rows,
-        // so nulling here mutates nothing shared.
-        foreach (var message in messages)
-        {
-            if (message?.MessageContent?.EventContent != null)
-            {
-                message.MessageContent.EventContent.EventJson = null;
-            }
-        }
 
         return new MessageSearchResult
         {
@@ -927,7 +934,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
     private async Task<string> GetEndpointErrorListCore(string endpointId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var ids = await conn.QueryAsync<string>(
             $@"SELECT CONCAT(EventId, '_', ISNULL(SessionId, ''))
                FROM {T("UnresolvedEvents")}
@@ -961,7 +968,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         var sql = $@"
 INSERT INTO {T("EndpointSubscriptions")} (Id, EndpointId, Type, Mail, AuthorId, Url, EventTypesJson, Payload, Frequency)
 VALUES (@Id, @EndpointId, @Type, @Mail, @AuthorId, @Url, @EventTypesJson, @Payload, @Frequency)";
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         await conn.ExecuteAsync(sql, new
         {
             sub.Id, sub.EndpointId, sub.Type, sub.Mail, sub.AuthorId, sub.Url,
@@ -973,7 +980,7 @@ VALUES (@Id, @EndpointId, @Type, @Mail, @AuthorId, @Url, @EventTypesJson, @Paylo
 
     public async Task<IEnumerable<EndpointSubscription>> GetSubscriptionsOnEndpoint(string endpointId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync(
             $"SELECT * FROM {T("EndpointSubscriptions")} WHERE EndpointId = @E",
             new { E = endpointId }, commandTimeout: _commandTimeout);
@@ -989,7 +996,7 @@ VALUES (@Id, @EndpointId, @Type, @Mail, @AuthorId, @Url, @EventTypesJson, @Paylo
 UPDATE {T("EndpointSubscriptions")}
 SET Mail = @Mail, Type = @Type, Url = @Url, EventTypesJson = @EventTypesJson, Payload = @Payload, Frequency = @Frequency
 WHERE Id = @Id";
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.ExecuteAsync(sql, new
         {
             subscription.Id, subscription.Mail, subscription.Type, subscription.Url,
@@ -1001,7 +1008,7 @@ WHERE Id = @Id";
 
     public async Task<bool> UnsubscribeById(string endpointId, string id)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.ExecuteAsync(
             $"DELETE FROM {T("EndpointSubscriptions")} WHERE Id = @Id AND EndpointId = @E",
             new { Id = id, E = endpointId }, commandTimeout: _commandTimeout);
@@ -1010,7 +1017,7 @@ WHERE Id = @Id";
 
     public async Task<bool> UnsubscribeByMail(string endpointId, string mail)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.ExecuteAsync(
             $"DELETE FROM {T("EndpointSubscriptions")} WHERE Mail = @Mail AND EndpointId = @E",
             new { Mail = mail, E = endpointId }, commandTimeout: _commandTimeout);
@@ -1019,7 +1026,7 @@ WHERE Id = @Id";
 
     public async Task<bool> DeleteSubscription(string subscriptionId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.ExecuteAsync(
             $"DELETE FROM {T("EndpointSubscriptions")} WHERE Id = @Id",
             new { Id = subscriptionId }, commandTimeout: _commandTimeout);
@@ -1048,7 +1055,7 @@ WHERE Id = @Id";
 
     public async Task<EndpointMetadata> GetEndpointMetadata(string endpointId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var row = await conn.QueryFirstOrDefaultAsync(
             $"SELECT * FROM {T("EndpointMetadata")} WHERE EndpointId = @E",
             new { E = endpointId }, commandTimeout: _commandTimeout);
@@ -1058,7 +1065,7 @@ WHERE Id = @Id";
 
     public async Task<List<EndpointMetadata>> GetMetadatas()
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync($"SELECT * FROM {T("EndpointMetadata")}", commandTimeout: _commandTimeout);
         return rows.Select(MapMetadataRow).Cast<EndpointMetadata>().ToList();
     }
@@ -1067,7 +1074,7 @@ WHERE Id = @Id";
     {
         var ids = endpointIds.ToArray();
         if (ids.Length == 0) return new List<EndpointMetadata>();
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync(
             $"SELECT * FROM {T("EndpointMetadata")} WHERE EndpointId IN @Ids",
             new { Ids = ids }, commandTimeout: _commandTimeout);
@@ -1092,7 +1099,7 @@ WHEN NOT MATCHED THEN INSERT (
     TechnicalContactsJson, SubscriptionStatus)
 VALUES (@EndpointId, @EndpointOwner, @EndpointOwnerTeam, @EndpointOwnerEmail,
     @TechnicalContactsJson, @SubscriptionStatus);";
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.ExecuteAsync(sql, new
         {
             endpointMetadata.EndpointId,
@@ -1139,7 +1146,7 @@ GROUP BY
     END,
     EventTypeId,
     MessageType";
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync<(string EndpointId, string EventTypeId, string MessageType, long EventCount)>(
             sql,
             new { From = from },
@@ -1161,41 +1168,68 @@ GROUP BY
 
     public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from)
     {
+        // Aggregate COUNT/AVG/MIN/MAX server-side and GROUP BY (endpoint, eventType)
+        // so the Resolver hot path never streams every outcome row into memory.
+        // COUNT/AVG/MIN/MAX ignore NULLs, replacing the old client-side null filter.
         var sql = $@"
-SELECT EndpointId, EventTypeId, QueueTimeMs, ProcessingTimeMs
+SELECT EndpointId,
+       EventTypeId,
+       COUNT(QueueTimeMs) AS QueueCount,
+       AVG(CAST(QueueTimeMs AS FLOAT)) AS QueueAvg,
+       MIN(QueueTimeMs) AS QueueMin,
+       MAX(QueueTimeMs) AS QueueMax,
+       COUNT(ProcessingTimeMs) AS ProcessingCount,
+       AVG(CAST(ProcessingTimeMs AS FLOAT)) AS ProcessingAvg,
+       MIN(ProcessingTimeMs) AS ProcessingMin,
+       MAX(ProcessingTimeMs) AS ProcessingMax
 FROM {T("Messages")}
 WHERE EnqueuedTimeUtc >= @From
   AND MessageType IN ('ResolutionResponse', 'ErrorResponse', 'SkipResponse', 'DeferralResponse', 'UnsupportedResponse')
-  AND (QueueTimeMs IS NOT NULL OR ProcessingTimeMs IS NOT NULL)";
+  AND (QueueTimeMs IS NOT NULL OR ProcessingTimeMs IS NOT NULL)
+GROUP BY EndpointId, EventTypeId";
 
         return GetEndpointLatencyMetricsCore(sql, from);
     }
 
     private async Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetricsCore(string sql, DateTime from)
     {
-        await using var conn = Open();
-        var rows = await conn.QueryAsync<(string EndpointId, string EventTypeId, long? QueueTimeMs, long? ProcessingTimeMs)>(
+        await using var conn = await OpenAsync();
+        var rows = await conn.QueryAsync<(string EndpointId, string EventTypeId,
+            int QueueCount, double? QueueAvg, long? QueueMin, long? QueueMax,
+            int ProcessingCount, double? ProcessingAvg, long? ProcessingMin, long? ProcessingMax)>(
             sql,
             new { From = from },
             commandTimeout: _commandTimeout);
 
         var latencies = rows
-            .GroupBy(r => (r.EndpointId, r.EventTypeId))
-            .Select(g => new EndpointLatencyAggregate
+            .Select(r => new EndpointLatencyAggregate
             {
-                EndpointId = g.Key.EndpointId,
-                EventTypeId = g.Key.EventTypeId,
-                Queue = AggregateLatency(g.Select(r => r.QueueTimeMs)),
-                Processing = AggregateLatency(g.Select(r => r.ProcessingTimeMs)),
+                EndpointId = r.EndpointId,
+                EventTypeId = r.EventTypeId,
+                Queue = BuildLatency(r.QueueCount, r.QueueAvg, r.QueueMin, r.QueueMax),
+                Processing = BuildLatency(r.ProcessingCount, r.ProcessingAvg, r.ProcessingMin, r.ProcessingMax),
             })
             .ToList();
 
         return new EndpointLatencyMetricsResult { Latencies = latencies };
     }
 
+    // A group whose column is entirely NULL yields COUNT = 0 with NULL avg/min/max;
+    // collapse that to the zeroed aggregate the client-side path used to produce.
+    private static LatencyAggregate BuildLatency(int count, double? avg, long? min, long? max)
+        => count == 0
+            ? new LatencyAggregate()
+            : new LatencyAggregate
+            {
+                Count = count,
+                AvgMs = avg ?? 0,
+                MinMs = min ?? 0,
+                MaxMs = max ?? 0,
+            };
+
     public async Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync<FailedMessageInfo>(
             $@"SELECT
                    EndpointId,
@@ -1212,12 +1246,26 @@ WHERE EnqueuedTimeUtc >= @From
 
     public async Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
     {
-        await using var conn = Open();
-        var rows = await conn.QueryAsync<(string MessageType, DateTime EnqueuedTimeUtc)>(
-            $@"SELECT MessageType, EnqueuedTimeUtc
+        // Floor to the bucket boundary server-side and GROUP BY, so we stop
+        // streaming every message row. DATEADD(unit, DATEDIFF(unit, 0, ts), 0)
+        // is version-agnostic (DATETRUNC is SQL Server 2022+). The unit is a
+        // switch-constrained literal, never user input.
+        var bucketUnit = substringLength switch
+        {
+            16 => "minute",
+            13 => "hour",
+            10 => "day",
+            _ => "hour",
+        };
+        var bucketExpr = $"DATEADD({bucketUnit}, DATEDIFF({bucketUnit}, 0, EnqueuedTimeUtc), 0)";
+
+        await using var conn = await OpenAsync();
+        var rows = await conn.QueryAsync<(string MessageType, DateTime Bucket, long Count)>(
+            $@"SELECT MessageType, {bucketExpr} AS Bucket, COUNT_BIG(*) AS [Count]
                FROM {T("Messages")}
                WHERE EnqueuedTimeUtc >= @From
-                 AND MessageType IN ('EventRequest', 'ResolutionResponse', 'ErrorResponse')",
+                 AND MessageType IN ('EventRequest', 'ResolutionResponse', 'ErrorResponse')
+               GROUP BY MessageType, {bucketExpr}",
             new { From = from },
             commandTimeout: _commandTimeout);
 
@@ -1226,7 +1274,9 @@ WHERE EnqueuedTimeUtc >= @From
 
         foreach (var row in rows)
         {
-            var key = DateTime.SpecifyKind(row.EnqueuedTimeUtc, DateTimeKind.Utc).ToString("o")[..substringLength];
+            // The bucket start truncated to substringLength yields the same key
+            // the per-row path produced (flooring == string truncation here).
+            var key = DateTime.SpecifyKind(row.Bucket, DateTimeKind.Utc).ToString("o")[..substringLength];
             if (!buckets.TryGetValue(key, out var bucket))
             {
                 bucket = new TimeSeriesBucket { Timestamp = key };
@@ -1236,13 +1286,13 @@ WHERE EnqueuedTimeUtc >= @From
             switch (row.MessageType)
             {
                 case "EventRequest":
-                    bucket.Published++;
+                    bucket.Published += (int)row.Count;
                     break;
                 case "ResolutionResponse":
-                    bucket.Handled++;
+                    bucket.Handled += (int)row.Count;
                     break;
                 case "ErrorResponse":
-                    bucket.Failed++;
+                    bucket.Failed += (int)row.Count;
                     break;
             }
         }
@@ -1252,20 +1302,6 @@ WHERE EnqueuedTimeUtc >= @From
             BucketSize = bucketLabel,
             DataPoints = buckets.Values.OrderBy(b => b.Timestamp).ToList(),
         };
-    }
-
-    private static LatencyAggregate AggregateLatency(IEnumerable<long?> values)
-    {
-        var captured = values.Where(v => v.HasValue).Select(v => (double)v!.Value).ToList();
-        return captured.Count == 0
-            ? new LatencyAggregate()
-            : new LatencyAggregate
-            {
-                Count = captured.Count,
-                AvgMs = captured.Average(),
-                MinMs = captured.Min(),
-                MaxMs = captured.Max(),
-            };
     }
 
     private static List<string> GenerateBucketKeys(DateTime from, DateTime to, int substringLength)
@@ -1306,7 +1342,7 @@ WHERE EnqueuedTimeUtc >= @From
 
     public async Task<EventSchema?> GetSchema(string eventTypeId)
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         return await conn.QuerySingleOrDefaultAsync<EventSchema>(
             $"SELECT * FROM {T("EventSchemas")} WHERE [EventTypeId] = @eventTypeId",
             new { eventTypeId },
@@ -1315,7 +1351,7 @@ WHERE EnqueuedTimeUtc >= @From
 
     public async Task<IReadOnlyList<EventSchema>> GetSchemas()
     {
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync<EventSchema>(
             $"SELECT * FROM {T("EventSchemas")}",
             commandTimeout: _commandTimeout);
@@ -1337,7 +1373,7 @@ WHERE EnqueuedTimeUtc >= @From
             return existing;
         }
 
-        await using var conn = Open();
+        await using var conn = await OpenAsync();
         try
         {
             await conn.ExecuteAsync(

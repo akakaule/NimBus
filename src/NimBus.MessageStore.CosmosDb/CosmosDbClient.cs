@@ -863,9 +863,13 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             query = query
                 .Where(x => filter.ResolutionStatus.Contains(x.Status));
 
+        // MessageType is persisted as a string (StringEnumConverter) and no enum
+        // name is a substring of another, so Contains(ToString()) is equality here —
+        // use plain equality (as SearchMessages does) so the range index can serve
+        // it instead of a full-scan CONTAINS over a computed ToString().
         if (filter.MessageType != null)
             query = query
-                .Where(x => x.Event.MessageType.ToString().Contains(filter.MessageType.ToString()));
+                .Where(x => x.Event.MessageType == filter.MessageType);
 
         if (filter.Payload != null)
             query = query

@@ -321,6 +321,59 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                             || e.Status.Equals(UnsupportedStatus, StringComparison.OrdinalIgnoreCase))
                 .Where(e => !e.Deleted.HasValue || !e.Deleted.Value)
                 .OrderByDescending(e => e.Event.UpdatedAt)
+                // Server-side projection: every UnresolvedEvent property EXCEPT the
+                // heavy EventJson payload, which dominates the response size and is
+                // never surfaced by the endpoint page list (the detail view fetches
+                // it on demand). Same shape as GetEventsByFilter — keep in sync with
+                // that projection and the UnresolvedEvent drift guard.
+                .Select(x => new EventDbo
+                {
+                    Id = x.Id,
+                    Status = x.Status,
+                    EventType = x.EventType,
+                    SessionId = x.SessionId,
+                    Deleted = x.Deleted,
+                    Event = new UnresolvedEvent
+                    {
+                        UpdatedAt = x.Event.UpdatedAt,
+                        EnqueuedTimeUtc = x.Event.EnqueuedTimeUtc,
+                        EventId = x.Event.EventId,
+                        SessionId = x.Event.SessionId,
+                        CorrelationId = x.Event.CorrelationId,
+                        ResolutionStatus = x.Event.ResolutionStatus,
+                        EndpointRole = x.Event.EndpointRole,
+                        EndpointId = x.Event.EndpointId,
+                        RetryCount = x.Event.RetryCount,
+                        RetryLimit = x.Event.RetryLimit,
+                        MessageType = x.Event.MessageType,
+                        DeadLetterReason = x.Event.DeadLetterReason,
+                        DeadLetterErrorDescription = x.Event.DeadLetterErrorDescription,
+                        LastMessageId = x.Event.LastMessageId,
+                        OriginatingMessageId = x.Event.OriginatingMessageId,
+                        ParentMessageId = x.Event.ParentMessageId,
+                        Reason = x.Event.Reason,
+                        OriginatingFrom = x.Event.OriginatingFrom,
+                        EventTypeId = x.Event.EventTypeId,
+                        To = x.Event.To,
+                        From = x.Event.From,
+                        MessageContent = new MessageContent
+                        {
+                            // EventJson deliberately omitted — the sole purpose of
+                            // this projection.
+                            EventContent = new EventContent
+                            {
+                                EventTypeId = x.Event.MessageContent.EventContent.EventTypeId,
+                            },
+                            ErrorContent = x.Event.MessageContent.ErrorContent,
+                        },
+                        QueueTimeMs = x.Event.QueueTimeMs,
+                        ProcessingTimeMs = x.Event.ProcessingTimeMs,
+                        PendingSubStatus = x.Event.PendingSubStatus,
+                        HandoffReason = x.Event.HandoffReason,
+                        ExternalJobId = x.Event.ExternalJobId,
+                        ExpectedBy = x.Event.ExpectedBy,
+                    },
+                })
                 .ToFeedIterator();
 
             var pendingEvents = new List<string>();

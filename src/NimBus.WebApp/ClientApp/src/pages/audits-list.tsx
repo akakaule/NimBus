@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import * as api from "api-client";
 import { formatMoment } from "functions/endpoint.functions";
 import DataTable, { ITableRow, ITableHeadCell } from "components/data-table";
@@ -125,6 +125,10 @@ export default function AuditsList() {
 
   const apiFilter = useMemo(() => toAuditSearchFilter(applied), [applied]);
 
+  // Bumped on every fetch. A late (out-of-order) response only commits when its
+  // ticket is still the latest, so a slow older fetch can't overwrite a newer one.
+  const fetchTicket = useRef(0);
+
   const fetchAudits = useCallback(
     async (
       filter: api.AuditSearchFilter,
@@ -132,6 +136,7 @@ export default function AuditsList() {
       token?: string,
       append = false,
     ) => {
+      const ticket = ++fetchTicket.current;
       setLoading(true);
       try {
         const client = new api.Client(api.CookieAuth());
@@ -143,16 +148,22 @@ export default function AuditsList() {
         const response = await client.postAuditsSearch(request);
         const newAudits = response.audits ?? [];
 
-        if (append) {
-          setAudits((prev) => [...prev, ...newAudits]);
-        } else {
-          setAudits(newAudits);
+        if (ticket === fetchTicket.current) {
+          if (append) {
+            setAudits((prev) => [...prev, ...newAudits]);
+          } else {
+            setAudits(newAudits);
+          }
+          setContinuationToken(response.continuationToken ?? undefined);
         }
-        setContinuationToken(response.continuationToken ?? undefined);
       } catch (err) {
-        console.error("Failed to fetch audits", err);
+        if (ticket === fetchTicket.current) {
+          console.error("Failed to fetch audits", err);
+        }
       } finally {
-        setLoading(false);
+        if (ticket === fetchTicket.current) {
+          setLoading(false);
+        }
       }
     },
     [],

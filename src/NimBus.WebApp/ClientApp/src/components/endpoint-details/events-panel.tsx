@@ -422,13 +422,17 @@ const EventsPanel = (props: EventsPanelProps) => {
       setContinuationToken(response.continuationToken);
       setCurrentFilter(filter);
 
-      // Fetch session status only for actionable events
+      // Hydrate the per-session count columns in the background so the table
+      // paints immediately. The session batch only fills the Pending/Deferred
+      // counts, so blocking the whole table (and its extra round trip) on it is
+      // needless — fire it un-awaited and let the counts fill in when it
+      // returns. fetchSessionStatus owns its own error handling.
       const actionableEvents = fetchedEvents.filter((e) =>
         isActionableStatus(e.resolutionStatus),
       );
 
       if (actionableEvents.length > 0) {
-        await fetchSessionStatus(actionableEvents);
+        void fetchSessionStatus(actionableEvents);
       }
     } catch (error) {
       console.error("Failed to fetch events:", error);

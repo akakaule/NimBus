@@ -225,6 +225,21 @@ public class MessageContextTests
     }
 
     [TestMethod]
+    public void MessageContent_ReadMultipleTimes_MaterializesBodyOnceAndReturnsSameInstance()
+    {
+        var msg = CreateDefaultMessage();
+        var ctx = new MessageContext(msg, new FakeServiceBusSession());
+
+        var first = ctx.MessageContent;
+        var second = ctx.MessageContent;
+        var third = ctx.MessageContent;
+
+        Assert.AreSame(first, second, "MessageContent should return the same cached instance");
+        Assert.AreSame(second, third, "MessageContent should return the same cached instance");
+        Assert.AreEqual(1, msg.BodyReadCount, "Body should be materialized/deserialized only once per context");
+    }
+
+    [TestMethod]
     public void ThrottleRetryCount_ValidValue_ReturnsCount()
     {
         var msg = new FakeServiceBusMessage();
@@ -719,7 +734,18 @@ public class MessageContextTests
     private sealed class FakeServiceBusMessage : IServiceBusMessage
     {
         public Dictionary<string, string> UserProperties { get; } = new();
-        public byte[] Body { get; set; } = Array.Empty<byte>();
+
+        private byte[] _body = Array.Empty<byte>();
+
+        // Counts how many times the Body getter is read, so tests can assert
+        // the message body is materialized/deserialized at most once per context.
+        public int BodyReadCount { get; private set; }
+
+        public byte[] Body
+        {
+            get { BodyReadCount++; return _body; }
+            set => _body = value;
+        }
         public string LockToken { get; set; } = "lock-1";
         public string SessionId { get; set; } = "session-1";
         public string MessageId { get; set; } = "msg-1";

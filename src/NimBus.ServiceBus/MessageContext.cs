@@ -412,8 +412,23 @@ namespace NimBus.ServiceBus
             throw new InvalidMessageException($"Unable to parse MessageType from '{messageTypeString}'.");
         }
 
-        private MessageContent GetContent() =>
-            JsonConvert.DeserializeObject<MessageContent>(Encoding.UTF8.GetString(_sbMessage.Body), Core.Messages.Constants.SafeJsonSettings);
+        private MessageContent? _content;
+        private bool _contentLoaded;
+
+        // MessageContext is constructed per received message and used single-threaded,
+        // so the deserialized body is memoized to avoid re-decoding + re-deserializing
+        // the entire body on every access (it is read 3-4x on the hot path). A separate
+        // "loaded" flag guards a genuinely-null payload from re-running each call.
+        private MessageContent GetContent()
+        {
+            if (!_contentLoaded)
+            {
+                _content = JsonConvert.DeserializeObject<MessageContent>(Encoding.UTF8.GetString(_sbMessage.Body), Core.Messages.Constants.SafeJsonSettings);
+                _contentLoaded = true;
+            }
+
+            return _content;
+        }
 
 
         private async Task UpdateSessionState(SessionState sessionState, CancellationToken cancellationToken = default)

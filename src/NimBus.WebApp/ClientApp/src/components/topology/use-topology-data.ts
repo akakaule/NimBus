@@ -38,7 +38,7 @@ interface UseTopologyDataOptions {
 interface UseTopologyDataResult {
   data: TopologyData | undefined;
   loading: boolean;
-  /** Re-runs every fetch (event types + per-id details + metrics). */
+  /** Re-runs every fetch (event-type catalog + metrics). */
   refresh: () => Promise<void>;
   lastUpdated?: Date;
   error?: string;
@@ -50,19 +50,16 @@ interface UseTopologyDataResult {
 
 /**
  * Collects Topology data from existing read-only endpoints and rolls it into
- * `TopologyData`. Two-step fetch:
+ * `TopologyData`. Single round-trip:
  *
- *   1. `getEventTypes()`           — one round-trip for the catalog.
- *   2. `getEventtypesEventtypeid()` per event type, in parallel — produces the
- *      producer/consumer arrays we need to render edges.
+ *   1. `getEventTypes()` — one call for the catalog. Each catalog entry already
+ *      carries the `producers`/`consumers` arrays we need to render edges, so
+ *      we build `detailsById` straight from that response rather than fanning
+ *      out a per-event-type `getEventtypesEventtypeid()` detail call.
  *
  * Metrics (`getMetricsOverview`) hang off the time-range knob and re-fetch
- * independently when only `period` changes. We memoise the per-event-type
- * details by id so the same call isn't repeated as the user flips the
- * time range.
- *
- * The hook intentionally fails soft: if an individual event-type detail call
- * errors we drop that event type rather than blowing up the whole graph.
+ * independently when only `period` changes. The per-event-type details don't
+ * depend on the time window, so we reuse them as the user flips the range.
  */
 export function useTopologyData({
   period,
@@ -91,21 +88,15 @@ export function useTopologyData({
     const valid = all.filter((et) => !!et.id);
     setEventTypes(valid);
 
-    const detailsEntries = await Promise.all(
-      valid.map(async (et) => {
-        try {
-          const d = await client.getEventtypesEventtypeid(et.id!);
-          return [et.id!, d] as const;
-        } catch {
-          return null;
-        }
-      }),
-    );
+    // The catalog entries already carry their producer/consumer arrays, so
+    // build the detail map straight from this response — no per-event-type
+    // round trip.
     const next: Record<string, api.EventTypeDetails> = {};
-    for (const entry of detailsEntries) {
-      if (entry) {
-        next[entry[0]] = entry[1];
-      }
+    for (const et of valid) {
+      next[et.id!] = new api.EventTypeDetails({
+        producers: et.producers ?? [],
+        consumers: et.consumers ?? [],
+      });
     }
     setDetailsById(next);
   }, []);

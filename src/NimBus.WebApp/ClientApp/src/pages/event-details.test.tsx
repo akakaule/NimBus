@@ -72,6 +72,99 @@ afterEach(() => {
   capturedProps.latest = undefined;
 });
 
+describe("enrichBlockedItems", () => {
+  function blocked(eventId: string, status: string): api.BlockedEvent {
+    return Object.assign(new api.BlockedEvent(), {
+      eventId,
+      originatingId: `orig-${eventId}`,
+      status,
+    });
+  }
+
+  it("fetches every blocked item concurrently instead of one at a time", async () => {
+    const { enrichBlockedItems } = await import("./event-details");
+    const items = [
+      blocked("e0", "Failed"),
+      blocked("e1", "Deadlettered"),
+      blocked("e2", "Unsupported"),
+      blocked("e3", "Failed"),
+      blocked("e4", "Failed"),
+    ];
+    const getEventIds = vi
+      .fn()
+      .mockImplementation((eventId: string) =>
+        Promise.resolve(Object.assign(new api.Message(), { eventId })),
+      );
+    const client = { getEventIds } as unknown as api.Client;
+
+    // A sequential await-loop calls getEventIds once, then yields at the first
+    // `await`; only the concurrent map fires all N calls in the same tick before
+    // the returned promise's first suspension point.
+    const pending = enrichBlockedItems(client, items);
+    expect(getEventIds).toHaveBeenCalledTimes(items.length);
+
+    await pending;
+  });
+
+  it("preserves page order and pairs each message with its status", async () => {
+    const { enrichBlockedItems } = await import("./event-details");
+    const items = [
+      blocked("e0", "Failed"),
+      blocked("e1", "Deadlettered"),
+      blocked("e2", "Unsupported"),
+    ];
+    // Resolve out of call order to prove ordering follows `items`, not arrival.
+    const delays: Record<string, number> = { e0: 30, e1: 0, e2: 15 };
+    const getEventIds = vi.fn().mockImplementation(
+      (eventId: string) =>
+        new Promise((resolve) =>
+          setTimeout(
+            () => resolve(Object.assign(new api.Message(), { eventId })),
+            delays[eventId],
+          ),
+        ),
+    );
+    const client = { getEventIds } as unknown as api.Client;
+
+    const result = await enrichBlockedItems(client, items);
+
+    expect(result.map((r) => (r.message as { eventId: string }).eventId)).toEqual([
+      "e0",
+      "e1",
+      "e2",
+    ]);
+    expect(result.map((r) => r.status)).toEqual([
+      "Failed",
+      "Deadlettered",
+      "Unsupported",
+    ]);
+    expect(getEventIds).toHaveBeenNthCalledWith(1, "e0", "orig-e0");
+  });
+
+  it("drops items whose detail fetch resolved to nothing, keeping the rest in order", async () => {
+    const { enrichBlockedItems } = await import("./event-details");
+    const items = [
+      blocked("keep-0", "Failed"),
+      blocked("drop", "Failed"),
+      blocked("keep-1", "Failed"),
+    ];
+    const getEventIds = vi.fn().mockImplementation((eventId: string) =>
+      Promise.resolve(
+        eventId === "drop" ? undefined : Object.assign(new api.Message(), { eventId }),
+      ),
+    );
+    const client = { getEventIds } as unknown as api.Client;
+
+    const result = await enrichBlockedItems(client, items);
+
+    expect(result).toHaveLength(2);
+    expect(result.map((r) => (r.message as { eventId: string }).eventId)).toEqual([
+      "keep-0",
+      "keep-1",
+    ]);
+  });
+});
+
 describe("EventDetails -> MessageListing wiring (spec 005)", () => {
   it("forwards the fetched history into the MessageListing messages prop", async () => {
     // Import after mocks are wired so EventDetails picks up the stubbed

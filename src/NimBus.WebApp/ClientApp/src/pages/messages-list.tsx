@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import * as api from "api-client";
 import { formatMoment } from "functions/endpoint.functions";
 import DataTable, { ITableRow, ITableHeadCell } from "components/data-table";
@@ -149,6 +149,11 @@ export default function MessagesList() {
 
   const apiFilter = useMemo(() => toMessageSearchFilter(applied), [applied]);
 
+  // Guards against out-of-order responses: bumped at the start of every fetch so
+  // a slower earlier request that resolves LAST can't clobber the newer results.
+  // Only the most-recent in-flight request commits its state.
+  const fetchTicket = useRef(0);
+
   const fetchMessages = useCallback(
     async (
       filter: api.MessageSearchFilter,
@@ -156,6 +161,7 @@ export default function MessagesList() {
       token?: string,
       append = false,
     ) => {
+      const ticket = ++fetchTicket.current;
       setLoading(true);
       try {
         const client = new api.Client(api.CookieAuth());
@@ -167,16 +173,24 @@ export default function MessagesList() {
         const response = await client.postMessagesSearch(request);
         const newMessages = response.messages ?? [];
 
-        if (append) {
-          setMessages((prev) => [...prev, ...newMessages]);
-        } else {
-          setMessages(newMessages);
+        // Ignore this response if a newer fetch has since started — its result is
+        // the stale one and must not overwrite the newer data.
+        if (ticket === fetchTicket.current) {
+          if (append) {
+            setMessages((prev) => [...prev, ...newMessages]);
+          } else {
+            setMessages(newMessages);
+          }
+          setContinuationToken(response.continuationToken ?? undefined);
         }
-        setContinuationToken(response.continuationToken ?? undefined);
       } catch (err) {
-        console.error("Failed to fetch messages", err);
+        if (ticket === fetchTicket.current) {
+          console.error("Failed to fetch messages", err);
+        }
       } finally {
-        setLoading(false);
+        if (ticket === fetchTicket.current) {
+          setLoading(false);
+        }
       }
     },
     [],

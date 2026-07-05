@@ -1239,12 +1239,26 @@ GROUP BY EndpointId, EventTypeId";
 
     public async Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
     {
+        // Floor to the bucket boundary server-side and GROUP BY, so we stop
+        // streaming every message row. DATEADD(unit, DATEDIFF(unit, 0, ts), 0)
+        // is version-agnostic (DATETRUNC is SQL Server 2022+). The unit is a
+        // switch-constrained literal, never user input.
+        var bucketUnit = substringLength switch
+        {
+            16 => "minute",
+            13 => "hour",
+            10 => "day",
+            _ => "hour",
+        };
+        var bucketExpr = $"DATEADD({bucketUnit}, DATEDIFF({bucketUnit}, 0, EnqueuedTimeUtc), 0)";
+
         await using var conn = await OpenAsync();
-        var rows = await conn.QueryAsync<(string MessageType, DateTime EnqueuedTimeUtc)>(
-            $@"SELECT MessageType, EnqueuedTimeUtc
+        var rows = await conn.QueryAsync<(string MessageType, DateTime Bucket, long Count)>(
+            $@"SELECT MessageType, {bucketExpr} AS Bucket, COUNT_BIG(*) AS [Count]
                FROM {T("Messages")}
                WHERE EnqueuedTimeUtc >= @From
-                 AND MessageType IN ('EventRequest', 'ResolutionResponse', 'ErrorResponse')",
+                 AND MessageType IN ('EventRequest', 'ResolutionResponse', 'ErrorResponse')
+               GROUP BY MessageType, {bucketExpr}",
             new { From = from },
             commandTimeout: _commandTimeout);
 
@@ -1253,7 +1267,9 @@ GROUP BY EndpointId, EventTypeId";
 
         foreach (var row in rows)
         {
-            var key = DateTime.SpecifyKind(row.EnqueuedTimeUtc, DateTimeKind.Utc).ToString("o")[..substringLength];
+            // The bucket start truncated to substringLength yields the same key
+            // the per-row path produced (flooring == string truncation here).
+            var key = DateTime.SpecifyKind(row.Bucket, DateTimeKind.Utc).ToString("o")[..substringLength];
             if (!buckets.TryGetValue(key, out var bucket))
             {
                 bucket = new TimeSeriesBucket { Timestamp = key };
@@ -1263,13 +1279,13 @@ GROUP BY EndpointId, EventTypeId";
             switch (row.MessageType)
             {
                 case "EventRequest":
-                    bucket.Published++;
+                    bucket.Published += (int)row.Count;
                     break;
                 case "ResolutionResponse":
-                    bucket.Handled++;
+                    bucket.Handled += (int)row.Count;
                     break;
                 case "ErrorResponse":
-                    bucket.Failed++;
+                    bucket.Failed += (int)row.Count;
                     break;
             }
         }

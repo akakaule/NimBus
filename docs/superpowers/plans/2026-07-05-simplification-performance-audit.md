@@ -3,7 +3,7 @@
 **Created:** 2026-07-05 · **Source:** multi-agent audit (find → adversarial-verify → skeptic).
 **Scope:** 97 verified findings (16 high-impact) across 23 projects. 21 candidate findings were refuted on review and are listed at the end.
 
-**Status:** Wave 1 (6 fixes) ✅ merged to `master` 2026-07-05. Waves 2–6 open.
+**Status:** Waves 1–2 ✅ merged to `master` (16 fixes, 2026-07-05). Wave 3 (frontend) in progress. Waves 4–6 + #840 open.
 
 Full interactive report: `.claire/nimbus-audit.html`.
 
@@ -60,9 +60,21 @@ Each of these is a contained, unit-testable change on the message hot path or a 
 ### 1.6 Frontend caches a rejected promise forever — `fix/webapp-eventtypes-rejected-promise`
 `src/NimBus.WebApp/ClientApp/src/hooks/event-types.ts:24-33`. On a failed request the `.then` cleanup never runs, so the rejected promise stays in `pendingRequests` and every later call returns the same rejection until reload. Move the `pendingRequests.delete(endpointId)` into a `.finally`, cache only on success. Vitest: first call rejects, second call retries (issues a new request) rather than returning the cached rejection.
 
-## Waves 2-6
+## Wave 2 — completed (✅ merged to `master` 2026-07-06)
 
-Enumerated in the catalog below with file:line, evidence and the intended change captured in the audit. Wave 2 (store efficiency) items change RU/round-trip cost only and must be checked against the Cosmos/SQL conformance suites with the local emulators (see `project_conformance_gate_local_containers` memory) before landing. Wave 4 deletions are safe removes but must run the **full** `dotnet test src/NimBus.sln` because they touch shared projects.
+Ten store-efficiency fixes, verified against **live** conformance suites (dedicated `mssql:2022` container + `azure-cosmos-emulator:vnext-preview`). Integrated tree passed SQL 60/60 and Cosmos 73/73. Grouped by file (sequential commits per branch) since the fixes clustered in two files.
+
+| Branch (merge) | Fixes |
+|---|---|
+| `wave2/sqlserver-store` (`8346431`) | async connection open (#48), SQL `GROUP BY` latency aggregation (#1182), SQL `GROUP BY` time-series bucketing (#1216), search payload-strip projection (#898), unbuffered latest-request read (#238) |
+| `wave2/sqlserver-search-indexes` (`64f3a9d`) | `0014_SearchSortIndexes.sql` — date-leading indexes (#0002) |
+| `wave2/cosmos-store` (`a5352ea`) | RemoveMessage single patch (#457), endpoint-list projection sans EventJson (#313), status-scoped GetEvent point read (#685), MessageType index-served equality (#817) |
+
+**Deferred:** #840 (SQL soft-delete purge) — new behavior needing a retention-policy decision, tracked in Wave 6.
+
+## Waves 3-6
+
+Enumerated in the catalog below with file:line, evidence and the intended change captured in the audit. Wave 4 deletions are safe removes but must run the **full** `dotnet test src/NimBus.sln` because they touch shared projects.
 
 ---
 

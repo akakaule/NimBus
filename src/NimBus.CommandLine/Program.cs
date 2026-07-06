@@ -704,19 +704,47 @@ internal static class Program
 
             catalogCommand.Command("asyncapi", asyncApiCommand =>
             {
-                asyncApiCommand.Description = "Export platform topology as an AsyncAPI 3.0 specification (YAML)";
+                asyncApiCommand.Description = "Export platform topology as an AsyncAPI 3.0 specification (YAML or JSON)";
 
                 var outputOption = asyncApiCommand.Option("-o|--output <PATH>",
-                    "Output file path (defaults to ./asyncapi.yaml in current directory)",
+                    "Output file path (defaults to ./asyncapi.yaml, or ./asyncapi.json for --format json)",
+                    CommandOptionType.SingleValue);
+
+                var formatOption = asyncApiCommand.Option("-f|--format <FORMAT>",
+                    "Output format: yaml (default) or json",
                     CommandOptionType.SingleValue);
 
                 asyncApiCommand.OnExecuteAsync(async ct =>
                 {
+                    AsyncApiFormat? explicitFormat = null;
+                    if (formatOption.HasValue())
+                    {
+                        switch (formatOption.Value()!.ToLowerInvariant())
+                        {
+                            case "yaml":
+                            case "yml":
+                                explicitFormat = AsyncApiFormat.Yaml;
+                                break;
+                            case "json":
+                                explicitFormat = AsyncApiFormat.Json;
+                                break;
+                            default:
+                                AnsiConsole.MarkupLine($"[red]Unknown format '{formatOption.Value()}'. Use 'yaml' or 'json'.[/]");
+                                return 1;
+                        }
+                    }
+
+                    var defaultName = explicitFormat == AsyncApiFormat.Json ? "asyncapi.json" : "asyncapi.yaml";
                     var outputPath = outputOption.HasValue()
                         ? outputOption.Value()!
-                        : Path.Combine(Environment.CurrentDirectory, "asyncapi.yaml");
+                        : Path.Combine(Environment.CurrentDirectory, defaultName);
 
-                    await AsyncApiExporter.ExportAsync(outputPath);
+                    var format = explicitFormat
+                        ?? (outputPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                            ? AsyncApiFormat.Json
+                            : AsyncApiFormat.Yaml);
+
+                    await AsyncApiExporter.ExportAsync(outputPath, format);
                     return 0;
                 });
             });

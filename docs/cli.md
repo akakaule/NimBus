@@ -345,18 +345,22 @@ Export platform topology as an AsyncAPI 3.0 specification.
 
 ```bash
 nb catalog asyncapi -o ./asyncapi.yaml
+nb catalog asyncapi --format json -o ./asyncapi.json
 ```
 
 | Option | Required | Description |
 |---|---|---|
-| `-o`, `--output` | No | Output file (default: `./asyncapi.yaml`) |
+| `-o`, `--output` | No | Output file (default: `./asyncapi.yaml`, or `./asyncapi.json` for `--format json`) |
+| `-f`, `--format` | No | `yaml` (default) or `json`. When omitted, an `.json` output path is auto-detected as JSON. |
 
-Generates an AsyncAPI 3.0 YAML specification with:
-- **Servers** — Azure Service Bus namespace (AMQP)
-- **Channels** — Topics per producing endpoint
-- **Operations** — Send/receive per endpoint with `$ref` links
-- **Messages** — Event types with descriptions from `[Description]` attributes
-- **Schemas** — JSON Schema from C# types (types, formats, required, ranges, descriptions)
+Generates an AsyncAPI 3.0 specification with:
+- **Servers** — Azure Service Bus namespace (AMQP 1.0), with an `x-nimbus-topology` extension describing the topic-per-endpoint pattern, SQL-rule routing, and auto-forwarding.
+- **Channels** — one per endpoint **topic** (both producers and consumers, since a consumer's own topic carries the auto-forwarded copy), with `x-servicebus` topic bindings.
+- **Operations** — a `send` per producer and a `receive` per consumer. Each `receive` carries an `x-servicebus-delivery` extension documenting the **physical delivery path**: the consumer's own session subscription (`user.To = '<endpoint>'`) plus the forward subscription(s) on each producer topic (filter `user.EventTypeId = 'X' AND user.From IS NULL`, the rewrite action, and `forwardTo`).
+- **Messages** — event types with a shared `NimBusMessageHeaders` header schema (the `user.*` application properties), `x-servicebus` message settings (session requirement, dead-letter, `MessageId`/`CorrelationId` conventions), an example payload, and `[Description]`/`[AsyncApiMessage]` enrichment.
+- **Schemas** — JSON Schema from C# types (formats, required from `[Required]`/non-nullable, `[Range]`, enums, collections, and nested objects). Dynamically-typed events (spec 022 `DynamicForward`) appear as messages flagged `x-nimbus-dynamic`.
+
+> **Mapping note.** Because there is no official AsyncAPI Service Bus binding, the document keeps portable **logical** channels/operations and carries Service Bus specifics via `x-servicebus*` / `x-nimbus*` specification extensions. See [`docs/asyncapi-mapping.md`](asyncapi-mapping.md) for the full NimBus → AsyncAPI concept mapping.
 
 The spec can be used with:
 - [EventCatalog AsyncAPI plugin](https://www.eventcatalog.dev/integrations/asyncapi) for architecture visualization

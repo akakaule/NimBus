@@ -1,4 +1,5 @@
 ﻿using System;
+using NimBus.Core.CloudEvents;
 
 namespace NimBus.Core.Messages
 {
@@ -121,6 +122,15 @@ namespace NimBus.Core.Messages
         /// <c>JsonConvert.SerializeObject(MessageContent)</c> at send time.
         /// </summary>
         string SerializedMessageContent => null;
+
+        /// <summary>
+        /// Opt-in CloudEvents publish context. Non-null only when the publisher has
+        /// enabled CloudEvents; tells the transport binding to emit this message as a
+        /// CloudEvent in the configured content mode. Null (the default) preserves the
+        /// native NimBus wire format exactly. Persisted through the outbox so a
+        /// CloudEvents message keeps its envelope when dispatched later.
+        /// </summary>
+        CloudEventPublishContext CloudEvent => null;
     }
 
     public class Message : IMessage
@@ -167,5 +177,13 @@ namespace NimBus.Core.Messages
         /// </summary>
         [Newtonsoft.Json.JsonIgnore]
         public string SerializedMessageContent { get; set; }
+
+        /// <summary>
+        /// See <see cref="IMessage.CloudEvent"/>. Intentionally NOT
+        /// <c>[JsonIgnore]</c>: the outbox serializes the whole <see cref="Message"/>
+        /// into its Payload column and this envelope must survive that round-trip so
+        /// an outbox-dispatched CloudEvents message is still emitted as a CloudEvent.
+        /// </summary>
+        public CloudEventPublishContext CloudEvent { get; set; }
     }
 }

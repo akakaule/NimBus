@@ -173,6 +173,13 @@ public class InMemoryMessageContext : IMessageContext
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Returns the CloudEvent carried by the wrapped message (publish context), or
+    /// <c>null</c> for a native message — so in-memory tests can assert CloudEvents
+    /// handler access and round-trips.
+    /// </summary>
+    public NimBus.Core.CloudEvents.CloudEvent GetCloudEvent() => _message.CloudEvent?.CloudEvent;
+
     public int ThrottleRetryCount => 0;
 
     public Task ScheduleRedelivery(TimeSpan delay, int throttleRetryCount, CancellationToken cancellationToken = default)

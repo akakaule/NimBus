@@ -364,6 +364,14 @@ namespace NimBus.Core.Messages
             {
                 throw;
             }
+            catch (PermanentFailureException)
+            {
+                // A permanent failure (e.g. an invalid or unknown-type CloudEvent
+                // rejected by the CloudEvents validator) must dead-letter, not go
+                // through the retry/error-response path. Let it propagate to
+                // MessageHandler.Handle's dedicated dead-letter catch.
+                throw;
+            }
             catch (Exception exception)
             {
                 if (_permanentFailureClassifier?.IsPermanentFailure(exception) == true)

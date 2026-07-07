@@ -1,4 +1,5 @@
-﻿using NimBus.Core.Messages.Exceptions;
+﻿using NimBus.Core.CloudEvents;
+using NimBus.Core.Messages.Exceptions;
 using System;
 using System.Diagnostics;
 using System.Threading;
@@ -147,5 +148,14 @@ namespace NimBus.Core.Messages
         /// that do not yet override it are forward-compatible.
         /// </remarks>
         ActivityContext ParentTraceContext { get => default; set { } }
+
+        /// <summary>
+        /// Returns the inbound CloudEvent when this message was received as a
+        /// CloudEvent (via a CloudEvents-enabled or AutoDetect subscriber), or
+        /// <c>null</c> for a native NimBus message. The default implementation
+        /// returns <c>null</c> so existing transport/test implementers are
+        /// forward-compatible.
+        /// </summary>
+        CloudEvent GetCloudEvent() => null;
     }
 }

@@ -16,6 +16,14 @@ namespace NimBus.ServiceBus
         int DeliveryCount { get; }
         long SequenceNumber { get; }
         DateTime EnqueuedTimeUtc { get; }
+
+        /// <summary>
+        /// The AMQP content-type of the inbound message. Used to detect a
+        /// structured CloudEvents envelope (<c>application/cloudevents+json</c>).
+        /// Defaults to <c>null</c> so existing implementers are forward-compatible.
+        /// </summary>
+        string ContentType => null;
+
         internal ServiceBusReceivedMessage Message { get; }
     }
 
@@ -44,6 +52,8 @@ namespace NimBus.ServiceBus
         public long SequenceNumber => _message.SequenceNumber;
 
         public DateTime EnqueuedTimeUtc => _message.EnqueuedTime.UtcDateTime;
+
+        public string ContentType => _message.ContentType;
 
         ServiceBusReceivedMessage IServiceBusMessage.Message => _message;
 

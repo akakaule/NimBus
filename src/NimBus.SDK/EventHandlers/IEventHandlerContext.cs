@@ -1,4 +1,5 @@
 using System;
+using NimBus.Core.CloudEvents;
 using NimBus.Core.Messages;
 
 namespace NimBus.SDK.EventHandlers
@@ -41,6 +42,16 @@ namespace NimBus.SDK.EventHandlers
         /// <param name="externalJobId">Optional external-system identifier (e.g. a DMF job id).</param>
         /// <param name="expectedBy">Optional duration after which the work is expected to settle.</param>
         void MarkPendingHandoff(string reason, string externalJobId = null, TimeSpan? expectedBy = null);
+
+        /// <summary>
+        /// Returns the inbound CloudEvent when this message was received as a
+        /// CloudEvent (via a CloudEvents-enabled or AutoDetect subscriber), exposing
+        /// its <c>id</c>, <c>source</c>, <c>type</c>, <c>subject</c>, <c>time</c>,
+        /// <c>datacontenttype</c> and extension attributes. Returns <c>null</c> for a
+        /// native NimBus message. The default implementation returns <c>null</c> so
+        /// existing context implementers are forward-compatible.
+        /// </summary>
+        CloudEvent GetCloudEvent() => null;
     }
 
     public class EventHandlerContext : IEventHandlerContext
@@ -82,5 +93,8 @@ namespace NimBus.SDK.EventHandlers
                 _messageContext.HandoffMetadata = HandoffMetadata;
             }
         }
+
+        /// <inheritdoc/>
+        public CloudEvent GetCloudEvent() => _messageContext?.GetCloudEvent();
     }
 }

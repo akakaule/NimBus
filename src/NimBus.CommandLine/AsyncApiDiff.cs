@@ -111,9 +111,25 @@ public static class AsyncApiDiff
             }
 
             // message-key removed from the channel = breaking; added = additive.
+            var oldMessages = oldChannel["messages"] as JObject;
+            var newMessages = newChannel["messages"] as JObject;
             DiffKeySet("channels", $"{path}.messages",
-                Keys(oldChannel["messages"] as JObject), Keys(newChannel["messages"] as JObject),
+                Keys(oldMessages), Keys(newMessages),
                 removedBreaking: true, changes, thing: "message");
+
+            // A same-key channel message whose $ref is retargeted (points at a different component
+            // message) changes the channel/message contract even though the key is unchanged — breaking.
+            foreach (var (messageKey, oldEntry, newEntry) in Pair(oldMessages, newMessages))
+            {
+                if (oldEntry is null || newEntry is null) continue; // add/remove already reported above.
+                var oldRef = oldEntry["$ref"]?.Value<string>();
+                var newRef = newEntry["$ref"]?.Value<string>();
+                if (!string.Equals(oldRef, newRef, StringComparison.Ordinal))
+                {
+                    changes.Add(new AsyncApiChange("channels", ChangeKind.Changed, $"{path}.messages.{messageKey}",
+                        breaking: true, $"Channel message '{messageKey}' $ref changed ('{oldRef ?? "(none)"}' → '{newRef ?? "(none)"}')."));
+                }
+            }
 
             // bindings / x-servicebus / x-* / description → informational.
             foreach (var field in new[] { "bindings", "x-servicebus", "description" })

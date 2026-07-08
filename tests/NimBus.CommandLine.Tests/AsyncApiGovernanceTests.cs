@@ -283,6 +283,23 @@ public sealed class AsyncApiGovernanceTests
     }
 
     [Fact]
+    public void Diff_ChangedChannel_MessageRefRetargeted_IsBreaking()
+    {
+        // A same-key channel message whose $ref is retargeted to a different component message changes
+        // the channel/message contract even though the message key is unchanged — must be Changed + breaking,
+        // never swallowed as "No differences".
+        var baseline = Doc(new NimBus.PlatformConfiguration());
+        var updated = (JObject)baseline.DeepClone();
+        updated["channels"]!["StorefrontEndpoint"]!["messages"]!["OrderPlaced"] =
+            new JObject { ["$ref"] = "#/components/messages/OrderCancelled" };
+
+        var result = AsyncApiDiff.Diff(baseline, updated);
+        Assert.True(result.HasBreaking);
+        Assert.Contains(result.Changes, c => c.Category == "channels" && c.Kind == ChangeKind.Changed && c.Breaking
+            && c.Path.EndsWith("messages.OrderPlaced", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Diff_ChangedChannel_BindingsChange_IsNotBreaking()
     {
         var baseline = Doc(new NimBus.PlatformConfiguration());

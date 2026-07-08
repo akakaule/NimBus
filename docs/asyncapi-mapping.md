@@ -108,7 +108,8 @@ A management-UI download of the enriched document (issue capability #6) is a fol
   section for its context (operation → channel; operation → channel-scoped message → component
   message; channel message → component message; message `payload`/`headers` → a component **schema**).
   A payload `$ref` into `#/components/messages` is rejected even though the node exists.
-- **`nb asyncapi diff`** classifies added/removed/changed channels, operations, messages, and schemas
+- **`nb asyncapi diff`** classifies added/removed/changed channels (including a channel message whose
+  `$ref` is retargeted to a different component message — breaking), operations, messages, and schemas
   (down to schema properties, including a property's effective shape, enum values, `[Range]`-derived
   `minimum`/`maximum` bounds, and `description` metadata) and flags breaking changes for build gating.
   A tightened bound is breaking; a relaxed/removed bound and metadata edits are non-breaking but still

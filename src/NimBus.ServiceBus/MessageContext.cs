@@ -381,7 +381,7 @@ namespace NimBus.ServiceBus
 
                         continue;
                     }
-                    return new MessageContext(deferred, _sbSession, isDeferred: true);
+                    return new MessageContext(deferred, _sbSession, isDeferred: true, _cloudEventReadOptions);
                 }
                 catch (ServiceBusException e) when (e.Reason == ServiceBusFailureReason.SessionLockLost)
                 {
@@ -422,7 +422,7 @@ namespace NimBus.ServiceBus
                         await UpdateSessionState(state, cancellationToken);
                     }
 
-                    return new MessageContext(deferred, _sbSession, isDeferred: true);
+                    return new MessageContext(deferred, _sbSession, isDeferred: true, _cloudEventReadOptions);
                 }
                 catch (ServiceBusException e) when (e.Reason == ServiceBusFailureReason.SessionLockLost)
                 {

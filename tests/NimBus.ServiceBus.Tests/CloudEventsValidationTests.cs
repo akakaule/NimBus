@@ -66,7 +66,7 @@ public class CloudEventsValidationTests
 
     // ── Dead-letter validation (AC12, AC13) ─────────────────────────────
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("id")]
     [DataRow("source")]
     [DataRow("type")]

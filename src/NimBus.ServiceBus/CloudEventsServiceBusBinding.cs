@@ -136,14 +136,13 @@ namespace NimBus.ServiceBus
 
             cloudEvent = structured
                 ? ParseStructured(message.Body, options)
-                : ParseBinary(message, prefixes, options, specVersion, id, source, type, contentType);
+                : ParseBinary(message, prefixes, specVersion, id, source, type, contentType);
             return true;
         }
 
         private static CloudEvent ParseBinary(
             IServiceBusMessage message,
             IReadOnlyList<string> prefixes,
-            CloudEventReadOptions options,
             string specVersion,
             string id,
             string source,
@@ -169,9 +168,25 @@ namespace NimBus.ServiceBus
                 cloudEvent.Time = parsedTime;
             }
 
-            // Extension attributes NimBus needs to read back (mapping-configured names).
-            AddExtensionIfPresent(message, prefixes, cloudEvent, options.Mapping?.CorrelationIdAttribute);
-            AddExtensionIfPresent(message, prefixes, cloudEvent, options.Mapping?.SessionIdAttribute);
+            // Every prefixed application property whose suffix is not a core context
+            // attribute is a CloudEvents extension attribute — mapping-configured
+            // names (correlationid/sessionid) as well as arbitrary custom extensions
+            // written by an external producer or NimBus's own Extensions hook. Copy
+            // them all so they survive round-trip and are visible via GetCloudEvent().
+            foreach (var propertyName in message.GetUserPropertyNames())
+            {
+                foreach (var prefix in prefixes)
+                {
+                    if (!propertyName.StartsWith(prefix, StringComparison.Ordinal)) continue;
+
+                    var attribute = propertyName.Substring(prefix.Length);
+                    if (attribute.Length == 0 || Array.IndexOf(CoreAttributeNames, attribute) >= 0) break;
+
+                    var value = message.GetUserProperty(propertyName);
+                    if (value != null) cloudEvent.Extensions[attribute] = value;
+                    break;
+                }
+            }
 
             return cloudEvent;
         }
@@ -226,20 +241,6 @@ namespace NimBus.ServiceBus
 
             _ = options; // reserved for future structured-mode mapping hooks
             return cloudEvent;
-        }
-
-        private static void AddExtensionIfPresent(
-            IServiceBusMessage message,
-            IReadOnlyList<string> prefixes,
-            CloudEvent cloudEvent,
-            string attribute)
-        {
-            if (string.IsNullOrEmpty(attribute) ||
-                string.Equals(attribute, CloudEventMapping.SubjectAttribute, StringComparison.OrdinalIgnoreCase))
-                return;
-
-            var value = Probe(message, prefixes, attribute);
-            if (value != null) cloudEvent.Extensions[attribute] = value;
         }
 
         private static string Probe(IServiceBusMessage message, IReadOnlyList<string> prefixes, string attribute)

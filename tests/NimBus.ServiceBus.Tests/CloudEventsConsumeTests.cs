@@ -4,7 +4,10 @@ using NimBus.Core.CloudEvents;
 using NimBus.Core.Messages;
 using NimBus.ServiceBus;
 using Newtonsoft.Json;
+using System;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace NimBus.ServiceBus.Tests;
 
@@ -68,6 +71,69 @@ public class CloudEventsConsumeTests
 
         Assert.AreEqual("OrderPlaced", ctx.MessageContent.EventContent.EventTypeId);
         Assert.AreEqual("ext-9", ctx.GetCloudEvent().Id);
+    }
+
+    [TestMethod]
+    public void BinaryCloudEvent_CustomExtensionAttributes_AreExposedViaGetCloudEvent()
+    {
+        // AC11 / finding #2: arbitrary (non-core) cloudEvents:* / ce-* attributes are
+        // surfaced as CloudEvent extensions on the binary consume path, not just the
+        // two mapping-configured names.
+        var message = new FakeCloudEventMessage
+        {
+            ContentType = "application/json",
+            Body = Encoding.UTF8.GetBytes("{}"),
+        };
+        message.Properties["cloudEvents:specversion"] = "1.0";
+        message.Properties["cloudEvents:id"] = "ext-ext-1";
+        message.Properties["cloudEvents:source"] = "urn:ext:crm";
+        message.Properties["cloudEvents:type"] = "OrderPlaced";
+        message.Properties["cloudEvents:correlationid"] = "corr-42"; // mapping-configured extension
+        message.Properties["cloudEvents:tenant"] = "acme";           // custom extension (canonical prefix)
+        message.Properties["ce-region"] = "eu-west";                 // custom extension (alternate prefix)
+
+        var ctx = Consume(message);
+        var ce = ctx.GetCloudEvent();
+
+        Assert.IsNotNull(ce);
+        Assert.AreEqual("acme", ce.Extensions["tenant"]);
+        Assert.AreEqual("eu-west", ce.Extensions["region"]);
+        // The mapping-configured correlationid extension is still read back both ways.
+        Assert.AreEqual("corr-42", ce.Extensions["correlationid"]);
+        Assert.AreEqual("corr-42", ctx.CorrelationId);
+        // Core context attributes are never mis-classified as extensions.
+        Assert.IsFalse(ce.Extensions.ContainsKey("id"));
+        Assert.IsFalse(ce.Extensions.ContainsKey("type"));
+        Assert.IsFalse(ce.Extensions.ContainsKey("specversion"));
+    }
+
+    [TestMethod]
+    public async Task ReceiveNextDeferred_PropagatesCloudEventReadOptions()
+    {
+        // Finding #3: a deferred CloudEvent must be re-parsed as a CloudEvent on
+        // replay, not mis-read as a native envelope — so the read options must flow
+        // into the replay MessageContext.
+        var deferred = new FakeCloudEventMessage
+        {
+            ContentType = "application/json",
+            Body = Encoding.UTF8.GetBytes("{\"orderId\":\"O-def\"}"),
+        };
+        deferred.Properties["cloudEvents:specversion"] = "1.0";
+        deferred.Properties["cloudEvents:id"] = "ext-def";
+        deferred.Properties["cloudEvents:source"] = "urn:ext:crm";
+        deferred.Properties["cloudEvents:type"] = "OrderPlaced";
+
+        var session = new DeferredCloudEventSession(deferredSeq: 7, deferred);
+        var outer = new MessageContext(new FakeCloudEventMessage(), session, isDeferred: false, new CloudEventReadOptions());
+
+        var replay = await outer.ReceiveNextDeferred();
+
+        Assert.IsNotNull(replay);
+        var ce = replay.GetCloudEvent();
+        Assert.IsNotNull(ce, "Deferred CloudEvent must retain read options on replay.");
+        Assert.AreEqual("ext-def", ce.Id);
+        Assert.AreEqual("OrderPlaced", replay.MessageContent.EventContent.EventTypeId);
+        Assert.AreEqual("{\"orderId\":\"O-def\"}", replay.MessageContent.EventContent.EventJson);
     }
 
     [TestMethod]
@@ -142,5 +208,29 @@ public class CloudEventsConsumeTests
     private sealed class OrderPlacedPayload
     {
         public string OrderId { get; set; }
+    }
+
+    /// <summary>Session double that returns a single pre-deferred message on replay.</summary>
+    private sealed class DeferredCloudEventSession : IServiceBusSession
+    {
+        private readonly SessionState _state = new();
+        private readonly long _seq;
+        private readonly IServiceBusMessage _deferred;
+
+        public DeferredCloudEventSession(long deferredSeq, IServiceBusMessage deferred)
+        {
+            _seq = deferredSeq;
+            _deferred = deferred;
+            _state.DeferredSequenceNumbers.Add(deferredSeq);
+        }
+
+        public Task CompleteAsync(IServiceBusMessage message, CancellationToken ct = default) => Task.CompletedTask;
+        public Task DeadLetterAsync(IServiceBusMessage message, string reason, string description, CancellationToken ct = default) => Task.CompletedTask;
+        public Task DeferAsync(IServiceBusMessage message, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<IServiceBusMessage> ReceiveDeferredMessageAsync(long seq, CancellationToken ct = default) =>
+            Task.FromResult(seq == _seq ? _deferred : null);
+        public Task SetStateAsync(SessionState state, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<SessionState> GetStateAsync(CancellationToken ct = default) => Task.FromResult(_state);
+        public Task SendScheduledMessageAsync(Azure.Messaging.ServiceBus.ServiceBusMessage message, DateTimeOffset scheduledTime, CancellationToken ct = default) => Task.CompletedTask;
     }
 }

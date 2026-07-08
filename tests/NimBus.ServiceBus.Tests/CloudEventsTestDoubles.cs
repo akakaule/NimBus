@@ -36,6 +36,8 @@ internal sealed class FakeCloudEventMessage : IServiceBusMessage
 
     public string GetUserProperty(string name) =>
         Properties.TryGetValue(name, out var value) ? value : null;
+
+    public IReadOnlyCollection<string> GetUserPropertyNames() => Properties.Keys;
 }
 
 /// <summary>Inert session double — the CloudEvents consume path never touches the session.</summary>

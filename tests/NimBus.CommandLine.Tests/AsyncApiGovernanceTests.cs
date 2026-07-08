@@ -1,6 +1,7 @@
 #pragma warning disable CA1707, CA2007
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
@@ -449,6 +450,21 @@ public sealed class AsyncApiGovernanceTests
         options.ExternalDocsUrl = "https://docs.example.com/enrich";
         options.Tags.Add("gov");
         options.Examples.Add(new AsyncApiMessageExample { Name = "ex1", Payload = new Dictionary<string, object> { ["id"] = "x" } });
+        options.Examples.Add(new AsyncApiMessageExample
+        {
+            Name = "readonly",
+            Payload = new ReadOnlyDictionary<string, object>(
+                new Dictionary<string, object> { ["id"] = "ro", ["count"] = 2 }),
+        });
+        options.Examples.Add(new AsyncApiMessageExample
+        {
+            Name = "jobject",
+            Payload = new JObject
+            {
+                ["id"] = "j",
+                ["nested"] = new JObject { ["ok"] = true },
+            },
+        });
 
         var doc = Doc(platform, registry);
         var message = doc["components"]!["messages"]!["EnrichEvent"]!;
@@ -463,6 +479,12 @@ public sealed class AsyncApiGovernanceTests
         Assert.Equal("https://docs.example.com/enrich", message["externalDocs"]!["url"]!.Value<string>());
         Assert.Contains(message["tags"]!.Select(t => t["name"]!.Value<string>()), n => n == "gov");
         Assert.Contains(message["examples"]!, e => e["name"]!.Value<string>() == "ex1");
+        var examples = message["examples"]!.Cast<JObject>().ToList();
+        Assert.Equal("x", ExamplePayload(examples, "ex1")["id"]!.Value<string>());
+        Assert.Equal("ro", ExamplePayload(examples, "readonly")["id"]!.Value<string>());
+        Assert.Equal(2, ExamplePayload(examples, "readonly")["count"]!.Value<int>());
+        Assert.Equal("j", ExamplePayload(examples, "jobject")["id"]!.Value<string>());
+        Assert.True(ExamplePayload(examples, "jobject")["nested"]!["ok"]!.Value<bool>());
 
         // deprecated marker lives on the schema object, not the message object.
         Assert.True(doc["components"]!["schemas"]!["EnrichEvent"]!["deprecated"]!.Value<bool>());
@@ -685,6 +707,12 @@ public sealed class AsyncApiGovernanceTests
         ["asyncapi"] = "3.0.0",
         ["components"] = new JObject { ["schemas"] = new JObject { [name] = schema } },
     };
+
+    private static JObject ExamplePayload(IEnumerable<JObject> examples, string name)
+    {
+        var example = examples.Single(e => e["name"]!.Value<string>() == name);
+        return Assert.IsType<JObject>(example["payload"]);
+    }
 
     private static JObject SchemaWithEnum(params string[] values) => new()
     {

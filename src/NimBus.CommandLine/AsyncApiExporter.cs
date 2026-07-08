@@ -3,6 +3,7 @@ using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -730,9 +731,9 @@ public static class AsyncApiExporter
         }
     }
 
-    private static object ToPlainValue(object value)
+    private static object ToPlainValue(object? value)
     {
-        if (value is null) return null;
+        if (value is null) return null!;
 
         var type = value.GetType();
         if (value is string s) return s;
@@ -745,7 +746,22 @@ public static class AsyncApiExporter
         if (value is Guid guid) return guid.ToString();
         if (value is DateTime dt) return dt.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
         if (value is DateTimeOffset dto) return dto.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
-        if (type.IsEnum) return value.ToString();
+        if (type.IsEnum) return value.ToString()!;
+
+        if (value is JValue jValue)
+        {
+            return jValue.Value is null ? null! : ToPlainValue(jValue.Value);
+        }
+
+        if (value is JObject jObject)
+        {
+            return ToPlainObject(jObject);
+        }
+
+        if (TryConvertDictionary(value, out var dictionary))
+        {
+            return dictionary;
+        }
 
         if (value is System.Collections.IEnumerable enumerable)
         {
@@ -760,6 +776,61 @@ public static class AsyncApiExporter
             map[ToCamelCase(property.Name)] = ToPlainValue(property.GetValue(value));
         }
         return map;
+    }
+
+    private static Map ToPlainObject(JObject value)
+    {
+        var map = new Map();
+        foreach (var property in value.Properties())
+        {
+            map[property.Name] = ToPlainValue(property.Value);
+        }
+
+        return map;
+    }
+
+    private static bool TryConvertDictionary(object value, out Map map)
+    {
+        if (value is System.Collections.IDictionary dictionary)
+        {
+            map = new Map();
+            foreach (System.Collections.DictionaryEntry entry in dictionary)
+            {
+                var key = Convert.ToString(entry.Key, System.Globalization.CultureInfo.InvariantCulture);
+                if (!string.IsNullOrEmpty(key))
+                {
+                    map[key] = ToPlainValue(entry.Value);
+                }
+            }
+
+            return true;
+        }
+
+        var dictionaryInterface = value.GetType().GetInterfaces()
+            .FirstOrDefault(i => i.IsGenericType &&
+                (i.GetGenericTypeDefinition() == typeof(IDictionary<,>) ||
+                 i.GetGenericTypeDefinition() == typeof(IReadOnlyDictionary<,>)));
+        if (dictionaryInterface == null)
+        {
+            map = new Map();
+            return false;
+        }
+
+        map = new Map();
+        foreach (var entry in (System.Collections.IEnumerable)value)
+        {
+            if (entry is null) continue;
+            var entryType = entry.GetType();
+            var key = entryType.GetProperty("Key")?.GetValue(entry);
+            var entryValue = entryType.GetProperty("Value")?.GetValue(entry);
+            var keyText = Convert.ToString(key, System.Globalization.CultureInfo.InvariantCulture);
+            if (!string.IsNullOrEmpty(keyText))
+            {
+                map[keyText] = ToPlainValue(entryValue);
+            }
+        }
+
+        return true;
     }
 
     private static string OpKey(string id)

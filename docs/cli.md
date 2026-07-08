@@ -390,10 +390,26 @@ nb asyncapi export --assembly ./bin/MyApp.dll -o ./asyncapi.yaml
 |---|---|---|
 | `-o`, `--output` | No | Output file (default: `./asyncapi.yaml`, or `./asyncapi.json` for `--format json`) |
 | `-f`, `--format` | No | `yaml` (default) or `json`. When omitted, an `.json` output path is auto-detected as JSON. |
-| `-a`, `--assembly` | No | Path to a host assembly exposing an `IAsyncApiDocumentProvider`. Use to include **fluent** `Publish<T>(o => o.AsyncApi…)` enrichment, which lives in the host's DI container and cannot be observed from the static built-in platform. When omitted, the built-in `PlatformConfiguration` is exported (attribute enrichment only). |
-| `-p`, `--provider` | No | `IAsyncApiDocumentProvider` type name (full or simple) to select when `--assembly` exposes more than one. |
+| `-a`, `--assembly` | No | Path to a host assembly exposing an `IAsyncApiDocumentProvider` or `IAsyncApiDocumentProviderFactory`. Use to include **fluent** `Publish<T>(o => o.AsyncApi…)` enrichment, which lives in the host's DI container and cannot be observed from the static built-in platform. When omitted, the built-in `PlatformConfiguration` is exported (attribute enrichment only). |
+| `-p`, `--provider` | No | Provider/factory type name (full or simple) to select when `--assembly` exposes more than one candidate. |
 
-The host exposes its enriched document by registering it with `AddNimBusAsyncApiDocument(platform, (p, f, r) => AsyncApiExporter.Serialize(p, f, r))` and surfacing a public, parameterless `IAsyncApiDocumentProvider`; the CLI loads the assembly (`Assembly.LoadFrom`), instantiates the provider, and writes `GetDocument(format)`. Export exits non-zero with a message when the assembly or provider cannot be loaded.
+Because `AddNimBusAsyncApiDocument(platform, (p, f, r) => AsyncApiExporter.Serialize(p, f, r))` registers a **private, DI-backed** `IAsyncApiDocumentProvider` (it has constructor dependencies the standalone CLI cannot instantiate), a host bridges to it by exposing a public, parameterless `IAsyncApiDocumentProviderFactory` whose `Create()` builds its container and resolves the provider:
+
+```csharp
+public sealed class MyAsyncApiFactory : IAsyncApiDocumentProviderFactory
+{
+    public IAsyncApiDocumentProvider Create()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new ServiceBusClient(connectionString));
+        services.AddNimBusPublisher("Orders", b => b.Publish<OrderPlaced>(o => o.AsyncApi.Owner = "orders-team"));
+        services.AddNimBusAsyncApiDocument(platform, (p, f, r) => AsyncApiExporter.Serialize(p, f, r));
+        return services.BuildServiceProvider().GetRequiredService<IAsyncApiDocumentProvider>();
+    }
+}
+```
+
+The CLI loads the assembly (`Assembly.LoadFrom`), instantiates the factory (or a directly-exposed public parameterless `IAsyncApiDocumentProvider`), and writes `GetDocument(format)` — so fluent enrichment surfaces from the CLI export. Export exits non-zero with a message when the assembly, factory, or provider cannot be loaded.
 
 #### `nb asyncapi validate <file>`
 
@@ -413,7 +429,7 @@ Compare two AsyncAPI documents, classify added / removed / changed channels, ope
 nb asyncapi diff ./asyncapi.previous.yaml ./asyncapi.yaml
 ```
 
-Treated as **breaking**: a removed channel / operation / message / schema; a removed property or a property that becomes newly required; a property **effective-shape** change (`type`/`format`/`$ref`/array `items`); a removed enum value; a message-association removed from an operation; an operation `action` flip or `channel` retarget; a `payload`/`headers` `$ref`, `contentType`, or session-semantics (`x-servicebus.requiresSession`/`sessionKeyProperty`) change. Additive changes (new channels/operations/messages/schemas/properties, added enum values, informational metadata) are non-breaking.
+Treated as **breaking**: a removed channel / operation / message / schema; a removed property or a property that becomes newly required; a property **effective-shape** change (`type`/`format`/`$ref`/array `items`); a removed enum value; a **tightened** validation bound (a `[Range]`-derived `minimum` raised or `maximum` lowered, or one newly added); a message-association removed from an operation; an operation `action` flip or `channel` retarget; a `payload`/`headers` `$ref`, `contentType`, or session-semantics (`x-servicebus.requiresSession`/`sessionKeyProperty`) change. Additive/informational changes are **non-breaking** and still reported: new channels/operations/messages/schemas/properties, added enum values, a **relaxed or removed** validation bound (`minimum` lowered / `maximum` raised), and `description` (or other metadata) changes.
 
 **Exit codes** (for build gating): `0` when the only differences are non-breaking, non-zero when a breaking change is detected.
 

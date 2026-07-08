@@ -64,6 +64,22 @@ public sealed class PublisherAsyncApiEnrichmentTests
     }
 
     [TestMethod]
+    public void CliLoader_ResolvesSdkRegisteredProvider_ViaFactory_IncludesFluentMetadata()
+    {
+        // End-to-end: a host registers its provider through the real SDK path (AddNimBusPublisher fluent
+        // enrichment + AddNimBusAsyncApiDocument → a private, DI-backed IAsyncApiDocumentProvider) and
+        // exposes it via a public parameterless IAsyncApiDocumentProviderFactory. The CLI's
+        // AsyncApiProviderLoader must reach that DI-backed provider through the factory so
+        // `nb asyncapi export --assembly <host.dll>` surfaces fluent metadata.
+        var provider = AsyncApiProviderLoader.Resolve(
+            typeof(PublisherAsyncApiEnrichmentTests).Assembly,
+            typeof(SdkFluentDocumentFactory).FullName);
+
+        var document = provider.GetDocument(AsyncApiFormat.Json);
+        StringAssert.Contains(document, SdkFluentDocumentFactory.OwnerMarker);
+    }
+
+    [TestMethod]
     public void FluentPublish_DoesNotBreakSendPath()
     {
         var services = new ServiceCollection();
@@ -88,6 +104,24 @@ public sealed class PublisherAsyncApiEnrichmentTests
     }
 
     // ---- test doubles ----
+
+    // Public parameterless factory a host exposes so `nb asyncapi export --assembly` can reach the
+    // SDK-registered, DI-backed IAsyncApiDocumentProvider. Builds the same container the host would.
+    public sealed class SdkFluentDocumentFactory : IAsyncApiDocumentProviderFactory
+    {
+        public const string OwnerMarker = "AF98-SDK-Factory-Owner";
+
+        public IAsyncApiDocumentProvider Create()
+        {
+            var services = new ServiceCollection();
+            services.AddSingleton(new ServiceBusClient(FakeConnection));
+            services.AddNimBusPublisher("Ep", b => b.Publish<SomeEvent>(o => o.AsyncApi.Owner = OwnerMarker));
+            services.AddNimBusAsyncApiDocument(
+                new TestPlatform(new TestEndpoint("Ep", produces: new[] { typeof(SomeEvent) })),
+                (p, f, r) => AsyncApiExporter.Serialize(p, f, r));
+            return services.BuildServiceProvider().GetRequiredService<IAsyncApiDocumentProvider>();
+        }
+    }
 
     private sealed class SomeEvent : Event
     {

@@ -87,11 +87,15 @@ CLI, and consumers share them without any project depending on `NimBus.CommandLi
 Three surfaces expose fluent enrichment:
 
 1. **`nb asyncapi export --assembly <host.dll> [--provider <Type>]`** — the CLI loads the host
-   assembly (via `Assembly.LoadFrom`, the same convention the WebApp uses to load an `IPlatform`),
-   resolves a public parameterless `IAsyncApiDocumentProvider` it exposes, and writes
-   `GetDocument(format)`. This is the CLI path to a **fluent-enriched** document. Without `--assembly`
-   the CLI exports the static built-in `PlatformConfiguration`, which surfaces **attribute**
-   enrichment only.
+   assembly (via `Assembly.LoadFrom`, the same convention the WebApp uses to load an `IPlatform`) and
+   resolves the provider it exposes, then writes `GetDocument(format)`. Because
+   `AddNimBusAsyncApiDocument` registers a **private, DI-backed** `IAsyncApiDocumentProvider` (it has
+   constructor dependencies the standalone CLI cannot instantiate), the host bridges to it with a
+   public parameterless **`IAsyncApiDocumentProviderFactory`** whose `Create()` builds the container
+   and resolves the provider from it; the CLI also accepts a directly-exposed public parameterless
+   `IAsyncApiDocumentProvider`. This is the CLI path to a **fluent-enriched** document. Without
+   `--assembly` the CLI exports the static built-in `PlatformConfiguration`, which surfaces
+   **attribute** enrichment only.
 2. **In-process** — any host that called `AddNimBusAsyncApiDocument(...)` resolves
    `IAsyncApiDocumentProvider` from its own container.
 
@@ -105,7 +109,10 @@ A management-UI download of the enriched document (issue capability #6) is a fol
   message; channel message → component message; message `payload`/`headers` → a component **schema**).
   A payload `$ref` into `#/components/messages` is rejected even though the node exists.
 - **`nb asyncapi diff`** classifies added/removed/changed channels, operations, messages, and schemas
-  (down to schema properties) and flags breaking changes for build gating. See
+  (down to schema properties, including a property's effective shape, enum values, `[Range]`-derived
+  `minimum`/`maximum` bounds, and `description` metadata) and flags breaking changes for build gating.
+  A tightened bound is breaking; a relaxed/removed bound and metadata edits are non-breaking but still
+  reported (so a metadata-only delta never shows as "No differences"). See
   [`docs/cli.md`](cli.md#nb-asyncapi-diff-old-file-new-file) for the exact breaking-change list.
 
 ## Schema generation

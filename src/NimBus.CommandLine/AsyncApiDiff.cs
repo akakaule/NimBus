@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Newtonsoft.Json.Linq;
 
@@ -289,8 +290,76 @@ public static class AsyncApiDiff
             // enum value removed → breaking (a producer may still emit it); added → additive.
             DiffKeySet("schemas", $"{propPath}.enum",
                 EnumValues(oldProp), EnumValues(newProp), removedBreaking: true, changes, thing: "enum value");
+
+            // [Range] validation bounds: tightening rejects values valid before (breaking); relaxing or
+            // removing a bound is additive. A raised minimum or a lowered maximum is a tighter bound.
+            CompareBound(oldProp, newProp, "minimum", propPath, BoundDirection.TightensWhenRaised, changes);
+            CompareBound(oldProp, newProp, "maximum", propPath, BoundDirection.TightensWhenLowered, changes);
+
+            // Documentation metadata ([Description]) — informational, never breaking.
+            CompareMetadata(oldProp, newProp, "description", propPath, changes);
         }
     }
+
+    /// <summary>Whether a numeric validation bound gets more restrictive when raised or when lowered.</summary>
+    private enum BoundDirection
+    {
+        /// <summary>A larger value is a tighter bound (e.g. <c>minimum</c>).</summary>
+        TightensWhenRaised,
+
+        /// <summary>A smaller value is a tighter bound (e.g. <c>maximum</c>).</summary>
+        TightensWhenLowered,
+    }
+
+    // Compares a numeric validation bound. A newly-added or tightened bound rejects previously-valid
+    // values (breaking); a removed or relaxed bound is additive.
+    private static void CompareBound(JObject oldProp, JObject newProp, string field, string propPath, BoundDirection direction, List<AsyncApiChange> changes)
+    {
+        var oldToken = oldProp[field];
+        var newToken = newProp[field];
+        if (JToken.DeepEquals(oldToken, newToken)) return;
+
+        var oldValue = AsDecimal(oldToken);
+        var newValue = AsDecimal(newToken);
+
+        bool breaking;
+        if (newValue is null)
+        {
+            breaking = false; // bound removed → relaxed.
+        }
+        else if (oldValue is null)
+        {
+            breaking = true; // bound newly added → tighter.
+        }
+        else
+        {
+            breaking = direction == BoundDirection.TightensWhenRaised
+                ? newValue > oldValue
+                : newValue < oldValue;
+        }
+
+        changes.Add(new AsyncApiChange("schemas", ChangeKind.Changed, $"{propPath}.{field}",
+            breaking, $"Property {field} changed ('{Display(oldToken)}' → '{Display(newToken)}')."));
+    }
+
+    // Reports a metadata field change as informational (non-breaking).
+    private static void CompareMetadata(JObject oldProp, JObject newProp, string field, string propPath, List<AsyncApiChange> changes)
+    {
+        if (JToken.DeepEquals(oldProp[field], newProp[field])) return;
+
+        changes.Add(new AsyncApiChange("schemas", ChangeKind.Changed, $"{propPath}.{field}",
+            breaking: false, $"Property {field} changed."));
+    }
+
+    private static decimal? AsDecimal(JToken? token)
+    {
+        if (token is null || token.Type == JTokenType.Null) return null;
+        return decimal.TryParse(token.Value<string>(), NumberStyles.Any, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : (decimal?)null;
+    }
+
+    private static string Display(JToken? token) => token is null || token.Type == JTokenType.Null ? "(none)" : token.ToString();
 
     private static void DiffRequired(JObject oldSchema, JObject newSchema, string path, List<AsyncApiChange> changes)
     {

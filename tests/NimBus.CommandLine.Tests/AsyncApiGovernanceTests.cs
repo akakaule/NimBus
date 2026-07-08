@@ -219,6 +219,58 @@ public sealed class AsyncApiGovernanceTests
     }
 
     [Fact]
+    public void Diff_PropertyMinimumTightened_IsBreaking()
+    {
+        // [Range] lower bound raised: values valid before are now rejected → breaking.
+        var oldSchema = new JObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JObject { ["qty"] = new JObject { ["type"] = "integer", ["format"] = "int32", ["minimum"] = 1 } },
+        };
+        var newSchema = (JObject)oldSchema.DeepClone();
+        newSchema["properties"]!["qty"]!["minimum"] = 5;
+
+        var result = AsyncApiDiff.Diff(WrapSchema("E", oldSchema), WrapSchema("E", newSchema));
+        Assert.True(result.HasBreaking);
+        Assert.Contains(result.Changes, c => c.Path.EndsWith("qty.minimum", StringComparison.Ordinal) && c.Breaking);
+    }
+
+    [Fact]
+    public void Diff_PropertyMaximumRelaxed_IsReportedNonBreaking()
+    {
+        // [Range] upper bound raised: previously-valid values still valid, more now allowed → additive.
+        var oldSchema = new JObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JObject { ["qty"] = new JObject { ["type"] = "integer", ["format"] = "int32", ["maximum"] = 10 } },
+        };
+        var newSchema = (JObject)oldSchema.DeepClone();
+        newSchema["properties"]!["qty"]!["maximum"] = 100;
+
+        var result = AsyncApiDiff.Diff(WrapSchema("E", oldSchema), WrapSchema("E", newSchema));
+        Assert.Contains(result.Changes, c => c.Path.EndsWith("qty.maximum", StringComparison.Ordinal) && !c.Breaking);
+        Assert.False(result.HasBreaking);
+    }
+
+    [Fact]
+    public void Diff_PropertyDescriptionChanged_IsReportedNonBreaking()
+    {
+        // Reviewer's core concern: a property metadata change must be classified, not swallowed as "No differences".
+        var oldSchema = new JObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JObject { ["qty"] = new JObject { ["type"] = "integer", ["description"] = "old docs" } },
+        };
+        var newSchema = (JObject)oldSchema.DeepClone();
+        newSchema["properties"]!["qty"]!["description"] = "new docs";
+
+        var result = AsyncApiDiff.Diff(WrapSchema("E", oldSchema), WrapSchema("E", newSchema));
+        Assert.NotEmpty(result.Changes);
+        Assert.Contains(result.Changes, c => c.Path.EndsWith("qty.description", StringComparison.Ordinal) && !c.Breaking);
+        Assert.False(result.HasBreaking);
+    }
+
+    [Fact]
     public void Diff_ChangedChannel_MessageRefRemoved_IsBreaking()
     {
         var baseline = Doc(new NimBus.PlatformConfiguration());
@@ -478,6 +530,20 @@ public sealed class AsyncApiGovernanceTests
     }
 
     [Fact]
+    public void ProviderLoader_ResolvesPublicParameterlessFactory_ProducesFluentDocument()
+    {
+        // A host that registers its provider through the SDK (a private, DI-backed IAsyncApiDocumentProvider)
+        // exposes it to the CLI via a public parameterless IAsyncApiDocumentProviderFactory. The loader
+        // must discover the factory and call Create(), not require a public parameterless provider type.
+        var provider = AsyncApiProviderLoader.Resolve(
+            typeof(AsyncApiGovernanceTests).Assembly,
+            typeof(FluentProviderFactoryDouble).FullName);
+
+        var doc = provider.GetDocument(AsyncApiFormat.Json);
+        Assert.Contains(FluentProviderDouble.OwnerMarker, doc, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RunExport_WithProviderAssembly_IncludesFluentMetadata()
     {
         var output = Path.Combine(Path.GetTempPath(), $"nimbus-asyncapi-{Guid.NewGuid():N}.json");
@@ -614,5 +680,13 @@ public sealed class AsyncApiGovernanceTests
             registry.For(typeof(EnrichEvent)).Owner = OwnerMarker;
             return AsyncApiExporter.Serialize(platform, format, registry);
         }
+    }
+
+    // Public parameterless factory (the CLI-export convention for reaching a DI-backed provider). Simulates
+    // a host exposing its enriched document through IAsyncApiDocumentProviderFactory rather than a public
+    // parameterless IAsyncApiDocumentProvider.
+    public sealed class FluentProviderFactoryDouble : IAsyncApiDocumentProviderFactory
+    {
+        public IAsyncApiDocumentProvider Create() => new FluentProviderDouble();
     }
 }

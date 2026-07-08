@@ -219,6 +219,29 @@ public sealed class AsyncApiGovernanceTests
     }
 
     [Fact]
+    public void Diff_RootSchemaMetadataOnlyChange_IsReportedNonBreaking()
+    {
+        // A component schema whose ONLY change is root metadata (title/description/deprecated) must be
+        // classified as a non-breaking change, not swallowed so `diff` prints "No differences".
+        var oldSchema = new JObject { ["type"] = "object", ["description"] = "old docs" };
+        var newSchema = new JObject
+        {
+            ["type"] = "object",
+            ["description"] = "new docs",
+            ["title"] = "Order",
+            ["deprecated"] = true,
+        };
+
+        var result = AsyncApiDiff.Diff(WrapSchema("Order", oldSchema), WrapSchema("Order", newSchema));
+        Assert.NotEmpty(result.Changes);
+        Assert.Contains(result.Changes, c => c.Category == "schemas"
+            && c.Path.EndsWith("Order.description", StringComparison.Ordinal) && !c.Breaking);
+        Assert.Contains(result.Changes, c => c.Path.EndsWith("Order.title", StringComparison.Ordinal) && !c.Breaking);
+        Assert.Contains(result.Changes, c => c.Path.EndsWith("Order.deprecated", StringComparison.Ordinal) && !c.Breaking);
+        Assert.False(result.HasBreaking);
+    }
+
+    [Fact]
     public void Diff_PropertyMinimumTightened_IsBreaking()
     {
         // [Range] lower bound raised: values valid before are now rejected → breaking.

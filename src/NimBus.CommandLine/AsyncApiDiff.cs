@@ -256,6 +256,12 @@ public static class AsyncApiDiff
             DiffSchemaProperties(name, oldSchema, newSchema, path, changes);
             DiffRequired(oldSchema, newSchema, path, changes);
 
+            // Root-level metadata (title/description/deprecated) — informational, never breaking, but
+            // must be reported so a metadata-only schema delta is not swallowed as "No differences".
+            CompareMetadata(oldSchema, newSchema, "title", path, changes);
+            CompareMetadata(oldSchema, newSchema, "description", path, changes);
+            CompareMetadata(oldSchema, newSchema, "deprecated", path, changes);
+
             // Root-level enum on a component schema that is itself an enum (e.g. components.schemas.Status):
             // a removed value is breaking (a producer may still emit it); an added value is additive.
             DiffKeySet("schemas", $"{path}.enum",

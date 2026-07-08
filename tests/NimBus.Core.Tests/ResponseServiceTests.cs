@@ -368,6 +368,49 @@ public class ResponseServiceTests
         Assert.AreEqual("BillingEndpoint", sender.SentMessages.Single().OriginatingFrom);
     }
 
+    // ── CloudEvents identity preservation (AC15) ────────────────────────
+
+    [TestMethod]
+    public async Task CreateResponse_CopiesCloudEventIdentityFromContext()
+    {
+        // When the inbound message was a CloudEvent, the response sent to the Resolver
+        // must carry its id/source/type/subject so the tracking/audit record preserves
+        // the CloudEvent identity (AC15).
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var ctx = CreateContext();
+        ctx.CloudEventToReturn = new NimBus.Core.CloudEvents.CloudEvent
+        {
+            Id = "ce-1",
+            Source = "urn:ext:billing",
+            Type = "InvoiceCreated",
+            Subject = "customer-42",
+        };
+
+        await sut.SendResolutionResponse(ctx);
+
+        var msg = sender.SentMessages.Single();
+        Assert.AreEqual("ce-1", msg.CloudEventId);
+        Assert.AreEqual("urn:ext:billing", msg.CloudEventSource);
+        Assert.AreEqual("InvoiceCreated", msg.CloudEventType);
+        Assert.AreEqual("customer-42", msg.CloudEventSubject);
+    }
+
+    [TestMethod]
+    public async Task CreateResponse_NativeMessage_LeavesCloudEventIdentityNull()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+
+        await sut.SendResolutionResponse(CreateContext()); // GetCloudEvent() == null
+
+        var msg = sender.SentMessages.Single();
+        Assert.IsNull(msg.CloudEventId);
+        Assert.IsNull(msg.CloudEventSource);
+        Assert.IsNull(msg.CloudEventType);
+        Assert.IsNull(msg.CloudEventSubject);
+    }
+
     // ── Constructor ─────────────────────────────────────────────────────
 
     [TestMethod]
@@ -524,6 +567,9 @@ public class ResponseServiceTests
         public DateTime? HandlerStartedAtUtc { get; set; }
         public HandlerOutcome HandlerOutcome { get; set; }
         public HandoffMetadata HandoffMetadata { get; set; }
+
+        public NimBus.Core.CloudEvents.CloudEvent CloudEventToReturn { get; set; }
+        public NimBus.Core.CloudEvents.CloudEvent GetCloudEvent() => CloudEventToReturn;
 
         public Task Complete(CancellationToken ct = default) => Task.CompletedTask;
         public Task Abandon(TransientException ex) => Task.CompletedTask;

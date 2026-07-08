@@ -1,4 +1,5 @@
 ﻿using Azure.Messaging.ServiceBus;
+using NimBus.Core.CloudEvents;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using Newtonsoft.Json;
@@ -15,17 +16,30 @@ namespace NimBus.ServiceBus
         private readonly IServiceBusMessage _sbMessage;
         private readonly IServiceBusSession _sbSession;
         private readonly bool _isDeferred;
+        private readonly CloudEventReadOptions _cloudEventReadOptions;
 
         private const int MaxDeadLetterErrorDescriptionLength = 4096;
         private const string TruncationIndicator = "\n...[TRUNCATED]...";
         private const string ThrottleRetryCountProperty = "ThrottleRetryCount";
 
         public MessageContext(IServiceBusMessage sbMessage, IServiceBusSession sbSession, bool isDeferred = false)
+            : this(sbMessage, sbSession, isDeferred, cloudEventReadOptions: null)
+        {
+        }
+
+        /// <summary>
+        /// Creates a message context. When <paramref name="cloudEventReadOptions"/>
+        /// is non-null the context detects and normalizes inbound CloudEvents; when
+        /// null the context is pure native NimBus (default), so native decoding and
+        /// property access are unchanged.
+        /// </summary>
+        public MessageContext(IServiceBusMessage sbMessage, IServiceBusSession sbSession, bool isDeferred, CloudEventReadOptions cloudEventReadOptions)
         {
             _sbMessage = sbMessage ?? throw new ArgumentNullException(nameof(sbMessage));
             _sbSession = sbSession ?? throw new ArgumentNullException(nameof(sbSession));
 
             _isDeferred = isDeferred;
+            _cloudEventReadOptions = cloudEventReadOptions;
         }
 
         public string From => GetUserProperty(UserPropertyName.From);
@@ -86,11 +100,41 @@ namespace NimBus.ServiceBus
 
         public MessageType MessageType => GetMessageType();
 
-        public string MessageId => _sbMessage.MessageId ?? throw new InvalidMessageException($"MessageId is not defined.");
+        public string MessageId
+        {
+            get
+            {
+                if (_sbMessage.MessageId != null) return _sbMessage.MessageId;
+                EnsureCloudEventEvaluated();
+                // A detected CloudEvent always yields a non-null id: use the CloudEvents
+                // `id` when present, otherwise a clear placeholder so an invalid (id-less)
+                // CloudEvent can still be dead-lettered without the getter throwing.
+                if (_isCloudEvent) return _cloudEvent?.Id ?? CloudEventMissingIdPlaceholder;
+                throw new InvalidMessageException($"MessageId is not defined.");
+            }
+        }
 
-        public string SessionId => _sbMessage.SessionId ?? throw new InvalidMessageException($"SessionId is not defined.");
+        public string SessionId
+        {
+            get
+            {
+                if (_sbMessage.SessionId != null) return _sbMessage.SessionId;
+                EnsureCloudEventEvaluated();
+                if (_isCloudEvent)
+                    return _cloudEventReadOptions.MapSessionId(_cloudEvent) ?? _cloudEvent?.Id ?? Constants.Self;
+                throw new InvalidMessageException($"SessionId is not defined.");
+            }
+        }
 
-        public string CorrelationId => _sbMessage.CorrelationId;
+        public string CorrelationId
+        {
+            get
+            {
+                if (_sbMessage.CorrelationId != null) return _sbMessage.CorrelationId;
+                EnsureCloudEventEvaluated();
+                return _isCloudEvent ? _cloudEventReadOptions.MapCorrelationId(_cloudEvent) : null;
+            }
+        }
 
         public MessageContent MessageContent => GetContent() ?? throw new InvalidMessageException($"MessageContent is null.");
 
@@ -340,7 +384,7 @@ namespace NimBus.ServiceBus
 
                         continue;
                     }
-                    return new MessageContext(deferred, _sbSession, isDeferred: true);
+                    return new MessageContext(deferred, _sbSession, isDeferred: true, _cloudEventReadOptions);
                 }
                 catch (ServiceBusException e) when (e.Reason == ServiceBusFailureReason.SessionLockLost)
                 {
@@ -381,7 +425,7 @@ namespace NimBus.ServiceBus
                         await UpdateSessionState(state, cancellationToken);
                     }
 
-                    return new MessageContext(deferred, _sbSession, isDeferred: true);
+                    return new MessageContext(deferred, _sbSession, isDeferred: true, _cloudEventReadOptions);
                 }
                 catch (ServiceBusException e) when (e.Reason == ServiceBusFailureReason.SessionLockLost)
                 {
@@ -399,7 +443,41 @@ namespace NimBus.ServiceBus
 
         private string GetUserProperty(UserPropertyName userPropertyName)
         {
-            return _sbMessage.GetUserProperty(userPropertyName) ?? throw new InvalidMessageException($"Message.UserProperties[{userPropertyName}] is not defined.");
+            var raw = _sbMessage.GetUserProperty(userPropertyName);
+            if (raw != null) return raw;
+
+            var cloudEventFallback = CloudEventFallback(userPropertyName);
+            if (cloudEventFallback != null) return cloudEventFallback;
+
+            throw new InvalidMessageException($"Message.UserProperties[{userPropertyName}] is not defined.");
+        }
+
+        // Synthetic user-property values derived from an inbound CloudEvent so an
+        // external CloudEvents producer (which does not stamp NimBus user.* routing
+        // properties) can still flow through the native dispatch/response pipeline.
+        // Returns null for native messages, so native property access is unchanged.
+        private string CloudEventFallback(UserPropertyName userPropertyName)
+        {
+            EnsureCloudEventEvaluated();
+            if (!_isCloudEvent) return null;
+
+            return userPropertyName switch
+            {
+                UserPropertyName.From => _cloudEvent?.Source ?? "external",
+                UserPropertyName.To => _cloudEventReadOptions.MapType(_cloudEvent?.Type),
+                // Never null for a detected CloudEvent: a producer may omit both the
+                // CloudEvents `id` and the native Service Bus MessageId. Such a message
+                // is invalid and will be dead-lettered by the validating handler, but
+                // the dead-letter path (MessageHandler) reads EventId while logging — a
+                // null here would throw InvalidMessageException and crash the processor
+                // before the message is dead-lettered (AC12). Fall back to a clear,
+                // inspectable placeholder so the dead-letter completes cleanly.
+                UserPropertyName.EventId => _cloudEvent?.Id ?? _sbMessage.MessageId ?? CloudEventMissingIdPlaceholder,
+                UserPropertyName.MessageType => MessageType.EventRequest.ToString(),
+                UserPropertyName.EventTypeId => _cloudEventReadOptions.MapType(_cloudEvent?.Type),
+                UserPropertyName.OriginatingFrom => _cloudEvent?.Source,
+                _ => null,
+            };
         }
 
         private MessageType GetMessageType()
@@ -415,6 +493,59 @@ namespace NimBus.ServiceBus
         private MessageContent? _content;
         private bool _contentLoaded;
 
+        private CloudEvent _cloudEvent;
+        private bool _isCloudEvent;
+        private bool _cloudEventEvaluated;
+
+        // Placeholder identifier used when a detected CloudEvent carries neither a
+        // CloudEvents `id` nor a native Service Bus MessageId. Such a message is
+        // invalid and will be dead-lettered; the placeholder keeps identity accessors
+        // non-null so the dead-letter path never crashes while logging (AC12).
+        private const string CloudEventMissingIdPlaceholder = "(cloudevent-missing-id)";
+
+        // Detects (once) whether this inbound message is a CloudEvent. Only runs when
+        // CloudEvents read options are configured; native subscribers never evaluate
+        // it, so their behavior is unchanged. Detection is intentionally lenient: a
+        // message carrying CloudEvents markers but missing required attributes is
+        // still flagged as a CloudEvent so the pipeline dead-letters it with a clear
+        // reason instead of mis-parsing it as native.
+        private void EnsureCloudEventEvaluated()
+        {
+            if (_cloudEventEvaluated) return;
+            _cloudEventEvaluated = true;
+
+            if (_cloudEventReadOptions == null) return;
+            if (CloudEventsServiceBusBinding.TryParse(_sbMessage, _cloudEventReadOptions, out var parsed))
+            {
+                _isCloudEvent = true;
+                _cloudEvent = parsed;
+            }
+        }
+
+        /// <inheritdoc/>
+        public CloudEvent GetCloudEvent()
+        {
+            EnsureCloudEventEvaluated();
+            return _cloudEvent;
+        }
+
+        // CloudEvents identity carried through to the Resolver. Two sources: a response
+        // message received by the Resolver reads the stamped user.CloudEvent* property;
+        // the original inbound CloudEvent (subscriber side) reads the parsed CloudEvent.
+        // Returns null for a native message, so tracking of native events is unchanged.
+        public string CloudEventId => CloudEventAttribute(UserPropertyName.CloudEventId, ce => ce.Id);
+        public string CloudEventSource => CloudEventAttribute(UserPropertyName.CloudEventSource, ce => ce.Source);
+        public string CloudEventType => CloudEventAttribute(UserPropertyName.CloudEventType, ce => ce.Type);
+        public string CloudEventSubject => CloudEventAttribute(UserPropertyName.CloudEventSubject, ce => ce.Subject);
+
+        private string CloudEventAttribute(UserPropertyName property, Func<CloudEvent, string> fromCloudEvent)
+        {
+            var stamped = _sbMessage.GetUserProperty(property);
+            if (stamped != null) return stamped;
+            EnsureCloudEventEvaluated();
+            return _cloudEvent != null ? fromCloudEvent(_cloudEvent) : null;
+        }
+
         // MessageContext is constructed per received message and used single-threaded,
         // so the deserialized body is memoized to avoid re-decoding + re-deserializing
         // the entire body on every access (it is read 3-4x on the hot path). A separate
@@ -423,7 +554,25 @@ namespace NimBus.ServiceBus
         {
             if (!_contentLoaded)
             {
-                _content = JsonConvert.DeserializeObject<MessageContent>(Encoding.UTF8.GetString(_sbMessage.Body), Core.Messages.Constants.SafeJsonSettings);
+                EnsureCloudEventEvaluated();
+                if (_isCloudEvent)
+                {
+                    // Normalize the CloudEvent into the internal MessageContent envelope
+                    // so the existing EventTypeId-keyed dispatch and EventJson handler
+                    // deserialization work unchanged.
+                    _content = new MessageContent
+                    {
+                        EventContent = new EventContent
+                        {
+                            EventTypeId = _cloudEventReadOptions.MapType(_cloudEvent?.Type),
+                            EventJson = _cloudEvent?.Data,
+                        },
+                    };
+                }
+                else
+                {
+                    _content = JsonConvert.DeserializeObject<MessageContent>(Encoding.UTF8.GetString(_sbMessage.Body), Core.Messages.Constants.SafeJsonSettings);
+                }
                 _contentLoaded = true;
             }
 

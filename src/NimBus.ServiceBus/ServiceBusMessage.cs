@@ -1,6 +1,8 @@
 ﻿using Azure.Messaging.ServiceBus;
 using NimBus.Core.Messages;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace NimBus.ServiceBus
 {
@@ -8,6 +10,15 @@ namespace NimBus.ServiceBus
     {
         string GetUserProperty(UserPropertyName name);
         string GetUserProperty(string name);
+
+        /// <summary>
+        /// All application-property names present on the inbound message. Used to
+        /// enumerate CloudEvents context/extension attributes (which carry
+        /// arbitrary, producer-defined names) in binary content mode. Defaults to
+        /// an empty set so existing implementers are forward-compatible.
+        /// </summary>
+        IReadOnlyCollection<string> GetUserPropertyNames() => Array.Empty<string>();
+
         byte[] Body { get; }
         string LockToken { get; }
         string SessionId { get; }
@@ -16,6 +27,14 @@ namespace NimBus.ServiceBus
         int DeliveryCount { get; }
         long SequenceNumber { get; }
         DateTime EnqueuedTimeUtc { get; }
+
+        /// <summary>
+        /// The AMQP content-type of the inbound message. Used to detect a
+        /// structured CloudEvents envelope (<c>application/cloudevents+json</c>).
+        /// Defaults to <c>null</c> so existing implementers are forward-compatible.
+        /// </summary>
+        string ContentType => null;
+
         internal ServiceBusReceivedMessage Message { get; }
     }
 
@@ -45,6 +64,8 @@ namespace NimBus.ServiceBus
 
         public DateTime EnqueuedTimeUtc => _message.EnqueuedTime.UtcDateTime;
 
+        public string ContentType => _message.ContentType;
+
         ServiceBusReceivedMessage IServiceBusMessage.Message => _message;
 
         public string GetUserProperty(UserPropertyName name)
@@ -59,5 +80,8 @@ namespace NimBus.ServiceBus
 
             return _message.ApplicationProperties[name]?.ToString();
         }
+
+        public IReadOnlyCollection<string> GetUserPropertyNames() =>
+            _message.ApplicationProperties.Keys.ToArray();
     }
 }

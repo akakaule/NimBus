@@ -53,4 +53,11 @@ public class MessageEntity : IReceivedMessage
     public string HandoffReason { get; set; }
     public string ExternalJobId { get; set; }
     public DateTime? ExpectedBy { get; set; }
+
+    // CloudEvents identity of the inbound CloudEvent (null for native messages),
+    // projected onto the tracking/audit record so it surfaces in the message store.
+    public string CloudEventId { get; set; }
+    public string CloudEventSource { get; set; }
+    public string CloudEventType { get; set; }
+    public string CloudEventSubject { get; set; }
 }

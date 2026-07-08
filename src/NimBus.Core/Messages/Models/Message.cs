@@ -1,4 +1,5 @@
 ﻿using System;
+using NimBus.Core.CloudEvents;
 
 namespace NimBus.Core.Messages
 {
@@ -121,6 +122,31 @@ namespace NimBus.Core.Messages
         /// <c>JsonConvert.SerializeObject(MessageContent)</c> at send time.
         /// </summary>
         string SerializedMessageContent => null;
+
+        /// <summary>
+        /// Opt-in CloudEvents publish context. Non-null only when the publisher has
+        /// enabled CloudEvents; tells the transport binding to emit this message as a
+        /// CloudEvent in the configured content mode. Null (the default) preserves the
+        /// native NimBus wire format exactly. Persisted through the outbox so a
+        /// CloudEvents message keeps its envelope when dispatched later.
+        /// </summary>
+        CloudEventPublishContext CloudEvent => null;
+
+        /// <summary>
+        /// CloudEvents <c>id</c> of the inbound CloudEvent this message relates to,
+        /// carried on the response sent to the Resolver so the tracking/audit record
+        /// preserves the CloudEvent identity. Null (the default) on native messages.
+        /// </summary>
+        string CloudEventId => null;
+
+        /// <summary>CloudEvents <c>source</c>, carried to the Resolver. Null for a native message.</summary>
+        string CloudEventSource => null;
+
+        /// <summary>CloudEvents <c>type</c>, carried to the Resolver. Null for a native message.</summary>
+        string CloudEventType => null;
+
+        /// <summary>CloudEvents <c>subject</c>, carried to the Resolver. Null for a native message.</summary>
+        string CloudEventSubject => null;
     }
 
     public class Message : IMessage
@@ -167,5 +193,25 @@ namespace NimBus.Core.Messages
         /// </summary>
         [Newtonsoft.Json.JsonIgnore]
         public string SerializedMessageContent { get; set; }
+
+        /// <summary>
+        /// See <see cref="IMessage.CloudEvent"/>. Intentionally NOT
+        /// <c>[JsonIgnore]</c>: the outbox serializes the whole <see cref="Message"/>
+        /// into its Payload column and this envelope must survive that round-trip so
+        /// an outbox-dispatched CloudEvents message is still emitted as a CloudEvent.
+        /// </summary>
+        public CloudEventPublishContext CloudEvent { get; set; }
+
+        /// <summary>See <see cref="IMessage.CloudEventId"/>.</summary>
+        public string CloudEventId { get; set; }
+
+        /// <summary>See <see cref="IMessage.CloudEventSource"/>.</summary>
+        public string CloudEventSource { get; set; }
+
+        /// <summary>See <see cref="IMessage.CloudEventType"/>.</summary>
+        public string CloudEventType { get; set; }
+
+        /// <summary>See <see cref="IMessage.CloudEventSubject"/>.</summary>
+        public string CloudEventSubject { get; set; }
     }
 }

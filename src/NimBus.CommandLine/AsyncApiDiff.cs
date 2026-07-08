@@ -266,6 +266,7 @@ public static class AsyncApiDiff
             // a removed value is breaking (a producer may still emit it); an added value is additive.
             DiffKeySet("schemas", $"{path}.enum",
                 EnumValues(oldSchema), EnumValues(newSchema), removedBreaking: true, changes, thing: "enum value");
+            DiffArrayItemSchema(oldSchema, newSchema, path, changes);
 
             // Root-level effective shape (scalar type/format, array items, $ref): a change breaks
             // deserialization. Object schemas normalize to "object", so property/required deltas are not
@@ -312,6 +313,7 @@ public static class AsyncApiDiff
             // enum value removed → breaking (a producer may still emit it); added → additive.
             DiffKeySet("schemas", $"{propPath}.enum",
                 EnumValues(oldProp), EnumValues(newProp), removedBreaking: true, changes, thing: "enum value");
+            DiffArrayItemSchema(oldProp, newProp, propPath, changes);
 
             // [Range] validation bounds: tightening rejects values valid before (breaking); relaxing or
             // removing a bound is additive. A raised minimum or a lowered maximum is a tighter bound.
@@ -321,6 +323,17 @@ public static class AsyncApiDiff
             // Documentation metadata ([Description]) — informational, never breaking.
             CompareMetadata(oldProp, newProp, "description", propPath, changes);
         }
+    }
+
+    private static void DiffArrayItemSchema(JToken oldSchema, JToken newSchema, string path, List<AsyncApiChange> changes)
+    {
+        var oldItems = (oldSchema as JObject)?["items"];
+        var newItems = (newSchema as JObject)?["items"];
+        if (oldItems is null || newItems is null) return;
+
+        DiffKeySet("schemas", $"{path}.items.enum",
+            EnumValues(oldItems), EnumValues(newItems), removedBreaking: true, changes, thing: "enum value");
+        DiffArrayItemSchema(oldItems, newItems, $"{path}.items", changes);
     }
 
     /// <summary>Whether a numeric validation bound gets more restrictive when raised or when lowered.</summary>

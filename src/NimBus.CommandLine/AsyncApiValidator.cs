@@ -70,14 +70,22 @@ public static class AsyncApiValidator
                 RequireRefInSection(document, channelRef, "#/channels/", $"{path}.channel", errors);
             }
 
-            // messages[].$ref → must resolve to a channel-scoped message entry that itself forwards
-            // to #/components/messages.
+            // messages[].$ref → generated docs use a channel-scoped message entry that forwards to
+            // #/components/messages; supplied valid AsyncAPI docs may point there directly.
             foreach (var (msgRef, msgIndex) in RefsOf(op["messages"]))
             {
                 var owner = $"{path}.messages[{msgIndex}]";
+                if (msgRef.StartsWith("#/components/messages/", StringComparison.Ordinal))
+                {
+                    RequireRefInSection(document, msgRef, "#/components/messages/", owner, errors);
+                    continue;
+                }
+
                 if (!msgRef.StartsWith("#/channels/", StringComparison.Ordinal))
                 {
-                    errors.Add($"{owner} $ref '{msgRef}' must point to a channel message (#/channels/<channel>/messages/<message>).");
+                    errors.Add($"{owner} $ref '{msgRef}' must point to a channel message "
+                        + "(#/channels/<channel>/messages/<message>) or component message "
+                        + "(#/components/messages/<message>).");
                     continue;
                 }
 

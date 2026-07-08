@@ -74,6 +74,17 @@ public sealed class AsyncApiGovernanceTests
             && e.Contains("#/components/schemas/", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Validate_OperationDirectComponentMessageRef_IsValid()
+    {
+        var doc = Doc(new NimBus.PlatformConfiguration());
+        doc["operations"]!["StorefrontEndpoint_send_OrderPlaced"]!["messages"] =
+            new JArray(new JObject { ["$ref"] = "#/components/messages/OrderPlaced" });
+
+        var result = AsyncApiValidator.Validate(doc);
+        Assert.True(result.IsValid, string.Join("; ", result.Errors));
+    }
+
     // ---------------- diff: additive vs breaking ----------------
 
     [Fact]
@@ -164,6 +175,30 @@ public sealed class AsyncApiGovernanceTests
         };
 
         Assert.True(AsyncApiDiff.Diff(WrapSchema("E", oldSchema), WrapSchema("E", newSchema)).HasBreaking);
+    }
+
+    [Fact]
+    public void Diff_ArrayItemsRemovedEnumValue_IsBreaking()
+    {
+        var oldSchema = new JObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JObject
+            {
+                ["statuses"] = new JObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JObject { ["type"] = "string", ["enum"] = new JArray { "A", "B" } },
+                },
+            },
+        };
+        var newSchema = (JObject)oldSchema.DeepClone();
+        newSchema["properties"]!["statuses"]!["items"]!["enum"] = new JArray { "A" };
+
+        var result = AsyncApiDiff.Diff(WrapSchema("E", oldSchema), WrapSchema("E", newSchema));
+        Assert.True(result.HasBreaking);
+        Assert.Contains(result.Changes, c => c.Path.EndsWith("statuses.items.enum.B", StringComparison.Ordinal)
+            && c.Breaking);
     }
 
     [Fact]

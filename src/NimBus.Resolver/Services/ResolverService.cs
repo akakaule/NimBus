@@ -186,6 +186,12 @@ namespace NimBus.Broker.Services
                 ExternalJobId = message.ExternalJobId,
                 ExpectedBy = message.ExpectedBy,
                 PendingSubStatus = message.MessageType == MessageType.PendingHandoffResponse ? "Handoff" : null,
+                // CloudEvents identity carried on the response from a CloudEvents-consuming
+                // subscriber; null for native messages.
+                CloudEventId = message.CloudEventId,
+                CloudEventSource = message.CloudEventSource,
+                CloudEventType = message.CloudEventType,
+                CloudEventSubject = message.CloudEventSubject,
             };
         }
 
@@ -267,6 +273,11 @@ namespace NimBus.Broker.Services
                 HandoffReason = message.HandoffReason,
                 ExternalJobId = message.ExternalJobId,
                 ExpectedBy = message.ExpectedBy,
+                // Surface CloudEvents identity on the tracking record (null for native).
+                CloudEventId = message.CloudEventId,
+                CloudEventSource = message.CloudEventSource,
+                CloudEventType = message.CloudEventType,
+                CloudEventSubject = message.CloudEventSubject,
             };
         }
 

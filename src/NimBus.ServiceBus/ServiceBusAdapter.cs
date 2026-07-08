@@ -1,4 +1,5 @@
 using Azure.Messaging.ServiceBus;
+using NimBus.Core.CloudEvents;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using Microsoft.Azure.Functions.Worker;
@@ -22,6 +23,7 @@ namespace NimBus.ServiceBus
         private readonly IMessageHandler _messageHandler;
         private readonly ServiceBusClient _serviceBusClient;
         private readonly string _entityPath;
+        private readonly CloudEventReadOptions _cloudEventReadOptions;
 
         /// <summary>
         /// Creates a new ServiceBusAdapter.
@@ -30,18 +32,21 @@ namespace NimBus.ServiceBus
         /// <param name="serviceBusClient">Optional ServiceBusClient for receiving deferred messages in isolated worker model.
         /// Inject via dependency injection if you need to use ReceiveDeferredMessageAsync.</param>
         /// <param name="entityPath">Optional entity path (queue name or topic/subscription path) for receiving deferred messages.</param>
-        public ServiceBusAdapter(IMessageHandler messageHandler, ServiceBusClient serviceBusClient = null, string entityPath = null)
+        /// <param name="cloudEventReadOptions">Optional CloudEvents consume options. When set, inbound
+        /// CloudEvents are detected and normalized; when null (default) the adapter is pure native NimBus.</param>
+        public ServiceBusAdapter(IMessageHandler messageHandler, ServiceBusClient serviceBusClient = null, string entityPath = null, CloudEventReadOptions cloudEventReadOptions = null)
         {
             _messageHandler = messageHandler ?? throw new ArgumentNullException(nameof(messageHandler));
             _serviceBusClient = serviceBusClient;
             _entityPath = entityPath;
+            _cloudEventReadOptions = cloudEventReadOptions;
         }
 
         public async Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default)
         {
             var messageWrapper = new ServiceBusMessage(message);
             var sessionWrapper = new ServiceBusSession(sessionActions, _serviceBusClient, _entityPath, message.SessionId);
-            var messageContext = new MessageContext(messageWrapper, sessionWrapper);
+            var messageContext = new MessageContext(messageWrapper, sessionWrapper, isDeferred: false, _cloudEventReadOptions);
 
             await HandleWithLatencyTracking(message, messageContext, cancellationToken);
         }
@@ -50,7 +55,7 @@ namespace NimBus.ServiceBus
         {
             var messageWrapper = new ServiceBusMessage(message);
             var sessionWrapper = new ServiceBusSession(messageActions, sessionActions, _serviceBusClient, _entityPath, message.SessionId);
-            var messageContext = new MessageContext(messageWrapper, sessionWrapper);
+            var messageContext = new MessageContext(messageWrapper, sessionWrapper, isDeferred: false, _cloudEventReadOptions);
 
             await HandleWithLatencyTracking(message, messageContext, cancellationToken);
         }
@@ -59,7 +64,7 @@ namespace NimBus.ServiceBus
         {
             var messageWrapper = new ServiceBusMessage(message);
             var sessionWrapper = new ServiceBusSession(sessionReceiver);
-            var messageContext = new MessageContext(messageWrapper, sessionWrapper);
+            var messageContext = new MessageContext(messageWrapper, sessionWrapper, isDeferred: false, _cloudEventReadOptions);
 
             await HandleWithLatencyTracking(message, messageContext, cancellationToken);
         }
@@ -68,7 +73,7 @@ namespace NimBus.ServiceBus
         {
             var messageWrapper = new ServiceBusMessage(args.Message);
             var sessionWrapper = new ServiceBusSession(args, _serviceBusClient, _entityPath);
-            var messageContext = new MessageContext(messageWrapper, sessionWrapper);
+            var messageContext = new MessageContext(messageWrapper, sessionWrapper, isDeferred: false, _cloudEventReadOptions);
 
             await HandleWithLatencyTracking(args.Message, messageContext, cancellationToken);
         }

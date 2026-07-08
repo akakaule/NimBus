@@ -110,7 +110,7 @@ namespace NimBus.SDK.Extensions
             }
 
             services.TryAddSingleton<ISender>(BuildPublisherSender);
-            services.TryAddSingleton<IPublisherClient>(sp => new PublisherClient(BuildPublisherSender(sp), options.Endpoint));
+            services.TryAddSingleton<IPublisherClient>(sp => new PublisherClient(BuildPublisherSender(sp), options.Endpoint, options.CloudEvents));
 
             return services;
         }
@@ -206,6 +206,14 @@ namespace NimBus.SDK.Extensions
                     registration.Register(sp, eventHandlerProvider);
                 }
 
+                // Opt-in CloudEvents consume: build the transport read options and, when
+                // enabled, wrap the handler provider in the validating decorator so an
+                // invalid or unknown-type CloudEvent dead-letters with a clear reason.
+                var cloudEventReadOptions = options.CloudEvents?.ToReadOptions();
+                Core.Messages.IEventContextHandler contextHandler = cloudEventReadOptions != null
+                    ? new CloudEventValidatingContextHandler(eventHandlerProvider)
+                    : eventHandlerProvider;
+
                 // Build retry policy provider
                 IRetryPolicyProvider? retryPolicyProvider = null;
                 if (builder.RetryPolicyConfigurator != null)
@@ -235,10 +243,10 @@ namespace NimBus.SDK.Extensions
                 // the old branches, and (crucially) never drops a registered
                 // IPermanentFailureClassifier when no pipeline/lifecycle notifier exists.
                 IMessageHandler strictMessageHandler = new StrictMessageHandler(
-                    eventHandlerProvider, responseService, logger,
+                    contextHandler, responseService, logger,
                     retryPolicyProvider, pipeline, lifecycleNotifier, permanentFailureClassifier);
 
-                var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, options.EntityPath);
+                var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, options.EntityPath, cloudEventReadOptions);
                 return new SubscriberClient(serviceBusAdapter, eventHandlerProvider);
             });
 

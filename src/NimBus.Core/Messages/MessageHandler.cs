@@ -106,7 +106,13 @@ namespace NimBus.Core.Messages
 
                 try
                 {
-                    var reason = $"Permanent failure: {permanentFailure.InnerException?.GetType().Name}";
+                    // Include the inner exception message so a specific, inspectable
+                    // reason (e.g. "CloudEvents message missing required attribute
+                    // 'source'") lands in the DLQ reason field, not just the type name.
+                    var inner = permanentFailure.InnerException;
+                    var reason = inner is null
+                        ? "Permanent failure"
+                        : $"Permanent failure: {inner.GetType().Name}: {inner.Message}";
                     await NotifyResolverOfDeadLetter(messageContext, reason, permanentFailure.InnerException, cancellationToken);
                     await messageContext.DeadLetter(reason, permanentFailure.InnerException, cancellationToken);
 

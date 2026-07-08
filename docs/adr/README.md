@@ -17,3 +17,4 @@ This directory contains Architecture Decision Records (ADRs) for the NimBus plat
 | [009](009-orchestration-via-application-services.md) | Orchestration via application services, not a saga framework | Accepted | 2026-04 |
 | [010](010-pluggable-message-storage.md) | Pluggable message storage providers (SQL Server + Cosmos DB) | Accepted | 2026-05 |
 | [012](012-pending-handoff.md) | PendingHandoff outcome for async message completion | Accepted | 2026-05 |
+| [013](013-cloudevents-interoperability.md) | CloudEvents 1.0 interoperability layer | Accepted | 2026-07 |

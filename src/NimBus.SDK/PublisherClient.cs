@@ -1,8 +1,10 @@
 ﻿using Azure.Messaging.ServiceBus;
+using NimBus.Core.CloudEvents;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using NimBus.OpenTelemetry;
+using NimBus.SDK.Extensions;
 using NimBus.ServiceBus;
 using Newtonsoft.Json;
 using System;
@@ -18,6 +20,7 @@ public class PublisherClient : IPublisherClient
 {
     private readonly ISender _sender;
     private readonly string _publisherEndpoint;
+    private readonly CloudEventPublisherOptions _cloudEvents;
     private ServiceBusClient _serviceBusClient;
 
     // There is a 256 KB limit per message sent on Azure Service Bus (Standard
@@ -37,10 +40,16 @@ public class PublisherClient : IPublisherClient
     /// carry the publishing endpoint identity through the Resolver. When null, the
     /// wire default <c>"self"</c> applies.
     /// </param>
-    public PublisherClient(ISender sender, string publisherEndpoint = null)
+    /// <param name="cloudEvents">
+    /// Optional CloudEvents publish options. When non-null every published event is
+    /// emitted as a CloudEvent in the configured content mode; when null (the
+    /// default) the native NimBus wire format is used.
+    /// </param>
+    public PublisherClient(ISender sender, string publisherEndpoint = null, CloudEventPublisherOptions cloudEvents = null)
     {
         _sender = sender ?? throw new ArgumentNullException(nameof(sender));
         _publisherEndpoint = publisherEndpoint;
+        _cloudEvents = cloudEvents;
     }
 
     /// <summary>
@@ -312,7 +321,48 @@ public class PublisherClient : IPublisherClient
         var message = (Message)GetMessageStatic(@event, correlationId, messageId, sessionId);
         if (!string.IsNullOrEmpty(_publisherEndpoint))
             message.OriginatingFrom = _publisherEndpoint;
+
+        // Opt-in CloudEvents: attach the CloudEvent publish context so the transport
+        // binding emits this message as a CloudEvent. Native routing metadata built
+        // above is untouched, so a NimBus round-trip keeps working.
+        if (_cloudEvents != null)
+            message.CloudEvent = BuildCloudEvent(@event, message);
+
         return message;
+    }
+
+    // Projects native NimBus identity/metadata onto a CloudEvent per the configured
+    // publisher options and mapping. The CloudEvent's data is the domain-event JSON
+    // (EventContent.EventJson), NOT the NimBus MessageContent envelope.
+    private CloudEventPublishContext BuildCloudEvent(IEvent @event, Message message)
+    {
+        var eventType = @event.GetType();
+        var type = _cloudEvents.TypeOverride?.Invoke(@event)
+            ?? (_cloudEvents.TypeNameStrategy == CloudEventTypeNameStrategy.FullName
+                ? eventType.FullName
+                : eventType.Name);
+
+        var cloudEvent = new CloudEvent
+        {
+            Id = message.MessageId,
+            Source = _cloudEvents.Source?.ToString(),
+            Type = type,
+            Subject = _cloudEvents.Subject?.Invoke(@event),
+            Time = _cloudEvents.Time?.Invoke(@event) ?? DateTimeOffset.UtcNow,
+            DataContentType = _cloudEvents.DataContentType,
+            DataSchema = _cloudEvents.DataSchema?.ToString(),
+            Data = message.MessageContent?.EventContent?.EventJson,
+        };
+
+        // Custom extension attributes first, so the mapped correlation/session ids
+        // below deterministically win if the caller reused those names.
+        _cloudEvents.Extensions?.Invoke(@event, cloudEvent.Extensions);
+
+        var mapping = _cloudEvents.Mapping ?? new CloudEventMapping();
+        mapping.WriteCorrelationId(cloudEvent, message.CorrelationId);
+        mapping.WriteSessionId(cloudEvent, message.SessionId);
+
+        return new CloudEventPublishContext(cloudEvent, _cloudEvents.ContentMode);
     }
 
     private static IMessage GetMessageStatic(IEvent @event, string correlationId = null, string messageId = null, string sessionId = null)

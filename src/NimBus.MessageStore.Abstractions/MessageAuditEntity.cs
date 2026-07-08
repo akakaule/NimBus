@@ -66,6 +66,12 @@ namespace NimBus.MessageStore
         /// <summary>Operator disabled an endpoint subscription.</summary>
         DisableEndpoint,
 
+        /// <summary>Operator enabled sending on an endpoint (topic status Active).</summary>
+        EnableEndpointSend,
+
+        /// <summary>Operator disabled sending on an endpoint (topic status SendDisabled).</summary>
+        DisableEndpointSend,
+
         /// <summary>Operator purged messages from an endpoint / subscription / session.</summary>
         PurgeMessages,
 

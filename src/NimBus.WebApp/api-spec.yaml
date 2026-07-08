@@ -906,6 +906,47 @@ paths:
       tags:
         - Endpoint
       description: Get status for given subscription on endpoint
+  '/api/endpoint/{endpointId}/sendstatus':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: ''
+      operationId: post-endpoint-sendstatus
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Bad Request
+      tags:
+        - Endpoint
+      description: Enable or disable sending (publishing) on an endpoint's topic
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+            examples:
+              example-1:
+                value: string
+    get:
+      summary: ''
+      operationId: get-endpoint-sendstatus
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: string
+        '404':
+          description: Not Found
+      tags:
+        - Endpoint
+      description: Get send (publish) status for an endpoint's topic
   '/api/event/invalid/{endpointId}/{eventId}/{sessionId}':
     parameters:
       - schema:

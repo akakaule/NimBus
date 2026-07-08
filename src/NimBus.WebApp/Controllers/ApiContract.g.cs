@@ -163,6 +163,24 @@ namespace NimBus.WebApp.ManagementApi
 
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<string>> GetEndpointSubscriptionstatusAsync(string endpointId);
 
+        /// <remarks>
+        /// Enable or disable sending (publishing) on an endpoint's topic
+        /// </remarks>
+
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostEndpointSendstatusAsync(string body, string endpointId);
+
+        /// <remarks>
+        /// Get send (publish) status for an endpoint's topic
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<string>> GetEndpointSendstatusAsync(string endpointId);
+
         /// <summary>
         /// Your GET endpoint
         /// </summary>
@@ -380,6 +398,28 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.GetEndpointSubscriptionstatusAsync(endpointId);
+        }
+
+        /// <remarks>
+        /// Enable or disable sending (publishing) on an endpoint's topic
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/endpoint/{endpointId}/sendstatus")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostEndpointSendstatus([Microsoft.AspNetCore.Mvc.FromBody] string body, string endpointId)
+        {
+
+            return _implementation.PostEndpointSendstatusAsync(body, endpointId);
+        }
+
+        /// <remarks>
+        /// Get send (publish) status for an endpoint's topic
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/endpoint/{endpointId}/sendstatus")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<string>> GetEndpointSendstatus(string endpointId)
+        {
+
+            return _implementation.GetEndpointSendstatusAsync(endpointId);
         }
 
         /// <summary>

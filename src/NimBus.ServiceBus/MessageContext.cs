@@ -106,7 +106,10 @@ namespace NimBus.ServiceBus
             {
                 if (_sbMessage.MessageId != null) return _sbMessage.MessageId;
                 EnsureCloudEventEvaluated();
-                if (_isCloudEvent && _cloudEvent?.Id != null) return _cloudEvent.Id;
+                // A detected CloudEvent always yields a non-null id: use the CloudEvents
+                // `id` when present, otherwise a clear placeholder so an invalid (id-less)
+                // CloudEvent can still be dead-lettered without the getter throwing.
+                if (_isCloudEvent) return _cloudEvent?.Id ?? CloudEventMissingIdPlaceholder;
                 throw new InvalidMessageException($"MessageId is not defined.");
             }
         }
@@ -462,7 +465,14 @@ namespace NimBus.ServiceBus
             {
                 UserPropertyName.From => _cloudEvent?.Source ?? "external",
                 UserPropertyName.To => _cloudEventReadOptions.MapType(_cloudEvent?.Type),
-                UserPropertyName.EventId => _cloudEvent?.Id ?? _sbMessage.MessageId,
+                // Never null for a detected CloudEvent: a producer may omit both the
+                // CloudEvents `id` and the native Service Bus MessageId. Such a message
+                // is invalid and will be dead-lettered by the validating handler, but
+                // the dead-letter path (MessageHandler) reads EventId while logging — a
+                // null here would throw InvalidMessageException and crash the processor
+                // before the message is dead-lettered (AC12). Fall back to a clear,
+                // inspectable placeholder so the dead-letter completes cleanly.
+                UserPropertyName.EventId => _cloudEvent?.Id ?? _sbMessage.MessageId ?? CloudEventMissingIdPlaceholder,
                 UserPropertyName.MessageType => MessageType.EventRequest.ToString(),
                 UserPropertyName.EventTypeId => _cloudEventReadOptions.MapType(_cloudEvent?.Type),
                 UserPropertyName.OriginatingFrom => _cloudEvent?.Source,
@@ -486,6 +496,12 @@ namespace NimBus.ServiceBus
         private CloudEvent _cloudEvent;
         private bool _isCloudEvent;
         private bool _cloudEventEvaluated;
+
+        // Placeholder identifier used when a detected CloudEvent carries neither a
+        // CloudEvents `id` nor a native Service Bus MessageId. Such a message is
+        // invalid and will be dead-lettered; the placeholder keeps identity accessors
+        // non-null so the dead-letter path never crashes while logging (AC12).
+        private const string CloudEventMissingIdPlaceholder = "(cloudevent-missing-id)";
 
         // Detects (once) whether this inbound message is a CloudEvent. Only runs when
         // CloudEvents read options are configured; native subscribers never evaluate
@@ -511,6 +527,23 @@ namespace NimBus.ServiceBus
         {
             EnsureCloudEventEvaluated();
             return _cloudEvent;
+        }
+
+        // CloudEvents identity carried through to the Resolver. Two sources: a response
+        // message received by the Resolver reads the stamped user.CloudEvent* property;
+        // the original inbound CloudEvent (subscriber side) reads the parsed CloudEvent.
+        // Returns null for a native message, so tracking of native events is unchanged.
+        public string CloudEventId => CloudEventAttribute(UserPropertyName.CloudEventId, ce => ce.Id);
+        public string CloudEventSource => CloudEventAttribute(UserPropertyName.CloudEventSource, ce => ce.Source);
+        public string CloudEventType => CloudEventAttribute(UserPropertyName.CloudEventType, ce => ce.Type);
+        public string CloudEventSubject => CloudEventAttribute(UserPropertyName.CloudEventSubject, ce => ce.Subject);
+
+        private string CloudEventAttribute(UserPropertyName property, Func<CloudEvent, string> fromCloudEvent)
+        {
+            var stamped = _sbMessage.GetUserProperty(property);
+            if (stamped != null) return stamped;
+            EnsureCloudEventEvaluated();
+            return _cloudEvent != null ? fromCloudEvent(_cloudEvent) : null;
         }
 
         // MessageContext is constructed per received message and used single-threaded,

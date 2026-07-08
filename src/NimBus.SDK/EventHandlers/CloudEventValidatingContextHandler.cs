@@ -21,13 +21,11 @@ namespace NimBus.SDK.EventHandlers
     public sealed class CloudEventValidatingContextHandler : IEventContextHandler
     {
         private readonly IEventContextHandler _inner;
-        private readonly CloudEventReadOptions _readOptions;
 
         /// <summary>Creates the validating decorator around <paramref name="inner"/>.</summary>
-        public CloudEventValidatingContextHandler(IEventContextHandler inner, CloudEventReadOptions readOptions)
+        public CloudEventValidatingContextHandler(IEventContextHandler inner)
         {
             _inner = inner ?? throw new ArgumentNullException(nameof(inner));
-            _readOptions = readOptions ?? throw new ArgumentNullException(nameof(readOptions));
         }
 
         /// <inheritdoc/>

@@ -94,6 +94,48 @@ public class ResolverServiceTests
     }
 
     [TestMethod]
+    public async Task Handle_CloudEventResponse_PersistsCloudEventIdentityOnTrackingRecord()
+    {
+        // AC15: the CloudEvents identity carried on the response from a CloudEvents-
+        // consuming subscriber must be projected onto the tracking record (the
+        // UnresolvedEvent the WebApp surfaces) and the per-message audit row.
+        var cosmos = new FakeCosmosDbClient();
+        var message = CreateMessageContext(messageType: MessageType.ResolutionResponse, to: "Resolver", from: "BillingEndpoint");
+        message.CloudEventId = "ce-1";
+        message.CloudEventSource = "urn:ext:billing";
+        message.CloudEventType = "InvoiceCreated";
+        message.CloudEventSubject = "customer-42";
+        var service = CreateService(cosmos);
+
+        await service.Handle(message);
+
+        Assert.AreEqual(1, cosmos.CompletedUploads.Count);
+        var tracked = cosmos.CompletedUploads[0].Content;
+        Assert.AreEqual("ce-1", tracked.CloudEventId);
+        Assert.AreEqual("urn:ext:billing", tracked.CloudEventSource);
+        Assert.AreEqual("InvoiceCreated", tracked.CloudEventType);
+        Assert.AreEqual("customer-42", tracked.CloudEventSubject);
+
+        // The per-message audit row (MessageEntity) carries it too.
+        Assert.AreEqual("ce-1", cosmos.StoredMessages[0].CloudEventId);
+        Assert.AreEqual("InvoiceCreated", cosmos.StoredMessages[0].CloudEventType);
+    }
+
+    [TestMethod]
+    public async Task Handle_NativeResponse_LeavesCloudEventIdentityNull()
+    {
+        var cosmos = new FakeCosmosDbClient();
+        var message = CreateMessageContext(messageType: MessageType.ResolutionResponse, to: "Resolver", from: "BillingEndpoint");
+        var service = CreateService(cosmos);
+
+        await service.Handle(message);
+
+        Assert.IsNull(cosmos.CompletedUploads[0].Content.CloudEventId);
+        Assert.IsNull(cosmos.CompletedUploads[0].Content.CloudEventType);
+        Assert.IsNull(cosmos.StoredMessages[0].CloudEventId);
+    }
+
+    [TestMethod]
     public async Task Handle_RetryRequest_StoresAuditBeforePersistingMessage()
     {
         var cosmos = new FakeCosmosDbClient();
@@ -353,6 +395,10 @@ public class ResolverServiceTests
         public DateTime? HandlerStartedAtUtc { get; set; }
         public HandlerOutcome HandlerOutcome { get; set; }
         public HandoffMetadata HandoffMetadata { get; set; }
+        public string CloudEventId { get; set; }
+        public string CloudEventSource { get; set; }
+        public string CloudEventType { get; set; }
+        public string CloudEventSubject { get; set; }
 
         public int CompletedCalls { get; private set; }
         public int DeadLetterCalls { get; private set; }

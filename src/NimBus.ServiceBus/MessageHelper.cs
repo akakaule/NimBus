@@ -75,6 +75,20 @@ namespace NimBus.ServiceBus
                     message.ExpectedBy.Value.ToUniversalTime().ToString("o", System.Globalization.CultureInfo.InvariantCulture);
             }
 
+            // CloudEvents identity carried to the Resolver on a response message so the
+            // tracking/audit record preserves the inbound CloudEvent's id/source/type/
+            // subject. Only stamped when present (i.e. the message originated from a
+            // CloudEvents-consuming subscriber); native messages leave these null, so
+            // their wire form is byte-identical.
+            if (!string.IsNullOrEmpty(message.CloudEventId))
+                result.ApplicationProperties[UserPropertyName.CloudEventId.ToString()] = message.CloudEventId;
+            if (!string.IsNullOrEmpty(message.CloudEventSource))
+                result.ApplicationProperties[UserPropertyName.CloudEventSource.ToString()] = message.CloudEventSource;
+            if (!string.IsNullOrEmpty(message.CloudEventType))
+                result.ApplicationProperties[UserPropertyName.CloudEventType.ToString()] = message.CloudEventType;
+            if (!string.IsNullOrEmpty(message.CloudEventSubject))
+                result.ApplicationProperties[UserPropertyName.CloudEventSubject.ToString()] = message.CloudEventSubject;
+
             // W3C trace propagation: traceparent (and optional tracestate) is the
             // canonical format on every transport (FR-030). Legacy Diagnostic-Id is
             // not written or read by NimBus.

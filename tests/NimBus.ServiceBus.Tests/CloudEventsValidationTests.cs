@@ -83,7 +83,7 @@ public class CloudEventsValidationTests
         }
 
         var inner = new RecordingContextHandler();
-        var decorator = new CloudEventValidatingContextHandler(inner, new CloudEventReadOptions());
+        var decorator = new CloudEventValidatingContextHandler(inner);
         var context = ContextFor(ce);
 
         var ex = await Assert.ThrowsExactlyAsync<PermanentFailureException>(() => decorator.Handle(context));
@@ -97,7 +97,7 @@ public class CloudEventsValidationTests
     {
         var ce = new CloudEvent { Id = "1", Source = "urn:x", Type = "NoSuchType", SpecVersion = "1.0" };
         var inner = new RecordingContextHandler { ToThrow = new EventHandlerNotFoundException("no handler for NoSuchType") };
-        var decorator = new CloudEventValidatingContextHandler(inner, new CloudEventReadOptions());
+        var decorator = new CloudEventValidatingContextHandler(inner);
 
         var ex = await Assert.ThrowsExactlyAsync<PermanentFailureException>(() => decorator.Handle(ContextFor(ce)));
         Assert.IsInstanceOfType(ex.InnerException, typeof(InvalidCloudEventException)); // AC13
@@ -109,7 +109,7 @@ public class CloudEventsValidationTests
     {
         var ce = new CloudEvent { Id = "1", Source = "urn:x", Type = "OrderPlaced", SpecVersion = "1.0" };
         var inner = new RecordingContextHandler();
-        var decorator = new CloudEventValidatingContextHandler(inner, new CloudEventReadOptions());
+        var decorator = new CloudEventValidatingContextHandler(inner);
 
         await decorator.Handle(ContextFor(ce));
 
@@ -123,7 +123,7 @@ public class CloudEventsValidationTests
         var message = new Message { MessageId = "n", SessionId = "s", MessageType = MessageType.EventRequest, MessageContent = new MessageContent() };
         var context = new InMemoryMessageContext(message, new InMemorySessionState());
         var inner = new RecordingContextHandler();
-        var decorator = new CloudEventValidatingContextHandler(inner, new CloudEventReadOptions());
+        var decorator = new CloudEventValidatingContextHandler(inner);
 
         await decorator.Handle(context);
 
@@ -142,7 +142,7 @@ public class CloudEventsValidationTests
         provider.RegisterHandler("ShipmentSent", () => shipHandler);
 
         var readOptions = new CloudEventReadOptions { Mode = CompatibilityMode.AutoDetect };
-        var decorator = new CloudEventValidatingContextHandler(provider, readOptions);
+        var decorator = new CloudEventValidatingContextHandler(provider);
 
         // Native NimBus message routed by its own MessageContent.EventTypeId.
         var nativeContent = new MessageContent { EventContent = new EventContent { EventTypeId = "OrderPlaced", EventJson = "{}" } };
@@ -172,6 +172,41 @@ public class CloudEventsValidationTests
         await decorator.Handle(new MessageContext(ceMsg, new InertServiceBusSession(), false, readOptions));
 
         Assert.IsTrue(shipHandler.WasCalled); // AC9
+    }
+
+    // ── Missing-id dead-letter safety (AC12) ────────────────────────────
+
+    [TestMethod]
+    public void CloudEventMissingIdAndMessageId_IdentityAccessorsDoNotThrow()
+    {
+        // An external CloudEvents producer may omit both the CloudEvents `id` and the
+        // native Service Bus MessageId. The message is invalid (missing `id`) and will
+        // be dead-lettered by the validating handler — but MessageHandler reads EventId
+        // (and MessageId) while logging the dead-letter. A null there would throw
+        // InvalidMessageException and crash the processor BEFORE the message is
+        // dead-lettered. AC12 requires a clean dead-letter, so these accessors must
+        // return a non-null placeholder instead of throwing.
+        var readOptions = new CloudEventReadOptions { Mode = CompatibilityMode.AutoDetect };
+        var ceMsg = new FakeCloudEventMessage
+        {
+            MessageId = null, // producer omitted the native Service Bus MessageId
+            ContentType = "application/json",
+            Body = Encoding.UTF8.GetBytes("{}"),
+        };
+        ceMsg.Properties["cloudEvents:specversion"] = "1.0";
+        ceMsg.Properties["cloudEvents:source"] = "urn:ext:wms";
+        ceMsg.Properties["cloudEvents:type"] = "ShipmentSent";
+        // deliberately no cloudEvents:id
+
+        var context = new MessageContext(ceMsg, new InertServiceBusSession(), false, readOptions);
+
+        // Neither accessor may throw — this is the exact read MessageHandler performs
+        // on the permanent-failure dead-letter path.
+        var eventId = context.EventId;
+        var messageId = context.MessageId;
+
+        Assert.IsFalse(string.IsNullOrEmpty(eventId), "EventId must be non-null so dead-letter logging does not crash.");
+        Assert.IsFalse(string.IsNullOrEmpty(messageId), "MessageId must be non-null so dead-letter logging does not crash.");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

@@ -131,6 +131,22 @@ namespace NimBus.Core.Messages
         /// CloudEvents message keeps its envelope when dispatched later.
         /// </summary>
         CloudEventPublishContext CloudEvent => null;
+
+        /// <summary>
+        /// CloudEvents <c>id</c> of the inbound CloudEvent this message relates to,
+        /// carried on the response sent to the Resolver so the tracking/audit record
+        /// preserves the CloudEvent identity. Null (the default) on native messages.
+        /// </summary>
+        string CloudEventId => null;
+
+        /// <summary>CloudEvents <c>source</c>, carried to the Resolver. Null for a native message.</summary>
+        string CloudEventSource => null;
+
+        /// <summary>CloudEvents <c>type</c>, carried to the Resolver. Null for a native message.</summary>
+        string CloudEventType => null;
+
+        /// <summary>CloudEvents <c>subject</c>, carried to the Resolver. Null for a native message.</summary>
+        string CloudEventSubject => null;
     }
 
     public class Message : IMessage
@@ -185,5 +201,17 @@ namespace NimBus.Core.Messages
         /// an outbox-dispatched CloudEvents message is still emitted as a CloudEvent.
         /// </summary>
         public CloudEventPublishContext CloudEvent { get; set; }
+
+        /// <summary>See <see cref="IMessage.CloudEventId"/>.</summary>
+        public string CloudEventId { get; set; }
+
+        /// <summary>See <see cref="IMessage.CloudEventSource"/>.</summary>
+        public string CloudEventSource { get; set; }
+
+        /// <summary>See <see cref="IMessage.CloudEventType"/>.</summary>
+        public string CloudEventType { get; set; }
+
+        /// <summary>See <see cref="IMessage.CloudEventSubject"/>.</summary>
+        public string CloudEventSubject { get; set; }
     }
 }

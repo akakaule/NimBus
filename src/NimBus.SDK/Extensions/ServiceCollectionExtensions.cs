@@ -168,7 +168,7 @@ namespace NimBus.SDK.Extensions
                 // invalid or unknown-type CloudEvent dead-letters with a clear reason.
                 var cloudEventReadOptions = options.CloudEvents?.ToReadOptions();
                 Core.Messages.IEventContextHandler contextHandler = cloudEventReadOptions != null
-                    ? new CloudEventValidatingContextHandler(eventHandlerProvider, cloudEventReadOptions)
+                    ? new CloudEventValidatingContextHandler(eventHandlerProvider)
                     : eventHandlerProvider;
 
                 // Build retry policy provider

@@ -183,6 +183,32 @@ public sealed class AsyncApiGovernanceTests
     }
 
     [Fact]
+    public void Diff_RootSchemaRemovedEnumValue_IsBreaking()
+    {
+        // A component schema that is itself an enum (e.g. components.schemas.Status).
+        var oldSchema = new JObject { ["type"] = "string", ["enum"] = new JArray("A", "B") };
+        var newSchema = new JObject { ["type"] = "string", ["enum"] = new JArray("A") };
+        Assert.True(AsyncApiDiff.Diff(WrapSchema("Status", oldSchema), WrapSchema("Status", newSchema)).HasBreaking);
+    }
+
+    [Fact]
+    public void Diff_RootSchemaAddedEnumValue_IsNotBreaking()
+    {
+        var oldSchema = new JObject { ["type"] = "string", ["enum"] = new JArray("A") };
+        var newSchema = new JObject { ["type"] = "string", ["enum"] = new JArray("A", "B") };
+        Assert.False(AsyncApiDiff.Diff(WrapSchema("Status", oldSchema), WrapSchema("Status", newSchema)).HasBreaking);
+    }
+
+    [Fact]
+    public void Diff_RootSchemaTypeChange_IsBreaking()
+    {
+        // A component schema whose own effective shape changes (scalar type/format).
+        var oldSchema = new JObject { ["type"] = "string" };
+        var newSchema = new JObject { ["type"] = "integer", ["format"] = "int32" };
+        Assert.True(AsyncApiDiff.Diff(WrapSchema("Amount", oldSchema), WrapSchema("Amount", newSchema)).HasBreaking);
+    }
+
+    [Fact]
     public void Diff_DescriptionOnlyChange_IsNotBreaking()
     {
         var baseline = Doc(new NimBus.PlatformConfiguration());

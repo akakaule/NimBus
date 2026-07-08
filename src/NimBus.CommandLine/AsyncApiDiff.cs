@@ -238,6 +238,22 @@ public static class AsyncApiDiff
 
             DiffSchemaProperties(name, oldSchema, newSchema, path, changes);
             DiffRequired(oldSchema, newSchema, path, changes);
+
+            // Root-level enum on a component schema that is itself an enum (e.g. components.schemas.Status):
+            // a removed value is breaking (a producer may still emit it); an added value is additive.
+            DiffKeySet("schemas", $"{path}.enum",
+                EnumValues(oldSchema), EnumValues(newSchema), removedBreaking: true, changes, thing: "enum value");
+
+            // Root-level effective shape (scalar type/format, array items, $ref): a change breaks
+            // deserialization. Object schemas normalize to "object", so property/required deltas are not
+            // double-reported here — those stay the responsibility of DiffSchemaProperties/DiffRequired.
+            var oldShape = NormalizeShape(oldSchema);
+            var newShape = NormalizeShape(newSchema);
+            if (!string.Equals(oldShape, newShape, StringComparison.Ordinal))
+            {
+                changes.Add(new AsyncApiChange("schemas", ChangeKind.Changed, $"{path}.type",
+                    breaking: true, $"Schema type changed ('{oldShape}' → '{newShape}')."));
+            }
         }
     }
 

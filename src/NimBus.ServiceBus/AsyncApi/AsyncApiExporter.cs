@@ -119,7 +119,11 @@ public static class AsyncApiExporter
 
         var channels = BuildChannels(topicMessages, endpointsById);
         var operations = BuildOperations(platform, events, dynamicForwards, endpointsById);
-        var components = BuildComponents(events, dynamicForwards);
+        // CloudEvents-enabled endpoints (those implementing ICloudEventsAware) get an
+        // x-cloudevents channel extension and a shared CloudEventsMessageHeaders schema.
+        // Native endpoints are untouched, so the export is unchanged when none opt in.
+        var anyCloudEvents = endpointsById.Values.Any(e => e is ICloudEventsAware);
+        var components = BuildComponents(events, dynamicForwards, anyCloudEvents);
 
         return new Map
         {
@@ -185,7 +189,7 @@ public static class AsyncApiExporter
                 messages[eventId] = new Map { ["$ref"] = $"#/components/messages/{eventId}" };
             }
 
-            channels[endpointId] = new Map
+            var channel = new Map
             {
                 ["address"] = endpointId,
                 ["description"] = $"Azure Service Bus topic for {name}.",
@@ -199,10 +203,28 @@ public static class AsyncApiExporter
                     ["duplicateDetectionHistoryTimeWindow"] = "PT10M",
                 },
             };
+
+            if (ep is ICloudEventsAware cloudEvents)
+            {
+                channel["x-cloudevents"] = BuildCloudEventsChannelExtension(cloudEvents);
+            }
+
+            channels[endpointId] = channel;
         }
 
         return channels;
     }
+
+    // Documents that this endpoint's topic carries CloudEvents 1.0 messages (content
+    // mode + attribute set), pointing at the shared CloudEventsMessageHeaders schema.
+    private static Map BuildCloudEventsChannelExtension(ICloudEventsAware cloudEvents) => new()
+    {
+        ["specversion"] = "1.0",
+        ["contentMode"] = string.IsNullOrEmpty(cloudEvents.CloudEventsContentMode) ? "binary" : cloudEvents.CloudEventsContentMode,
+        ["source"] = cloudEvents.CloudEventsSource,
+        ["attributes"] = new List<object> { "id", "source", "type", "specversion", "subject", "time", "datacontenttype", "dataschema" },
+        ["headers"] = new Map { ["$ref"] = "#/components/schemas/CloudEventsMessageHeaders" },
+    };
 
     private static Map BuildOperations(
         IPlatform platform,
@@ -301,10 +323,14 @@ public static class AsyncApiExporter
             ["action"] = ForwardAction(sourceTopic, target),
         };
 
-    private static Map BuildComponents(IReadOnlyList<IEventType> events, IReadOnlyList<DynamicForward> dynamicForwards)
+    private static Map BuildComponents(IReadOnlyList<IEventType> events, IReadOnlyList<DynamicForward> dynamicForwards, bool includeCloudEventsHeaders)
     {
         var messages = new Map();
         var schemas = new Map { ["NimBusMessageHeaders"] = BuildHeadersSchema() };
+        if (includeCloudEventsHeaders)
+        {
+            schemas["CloudEventsMessageHeaders"] = BuildCloudEventsHeadersSchema();
+        }
         var building = new HashSet<Type>();
 
         foreach (var evt in events)
@@ -426,6 +452,31 @@ public static class AsyncApiExporter
     };
 
     private static Map HeaderProp(string description) => new() { ["type"] = "string", ["description"] = description };
+
+    // CloudEvents 1.0 AMQP binding context attributes (cloudEvents:* application
+    // properties in binary mode / top-level fields in structured mode) carried on a
+    // CloudEvents-enabled endpoint's topic, alongside the native NimBusMessageHeaders.
+    private static Map BuildCloudEventsHeadersSchema() => new()
+    {
+        ["type"] = "object",
+        ["description"] =
+            "CloudEvents 1.0 context attributes carried on this endpoint (binary mode: cloudEvents:* AMQP " +
+            "application properties; structured mode: top-level JSON fields). Present only on endpoints that " +
+            "enable CloudEvents; native NimBus routing headers (NimBusMessageHeaders) are still stamped.",
+        ["properties"] = new Map
+        {
+            ["id"] = HeaderProp("CloudEvents id (maps from NimBus MessageId)."),
+            ["source"] = HeaderProp("CloudEvents source (the producing endpoint/system identity)."),
+            ["type"] = HeaderProp("CloudEvents type (the event contract name; the dispatch key)."),
+            ["specversion"] = HeaderProp("CloudEvents spec version; always \"1.0\"."),
+            ["subject"] = HeaderProp("Optional CloudEvents subject."),
+            ["time"] = new Map { ["type"] = "string", ["format"] = "date-time", ["description"] = "Optional CloudEvents time." },
+            ["datacontenttype"] = HeaderProp("Content type of the data payload (default application/json)."),
+            ["dataschema"] = HeaderProp("Optional CloudEvents dataschema reference."),
+            ["correlationid"] = HeaderProp("Extension attribute carrying the NimBus CorrelationId (default mapping)."),
+            ["sessionid"] = HeaderProp("Extension attribute carrying the NimBus SessionId (default mapping)."),
+        },
+    };
 
     // ---- JSON Schema generation from CLR event contracts ----
 

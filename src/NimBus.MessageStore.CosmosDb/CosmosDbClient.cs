@@ -1494,7 +1494,11 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         "\"PendingSubStatus\": c.message.PendingSubStatus, " +
         "\"HandoffReason\": c.message.HandoffReason, " +
         "\"ExternalJobId\": c.message.ExternalJobId, " +
-        "\"ExpectedBy\": c.message.ExpectedBy" +
+        "\"ExpectedBy\": c.message.ExpectedBy, " +
+        "\"CloudEventId\": c.message.CloudEventId, " +
+        "\"CloudEventSource\": c.message.CloudEventSource, " +
+        "\"CloudEventType\": c.message.CloudEventType, " +
+        "\"CloudEventSubject\": c.message.CloudEventSubject" +
         "} AS message FROM c";
 
     public async Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount)

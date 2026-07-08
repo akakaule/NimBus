@@ -1,0 +1,13 @@
+<Solution>
+  <Project Path="../../src/NimBus.Abstractions/NimBus.Abstractions.csproj" />
+  <Project Path="../../src/NimBus.Core/NimBus.Core.csproj" />
+  <Project Path="../../src/NimBus.MessageStore.Abstractions/NimBus.MessageStore.Abstractions.csproj" />
+  <Project Path="../../src/NimBus.OpenTelemetry/NimBus.OpenTelemetry.csproj" />
+  <Project Path="../../src/NimBus.SDK/NimBus.SDK.csproj" />
+  <Project Path="../../src/NimBus.ServiceBus/NimBus.ServiceBus.csproj" />
+  <Project Path="CloudEventsInterop.Contracts/CloudEventsInterop.Contracts.csproj" />
+  <Project Path="CloudEventsInterop.NonNimBusConsumer/CloudEventsInterop.NonNimBusConsumer.csproj" />
+  <Project Path="CloudEventsInterop.Provisioner/CloudEventsInterop.Provisioner.csproj" />
+  <Project Path="CloudEventsInterop.Publisher/CloudEventsInterop.Publisher.csproj" />
+  <Project Path="CloudEventsInterop.Subscriber/CloudEventsInterop.Subscriber.csproj" />
+</Solution>

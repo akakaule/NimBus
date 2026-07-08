@@ -97,8 +97,13 @@ namespace NimBus.Core.Messages
             await _sender.Send(response, cancellationToken: cancellationToken);
         }
 
-        private IMessage CreateResponse(IMessageContext messageContext, MessageType responseType, MessageContent responseContent) =>
-            new Message()
+        private static IMessage CreateResponse(IMessageContext messageContext, MessageType responseType, MessageContent responseContent)
+        {
+            // Preserve the inbound CloudEvent's identity on the response so the Resolver
+            // persists it on the tracking/audit record. Null (native message) leaves the
+            // response byte-identical to today's wire form.
+            var cloudEvent = messageContext.GetCloudEvent();
+            return new Message()
             {
                 To = Constants.ResolverId,
                 CorrelationId = messageContext.MessageId,
@@ -115,7 +120,12 @@ namespace NimBus.Core.Messages
                 // on the audit doc — the message detail page renders them.
                 QueueTimeMs = messageContext.QueueTimeMs,
                 ProcessingTimeMs = ComputeProcessingTimeMs(messageContext),
+                CloudEventId = cloudEvent?.Id,
+                CloudEventSource = cloudEvent?.Source,
+                CloudEventType = cloudEvent?.Type,
+                CloudEventSubject = cloudEvent?.Subject,
             };
+        }
 
         // The terminal handler calls SendResolutionResponse INSIDE the pipeline,
         // before any post-await middleware can finalise ProcessingTimeMs. Prefer

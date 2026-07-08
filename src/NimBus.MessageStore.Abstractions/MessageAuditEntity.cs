@@ -39,6 +39,23 @@ namespace NimBus.MessageStore
         /// argument supplied to <see cref="Abstractions.IMessageTrackingStore.StoreMessageAudit"/>.
         /// </summary>
         public string? EndpointId { get; set; }
+
+        /// <summary>
+        /// CloudEvents <c>id</c> attribute when the tracked message was received or
+        /// published as a CloudEvent, otherwise <c>null</c>. Preserved so CloudEvents
+        /// identity surfaces in the message store / management UI. Defaults to
+        /// <c>null</c> so legacy rows and native messages project unchanged.
+        /// </summary>
+        public string? CloudEventId { get; set; }
+
+        /// <summary>CloudEvents <c>source</c> attribute, or <c>null</c> for a native message.</summary>
+        public string? CloudEventSource { get; set; }
+
+        /// <summary>CloudEvents <c>type</c> attribute, or <c>null</c> for a native message.</summary>
+        public string? CloudEventType { get; set; }
+
+        /// <summary>CloudEvents <c>subject</c> attribute, or <c>null</c> for a native message.</summary>
+        public string? CloudEventSubject { get; set; }
     }
 
     public enum MessageAuditType

@@ -57,5 +57,13 @@ namespace NimBus.MessageStore
         public string HandoffReason { get; set; }
         public string ExternalJobId { get; set; }
         public DateTime? ExpectedBy { get; set; }
+
+        // CloudEvents identity of the inbound CloudEvent (null for native messages).
+        // Populated by the Resolver from the response message so CloudEvents identity
+        // surfaces in the message store / management UI alongside the native fields.
+        public string CloudEventId { get; set; }
+        public string CloudEventSource { get; set; }
+        public string CloudEventType { get; set; }
+        public string CloudEventSubject { get; set; }
     }
 }

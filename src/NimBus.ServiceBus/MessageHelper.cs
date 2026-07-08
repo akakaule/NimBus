@@ -1,4 +1,5 @@
-﻿using NimBus.Core.Diagnostics;
+﻿using NimBus.Core.CloudEvents;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using Newtonsoft.Json;
 using System;
@@ -74,6 +75,20 @@ namespace NimBus.ServiceBus
                     message.ExpectedBy.Value.ToUniversalTime().ToString("o", System.Globalization.CultureInfo.InvariantCulture);
             }
 
+            // CloudEvents identity carried to the Resolver on a response message so the
+            // tracking/audit record preserves the inbound CloudEvent's id/source/type/
+            // subject. Only stamped when present (i.e. the message originated from a
+            // CloudEvents-consuming subscriber); native messages leave these null, so
+            // their wire form is byte-identical.
+            if (!string.IsNullOrEmpty(message.CloudEventId))
+                result.ApplicationProperties[UserPropertyName.CloudEventId.ToString()] = message.CloudEventId;
+            if (!string.IsNullOrEmpty(message.CloudEventSource))
+                result.ApplicationProperties[UserPropertyName.CloudEventSource.ToString()] = message.CloudEventSource;
+            if (!string.IsNullOrEmpty(message.CloudEventType))
+                result.ApplicationProperties[UserPropertyName.CloudEventType.ToString()] = message.CloudEventType;
+            if (!string.IsNullOrEmpty(message.CloudEventSubject))
+                result.ApplicationProperties[UserPropertyName.CloudEventSubject.ToString()] = message.CloudEventSubject;
+
             // W3C trace propagation: traceparent (and optional tracestate) is the
             // canonical format on every transport (FR-030). Legacy Diagnostic-Id is
             // not written or read by NimBus.
@@ -84,11 +99,35 @@ namespace NimBus.ServiceBus
                 result.ApplicationProperties[W3CMessagePropagator.TraceStateHeader] = traceState;
 
             result.ScheduledEnqueueTime = DateTime.UtcNow.AddMinutes(messageEnqueueDelay);
-            // Publish paths that already serialized the content (batch sizing)
-            // stash it on the message so it isn't serialized a second time here.
-            var messageContentSerialized = message.SerializedMessageContent
-                ?? JsonConvert.SerializeObject(message.MessageContent);
-            result.Body = new BinaryData(Encoding.UTF8.GetBytes(messageContentSerialized));
+
+            // CloudEvents opt-in layer: when a CloudEvents publish context is present
+            // the body/content-type are shaped per the CloudEvents 1.0 AMQP binding.
+            // All native routing/trace/id stamping above is UNCHANGED, so a NimBus
+            // round-trip keeps working; only the body shape differs. When absent
+            // (the default), the native MessageContent envelope is the body —
+            // byte-identical to pre-CloudEvents behavior.
+            if (message.CloudEvent is { } cloudEventPublish)
+            {
+                var domainEventJson = message.MessageContent?.EventContent?.EventJson ?? string.Empty;
+                if (cloudEventPublish.ContentMode == CloudEventContentMode.StructuredJson)
+                {
+                    var envelope = CloudEventsServiceBusBinding.WriteStructured(result, cloudEventPublish.CloudEvent, domainEventJson);
+                    result.Body = new BinaryData(Encoding.UTF8.GetBytes(envelope));
+                }
+                else
+                {
+                    CloudEventsServiceBusBinding.WriteBinary(result, cloudEventPublish.CloudEvent);
+                    result.Body = new BinaryData(Encoding.UTF8.GetBytes(domainEventJson));
+                }
+            }
+            else
+            {
+                // Publish paths that already serialized the content (batch sizing)
+                // stash it on the message so it isn't serialized a second time here.
+                var messageContentSerialized = message.SerializedMessageContent
+                    ?? JsonConvert.SerializeObject(message.MessageContent);
+                result.Body = new BinaryData(Encoding.UTF8.GetBytes(messageContentSerialized));
+            }
             if (!string.IsNullOrWhiteSpace(message.MessageId))
                 result.MessageId = message.MessageId;
 

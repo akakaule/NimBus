@@ -1,4 +1,5 @@
 using McMaster.Extensions.CommandLineUtils;
+using NimBus.Core.Events;
 using NimBus.MessageStore;
 using Spectre.Console;
 
@@ -36,6 +37,7 @@ internal static class Program
         ConfigureEndpointCommands(app, sbConnectionString, dbConnectionString);
         ConfigureContainerCommands(app, sbConnectionString, dbConnectionString);
         ConfigureCatalogCommands(app);
+        ConfigureAsyncApiCommands(app);
 
         app.OnExecute(() =>
         {
@@ -714,39 +716,98 @@ internal static class Program
                     "Output format: yaml (default) or json",
                     CommandOptionType.SingleValue);
 
-                asyncApiCommand.OnExecuteAsync(async ct =>
+                asyncApiCommand.OnExecute(() =>
                 {
-                    AsyncApiFormat? explicitFormat = null;
-                    if (formatOption.HasValue())
+                    if (!TryParseFormat(formatOption, out var explicitFormat))
                     {
-                        switch (formatOption.Value()!.ToLowerInvariant())
-                        {
-                            case "yaml":
-                            case "yml":
-                                explicitFormat = AsyncApiFormat.Yaml;
-                                break;
-                            case "json":
-                                explicitFormat = AsyncApiFormat.Json;
-                                break;
-                            default:
-                                AnsiConsole.MarkupLine($"[red]Unknown format '{formatOption.Value()}'. Use 'yaml' or 'json'.[/]");
-                                return 1;
-                        }
+                        return 1;
                     }
 
-                    var defaultName = explicitFormat == AsyncApiFormat.Json ? "asyncapi.json" : "asyncapi.yaml";
-                    var outputPath = outputOption.HasValue()
-                        ? outputOption.Value()!
-                        : Path.Combine(Environment.CurrentDirectory, defaultName);
-
-                    var format = explicitFormat
-                        ?? (outputPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
-                            ? AsyncApiFormat.Json
-                            : AsyncApiFormat.Yaml);
-
-                    await AsyncApiExporter.ExportAsync(outputPath, format);
-                    return 0;
+                    // Back-compat alias: identical output to `nb asyncapi export`, same code path.
+                    return AsyncApiCli.RunExport(outputOption.Value(), explicitFormat, Console.Out);
                 });
+            });
+        });
+    }
+
+    // Parses the -f|--format option. Returns false (after printing an error) on an unknown value;
+    // leaves 'format' null when the option is absent so the caller can infer from the output path.
+    private static bool TryParseFormat(CommandOption formatOption, out AsyncApiFormat? format)
+    {
+        format = null;
+        if (!formatOption.HasValue())
+        {
+            return true;
+        }
+
+        switch (formatOption.Value()!.ToLowerInvariant())
+        {
+            case "yaml":
+            case "yml":
+                format = AsyncApiFormat.Yaml;
+                return true;
+            case "json":
+                format = AsyncApiFormat.Json;
+                return true;
+            default:
+                AnsiConsole.MarkupLine($"[red]Unknown format '{formatOption.Value()}'. Use 'yaml' or 'json'.[/]");
+                return false;
+        }
+    }
+
+    private static void ConfigureAsyncApiCommands(CommandLineApplication app)
+    {
+        app.Command("asyncapi", asyncApiCommand =>
+        {
+            asyncApiCommand.Description = "Generate, validate, and diff AsyncAPI 3.0 documents for CI/CD governance.";
+
+            asyncApiCommand.OnExecute(() =>
+            {
+                AnsiConsole.MarkupLine("[yellow]Specify a subcommand: export, validate, or diff[/]");
+                asyncApiCommand.ShowHelp();
+                return 1;
+            });
+
+            asyncApiCommand.Command("export", exportCommand =>
+            {
+                exportCommand.Description = "Export platform topology as an AsyncAPI 3.0 specification (YAML or JSON)";
+
+                var outputOption = exportCommand.Option("-o|--output <PATH>",
+                    "Output file path (defaults to ./asyncapi.yaml, or ./asyncapi.json for --format json)",
+                    CommandOptionType.SingleValue);
+
+                var formatOption = exportCommand.Option("-f|--format <FORMAT>",
+                    "Output format: yaml (default) or json",
+                    CommandOptionType.SingleValue);
+
+                exportCommand.OnExecute(() =>
+                {
+                    if (!TryParseFormat(formatOption, out var explicitFormat))
+                    {
+                        return 1;
+                    }
+
+                    return AsyncApiCli.RunExport(outputOption.Value(), explicitFormat, Console.Out);
+                });
+            });
+
+            asyncApiCommand.Command("validate", validateCommand =>
+            {
+                validateCommand.Description = "Structurally validate an AsyncAPI 3.0 document (exit 0 valid, non-zero invalid)";
+
+                var fileArgument = validateCommand.Argument("file", "Path to the AsyncAPI document to validate").IsRequired();
+
+                validateCommand.OnExecute(() => AsyncApiCli.RunValidate(fileArgument.Value!, Console.Out));
+            });
+
+            asyncApiCommand.Command("diff", diffCommand =>
+            {
+                diffCommand.Description = "Diff two AsyncAPI documents (exit 0 additive-only, non-zero on breaking changes)";
+
+                var oldArgument = diffCommand.Argument("old-file", "Path to the previous AsyncAPI document").IsRequired();
+                var newArgument = diffCommand.Argument("new-file", "Path to the new AsyncAPI document").IsRequired();
+
+                diffCommand.OnExecute(() => AsyncApiCli.RunDiff(oldArgument.Value!, newArgument.Value!, Console.Out));
             });
         });
     }

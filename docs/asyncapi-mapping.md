@@ -1,9 +1,11 @@
 # NimBus → AsyncAPI mapping
 
-`nb catalog asyncapi` generates an [AsyncAPI 3.0](https://www.asyncapi.com/) document from a
-NimBus `IPlatform`. This page explains how NimBus concepts map to AsyncAPI, and — importantly —
-how the document represents NimBus's **real Azure Service Bus topology** rather than a simplified
-"one topic per event" model.
+`nb asyncapi export` (and its backward-compatible alias `nb catalog asyncapi`) generates an
+[AsyncAPI 3.0](https://www.asyncapi.com/) document from a NimBus `IPlatform`. The
+`nb asyncapi validate` and `nb asyncapi diff` subcommands turn that document into a CI/CD
+governance gate (see [`docs/cli.md`](cli.md#nb-asyncapi)). This page explains how NimBus concepts
+map to AsyncAPI, and — importantly — how the document represents NimBus's **real Azure Service Bus
+topology** rather than a simplified "one topic per event" model.
 
 ## The topology being described
 
@@ -45,8 +47,53 @@ server declares `protocol: amqp` and an empty `amqp1` binding for tooling that k
 | `user.*` application properties | `components.schemas.NimBusMessageHeaders`, referenced by every message's `headers` |
 | `[SessionKey]`, MessageId/CorrelationId conventions, session/dead-letter | `components.messages.<event>.x-servicebus` |
 | `[Description]` / `[AsyncApiMessage]` on an event | message `title` / `summary` / `description` / `tags` |
-| `Event`'s static example instance (`GetEventExample()`) | message `examples[0].payload` |
+| `[AsyncApiMessage(Name=…)]` / fluent `o.AsyncApi.Name` | message `name` **and** payload schema `title` (component key stays the event id) |
+| `Owner` / `Team` / `BusinessCapability` / `Version` | message `x-nimbus-governance.*` (no standard AsyncAPI slot) |
+| `ExternalDocsUrl` / `ExternalDocsDescription` | message `externalDocs.url` / `externalDocs.description` |
+| `Deprecated` | payload schema `deprecated: true` (the AsyncAPI/JSON-Schema marker), mirrored as `x-nimbus-governance.deprecated` |
+| `Event`'s static example instance (`GetEventExample()`) + fluent `o.AsyncApi.Examples` | message `examples[]` (derived `sample` first, then fluent examples) |
 | `DynamicForward` (spec 022) | message flagged `x-nimbus-dynamic` + its send/receive operations |
+
+## Enrichment: attributes and fluent per-publish config
+
+Enrichment can be supplied two ways, and they are merged into one document:
+
+- **Attribute** — `[AsyncApiMessage(Title=…, Summary=…, Description=…, Tags=…, Name=…, Owner=…, Team=…, BusinessCapability=…, Version=…, Deprecated=…, ExternalDocsUrl=…, ExternalDocsDescription=…)]` on the event class.
+- **Fluent** — at publisher registration:
+  ```csharp
+  services.AddNimBusPublisher("StorefrontEndpoint", b => b
+      .Publish<OrderPlaced>(o =>
+      {
+          o.AsyncApi.Title = "Order placed";
+          o.AsyncApi.Owner = "commerce";
+          o.AsyncApi.Tags.Add("CRM");
+          o.AsyncApi.Examples.Add(new AsyncApiMessageExample { Name = "typical", Payload = new { orderId = "…" } });
+      }));
+  ```
+  The fluent call records metadata only — it never changes the send path.
+
+**Merge rule (deterministic).** When both are present for the same event: scalars use **fluent → attribute → derived default**; `Tags` are **unioned** (first-seen, de-duped); `Examples` are the derived `sample` followed by fluent examples; `Deprecated` is **OR-ed**.
+
+### The fluent → document bridge
+
+The CLI (`nb asyncapi export`) exports the static built-in `PlatformConfiguration`, so it surfaces
+**attribute** enrichment. Fluent enrichment is imperative container state, so it is exported by the
+**host that registered the publishers**: call `AddNimBusAsyncApiDocument(platform, (p, f, r) => AsyncApiExporter.Serialize(p, f, r))`,
+then resolve `IAsyncApiDocumentProvider` and call `GetDocument(format)`. The provider reads the same
+`AsyncApiEnrichmentRegistry` the fluent `Publish<T>` calls populated, so fluent values appear in that
+host's exported document. `AsyncApiFormat`, `AsyncApiEnrichmentRegistry`, and `IAsyncApiDocumentProvider`
+live in `NimBus.Abstractions` (ns `NimBus.Core.Events`) so the SDK, CLI, and consumers share them
+without any project depending on `NimBus.CommandLine`.
+
+## Validation & diff (governance)
+
+- **`nb asyncapi validate`** is **section-aware**: each `$ref` must resolve to the correct AsyncAPI
+  section for its context (operation → channel; operation → channel-scoped message → component
+  message; channel message → component message; message `payload`/`headers` → a component **schema**).
+  A payload `$ref` into `#/components/messages` is rejected even though the node exists.
+- **`nb asyncapi diff`** classifies added/removed/changed channels, operations, messages, and schemas
+  (down to schema properties) and flags breaking changes for build gating. See
+  [`docs/cli.md`](cli.md#nb-asyncapi-diff-old-file-new-file) for the exact breaking-change list.
 
 ## Schema generation
 
@@ -65,8 +112,9 @@ Schemas are reflected from the CLR event type (`IEventType.GetEventClassType()`)
   classes with the same name collide (documented hazard) — the exporter emits both producers'
   `send` operations but the shared message/schema key resolves to one type.
 - Dynamically-typed events have no compiled contract, so they get no payload schema.
-- Not yet included (follow-ups): management-UI download, `asyncapi validate`/`diff`, contract-first
-  validation, and fluent per-publish `AsyncApi` options.
+- Not yet included (follow-ups): management-UI download of the AsyncAPI document / event catalog,
+  contract-first validation (verifying implemented publishers/subscribers match a supplied contract),
+  and XML-doc-comment-sourced schema descriptions (today only `[Description]` attributes are read).
 
 See [ADR-007](adr/007-code-first-catalog-export.md) for the decision record and
 [`docs/cli.md`](cli.md#nb-catalog-asyncapi) for command usage.

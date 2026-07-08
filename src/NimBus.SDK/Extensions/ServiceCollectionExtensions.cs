@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.Core.Diagnostics;
+using NimBus.Core.Events;
 using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
 using NimBus.Core.Outbox;
@@ -31,6 +32,48 @@ namespace NimBus.SDK.Extensions
         public static IServiceCollection AddNimBusPublisher(this IServiceCollection services, string endpoint)
         {
             return services.AddNimBusPublisher(options => options.Endpoint = endpoint);
+        }
+
+        /// <summary>
+        /// Registers a NimBus publisher and configures AsyncAPI enrichment for the events it publishes.
+        /// The send wiring is identical to <see cref="AddNimBusPublisher(IServiceCollection, string)"/>;
+        /// <paramref name="configure"/> only records documentation metadata (via a shared
+        /// <see cref="AsyncApiEnrichmentRegistry"/> singleton) that the exporter surfaces.
+        /// </summary>
+        /// <param name="services">The service collection.</param>
+        /// <param name="endpoint">The endpoint (topic name) to publish messages to.</param>
+        /// <param name="configure">Configures per-event AsyncAPI enrichment.</param>
+        /// <returns>The service collection for chaining.</returns>
+        public static IServiceCollection AddNimBusPublisher(
+            this IServiceCollection services, string endpoint, Action<NimBusPublisherBuilder> configure)
+        {
+            if (configure is null) throw new ArgumentNullException(nameof(configure));
+
+            // Unchanged send wiring — the fluent path is metadata-only.
+            services.AddNimBusPublisher(options => options.Endpoint = endpoint);
+
+            var registry = GetOrCreateEnrichmentRegistry(services);
+            configure(new NimBusPublisherBuilder(registry));
+            return services;
+        }
+
+        // Get-or-create the single shared AsyncApiEnrichmentRegistry in this container, mirroring the
+        // SubscriberEndpointMarker scan pattern below, so multiple publisher registrations (and the
+        // AddNimBusAsyncApiDocument bridge) all accumulate onto one instance.
+        internal static AsyncApiEnrichmentRegistry GetOrCreateEnrichmentRegistry(IServiceCollection services)
+        {
+            foreach (var descriptor in services)
+            {
+                if (descriptor.ServiceType == typeof(AsyncApiEnrichmentRegistry)
+                    && descriptor.ImplementationInstance is AsyncApiEnrichmentRegistry existing)
+                {
+                    return existing;
+                }
+            }
+
+            var registry = new AsyncApiEnrichmentRegistry();
+            services.AddSingleton(registry);
+            return registry;
         }
 
         /// <summary>

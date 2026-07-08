@@ -1,6 +1,7 @@
 import Page from "components/page";
 import { Tabs, TabList, Tab, TabPanels, TabPanel } from "components/ui/tabs";
 import TopologyAudit from "components/admin/topology-audit";
+import AsyncApiExport from "components/admin/asyncapi-export";
 import Operations from "components/admin/operations";
 import DevTools from "components/dev/dev-tools";
 import useDevMode from "hooks/use-dev-mode";
@@ -19,7 +20,8 @@ export default function Admin() {
           {isDev && <Tab index={2}>Dev Tools</Tab>}
         </TabList>
         <TabPanels>
-          <TabPanel index={0} className="p-6">
+          <TabPanel index={0} className="p-6 space-y-8">
+            <AsyncApiExport />
             <TopologyAudit />
           </TabPanel>
           <TabPanel index={1} className="p-6">

@@ -1123,6 +1123,31 @@ paths:
                 $ref: '#/components/schemas/PlatformConfig'
         '403':
           description: Forbidden
+  /api/admin/asyncapi:
+    get:
+      summary: Export platform topology as an AsyncAPI 3.0 document
+      operationId: get-admin-asyncapi
+      tags:
+        - Admin
+      parameters:
+        - schema:
+            type: string
+          name: format
+          in: query
+          required: false
+          description: Output format, 'yaml' or 'json'. Defaults to yaml when missing or empty; any other value returns 400.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid format
+        '403':
+          description: Forbidden
   '/api/admin/topology/{endpointName}':
     parameters:
       - schema:

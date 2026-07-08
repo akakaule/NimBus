@@ -88,7 +88,7 @@ public sealed class AsyncApiExporterTests
     [TestMethod]
     public void Serialize_Null_Throws()
     {
-        Assert.ThrowsException<ArgumentNullException>(() => AsyncApiExporter.Serialize(null!, AsyncApiFormat.Yaml));
+        Assert.ThrowsExactly<ArgumentNullException>(() => AsyncApiExporter.Serialize(null!, AsyncApiFormat.Yaml));
     }
 
     // ---------------- Test doubles ----------------

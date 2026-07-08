@@ -132,12 +132,12 @@ public sealed class AsyncApiExporterTests
     }
 
     [Fact]
-    public void LegacyExportAsync_WritesParseableYamlFile()
+    public async Task LegacyExportAsync_WritesParseableYamlFile()
     {
         var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"nimbus-asyncapi-{System.Guid.NewGuid():N}.yaml");
         try
         {
-            AsyncApiExporter.ExportAsync(path).GetAwaiter().GetResult();
+            await AsyncApiExporter.ExportAsync(path);
             var yaml = System.IO.File.ReadAllText(path);
             // Round-trips through a real YAML parser (proves valid YAML, not just a string blob).
             var parsed = new YamlDotNet.Serialization.DeserializerBuilder().Build()

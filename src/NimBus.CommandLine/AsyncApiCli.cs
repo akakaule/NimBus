@@ -13,8 +13,19 @@ namespace NimBus.CommandLine;
 /// </summary>
 public static class AsyncApiCli
 {
-    /// <summary>Exports the built-in platform's AsyncAPI document to a file. Returns 0 on success.</summary>
-    public static int RunExport(string? output, AsyncApiFormat? format, TextWriter writer)
+    /// <summary>
+    /// Exports an AsyncAPI document to a file. By default the built-in platform is serialized (attribute
+    /// enrichment only). When <paramref name="assemblyPath"/> is supplied, an
+    /// <see cref="IAsyncApiDocumentProvider"/> loaded from that host assembly produces the document, so
+    /// fluent <c>Publish&lt;T&gt;(o =&gt; o.AsyncApi…)</c> enrichment recorded by the host surfaces too.
+    /// Returns 0 on success, 1 when the provider cannot be loaded or the write fails.
+    /// </summary>
+    public static int RunExport(
+        string? output,
+        AsyncApiFormat? format,
+        TextWriter writer,
+        string? assemblyPath = null,
+        string? providerType = null)
     {
         if (writer is null) throw new ArgumentNullException(nameof(writer));
 
@@ -28,16 +39,32 @@ public static class AsyncApiCli
             ? Path.Combine(Environment.CurrentDirectory, defaultName)
             : output!;
 
-        var platform = new PlatformConfiguration();
-        var content = AsyncApiExporter.Serialize(platform, resolvedFormat);
-        File.WriteAllText(outputPath, content);
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(assemblyPath))
+            {
+                var provider = AsyncApiProviderLoader.Load(assemblyPath!, providerType);
+                File.WriteAllText(outputPath, provider.GetDocument(resolvedFormat));
+                writer.WriteLine($"AsyncAPI 3.0 spec exported to: {outputPath}");
+                writer.WriteLine($"  from provider in '{Path.GetFileName(assemblyPath)}' ({resolvedFormat.ToString().ToUpperInvariant()})");
+                return 0;
+            }
 
-        var endpointCount = platform.Endpoints.Count();
-        var eventCount = platform.EventTypes.Count()
-            + platform.DynamicForwards.Select(f => f.EventTypeId).Distinct().Count();
-        writer.WriteLine($"AsyncAPI 3.0 spec exported to: {outputPath}");
-        writer.WriteLine($"  {endpointCount} endpoints, {eventCount} event types ({resolvedFormat.ToString().ToUpperInvariant()})");
-        return 0;
+            var platform = new PlatformConfiguration();
+            File.WriteAllText(outputPath, AsyncApiExporter.Serialize(platform, resolvedFormat));
+
+            var endpointCount = platform.Endpoints.Count();
+            var eventCount = platform.EventTypes.Count()
+                + platform.DynamicForwards.Select(f => f.EventTypeId).Distinct().Count();
+            writer.WriteLine($"AsyncAPI 3.0 spec exported to: {outputPath}");
+            writer.WriteLine($"  {endpointCount} endpoints, {eventCount} event types ({resolvedFormat.ToString().ToUpperInvariant()})");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            writer.WriteLine($"Failed to export AsyncAPI document: {ex.Message}");
+            return 1;
+        }
     }
 
     /// <summary>Validates an AsyncAPI document. Returns 0 when valid, 1 when invalid or unreadable.</summary>

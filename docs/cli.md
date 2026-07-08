@@ -382,12 +382,18 @@ Export the platform topology as an AsyncAPI 3.0 specification — identical gene
 ```bash
 nb asyncapi export -o ./asyncapi.yaml
 nb asyncapi export --format json -o ./asyncapi.json
+# include fluent Publish<T>(o => o.AsyncApi…) enrichment recorded by a host assembly:
+nb asyncapi export --assembly ./bin/MyApp.dll -o ./asyncapi.yaml
 ```
 
 | Option | Required | Description |
 |---|---|---|
 | `-o`, `--output` | No | Output file (default: `./asyncapi.yaml`, or `./asyncapi.json` for `--format json`) |
 | `-f`, `--format` | No | `yaml` (default) or `json`. When omitted, an `.json` output path is auto-detected as JSON. |
+| `-a`, `--assembly` | No | Path to a host assembly exposing an `IAsyncApiDocumentProvider`. Use to include **fluent** `Publish<T>(o => o.AsyncApi…)` enrichment, which lives in the host's DI container and cannot be observed from the static built-in platform. When omitted, the built-in `PlatformConfiguration` is exported (attribute enrichment only). |
+| `-p`, `--provider` | No | `IAsyncApiDocumentProvider` type name (full or simple) to select when `--assembly` exposes more than one. |
+
+The host exposes its enriched document by registering it with `AddNimBusAsyncApiDocument(platform, (p, f, r) => AsyncApiExporter.Serialize(p, f, r))` and surfacing a public, parameterless `IAsyncApiDocumentProvider`; the CLI loads the assembly (`Assembly.LoadFrom`), instantiates the provider, and writes `GetDocument(format)`. Export exits non-zero with a message when the assembly or provider cannot be loaded.
 
 #### `nb asyncapi validate <file>`
 

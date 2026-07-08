@@ -461,6 +461,75 @@ public sealed class AsyncApiGovernanceTests
         }
     }
 
+    // ---------------- export: fluent-enrichment provider bridge (AC#8 via CLI) ----------------
+
+    [Fact]
+    public void ProviderLoader_ResolvesNamedPublicProvider_ProducesFluentDocument()
+    {
+        var provider = AsyncApiProviderLoader.Resolve(
+            typeof(AsyncApiGovernanceTests).Assembly,
+            typeof(FluentProviderDouble).FullName);
+
+        var doc = provider.GetDocument(AsyncApiFormat.Json);
+
+        // The fluent-registry owner surfaces via x-nimbus-governance, proving the CLI provider bridge
+        // carries fluent (Publish<T>(o => o.AsyncApi…)) metadata the static platform export cannot.
+        Assert.Contains(FluentProviderDouble.OwnerMarker, doc, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RunExport_WithProviderAssembly_IncludesFluentMetadata()
+    {
+        var output = Path.Combine(Path.GetTempPath(), $"nimbus-asyncapi-{Guid.NewGuid():N}.json");
+        try
+        {
+            var exit = AsyncApiCli.RunExport(
+                output,
+                AsyncApiFormat.Json,
+                new StringWriter(),
+                assemblyPath: typeof(AsyncApiGovernanceTests).Assembly.Location,
+                providerType: typeof(FluentProviderDouble).FullName);
+
+            Assert.Equal(0, exit);
+            var content = File.ReadAllText(output);
+            Assert.Contains(FluentProviderDouble.OwnerMarker, content, StringComparison.Ordinal);
+            Assert.True(AsyncApiValidator.Validate(JObject.Parse(content)).IsValid);
+        }
+        finally
+        {
+            if (File.Exists(output)) File.Delete(output);
+        }
+    }
+
+    [Fact]
+    public void RunExport_WithMissingAssembly_ReturnsNonZeroAndReports()
+    {
+        var writer = new StringWriter();
+        var exit = AsyncApiCli.RunExport(
+            Path.Combine(Path.GetTempPath(), $"nimbus-asyncapi-{Guid.NewGuid():N}.json"),
+            AsyncApiFormat.Json,
+            writer,
+            assemblyPath: Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}.dll"));
+
+        Assert.NotEqual(0, exit);
+        Assert.NotEqual(string.Empty, writer.ToString());
+    }
+
+    [Fact]
+    public void RunExport_BuiltInPlatform_StillWritesValidDocument()
+    {
+        var output = Path.Combine(Path.GetTempPath(), $"nimbus-asyncapi-{Guid.NewGuid():N}.yaml");
+        try
+        {
+            Assert.Equal(0, AsyncApiCli.RunExport(output, AsyncApiFormat.Yaml, new StringWriter()));
+            Assert.True(AsyncApiValidator.Validate(AsyncApiDocumentLoader.LoadFile(output)).IsValid);
+        }
+        finally
+        {
+            if (File.Exists(output)) File.Delete(output);
+        }
+    }
+
     // ---------------- helpers & doubles ----------------
 
     private static string WriteTempDoc(string content, string extension)
@@ -529,5 +598,21 @@ public sealed class AsyncApiGovernanceTests
     {
         [Required]
         public Guid Id { get; set; }
+    }
+
+    // Public (so AsyncApiProviderLoader, which scans exported types, can discover it) with a public
+    // parameterless ctor. Simulates a host that recorded fluent enrichment (here via the registry the
+    // SDK Publish<T>(o => o.AsyncApi…) path feeds) and exposes its enriched document to the CLI.
+    public sealed class FluentProviderDouble : IAsyncApiDocumentProvider
+    {
+        public const string OwnerMarker = "AF98-Fluent-Owner";
+
+        public string GetDocument(AsyncApiFormat format)
+        {
+            var platform = new FakePlatform(new FakeEndpoint("Ep", produces: new[] { typeof(EnrichEvent) }));
+            var registry = new AsyncApiEnrichmentRegistry();
+            registry.For(typeof(EnrichEvent)).Owner = OwnerMarker;
+            return AsyncApiExporter.Serialize(platform, format, registry);
+        }
     }
 }

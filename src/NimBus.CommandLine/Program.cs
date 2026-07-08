@@ -780,6 +780,14 @@ internal static class Program
                     "Output format: yaml (default) or json",
                     CommandOptionType.SingleValue);
 
+                var assemblyOption = exportCommand.Option("-a|--assembly <PATH>",
+                    "Host assembly exposing an IAsyncApiDocumentProvider; use to include fluent Publish<T>(o => o.AsyncApi…) enrichment. When omitted, the built-in platform (attribute enrichment) is exported.",
+                    CommandOptionType.SingleValue);
+
+                var providerOption = exportCommand.Option("-p|--provider <TYPE>",
+                    "IAsyncApiDocumentProvider type name to use when --assembly exposes more than one",
+                    CommandOptionType.SingleValue);
+
                 exportCommand.OnExecute(() =>
                 {
                     if (!TryParseFormat(formatOption, out var explicitFormat))
@@ -787,7 +795,12 @@ internal static class Program
                         return 1;
                     }
 
-                    return AsyncApiCli.RunExport(outputOption.Value(), explicitFormat, Console.Out);
+                    return AsyncApiCli.RunExport(
+                        outputOption.Value(),
+                        explicitFormat,
+                        Console.Out,
+                        assemblyOption.Value(),
+                        providerOption.Value());
                 });
             });
 

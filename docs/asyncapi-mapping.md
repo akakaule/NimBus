@@ -76,14 +76,27 @@ Enrichment can be supplied two ways, and they are merged into one document:
 
 ### The fluent → document bridge
 
-The CLI (`nb asyncapi export`) exports the static built-in `PlatformConfiguration`, so it surfaces
-**attribute** enrichment. Fluent enrichment is imperative container state, so it is exported by the
-**host that registered the publishers**: call `AddNimBusAsyncApiDocument(platform, (p, f, r) => AsyncApiExporter.Serialize(p, f, r))`,
-then resolve `IAsyncApiDocumentProvider` and call `GetDocument(format)`. The provider reads the same
-`AsyncApiEnrichmentRegistry` the fluent `Publish<T>` calls populated, so fluent values appear in that
-host's exported document. `AsyncApiFormat`, `AsyncApiEnrichmentRegistry`, and `IAsyncApiDocumentProvider`
-live in `NimBus.Abstractions` (ns `NimBus.Core.Events`) so the SDK, CLI, and consumers share them
-without any project depending on `NimBus.CommandLine`.
+Fluent enrichment is imperative container state (recorded in an `AsyncApiEnrichmentRegistry` by the
+`Publish<T>` calls), so it is exported by the **host that registered the publishers**: call
+`AddNimBusAsyncApiDocument(platform, (p, f, r) => AsyncApiExporter.Serialize(p, f, r))`, then resolve
+`IAsyncApiDocumentProvider` and call `GetDocument(format)`. The provider reads the same registry, so
+fluent values appear in that host's exported document. `AsyncApiFormat`, `AsyncApiEnrichmentRegistry`,
+and `IAsyncApiDocumentProvider` live in `NimBus.Abstractions` (ns `NimBus.Core.Events`) so the SDK,
+CLI, and consumers share them without any project depending on `NimBus.CommandLine`.
+
+Three surfaces expose fluent enrichment:
+
+1. **`nb asyncapi export --assembly <host.dll> [--provider <Type>]`** — the CLI loads the host
+   assembly (via `Assembly.LoadFrom`, the same convention the WebApp uses to load an `IPlatform`),
+   resolves a public parameterless `IAsyncApiDocumentProvider` it exposes, and writes
+   `GetDocument(format)`. This is the CLI path to a **fluent-enriched** document. Without `--assembly`
+   the CLI exports the static built-in `PlatformConfiguration`, which surfaces **attribute**
+   enrichment only.
+2. **In-process** — any host that called `AddNimBusAsyncApiDocument(...)` resolves
+   `IAsyncApiDocumentProvider` from its own container.
+
+A management-UI download of the enriched document (issue capability #6) is a follow-up — see
+[Notes & limits](#notes--limits).
 
 ## Validation & diff (governance)
 

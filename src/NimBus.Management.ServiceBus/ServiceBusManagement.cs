@@ -11,6 +11,13 @@ public enum SubscriptionState
     Disabled,
     NotFound,
 }
+
+public enum TopicSendState
+{
+    Enabled,
+    SendDisabled,
+    NotFound,
+}
 public interface IServiceBusManagement
 {
     Task CreateRule(string topicName, string subscriptionName, string ruleName);
@@ -25,6 +32,9 @@ public interface IServiceBusManagement
     Task EnableSubscription(string topicName, string subscriptionName);
     Task<bool> IsSubscriptionActive(string topicName, string subscriptionName);
     Task<SubscriptionState> GetSubscriptionState(string topicName, string subscriptionName);
+    Task DisableTopicSend(string topicName);
+    Task EnableTopicSend(string topicName);
+    Task<TopicSendState> GetTopicSendState(string topicName);
     Task UpdateForwardTo(string topicName, string subscriptionName, string forwardTo);
     Task CreateDeferredSubscription(string topicName);
     Task CreateDeferredProcessorSubscription(string topicName);
@@ -290,6 +300,77 @@ public class ServiceBusManagement : IServiceBusManagement
         {
             _logger?.Error(e, $"Could not update status for subscription {e.Message}");
             throw;
+        }
+    }
+
+    public async Task DisableTopicSend(string topicName)
+    {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        try
+        {
+            var topic = await client.GetTopicAsync(topicName);
+            if (topic != null)
+            {
+                _logger?.Verbose("Updating send status for topic...");
+
+                topic.Value.Status = EntityStatus.SendDisabled;
+                await client.UpdateTopicAsync(topic);
+
+                _logger?.Verbose("Send status updated on topic successfully.");
+            }
+        }
+        catch (Exception e)
+        {
+            _logger?.Error(e, $"Could not update send status for topic {e.Message}");
+            throw;
+        }
+    }
+
+    public async Task EnableTopicSend(string topicName)
+    {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        try
+        {
+            var topic = await client.GetTopicAsync(topicName);
+            if (topic != null)
+            {
+                _logger?.Verbose("Updating send status for topic...");
+
+                topic.Value.Status = EntityStatus.Active;
+                await client.UpdateTopicAsync(topic);
+
+                _logger?.Verbose("Send status updated on topic successfully.");
+            }
+        }
+        catch (Exception e)
+        {
+            _logger?.Error(e, $"Could not update send status for topic {e.Message}");
+            throw;
+        }
+    }
+
+    public async Task<TopicSendState> GetTopicSendState(string topicName)
+    {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        try
+        {
+            var topic = await client.GetTopicAsync(topicName);
+            // Any non-Active status (SendDisabled, or fully Disabled) means producers
+            // can't publish, so it collapses to SendDisabled from the send perspective.
+            return topic?.Value?.Status == EntityStatus.Active
+                ? TopicSendState.Enabled
+                : TopicSendState.SendDisabled;
+        }
+        catch (Azure.Messaging.ServiceBus.ServiceBusException ex)
+            when (ex.Reason == Azure.Messaging.ServiceBus.ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger?.Information("Topic '{TopicName}' was not found.", topicName);
+            return TopicSendState.NotFound;
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 404)
+        {
+            _logger?.Information("Topic '{TopicName}' was not found.", topicName);
+            return TopicSendState.NotFound;
         }
     }
 

@@ -1,6 +1,10 @@
 using McMaster.Extensions.CommandLineUtils;
 using NimBus.MessageStore;
 using Spectre.Console;
+// The AsyncAPI exporter moved to NimBus.ServiceBus.AsyncApi; alias it so the CLI uses the canonical
+// implementation directly rather than the obsolete NimBus.CommandLine bridge kept for compatibility.
+using AsyncApiExporter = NimBus.ServiceBus.AsyncApi.AsyncApiExporter;
+using AsyncApiFormat = NimBus.ServiceBus.AsyncApi.AsyncApiFormat;
 
 namespace NimBus.CommandLine;
 
@@ -744,7 +748,7 @@ internal static class Program
                             ? AsyncApiFormat.Json
                             : AsyncApiFormat.Yaml);
 
-                    await AsyncApiExporter.ExportAsync(outputPath, format);
+                    await AsyncApiExporter.ExportAsync(new PlatformConfiguration(), outputPath, format);
                     return 0;
                 });
             });

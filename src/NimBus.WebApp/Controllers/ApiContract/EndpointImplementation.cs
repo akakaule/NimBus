@@ -642,6 +642,77 @@ public class EndpointImplementation : IEndpointApiController
         return new OkObjectResult("disabled");
     }
 
+    public async Task<IActionResult> PostEndpointSendstatusAsync(string body, string endpointId)
+    {
+        var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);
+        if (!endpointIdValid)
+        {
+            return new NotFoundObjectResult("Endpoint not found");
+        }
+
+        MessageAuditType? auditType = body switch
+        {
+            "enable" => MessageAuditType.EnableEndpointSend,
+            "disable" => MessageAuditType.DisableEndpointSend,
+            _ => null,
+        };
+
+        if (auditType.HasValue && !_authorizationService.IsManagerOfEndpoint(endpointId))
+        {
+            await _auditLogService.LogAuditAsync(auditType.Value, _context,
+                accessDenied: true, endpointId: endpointId);
+            return new ForbidResult();
+        }
+
+        var endpointManagement = new EndpointManagement(serviceBusManagement);
+        switch (body)
+        {
+            case "enable":
+                {
+                    await endpointManagement.EnableEndpointSend(endpointId);
+                    await _auditLogService.LogAuditAsync(MessageAuditType.EnableEndpointSend, _context,
+                        endpointId: endpointId);
+                    if (await endpointManagement.GetEndpointSendState(endpointId) == TopicSendState.Enabled)
+                        return new OkObjectResult($"{endpointId} send is active");
+                    break;
+                }
+            case "disable":
+                {
+                    await endpointManagement.DisableEndpointSend(endpointId);
+                    await _auditLogService.LogAuditAsync(MessageAuditType.DisableEndpointSend, _context,
+                        endpointId: endpointId);
+                    if (await endpointManagement.GetEndpointSendState(endpointId) == TopicSendState.SendDisabled)
+                        return new OkObjectResult($"{endpointId} send is disabled");
+                    break;
+                }
+        }
+
+        return new NotFoundObjectResult($"{endpointId} send status not set");
+    }
+
+    public async Task<ActionResult<string>> GetEndpointSendstatusAsync(string endpointId)
+    {
+        var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);
+        if (!endpointIdValid)
+        {
+            return new NotFoundObjectResult("Endpoint not found");
+        }
+
+        var endpointManagement = new EndpointManagement(serviceBusManagement);
+        var sendState = await endpointManagement.GetEndpointSendState(endpointId);
+        if (sendState == TopicSendState.Enabled)
+        {
+            return new OkObjectResult($"active");
+        }
+
+        if (sendState == TopicSendState.NotFound)
+        {
+            return new OkObjectResult("not-found");
+        }
+
+        return new OkObjectResult("disabled");
+    }
+
     public async Task<ActionResult<Metadata>> GetMetadataEndpointAsync(string endpointId)
     {
         var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);

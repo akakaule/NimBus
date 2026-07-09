@@ -57,6 +57,31 @@ public class EndpointManagement
         return await _serviceBusManagement.IsSubscriptionActive(topicName, subscriptionName);
     }
 
+    public async Task DisableEndpointSend(string endpointName)
+    {
+        string topicName = endpointName;
+
+        await _serviceBusManagement.DisableTopicSend(topicName);
+
+        _logger?.Information("Disabled endpoint send succesfully");
+    }
+
+    public async Task EnableEndpointSend(string endpointName)
+    {
+        string topicName = endpointName;
+
+        await _serviceBusManagement.EnableTopicSend(topicName);
+
+        _logger?.Information("Enabled endpoint send succesfully");
+    }
+
+    public async Task<TopicSendState> GetEndpointSendState(string endpointName)
+    {
+        string topicName = endpointName;
+
+        return await _serviceBusManagement.GetTopicSendState(topicName);
+    }
+
     public async Task<SubscriptionState> GetEndpointSubscriptionState(string endpointName)
     {
         string topicName = endpointName;

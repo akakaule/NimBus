@@ -163,6 +163,24 @@ namespace NimBus.WebApp.ManagementApi
 
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<string>> GetEndpointSubscriptionstatusAsync(string endpointId);
 
+        /// <remarks>
+        /// Enable or disable sending (publishing) on an endpoint's topic
+        /// </remarks>
+
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostEndpointSendstatusAsync(string body, string endpointId);
+
+        /// <remarks>
+        /// Get send (publish) status for an endpoint's topic
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<string>> GetEndpointSendstatusAsync(string endpointId);
+
         /// <summary>
         /// Your GET endpoint
         /// </summary>
@@ -380,6 +398,28 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.GetEndpointSubscriptionstatusAsync(endpointId);
+        }
+
+        /// <remarks>
+        /// Enable or disable sending (publishing) on an endpoint's topic
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/endpoint/{endpointId}/sendstatus")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostEndpointSendstatus([Microsoft.AspNetCore.Mvc.FromBody] string body, string endpointId)
+        {
+
+            return _implementation.PostEndpointSendstatusAsync(body, endpointId);
+        }
+
+        /// <remarks>
+        /// Get send (publish) status for an endpoint's topic
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/endpoint/{endpointId}/sendstatus")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<string>> GetEndpointSendstatus(string endpointId)
+        {
+
+            return _implementation.GetEndpointSendstatusAsync(endpointId);
         }
 
         /// <summary>
@@ -1082,6 +1122,16 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<PlatformConfig>> GetAdminPlatformConfigAsync();
 
         /// <summary>
+        /// Export platform topology as an AsyncAPI 3.0 document
+        /// </summary>
+
+        /// <param name="format">Output format, 'yaml' or 'json'. Defaults to yaml when missing or empty; any other value returns 400.</param>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> GetAdminAsyncapiAsync(string format);
+
+        /// <summary>
         /// Audit Service Bus topology for endpoint
         /// </summary>
 
@@ -1274,6 +1324,18 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.GetAdminPlatformConfigAsync();
+        }
+
+        /// <summary>
+        /// Export platform topology as an AsyncAPI 3.0 document
+        /// </summary>
+        /// <param name="format">Output format, 'yaml' or 'json'. Defaults to yaml when missing or empty; any other value returns 400.</param>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/admin/asyncapi")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> GetAdminAsyncapi([Microsoft.AspNetCore.Mvc.FromQuery] string format)
+        {
+
+            return _implementation.GetAdminAsyncapiAsync(format);
         }
 
         /// <summary>
@@ -10665,6 +10727,43 @@ namespace NimBus.WebApp.ManagementApi
                 handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
         }
     }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class FileResponse : System.IDisposable
+    {
+        private System.IDisposable _client;
+        private System.IDisposable _response;
+
+        public int StatusCode { get; private set; }
+
+        public System.Collections.Generic.IReadOnlyDictionary<string, System.Collections.Generic.IEnumerable<string>> Headers { get; private set; }
+
+        public System.IO.Stream Stream { get; private set; }
+
+        public bool IsPartial
+        {
+            get { return StatusCode == 206; }
+        }
+
+        public FileResponse(int statusCode, System.Collections.Generic.IReadOnlyDictionary<string, System.Collections.Generic.IEnumerable<string>> headers, System.IO.Stream stream, System.IDisposable client, System.IDisposable response)
+        {
+            StatusCode = statusCode;
+            Headers = headers;
+            Stream = stream;
+            _client = client;
+            _response = response;
+        }
+
+        public void Dispose()
+        {
+            Stream.Dispose();
+            if (_response != null)
+                _response.Dispose();
+            if (_client != null)
+                _client.Dispose();
+        }
+    }
+
 
 
 }

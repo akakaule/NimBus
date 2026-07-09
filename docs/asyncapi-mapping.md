@@ -29,6 +29,20 @@ a **hybrid**: portable logical channels/operations (what developer portals expec
 Service Bus specifics carried in `x-servicebus*` / `x-nimbus*` **specification extensions**. The
 server declares `protocol: amqp` and an empty `amqp1` binding for tooling that keys off it.
 
+## Exporting the document
+
+Two ways to produce the same full-platform document:
+
+- **CLI** — `nb catalog asyncapi` writes it to a file (`.json` ⇒ JSON, else YAML).
+- **Management WebApp** — on **Admin → Topology**, the **AsyncAPI export** panel offers
+  **Download YAML** and **Download JSON** buttons. The endpoint is
+  `GET /api/admin/asyncapi?format=yaml|json` (missing/empty `format` defaults to YAML; any other
+  value is a `400`). It is admin-only — restricted to the `EIP_Management` security group, the same
+  gate as the platform-config view — and returns the document as a `nimbus-asyncapi.yaml` /
+  `nimbus-asyncapi.json` attachment. Both paths reuse the one exporter
+  (`NimBus.ServiceBus.AsyncApi.AsyncApiExporter`), so the WebApp download and the CLI output are
+  identical for the same platform.
+
 ## Concept mapping
 
 | NimBus concept | AsyncAPI construct |
@@ -65,8 +79,8 @@ Schemas are reflected from the CLR event type (`IEventType.GetEventClassType()`)
   classes with the same name collide (documented hazard) — the exporter emits both producers'
   `send` operations but the shared message/schema key resolves to one type.
 - Dynamically-typed events have no compiled contract, so they get no payload schema.
-- Not yet included (follow-ups): management-UI download, `asyncapi validate`/`diff`, contract-first
-  validation, and fluent per-publish `AsyncApi` options.
+- Not yet included (follow-ups): `asyncapi validate`/`diff`, contract-first validation, and fluent
+  per-publish `AsyncApi` options.
 
 See [ADR-007](adr/007-code-first-catalog-export.md) for the decision record and
 [`docs/cli.md`](cli.md#nb-catalog-asyncapi) for command usage.

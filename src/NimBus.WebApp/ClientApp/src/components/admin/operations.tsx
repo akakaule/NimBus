@@ -21,6 +21,7 @@ import {
   DeleteAllEventsCard,
 } from "./advanced-operations";
 import { SessionPurgeCard } from "./session-management";
+import { EndpointControlsCard } from "./endpoint-controls";
 
 interface EndpointOption {
   value: string;
@@ -227,6 +228,18 @@ export default function Operations() {
             <SubscriptionPurgeCard endpoints={endpoints} />
             <CopyEndpointCard endpoints={endpoints} />
           </div>
+        </OperationGroup>
+
+        <OperationGroup
+          id="endpoint-controls"
+          tone="warning"
+          icon="⏻"
+          title="Endpoint Kill Switch"
+          count={1}
+          caption="Reversible · per-endpoint"
+          description="Enable or disable each endpoint's receive (processing) and send (publishing) independently via Service Bus entity status."
+        >
+          <EndpointControlsCard endpoints={endpoints} />
         </OperationGroup>
 
         <OperationGroup

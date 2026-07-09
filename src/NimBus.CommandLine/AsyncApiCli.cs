@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Linq;
 using NimBus.Core.Events;
+using CoreAsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
+using ServiceBusAsyncApiExporter = NimBus.ServiceBus.AsyncApi.AsyncApiExporter;
 
 namespace NimBus.CommandLine;
 
@@ -22,7 +24,7 @@ public static class AsyncApiCli
     /// </summary>
     public static int RunExport(
         string? output,
-        AsyncApiFormat? format,
+        CoreAsyncApiFormat? format,
         TextWriter writer,
         string? assemblyPath = null,
         string? providerType = null)
@@ -31,10 +33,10 @@ public static class AsyncApiCli
 
         var resolvedFormat = format
             ?? (output != null && output.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
-                ? AsyncApiFormat.Json
-                : AsyncApiFormat.Yaml);
+                ? CoreAsyncApiFormat.Json
+                : CoreAsyncApiFormat.Yaml);
 
-        var defaultName = resolvedFormat == AsyncApiFormat.Json ? "asyncapi.json" : "asyncapi.yaml";
+        var defaultName = resolvedFormat == CoreAsyncApiFormat.Json ? "asyncapi.json" : "asyncapi.yaml";
         var outputPath = string.IsNullOrEmpty(output)
             ? Path.Combine(Environment.CurrentDirectory, defaultName)
             : output!;
@@ -51,7 +53,7 @@ public static class AsyncApiCli
             }
 
             var platform = new PlatformConfiguration();
-            File.WriteAllText(outputPath, AsyncApiExporter.Serialize(platform, resolvedFormat));
+            File.WriteAllText(outputPath, ServiceBusAsyncApiExporter.Serialize(platform, resolvedFormat));
 
             var endpointCount = platform.Endpoints.Count();
             var eventCount = platform.EventTypes.Count()

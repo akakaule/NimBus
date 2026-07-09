@@ -5,6 +5,8 @@ using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using Xunit;
+using CoreAsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
+using ServiceBusAsyncApiExporter = NimBus.ServiceBus.AsyncApi.AsyncApiExporter;
 
 namespace NimBus.CommandLine.Tests;
 
@@ -15,7 +17,7 @@ namespace NimBus.CommandLine.Tests;
 public sealed class AsyncApiExporterTests
 {
     private static JsonNode Json(IPlatform platform) =>
-        JsonNode.Parse(AsyncApiExporter.Serialize(platform, AsyncApiFormat.Json))!;
+        JsonNode.Parse(ServiceBusAsyncApiExporter.Serialize(platform, CoreAsyncApiFormat.Json))!;
 
     // ---- Built-in platform (Storefront produces OrderPlaced; Billing + Warehouse consume) ----
 
@@ -137,7 +139,9 @@ public sealed class AsyncApiExporterTests
         var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"nimbus-asyncapi-{System.Guid.NewGuid():N}.yaml");
         try
         {
-            await AsyncApiExporter.ExportAsync(path);
+#pragma warning disable CS0618
+            await NimBus.CommandLine.AsyncApiExporter.ExportAsync(path);
+#pragma warning restore CS0618
             var yaml = System.IO.File.ReadAllText(path);
             // Round-trips through a real YAML parser (proves valid YAML, not just a string blob).
             var parsed = new YamlDotNet.Serialization.DeserializerBuilder().Build()
@@ -253,11 +257,11 @@ public sealed class AsyncApiExporterTests
     {
         var platform = new FakePlatform(new FakeEndpoint("Weird", produces: new[] { typeof(WeirdEvent) }));
 
-        var yaml = AsyncApiExporter.Serialize(platform, AsyncApiFormat.Yaml);
+        var yaml = ServiceBusAsyncApiExporter.Serialize(platform, CoreAsyncApiFormat.Yaml);
         var parsedYaml = new YamlDotNet.Serialization.DeserializerBuilder().Build().Deserialize<object>(yaml);
         Assert.NotNull(parsedYaml);
 
-        var json = AsyncApiExporter.Serialize(platform, AsyncApiFormat.Json);
+        var json = ServiceBusAsyncApiExporter.Serialize(platform, CoreAsyncApiFormat.Json);
         Assert.NotNull(JsonNode.Parse(json));
     }
 

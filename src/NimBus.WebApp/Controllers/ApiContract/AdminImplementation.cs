@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -7,8 +9,10 @@ using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 using NimBus.Core;
 using NimBus.MessageStore;
+using NimBus.ServiceBus.AsyncApi;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
+using AsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
 
 namespace NimBus.WebApp.Controllers.ApiContract;
 
@@ -41,6 +45,43 @@ public class AdminImplementation : IAdminApiController
 
         var result = await _adminService.GetPlatformConfigAsync(_platform);
         return new OkObjectResult(result);
+    }
+
+    // Full-platform AsyncAPI 3.0 export. Admin-only (EIP_Management), matching platform-config access.
+    // Authorization is checked before any serialization work. Missing/empty format defaults to YAML;
+    // only 'yaml' and 'json' are accepted — anything else is a 400 (never a silent default).
+    public Task<IActionResult> GetAdminAsyncapiAsync(string format)
+    {
+        if (!IsUserInSecurityGroup("EIP_Management"))
+            return Task.FromResult<IActionResult>(new ForbidResult());
+
+        AsyncApiFormat exportFormat;
+        string fileName;
+        string contentType;
+
+        if (string.IsNullOrWhiteSpace(format) ||
+            string.Equals(format, "yaml", StringComparison.OrdinalIgnoreCase))
+        {
+            exportFormat = AsyncApiFormat.Yaml;
+            fileName = "nimbus-asyncapi.yaml";
+            contentType = "application/x-yaml";
+        }
+        else if (string.Equals(format, "json", StringComparison.OrdinalIgnoreCase))
+        {
+            exportFormat = AsyncApiFormat.Json;
+            fileName = "nimbus-asyncapi.json";
+            contentType = "application/json";
+        }
+        else
+        {
+            return Task.FromResult<IActionResult>(
+                new BadRequestObjectResult($"Unsupported format '{format}'. Use 'yaml' or 'json'."));
+        }
+
+        var content = AsyncApiExporter.Serialize(_platform, exportFormat);
+        var bytes = Encoding.UTF8.GetBytes(content);
+        return Task.FromResult<IActionResult>(
+            new FileContentResult(bytes, contentType) { FileDownloadName = fileName });
     }
 
     public async Task<ActionResult<TopologyAuditResult>> GetAdminTopologyAsync(string endpointName)

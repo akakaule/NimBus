@@ -2,6 +2,7 @@ using McMaster.Extensions.CommandLineUtils;
 using NimBus.Core.Events;
 using NimBus.MessageStore;
 using Spectre.Console;
+using CoreAsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
 
 namespace NimBus.CommandLine;
 
@@ -732,7 +733,7 @@ internal static class Program
 
     // Parses the -f|--format option. Returns false (after printing an error) on an unknown value;
     // leaves 'format' null when the option is absent so the caller can infer from the output path.
-    private static bool TryParseFormat(CommandOption formatOption, out AsyncApiFormat? format)
+    private static bool TryParseFormat(CommandOption formatOption, out CoreAsyncApiFormat? format)
     {
         format = null;
         if (!formatOption.HasValue())
@@ -744,10 +745,10 @@ internal static class Program
         {
             case "yaml":
             case "yml":
-                format = AsyncApiFormat.Yaml;
+                format = CoreAsyncApiFormat.Yaml;
                 return true;
             case "json":
-                format = AsyncApiFormat.Json;
+                format = CoreAsyncApiFormat.Json;
                 return true;
             default:
                 AnsiConsole.MarkupLine($"[red]Unknown format '{formatOption.Value()}'. Use 'yaml' or 'json'.[/]");

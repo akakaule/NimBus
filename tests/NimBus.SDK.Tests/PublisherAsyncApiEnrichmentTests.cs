@@ -9,6 +9,8 @@ using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using NimBus.SDK.Extensions;
+using AsyncApiExporter = NimBus.ServiceBus.AsyncApi.AsyncApiExporter;
+using AsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
 
 namespace NimBus.SDK.Tests;
 

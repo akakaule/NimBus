@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\NimBus.Core\NimBus.Core.csproj" />
     <ProjectReference Include="..\..\src\NimBus.SDK\NimBus.SDK.csproj" />
+    <ProjectReference Include="..\..\src\NimBus.ServiceBus\NimBus.ServiceBus.csproj" />
     <!-- The AsyncAPI export bridge test drives the real AsyncApiExporter through the fluent
          registration → IAsyncApiDocumentProvider path, proving fluent enrichment reaches the document. -->
     <ProjectReference Include="..\..\src\NimBus.CommandLine\NimBus.CommandLine.csproj" />

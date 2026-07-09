@@ -10,6 +10,8 @@ using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using Newtonsoft.Json.Linq;
 using Xunit;
+using CoreAsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
+using ServiceBusAsyncApiExporter = NimBus.ServiceBus.AsyncApi.AsyncApiExporter;
 
 namespace NimBus.CommandLine.Tests;
 
@@ -18,7 +20,7 @@ namespace NimBus.CommandLine.Tests;
 public sealed class AsyncApiGovernanceTests
 {
     private static JObject Doc(IPlatform platform, AsyncApiEnrichmentRegistry? enrichment = null) =>
-        JObject.Parse(AsyncApiExporter.Serialize(platform, AsyncApiFormat.Json, enrichment));
+        JObject.Parse(ServiceBusAsyncApiExporter.Serialize(platform, CoreAsyncApiFormat.Json, enrichment));
 
     // ---------------- validate ----------------
 
@@ -32,7 +34,7 @@ public sealed class AsyncApiGovernanceTests
     [Fact]
     public void Validate_YamlRoundTrip_IsValid()
     {
-        var yaml = AsyncApiExporter.Serialize(new NimBus.PlatformConfiguration(), AsyncApiFormat.Yaml);
+        var yaml = ServiceBusAsyncApiExporter.Serialize(new NimBus.PlatformConfiguration(), CoreAsyncApiFormat.Yaml);
         var result = AsyncApiValidator.Validate(AsyncApiDocumentLoader.Parse(yaml, asJson: false));
         Assert.True(result.IsValid, string.Join("; ", result.Errors));
     }
@@ -539,7 +541,7 @@ public sealed class AsyncApiGovernanceTests
     [Fact]
     public void RunValidate_ValidDocument_ReturnsZero()
     {
-        var path = WriteTempDoc(AsyncApiExporter.Serialize(new NimBus.PlatformConfiguration(), AsyncApiFormat.Yaml), ".yaml");
+        var path = WriteTempDoc(ServiceBusAsyncApiExporter.Serialize(new NimBus.PlatformConfiguration(), CoreAsyncApiFormat.Yaml), ".yaml");
         try
         {
             Assert.Equal(0, AsyncApiCli.RunValidate(path, new StringWriter()));
@@ -619,7 +621,7 @@ public sealed class AsyncApiGovernanceTests
             typeof(AsyncApiGovernanceTests).Assembly,
             typeof(FluentProviderDouble).FullName);
 
-        var doc = provider.GetDocument(AsyncApiFormat.Json);
+        var doc = provider.GetDocument(CoreAsyncApiFormat.Json);
 
         // The fluent-registry owner surfaces via x-nimbus-governance, proving the CLI provider bridge
         // carries fluent (Publish<T>(o => o.AsyncApi…)) metadata the static platform export cannot.
@@ -636,7 +638,7 @@ public sealed class AsyncApiGovernanceTests
             typeof(AsyncApiGovernanceTests).Assembly,
             typeof(FluentProviderFactoryDouble).FullName);
 
-        var doc = provider.GetDocument(AsyncApiFormat.Json);
+        var doc = provider.GetDocument(CoreAsyncApiFormat.Json);
         Assert.Contains(FluentProviderDouble.OwnerMarker, doc, StringComparison.Ordinal);
     }
 
@@ -648,7 +650,7 @@ public sealed class AsyncApiGovernanceTests
         {
             var exit = AsyncApiCli.RunExport(
                 output,
-                AsyncApiFormat.Json,
+                CoreAsyncApiFormat.Json,
                 new StringWriter(),
                 assemblyPath: typeof(AsyncApiGovernanceTests).Assembly.Location,
                 providerType: typeof(FluentProviderDouble).FullName);
@@ -670,7 +672,7 @@ public sealed class AsyncApiGovernanceTests
         var writer = new StringWriter();
         var exit = AsyncApiCli.RunExport(
             Path.Combine(Path.GetTempPath(), $"nimbus-asyncapi-{Guid.NewGuid():N}.json"),
-            AsyncApiFormat.Json,
+            CoreAsyncApiFormat.Json,
             writer,
             assemblyPath: Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}.dll"));
 
@@ -684,7 +686,7 @@ public sealed class AsyncApiGovernanceTests
         var output = Path.Combine(Path.GetTempPath(), $"nimbus-asyncapi-{Guid.NewGuid():N}.yaml");
         try
         {
-            Assert.Equal(0, AsyncApiCli.RunExport(output, AsyncApiFormat.Yaml, new StringWriter()));
+            Assert.Equal(0, AsyncApiCli.RunExport(output, CoreAsyncApiFormat.Yaml, new StringWriter()));
             Assert.True(AsyncApiValidator.Validate(AsyncApiDocumentLoader.LoadFile(output)).IsValid);
         }
         finally
@@ -776,12 +778,12 @@ public sealed class AsyncApiGovernanceTests
     {
         public const string OwnerMarker = "AF98-Fluent-Owner";
 
-        public string GetDocument(AsyncApiFormat format)
+        public string GetDocument(CoreAsyncApiFormat format)
         {
             var platform = new FakePlatform(new FakeEndpoint("Ep", produces: new[] { typeof(EnrichEvent) }));
             var registry = new AsyncApiEnrichmentRegistry();
             registry.For(typeof(EnrichEvent)).Owner = OwnerMarker;
-            return AsyncApiExporter.Serialize(platform, format, registry);
+            return ServiceBusAsyncApiExporter.Serialize(platform, format, registry);
         }
     }
 

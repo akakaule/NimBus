@@ -278,7 +278,11 @@ namespace NimBus.SDK.Extensions
             if (string.IsNullOrEmpty(options.SubscriptionName))
                 throw new ArgumentException("SubscriptionName must be specified.", nameof(configure));
 
-            services.AddHostedService(sp =>
+            // NOT AddHostedService: that registers via TryAddEnumerable keyed on the
+            // implementation type, so a SECOND AddNimBusReceiver call (e.g. one endpoint
+            // draining an extra ingress topic such as CrmErpDemo's PartnerInbound) would
+            // be silently dropped. Each call must yield its own hosted receiver.
+            services.AddSingleton<IHostedService>(sp =>
             {
                 var client = sp.GetRequiredService<ServiceBusClient>();
                 var subscriber = sp.GetRequiredService<ISubscriberClient>();

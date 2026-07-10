@@ -133,6 +133,60 @@ namespace NimBus.SDK.Tests
             }
         }
 
+        [TestMethod]
+        public async Task RecoveryRestart_WithRealProcessorState_DoesNotFaultTheLoop()
+        {
+            // Regression: StopAndDisposeProcessorAsync used to detach the event handlers
+            // BEFORE StopProcessingAsync. The Azure SDK forbids removing handlers from a
+            // running processor (EnsureNotRunningAndInvoke throws InvalidOperationException),
+            // so the recovery-restart path — the one place designed to keep the receiver
+            // alive — crashed the host instead. The doubles in the other tests no-op
+            // Start/Stop, which hides the guard; this test keeps the REAL base
+            // start/stop semantics (IsProcessing state) on a loopback endpoint.
+            var client = new RealStateServiceBusClient();
+            var service = new TestableNimBusReceiverHostedService(
+                client,
+                new NoopServiceBusAdapter(),
+                new NimBusReceiverOptions
+                {
+                    TopicName = "orders",
+                    SubscriptionName = "orders",
+                    RecoverableErrorRestartThreshold = 2,
+                    RecoverableErrorDelay = TimeSpan.Zero,
+                    ProcessorRestartDelay = TimeSpan.Zero,
+                },
+                NullLogger<NimBusReceiverHostedService>.Instance);
+
+            using var cts = new CancellationTokenSource();
+            var runTask = service.RunProcessorLoopAsync(cts.Token);
+
+            try
+            {
+                await WaitUntilAsync(() => client.Processors.Count == 1, () => $"ProcessorCount={client.Processors.Count}");
+                await WaitUntilAsync(() => client.Processors[0].IsProcessing, () => "Processor not started");
+
+                await service.HandleProcessorErrorAsync(CreateErrorArgs(
+                    new ObjectDisposedException("connection"),
+                    ServiceBusErrorSource.AcceptSession));
+                await service.HandleProcessorErrorAsync(CreateErrorArgs(
+                    new ObjectDisposedException("connection"),
+                    ServiceBusErrorSource.AcceptSession));
+
+                // With the buggy detach-before-stop order the loop task faults with
+                // InvalidOperationException here instead of creating processor #2.
+                await WaitUntilAsync(
+                    () => client.Processors.Count >= 2 || runTask.IsFaulted,
+                    () => $"ProcessorCount={client.Processors.Count}, Faulted={runTask.IsFaulted}");
+
+                Assert.IsFalse(runTask.IsFaulted, $"Receiver loop faulted instead of restarting: {runTask.Exception?.GetBaseException().Message}");
+                Assert.IsTrue(client.Processors.Count >= 2, "A replacement processor must be created after the restart request");
+            }
+            finally
+            {
+                await StopServiceAsync(cts, runTask);
+            }
+        }
+
         private static async Task StopServiceAsync(CancellationTokenSource cts, Task runTask)
         {
             cts.Cancel();
@@ -190,6 +244,30 @@ namespace NimBus.SDK.Tests
                 Options = options;
 
                 var processor = new RecordingServiceBusSessionProcessor(this, topicName, subscriptionName, options);
+                Processors.Add(processor);
+                return processor;
+            }
+        }
+
+        // Client whose processors keep the REAL ServiceBusSessionProcessor start/stop
+        // behavior (IsProcessing state and the running-processor handler-removal guard).
+        // Points at loopback so the background receive tasks fail fast without leaving
+        // the machine; those connection errors only surface through ProcessErrorAsync.
+        private sealed class RealStateServiceBusClient : ServiceBusClient
+        {
+            public RealStateServiceBusClient()
+                : base("Endpoint=sb://127.0.0.1;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=ZmFrZQ==")
+            {
+            }
+
+            public List<ServiceBusSessionProcessor> Processors { get; } = new List<ServiceBusSessionProcessor>();
+
+            public override ServiceBusSessionProcessor CreateSessionProcessor(
+                string topicName,
+                string subscriptionName,
+                ServiceBusSessionProcessorOptions options)
+            {
+                var processor = base.CreateSessionProcessor(topicName, subscriptionName, options);
                 Processors.Add(processor);
                 return processor;
             }

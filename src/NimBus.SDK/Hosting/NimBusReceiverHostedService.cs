@@ -153,9 +153,6 @@ namespace NimBus.SDK.Hosting
                 return;
             }
 
-            processor.ProcessMessageAsync -= OnMessageAsync;
-            processor.ProcessErrorAsync -= OnErrorAsync;
-
             try
             {
                 await processor.StopProcessingAsync(cancellationToken).ConfigureAwait(false);
@@ -169,6 +166,26 @@ namespace NimBus.SDK.Hosting
                 _logger.LogWarning(
                     ex,
                     "Error while stopping NimBus receiver for {Topic}/{Subscription}",
+                    _options.TopicName,
+                    _options.SubscriptionName);
+            }
+
+            // Detach only AFTER the processor has stopped: the Azure SDK throws
+            // InvalidOperationException when an event handler is removed from a running
+            // processor, and this method runs on the recovery-restart path — an
+            // unhandled throw here escapes the processor loop and stops the whole host
+            // instead of recovering. Guarded because a failed stop above can leave the
+            // processor in a running state; the DisposeAsync below stops it regardless.
+            try
+            {
+                processor.ProcessMessageAsync -= OnMessageAsync;
+                processor.ProcessErrorAsync -= OnErrorAsync;
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Could not detach handlers from the NimBus receiver for {Topic}/{Subscription}; disposing with handlers attached",
                     _options.TopicName,
                     _options.SubscriptionName);
             }

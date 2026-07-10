@@ -3,6 +3,7 @@ using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -12,11 +13,17 @@ using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using YamlDotNet.Serialization;
+using CoreAsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
 using Map = System.Collections.Generic.Dictionary<string, object>;
 
 namespace NimBus.ServiceBus.AsyncApi;
 
 /// <summary>Output format for <see cref="AsyncApiExporter"/>.</summary>
+/// <remarks>
+/// Use <see cref="NimBus.Core.Events.AsyncApiFormat"/> for new code. This bridge remains so callers
+/// that adopted the initial ServiceBus exporter API can migrate without losing source compatibility.
+/// </remarks>
+[Obsolete("Use NimBus.Core.Events.AsyncApiFormat instead. This bridge type is kept for backward compatibility.")]
 public enum AsyncApiFormat
 {
     /// <summary>AsyncAPI 3.0 as YAML (default).</summary>
@@ -39,6 +46,9 @@ public enum AsyncApiFormat
 /// </summary>
 public static class AsyncApiExporter
 {
+    private static CoreAsyncApiFormat Map(AsyncApiFormat format) =>
+        format == AsyncApiFormat.Json ? CoreAsyncApiFormat.Json : CoreAsyncApiFormat.Yaml;
+
     // Kept in lock-step with ServiceBusTopologyProvisioner so the documented rules match what
     // provisioning actually creates. If those SQL expressions change, change them here too.
     private static string ForwardFilter(string eventTypeId) =>
@@ -50,11 +60,15 @@ public static class AsyncApiExporter
     private static string DeliveryFilter(string endpointId) => $"user.To = '{endpointId}'";
 
     /// <summary>Exports an arbitrary platform (WebApp export endpoint, external integration repos, samples, tests).</summary>
-    public static async Task ExportAsync(IPlatform platform, string outputPath, AsyncApiFormat format)
+    public static async Task ExportAsync(
+        IPlatform platform,
+        string outputPath,
+        CoreAsyncApiFormat format,
+        AsyncApiEnrichmentRegistry? enrichment = null)
     {
         if (platform is null) throw new ArgumentNullException(nameof(platform));
 
-        var content = Serialize(platform, format);
+        var content = Serialize(platform, format, enrichment);
         await File.WriteAllTextAsync(outputPath, content);
 
         var endpointCount = platform.Endpoints.Count();
@@ -63,13 +77,25 @@ public static class AsyncApiExporter
         Console.WriteLine($"  {endpointCount} endpoints, {eventCount} event types ({format.ToString().ToUpperInvariant()})");
     }
 
+    /// <summary>Exports an arbitrary platform (WebApp export endpoint, external integration repos, samples, tests).</summary>
+    [Obsolete("Use the overload that accepts NimBus.Core.Events.AsyncApiFormat instead.")]
+    public static Task ExportAsync(IPlatform platform, string outputPath, AsyncApiFormat format) =>
+        ExportAsync(platform, outputPath, Map(format));
+
     /// <summary>Builds the AsyncAPI document for <paramref name="platform"/> and serializes it.</summary>
-    public static string Serialize(IPlatform platform, AsyncApiFormat format)
+    /// <param name="platform">The platform whose topology and event contracts are exported.</param>
+    /// <param name="format">YAML or JSON.</param>
+    /// <param name="enrichment">
+    /// Optional fluent enrichment (from <c>Publish&lt;T&gt;(o =&gt; o.AsyncApi…)</c>). Merged with any
+    /// <see cref="AsyncApiMessageAttribute"/> on each contract (fluent wins scalars; tags/examples union;
+    /// deprecated OR-ed). When null, only attribute enrichment applies.
+    /// </param>
+    public static string Serialize(IPlatform platform, CoreAsyncApiFormat format, AsyncApiEnrichmentRegistry? enrichment = null)
     {
         if (platform is null) throw new ArgumentNullException(nameof(platform));
 
-        var document = BuildDocument(platform);
-        return format == AsyncApiFormat.Json
+        var document = BuildDocument(platform, enrichment);
+        return format == CoreAsyncApiFormat.Json
             ? JsonConvert.SerializeObject(document, Formatting.Indented)
             // WithQuotingNecessaryStrings so values that look like numbers/bools/null (e.g. a
             // protocolVersion of "1.0", or an event/field literally named "123" or "true") round-trip
@@ -77,7 +103,12 @@ public static class AsyncApiExporter
             : new SerializerBuilder().WithQuotingNecessaryStrings().Build().Serialize(document);
     }
 
-    private static Map BuildDocument(IPlatform platform)
+    /// <summary>Builds the AsyncAPI document for <paramref name="platform"/> and serializes it.</summary>
+    [Obsolete("Use the overload that accepts NimBus.Core.Events.AsyncApiFormat instead.")]
+    public static string Serialize(IPlatform platform, AsyncApiFormat format) =>
+        Serialize(platform, Map(format));
+
+    private static Map BuildDocument(IPlatform platform, AsyncApiEnrichmentRegistry? enrichment = null)
     {
         var endpointsById = platform.Endpoints
             .GroupBy(e => e.Id, StringComparer.Ordinal)
@@ -123,7 +154,7 @@ public static class AsyncApiExporter
         // x-cloudevents channel extension and a shared CloudEventsMessageHeaders schema.
         // Native endpoints are untouched, so the export is unchanged when none opt in.
         var anyCloudEvents = endpointsById.Values.Any(e => e is ICloudEventsAware);
-        var components = BuildComponents(events, dynamicForwards, anyCloudEvents);
+        var components = BuildComponents(events, dynamicForwards, enrichment, anyCloudEvents);
 
         return new Map
         {
@@ -323,7 +354,11 @@ public static class AsyncApiExporter
             ["action"] = ForwardAction(sourceTopic, target),
         };
 
-    private static Map BuildComponents(IReadOnlyList<IEventType> events, IReadOnlyList<DynamicForward> dynamicForwards, bool includeCloudEventsHeaders)
+    private static Map BuildComponents(
+        IReadOnlyList<IEventType> events,
+        IReadOnlyList<DynamicForward> dynamicForwards,
+        AsyncApiEnrichmentRegistry? enrichment,
+        bool includeCloudEventsHeaders)
     {
         var messages = new Map();
         var schemas = new Map { ["NimBusMessageHeaders"] = BuildHeadersSchema() };
@@ -336,12 +371,26 @@ public static class AsyncApiExporter
         foreach (var evt in events)
         {
             var clrType = evt.GetEventClassType();
+
+            // Merge attribute + fluent enrichment once so the message and the payload schema
+            // (both keyed by evt.Id == clrType.Name) surface the same resolved values.
+            var resolved = ResolveEnrichment(evt, clrType, enrichment);
+
             if (clrType != null)
             {
                 EnsureObjectSchema(clrType, schemas, building);
+
+                // The custom name surfaces as the payload schema's JSON-Schema title, and the
+                // deprecated marker belongs on the Schema Object (AsyncAPI 3.0 has no Message-level
+                // deprecated field). Key stays clrType.Name so the payload $ref never dangles.
+                if (schemas.TryGetValue(clrType.Name, out var schemaObj) && schemaObj is Map schema)
+                {
+                    if (!string.IsNullOrEmpty(resolved.Name)) schema["title"] = resolved.Name;
+                    if (resolved.Deprecated) schema["deprecated"] = true;
+                }
             }
 
-            messages[evt.Id] = BuildMessage(evt, clrType);
+            messages[evt.Id] = BuildMessage(evt, clrType, resolved);
         }
 
         foreach (var eventTypeId in dynamicForwards.Select(f => f.EventTypeId).Distinct(StringComparer.Ordinal))
@@ -359,11 +408,8 @@ public static class AsyncApiExporter
         };
     }
 
-    private static Map BuildMessage(IEventType evt, Type clrType)
+    private static Map BuildMessage(IEventType evt, Type? clrType, ResolvedEnrichment resolved)
     {
-        var annotation = clrType?.GetCustomAttribute<AsyncApiMessageAttribute>();
-        var typeDescription = clrType?.GetCustomAttribute<DescriptionAttribute>()?.Description;
-
         var serviceBus = new Map
         {
             ["contentType"] = "application/json",
@@ -382,9 +428,10 @@ public static class AsyncApiExporter
 
         var message = new Map
         {
-            ["name"] = evt.Id,
-            ["title"] = annotation?.Title ?? evt.Name,
-            ["summary"] = annotation?.Summary ?? typeDescription ?? $"{evt.Name} event.",
+            // Custom name -> message.name (falls back to the event id, which is also the component key).
+            ["name"] = string.IsNullOrEmpty(resolved.Name) ? evt.Id : resolved.Name,
+            ["title"] = resolved.Title,
+            ["summary"] = resolved.Summary,
             ["contentType"] = "application/json",
             ["headers"] = new Map { ["$ref"] = "#/components/schemas/NimBusMessageHeaders" },
             ["payload"] = new Map { ["$ref"] = $"#/components/schemas/{evt.Id}" },
@@ -392,26 +439,137 @@ public static class AsyncApiExporter
             ["x-servicebus"] = serviceBus,
         };
 
-        if (!string.IsNullOrEmpty(annotation?.Description))
+        if (!string.IsNullOrEmpty(resolved.Description))
         {
-            message["description"] = annotation.Description;
+            message["description"] = resolved.Description;
         }
 
-        if (annotation?.Tags is { Length: > 0 } tags)
+        if (resolved.Tags.Count > 0)
         {
-            message["tags"] = tags.Select(tag => (object)new Map { ["name"] = tag }).ToList();
+            message["tags"] = resolved.Tags.Select(tag => (object)new Map { ["name"] = tag }).ToList();
         }
 
-        var example = TryBuildExample(evt);
-        if (example != null)
+        if (!string.IsNullOrEmpty(resolved.ExternalDocsUrl))
         {
-            message["examples"] = new List<object>
+            var externalDocs = new Map { ["url"] = resolved.ExternalDocsUrl! };
+            if (!string.IsNullOrEmpty(resolved.ExternalDocsDescription))
             {
-                new Map { ["name"] = "sample", ["payload"] = example },
-            };
+                externalDocs["description"] = resolved.ExternalDocsDescription!;
+            }
+
+            message["externalDocs"] = externalDocs;
+        }
+
+        var governance = BuildGovernance(resolved);
+        if (governance.Count > 0)
+        {
+            message["x-nimbus-governance"] = governance;
+        }
+
+        var examples = BuildExamples(evt, resolved);
+        if (examples.Count > 0)
+        {
+            message["examples"] = examples;
         }
 
         return message;
+    }
+
+    // owner/team/businessCapability/version have no standard AsyncAPI slot -> x-* extension.
+    // deprecated is mirrored here for discoverability; the authoritative marker lives on the schema.
+    private static Map BuildGovernance(ResolvedEnrichment resolved)
+    {
+        var governance = new Map();
+        if (!string.IsNullOrEmpty(resolved.Owner)) governance["owner"] = resolved.Owner!;
+        if (!string.IsNullOrEmpty(resolved.Team)) governance["team"] = resolved.Team!;
+        if (!string.IsNullOrEmpty(resolved.BusinessCapability)) governance["businessCapability"] = resolved.BusinessCapability!;
+        if (!string.IsNullOrEmpty(resolved.Version)) governance["version"] = resolved.Version!;
+        if (resolved.Deprecated) governance["deprecated"] = true;
+        return governance;
+    }
+
+    private static List<object> BuildExamples(IEventType evt, ResolvedEnrichment resolved)
+    {
+        var examples = new List<object>();
+
+        var derived = TryBuildExample(evt);
+        if (derived != null)
+        {
+            examples.Add(new Map { ["name"] = "sample", ["payload"] = derived });
+        }
+
+        foreach (var example in resolved.Examples)
+        {
+            var map = new Map();
+            if (!string.IsNullOrEmpty(example.Name)) map["name"] = example.Name!;
+            if (!string.IsNullOrEmpty(example.Summary)) map["summary"] = example.Summary!;
+            map["payload"] = ToPlainValue(example.Payload);
+            examples.Add(map);
+        }
+
+        return examples;
+    }
+
+    // Merge order for scalars: fluent ?? attribute ?? derived default. Tags are unioned
+    // (first-seen, de-duped Ordinal); examples are handled separately; deprecated is OR-ed.
+    private static ResolvedEnrichment ResolveEnrichment(
+        IEventType evt,
+        Type? clrType,
+        AsyncApiEnrichmentRegistry? enrichment)
+    {
+        var attribute = clrType?.GetCustomAttribute<AsyncApiMessageAttribute>();
+        var typeDescription = clrType?.GetCustomAttribute<DescriptionAttribute>()?.Description;
+
+        AsyncApiMessageOptions? fluent = null;
+        if (clrType != null) enrichment?.TryGet(clrType, out fluent);
+
+        var tags = new List<string>();
+        var seenTags = new HashSet<string>(StringComparer.Ordinal);
+        void AddTags(IEnumerable<string>? source)
+        {
+            if (source is null) return;
+            foreach (var tag in source)
+            {
+                if (!string.IsNullOrEmpty(tag) && seenTags.Add(tag)) tags.Add(tag);
+            }
+        }
+
+        AddTags(attribute?.Tags);
+        AddTags(fluent?.Tags);
+
+        return new ResolvedEnrichment
+        {
+            Name = fluent?.Name ?? attribute?.Name,
+            Title = fluent?.Title ?? attribute?.Title ?? evt.Name,
+            Summary = fluent?.Summary ?? attribute?.Summary ?? typeDescription ?? $"{evt.Name} event.",
+            Description = fluent?.Description ?? attribute?.Description,
+            Owner = fluent?.Owner ?? attribute?.Owner,
+            Team = fluent?.Team ?? attribute?.Team,
+            BusinessCapability = fluent?.BusinessCapability ?? attribute?.BusinessCapability,
+            Version = fluent?.Version ?? attribute?.Version,
+            ExternalDocsUrl = fluent?.ExternalDocsUrl ?? attribute?.ExternalDocsUrl,
+            ExternalDocsDescription = fluent?.ExternalDocsDescription ?? attribute?.ExternalDocsDescription,
+            Deprecated = (attribute?.Deprecated ?? false) || (fluent?.Deprecated ?? false),
+            Tags = tags,
+            Examples = fluent?.Examples?.ToList() ?? new List<AsyncApiMessageExample>(),
+        };
+    }
+
+    private sealed class ResolvedEnrichment
+    {
+        public string? Name { get; init; }
+        public string Title { get; init; } = string.Empty;
+        public string Summary { get; init; } = string.Empty;
+        public string? Description { get; init; }
+        public string? Owner { get; init; }
+        public string? Team { get; init; }
+        public string? BusinessCapability { get; init; }
+        public string? Version { get; init; }
+        public string? ExternalDocsUrl { get; init; }
+        public string? ExternalDocsDescription { get; init; }
+        public bool Deprecated { get; init; }
+        public IReadOnlyList<string> Tags { get; init; } = Array.Empty<string>();
+        public IReadOnlyList<AsyncApiMessageExample> Examples { get; init; } = Array.Empty<AsyncApiMessageExample>();
     }
 
     private static Map BuildDynamicMessage(string eventTypeId) => new()
@@ -592,9 +750,9 @@ public static class AsyncApiExporter
         }
     }
 
-    private static object ToPlainValue(object value)
+    private static object ToPlainValue(object? value)
     {
-        if (value is null) return null;
+        if (value is null) return null!;
 
         var type = value.GetType();
         if (value is string s) return s;
@@ -607,7 +765,22 @@ public static class AsyncApiExporter
         if (value is Guid guid) return guid.ToString();
         if (value is DateTime dt) return dt.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
         if (value is DateTimeOffset dto) return dto.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
-        if (type.IsEnum) return value.ToString();
+        if (type.IsEnum) return value.ToString()!;
+
+        if (value is JValue jValue)
+        {
+            return jValue.Value is null ? null! : ToPlainValue(jValue.Value);
+        }
+
+        if (value is JObject jObject)
+        {
+            return ToPlainObject(jObject);
+        }
+
+        if (TryConvertDictionary(value, out var dictionary))
+        {
+            return dictionary;
+        }
 
         if (value is System.Collections.IEnumerable enumerable)
         {
@@ -622,6 +795,61 @@ public static class AsyncApiExporter
             map[ToCamelCase(property.Name)] = ToPlainValue(property.GetValue(value));
         }
         return map;
+    }
+
+    private static Map ToPlainObject(JObject value)
+    {
+        var map = new Map();
+        foreach (var property in value.Properties())
+        {
+            map[property.Name] = ToPlainValue(property.Value);
+        }
+
+        return map;
+    }
+
+    private static bool TryConvertDictionary(object value, out Map map)
+    {
+        if (value is System.Collections.IDictionary dictionary)
+        {
+            map = new Map();
+            foreach (System.Collections.DictionaryEntry entry in dictionary)
+            {
+                var key = Convert.ToString(entry.Key, System.Globalization.CultureInfo.InvariantCulture);
+                if (!string.IsNullOrEmpty(key))
+                {
+                    map[key] = ToPlainValue(entry.Value);
+                }
+            }
+
+            return true;
+        }
+
+        var dictionaryInterface = value.GetType().GetInterfaces()
+            .FirstOrDefault(i => i.IsGenericType &&
+                (i.GetGenericTypeDefinition() == typeof(IDictionary<,>) ||
+                 i.GetGenericTypeDefinition() == typeof(IReadOnlyDictionary<,>)));
+        if (dictionaryInterface == null)
+        {
+            map = new Map();
+            return false;
+        }
+
+        map = new Map();
+        foreach (var entry in (System.Collections.IEnumerable)value)
+        {
+            if (entry is null) continue;
+            var entryType = entry.GetType();
+            var key = entryType.GetProperty("Key")?.GetValue(entry);
+            var entryValue = entryType.GetProperty("Value")?.GetValue(entry);
+            var keyText = Convert.ToString(key, System.Globalization.CultureInfo.InvariantCulture);
+            if (!string.IsNullOrEmpty(keyText))
+            {
+                map[keyText] = ToPlainValue(entryValue);
+            }
+        }
+
+        return true;
     }
 
     private static string OpKey(string id)

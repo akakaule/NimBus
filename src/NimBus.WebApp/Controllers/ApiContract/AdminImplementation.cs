@@ -12,6 +12,7 @@ using NimBus.MessageStore;
 using NimBus.ServiceBus.AsyncApi;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
+using AsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
 
 namespace NimBus.WebApp.Controllers.ApiContract;
 

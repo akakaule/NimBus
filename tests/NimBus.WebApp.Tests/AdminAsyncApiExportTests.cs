@@ -12,6 +12,7 @@ using NimBus;
 using NimBus.Core;
 using NimBus.ServiceBus.AsyncApi;
 using NimBus.WebApp.Controllers.ApiContract;
+using AsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
 
 namespace NimBus.WebApp.Tests;
 

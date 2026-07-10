@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NimBus.CommandLine\NimBus.CommandLine.csproj" />
+    <ProjectReference Include="..\..\src\NimBus.ServiceBus\NimBus.ServiceBus.csproj" />
   </ItemGroup>
 
 </Project>

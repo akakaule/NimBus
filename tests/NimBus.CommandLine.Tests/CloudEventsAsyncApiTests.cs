@@ -7,6 +7,8 @@ using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using Xunit;
+using CoreAsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
+using ServiceBusAsyncApiExporter = NimBus.ServiceBus.AsyncApi.AsyncApiExporter;
 
 namespace NimBus.CommandLine.Tests;
 
@@ -17,7 +19,7 @@ namespace NimBus.CommandLine.Tests;
 public sealed class CloudEventsAsyncApiTests
 {
     private static JsonNode Json(IPlatform platform) =>
-        JsonNode.Parse(AsyncApiExporter.Serialize(platform, AsyncApiFormat.Json))!;
+        JsonNode.Parse(ServiceBusAsyncApiExporter.Serialize(platform, CoreAsyncApiFormat.Json))!;
 
     [Fact]
     public void CloudEventsEnabledEndpoint_EmitsChannelExtensionAndHeadersSchema()

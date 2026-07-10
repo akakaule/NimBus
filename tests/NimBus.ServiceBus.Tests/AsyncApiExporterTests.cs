@@ -13,6 +13,7 @@ using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using NimBus.ServiceBus.AsyncApi;
 using YamlDotNet.Serialization;
+using AsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
 
 namespace NimBus.ServiceBus.Tests;
 

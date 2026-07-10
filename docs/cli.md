@@ -367,6 +367,72 @@ The spec can be used with:
 - [AsyncAPI HTML template](https://github.com/asyncapi/html-template) for documentation
 - Schema validation and contract testing tools
 
+> **Note.** `nb catalog asyncapi` is a backward-compatible alias for `nb asyncapi export` (below) and produces identical output from the same code path.
+
+---
+
+### `nb asyncapi`
+
+Generate, validate, and diff AsyncAPI 3.0 documents for CI/CD governance. Three subcommands:
+
+#### `nb asyncapi export`
+
+Export the platform topology as an AsyncAPI 3.0 specification — identical generation to `nb catalog asyncapi`.
+
+```bash
+nb asyncapi export -o ./asyncapi.yaml
+nb asyncapi export --format json -o ./asyncapi.json
+# include fluent Publish<T>(o => o.AsyncApi…) enrichment recorded by a host assembly:
+nb asyncapi export --assembly ./bin/MyApp.dll -o ./asyncapi.yaml
+```
+
+| Option | Required | Description |
+|---|---|---|
+| `-o`, `--output` | No | Output file (default: `./asyncapi.yaml`, or `./asyncapi.json` for `--format json`) |
+| `-f`, `--format` | No | `yaml` (default) or `json`. When omitted, an `.json` output path is auto-detected as JSON. |
+| `-a`, `--assembly` | No | Path to a host assembly exposing an `IAsyncApiDocumentProvider` or `IAsyncApiDocumentProviderFactory`. Use to include **fluent** `Publish<T>(o => o.AsyncApi…)` enrichment, which lives in the host's DI container and cannot be observed from the static built-in platform. When omitted, the built-in `PlatformConfiguration` is exported (attribute enrichment only). |
+| `-p`, `--provider` | No | Provider/factory type name (full or simple) to select when `--assembly` exposes more than one candidate. |
+
+Because `AddNimBusAsyncApiDocument(platform, (p, f, r) => AsyncApiExporter.Serialize(p, f, r))` registers a **private, DI-backed** `IAsyncApiDocumentProvider` (it has constructor dependencies the standalone CLI cannot instantiate), a host bridges to it by exposing a public, parameterless `IAsyncApiDocumentProviderFactory` whose `Create()` builds its container and resolves the provider:
+
+```csharp
+public sealed class MyAsyncApiFactory : IAsyncApiDocumentProviderFactory
+{
+    public IAsyncApiDocumentProvider Create()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new ServiceBusClient(connectionString));
+        services.AddNimBusPublisher("Orders", b => b.Publish<OrderPlaced>(o => o.AsyncApi.Owner = "orders-team"));
+        services.AddNimBusAsyncApiDocument(platform, (p, f, r) => AsyncApiExporter.Serialize(p, f, r));
+        return services.BuildServiceProvider().GetRequiredService<IAsyncApiDocumentProvider>();
+    }
+}
+```
+
+The CLI loads the assembly (`Assembly.LoadFrom`), instantiates the factory (or a directly-exposed public parameterless `IAsyncApiDocumentProvider`), and writes `GetDocument(format)` — so fluent enrichment surfaces from the CLI export. Export exits non-zero with a message when the assembly, factory, or provider cannot be loaded.
+
+#### `nb asyncapi validate <file>`
+
+Structurally validate a generated or hand-authored AsyncAPI 3.0 document. Checks `asyncapi: 3.0.0`; the presence of `info`, `channels`, `operations`, `components`; and that every `$ref` resolves to the **correct** section for its context (operation → channel; operation message → channel-scoped message → component message, or directly to component message; channel message → component message; message `payload`/`headers` → a component **schema**). A payload `$ref` that points at a non-schema node is rejected.
+
+```bash
+nb asyncapi validate ./asyncapi.yaml
+```
+
+**Exit codes** (for CI gating): `0` valid, non-zero when invalid (errors are printed, one per line).
+
+#### `nb asyncapi diff <old-file> <new-file>`
+
+Compare two AsyncAPI documents, classify added / removed / changed channels, operations, messages, and schemas (including schema properties), and flag breaking changes.
+
+```bash
+nb asyncapi diff ./asyncapi.previous.yaml ./asyncapi.yaml
+```
+
+Treated as **breaking**: a removed channel / operation / message / schema; a removed property or a property that becomes newly required; a property **effective-shape** change (`type`/`format`/`$ref`/array `items`); a removed enum value (including on an array `items` schema); a **tightened** validation bound (a `[Range]`-derived `minimum` raised or `maximum` lowered, or one newly added); a message-association removed from an operation; a same-key channel message whose `$ref` is **retargeted** to a different component message; an operation `action` flip or `channel` retarget; a `payload`/`headers` `$ref`, `contentType`, or session-semantics (`x-servicebus.requiresSession`/`sessionKeyProperty`) change. Additive/informational changes are **non-breaking** and still reported: new channels/operations/messages/schemas/properties, added enum values, a **relaxed or removed** validation bound (`minimum` lowered / `maximum` raised), and metadata changes at both the property level (`description`) and the schema root (`title` / `description` / `deprecated`) — so a metadata-only schema delta is still reported, never swallowed as "No differences".
+
+**Exit codes** (for build gating): `0` when the only differences are non-breaking, non-zero when a breaking change is detected.
+
 ---
 
 ## Examples

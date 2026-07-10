@@ -20,6 +20,10 @@ public class CrmEndpoint : Endpoint
         Consumes<ErpContactCreated>();
         Consumes<ErpContactUpdated>();
         Consumes<ErpContactDeleted>();
+
+        // Submitted by the external PartnerPortal as a raw CloudEvents message on the
+        // PartnerInbound topic; there is no NimBus producer endpoint for it.
+        Consumes<PartnerLeadSubmitted>();
     }
 
     public override ISystem System => new CrmSystem();

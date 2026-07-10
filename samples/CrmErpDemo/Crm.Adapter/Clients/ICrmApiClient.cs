@@ -12,5 +12,7 @@ public interface ICrmApiClient
 // ErpCustomerId carries the ERP customer id from the inbound event. The CRM API
 // resolves it to a local Account.Id via Accounts.ErpCustomerId before storing
 // the contact, so the contact ends up linked to the correct CRM account.
-public record ContactPayload(Guid? ErpCustomerId, string FirstName, string LastName, string? Email, string? Phone);
+// Origin defaults to "Erp" (the pre-existing behavior); the partner-lead handler
+// passes "Partner" so partner-sourced contacts are distinguishable in the CRM UI.
+public record ContactPayload(Guid? ErpCustomerId, string FirstName, string LastName, string? Email, string? Phone, string Origin = "Erp");
 public record AccountUpsertPayload(Guid? CrmAccountId, string LegalName, string? TaxId, string CountryCode, string? CustomerNumber);

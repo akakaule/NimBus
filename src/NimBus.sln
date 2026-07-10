@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.3.11415.281
@@ -143,6 +143,7 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.WebApp.Tests", "..\tests\NimBus.WebApp.Tests\NimBus.WebApp.Tests.csproj", "{07664C1B-9AD9-4D52-86AC-F707EAFBE380}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.Extensions.Notifications.Tests", "..\tests\NimBus.Extensions.Notifications.Tests\NimBus.Extensions.Notifications.Tests.csproj", "{A6255E01-F833-4B6C-B359-FE5884B5294B}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.Mcp", "NimBus.Mcp\NimBus.Mcp.csproj", "{8B0D7BC4-FF40-4A78-B1AD-BA3A879271B5}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.Mcp.Tests", "..\tests\NimBus.Mcp.Tests\NimBus.Mcp.Tests.csproj", "{BB4F81E1-E5C2-426B-9D43-02D2733C05CE}"
@@ -162,6 +163,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.Agents.Tests", "..\tests\NimBus.Agents.Tests\NimBus.Agents.Tests.csproj", "{9AEBBD6D-AD9D-4B46-AF6C-CDC0752B6E6B}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.Outbox.SqlServer.Tests", "..\tests\NimBus.Outbox.SqlServer.Tests\NimBus.Outbox.SqlServer.Tests.csproj", "{0C04FB4D-4250-4384-98C0-99775A65A782}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PartnerPortal", "..\samples\CrmErpDemo\PartnerPortal\PartnerPortal.csproj", "{AD2F1E3A-4F1A-422D-AB04-5B99411F6EDC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -821,6 +824,18 @@ Global
 		{0C04FB4D-4250-4384-98C0-99775A65A782}.Release|x64.Build.0 = Release|Any CPU
 		{0C04FB4D-4250-4384-98C0-99775A65A782}.Release|x86.ActiveCfg = Release|Any CPU
 		{0C04FB4D-4250-4384-98C0-99775A65A782}.Release|x86.Build.0 = Release|Any CPU
+		{AD2F1E3A-4F1A-422D-AB04-5B99411F6EDC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AD2F1E3A-4F1A-422D-AB04-5B99411F6EDC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AD2F1E3A-4F1A-422D-AB04-5B99411F6EDC}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{AD2F1E3A-4F1A-422D-AB04-5B99411F6EDC}.Debug|x64.Build.0 = Debug|Any CPU
+		{AD2F1E3A-4F1A-422D-AB04-5B99411F6EDC}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{AD2F1E3A-4F1A-422D-AB04-5B99411F6EDC}.Debug|x86.Build.0 = Debug|Any CPU
+		{AD2F1E3A-4F1A-422D-AB04-5B99411F6EDC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AD2F1E3A-4F1A-422D-AB04-5B99411F6EDC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AD2F1E3A-4F1A-422D-AB04-5B99411F6EDC}.Release|x64.ActiveCfg = Release|Any CPU
+		{AD2F1E3A-4F1A-422D-AB04-5B99411F6EDC}.Release|x64.Build.0 = Release|Any CPU
+		{AD2F1E3A-4F1A-422D-AB04-5B99411F6EDC}.Release|x86.ActiveCfg = Release|Any CPU
+		{AD2F1E3A-4F1A-422D-AB04-5B99411F6EDC}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -881,6 +896,7 @@ Global
 		{F4068ADF-F7EC-427E-8163-4C572EE34329} = {7B544F2A-7333-4D20-A0E7-C23B39DD94BE}
 		{B4EDA3F8-A226-17DA-B126-C4B481DF73E7} = {3FF7E5E6-FDB2-48EB-B97C-EF259503E77F}
 		{B00A069D-9F0C-444D-9C98-1EB3D36681B1} = {B4EDA3F8-A226-17DA-B126-C4B481DF73E7}
+		{AD2F1E3A-4F1A-422D-AB04-5B99411F6EDC} = {7B544F2A-7333-4D20-A0E7-C23B39DD94BE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {58272779-594B-49E5-BA62-CBA32A55D9BA}

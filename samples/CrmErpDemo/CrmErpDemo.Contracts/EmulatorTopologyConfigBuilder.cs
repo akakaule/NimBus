@@ -38,6 +38,8 @@ public static class EmulatorTopologyConfigBuilder
             topics.Add(BuildEndpointTopic(platform, endpoint, dynamicForwards));
         }
 
+        topics.Add(BuildPartnerInboundTopic());
+
         var root = new
         {
             UserConfig = new
@@ -215,6 +217,24 @@ public static class EmulatorTopologyConfigBuilder
             });
         }
 
+        // Raw capture for the external PartnerPortal: the ERP endpoint publishes its
+        // events as CloudEvents (binary mode), so a NimBus-free consumer can drain this
+        // subscription with the plain Azure.Messaging.ServiceBus SDK. The rule keeps
+        // only original publishes — responses, retries and continuation envelopes that
+        // also traverse the topic are excluded.
+        if (string.Equals(endpoint.Id, "ErpEndpoint", StringComparison.Ordinal))
+        {
+            subscriptions.Add(new
+            {
+                Name = "PartnerPortalCapture",
+                Properties = NonSessionSubscriptionProperties(),
+                Rules = new object[]
+                {
+                    Rule("cloudevents-capture", "user.MessageType = 'EventRequest' AND user.From IS NULL", action: null),
+                },
+            });
+        }
+
         return new
         {
             Name = endpoint.Id,
@@ -222,6 +242,27 @@ public static class EmulatorTopologyConfigBuilder
             Subscriptions = subscriptions.ToArray(),
         };
     }
+
+    // Partner-facing ingress: a plain topic external CloudEvents producers send to.
+    // One session-required catch-all subscription that Crm.Adapter drains with a second
+    // AddNimBusReceiver; MessageContext synthesizes the native routing properties
+    // (To/EventTypeId/From/EventId) from the CloudEvent at consume time, so no user.To
+    // rule is needed here. Sessions are required because the NimBus receiver is always
+    // a ServiceBusSessionProcessor — external producers must set the plain SB SessionId.
+    private static object BuildPartnerInboundTopic() => new
+    {
+        Name = "PartnerInbound",
+        Properties = TopicProperties(),
+        Subscriptions = new[]
+        {
+            new
+            {
+                Name = "CrmEndpoint",
+                Properties = SessionSubscriptionProperties(forwardTo: null),
+                Rules = new[] { DefaultRule() },
+            },
+        },
+    };
 
     private static object TopicProperties() => new
     {

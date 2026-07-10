@@ -260,6 +260,17 @@ var agentZone = builder.AddProject<Projects.CrmErpDemo_AgentZone>("agent-zone")
     .WithReference(servicebus);
 if (provisioner is not null) agentZone.WaitFor(provisioner);
 
+// PartnerPortal — simulated EXTERNAL partner for the CloudEvents interop showcase.
+// Deliberately references only Azure.Messaging.ServiceBus (zero NimBus): it publishes
+// raw CloudEvents leads to the PartnerInbound topic (drained by crm-adapter's second
+// receiver in AutoDetect mode) and reads ERP CloudEvents from the plain
+// ErpEndpoint/PartnerPortalCapture subscription. Waits for crm-adapter so leads
+// don't pile up before the subscriber is listening.
+var partnerPortal = builder.AddProject<Projects.PartnerPortal>("partner-portal")
+    .WithReference(servicebus)
+    .WaitFor(crmAdapter);
+if (provisioner is not null) partnerPortal.WaitFor(provisioner);
+
 // EnrichmentAgent (spec 022). Runs the receive->classify->define->publish->settle
 // loop against the agent REST API on nimbus-ops. nimbus-ops is registered
 // unconditionally above, so the agent binds to it directly — service discovery

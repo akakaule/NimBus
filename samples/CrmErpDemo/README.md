@@ -448,6 +448,65 @@ erp-web (Error mode / Service mode toggle)
    Flipping **Service mode** ON instead produces **Error** alerts as inbound messages are rejected.
 5. Turn the toggles OFF to stop new alerts; click **Clear** to empty the panel.
 
+## Showcase: CloudEvents partner interop (external system, zero NimBus)
+
+NimBus's [CloudEvents 1.0 interoperability](../../docs/cloudevents.md) ([ADR-013](../../docs/adr/013-cloudevents-interoperability.md)) is demonstrated in both directions by **PartnerPortal** — a simulated external third-party system that deliberately references only `Azure.Messaging.ServiceBus` (zero NimBus packages):
+
+```
+PartnerPortal (no NimBus)
+   │  INBOUND: raw CloudEvents (binary mode, ce-* application properties,
+   │           type = com.partnerportal.crm.PartnerLeadSubmitted, SessionId = LeadId)
+   ▼
+PartnerInbound topic ─ CrmEndpoint subscription (session-required, catch-all)
+   ▼
+crm-adapter (AutoDetect subscriber, second receiver)
+   └─▶ PartnerLeadSubmittedHandler → Crm.Api upsert → contact appears in crm-web
+       with a violet "Partner" origin badge
+
+erp-api publisher + UseCloudEvents(Binary, source urn:crmerpdemo:erp)
+   ▼  (envelope survives the SQL outbox — Message.CloudEvent is serialized into Payload)
+ErpEndpoint topic ─ PartnerPortalCapture subscription
+   (rule: user.MessageType = 'EventRequest' AND user.From IS NULL)
+   ▼
+   OUTBOUND: PartnerPortal logs the raw cloudEvents:* properties + domain JSON
+```
+
+Key mechanics on display:
+
+- **Inbound routing without NimBus properties** — the partner stamps no `user.*` routing
+  properties; `MessageContext` synthesizes `To`/`EventTypeId`/`From`/`EventId` from the
+  CloudEvent at consume time. The default type mapping takes the last dot-segment of the
+  CloudEvents `type` (`com.partnerportal.crm.PartnerLeadSubmitted` → `PartnerLeadSubmitted`),
+  so no subscriber configuration is needed.
+- **Alternate prefix** — the partner uses `ce-*` properties (not NimBus's own `cloudEvents:*`)
+  to prove the reader's `AcceptedPrefixes` handle non-Microsoft producers.
+- **AutoDetect** — crm-adapter and dataplatform-adapter handle native and CloudEvents traffic
+  on the same subscription; native messages are processed byte-identically.
+- **Outbox survival** — ERP events flow business-transactionally through
+  `nimbus.OutboxMessages` and are still emitted as CloudEvents by the dispatcher.
+- **AsyncAPI** — `ErpEndpoint` implements `ICloudEventsAware`, so the nimbus-ops Admin
+  AsyncAPI export carries the `x-cloudevents` channel extension + `CloudEventsMessageHeaders`
+  schema for the `erpendpoint` channel.
+
+> Resolver caveat: the Resolver ingests forwarded CloudEvents copies natively, so the
+> *Pending* audit row of a CloudEvents message shows an empty payload view; the
+> Completed/Failed rows carry the full content plus the CloudEvent identity
+> (`CloudEventId/Source/Type/Subject`) in the store.
+
+### Manual smoke flow
+
+1. AppHost up → **partner-portal** logs a published lead every 45 s
+   (`PARTNER_LEAD_INTERVAL_SECONDS` to change).
+2. **crm-adapter** logs `PartnerLeadSubmittedHandler` with the CloudEvent id/source/type;
+   open **crm-web** → Contacts → the lead appears with a violet **Partner** badge.
+3. Open **erp-web** → create a customer (or create an account in **crm-web** and let the
+   round-trip produce `ErpCustomerCreated`) → **partner-portal** logs the raw
+   `cloudEvents:*` properties and domain JSON of the ERP event.
+4. Dead-letter demo: set `PARTNER_SEND_INVALID=true` on partner-portal and restart it →
+   it sends one CloudEvent missing `ce-source`; crm-adapter rejects it with
+   `InvalidCloudEventException` and the message lands in the
+   `PartnerInbound/CrmEndpoint` dead-letter queue.
+
 ## Out of scope (v1)
 
 No authn/authz, no multi-tenant, no production deployment scripts, no non-Azure transports, no realistic tax/currency/shipping math, no automated browser tests, no UI i18n, no Sales Orders/Products/Inventory.
@@ -464,3 +523,5 @@ No authn/authz, no multi-tenant, no production deployment scripts, no non-Azure 
 | ERP Function adapter                    | `Erp.Adapter.Functions/Functions/ErpEndpointFunction.cs` + deferred function                |
 | ERP subscriber handlers                 | `Erp.Adapter.Functions/Handlers/*.cs`                                                       |
 | Aspire wiring                           | `CrmErpDemo.AppHost/Program.cs`                                                            |
+| CloudEvents partner (external, no NimBus) | `PartnerPortal/Program.cs`                                                               |
+| CloudEvents inbound handler             | `Crm.Adapter/Handlers/PartnerLeadSubmittedHandler.cs`                                      |

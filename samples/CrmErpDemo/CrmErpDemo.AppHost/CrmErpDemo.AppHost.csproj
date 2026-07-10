@@ -30,6 +30,7 @@
     <ProjectReference Include="..\DataPlatform.Adapter.Functions\DataPlatform.Adapter.Functions.csproj" />
     <ProjectReference Include="..\CrmErpDemo.AgentZone\CrmErpDemo.AgentZone.csproj" />
     <ProjectReference Include="..\EnrichmentAgent\EnrichmentAgent.csproj" />
+    <ProjectReference Include="..\PartnerPortal\PartnerPortal.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.Resolver\NimBus.Resolver.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.WebApp\NimBus.WebApp.csproj" />
   </ItemGroup>

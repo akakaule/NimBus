@@ -338,6 +338,11 @@ endpoints emit exactly their previous output. See
   consumes it via `context.GetCloudEvent()`, and a plain
   `Azure.Messaging.ServiceBus` consumer (no NimBus dependency) reads the same
   wire message.
+- [`samples/CrmErpDemo`](../samples/CrmErpDemo#showcase-cloudevents-partner-interop-external-system-zero-nimbus) —
+  realistic bidirectional showcase: the external **PartnerPortal** (zero NimBus)
+  publishes raw CloudEvents leads that AutoDetect routes into the CRM flow, and
+  consumes ERP events published as CloudEvents through the SQL transactional
+  outbox.
 - [`docs/asyncapi-mapping.md`](asyncapi-mapping.md) — AsyncAPI export, which
   reflects CloudEvents-enabled endpoints via the `x-cloudevents` channel
   extension and `CloudEventsMessageHeaders` schema.

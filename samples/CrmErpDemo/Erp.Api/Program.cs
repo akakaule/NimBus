@@ -5,6 +5,7 @@ using Erp.Api.HandoffMode;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
+using NimBus.Core.CloudEvents;
 using NimBus.Outbox.SqlServer;
 using NimBus.SDK.Extensions;
 using NimBus.SDK.Hosting;
@@ -38,7 +39,19 @@ builder.Services.AddSingleton<AlertsState>();
 builder.Services.AddNimBusSqlServerOutbox(erpConnectionString);
 if (hasServiceBus)
 {
-    builder.Services.AddNimBusPublisher("ErpEndpoint");
+    // ERP publishes its events as CloudEvents 1.0 (binary mode) so NimBus-free
+    // consumers like the PartnerPortal can read them. The envelope survives the
+    // SQL outbox: Message.CloudEvent is serialized into the Payload column and the
+    // dispatcher re-emits the same CloudEvent shape.
+    builder.Services.AddNimBusPublisher(options =>
+    {
+        options.Endpoint = "ErpEndpoint";
+        options.UseCloudEvents(ce =>
+        {
+            ce.Source = new Uri("urn:crmerpdemo:erp");
+            ce.ContentMode = CloudEventContentMode.Binary;
+        });
+    });
     builder.Services.AddSingleton<OutboxDispatcherSender>(sp =>
     {
         var client = sp.GetRequiredService<ServiceBusClient>();

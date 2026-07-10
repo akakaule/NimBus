@@ -43,6 +43,7 @@ public sealed class CrmApiClient(HttpClient http) : ICrmApiClient
                 payload.LastName,
                 payload.Email,
                 payload.Phone,
+                payload.Origin,
             },
             ct);
         await response.EnsureSuccessOrThrowAsync(

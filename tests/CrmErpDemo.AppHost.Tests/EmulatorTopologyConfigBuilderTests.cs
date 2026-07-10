@@ -105,6 +105,85 @@ public sealed class EmulatorTopologyConfigBuilderTests
         Assert.IsNotNull(erpForwardSub, "Compiled forward subscription CrmEndpoint → ErpEndpoint must still exist");
     }
 
+    // ── CloudEvents partner interop entities ──────────────────────────────────
+
+    [TestMethod]
+    public void Build_PartnerInboundTopic_HasSessionRequiredCatchAllCrmEndpointSubscription()
+    {
+        using var doc = BuildConfig();
+        var topic = FindTopic(doc, "PartnerInbound");
+        Assert.IsNotNull(topic, "PartnerInbound topic not found in generated config");
+
+        var sub = FindSubscription(topic.Value, "CrmEndpoint");
+        Assert.IsNotNull(sub, "Subscription 'CrmEndpoint' not found on PartnerInbound topic");
+
+        // NimBus receivers are session processors, so the partner ingress
+        // subscription must require sessions.
+        Assert.IsTrue(
+            sub.Value.GetProperty("Properties").GetProperty("RequiresSession").GetBoolean(),
+            "PartnerInbound/CrmEndpoint must require sessions — NimBus receivers are ServiceBusSessionProcessors");
+
+        // Raw CloudEvents producers stamp no user.* routing properties, so the
+        // subscription must be catch-all (default 1=1 rule), not user.To-filtered.
+        var rule = FindRule(sub.Value, "$Default");
+        Assert.IsNotNull(rule, "PartnerInbound/CrmEndpoint must keep the catch-all $Default rule");
+        Assert.AreEqual(
+            "1=1",
+            rule.Value.GetProperty("Properties").GetProperty("SqlFilter").GetProperty("SqlExpression").GetString(),
+            "Catch-all rule must be 1=1 — external CloudEvents carry no user.To");
+    }
+
+    [TestMethod]
+    public void Build_ErpEndpointTopic_HasPartnerPortalCaptureSubscriptionFilteredToOriginalPublishes()
+    {
+        using var doc = BuildConfig();
+        var topic = FindTopic(doc, "ErpEndpoint");
+        Assert.IsNotNull(topic, "ErpEndpoint topic not found in generated config");
+
+        var sub = FindSubscription(topic.Value, "PartnerPortalCapture");
+        Assert.IsNotNull(sub, "Subscription 'PartnerPortalCapture' not found on ErpEndpoint topic");
+
+        Assert.IsFalse(
+            sub.Value.GetProperty("Properties").GetProperty("RequiresSession").GetBoolean(),
+            "PartnerPortalCapture is drained by a plain (non-NimBus) receiver and must not require sessions");
+
+        var rule = FindRule(sub.Value, "cloudevents-capture");
+        Assert.IsNotNull(rule, "Rule 'cloudevents-capture' not found on PartnerPortalCapture subscription");
+
+        var sqlFilter = rule.Value
+            .GetProperty("Properties")
+            .GetProperty("SqlFilter")
+            .GetProperty("SqlExpression")
+            .GetString();
+
+        StringAssert.Contains(sqlFilter, "user.MessageType = 'EventRequest'",
+            "Capture must keep only original publishes (EventRequest)");
+        StringAssert.Contains(sqlFilter, "user.From IS NULL",
+            "Capture must exclude forwarded/rewritten copies");
+    }
+
+    [TestMethod]
+    public void Build_PartnerPortalCapture_OnlyOnErpEndpointTopic()
+    {
+        // The capture subscription is ERP-specific: no other endpoint topic
+        // (and not PartnerInbound) should grow one.
+        using var doc = BuildConfig();
+        var topics = doc.RootElement
+            .GetProperty("UserConfig")
+            .GetProperty("Namespaces")[0]
+            .GetProperty("Topics");
+
+        foreach (var topic in topics.EnumerateArray())
+        {
+            var name = topic.GetProperty("Name").GetString();
+            if (name == "ErpEndpoint") continue;
+
+            Assert.IsNull(
+                FindSubscription(topic, "PartnerPortalCapture"),
+                $"Topic '{name}' must not have a PartnerPortalCapture subscription");
+        }
+    }
+
     // ── Two forwards, same (source, target), different event types ────────────
 
     [TestMethod]

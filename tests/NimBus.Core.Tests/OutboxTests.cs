@@ -1,5 +1,6 @@
 #pragma warning disable CA1707, CA2007
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Core;
 using NimBus.Core.Messages;
 using NimBus.Core.Outbox;
 using Newtonsoft.Json;
@@ -126,6 +127,53 @@ public class OutboxSenderTests
         await sender.Send(CreateMessage("msg-1", "OrderPlaced", "s1"));
 
         Assert.IsNull(outbox.StoredMessages[0].DispatchedAtUtc);
+    }
+
+    [TestMethod]
+    public async Task Send_CloudEventPublishContext_SurvivesOutboxPayloadRoundTrip()
+    {
+        // The whole outbox-published-CloudEvents story rests on Message.CloudEvent
+        // NOT being [JsonIgnore]: OutboxSender serializes the entire Message into
+        // the Payload column and OutboxDispatcher deserializes it with
+        // Constants.SafeJsonSettings before re-sending. If the envelope were lost,
+        // an outboxed CloudEvents message would silently degrade to native format.
+        var outbox = new InMemoryOutbox();
+        var sender = new OutboxSender(outbox);
+        var message = CreateMessage("msg-ce", "OrderPlaced", "session-ce");
+        var cloudEvent = new NimBus.Core.CloudEvents.CloudEvent
+        {
+            Id = "msg-ce",
+            Source = "urn:test:orders",
+            Type = "OrderPlaced",
+            Subject = "orders/42",
+            Time = new DateTimeOffset(2026, 7, 10, 12, 0, 0, TimeSpan.Zero),
+            DataContentType = "application/json",
+            Data = "{\"orderId\":42}",
+        };
+        cloudEvent.Extensions["correlationid"] = "corr-1";
+        cloudEvent.Extensions["sessionid"] = "session-ce";
+        message.CloudEvent = new NimBus.Core.CloudEvents.CloudEventPublishContext(
+            cloudEvent,
+            NimBus.Core.CloudEvents.CloudEventContentMode.Binary);
+
+        await sender.Send(message);
+
+        // Mirror OutboxDispatcher.DispatchAsync exactly.
+        var roundTripped = JsonConvert.DeserializeObject<Message>(
+            outbox.StoredMessages[0].Payload, Constants.SafeJsonSettings);
+
+        Assert.IsNotNull(roundTripped);
+        Assert.IsNotNull(roundTripped.CloudEvent, "CloudEventPublishContext must survive the outbox Payload round-trip");
+        Assert.AreEqual(NimBus.Core.CloudEvents.CloudEventContentMode.Binary, roundTripped.CloudEvent.ContentMode);
+        var ce = roundTripped.CloudEvent.CloudEvent;
+        Assert.AreEqual("msg-ce", ce.Id);
+        Assert.AreEqual("urn:test:orders", ce.Source);
+        Assert.AreEqual("OrderPlaced", ce.Type);
+        Assert.AreEqual("orders/42", ce.Subject);
+        Assert.AreEqual("application/json", ce.DataContentType);
+        Assert.AreEqual("{\"orderId\":42}", ce.Data);
+        Assert.AreEqual("corr-1", ce.Extensions["correlationid"]);
+        Assert.AreEqual("session-ce", ce.Extensions["sessionid"]);
     }
 
     private static Message CreateMessage(string messageId, string eventTypeId, string sessionId) => new()

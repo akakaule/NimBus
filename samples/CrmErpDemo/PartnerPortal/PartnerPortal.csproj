@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    Deliberately zero ProjectReference to any NimBus.* project. PartnerPortal simulates an
+    EXTERNAL third-party system: it publishes raw CloudEvents 1.0 messages into the CRM flow
+    and reads the ERP's CloudEvents output using nothing but the plain Azure Service Bus SDK.
+    See samples/CrmErpDemo/README.md (CloudEvents partner interop) and docs/cloudevents.md.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
+  </ItemGroup>
+
+</Project>

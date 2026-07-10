@@ -73,7 +73,7 @@ public static class ContactEndpoints
                     Email = req.Email,
                     Phone = req.Phone,
                     CreatedAt = DateTimeOffset.UtcNow,
-                    Origin = "Erp",
+                    Origin = req.Origin ?? "Erp",
                 };
                 db.Contacts.Add(contact);
                 await db.SaveChangesAsync();
@@ -119,5 +119,7 @@ public static class ContactEndpoints
 
 // Adapter-side upsert request shape. Carries ErpCustomerId (ERP's customer id);
 // the API resolves it to a local Account.Id via Accounts.ErpCustomerId so the
-// CRM contact is FK-linked to the correct local account row.
-public record ContactUpsertRequest(Guid? ErpCustomerId, string FirstName, string LastName, string? Email, string? Phone);
+// CRM contact is FK-linked to the correct local account row. Origin is only
+// honored on insert (null keeps the historical "Erp" default); updates never
+// rewrite an existing contact's origin.
+public record ContactUpsertRequest(Guid? ErpCustomerId, string FirstName, string LastName, string? Email, string? Phone, string? Origin = null);

@@ -58,7 +58,9 @@ function OriginBadge({ origin }: { origin?: string }) {
     ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200'
     : origin === 'Erp'
       ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
-      : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200';
+      : origin === 'Partner'
+        ? 'bg-violet-50 text-violet-700 ring-1 ring-violet-200'
+        : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200';
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${styles}`}>{origin}</span>;
 }
 

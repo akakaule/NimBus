@@ -6,6 +6,7 @@ using Microsoft.Azure.Functions.Worker.OpenTelemetry;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using NimBus.Core.CloudEvents;
 using NimBus.SDK.Extensions;
 
 var builder = FunctionsApplication.CreateBuilder(args);
@@ -31,14 +32,23 @@ builder.Services.AddSingleton<ServiceBusClient>(sp =>
 // Singleton is the honest lifetime (its only dependency, ILogger<T>, is itself a singleton).
 builder.Services.AddSingleton<EnrichedContactHandler>();
 
-builder.Services.AddNimBusSubscriber("DataPlatformEndpoint", sub =>
-{
-    sub.AddHandler<ErpCustomerCreated, ErpCustomerCreatedHandler>();
+// AutoDetect is required now that Erp.Api publishes CloudEvents-binary: the body is the
+// raw domain JSON (not the native MessageContent envelope), so a native-only subscriber
+// would mis-parse ErpCustomerCreated. Native messages are still handled untouched.
+builder.Services.AddNimBusSubscriber(
+    configure: options =>
+    {
+        options.Endpoint = "DataPlatformEndpoint";
+        options.UseCloudEvents(ce => ce.Mode = CompatibilityMode.AutoDetect);
+    },
+    configureBuilder: sub =>
+    {
+        sub.AddHandler<ErpCustomerCreated, ErpCustomerCreatedHandler>();
 
-    // Spec 022 Phase 3 Task D — consume the AI-agent enriched-contact event on this endpoint.
-    // The event has no compiled IEvent class; it is identified only by its EventTypeId string.
-    // Use the DI-aware overload so EnrichedContactHandler receives its ILogger from the container.
-    sub.AddDynamicHandler("crm.contact.enriched.v1", sp => sp.GetRequiredService<EnrichedContactHandler>());
-});
+        // Spec 022 Phase 3 Task D — consume the AI-agent enriched-contact event on this endpoint.
+        // The event has no compiled IEvent class; it is identified only by its EventTypeId string.
+        // Use the DI-aware overload so EnrichedContactHandler receives its ILogger from the container.
+        sub.AddDynamicHandler("crm.contact.enriched.v1", sp => sp.GetRequiredService<EnrichedContactHandler>());
+    });
 
 builder.Build().Run();

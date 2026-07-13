@@ -6,9 +6,9 @@ namespace NimBus.CommandLine;
 internal sealed class InfrastructureDeployer
 {
     private readonly CommandContext _context;
-    private readonly AzureCliRunner _az;
+    private readonly IAzureCliRunner _az;
 
-    public InfrastructureDeployer(CommandContext context, AzureCliRunner az)
+    public InfrastructureDeployer(CommandContext context, IAzureCliRunner az)
     {
         _context = context;
         _az = az;
@@ -259,7 +259,6 @@ internal sealed class InfrastructureDeployer
         if (options.StorageProvider == StorageProviderChoice.SqlServer && options.SqlMode == SqlProvisioningMode.Provision)
         {
             arguments.Add($"sqlAdminLogin={options.SqlAdminLogin}");
-            arguments.Add($"sqlAdminPassword={options.SqlAdminPassword}");
         }
 
         if (!string.IsNullOrWhiteSpace(options.SqlServerName))
@@ -291,8 +290,14 @@ internal sealed class InfrastructureDeployer
             }
         }
 
+        using var command = new AzureDeploymentCommand(arguments);
+        if (options.StorageProvider == StorageProviderChoice.SqlServer && options.SqlMode == SqlProvisioningMode.Provision)
+        {
+            command.AddSecureParameter("sqlAdminPassword", options.SqlAdminPassword ?? string.Empty);
+        }
+
         await _az.EnsureSuccessAsync(
-            arguments,
+            command.BuildArguments(),
             _context.DeployDirectory,
             cancellationToken,
             "Core infrastructure deployment failed.").ConfigureAwait(false);
@@ -320,11 +325,8 @@ internal sealed class InfrastructureDeployer
             $"solutionId={names.SolutionId}",
             $"environment={names.Environment}",
             $"webAppVersion={options.WebAppVersion}",
-            $"apiKey={appInsightsApiKey}",
             $"appInsightsAppId={appInsightsAppId}",
-            $"instrumentationKey={instrumentationKey}",
             $"cosmosAccountEndpoint={cosmosAccountEndpoint}",
-            $"sqlConnectionString={sqlConnectionString}",
             $"serviceBusFullyQualifiedNamespace={serviceBusFullyQualifiedNamespace}",
             $"alwaysOnEnabled={(alwaysOnEnabled ? "true" : "false")}",
         };
@@ -332,7 +334,6 @@ internal sealed class InfrastructureDeployer
         if (!string.IsNullOrWhiteSpace(options.IdentityAdminEmail))
         {
             arguments.Add($"identityAdminEmail={options.IdentityAdminEmail}");
-            arguments.Add($"identityAdminPassword={options.IdentityAdminPassword}");
         }
 
         if (!string.IsNullOrWhiteSpace(options.Location))
@@ -344,8 +345,17 @@ internal sealed class InfrastructureDeployer
         AddPinnedLocation(arguments, existingLocations, names.WebAppName, "webAppLocation", pinned);
         AddPinnedLocation(arguments, existingLocations, names.ManagementAppServicePlanName, "managementAppServicePlanLocation", pinned);
 
+        using var command = new AzureDeploymentCommand(arguments);
+        command.AddSecureParameter("apiKey", appInsightsApiKey);
+        command.AddSecureParameter("instrumentationKey", instrumentationKey);
+        command.AddSecureParameter("sqlConnectionString", sqlConnectionString);
+        if (!string.IsNullOrWhiteSpace(options.IdentityAdminEmail))
+        {
+            command.AddSecureParameter("identityAdminPassword", options.IdentityAdminPassword ?? string.Empty);
+        }
+
         await _az.EnsureSuccessAsync(
-            arguments,
+            command.BuildArguments(),
             _context.DeployDirectory,
             cancellationToken,
             "Web app infrastructure deployment failed.").ConfigureAwait(false);

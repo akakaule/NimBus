@@ -372,6 +372,13 @@ namespace NimBus.Core.Messages
                 // MessageHandler.Handle's dedicated dead-letter catch.
                 throw;
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Cooperative shutdown must remain cancellation all the way through
+                // MessageHandler; wrapping it would trigger error responses, session
+                // blocking, retries, and settlement.
+                throw;
+            }
             catch (Exception exception)
             {
                 if (_permanentFailureClassifier?.IsPermanentFailure(exception) == true)

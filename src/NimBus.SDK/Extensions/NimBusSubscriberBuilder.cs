@@ -122,12 +122,11 @@ namespace NimBus.SDK.Extensions
 
         /// <summary>
         /// Registers a handler for a dynamically-typed event keyed by its string EventTypeId,
-        /// with a DI-aware factory that receives the <see cref="IServiceProvider"/> at registration
-        /// time. This is the DI-integrated counterpart to
+        /// with a DI-aware factory that receives a per-message scoped
+        /// <see cref="IServiceProvider"/>. This is the DI-integrated counterpart to
         /// <see cref="AddDynamicHandler(string, Func{IEventJsonHandler})"/> — the
-        /// <paramref name="handlerFactory"/> is called once when the
-        /// <see cref="ISubscriberClient"/> singleton is resolved, so it behaves like a singleton
-        /// handler (appropriate for handlers whose dependencies are themselves singletons).
+        /// <paramref name="handlerFactory"/> is called once per message and its scope is
+        /// disposed after the handler completes.
         /// </summary>
         /// <param name="eventTypeId">The wire EventTypeId string (e.g. "crm.contact.enriched.v1"). Must not be null or whitespace.</param>
         /// <param name="handlerFactory">Factory that receives the DI container and returns the handler. Must not be null.</param>
@@ -156,11 +155,9 @@ namespace NimBus.SDK.Extensions
                 IsExplicit = true,
                 Register = (provider, handlerProvider) =>
                 {
-                    // Resolve the handler once (at ISubscriberClient singleton creation) and
-                    // register it as a constant factory — this mirrors how AddHandler<TEvent,THandler>
-                    // resolves from IServiceProvider, but for the DI-aware dynamic variant.
-                    var handler = handlerFactory(provider);
-                    handlerProvider.RegisterHandler(eventTypeId, () => handler);
+                    handlerProvider.RegisterHandler(
+                        eventTypeId,
+                        scopedProvider => handlerFactory(scopedProvider ?? provider));
                 }
             });
 
@@ -184,11 +181,8 @@ namespace NimBus.SDK.Extensions
                 IsExplicit = true,
                 Register = (provider, handlerProvider) =>
                 {
-                    // Resolve the handler once (at ISubscriberClient singleton creation) and
-                    // register it as the fallback — same resolution pattern as the SP-aware
-                    // AddDynamicHandler overload, but targeting RegisterFallbackHandler.
-                    var handler = handlerFactory(provider);
-                    handlerProvider.RegisterFallbackHandler(() => handler);
+                    handlerProvider.RegisterFallbackHandler(
+                        scopedProvider => handlerFactory(scopedProvider ?? provider));
                 }
             });
 
@@ -289,7 +283,9 @@ namespace NimBus.SDK.Extensions
                 IsExplicit = explicitRegistration,
                 Register = (provider, handlerProvider) =>
                 {
-                    handlerProvider.RegisterHandler(eventType, () => provider.GetRequiredService(expectedHandlerInterface));
+                    handlerProvider.RegisterHandler(
+                        eventType,
+                        scopedProvider => (scopedProvider ?? provider).GetRequiredService(expectedHandlerInterface));
                 }
             });
         }

@@ -83,7 +83,7 @@ namespace NimBus.Broker.Services
 
                 await messageContext.Complete(cancellationToken);
             }
-            catch (StorageProviderTransientException ex) when (ex.RetryAfter.HasValue)
+            catch (StorageProviderTransientException ex)
             {
                 await HandleThrottling(messageContext, ex.RetryAfter, cancellationToken);
             }
@@ -115,19 +115,21 @@ namespace NimBus.Broker.Services
             var calculatedDelay = TimeSpan.FromSeconds(
                 Math.Min(BaseDelaySeconds * Math.Pow(2, retryCount), MaxDelaySeconds));
 
-            // Use Cosmos retry-after if longer
-            var useCosmosRetryAfter = retryAfter.HasValue && retryAfter.Value > calculatedDelay;
-            var delay = useCosmosRetryAfter ? retryAfter.Value : calculatedDelay;
+            // Honor a provider hint only when it is longer than the calculated
+            // backoff. Providers such as SQL Server may not supply one.
+            var providerRetryAfter = retryAfter.GetValueOrDefault();
+            var useProviderRetryAfter = retryAfter.HasValue && providerRetryAfter > calculatedDelay;
+            var delay = useProviderRetryAfter ? providerRetryAfter : calculatedDelay;
 
             _logger?.Verbose(
-                "Resolver: Throttle delay decision - using {DelaySource}. CosmosRetryAfter:{CosmosRetryAfter}s, CalculatedBackoff:{CalculatedBackoff}s, EventId:{EventId}",
-                useCosmosRetryAfter ? "CosmosRetryAfter" : "CalculatedBackoff",
+                "Resolver: Transient storage delay decision - using {DelaySource}. ProviderRetryAfter:{ProviderRetryAfter}s, CalculatedBackoff:{CalculatedBackoff}s, EventId:{EventId}",
+                useProviderRetryAfter ? "ProviderRetryAfter" : "CalculatedBackoff",
                 retryAfter?.TotalSeconds,
                 calculatedDelay.TotalSeconds,
                 messageContext.EventId);
 
             _logger?.Information(
-                "Resolver: Cosmos DB throttled. Scheduling redelivery in {DelaySeconds}s. EventId:{EventId}, SessionId:{SessionId}, RetryCount:{RetryCount}/{MaxRetries}",
+                "Resolver: Storage provider temporarily unavailable. Scheduling redelivery in {DelaySeconds}s. EventId:{EventId}, SessionId:{SessionId}, RetryCount:{RetryCount}/{MaxRetries}",
                 delay.TotalSeconds, messageContext.EventId, messageContext.SessionId, retryCount + 1, MaxThrottleRetries);
 
             try

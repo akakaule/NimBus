@@ -79,6 +79,14 @@ clear "use SQL backup/restore" error rather than a broken UI.
 - `deploy.webapp.bicep` makes `cosmosAccountEndpoint` optional, adds
   `sqlConnectionString`, validates exactly one is provided.
 
+Security amendment (2026-07-11): secret-valued CLI options were removed because
+process arguments are observable. External SQL connections now use
+`NIMBUS_SQL_CONNECTION_STRING`; provisioned SQL uses
+`NIMBUS_SQL_ADMIN_PASSWORD`; bootstrap identity uses
+`NIMBUS_IDENTITY_ADMIN_PASSWORD`. The non-secret `--sql-admin-login` option is
+unchanged. The CLI passes secrets to ARM through owner-only ephemeral parameter
+files, and nested Bicep module parameters remain secure.
+
 ### Conformance test suite
 `NimBus.Testing.Conformance.MessageTrackingStoreConformanceTests` is an
 abstract MSTest base class. Each provider's test project subclasses it and

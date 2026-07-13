@@ -49,33 +49,48 @@ namespace NimBus.Core.Outbox
             // session's row fails, later rows for that same session stay parked
             // behind it this poll and are retried next interval.
             var failedSessions = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var outboxMessage in pending)
+            try
             {
-                var sessionId = outboxMessage.SessionId;
-                var hasSession = !string.IsNullOrEmpty(sessionId);
-
-                if (hasSession && failedSessions.Contains(sessionId))
+                foreach (var outboxMessage in pending)
                 {
-                    // A prior row on this session failed this poll; keep it strictly
-                    // ordered behind its stuck row instead of dispatching out of order.
-                    continue;
+                    var sessionId = outboxMessage.SessionId;
+                    var hasSession = !string.IsNullOrEmpty(sessionId);
+
+                    if (hasSession && failedSessions.Contains(sessionId))
+                    {
+                        // A prior row on this session failed this poll; keep it strictly
+                        // ordered behind its stuck row instead of dispatching out of order.
+                        continue;
+                    }
+
+                    if (!await DispatchOneAsync(outboxMessage, cancellationToken))
+                    {
+                        // Block only this session; session-less rows fail independently.
+                        // The failed message will be retried on the next poll.
+                        if (hasSession)
+                            failedSessions.Add(sessionId);
+                        continue;
+                    }
+
+                    dispatched.Add(outboxMessage.Id);
                 }
 
-                if (!await DispatchOneAsync(outboxMessage, cancellationToken))
+                if (dispatched.Count > 0)
                 {
-                    // Block only this session; session-less rows fail independently.
-                    // The failed message will be retried on the next poll.
-                    if (hasSession)
-                        failedSessions.Add(sessionId);
-                    continue;
+                    await _outbox.MarkAsDispatchedAsync(dispatched, cancellationToken);
                 }
-
-                dispatched.Add(outboxMessage.Id);
             }
-
-            if (dispatched.Count > 0)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                await _outbox.MarkAsDispatchedAsync(dispatched, cancellationToken);
+                // Sending and checkpointing are separate operations. Preserve any
+                // sends that completed before cancellation so the next poll does not
+                // publish them again; this bookkeeping must outlive the canceled poll.
+                if (dispatched.Count > 0)
+                {
+                    await _outbox.MarkAsDispatchedAsync(dispatched, CancellationToken.None);
+                }
+
+                throw;
             }
 
             return dispatched.Count;
@@ -150,6 +165,13 @@ namespace NimBus.Core.Outbox
                     "Outbox dispatched message {OutboxId} (event {EventTypeId}, session {SessionId}, messageId {MessageId})",
                     outboxMessage.Id, outboxMessage.EventTypeId, outboxMessage.SessionId, outboxMessage.MessageId);
                 return true;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // A stopped polling loop is not a failed outbox dispatch. Propagate
+                // cancellation without failure metrics/logging so the row remains
+                // pending for the next active dispatcher.
+                throw;
             }
             catch (Exception ex)
             {

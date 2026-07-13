@@ -8742,12 +8742,77 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum AdminDeleteStatus
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Pending")]
+        Pending = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Deferred")]
+        Deferred = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Failed")]
+        Failed = 2,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"TooManyRequests")]
+        TooManyRequests = 3,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"DeadLettered")]
+        DeadLettered = 4,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Unsupported")]
+        Unsupported = 5,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Published")]
+        Published = 6,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Completed")]
+        Completed = 7,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Skipped")]
+        Skipped = 8,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum AdminSkipSourceStatus
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Pending")]
+        Pending = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Deferred")]
+        Deferred = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Failed")]
+        Failed = 2,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"TooManyRequests")]
+        TooManyRequests = 3,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"DeadLettered")]
+        DeadLettered = 4,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Unsupported")]
+        Unsupported = 5,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Published")]
+        Published = 6,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class DeleteByStatusRequest : System.ComponentModel.INotifyPropertyChanged
     {
-        private System.Collections.Generic.List<string> _statuses;
+        private System.Collections.Generic.List<AdminDeleteStatus> _statuses = new System.Collections.Generic.List<AdminDeleteStatus>();
 
-        [Newtonsoft.Json.JsonProperty("statuses", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public System.Collections.Generic.List<string> Statuses    {
+        /// <summary>
+        /// One or more valid ResolutionStatus names.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("statuses", Required = Newtonsoft.Json.Required.Always, ItemConverterType = typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.MinLength(1)]
+        public System.Collections.Generic.List<AdminDeleteStatus> Statuses    {
             get { return _statuses; }
             set
             {
@@ -8793,11 +8858,16 @@ namespace NimBus.WebApp.ManagementApi
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class SkipRequest : System.ComponentModel.INotifyPropertyChanged
     {
-        private System.Collections.Generic.List<string> _statuses;
+        private System.Collections.Generic.List<AdminSkipSourceStatus> _statuses = new System.Collections.Generic.List<AdminSkipSourceStatus>();
         private System.DateTime? _before;
 
-        [Newtonsoft.Json.JsonProperty("statuses", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
-        public System.Collections.Generic.List<string> Statuses    {
+        /// <summary>
+        /// Source statuses; Completed and Skipped are terminal and cannot be skipped again.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("statuses", Required = Newtonsoft.Json.Required.Always, ItemConverterType = typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.MinLength(1)]
+        public System.Collections.Generic.List<AdminSkipSourceStatus> Statuses    {
             get { return _statuses; }
             set
             {

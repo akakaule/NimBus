@@ -4,12 +4,30 @@ using System.Text;
 
 namespace NimBus.CommandLine;
 
-internal sealed class ProcessRunner
+internal interface IProcessRunner
 {
+    Task<ProcessResult> RunAsync(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        bool echoStandardOutput,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class ProcessRunner : IProcessRunner
+{
+    public Task<ProcessResult> RunAsync(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        CancellationToken cancellationToken) =>
+        RunAsync(fileName, arguments, workingDirectory, echoStandardOutput: true, cancellationToken);
+
     public async Task<ProcessResult> RunAsync(
         string fileName,
         IReadOnlyList<string> arguments,
         string? workingDirectory,
+        bool echoStandardOutput,
         CancellationToken cancellationToken)
     {
         var startInfo = new ProcessStartInfo
@@ -20,6 +38,7 @@ internal sealed class ProcessRunner
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        DeploymentSecrets.RemoveFrom(startInfo.Environment);
 
         if (!string.IsNullOrWhiteSpace(workingDirectory))
         {
@@ -48,7 +67,11 @@ internal sealed class ProcessRunner
         {
             if (args.Data is not null)
             {
-                CliOutput.WriteLine(args.Data);
+                if (echoStandardOutput)
+                {
+                    CliOutput.WriteLine(args.Data);
+                }
+
                 output.AppendLine(args.Data);
             }
         };
@@ -80,7 +103,30 @@ internal sealed class ProcessRunner
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
-        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The deployment command may still be reading an ephemeral ARM
+            // parameter file. Stop the whole child tree and wait for shutdown
+            // before the caller unwinds and deletes that file.
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch (InvalidOperationException) when (process.HasExited)
+            {
+                // The process won the race and exited between HasExited and Kill.
+            }
+
+            await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
 
         return new ProcessResult(process.ExitCode, output.ToString().Trim(), error.ToString().Trim());
     }

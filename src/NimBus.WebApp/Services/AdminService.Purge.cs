@@ -457,6 +457,7 @@ public partial class AdminService
 
     public async Task<int> DeleteByStatusPreviewAsync(string endpointId, List<string> statuses)
     {
+        statuses = AdminStatusValidation.NormalizeDeleteStatuses(statuses);
         int count = 0;
         string continuationToken = string.Empty;
 
@@ -476,6 +477,7 @@ public partial class AdminService
 
     public async Task<BulkOperationResult> DeleteByStatusAsync(string endpointId, List<string> statuses)
     {
+        statuses = AdminStatusValidation.NormalizeDeleteStatuses(statuses);
         int succeeded = 0;
         int failed = 0;
         var errors = new List<string>();
@@ -511,6 +513,7 @@ public partial class AdminService
 
     public async Task<int> SkipMessagesPreviewAsync(string endpointId, List<string> statuses, DateTime? before)
     {
+        statuses = AdminStatusValidation.NormalizeSkipStatuses(statuses);
         int count = 0;
         string continuationToken = string.Empty;
 
@@ -535,6 +538,7 @@ public partial class AdminService
 
     public async Task<BulkOperationResult> SkipMessagesAsync(string endpointId, List<string> statuses, DateTime? before)
     {
+        statuses = AdminStatusValidation.NormalizeSkipStatuses(statuses);
         int succeeded = 0;
         int failed = 0;
         var errors = new List<string>();

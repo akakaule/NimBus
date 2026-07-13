@@ -59,7 +59,8 @@ public sealed class CosmosDatabaseAdapter : ICosmosDatabaseAdapter
 
     public async Task<ICosmosContainerAdapter> CreateContainerIfNotExistsAsync(string id, string partitionKeyPath)
     {
-        var response = await _database.CreateContainerIfNotExistsAsync(id, partitionKeyPath);
+        var response = await CosmosExceptionTranslation.TranslateTransientAsync(
+            () => _database.CreateContainerIfNotExistsAsync(id, partitionKeyPath));
         return new CosmosContainerAdapter(response.Container);
     }
 }
@@ -74,41 +75,41 @@ public sealed class CosmosContainerAdapter : ICosmosContainerAdapter
     }
 
     public FeedIterator<T> GetItemQueryIterator<T>(QueryDefinition queryDefinition) =>
-        _container.GetItemQueryIterator<T>(queryDefinition);
+        CosmosExceptionTranslation.Wrap(_container.GetItemQueryIterator<T>(queryDefinition));
 
     public FeedIterator<T> GetItemQueryIterator<T>(QueryDefinition queryDefinition, string continuationToken = null, QueryRequestOptions requestOptions = null) =>
-        _container.GetItemQueryIterator<T>(queryDefinition, continuationToken, requestOptions);
+        CosmosExceptionTranslation.Wrap(_container.GetItemQueryIterator<T>(queryDefinition, continuationToken, requestOptions));
 
     public FeedIterator<T> GetItemQueryIterator<T>(string queryText) =>
-        _container.GetItemQueryIterator<T>(queryText);
+        CosmosExceptionTranslation.Wrap(_container.GetItemQueryIterator<T>(queryText));
 
     public FeedIterator<T> GetItemQueryIterator<T>(string queryText, string continuationToken = null, QueryRequestOptions requestOptions = null) =>
-        _container.GetItemQueryIterator<T>(queryText, continuationToken, requestOptions);
+        CosmosExceptionTranslation.Wrap(_container.GetItemQueryIterator<T>(queryText, continuationToken, requestOptions));
 
     public IOrderedQueryable<T> GetItemLinqQueryable<T>(bool allowSynchronousQueryExecution = false, string continuationToken = null, QueryRequestOptions requestOptions = null) =>
         _container.GetItemLinqQueryable<T>(allowSynchronousQueryExecution, continuationToken, requestOptions);
 
     public Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default) =>
-        _container.CreateItemAsync(item, partitionKey);
+        CosmosExceptionTranslation.TranslateTransientAsync(() => _container.CreateItemAsync(item, partitionKey));
 
     public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions requestOptions = null) =>
-        _container.UpsertItemAsync(item, partitionKey, requestOptions);
+        CosmosExceptionTranslation.TranslateTransientAsync(() => _container.UpsertItemAsync(item, partitionKey, requestOptions));
 
     public Task<ItemResponse<T>> DeleteItemAsync<T>(string id, PartitionKey partitionKey) =>
-        _container.DeleteItemAsync<T>(id, partitionKey);
+        CosmosExceptionTranslation.TranslateTransientAsync(() => _container.DeleteItemAsync<T>(id, partitionKey));
 
     public Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey) =>
-        _container.ReadItemAsync<T>(id, partitionKey);
+        CosmosExceptionTranslation.TranslateTransientAsync(() => _container.ReadItemAsync<T>(id, partitionKey));
 
     public Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey, ItemRequestOptions requestOptions) =>
-        _container.ReadItemAsync<T>(id, partitionKey, requestOptions);
+        CosmosExceptionTranslation.TranslateTransientAsync(() => _container.ReadItemAsync<T>(id, partitionKey, requestOptions));
 
     public Task<ItemResponse<T>> PatchItemAsync<T>(string id, PartitionKey partitionKey, IReadOnlyList<PatchOperation> patchOperations) =>
-        _container.PatchItemAsync<T>(id, partitionKey, patchOperations);
+        CosmosExceptionTranslation.TranslateTransientAsync(() => _container.PatchItemAsync<T>(id, partitionKey, patchOperations));
 
     public Task<ContainerResponse> DeleteContainerAsync() =>
-        _container.DeleteContainerAsync();
+        CosmosExceptionTranslation.TranslateTransientAsync(() => _container.DeleteContainerAsync());
 
     public Task<FeedResponse<T>> ReadManyItemsAsync<T>(IReadOnlyList<(string id, PartitionKey partitionKey)> items) =>
-        _container.ReadManyItemsAsync<T>(items);
+        CosmosExceptionTranslation.TranslateTransientAsync(() => _container.ReadManyItemsAsync<T>(items));
 }

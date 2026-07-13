@@ -60,7 +60,7 @@ Constraints:
 ## Deployment — CLI & Bicep (FR-040..FR-046)
 
 - `nb infra apply --storage-provider {cosmos|sqlserver}` (default `cosmos` for back-compat).
-- For `sqlserver`: `--sql-mode {provision|external}`. `provision` deploys Azure SQL via Bicep; `external` accepts `--sql-connection-string` (or Key Vault reference).
+- For `sqlserver`: `--sql-mode {provision|external}`. `provision` deploys Azure SQL via Bicep; `external` reads `NIMBUS_SQL_CONNECTION_STRING`. Secret values are never accepted as command-line arguments.
 - `deploy.core.bicep` conditionally provisions Cosmos OR Azure SQL based on flag.
 - `deploy.webapp.bicep` treats `cosmosAccountEndpoint` as optional; when absent, wires the SQL connection setting instead.
 - Clear error when `--storage-provider sqlserver` is used without a `--sql-mode` choice.

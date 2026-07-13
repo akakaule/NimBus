@@ -156,12 +156,32 @@ IKEY=$(az monitor app-insights component show \
 COSMOS_ENDPOINT=$(az cosmosdb show \
   --resource-group rg-nimbus-dev --name cosmos-nimbus-dev --query documentEndpoint -o tsv)
 
+# Keep secret values out of the az process arguments and deployment history.
+# Store this file with owner-only permissions, never commit it, and delete it
+# immediately after the deployment.
+umask 077
+SECURE_PARAMETERS=$(mktemp)
+trap 'rm -f "$SECURE_PARAMETERS"' EXIT
+cat > "$SECURE_PARAMETERS" <<EOF
+{
+  "\$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "apiKey": { "value": "$APIKEY" },
+    "instrumentationKey": { "value": "$IKEY" }
+  }
+}
+EOF
+
 az deployment group create \
   --resource-group rg-nimbus-dev \
   --template-file deploy/bicep/deploy.webapp.bicep \
   --parameters deploy/bicep/parameters/deploy.webapp.example.bicepparam \
-  --parameters apiKey="$APIKEY" appInsightsAppId="$APP_ID" instrumentationKey="$IKEY" \
+  --parameters "@$SECURE_PARAMETERS" \
+  --parameters appInsightsAppId="$APP_ID" \
     cosmosAccountEndpoint="$COSMOS_ENDPOINT"
+rm -f "$SECURE_PARAMETERS"
+trap - EXIT
 ```
 
 The Service Bus namespace follows the convention `sb-{solutionId}-{environment}.servicebus.windows.net`.

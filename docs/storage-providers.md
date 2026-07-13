@@ -86,26 +86,28 @@ To deploy NimBus without Cosmos DB at all (no Cosmos resources provisioned, no
 Cosmos secrets required, no Cosmos packages referenced):
 
 ```bash
+export NIMBUS_SQL_ADMIN_PASSWORD='<strong-password>'
 nb infra apply \
   --solution-id mybus \
   --environment prod \
   --resource-group rg-mybus-prod \
   --storage-provider sqlserver \
   --sql-mode provision \
-  --sql-admin-login dbadmin \
-  --sql-admin-password '<strong-password>'
+  --sql-admin-login dbadmin
+unset NIMBUS_SQL_ADMIN_PASSWORD
 ```
 
 Or to use an externally-provisioned SQL Server:
 
 ```bash
+export NIMBUS_SQL_CONNECTION_STRING='Server=tcp:...;Initial Catalog=MessageDatabase;...'
 nb infra apply \
   --solution-id mybus \
   --environment prod \
   --resource-group rg-mybus-prod \
   --storage-provider sqlserver \
-  --sql-mode external \
-  --sql-connection-string 'Server=tcp:...;Initial Catalog=MessageDatabase;...'
+  --sql-mode external
+unset NIMBUS_SQL_CONNECTION_STRING
 ```
 
 The Bicep templates skip Cosmos provisioning entirely when `storageProvider == 'sqlserver'`.
@@ -180,10 +182,10 @@ store is empty. After the first sign-in, change the password from the
 UI; the override env vars become inert on subsequent runs. Drop the
 `nimbus.AspNet*` tables to reseed.
 
-**Security.** These defaults are for local dev only. The Azure deploy
-path uses CLI-supplied credentials via
-`nb setup --identity-admin-email … --identity-admin-password …`
-(see *SQL-only deployment* above). Never set
+**Security.** These defaults are for local dev only. For Azure deployment,
+pass `--identity-admin-email` and set `NIMBUS_IDENTITY_ADMIN_PASSWORD` only
+in the environment of the `nb setup` process (see *SQL-only deployment*
+above). Remove it after the command completes. Never set
 `NIMBUS_IDENTITY_ADMIN_PASSWORD=Local!Admin123` on a deployed slot.
 
 Implementation reference: `src/NimBus.AppHost/Program.cs` (the env-var

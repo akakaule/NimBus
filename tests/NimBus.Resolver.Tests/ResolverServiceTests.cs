@@ -4,6 +4,7 @@ using NimBus.Broker.Services;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 
 namespace NimBus.Resolver.Tests;
@@ -167,6 +168,25 @@ public class ResolverServiceTests
         Assert.AreEqual(1, message.ScheduleRedeliveryCalls);
         Assert.AreEqual(TimeSpan.FromSeconds(20), message.LastScheduledDelay);
         Assert.AreEqual(3, message.LastScheduledRetryCount);
+        Assert.AreEqual(0, message.CompletedCalls);
+        Assert.AreEqual(0, message.DeadLetterCalls);
+    }
+
+    [TestMethod]
+    public async Task Handle_StorageProviderTransientExceptionWithoutRetryAfter_UsesCalculatedBackoff()
+    {
+        var cosmos = new FakeCosmosDbClient
+        {
+            StoreMessageException = new StorageProviderTransientException("temporarily unavailable", retryAfter: null),
+        };
+        var message = CreateMessageContext(messageType: MessageType.EventRequest, throttleRetryCount: 1);
+        var service = CreateService(cosmos);
+
+        await service.Handle(message);
+
+        Assert.AreEqual(1, message.ScheduleRedeliveryCalls);
+        Assert.AreEqual(TimeSpan.FromSeconds(10), message.LastScheduledDelay);
+        Assert.AreEqual(2, message.LastScheduledRetryCount);
         Assert.AreEqual(0, message.CompletedCalls);
         Assert.AreEqual(0, message.DeadLetterCalls);
     }

@@ -193,10 +193,6 @@ module appserviceplan 'templates/appServicePlan.bicep' = {
 // Settings every resolver host needs regardless of plan type.
 var sharedResolverSettings = [
   {
-    name: 'GlobalTraceLogInstrKey'
-    value: applicationinsights.outputs.instrumentationKey
-  }
-  {
     name: 'ServiceBusNamespace'
     value: sbNamespace
   }
@@ -214,22 +210,8 @@ var sharedResolverSettings = [
 // Flex Consumption rejects these settings.
 var elasticPremiumExtraSettings = resolverPlan == 'ElasticPremium' ? [
   {
-    name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
-    value: funcstorageaccount.outputs.connectionString
-  }
-  {
     name: 'WEBSITE_CONTENTSHARE'
     value: '${toLower(resolverFunctionAppName)}${uniqueString(uniqueDeploy)}'
-  }
-] : []
-
-// The Elastic Premium template injects APPINSIGHTS_INSTRUMENTATIONKEY itself; the
-// Flex template does not, so wire platform telemetry here via the (non-deprecated)
-// connection-string setting.
-var flexExtraSettings = resolverPlan == 'FlexConsumption' ? [
-  {
-    name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-    value: applicationinsights.outputs.connectionString
   }
 ] : []
 
@@ -240,14 +222,34 @@ var cosmosResolverSetting = storageProvider == 'cosmos' ? [
   }
 ] : []
 
-var sqlResolverSetting = storageProvider == 'sqlserver' && sqlMode == 'provision' ? [
-  {
-    name: 'SqlConnection'
-    value: 'Server=tcp:${azureSql.outputs.serverFqdn},1433;Initial Catalog=${sqlDbName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=true;'
-  }
-] : []
+var resolverappsettings = concat(sharedResolverSettings, elasticPremiumExtraSettings, cosmosResolverSetting)
 
-var resolverappsettings = concat(sharedResolverSettings, elasticPremiumExtraSettings, flexExtraSettings, cosmosResolverSetting, sqlResolverSetting)
+// Secrets must remain secure across the nested module boundary. Passing them in
+// the ordinary settings array would retain their values in nested deployment
+// history even though sqlAdminPassword is a secure top-level parameter.
+var sharedResolverSecretSettings = {
+  GlobalTraceLogInstrKey: applicationinsights.outputs.instrumentationKey
+}
+
+var elasticPremiumSecretSettings = resolverPlan == 'ElasticPremium' ? {
+  WEBSITE_CONTENTAZUREFILECONNECTIONSTRING: funcstorageaccount.outputs.connectionString
+} : {}
+
+// The Elastic Premium template injects APPINSIGHTS_INSTRUMENTATIONKEY itself; the
+// Flex template does not, so wire platform telemetry here via the connection string.
+var flexSecretSettings = resolverPlan == 'FlexConsumption' ? {
+  APPLICATIONINSIGHTS_CONNECTION_STRING: applicationinsights.outputs.connectionString
+} : {}
+
+var sqlResolverSecretSettings = storageProvider == 'sqlserver' && sqlMode == 'provision' ? {
+  SqlConnection: 'Server=tcp:${azureSql.outputs.serverFqdn},1433;Initial Catalog=${sqlDbName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=true;'
+} : {}
+
+var resolverSecretSettings = union(
+  sharedResolverSecretSettings,
+  elasticPremiumSecretSettings,
+  flexSecretSettings,
+  sqlResolverSecretSettings)
 
 //##############################################
 //# Resolver: Hosting plan + Function App (Elastic Premium branch)
@@ -272,6 +274,7 @@ module resolverFunctionElastic 'templates/functionApp.bicep' = if (resolverPlan 
     storageConnectionString: funcstorageaccount.outputs.connectionString
     location: effectiveResolverFunctionAppLocation
     settings: resolverappsettings
+    secretSettings: resolverSecretSettings
   }
 }
 
@@ -296,6 +299,7 @@ module resolverFunctionFlex 'templates/flexConsumptionFunctionApp.bicep' = if (r
     deploymentStorageBlobUri: '${funcstorageaccount.outputs.blobEndpoint}app-package-resolver'
     location: effectiveResolverFunctionAppLocation
     settings: resolverappsettings
+    secretSettings: resolverSecretSettings
   }
 }
 

@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 
 namespace NimBus.MessageStore.CosmosDb.Tests;
@@ -86,7 +87,7 @@ public sealed class CosmosDbClientUnitTests
     }
 
     [TestMethod]
-    public async Task SetEndpointMetadata_reports_throttled_upserts_through_logger()
+    public async Task SetEndpointMetadata_reports_throttled_upserts_without_logging_provider_details()
     {
         var logger = new CapturingLogger();
         var container = new FakeContainerAdapter
@@ -98,8 +99,49 @@ public sealed class CosmosDbClientUnitTests
         await Assert.ThrowsExactlyAsync<RequestLimitException>(
             () => client.SetEndpointMetadata(new EndpointMetadata { EndpointId = "ep-1" }));
 
-        Assert.IsTrue(logger.Entries.Any(e => e.Level == LogLevel.Error && e.Exception is CosmosException),
-            "Upsert failures must surface through the Microsoft.Extensions.Logging logger.");
+        Assert.IsTrue(logger.Entries.Any(e => e.Level == LogLevel.Warning && e.Exception is null),
+            "Transient upserts should be observable without attaching the provider exception, which may contain account details.");
+    }
+
+    [TestMethod]
+    public async Task StoreMessage_translates_service_unavailable_without_leaking_provider_details()
+    {
+        var container = new FakeContainerAdapter
+        {
+            UpsertException = new CosmosException(
+                "server=tcp:secret-host;database=secret-db",
+                HttpStatusCode.ServiceUnavailable,
+                0,
+                "activity-1",
+                0),
+        };
+        var client = new CosmosDbClient(new FakeCosmosClientAdapter(container));
+
+        var exception = await Assert.ThrowsExactlyAsync<StorageProviderTransientException>(() =>
+            client.StoreMessage(new MessageEntity
+            {
+                EventId = "event-1",
+                MessageId = "message-1",
+                EndpointId = "endpoint-1",
+                EnqueuedTimeUtc = DateTime.UtcNow,
+                MessageContent = new(),
+            }));
+
+        Assert.IsNull(exception.RetryAfter);
+        Assert.IsFalse(exception.Message.Contains("secret-host", StringComparison.Ordinal));
+        Assert.IsFalse(exception.Message.Contains("secret-db", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void Transient_translating_feed_iterator_disposes_inner_iterator()
+    {
+        var inner = new DisposableFeedIterator<object>();
+
+        using (CosmosExceptionTranslation.Wrap(inner))
+        {
+        }
+
+        Assert.IsTrue(inner.IsDisposed);
     }
 
     private sealed class CapturingLogger : ILogger<CosmosDbClient>
@@ -196,5 +238,21 @@ public sealed class CosmosDbClientUnitTests
 
         public override Task<FeedResponse<T>> ReadNextAsync(CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Iterator is empty.");
+    }
+
+    private sealed class DisposableFeedIterator<T> : FeedIterator<T>
+    {
+        public bool IsDisposed { get; private set; }
+
+        public override bool HasMoreResults => false;
+
+        public override Task<FeedResponse<T>> ReadNextAsync(CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Iterator is empty.");
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = disposing;
+            base.Dispose(disposing);
+        }
     }
 }

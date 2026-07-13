@@ -55,17 +55,21 @@ for the full walk-through.
 ### On Azure (via the `nb` CLI)
 
 ```powershell
+$env:NIMBUS_SQL_ADMIN_PASSWORD = '<sql-pwd>'
+$env:NIMBUS_IDENTITY_ADMIN_PASSWORD = '<pwd>'
 nb setup `
   --solution-id nimbus --environment dev `
   --resource-group rg-nimbus-dev --location northeurope `
   --storage-provider sqlserver --sql-mode provision `
-  --sql-admin-login <sql-admin> --sql-admin-password '<sql-pwd>' `
-  --identity-admin-email <admin-email> --identity-admin-password '<pwd>'
+  --sql-admin-login <sql-admin> `
+  --identity-admin-email <admin-email>
+Remove-Item Env:NIMBUS_SQL_ADMIN_PASSWORD
+Remove-Item Env:NIMBUS_IDENTITY_ADMIN_PASSWORD
 ```
 
 The bicep wires the WebApp app settings
 (`deploy/bicep/deploy.webapp.bicep`), seeding `NimBusIdentity__*` from
-the CLI flags. `RequireEmailConfirmation` is forced to `false` so the
+the CLI input. `RequireEmailConfirmation` is forced to `false` so the
 bootstrap admin can sign in without SMTP setup.
 
 **Post-deploy hygiene.** Remove `NimBusIdentity__Bootstrap__Password`

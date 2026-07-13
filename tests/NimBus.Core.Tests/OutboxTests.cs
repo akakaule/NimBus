@@ -385,6 +385,72 @@ public class OutboxDispatcherTests
 
         Assert.AreEqual(3, count);
     }
+
+    [TestMethod]
+    public async Task DispatchPending_CallerCancellation_PropagatesWithoutMarkingFailureOrDispatched()
+    {
+        var outbox = new InMemoryOutbox();
+        outbox.AddPending(new OutboxMessage
+        {
+            Id = "out-1",
+            MessageId = "msg-1",
+            Payload = JsonConvert.SerializeObject(new Message
+            {
+                MessageId = "msg-1",
+                To = "Test",
+                SessionId = "s1",
+                MessageContent = new MessageContent { EventContent = new EventContent { EventTypeId = "OrderPlaced" } }
+            }),
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var sender = new CancellationAwareSender();
+        var logger = new OutboxRecordingLogger();
+        var dispatcher = new OutboxDispatcher(outbox, sender, logger);
+
+        await Assert.ThrowsExactlyAsync<TaskCanceledException>(
+            () => dispatcher.DispatchPendingAsync(cancellationToken: cancellation.Token));
+
+        Assert.AreEqual(1, sender.SendCalls);
+        Assert.AreEqual(0, outbox.DispatchedIds.Count);
+        Assert.AreEqual(0, logger.ErrorCalls, "Cooperative cancellation must not be recorded as an outbox failure");
+    }
+
+    [TestMethod]
+    public async Task DispatchPending_CancellationAfterSuccessfulSend_MarksPriorSuccessBeforePropagating()
+    {
+        var outbox = new InMemoryOutbox();
+        outbox.AddPending(CreatePendingMessage("out-1", "msg-1", "s1"));
+        outbox.AddPending(CreatePendingMessage("out-2", "msg-2", "s2"));
+        using var cancellation = new CancellationTokenSource();
+        var sender = new CancelOnSecondSendSender(cancellation);
+        var logger = new OutboxRecordingLogger();
+        var dispatcher = new OutboxDispatcher(outbox, sender, logger);
+
+        await Assert.ThrowsExactlyAsync<TaskCanceledException>(
+            () => dispatcher.DispatchPendingAsync(cancellationToken: cancellation.Token));
+
+        Assert.AreEqual(2, sender.SendCalls);
+        Assert.AreEqual(1, outbox.DispatchedIds.Count);
+        Assert.AreEqual("out-1", outbox.DispatchedIds[0]);
+        Assert.AreEqual(0, logger.ErrorCalls, "Cooperative cancellation must not be recorded as an outbox failure");
+    }
+
+    private static OutboxMessage CreatePendingMessage(string outboxId, string messageId, string sessionId) => new()
+    {
+        Id = outboxId,
+        MessageId = messageId,
+        SessionId = sessionId,
+        Payload = JsonConvert.SerializeObject(new Message
+        {
+            MessageId = messageId,
+            To = "Test",
+            SessionId = sessionId,
+            MessageContent = new MessageContent { EventContent = new EventContent { EventTypeId = "OrderPlaced" } }
+        }),
+        CreatedAtUtc = DateTime.UtcNow
+    };
 }
 
 // ── Test doubles ─────────────────────────────────────────────────────
@@ -419,12 +485,14 @@ file sealed class InMemoryOutbox : IOutbox
 
     public Task MarkAsDispatchedAsync(string id, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         DispatchedIds.Add(id);
         return Task.CompletedTask;
     }
 
     public Task MarkAsDispatchedAsync(IEnumerable<string> ids, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         DispatchedIds.AddRange(ids);
         return Task.CompletedTask;
     }
@@ -456,4 +524,83 @@ file sealed class RecordingSender : ISender
     }
 
     public Task CancelScheduledMessage(long sequenceNumber, CancellationToken ct = default) => Task.CompletedTask;
+}
+
+file sealed class CancellationAwareSender : ISender
+{
+    public int SendCalls { get; private set; }
+
+    public Task Send(IMessage message, int messageEnqueueDelay = 0, CancellationToken ct = default)
+    {
+        SendCalls++;
+        return Task.FromCanceled(ct);
+    }
+
+    public Task Send(IEnumerable<IMessage> messages, int messageEnqueueDelay = 0, CancellationToken ct = default) =>
+        Task.FromCanceled(ct);
+
+    public Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken ct = default) =>
+        Task.FromCanceled<long>(ct);
+
+    public Task CancelScheduledMessage(long sequenceNumber, CancellationToken ct = default) => Task.CompletedTask;
+}
+
+file sealed class CancelOnSecondSendSender : ISender
+{
+    private readonly CancellationTokenSource _cancellation;
+
+    public CancelOnSecondSendSender(CancellationTokenSource cancellation)
+    {
+        _cancellation = cancellation;
+    }
+
+    public int SendCalls { get; private set; }
+
+    public Task Send(IMessage message, int messageEnqueueDelay = 0, CancellationToken ct = default)
+    {
+        SendCalls++;
+        if (SendCalls == 1)
+            return Task.CompletedTask;
+
+        _cancellation.Cancel();
+        return Task.FromCanceled(ct);
+    }
+
+    public Task Send(IEnumerable<IMessage> messages, int messageEnqueueDelay = 0, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
+    public Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
+    public Task CancelScheduledMessage(long sequenceNumber, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+}
+
+file sealed class OutboxRecordingLogger : Microsoft.Extensions.Logging.ILogger<OutboxDispatcher>
+{
+    public int ErrorCalls { get; private set; }
+
+    public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+    public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+    public void Log<TState>(
+        Microsoft.Extensions.Logging.LogLevel logLevel,
+        Microsoft.Extensions.Logging.EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter)
+    {
+        if (logLevel == Microsoft.Extensions.Logging.LogLevel.Error)
+            ErrorCalls++;
+    }
+
+    private sealed class NullScope : IDisposable
+    {
+        public static NullScope Instance { get; } = new();
+
+        public void Dispose()
+        {
+        }
+    }
 }

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
@@ -11,24 +12,62 @@ namespace NimBus.SDK.EventHandlers
 {
     public class EventHandlerProvider : IEventContextHandler
     {
-        private readonly ConcurrentDictionary<string, Func<IEventJsonHandler>> _handlerBuilders;
-        private Func<IEventJsonHandler>? _fallbackBuilder;
+        private readonly ConcurrentDictionary<string, Func<IServiceProvider?, IEventJsonHandler>> _handlerBuilders;
+        private readonly IServiceScopeFactory? _scopeFactory;
+        private Func<IServiceProvider?, IEventJsonHandler>? _fallbackBuilder;
 
         public EventHandlerProvider()
         {
-            _handlerBuilders = new ConcurrentDictionary<string, Func<IEventJsonHandler>>();
+            _handlerBuilders = new ConcurrentDictionary<string, Func<IServiceProvider?, IEventJsonHandler>>();
+        }
+
+        internal EventHandlerProvider(IServiceScopeFactory scopeFactory)
+            : this()
+        {
+            _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         }
 
         /// <summary>
-        /// Abstract override, handles <see cref="IEventContext"/> regardless of when/how/why the event message was sent.
+        /// Handles an <see cref="IMessageContext"/> regardless of when, how, or why the event message was sent.
         /// </summary>
         public async Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
         {
-            // Get handler from factory.
-            var handler = GetHandler(context.MessageContent.EventContent.EventTypeId);
+            if (context == null) throw new ArgumentNullException(nameof(context));
 
-            // Invoke handler.
-            await handler.Handle(context, cancellationToken);
+            var eventTypeId = context.EventTypeId;
+            var bodyEventTypeId = context.MessageContent?.EventContent?.EventTypeId;
+            if (!string.IsNullOrEmpty(eventTypeId)
+                && !string.IsNullOrEmpty(bodyEventTypeId)
+                && !string.Equals(eventTypeId, bodyEventTypeId, StringComparison.Ordinal))
+            {
+                throw new PermanentFailureException(new InvalidOperationException(
+                    $"Message EventTypeId mismatch: authoritative context value '{eventTypeId}' " +
+                    $"does not match body value '{bodyEventTypeId}'."));
+            }
+
+            // Native messages produced before EventTypeId was stamped as an
+            // application property still carry the dispatch key in the body.
+            // A non-empty context value remains authoritative, and the mismatch
+            // guard above prevents a conflicting body value from changing routing.
+            var dispatchEventTypeId = string.IsNullOrEmpty(eventTypeId)
+                ? bodyEventTypeId
+                : eventTypeId;
+            if (string.IsNullOrEmpty(dispatchEventTypeId))
+            {
+                throw new EventHandlerNotFoundException("Message does not define an EventTypeId.");
+            }
+
+            if (_scopeFactory == null)
+            {
+                await GetHandler(dispatchEventTypeId, serviceProvider: null).Handle(context, cancellationToken);
+                return;
+            }
+
+            // Handlers and their scoped dependencies live for exactly one message.
+            // Async disposal is required for dependencies that implement only
+            // IAsyncDisposable (database contexts and clients commonly do).
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            await GetHandler(dispatchEventTypeId, scope.ServiceProvider).Handle(context, cancellationToken);
         }
 
         public void RegisterHandler<T_Event>(Func<IEventHandler<T_Event>> eventHandlerFactory)
@@ -44,16 +83,13 @@ namespace NimBus.SDK.EventHandlers
             if (!typeof(IEvent).IsAssignableFrom(eventType))
                 throw new ArgumentException($"Event type '{eventType.FullName}' must implement {nameof(IEvent)}.", nameof(eventType));
 
-            IEventJsonHandler buildEventJsonHandler()
-            {
-                var eventHandler = eventHandlerFactory.Invoke();
-                var adapterType = typeof(EventJsonHandler<>).MakeGenericType(eventType);
-                return (IEventJsonHandler)(Activator.CreateInstance(adapterType, eventHandler)
-                    ?? throw new InvalidOperationException($"Could not create handler adapter for event type '{eventType.FullName}'."));
-            }
+            RegisterHandlerCore(eventType, _ => eventHandlerFactory.Invoke());
+        }
 
-            var eventTypeId = new EventType(eventType).Id;
-            _handlerBuilders[eventTypeId] = buildEventJsonHandler;
+        internal void RegisterHandler(Type eventType, Func<IServiceProvider?, object> eventHandlerFactory)
+        {
+            if (eventHandlerFactory == null) throw new ArgumentNullException(nameof(eventHandlerFactory));
+            RegisterHandlerCore(eventType, eventHandlerFactory);
         }
 
         /// <summary>
@@ -62,6 +98,12 @@ namespace NimBus.SDK.EventHandlers
         /// at the Mapping Zone and decide from the mapping registry per message.
         /// </summary>
         public void RegisterFallbackHandler(Func<IEventJsonHandler> fallbackFactory)
+        {
+            if (fallbackFactory == null) throw new ArgumentNullException(nameof(fallbackFactory));
+            _fallbackBuilder = _ => fallbackFactory.Invoke();
+        }
+
+        internal void RegisterFallbackHandler(Func<IServiceProvider?, IEventJsonHandler> fallbackFactory)
         {
             _fallbackBuilder = fallbackFactory ?? throw new ArgumentNullException(nameof(fallbackFactory));
         }
@@ -79,15 +121,42 @@ namespace NimBus.SDK.EventHandlers
                 throw new ArgumentException("Event type id must not be null or empty.", nameof(eventTypeId));
             if (eventJsonHandlerFactory == null) throw new ArgumentNullException(nameof(eventJsonHandlerFactory));
 
+            _handlerBuilders[eventTypeId] = _ => eventJsonHandlerFactory.Invoke();
+        }
+
+        internal void RegisterHandler(string eventTypeId, Func<IServiceProvider?, IEventJsonHandler> eventJsonHandlerFactory)
+        {
+            if (string.IsNullOrWhiteSpace(eventTypeId))
+                throw new ArgumentException("Event type id must not be null or empty.", nameof(eventTypeId));
+            if (eventJsonHandlerFactory == null) throw new ArgumentNullException(nameof(eventJsonHandlerFactory));
+
             _handlerBuilders[eventTypeId] = eventJsonHandlerFactory;
         }
 
-        private IEventJsonHandler GetHandler(string eventTypeId)
+        private void RegisterHandlerCore(Type eventType, Func<IServiceProvider?, object> eventHandlerFactory)
+        {
+            if (eventType == null) throw new ArgumentNullException(nameof(eventType));
+            if (!typeof(IEvent).IsAssignableFrom(eventType))
+                throw new ArgumentException($"Event type '{eventType.FullName}' must implement {nameof(IEvent)}.", nameof(eventType));
+
+            IEventJsonHandler BuildEventJsonHandler(IServiceProvider? serviceProvider)
+            {
+                var eventHandler = eventHandlerFactory.Invoke(serviceProvider);
+                var adapterType = typeof(EventJsonHandler<>).MakeGenericType(eventType);
+                return (IEventJsonHandler)(Activator.CreateInstance(adapterType, eventHandler)
+                    ?? throw new InvalidOperationException($"Could not create handler adapter for event type '{eventType.FullName}'."));
+            }
+
+            var eventTypeId = new EventType(eventType).Id;
+            _handlerBuilders[eventTypeId] = BuildEventJsonHandler;
+        }
+
+        private IEventJsonHandler GetHandler(string eventTypeId, IServiceProvider? serviceProvider)
         {
             if (_handlerBuilders.TryGetValue(eventTypeId, out var factory))
-                return factory.Invoke();
+                return factory.Invoke(serviceProvider);
             if (_fallbackBuilder != null)
-                return _fallbackBuilder.Invoke();
+                return _fallbackBuilder.Invoke(serviceProvider);
             throw new EventHandlerNotFoundException($"Event handler not registered for Event type {eventTypeId}");
         }
     }

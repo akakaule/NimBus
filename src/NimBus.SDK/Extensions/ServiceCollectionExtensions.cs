@@ -198,7 +198,8 @@ namespace NimBus.SDK.Extensions
                 ISender sender = NimBusOpenTelemetryDecorators.InstrumentSender(
                     new Sender(serviceBusSender), MessagingSystem.ServiceBus);
                 var responseService = new ResponseService(sender);
-                var eventHandlerProvider = new EventHandlerProvider();
+                var eventHandlerProvider = new EventHandlerProvider(
+                    sp.GetRequiredService<IServiceScopeFactory>());
 
                 // Register all handlers via DI
                 foreach (var registration in builder.HandlerRegistrations)

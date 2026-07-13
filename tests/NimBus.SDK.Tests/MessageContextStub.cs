@@ -18,15 +18,23 @@ public static class MessageContextStub
     public static IMessageContext ForEventType(string eventTypeId, string eventJson)
         => new StubMessageContext(eventTypeId, eventJson);
 
+    public static IMessageContext ForEventTypes(string eventTypeId, string bodyEventTypeId, string eventJson)
+        => new StubMessageContext(eventTypeId, bodyEventTypeId, eventJson);
+
     private sealed class StubMessageContext : IMessageContext
     {
         public StubMessageContext(string eventTypeId, string eventJson)
+            : this(eventTypeId, eventTypeId, eventJson)
+        {
+        }
+
+        public StubMessageContext(string eventTypeId, string bodyEventTypeId, string eventJson)
         {
             MessageContent = new MessageContent
             {
                 EventContent = new EventContent
                 {
-                    EventTypeId = eventTypeId,
+                    EventTypeId = bodyEventTypeId,
                     EventJson = eventJson,
                 }
             };

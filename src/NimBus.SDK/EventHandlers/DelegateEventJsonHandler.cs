@@ -10,8 +10,8 @@ namespace NimBus.SDK.EventHandlers
     /// identified only by its <c>EventTypeId</c> string with a JSON body and no compiled
     /// <see cref="NimBus.Core.Events.IEvent"/> class. Unlike <see cref="EventJsonHandler{T_Event}"/>,
     /// it does not deserialize into a CLR type; the raw event JSON is available to the
-    /// callback via <c>context.MessageContent.EventContent.EventJson</c> (and the type id via
-    /// <c>context.MessageContent.EventContent.EventTypeId</c>).
+    /// callback via <c>context.MessageContent.EventContent.EventJson</c> (and the authoritative
+    /// type id via <c>context.EventTypeId</c>).
     /// </summary>
     /// <remarks>
     /// Register via <see cref="EventHandlerProvider.RegisterHandler(string, Func{IEventJsonHandler})"/>.

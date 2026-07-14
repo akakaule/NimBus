@@ -210,7 +210,7 @@ namespace NimBus.Outbox.SqlServer
 
         public async Task MarkAsDispatchedAsync(string id, CancellationToken cancellationToken = default)
         {
-            var sql = $@"UPDATE {_options.FullTableName} SET [DispatchedAtUtc] = SYSUTCDATETIME() WHERE [Id] = @Id";
+            var sql = $@"UPDATE {_options.FullTableName} SET [DispatchedAtUtc] = SYSUTCDATETIME() WHERE [Id] = @Id AND [DispatchedAtUtc] IS NULL";
 
             await using var connection = new SqlConnection(_options.ConnectionString);
             await connection.OpenAsync(cancellationToken);
@@ -230,7 +230,7 @@ namespace NimBus.Outbox.SqlServer
             {
                 var batch = idList.GetRange(i, Math.Min(100, idList.Count - i));
                 var paramNames = new string[batch.Count];
-                var sql = $"UPDATE {_options.FullTableName} SET [DispatchedAtUtc] = SYSUTCDATETIME() WHERE [Id] IN (";
+                var sql = $"UPDATE {_options.FullTableName} SET [DispatchedAtUtc] = SYSUTCDATETIME() WHERE [DispatchedAtUtc] IS NULL AND [Id] IN (";
 
                 await using var command = new SqlCommand();
                 command.Connection = connection;

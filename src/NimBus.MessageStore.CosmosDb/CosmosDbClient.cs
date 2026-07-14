@@ -498,16 +498,15 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 "COSMOS UPSERT-RESPONSE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}, Status: {Status}", eventId, sessionId, response.StatusCode, CompletedStatus);
             return true;
         }
+        catch (StorageProviderTransientException)
+        {
+            _logger?.LogWarning(
+                "COSMOS UPSERT-TRANSIENT: EventId: {EventId}, SessionId: {SessionId}, Status: {Status}",
+                eventId, sessionId, CompletedStatus);
+            throw;
+        }
         catch (CosmosException e)
         {
-            if (CosmosExceptionTranslation.IsTransient(e))
-            {
-                _logger?.LogWarning(
-                    "COSMOS UPSERT-TRANSIENT: EventId: {EventId}, SessionId: {SessionId}, Status: {Status}, HttpStatusCode: {StatusCode}",
-                    eventId, sessionId, CompletedStatus, e.StatusCode);
-                CosmosExceptionTranslation.ThrowIfTransient(e);
-            }
-
             _logger?.LogError(e,
                 "COSMOS UPSERT-ERROR: EventId: {EventId}, SessionId: {SessionId}, Status: {Status}", eventId, sessionId, CompletedStatus);
             throw;
@@ -535,6 +534,13 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 "COSMOS REMOVE-MESSAGE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}", eventId, sessionId, response.StatusCode);
             return true;
         }
+        catch (StorageProviderTransientException)
+        {
+            _logger?.LogWarning(
+                "COSMOS REMOVE-MESSAGE-TRANSIENT: EventId: {EventId}, SessionId: {SessionId}",
+                eventId, sessionId);
+            throw;
+        }
         catch (CosmosException e)
         {
             _logger?.LogError(e,
@@ -545,11 +551,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 // Missing document — nothing to remove (matches the previous
                 // empty-query-result path returning false).
                 return false;
-            }
-
-            if (CosmosExceptionTranslation.IsTransient(e))
-            {
-                CosmosExceptionTranslation.ThrowIfTransient(e);
             }
 
             throw;
@@ -1646,16 +1647,15 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         {
             await container.UpsertItemAsync(doc, new PartitionKey(doc.EventId), SuppressContentOnWrite);
         }
+        catch (StorageProviderTransientException)
+        {
+            _logger?.LogWarning(
+                "COSMOS STORE-MESSAGE-TRANSIENT: EventId: {EventId}, MessageId: {MessageId}",
+                message.EventId, message.MessageId);
+            throw;
+        }
         catch (CosmosException e)
         {
-            if (CosmosExceptionTranslation.IsTransient(e))
-            {
-                _logger?.LogWarning(
-                    "COSMOS STORE-MESSAGE-TRANSIENT: EventId: {EventId}, MessageId: {MessageId}, HttpStatusCode: {StatusCode}",
-                    message.EventId, message.MessageId, e.StatusCode);
-                CosmosExceptionTranslation.ThrowIfTransient(e);
-            }
-
             _logger?.LogError(e, "COSMOS STORE-MESSAGE-ERROR: EventId: {EventId}, MessageId: {MessageId}", message.EventId, message.MessageId);
             throw;
         }
@@ -1797,16 +1797,15 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         {
             await container.UpsertItemAsync(doc, new PartitionKey(doc.EventId), SuppressContentOnWrite);
         }
+        catch (StorageProviderTransientException)
+        {
+            _logger?.LogWarning(
+                "COSMOS STORE-AUDIT-TRANSIENT: EventId: {EventId}",
+                eventId);
+            throw;
+        }
         catch (CosmosException e)
         {
-            if (CosmosExceptionTranslation.IsTransient(e))
-            {
-                _logger?.LogWarning(
-                    "COSMOS STORE-AUDIT-TRANSIENT: EventId: {EventId}, HttpStatusCode: {StatusCode}",
-                    eventId, e.StatusCode);
-                CosmosExceptionTranslation.ThrowIfTransient(e);
-            }
-
             _logger?.LogError(e, "COSMOS STORE-AUDIT-ERROR: EventId: {EventId}", eventId);
             throw;
         }
@@ -1981,16 +1980,15 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 "COSMOS UPSERT-RESPONSE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}, Status: {Status}", eventId, sessionId, response.StatusCode, status);
             return true;
         }
+        catch (StorageProviderTransientException)
+        {
+            _logger?.LogWarning(
+                "COSMOS UPSERT-TRANSIENT: EventId: {EventId}, SessionId: {SessionId}, Status: {Status}",
+                eventId, sessionId, status);
+            throw;
+        }
         catch (CosmosException e)
         {
-            if (CosmosExceptionTranslation.IsTransient(e))
-            {
-                _logger?.LogWarning(
-                    "COSMOS UPSERT-TRANSIENT: EventId: {EventId}, SessionId: {SessionId}, Status: {Status}, HttpStatusCode: {StatusCode}",
-                    eventId, sessionId, status, e.StatusCode);
-                CosmosExceptionTranslation.ThrowIfTransient(e);
-            }
-
             _logger?.LogError(e,
                 "COSMOS UPSERT-ERROR: EventId: {EventId}, SessionId: {SessionId}, Status: {Status}, HttpStatusCode: {StatusCode}", eventId, sessionId, status, e.StatusCode);
             throw;
@@ -2079,16 +2077,15 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 "COSMOS UPSERT-RESPONSE: Metadata upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointMetadata.EndpointId, response.StatusCode);
             return true;
         }
+        catch (StorageProviderTransientException)
+        {
+            _logger?.LogWarning(
+                "COSMOS UPSERT-TRANSIENT: Metadata upsert. Id: {EndpointId}",
+                endpointMetadata.EndpointId);
+            throw;
+        }
         catch (CosmosException e)
         {
-            if (CosmosExceptionTranslation.IsTransient(e))
-            {
-                _logger?.LogWarning(
-                    "COSMOS UPSERT-TRANSIENT: Metadata upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}",
-                    endpointMetadata.EndpointId, e.StatusCode);
-                CosmosExceptionTranslation.ThrowIfTransient(e);
-            }
-
             _logger?.LogError(e,
                 "COSMOS UPSERT-ERROR: Metadata upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointMetadata.EndpointId, e.StatusCode);
             throw;

@@ -55,7 +55,21 @@ namespace NimBus.ServiceBus
 
         public string EventTypeId
         {
-            get { try { return GetUserProperty(UserPropertyName.EventTypeId); } catch (InvalidMessageException) { return null; } }
+            get
+            {
+                try
+                {
+                    var eventTypeId = GetUserProperty(UserPropertyName.EventTypeId);
+                    if (!string.IsNullOrEmpty(eventTypeId)) return eventTypeId;
+                }
+                catch (InvalidMessageException)
+                {
+                    // Native messages produced before EventTypeId became an
+                    // application property still carry it in MessageContent.
+                }
+
+                return GetContent()?.EventContent?.EventTypeId;
+            }
         }
 
         public string DeadLetterReason

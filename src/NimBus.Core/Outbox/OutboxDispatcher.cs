@@ -82,12 +82,25 @@ namespace NimBus.Core.Outbox
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // Sending and checkpointing are separate operations. Preserve any
-                // sends that completed before cancellation so the next poll does not
-                // publish them again; this bookkeeping must outlive the canceled poll.
+                // Sending and checkpointing are separate operations. Complete the
+                // idempotent checkpoint without the canceled polling token, whether
+                // cancellation interrupted sending or a partially-applied checkpoint.
                 if (dispatched.Count > 0)
                 {
-                    await _outbox.MarkAsDispatchedAsync(dispatched, CancellationToken.None);
+                    try
+                    {
+                        await _outbox.MarkAsDispatchedAsync(dispatched, CancellationToken.None);
+                    }
+                    catch (Exception)
+                    {
+                        // The caller's cancellation remains the primary outcome. The
+                        // pending rows may be sent again under the outbox's at-least-once
+                        // delivery contract, but shutdown must not be reported as a
+                        // dispatch failure because bookkeeping also became unavailable.
+                        _logger.LogWarning(
+                            "Could not checkpoint {DispatchedCount} outbox message(s) sent before cancellation",
+                            dispatched.Count);
+                    }
                 }
 
                 throw;

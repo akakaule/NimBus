@@ -92,15 +92,28 @@ public sealed class CosmosDbClientUnitTests
         var logger = new CapturingLogger();
         var container = new FakeContainerAdapter
         {
-            UpsertException = new CosmosException("throttled", HttpStatusCode.TooManyRequests, 0, "activity-1", 0),
+            UpsertException = new CosmosException(
+                "server=tcp:secret-host;database=secret-db",
+                HttpStatusCode.TooManyRequests,
+                0,
+                "activity-1",
+                0),
         };
         var client = new CosmosDbClient(new FakeCosmosClientAdapter(container), logger);
 
         await Assert.ThrowsExactlyAsync<RequestLimitException>(
             () => client.SetEndpointMetadata(new EndpointMetadata { EndpointId = "ep-1" }));
 
-        Assert.IsTrue(logger.Entries.Any(e => e.Level == LogLevel.Warning && e.Exception is null),
+        Assert.IsTrue(logger.Entries.Any(e =>
+                e.Level == LogLevel.Warning &&
+                e.Exception is null &&
+                e.Message.Contains("ep-1", StringComparison.Ordinal)),
             "Transient upserts should be observable without attaching the provider exception, which may contain account details.");
+        Assert.IsFalse(logger.Entries.Any(e =>
+                e.Message.Contains("secret-host", StringComparison.Ordinal) ||
+                e.Message.Contains("secret-db", StringComparison.Ordinal) ||
+                e.Message.Contains("activity-1", StringComparison.Ordinal)),
+            "Contextual warnings must not expose Cosmos account, database, or activity details.");
     }
 
     [TestMethod]
@@ -208,7 +221,8 @@ public sealed class CosmosDbClientUnitTests
             => throw new NotSupportedException();
 
         public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions requestOptions = null)
-            => throw UpsertException ?? new NotSupportedException();
+            => CosmosExceptionTranslation.TranslateTransientAsync(
+                () => Task.FromException<ItemResponse<T>>(UpsertException ?? new NotSupportedException()));
 
         public Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default)
             => throw new NotSupportedException();

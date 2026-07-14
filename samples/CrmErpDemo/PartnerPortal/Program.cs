@@ -35,12 +35,31 @@ var leadIntervalSeconds = int.TryParse(Environment.GetEnvironmentVariable("PARTN
 var sendInvalid = string.Equals(Environment.GetEnvironmentVariable("PARTNER_SEND_INVALID"), "true", StringComparison.OrdinalIgnoreCase);
 
 await using var client = new ServiceBusClient(connectionString);
+using var shutdown = new CancellationTokenSource();
+
+ConsoleCancelEventHandler cancelHandler = (_, e) =>
+{
+    e.Cancel = true;
+    shutdown.Cancel();
+};
+Console.CancelKeyPress += cancelHandler;
 
 Console.WriteLine($"PartnerPortal started (no NimBus reference). Publishing a lead to '{partnerInboundTopic}' every {leadIntervalSeconds}s; listening on {erpTopic}/{captureSubscription}. Ctrl+C to stop.");
 
-await Task.WhenAll(PublishLeadsAsync(), ConsumeErpCloudEventsAsync());
+try
+{
+    await Program.RunSupervisedAsync(PublishLeadsAsync, ConsumeErpCloudEventsAsync, shutdown.Token);
+}
+catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
+{
+    // Expected on Ctrl+C.
+}
+finally
+{
+    Console.CancelKeyPress -= cancelHandler;
+}
 
-async Task PublishLeadsAsync()
+async Task PublishLeadsAsync(CancellationToken cancellationToken)
 {
     var firstNames = new[] { "Ada", "Grace", "Alan", "Edsger", "Barbara", "Donald" };
     var lastNames = new[] { "Lovelace", "Hopper", "Turing", "Dijkstra", "Liskov", "Knuth" };
@@ -64,7 +83,7 @@ async Task PublishLeadsAsync()
         invalid.ApplicationProperties["ce-type"] = leadEventType;
         try
         {
-            await sender.SendMessageAsync(invalid);
+            await sender.SendMessageAsync(invalid, cancellationToken);
             Console.WriteLine("[publish] Sent one INVALID CloudEvent (missing ce-source) to demo dead-lettering.");
         }
         catch (Exception ex) when (IsTransient(ex))
@@ -74,7 +93,7 @@ async Task PublishLeadsAsync()
     }
 
     var iteration = 0;
-    while (true)
+    while (!cancellationToken.IsCancellationRequested)
     {
         try
         {
@@ -103,7 +122,7 @@ async Task PublishLeadsAsync()
             message.ApplicationProperties["ce-type"] = leadEventType;
             message.ApplicationProperties["ce-time"] = DateTimeOffset.UtcNow.ToString("o");
 
-            await sender.SendMessageAsync(message);
+            await sender.SendMessageAsync(message, cancellationToken);
             Console.WriteLine($"[publish] Sent lead {lead.LeadId} ({lead.FirstName} {lead.LastName}, {lead.CompanyName}) as CloudEvent '{leadEventType}' to {partnerInboundTopic}.");
         }
         catch (Exception ex) when (IsTransient(ex))
@@ -113,68 +132,95 @@ async Task PublishLeadsAsync()
             Console.WriteLine($"[publish] Transient Service Bus error, retrying next tick: {ex.Message}");
         }
 
-        await Task.Delay(TimeSpan.FromSeconds(leadIntervalSeconds));
+        await Task.Delay(TimeSpan.FromSeconds(leadIntervalSeconds), cancellationToken);
     }
 }
 
-async Task ConsumeErpCloudEventsAsync()
+async Task ConsumeErpCloudEventsAsync(CancellationToken cancellationToken)
 {
     await using var receiver = client.CreateReceiver(erpTopic, captureSubscription);
 
-    while (true)
+    while (!cancellationToken.IsCancellationRequested)
     {
-        ServiceBusReceivedMessage? message;
         try
         {
-            message = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(30));
+            var message = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(30), cancellationToken);
+
+            if (message is null)
+            {
+                continue;
+            }
+
+            if (string.Equals(message.ContentType, structuredContentType, StringComparison.OrdinalIgnoreCase))
+            {
+                // Structured content mode: the entire CloudEvent (context attributes + data)
+                // is the JSON body.
+                Console.WriteLine("[consume] Structured CloudEvent received:");
+                Console.WriteLine(message.Body.ToString());
+            }
+            else if (message.ApplicationProperties.ContainsKey($"{cloudEventsPropertyPrefix}specversion")
+                || message.ApplicationProperties.ContainsKey("ce-specversion"))
+            {
+                // Binary content mode: CloudEvents context attributes ride as "cloudEvents:*"
+                // application properties (the AMQP CloudEvents binding); the body is the raw
+                // domain-event JSON and message.ContentType carries datacontenttype.
+                Console.WriteLine($"[consume] Binary CloudEvent received (datacontenttype={message.ContentType}):");
+                foreach (var property in message.ApplicationProperties)
+                {
+                    if (property.Key.StartsWith(cloudEventsPropertyPrefix, StringComparison.Ordinal)
+                        || property.Key.StartsWith("ce-", StringComparison.Ordinal))
+                    {
+                        Console.WriteLine($"  {property.Key} = {property.Value}");
+                    }
+                }
+                Console.WriteLine($"  data = {Encoding.UTF8.GetString(message.Body)}");
+            }
+            else
+            {
+                // Belt-and-braces: the capture rule already excludes response/retry envelopes,
+                // but if a non-CloudEvents message slips through, don't poison the subscription.
+                Console.WriteLine($"[consume] Skipping non-CloudEvents message {message.MessageId}.");
+            }
+
+            await receiver.CompleteMessageAsync(message, cancellationToken);
         }
         catch (Exception ex) when (IsTransient(ex))
         {
-            // See the publish loop — emulator warm-up drops connections; retry.
+            // Receive and completion share this retry boundary. The emulator can drop
+            // either operation while warming up, and the client reconnects itself.
             Console.WriteLine($"[consume] Transient Service Bus error, retrying in 5s: {ex.Message}");
-            await Task.Delay(TimeSpan.FromSeconds(5));
-            continue;
+            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
         }
-
-        if (message is null)
-        {
-            continue;
-        }
-
-        if (string.Equals(message.ContentType, structuredContentType, StringComparison.OrdinalIgnoreCase))
-        {
-            // Structured content mode: the entire CloudEvent (context attributes + data)
-            // is the JSON body.
-            Console.WriteLine("[consume] Structured CloudEvent received:");
-            Console.WriteLine(message.Body.ToString());
-        }
-        else if (message.ApplicationProperties.ContainsKey($"{cloudEventsPropertyPrefix}specversion")
-            || message.ApplicationProperties.ContainsKey("ce-specversion"))
-        {
-            // Binary content mode: CloudEvents context attributes ride as "cloudEvents:*"
-            // application properties (the AMQP CloudEvents binding); the body is the raw
-            // domain-event JSON and message.ContentType carries datacontenttype.
-            Console.WriteLine($"[consume] Binary CloudEvent received (datacontenttype={message.ContentType}):");
-            foreach (var property in message.ApplicationProperties)
-            {
-                if (property.Key.StartsWith(cloudEventsPropertyPrefix, StringComparison.Ordinal)
-                    || property.Key.StartsWith("ce-", StringComparison.Ordinal))
-                {
-                    Console.WriteLine($"  {property.Key} = {property.Value}");
-                }
-            }
-            Console.WriteLine($"  data = {Encoding.UTF8.GetString(message.Body)}");
-        }
-        else
-        {
-            // Belt-and-braces: the capture rule already excludes response/retry envelopes,
-            // but if a non-CloudEvents message slips through, don't poison the subscription.
-            Console.WriteLine($"[consume] Skipping non-CloudEvents message {message.MessageId}.");
-        }
-
-        await receiver.CompleteMessageAsync(message);
     }
 }
 
 static bool IsTransient(Exception ex) =>
     ex is ServiceBusException or System.IO.IOException or System.Net.Sockets.SocketException or TimeoutException;
+
+internal partial class Program
+{
+    internal static async Task RunSupervisedAsync(
+        Func<CancellationToken, Task> publisher,
+        Func<CancellationToken, Task> consumer,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(publisher);
+        ArgumentNullException.ThrowIfNull(consumer);
+
+        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var publisherTask = RunLoopAsync(publisher, linkedCancellation.Token);
+        var consumerTask = RunLoopAsync(consumer, linkedCancellation.Token);
+
+        await Task.WhenAny(publisherTask, consumerTask);
+        linkedCancellation.Cancel();
+
+        // WhenAll observes both tasks, gives faults precedence over the sibling's expected
+        // cancellation, and does not return until the canceled sibling has shut down.
+        await Task.WhenAll(publisherTask, consumerTask);
+    }
+
+    private static async Task RunLoopAsync(
+        Func<CancellationToken, Task> loop,
+        CancellationToken cancellationToken) =>
+        await loop(cancellationToken);
+}

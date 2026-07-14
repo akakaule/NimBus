@@ -82,7 +82,7 @@ public class EventHandlerProviderTests
     }
 
     [TestMethod]
-    public async Task DiAwareDynamicHandler_ScopedDependency_IsDisposedAfterMessage()
+    public async Task ScopedDynamicHandler_DependencyIsResolvedPerMessageAndDisposedAsynchronously()
     {
         var services = new ServiceCollection();
         var probes = new List<ScopedProbe>();
@@ -93,20 +93,49 @@ public class EventHandlerProviderTests
             return probe;
         });
         var builder = new NimBusSubscriberBuilder(services);
-        builder.AddDynamicHandler(DynamicEventType, serviceProvider =>
+        builder.AddScopedDynamicHandler(DynamicEventType, serviceProvider =>
             new ScopedDynamicHandler(serviceProvider.GetRequiredService<ScopedProbe>()));
         await using var root = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var provider = new EventHandlerProvider(root.GetRequiredService<IServiceScopeFactory>());
         Register(builder, root, provider);
 
         await provider.Handle(MessageContextStub.ForEventType(DynamicEventType, "{}"));
+        await provider.Handle(MessageContextStub.ForEventType(DynamicEventType, "{}"));
 
-        Assert.AreEqual(1, probes.Count);
-        Assert.IsTrue(probes[0].IsDisposed);
+        Assert.AreEqual(2, probes.Count);
+        Assert.AreNotSame(probes[0], probes[1]);
+        Assert.IsTrue(probes.All(probe => probe.IsDisposed));
     }
 
     [TestMethod]
-    public async Task DiAwareFallbackHandler_ScopedDependency_IsDisposedAfterMessage()
+    public async Task DiAwareDynamicHandler_FactoryIsInvokedOnceAndHandlerRetainsStateAcrossMessages()
+    {
+        var services = new ServiceCollection();
+        var factoryCalls = 0;
+        StatefulDynamicHandler? handler = null;
+        var builder = new NimBusSubscriberBuilder(services);
+        builder.AddDynamicHandler(DynamicEventType, _ =>
+        {
+            factoryCalls++;
+            handler = new StatefulDynamicHandler();
+            return handler;
+        });
+        await using var root = services.BuildServiceProvider();
+        var provider = new EventHandlerProvider(root.GetRequiredService<IServiceScopeFactory>());
+        Register(builder, root, provider);
+
+        Assert.AreEqual(1, factoryCalls);
+        Assert.IsNotNull(handler);
+
+        await provider.Handle(MessageContextStub.ForEventType(DynamicEventType, "{}"));
+        await provider.Handle(MessageContextStub.ForEventType(DynamicEventType, "{}"));
+
+        Assert.AreEqual(1, factoryCalls);
+        Assert.AreEqual(2, handler.HandleCalls);
+    }
+
+    [TestMethod]
+    public async Task ScopedDynamicFallbackHandler_DependencyIsResolvedPerMessageAndDisposedAsynchronously()
     {
         var services = new ServiceCollection();
         var probes = new List<ScopedProbe>();
@@ -117,16 +146,45 @@ public class EventHandlerProviderTests
             return probe;
         });
         var builder = new NimBusSubscriberBuilder(services);
-        builder.AddDynamicFallbackHandler(serviceProvider =>
+        builder.AddScopedDynamicFallbackHandler(serviceProvider =>
             new ScopedDynamicHandler(serviceProvider.GetRequiredService<ScopedProbe>()));
         await using var root = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var provider = new EventHandlerProvider(root.GetRequiredService<IServiceScopeFactory>());
         Register(builder, root, provider);
 
         await provider.Handle(MessageContextStub.ForEventType("unregistered.event.v1", "{}"));
+        await provider.Handle(MessageContextStub.ForEventType("another.unregistered.event.v1", "{}"));
 
-        Assert.AreEqual(1, probes.Count);
-        Assert.IsTrue(probes[0].IsDisposed);
+        Assert.AreEqual(2, probes.Count);
+        Assert.AreNotSame(probes[0], probes[1]);
+        Assert.IsTrue(probes.All(probe => probe.IsDisposed));
+    }
+
+    [TestMethod]
+    public async Task DiAwareFallbackHandler_FactoryIsInvokedOnceAndHandlerRetainsStateAcrossMessages()
+    {
+        var services = new ServiceCollection();
+        var factoryCalls = 0;
+        StatefulDynamicHandler? handler = null;
+        var builder = new NimBusSubscriberBuilder(services);
+        builder.AddDynamicFallbackHandler(_ =>
+        {
+            factoryCalls++;
+            handler = new StatefulDynamicHandler();
+            return handler;
+        });
+        await using var root = services.BuildServiceProvider();
+        var provider = new EventHandlerProvider(root.GetRequiredService<IServiceScopeFactory>());
+        Register(builder, root, provider);
+
+        Assert.AreEqual(1, factoryCalls);
+        Assert.IsNotNull(handler);
+
+        await provider.Handle(MessageContextStub.ForEventType("unregistered.event.v1", "{}"));
+        await provider.Handle(MessageContextStub.ForEventType("another.unregistered.event.v1", "{}"));
+
+        Assert.AreEqual(1, factoryCalls);
+        Assert.AreEqual(2, handler.HandleCalls);
     }
 
     private static void Register(
@@ -170,6 +228,17 @@ public class EventHandlerProviderTests
         public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
         {
             Assert.IsFalse(_probe.IsDisposed);
+            return Task.CompletedTask;
+        }
+    }
+
+    public sealed class StatefulDynamicHandler : IEventJsonHandler
+    {
+        public int HandleCalls { get; private set; }
+
+        public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
+        {
+            HandleCalls++;
             return Task.CompletedTask;
         }
     }

@@ -437,6 +437,40 @@ public class OutboxDispatcherTests
         Assert.AreEqual(0, logger.ErrorCalls, "Cooperative cancellation must not be recorded as an outbox failure");
     }
 
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task DispatchPending_CancellationDuringCheckpoint_RetriesIdempotently(bool commitsBeforeCancellation)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var outbox = new CancelDuringCheckpointOutbox(cancellation, commitsBeforeCancellation);
+        outbox.AddPending(CreatePendingMessage("out-1", "msg-1", "s1"));
+        outbox.AddPending(CreatePendingMessage("out-2", "msg-2", "s2"));
+        var dispatcher = new OutboxDispatcher(outbox, new RecordingSender());
+
+        await Assert.ThrowsExactlyAsync<TaskCanceledException>(
+            () => dispatcher.DispatchPendingAsync(cancellationToken: cancellation.Token));
+
+        Assert.AreEqual(2, outbox.MarkCalls, "The cancelled checkpoint must be completed with a non-cancelled idempotent retry");
+        string[] expectedDispatchedIds = ["out-1", "out-2"];
+        CollectionAssert.AreEqual(expectedDispatchedIds, outbox.DispatchedIds);
+    }
+
+    [TestMethod]
+    public async Task DispatchPending_CompensatingCheckpointFailure_PreservesCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var outbox = new FailingCheckpointOutbox();
+        outbox.AddPending(CreatePendingMessage("out-1", "msg-1", "s1"));
+        outbox.AddPending(CreatePendingMessage("out-2", "msg-2", "s2"));
+        var dispatcher = new OutboxDispatcher(outbox, new CancelOnSecondSendSender(cancellation));
+
+        await Assert.ThrowsExactlyAsync<TaskCanceledException>(
+            () => dispatcher.DispatchPendingAsync(cancellationToken: cancellation.Token));
+
+        Assert.AreEqual(1, outbox.MarkCalls);
+    }
+
     private static OutboxMessage CreatePendingMessage(string outboxId, string messageId, string sessionId) => new()
     {
         Id = outboxId,
@@ -486,14 +520,25 @@ file sealed class InMemoryOutbox : IOutbox
     public Task MarkAsDispatchedAsync(string id, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        DispatchedIds.Add(id);
+        if (!DispatchedIds.Contains(id, StringComparer.Ordinal))
+        {
+            DispatchedIds.Add(id);
+        }
+
         return Task.CompletedTask;
     }
 
     public Task MarkAsDispatchedAsync(IEnumerable<string> ids, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        DispatchedIds.AddRange(ids);
+        foreach (var id in ids)
+        {
+            if (!DispatchedIds.Contains(id, StringComparer.Ordinal))
+            {
+                DispatchedIds.Add(id);
+            }
+        }
+
         return Task.CompletedTask;
     }
 }
@@ -524,6 +569,91 @@ file sealed class RecordingSender : ISender
     }
 
     public Task CancelScheduledMessage(long sequenceNumber, CancellationToken ct = default) => Task.CompletedTask;
+}
+
+file sealed class CancelDuringCheckpointOutbox : IOutbox
+{
+    private readonly CancellationTokenSource _cancellation;
+    private readonly bool _commitsBeforeCancellation;
+    private readonly List<OutboxMessage> _pending = new();
+
+    public CancelDuringCheckpointOutbox(
+        CancellationTokenSource cancellation,
+        bool commitsBeforeCancellation)
+    {
+        _cancellation = cancellation;
+        _commitsBeforeCancellation = commitsBeforeCancellation;
+    }
+
+    public int MarkCalls { get; private set; }
+    public List<string> DispatchedIds { get; } = new();
+
+    public void AddPending(OutboxMessage message) => _pending.Add(message);
+
+    public Task StoreAsync(OutboxMessage message, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public Task StoreBatchAsync(IEnumerable<OutboxMessage> messages, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public Task<IReadOnlyList<OutboxMessage>> GetPendingAsync(int batchSize, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<OutboxMessage>>(_pending.Take(batchSize).ToList());
+
+    public Task MarkAsDispatchedAsync(string id, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public Task MarkAsDispatchedAsync(IEnumerable<string> ids, CancellationToken cancellationToken = default)
+    {
+        MarkCalls++;
+        var idList = ids.ToList();
+        if (MarkCalls == 1)
+        {
+            if (_commitsBeforeCancellation)
+            {
+                DispatchedIds.Add(idList[0]);
+            }
+
+            _cancellation.Cancel();
+            return Task.FromCanceled(cancellationToken);
+        }
+
+        foreach (var id in idList)
+        {
+            if (!DispatchedIds.Contains(id, StringComparer.Ordinal))
+            {
+                DispatchedIds.Add(id);
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+}
+
+file sealed class FailingCheckpointOutbox : IOutbox
+{
+    private readonly List<OutboxMessage> _pending = new();
+
+    public int MarkCalls { get; private set; }
+
+    public void AddPending(OutboxMessage message) => _pending.Add(message);
+
+    public Task StoreAsync(OutboxMessage message, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public Task StoreBatchAsync(IEnumerable<OutboxMessage> messages, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public Task<IReadOnlyList<OutboxMessage>> GetPendingAsync(int batchSize, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<OutboxMessage>>(_pending.Take(batchSize).ToList());
+
+    public Task MarkAsDispatchedAsync(string id, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public Task MarkAsDispatchedAsync(IEnumerable<string> ids, CancellationToken cancellationToken = default)
+    {
+        MarkCalls++;
+        throw new InvalidOperationException("Checkpoint unavailable");
+    }
 }
 
 file sealed class CancellationAwareSender : ISender

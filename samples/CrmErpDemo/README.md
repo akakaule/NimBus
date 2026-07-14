@@ -450,7 +450,7 @@ erp-web (Error mode / Service mode toggle)
 
 ## Showcase: CloudEvents partner interop (external system, zero NimBus)
 
-NimBus's [CloudEvents 1.0 interoperability](../../docs/cloudevents.md) ([ADR-013](../../docs/adr/013-cloudevents-interoperability.md)) is demonstrated in both directions by **PartnerPortal** — a simulated external third-party system that deliberately references only `Azure.Messaging.ServiceBus` (zero NimBus packages):
+NimBus's [CloudEvents 1.0 interoperability](../../docs/cloudevents.md) ([ADR-013](../../docs/adr/013-cloudevents-interoperability.md)) is demonstrated in both directions by **PartnerPortal** — a simulated external third-party system that deliberately references only `Azure.Messaging.ServiceBus` (zero NimBus packages). A visual guide with sequence diagrams and wire-format examples is in [docs/partner-interop.md](docs/partner-interop.md):
 
 ```
 PartnerPortal (no NimBus)

@@ -88,6 +88,41 @@ public class MessageContextTests
     }
 
     [TestMethod]
+    public void EventTypeId_WhenPropertyMissingAndBodyIsMalformed_ReturnsNull()
+    {
+        var msg = CreateDefaultMessage();
+        msg.Body = Encoding.UTF8.GetBytes("{not-json");
+        var ctx = new MessageContext(msg, new FakeServiceBusSession());
+
+        Assert.IsNull(ctx.EventTypeId);
+    }
+
+    [TestMethod]
+    public void EventTypeId_WhenPropertyEmptyAndBodyIsForeignJson_ReturnsNull()
+    {
+        var msg = CreateDefaultMessage();
+        msg.UserProperties[UserPropertyName.EventTypeId.ToString()] = string.Empty;
+        msg.Body = Encoding.UTF8.GetBytes("\"foreign-body\"");
+        var ctx = new MessageContext(msg, new FakeServiceBusSession());
+
+        Assert.IsNull(ctx.EventTypeId);
+    }
+
+    [TestMethod]
+    public void EventTypeId_MalformedBody_ReadMultipleTimes_ParsesOnlyOnce()
+    {
+        var msg = CreateDefaultMessage();
+        msg.Body = Encoding.UTF8.GetBytes("{not-json");
+        var ctx = new MessageContext(msg, new FakeServiceBusSession());
+
+        Assert.IsNull(ctx.EventTypeId);
+        Assert.IsNull(ctx.EventTypeId);
+        Assert.IsNull(ctx.EventTypeId);
+
+        Assert.AreEqual(1, msg.BodyReadCount, "A failed body parse should be memoized per context.");
+    }
+
+    [TestMethod]
     public async Task SubscriberPipeline_LegacyBodyOnlyEventTypeId_ReachesTypedHandlerWithNormalizedMetadata()
     {
         var session = new FakeServiceBusSession();

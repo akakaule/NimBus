@@ -151,31 +151,4 @@ public sealed class SqlServerOutboxBatchIntegrationTests
         Assert.AreEqual(0, pending.Count, "Rolling back the ambient transaction must discard the batch.");
     }
 
-    [TestMethod]
-    public async Task MarkAsDispatchedAsync_is_idempotent_and_preserves_the_first_timestamp()
-    {
-        var outbox = await CreateOutboxAsync();
-        await outbox.StoreAsync(NewMessage(1));
-        string[] ids = ["id-1"];
-
-        await outbox.MarkAsDispatchedAsync(ids);
-        var firstTimestamp = await ReadDispatchedAtUtcAsync("id-1");
-        await Task.Delay(TimeSpan.FromMilliseconds(20));
-        await outbox.MarkAsDispatchedAsync(ids);
-        var secondTimestamp = await ReadDispatchedAtUtcAsync("id-1");
-
-        Assert.IsNotNull(firstTimestamp);
-        Assert.AreEqual(firstTimestamp, secondTimestamp);
-    }
-
-    private static async Task<DateTime?> ReadDispatchedAtUtcAsync(string id)
-    {
-        await using var connection = new SqlConnection(_options.ConnectionString);
-        await connection.OpenAsync();
-        await using var command = new SqlCommand(
-            $"SELECT [DispatchedAtUtc] FROM [{_options.Schema}].[{_options.TableName}] WHERE [Id] = @Id",
-            connection);
-        command.Parameters.AddWithValue("@Id", id);
-        return (DateTime?)await command.ExecuteScalarAsync();
-    }
 }

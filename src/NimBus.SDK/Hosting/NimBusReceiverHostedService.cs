@@ -201,6 +201,14 @@ namespace NimBus.SDK.Hosting
                         _options.TopicName,
                         _options.SubscriptionName);
                 }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Error while disposing NimBus receiver for {Topic}/{Subscription}",
+                        _options.TopicName,
+                        _options.SubscriptionName);
+                }
             }
 
             if (cancellationException is not null)

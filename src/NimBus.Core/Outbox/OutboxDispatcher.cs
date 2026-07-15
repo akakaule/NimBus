@@ -17,14 +17,37 @@ namespace NimBus.Core.Outbox
     /// </summary>
     public class OutboxDispatcher
     {
+        private static readonly TimeSpan DefaultCompensatingCheckpointTimeout = TimeSpan.FromSeconds(5);
         private readonly IOutbox _outbox;
         private readonly ISender _sender;
         private readonly ILogger<OutboxDispatcher> _logger;
+        private readonly TimeSpan _compensatingCheckpointTimeout;
 
-        public OutboxDispatcher(IOutbox outbox, ISender sender, ILogger<OutboxDispatcher> logger = null)
+        public OutboxDispatcher(IOutbox outbox, ISender sender, ILogger<OutboxDispatcher>? logger = null)
+            : this(outbox, sender, DefaultCompensatingCheckpointTimeout, logger)
+        {
+        }
+
+        /// <summary>
+        /// Initializes an outbox dispatcher with a bounded timeout for the best-effort
+        /// checkpoint performed after cooperative cancellation.
+        /// </summary>
+        /// <param name="outbox">The transactional outbox store.</param>
+        /// <param name="sender">The sender used to dispatch stored messages.</param>
+        /// <param name="compensatingCheckpointTimeout">Maximum time to wait for the cancellation checkpoint.</param>
+        /// <param name="logger">Optional dispatcher logger.</param>
+        public OutboxDispatcher(
+            IOutbox outbox,
+            ISender sender,
+            TimeSpan compensatingCheckpointTimeout,
+            ILogger<OutboxDispatcher>? logger = null)
         {
             _outbox = outbox ?? throw new ArgumentNullException(nameof(outbox));
             _sender = sender ?? throw new ArgumentNullException(nameof(sender));
+            if (compensatingCheckpointTimeout <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(compensatingCheckpointTimeout));
+
+            _compensatingCheckpointTimeout = compensatingCheckpointTimeout;
             _logger = logger ?? NullLogger<OutboxDispatcher>.Instance;
         }
 
@@ -87,17 +110,25 @@ namespace NimBus.Core.Outbox
                 // cancellation interrupted sending or a partially-applied checkpoint.
                 if (dispatched.Count > 0)
                 {
+                    Task? checkpointTask = null;
                     try
                     {
-                        await _outbox.MarkAsDispatchedAsync(dispatched, CancellationToken.None);
+                        checkpointTask = _outbox.MarkAsDispatchedAsync(dispatched, CancellationToken.None);
+                        await checkpointTask.WaitAsync(_compensatingCheckpointTimeout);
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
+                        if (ex is TimeoutException && checkpointTask is not null)
+                        {
+                            _ = ObserveCompensatingCheckpointAsync(checkpointTask, dispatched.Count);
+                        }
+
                         // The caller's cancellation remains the primary outcome. The
                         // pending rows may be sent again under the outbox's at-least-once
                         // delivery contract, but shutdown must not be reported as a
                         // dispatch failure because bookkeeping also became unavailable.
                         _logger.LogWarning(
+                            ex,
                             "Could not checkpoint {DispatchedCount} outbox message(s) sent before cancellation",
                             dispatched.Count);
                     }
@@ -107,6 +138,21 @@ namespace NimBus.Core.Outbox
             }
 
             return dispatched.Count;
+        }
+
+        private async Task ObserveCompensatingCheckpointAsync(Task checkpointTask, int dispatchedCount)
+        {
+            try
+            {
+                await checkpointTask.ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Outbox checkpoint completed with an error after shutdown stopped waiting for {DispatchedCount} message(s)",
+                    dispatchedCount);
+            }
         }
 
         private async Task<bool> DispatchOneAsync(OutboxMessage outboxMessage, CancellationToken cancellationToken)

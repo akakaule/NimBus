@@ -463,12 +463,39 @@ public class OutboxDispatcherTests
         var outbox = new FailingCheckpointOutbox();
         outbox.AddPending(CreatePendingMessage("out-1", "msg-1", "s1"));
         outbox.AddPending(CreatePendingMessage("out-2", "msg-2", "s2"));
-        var dispatcher = new OutboxDispatcher(outbox, new CancelOnSecondSendSender(cancellation));
+        var logger = new OutboxRecordingLogger();
+        var dispatcher = new OutboxDispatcher(outbox, new CancelOnSecondSendSender(cancellation), logger);
 
         await Assert.ThrowsExactlyAsync<TaskCanceledException>(
             () => dispatcher.DispatchPendingAsync(cancellationToken: cancellation.Token));
 
         Assert.AreEqual(1, outbox.MarkCalls);
+        Assert.AreEqual(1, logger.WarningCalls);
+        Assert.IsInstanceOfType<InvalidOperationException>(logger.LastWarningException);
+        Assert.AreEqual("Checkpoint unavailable", logger.LastWarningException!.Message);
+    }
+
+    [TestMethod]
+    public async Task DispatchPending_HangingCompensatingCheckpoint_TimesOutAndPreservesCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var outbox = new HangingCheckpointOutbox();
+        outbox.AddPending(CreatePendingMessage("out-1", "msg-1", "s1"));
+        outbox.AddPending(CreatePendingMessage("out-2", "msg-2", "s2"));
+        var logger = new OutboxRecordingLogger();
+        var dispatcher = new OutboxDispatcher(
+            outbox,
+            new CancelOnSecondSendSender(cancellation),
+            TimeSpan.FromMilliseconds(50),
+            logger);
+
+        await Assert.ThrowsExactlyAsync<TaskCanceledException>(
+            () => dispatcher.DispatchPendingAsync(cancellationToken: cancellation.Token)
+                .WaitAsync(TimeSpan.FromSeconds(1)));
+
+        Assert.AreEqual(1, outbox.MarkCalls);
+        Assert.AreEqual(1, logger.WarningCalls);
+        Assert.IsInstanceOfType<TimeoutException>(logger.LastWarningException);
     }
 
     private static OutboxMessage CreatePendingMessage(string outboxId, string messageId, string sessionId) => new()
@@ -656,6 +683,34 @@ file sealed class FailingCheckpointOutbox : IOutbox
     }
 }
 
+file sealed class HangingCheckpointOutbox : IOutbox
+{
+    private readonly List<OutboxMessage> _pending = new();
+    private readonly TaskCompletionSource _checkpoint = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public int MarkCalls { get; private set; }
+
+    public void AddPending(OutboxMessage message) => _pending.Add(message);
+
+    public Task StoreAsync(OutboxMessage message, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public Task StoreBatchAsync(IEnumerable<OutboxMessage> messages, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public Task<IReadOnlyList<OutboxMessage>> GetPendingAsync(int batchSize, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<OutboxMessage>>(_pending.Take(batchSize).ToList());
+
+    public Task MarkAsDispatchedAsync(string id, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public Task MarkAsDispatchedAsync(IEnumerable<string> ids, CancellationToken cancellationToken = default)
+    {
+        MarkCalls++;
+        return _checkpoint.Task;
+    }
+}
+
 file sealed class CancellationAwareSender : ISender
 {
     public int SendCalls { get; private set; }
@@ -709,6 +764,8 @@ file sealed class CancelOnSecondSendSender : ISender
 file sealed class OutboxRecordingLogger : Microsoft.Extensions.Logging.ILogger<OutboxDispatcher>
 {
     public int ErrorCalls { get; private set; }
+    public int WarningCalls { get; private set; }
+    public Exception? LastWarningException { get; private set; }
 
     public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
 
@@ -723,6 +780,11 @@ file sealed class OutboxRecordingLogger : Microsoft.Extensions.Logging.ILogger<O
     {
         if (logLevel == Microsoft.Extensions.Logging.LogLevel.Error)
             ErrorCalls++;
+        if (logLevel == Microsoft.Extensions.Logging.LogLevel.Warning)
+        {
+            WarningCalls++;
+            LastWarningException = exception;
+        }
     }
 
     private sealed class NullScope : IDisposable

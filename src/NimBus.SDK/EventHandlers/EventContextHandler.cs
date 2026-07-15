@@ -35,9 +35,13 @@ namespace NimBus.SDK.EventHandlers
             if (context == null) throw new ArgumentNullException(nameof(context));
 
             var eventTypeId = context.EventTypeId;
+            if (string.IsNullOrEmpty(eventTypeId))
+            {
+                throw new EventHandlerNotFoundException("Message does not define an EventTypeId.");
+            }
+
             var bodyEventTypeId = context.MessageContent?.EventContent?.EventTypeId;
-            if (!string.IsNullOrEmpty(eventTypeId)
-                && !string.IsNullOrEmpty(bodyEventTypeId)
+            if (!string.IsNullOrEmpty(bodyEventTypeId)
                 && !string.Equals(eventTypeId, bodyEventTypeId, StringComparison.Ordinal))
             {
                 throw new PermanentFailureException(new InvalidOperationException(
@@ -45,21 +49,9 @@ namespace NimBus.SDK.EventHandlers
                     $"does not match body value '{bodyEventTypeId}'."));
             }
 
-            // Native messages produced before EventTypeId was stamped as an
-            // application property still carry the dispatch key in the body.
-            // A non-empty context value remains authoritative, and the mismatch
-            // guard above prevents a conflicting body value from changing routing.
-            var dispatchEventTypeId = string.IsNullOrEmpty(eventTypeId)
-                ? bodyEventTypeId
-                : eventTypeId;
-            if (string.IsNullOrEmpty(dispatchEventTypeId))
-            {
-                throw new EventHandlerNotFoundException("Message does not define an EventTypeId.");
-            }
-
             if (_scopeFactory == null)
             {
-                await GetHandler(dispatchEventTypeId, serviceProvider: null).Handle(context, cancellationToken);
+                await GetHandler(eventTypeId, serviceProvider: null).Handle(context, cancellationToken);
                 return;
             }
 
@@ -67,7 +59,7 @@ namespace NimBus.SDK.EventHandlers
             // Async disposal is required for dependencies that implement only
             // IAsyncDisposable (database contexts and clients commonly do).
             await using var scope = _scopeFactory.CreateAsyncScope();
-            await GetHandler(dispatchEventTypeId, scope.ServiceProvider).Handle(context, cancellationToken);
+            await GetHandler(eventTypeId, scope.ServiceProvider).Handle(context, cancellationToken);
         }
 
         public void RegisterHandler<T_Event>(Func<IEventHandler<T_Event>> eventHandlerFactory)

@@ -1,8 +1,10 @@
 using System;
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Azure.Cosmos;
+using Microsoft.Extensions.Logging;
 using NimBus.MessageStore.Abstractions;
 
 namespace NimBus.MessageStore;
@@ -29,7 +31,10 @@ internal static class CosmosExceptionTranslation
         _ => false,
     };
 
-    internal static void ThrowIfTransient(CosmosException exception)
+    internal static void ThrowIfTransient(
+        CosmosException exception,
+        ILogger? logger = null,
+        [CallerMemberName] string operation = "")
     {
         if (!IsTransient(exception))
         {
@@ -39,6 +44,17 @@ internal static class CosmosExceptionTranslation
         var retryAfter = exception.RetryAfter > TimeSpan.Zero
             ? exception.RetryAfter
             : null;
+
+        // Log only deliberately selected diagnostic fields while the native
+        // exception is still available. Cosmos exception messages and metadata
+        // can contain account hosts, database names, activity IDs, or payload
+        // details and therefore must not be attached to this warning.
+        logger?.LogWarning(
+            "COSMOS TRANSIENT: Operation: {Operation}, HttpStatusCode: {StatusCode}, RetryAfter: {RetryAfter}",
+            operation,
+            (int)exception.StatusCode,
+            retryAfter);
+
         if (exception.StatusCode == HttpStatusCode.TooManyRequests)
         {
             throw new RequestLimitException(TransientFailureMessage, retryAfter);
@@ -49,7 +65,10 @@ internal static class CosmosExceptionTranslation
         throw new StorageProviderTransientException(TransientFailureMessage, retryAfter);
     }
 
-    public static async Task<T> TranslateTransientAsync<T>(Func<Task<T>> action)
+    public static async Task<T> TranslateTransientAsync<T>(
+        Func<Task<T>> action,
+        ILogger? logger = null,
+        [CallerMemberName] string operation = "")
     {
         try
         {
@@ -57,12 +76,15 @@ internal static class CosmosExceptionTranslation
         }
         catch (CosmosException ex)
         {
-            ThrowIfTransient(ex);
+            ThrowIfTransient(ex, logger, operation);
             throw;
         }
     }
 
-    public static async Task TranslateTransientAsync(Func<Task> action)
+    public static async Task TranslateTransientAsync(
+        Func<Task> action,
+        ILogger? logger = null,
+        [CallerMemberName] string operation = "")
     {
         try
         {
@@ -70,24 +92,34 @@ internal static class CosmosExceptionTranslation
         }
         catch (CosmosException ex)
         {
-            ThrowIfTransient(ex);
+            ThrowIfTransient(ex, logger, operation);
             throw;
         }
     }
 
-    internal static FeedIterator<T> Wrap<T>(FeedIterator<T> iterator) =>
-        new TransientTranslatingFeedIterator<T>(iterator);
+    internal static FeedIterator<T> Wrap<T>(
+        FeedIterator<T> iterator,
+        ILogger? logger = null,
+        [CallerMemberName] string operation = "") =>
+        new TransientTranslatingFeedIterator<T>(iterator, logger, operation);
 
     private sealed class TransientTranslatingFeedIterator<T> : FeedIterator<T>
     {
         private readonly FeedIterator<T> _inner;
+        private readonly ILogger? _logger;
+        private readonly string _operation;
 
-        public TransientTranslatingFeedIterator(FeedIterator<T> inner) => _inner = inner;
+        public TransientTranslatingFeedIterator(FeedIterator<T> inner, ILogger? logger, string operation)
+        {
+            _inner = inner;
+            _logger = logger;
+            _operation = operation;
+        }
 
         public override bool HasMoreResults => _inner.HasMoreResults;
 
         public override Task<FeedResponse<T>> ReadNextAsync(CancellationToken cancellationToken = default) =>
-            TranslateTransientAsync(() => _inner.ReadNextAsync(cancellationToken));
+            TranslateTransientAsync(() => _inner.ReadNextAsync(cancellationToken), _logger, _operation);
 
         protected override void Dispose(bool disposing)
         {
@@ -100,7 +132,11 @@ internal static class CosmosExceptionTranslation
         }
     }
 
-    public static async Task<T> TranslateAsync<T>(Func<Task<T>> action, string? endpointId = null)
+    public static async Task<T> TranslateAsync<T>(
+        Func<Task<T>> action,
+        string? endpointId = null,
+        ILogger? logger = null,
+        [CallerMemberName] string operation = "")
     {
         try
         {
@@ -112,12 +148,16 @@ internal static class CosmosExceptionTranslation
         }
         catch (CosmosException ex) when (IsTransient(ex))
         {
-            ThrowIfTransient(ex);
+            ThrowIfTransient(ex, logger, operation);
             throw;
         }
     }
 
-    public static async Task TranslateAsync(Func<Task> action, string? endpointId = null)
+    public static async Task TranslateAsync(
+        Func<Task> action,
+        string? endpointId = null,
+        ILogger? logger = null,
+        [CallerMemberName] string operation = "")
     {
         try
         {
@@ -129,7 +169,7 @@ internal static class CosmosExceptionTranslation
         }
         catch (CosmosException ex) when (IsTransient(ex))
         {
-            ThrowIfTransient(ex);
+            ThrowIfTransient(ex, logger, operation);
             throw;
         }
     }

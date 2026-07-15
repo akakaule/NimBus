@@ -146,8 +146,8 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
     public CosmosDbClient(CosmosClient cosmosClient, ILogger<CosmosDbClient> logger = null)
     {
-        _cosmosClient = new CosmosClientAdapter(cosmosClient);
         _logger = logger;
+        _cosmosClient = new CosmosClientAdapter(cosmosClient, _logger);
     }
 
     public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient> logger = null)
@@ -159,8 +159,8 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     [Obsolete("Use the Microsoft.Extensions.Logging constructor — NimBus standardizes on Microsoft.Extensions.Logging (ADR-006). This bridge remains for callers that still pass a Serilog logger.")]
     public CosmosDbClient(CosmosClient cosmosClient, Serilog.ILogger logger)
     {
-        _cosmosClient = new CosmosClientAdapter(cosmosClient);
         _logger = logger is null ? null : new SerilogBridgeLogger(logger);
+        _cosmosClient = new CosmosClientAdapter(cosmosClient, _logger);
     }
 
     [Obsolete("Use the Microsoft.Extensions.Logging constructor — NimBus standardizes on Microsoft.Extensions.Logging (ADR-006). This bridge remains for callers that still pass a Serilog logger.")]
@@ -379,7 +379,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                     },
                 })
                 .ToFeedIterator();
-            result = CosmosExceptionTranslation.Wrap(result);
+            result = CosmosExceptionTranslation.Wrap(result, _logger);
 
             var pendingEvents = new List<string>();
             var failedEvents = new List<string>();
@@ -498,13 +498,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 "COSMOS UPSERT-RESPONSE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}, Status: {Status}", eventId, sessionId, response.StatusCode, CompletedStatus);
             return true;
         }
-        catch (StorageProviderTransientException)
-        {
-            _logger?.LogWarning(
-                "COSMOS UPSERT-TRANSIENT: EventId: {EventId}, SessionId: {SessionId}, Status: {Status}",
-                eventId, sessionId, CompletedStatus);
-            throw;
-        }
         catch (CosmosException e)
         {
             _logger?.LogError(e,
@@ -533,13 +526,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             _logger?.LogTrace(
                 "COSMOS REMOVE-MESSAGE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}", eventId, sessionId, response.StatusCode);
             return true;
-        }
-        catch (StorageProviderTransientException)
-        {
-            _logger?.LogWarning(
-                "COSMOS REMOVE-MESSAGE-TRANSIENT: EventId: {EventId}, SessionId: {SessionId}",
-                eventId, sessionId);
-            throw;
         }
         catch (CosmosException e)
         {
@@ -945,7 +931,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 },
             })
             .ToFeedIterator();
-        result = CosmosExceptionTranslation.Wrap(result);
+        result = CosmosExceptionTranslation.Wrap(result, _logger);
         var events = new List<UnresolvedEvent>();
         var token = "";
         var effectiveLimit = PaginationLimits.Resolve(maxSearchItemsCount);
@@ -1077,7 +1063,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 .Where(e => e.Status.Equals(PendingStatus, StringComparison.OrdinalIgnoreCase))
                 .Where(e => !e.Deleted.HasValue || !e.Deleted.Value)
                 .OrderByDescending(e => e.Event.UpdatedAt).ToFeedIterator();
-            queryResult = CosmosExceptionTranslation.Wrap(queryResult);
+            queryResult = CosmosExceptionTranslation.Wrap(queryResult, _logger);
             while (queryResult.HasMoreResults)
             {
                 var eventDbo = await queryResult.ReadNextAsync();
@@ -1380,7 +1366,8 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     {
         var db = _cosmosClient.GetDatabase(DatabaseId);
         return await CosmosExceptionTranslation.TranslateTransientAsync(
-            () => db.CreateContainerIfNotExistsAsync(containerId, partitionKeyPath));
+            () => db.CreateContainerIfNotExistsAsync(containerId, partitionKeyPath),
+            _logger);
     }
 
     private Task<ICosmosContainerAdapter> GetEndpointContainer(string endpointId)
@@ -1647,13 +1634,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         {
             await container.UpsertItemAsync(doc, new PartitionKey(doc.EventId), SuppressContentOnWrite);
         }
-        catch (StorageProviderTransientException)
-        {
-            _logger?.LogWarning(
-                "COSMOS STORE-MESSAGE-TRANSIENT: EventId: {EventId}, MessageId: {MessageId}",
-                message.EventId, message.MessageId);
-            throw;
-        }
         catch (CosmosException e)
         {
             _logger?.LogError(e, "COSMOS STORE-MESSAGE-ERROR: EventId: {EventId}, MessageId: {MessageId}", message.EventId, message.MessageId);
@@ -1703,7 +1683,8 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         while (result.HasMoreResults)
         {
             var feed = await CosmosExceptionTranslation.TranslateTransientAsync(
-                () => result.ReadNextAsync());
+                () => result.ReadNextAsync(),
+                _logger);
             foreach (var doc in feed)
             {
                 messages.Add(doc.Message);
@@ -1796,13 +1777,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         try
         {
             await container.UpsertItemAsync(doc, new PartitionKey(doc.EventId), SuppressContentOnWrite);
-        }
-        catch (StorageProviderTransientException)
-        {
-            _logger?.LogWarning(
-                "COSMOS STORE-AUDIT-TRANSIENT: EventId: {EventId}",
-                eventId);
-            throw;
         }
         catch (CosmosException e)
         {
@@ -1980,13 +1954,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 "COSMOS UPSERT-RESPONSE: EventId: {EventId}, SessionId: {SessionId}, HttpStatusCode: {StatusCode}, Status: {Status}", eventId, sessionId, response.StatusCode, status);
             return true;
         }
-        catch (StorageProviderTransientException)
-        {
-            _logger?.LogWarning(
-                "COSMOS UPSERT-TRANSIENT: EventId: {EventId}, SessionId: {SessionId}, Status: {Status}",
-                eventId, sessionId, status);
-            throw;
-        }
         catch (CosmosException e)
         {
             _logger?.LogError(e,
@@ -2076,13 +2043,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
             _logger?.LogTrace(
                 "COSMOS UPSERT-RESPONSE: Metadata upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointMetadata.EndpointId, response.StatusCode);
             return true;
-        }
-        catch (StorageProviderTransientException)
-        {
-            _logger?.LogWarning(
-                "COSMOS UPSERT-TRANSIENT: Metadata upsert. Id: {EndpointId}",
-                endpointMetadata.EndpointId);
-            throw;
         }
         catch (CosmosException e)
         {

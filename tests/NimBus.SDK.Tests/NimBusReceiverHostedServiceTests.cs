@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.SDK.Hosting;
@@ -188,6 +189,54 @@ namespace NimBus.SDK.Tests
         }
 
         [TestMethod]
+        public async Task RecoveryRestart_DisposeFailure_IsLoggedAndDoesNotFaultTheLoop()
+        {
+            var client = new RecordingServiceBusClient();
+            var logger = new RecordingLogger();
+            var disposalFailure = new ServiceBusException(
+                "dead connection",
+                ServiceBusFailureReason.ServiceCommunicationProblem);
+            var service = new TestableNimBusReceiverHostedService(
+                client,
+                new NoopServiceBusAdapter(),
+                new NimBusReceiverOptions
+                {
+                    TopicName = "orders",
+                    SubscriptionName = "orders",
+                    RecoverableErrorRestartThreshold = 1,
+                    RecoverableErrorDelay = TimeSpan.Zero,
+                    ProcessorRestartDelay = TimeSpan.Zero,
+                },
+                logger);
+            service.FailNextDisposal(disposalFailure);
+
+            using var cts = new CancellationTokenSource();
+            var runTask = service.RunProcessorLoopAsync(cts.Token);
+
+            try
+            {
+                await WaitUntilAsync(() => client.Processors.Count == 1, () => $"ProcessorCount={client.Processors.Count}");
+
+                await service.HandleProcessorErrorAsync(CreateErrorArgs(
+                    new ObjectDisposedException("connection"),
+                    ServiceBusErrorSource.AcceptSession));
+
+                await WaitUntilAsync(
+                    () => client.Processors.Count >= 2 || runTask.IsCompleted,
+                    () => $"ProcessorCount={client.Processors.Count}, Status={runTask.Status}");
+
+                Assert.IsFalse(runTask.IsFaulted, $"Receiver loop faulted instead of restarting: {runTask.Exception?.GetBaseException().Message}");
+                Assert.IsTrue(client.Processors.Count >= 2, "A disposal failure must not prevent creation of the replacement processor");
+                Assert.IsTrue(logger.WarningCalls >= 2, "Recovery and the tolerated disposal failure must both be logged");
+                Assert.AreSame(disposalFailure, logger.LastWarningException, "The tolerated disposal failure must be logged");
+            }
+            finally
+            {
+                await StopServiceAsync(cts, runTask);
+            }
+        }
+
+        [TestMethod]
         public async Task CancelledProcessorStop_StillDisposesCapturedProcessor()
         {
             var client = new RecordingServiceBusClient();
@@ -354,12 +403,13 @@ namespace NimBus.SDK.Tests
         private sealed class TestableNimBusReceiverHostedService : NimBusReceiverHostedService
         {
             private TaskCompletionSource? _disposeCompletion;
+            private Exception? _disposeFailure;
 
             public TestableNimBusReceiverHostedService(
                 ServiceBusClient client,
                 IServiceBusAdapter adapter,
                 NimBusReceiverOptions options,
-                NullLogger<NimBusReceiverHostedService> logger)
+                ILogger<NimBusReceiverHostedService> logger)
                 : base(client, adapter, options, logger)
             {
             }
@@ -376,12 +426,52 @@ namespace NimBus.SDK.Tests
                 _disposeCompletion?.TrySetResult();
             }
 
+            public void FailNextDisposal(Exception exception)
+            {
+                _disposeFailure = exception;
+            }
+
             protected override ValueTask DisposeProcessorAsync(ServiceBusSessionProcessor processor)
             {
                 DisposeCalls++;
+                var disposalFailure = Interlocked.Exchange(ref _disposeFailure, null);
+                if (disposalFailure is not null)
+                {
+                    return new ValueTask(Task.FromException(disposalFailure));
+                }
+
                 return _disposeCompletion is null
                     ? default
                     : new ValueTask(_disposeCompletion.Task);
+            }
+        }
+
+        private sealed class RecordingLogger : ILogger<NimBusReceiverHostedService>
+        {
+            private int _warningCalls;
+
+            public int WarningCalls => Volatile.Read(ref _warningCalls);
+            public Exception? LastWarningException { get; private set; }
+
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                if (logLevel != LogLevel.Warning)
+                {
+                    return;
+                }
+
+                LastWarningException = exception;
+                Interlocked.Increment(ref _warningCalls);
             }
         }
 

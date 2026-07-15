@@ -20,6 +20,10 @@ namespace NimBus.MessageStore.CosmosDb.Tests;
 [TestClass]
 public sealed class CosmosDbClientUnitTests
 {
+    private static readonly string[] SingleEndpointId = ["ep-1"];
+    private static readonly string[] SensitiveDiagnosticFragments =
+        ["secret-host", "secret-db", "activity-1"];
+
     [TestMethod]
     public async Task DownloadEndpointStateCount_stamps_EventTime_in_utc()
     {
@@ -87,17 +91,16 @@ public sealed class CosmosDbClientUnitTests
     }
 
     [TestMethod]
-    public async Task SetEndpointMetadata_reports_throttled_upserts_without_logging_provider_details()
+    public async Task SetEndpointMetadata_reports_status_retry_and_safe_context_without_provider_details()
     {
         var logger = new CapturingLogger();
-        var container = new FakeContainerAdapter
+        var container = new FakeContainerAdapter(logger)
         {
-            UpsertException = new CosmosException(
+            UpsertException = new TestCosmosException(
                 "server=tcp:secret-host;database=secret-db",
                 HttpStatusCode.TooManyRequests,
-                0,
                 "activity-1",
-                0),
+                TimeSpan.FromSeconds(7)),
         };
         var client = new CosmosDbClient(new FakeCosmosClientAdapter(container), logger);
 
@@ -107,13 +110,26 @@ public sealed class CosmosDbClientUnitTests
         Assert.IsTrue(logger.Entries.Any(e =>
                 e.Level == LogLevel.Warning &&
                 e.Exception is null &&
-                e.Message.Contains("ep-1", StringComparison.Ordinal)),
-            "Transient upserts should be observable without attaching the provider exception, which may contain account details.");
-        Assert.IsFalse(logger.Entries.Any(e =>
-                e.Message.Contains("secret-host", StringComparison.Ordinal) ||
-                e.Message.Contains("secret-db", StringComparison.Ordinal) ||
-                e.Message.Contains("activity-1", StringComparison.Ordinal)),
+                e.Message.Contains("UpsertItemAsync", StringComparison.Ordinal) &&
+                e.Message.Contains("429", StringComparison.Ordinal) &&
+                e.Message.Contains("00:00:07", StringComparison.Ordinal)),
+            "Transient upserts should include safe operation, status, and retry diagnostics without attaching the provider exception.");
+        Assert.IsFalse(logger.Entries.Any(e => ContainsSensitiveDetails(e.Message, e.Exception)),
             "Contextual warnings must not expose Cosmos account, database, or activity details.");
+    }
+
+    [TestMethod]
+    public async Task Read_query_and_read_many_transients_are_logged_at_the_translation_boundary()
+    {
+        await AssertTransientOperationLogged(
+            "ReadItemAsync",
+            client => client.GetEndpointMetadata("ep-1"));
+        await AssertTransientOperationLogged(
+            "ReadManyItemsAsync",
+            client => client.GetMetadatas(SingleEndpointId)!);
+        await AssertTransientOperationLogged(
+            "GetItemQueryIterator",
+            client => client.GetMetadatas());
     }
 
     [TestMethod]
@@ -156,6 +172,38 @@ public sealed class CosmosDbClientUnitTests
 
         Assert.IsTrue(inner.IsDisposed);
     }
+
+    private static async Task AssertTransientOperationLogged(
+        string expectedOperation,
+        Func<CosmosDbClient, Task> operation)
+    {
+        var logger = new CapturingLogger();
+        var container = new FakeContainerAdapter(logger)
+        {
+            OperationException = new TestCosmosException(
+                "server=tcp:secret-host;database=secret-db",
+                HttpStatusCode.ServiceUnavailable,
+                "activity-1",
+                null),
+        };
+        var client = new CosmosDbClient(new FakeCosmosClientAdapter(container), logger);
+
+        await Assert.ThrowsExactlyAsync<StorageProviderTransientException>(() => operation(client));
+
+        Assert.IsTrue(logger.Entries.Any(e =>
+                e.Level == LogLevel.Warning &&
+                e.Exception is null &&
+                e.Message.Contains(expectedOperation, StringComparison.Ordinal) &&
+                e.Message.Contains("503", StringComparison.Ordinal)),
+            $"{expectedOperation} should log its operation and status at the shared transient translation boundary.");
+        Assert.IsFalse(logger.Entries.Any(e => ContainsSensitiveDetails(e.Message, e.Exception)),
+            "Transient diagnostics must not expose Cosmos host, database, activity, or provider-exception details.");
+    }
+
+    private static bool ContainsSensitiveDetails(string message, Exception? exception) =>
+        SensitiveDiagnosticFragments.Any(fragment =>
+            message.Contains(fragment, StringComparison.Ordinal) ||
+            exception?.ToString().Contains(fragment, StringComparison.Ordinal) == true);
 
     private sealed class CapturingLogger : ILogger<CosmosDbClient>
     {
@@ -201,28 +249,48 @@ public sealed class CosmosDbClientUnitTests
     {
     }
 
+    private sealed class TestCosmosException : CosmosException
+    {
+        private readonly TimeSpan? _retryAfter;
+
+        public TestCosmosException(string message, HttpStatusCode statusCode, string activityId, TimeSpan? retryAfter)
+            : base(message, statusCode, 0, activityId, 0)
+        {
+            _retryAfter = retryAfter;
+        }
+
+        public override TimeSpan? RetryAfter => _retryAfter;
+    }
+
     private sealed class FakeContainerAdapter : ICosmosContainerAdapter
     {
+        private readonly ILogger? _logger;
+
+        public FakeContainerAdapter(ILogger? logger = null) => _logger = logger;
+
         public Exception UpsertException { get; set; }
 
+        public Exception? OperationException { get; set; }
+
         public FeedIterator<T> GetItemQueryIterator<T>(QueryDefinition queryDefinition)
-            => new EmptyFeedIterator<T>();
+            => CreateQueryIterator<T>();
 
         public FeedIterator<T> GetItemQueryIterator<T>(QueryDefinition queryDefinition, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
-            => new EmptyFeedIterator<T>();
+            => CreateQueryIterator<T>();
 
         public FeedIterator<T> GetItemQueryIterator<T>(string queryText)
-            => new EmptyFeedIterator<T>();
+            => CreateQueryIterator<T>();
 
         public FeedIterator<T> GetItemQueryIterator<T>(string queryText, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
-            => new EmptyFeedIterator<T>();
+            => CreateQueryIterator<T>();
 
         public IOrderedQueryable<T> GetItemLinqQueryable<T>(bool allowSynchronousQueryExecution = false, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
             => throw new NotSupportedException();
 
         public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions requestOptions = null)
             => CosmosExceptionTranslation.TranslateTransientAsync(
-                () => Task.FromException<ItemResponse<T>>(UpsertException ?? new NotSupportedException()));
+                () => Task.FromException<ItemResponse<T>>(UpsertException ?? new NotSupportedException()),
+                _logger);
 
         public Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default)
             => throw new NotSupportedException();
@@ -231,10 +299,12 @@ public sealed class CosmosDbClientUnitTests
             => throw new NotSupportedException();
 
         public Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey)
-            => throw new NotSupportedException();
+            => CosmosExceptionTranslation.TranslateTransientAsync(
+                () => Task.FromException<ItemResponse<T>>(OperationException ?? new NotSupportedException()),
+                _logger);
 
         public Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey, ItemRequestOptions requestOptions)
-            => throw new NotSupportedException();
+            => ReadItemAsync<T>(id, partitionKey);
 
         public Task<ItemResponse<T>> PatchItemAsync<T>(string id, PartitionKey partitionKey, IReadOnlyList<PatchOperation> patchOperations)
             => throw new NotSupportedException();
@@ -243,7 +313,16 @@ public sealed class CosmosDbClientUnitTests
             => Task.FromResult<ContainerResponse>(new FakeContainerResponse());
 
         public Task<FeedResponse<T>> ReadManyItemsAsync<T>(IReadOnlyList<(string id, PartitionKey partitionKey)> items)
-            => throw new NotSupportedException();
+            => CosmosExceptionTranslation.TranslateTransientAsync(
+                () => Task.FromException<FeedResponse<T>>(OperationException ?? new NotSupportedException()),
+                _logger);
+
+        private FeedIterator<T> CreateQueryIterator<T>() => OperationException is null
+            ? new EmptyFeedIterator<T>()
+            : CosmosExceptionTranslation.Wrap(
+                new ThrowingFeedIterator<T>(OperationException),
+                _logger,
+                "GetItemQueryIterator");
     }
 
     private sealed class EmptyFeedIterator<T> : FeedIterator<T>
@@ -268,5 +347,17 @@ public sealed class CosmosDbClientUnitTests
             IsDisposed = disposing;
             base.Dispose(disposing);
         }
+    }
+
+    private sealed class ThrowingFeedIterator<T> : FeedIterator<T>
+    {
+        private readonly Exception _exception;
+
+        public ThrowingFeedIterator(Exception exception) => _exception = exception;
+
+        public override bool HasMoreResults => true;
+
+        public override Task<FeedResponse<T>> ReadNextAsync(CancellationToken cancellationToken = default)
+            => Task.FromException<FeedResponse<T>>(_exception);
     }
 }

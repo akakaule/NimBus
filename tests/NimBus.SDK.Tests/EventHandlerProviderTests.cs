@@ -57,6 +57,23 @@ public class EventHandlerProviderTests
     }
 
     [TestMethod]
+    public async Task Handle_MissingContextType_DoesNotFallbackToBodyType()
+    {
+        var provider = new EventHandlerProvider();
+        var calls = 0;
+        provider.RegisterHandler("body.event.v1", () => new DelegateEventJsonHandler((_, _) =>
+        {
+            calls++;
+            return Task.CompletedTask;
+        }));
+
+        await Assert.ThrowsExactlyAsync<EventHandlerNotFoundException>(() => provider.Handle(
+            MessageContextStub.ForEventTypes(string.Empty, "body.event.v1", "{}")));
+
+        Assert.AreEqual(0, calls);
+    }
+
+    [TestMethod]
     public async Task TypedHandler_ScopedDependency_IsResolvedPerMessageAndDisposedAsynchronously()
     {
         var services = new ServiceCollection();

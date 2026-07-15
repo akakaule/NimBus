@@ -563,11 +563,14 @@ namespace NimBus.ServiceBus
         // MessageContext is constructed per received message and used single-threaded,
         // so the deserialized body is memoized to avoid re-decoding + re-deserializing
         // the entire body on every access (it is read 3-4x on the hot path). A separate
-        // "loaded" flag guards a genuinely-null payload from re-running each call.
+        // "loaded" flag guards null and invalid payloads from re-running each call.
         private MessageContent GetContent()
         {
             if (!_contentLoaded)
             {
+                // Record the attempt before parsing so an invalid body cannot trigger
+                // repeated decoding, parsing, and exceptions on failure paths.
+                _contentLoaded = true;
                 EnsureCloudEventEvaluated();
                 if (_isCloudEvent)
                 {
@@ -585,9 +588,18 @@ namespace NimBus.ServiceBus
                 }
                 else
                 {
-                    _content = JsonConvert.DeserializeObject<MessageContent>(Encoding.UTF8.GetString(_sbMessage.Body), Core.Messages.Constants.SafeJsonSettings);
+                    try
+                    {
+                        _content = JsonConvert.DeserializeObject<MessageContent>(Encoding.UTF8.GetString(_sbMessage.Body), Core.Messages.Constants.SafeJsonSettings);
+                    }
+                    catch (JsonException)
+                    {
+                        // EventTypeId is read by lifecycle and dead-letter paths. Treat
+                        // a foreign or malformed body as missing content so those paths
+                        // can reject the message without a property getter throwing.
+                        _content = null;
+                    }
                 }
-                _contentLoaded = true;
             }
 
             return _content;

@@ -79,9 +79,16 @@ namespace NimBus.Broker.Services
                 // the only way for the WebApp to learn about updates; this works for any
                 // storage provider including SQL Server which has no Change Feed.
                 try { await _notifier.NotifyEndpointStateChangedAsync(messageEntity.EndpointId, cancellationToken); }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                 catch (Exception notifyEx) { _logger?.Warning(notifyEx, "Resolver: state-change notification failed (non-fatal)"); }
 
                 await messageContext.Complete(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Host shutdown is not a resolver failure. Leave the message unsettled
+                // so the transport can stop cooperatively and redeliver it later.
+                throw;
             }
             catch (StorageProviderTransientException ex)
             {

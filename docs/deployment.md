@@ -28,6 +28,7 @@ Every path ultimately performs the same three layers, in order:
 **Tooling**
 
 - Azure CLI ≥ 2.60.0 **required** for Flex Consumption deploys ([Microsoft-documented minimum](https://learn.microsoft.com/azure/azure-functions/flex-consumption-how-to); `nb` checks this before publishing). ≥ 2.70 recommended; `.bicepparam` support needs ≥ 2.53
+- Bicep CLI ≥ 0.35.1 **required for every deployment path** because the templates use secure outputs. Check with `az bicep version` and update with `az bicep upgrade` ([secure-output requirement](https://learn.microsoft.com/azure/azure-resource-manager/bicep/outputs#secure-outputs))
 - .NET 10 SDK and Node.js 22 wherever the apps are built (pipelines set these up themselves)
 
 **RBAC for the deploying identity.** The Bicep creates role assignments (`Microsoft.Authorization/roleAssignments`: Azure Service Bus Data Owner and, on Flex Consumption, Storage Blob Data Owner), and plain **Contributor cannot write role assignments**. On the target resource group, grant the pipeline/service principal either:
@@ -119,7 +120,7 @@ The repository ships [pipelines/azure-pipelines-deploy.yml](../pipelines/azure-p
 
 For platform teams that provision Azure resources with their own tooling. Raw Bicep covers **layer 1 only** — the Service Bus topology and app deployment still need the `nb` CLI afterwards.
 
-Sample parameter files live in [`deploy/bicep/parameters/`](../deploy/bicep/parameters/) (`.bicepparam` deployment needs Azure CLI ≥ 2.53, Bicep ≥ 0.22.6).
+Sample parameter files live in [`deploy/bicep/parameters/`](../deploy/bicep/parameters/) (`.bicepparam` deployment needs Azure CLI ≥ 2.53; these templates require Bicep ≥ 0.35.1 for secure outputs).
 
 ### 4.1 Core infrastructure
 

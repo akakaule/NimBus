@@ -350,9 +350,16 @@ public interface IOutbox
     Task StoreAsync(OutboxMessage message, CancellationToken ct = default);
     Task StoreBatchAsync(IEnumerable<OutboxMessage> messages, CancellationToken ct = default);
     Task<IReadOnlyList<OutboxMessage>> GetPendingAsync(int maxCount, CancellationToken ct = default);
+    Task MarkAsDispatchedAsync(string messageId, CancellationToken ct = default);
     Task MarkAsDispatchedAsync(IEnumerable<string> messageIds, CancellationToken ct = default);
 }
 ```
+
+Custom providers must return pending rows in creation order and implement both
+checkpoint overloads idempotently. Repeating a checkpoint—including after a
+partially committed batch—must succeed and preserve each row's original
+dispatch timestamp. Provider authors can execute this contract by deriving a
+test fixture from `NimBus.Testing.Conformance.OutboxConformanceTests`.
 
 SQL Server implementation: `NimBus.Outbox.SqlServer`. Register via:
 
@@ -374,7 +381,7 @@ Full context available to middleware and internal handlers:
 |---|---|---|
 | `EventId` | `string` | Unique event identifier |
 | `MessageId` | `string` | Unique message identifier |
-| `EventTypeId` | `string` | Event type name |
+| `EventTypeId` | `string` | Authoritative routing type; legacy native messages fall back to the body value when the application property is absent |
 | `MessageType` | `MessageType` | Enum: EventRequest, RetryRequest, etc. |
 | `SessionId` | `string` | Session for ordered processing |
 | `CorrelationId` | `string` | Correlation tracking |

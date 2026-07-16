@@ -590,7 +590,9 @@ namespace NimBus.ServiceBus
                 {
                     try
                     {
-                        _content = JsonConvert.DeserializeObject<MessageContent>(Encoding.UTF8.GetString(_sbMessage.Body), Core.Messages.Constants.SafeJsonSettings);
+                        _content = JsonConvert.DeserializeObject<MessageContent>(
+                            Encoding.UTF8.GetString(_sbMessage.Body),
+                            Core.Messages.Constants.CreateSafeJsonSettings());
                     }
                     catch (JsonException)
                     {

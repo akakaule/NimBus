@@ -40,7 +40,18 @@ namespace NimBus.SDK.EventHandlers
                 throw new EventHandlerNotFoundException("Message does not define an EventTypeId.");
             }
 
-            var bodyEventTypeId = context.MessageContent?.EventContent?.EventTypeId;
+            string? bodyEventTypeId;
+            try
+            {
+                bodyEventTypeId = context.MessageContent?.EventContent?.EventTypeId;
+            }
+            catch (InvalidMessageException exception)
+            {
+                // A known routed type with an unreadable body is malformed input,
+                // not a transient handler failure.
+                throw new PermanentFailureException(exception);
+            }
+
             if (!string.IsNullOrEmpty(bodyEventTypeId)
                 && !string.Equals(eventTypeId, bodyEventTypeId, StringComparison.Ordinal))
             {

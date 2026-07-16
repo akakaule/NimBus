@@ -106,7 +106,7 @@ namespace NimBus.SDK.Hosting
                 }
                 finally
                 {
-                    await StopAndDisposeProcessorAsync(CancellationToken.None).ConfigureAwait(false);
+                    await StopAndDisposeProcessorForLoopAsync(stoppingToken).ConfigureAwait(false);
                 }
 
                 if (!stoppingToken.IsCancellationRequested && _options.ProcessorRestartDelay > TimeSpan.Zero)
@@ -155,15 +155,21 @@ namespace NimBus.SDK.Hosting
             }
 
             OperationCanceledException? cancellationException = null;
+            Task? stopTask = null;
             try
             {
                 try
                 {
-                    await processor.StopProcessingAsync(cancellationToken).ConfigureAwait(false);
+                    stopTask = processor.StopProcessingAsync(cancellationToken);
+                    await stopTask.WaitAsync(cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
                 {
                     cancellationException = ex;
+                    if (stopTask is not null)
+                    {
+                        _ = ObserveProcessorStopAsync(stopTask);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -214,6 +220,54 @@ namespace NimBus.SDK.Hosting
             if (cancellationException is not null)
             {
                 ExceptionDispatchInfo.Capture(cancellationException).Throw();
+            }
+        }
+
+        private async Task StopAndDisposeProcessorForLoopAsync(CancellationToken stoppingToken)
+        {
+            if (stoppingToken.IsCancellationRequested)
+            {
+                try
+                {
+                    await StopAndDisposeProcessorAsync(stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    // The loop has already observed host shutdown. Cleanup was
+                    // initiated and any incomplete task is observed in the background.
+                }
+
+                return;
+            }
+
+            using var cleanupCancellation = new CancellationTokenSource(_options.ProcessorShutdownTimeout);
+            try
+            {
+                await StopAndDisposeProcessorAsync(cleanupCancellation.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cleanupCancellation.IsCancellationRequested)
+            {
+                _logger.LogWarning(
+                    "Timed out after {Timeout} while stopping or disposing NimBus receiver for {Topic}/{Subscription}; continuing processor recovery",
+                    _options.ProcessorShutdownTimeout,
+                    _options.TopicName,
+                    _options.SubscriptionName);
+            }
+        }
+
+        private async Task ObserveProcessorStopAsync(Task stopTask)
+        {
+            try
+            {
+                await stopTask.ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "NimBus receiver stop completed with an error after recovery stopped waiting for {Topic}/{Subscription}",
+                    _options.TopicName,
+                    _options.SubscriptionName);
             }
         }
 
@@ -410,6 +464,11 @@ namespace NimBus.SDK.Hosting
             if (options.ProcessorRestartDelay < TimeSpan.Zero)
             {
                 throw new ArgumentOutOfRangeException(nameof(options.ProcessorRestartDelay), "ProcessorRestartDelay cannot be negative.");
+            }
+
+            if (options.ProcessorShutdownTimeout <= TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(options.ProcessorShutdownTimeout), "ProcessorShutdownTimeout must be greater than zero.");
             }
         }
 

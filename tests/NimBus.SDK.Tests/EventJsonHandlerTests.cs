@@ -4,6 +4,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
+using NimBus.Core.Messages.Exceptions;
 using NimBus.SDK.EventHandlers;
 
 namespace NimBus.SDK.Tests;
@@ -29,9 +30,10 @@ public class EventJsonHandlerTests
         var handler = new RecordingHandler();
         var sut = new EventJsonHandler<TestEvent>(handler);
 
-        await Assert.ThrowsExactlyAsync<JsonSerializationException>(() =>
+        var exception = await Assert.ThrowsExactlyAsync<PermanentFailureException>(() =>
             sut.Handle(MessageContextStub.ForEventType(nameof(TestEvent), "null")));
 
+        Assert.IsInstanceOfType<JsonSerializationException>(exception.InnerException);
         Assert.AreEqual(0, handler.Calls);
     }
 
@@ -41,9 +43,10 @@ public class EventJsonHandlerTests
         var handler = new RecordingHandler();
         var sut = new EventJsonHandler<TestEvent>(handler);
 
-        await Assert.ThrowsExactlyAsync<JsonSerializationException>(() =>
+        var exception = await Assert.ThrowsExactlyAsync<PermanentFailureException>(() =>
             sut.Handle(MessageContextStub.ForEventType(nameof(TestEvent), null!)));
 
+        Assert.IsInstanceOfType<JsonSerializationException>(exception.InnerException);
         Assert.AreEqual(0, handler.Calls);
     }
 
@@ -53,9 +56,10 @@ public class EventJsonHandlerTests
         var handler = new RecordingHandler();
         var sut = new EventJsonHandler<TestEvent>(handler);
 
-        await Assert.ThrowsExactlyAsync<JsonSerializationException>(() =>
+        var exception = await Assert.ThrowsExactlyAsync<PermanentFailureException>(() =>
             sut.Handle(MessageContextStub.ForEventType(nameof(TestEvent), "{")));
 
+        Assert.IsInstanceOfType<JsonSerializationException>(exception.InnerException);
         Assert.AreEqual(0, handler.Calls);
     }
 
@@ -68,9 +72,10 @@ public class EventJsonHandlerTests
             + "{}"
             + new string('}', 33);
 
-        await Assert.ThrowsExactlyAsync<JsonReaderException>(() =>
+        var exception = await Assert.ThrowsExactlyAsync<PermanentFailureException>(() =>
             sut.Handle(MessageContextStub.ForEventType(nameof(TestEvent), json)));
 
+        Assert.IsInstanceOfType<JsonReaderException>(exception.InnerException);
         Assert.AreEqual(0, handler.Calls);
     }
 
@@ -100,6 +105,32 @@ public class EventJsonHandlerTests
         finally
         {
             JsonConvert.DefaultSettings = previousSettings;
+        }
+    }
+
+    [TestMethod]
+    [DoNotParallelize]
+    public async Task Handle_MutatedPublicSafeSettings_DoesNotEnableTypeNameHandling()
+    {
+        var previousTypeNameHandling = Constants.SafeJsonSettings.TypeNameHandling;
+        HostilePayload.ConstructionCount = 0;
+        Constants.SafeJsonSettings.TypeNameHandling = TypeNameHandling.Auto;
+        try
+        {
+            var handler = new RecordingHandler();
+            var sut = new EventJsonHandler<TestEvent>(handler);
+            var typeName = $"{typeof(HostilePayload).FullName}, {typeof(HostilePayload).Assembly.GetName().Name}";
+            var json = $"{{\"Value\":{{\"$type\":{JsonConvert.SerializeObject(typeName)}}}}}";
+
+            await sut.Handle(MessageContextStub.ForEventType(nameof(TestEvent), json));
+
+            Assert.AreEqual(1, handler.Calls);
+            Assert.AreEqual(0, HostilePayload.ConstructionCount);
+            Assert.IsInstanceOfType<JObject>(handler.LastEvent?.Value);
+        }
+        finally
+        {
+            Constants.SafeJsonSettings.TypeNameHandling = previousTypeNameHandling;
         }
     }
 

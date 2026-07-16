@@ -65,6 +65,22 @@ internal static class CosmosExceptionTranslation
         throw new StorageProviderTransientException(TransientFailureMessage, retryAfter);
     }
 
+    internal static T TranslateTransient<T>(
+        Func<T> action,
+        ILogger? logger = null,
+        [CallerMemberName] string operation = "")
+    {
+        try
+        {
+            return action();
+        }
+        catch (CosmosException ex)
+        {
+            ThrowIfTransient(ex, logger, operation);
+            throw;
+        }
+    }
+
     public static async Task<T> TranslateTransientAsync<T>(
         Func<Task<T>> action,
         ILogger? logger = null,

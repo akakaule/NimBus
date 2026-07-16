@@ -152,8 +152,8 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
     public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient> logger = null)
     {
-        _cosmosClient = cosmosClient;
         _logger = logger;
+        _cosmosClient = new TransientTranslatingCosmosClientAdapter(cosmosClient, _logger);
     }
 
     [Obsolete("Use the Microsoft.Extensions.Logging constructor — NimBus standardizes on Microsoft.Extensions.Logging (ADR-006). This bridge remains for callers that still pass a Serilog logger.")]
@@ -166,8 +166,8 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     [Obsolete("Use the Microsoft.Extensions.Logging constructor — NimBus standardizes on Microsoft.Extensions.Logging (ADR-006). This bridge remains for callers that still pass a Serilog logger.")]
     public CosmosDbClient(ICosmosClientAdapter cosmosClient, Serilog.ILogger logger)
     {
-        _cosmosClient = cosmosClient;
         _logger = logger is null ? null : new SerilogBridgeLogger(logger);
+        _cosmosClient = new TransientTranslatingCosmosClientAdapter(cosmosClient, _logger);
     }
 
     /// <summary>

@@ -346,10 +346,70 @@ public class ResolverServiceTests
         Assert.AreEqual(0, message.CompletedCalls);
     }
 
-    private static ResolverService CreateService(FakeCosmosDbClient? cosmos = null)
+    [TestMethod]
+    public async Task Handle_StoreCancellation_RethrowsWithoutSettlingMessage()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var cosmos = new FakeCosmosDbClient
+        {
+            StoreMessageException = new OperationCanceledException(cancellation.Token),
+        };
+        var message = CreateMessageContext(messageType: MessageType.EventRequest);
+        var service = CreateService(cosmos);
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(
+            () => service.Handle(message, cancellation.Token));
+
+        Assert.AreEqual(0, message.CompletedCalls);
+        Assert.AreEqual(0, message.AbandonCalls);
+        Assert.AreEqual(0, message.DeadLetterCalls);
+        Assert.AreEqual(0, message.ScheduleRedeliveryCalls);
+    }
+
+    [TestMethod]
+    public async Task Handle_NotificationCancellation_RethrowsWithoutCompletingOrDeadLettering()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var notifier = new ThrowingMessageStateChangeNotifier(
+            new OperationCanceledException(cancellation.Token));
+        var message = CreateMessageContext(messageType: MessageType.EventRequest);
+        var service = CreateService(notifier: notifier);
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(
+            () => service.Handle(message, cancellation.Token));
+
+        Assert.AreEqual(0, message.CompletedCalls);
+        Assert.AreEqual(0, message.AbandonCalls);
+        Assert.AreEqual(0, message.DeadLetterCalls);
+        Assert.AreEqual(0, message.ScheduleRedeliveryCalls);
+    }
+
+    [TestMethod]
+    public async Task Handle_CompletionCancellation_RethrowsWithoutDeadLettering()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var message = CreateMessageContext(messageType: MessageType.EventRequest);
+        message.CompleteException = new OperationCanceledException(cancellation.Token);
+        var service = CreateService();
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(
+            () => service.Handle(message, cancellation.Token));
+
+        Assert.AreEqual(1, message.CompletedCalls);
+        Assert.AreEqual(0, message.AbandonCalls);
+        Assert.AreEqual(0, message.DeadLetterCalls);
+        Assert.AreEqual(0, message.ScheduleRedeliveryCalls);
+    }
+
+    private static ResolverService CreateService(
+        FakeCosmosDbClient? cosmos = null,
+        IMessageStateChangeNotifier? notifier = null)
     {
         cosmos ??= new FakeCosmosDbClient();
-        return new ResolverService(cosmos);
+        return new ResolverService(cosmos, notifier ?? new NoopMessageStateChangeNotifier());
     }
 
     private static FakeMessageContext CreateMessageContext(
@@ -421,19 +481,27 @@ public class ResolverServiceTests
         public string CloudEventSubject { get; set; }
 
         public int CompletedCalls { get; private set; }
+        public int AbandonCalls { get; private set; }
         public int DeadLetterCalls { get; private set; }
         public int ScheduleRedeliveryCalls { get; private set; }
         public TimeSpan? LastScheduledDelay { get; private set; }
         public int? LastScheduledRetryCount { get; private set; }
         public string? LastDeadLetterReason { get; private set; }
+        public Exception? CompleteException { get; set; }
 
         public Task Complete(CancellationToken cancellationToken = default)
         {
             CompletedCalls++;
-            return Task.CompletedTask;
+            return CompleteException is null
+                ? Task.CompletedTask
+                : Task.FromException(CompleteException);
         }
 
-        public Task Abandon(TransientException exception) => Task.CompletedTask;
+        public Task Abandon(TransientException exception)
+        {
+            AbandonCalls++;
+            return Task.CompletedTask;
+        }
 
         public Task DeadLetter(string reason, Exception? exception = null, CancellationToken cancellationToken = default)
         {
@@ -466,6 +534,21 @@ public class ResolverServiceTests
             LastScheduledRetryCount = throttleRetryCount;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class ThrowingMessageStateChangeNotifier : IMessageStateChangeNotifier
+    {
+        private readonly Exception _exception;
+
+        public ThrowingMessageStateChangeNotifier(Exception exception)
+        {
+            _exception = exception;
+        }
+
+        public Task NotifyEndpointStateChangedAsync(
+            string endpointId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException(_exception);
     }
 
     internal sealed class FakeCosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.INimBusMessageStore

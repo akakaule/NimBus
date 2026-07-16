@@ -74,6 +74,25 @@ public class EventHandlerProviderTests
     }
 
     [TestMethod]
+    public async Task Handle_InvalidBodyForKnownContextType_IsPermanentFailure()
+    {
+        var provider = new EventHandlerProvider();
+        var calls = 0;
+        provider.RegisterHandler("header.event.v1", () => new DelegateEventJsonHandler((_, _) =>
+        {
+            calls++;
+            return Task.CompletedTask;
+        }));
+        var invalidBody = new InvalidMessageException("MessageContent is null.");
+
+        var exception = await Assert.ThrowsExactlyAsync<PermanentFailureException>(() => provider.Handle(
+            MessageContextStub.WithInvalidContent("header.event.v1", invalidBody)));
+
+        Assert.AreSame(invalidBody, exception.InnerException);
+        Assert.AreEqual(0, calls);
+    }
+
+    [TestMethod]
     public async Task TypedHandler_ScopedDependency_IsResolvedPerMessageAndDisposedAsynchronously()
     {
         var services = new ServiceCollection();

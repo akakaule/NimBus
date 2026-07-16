@@ -1,5 +1,6 @@
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
+using NimBus.Core.Messages.Exceptions;
 using Newtonsoft.Json;
 using System;
 using System.Threading;
@@ -22,12 +23,26 @@ namespace NimBus.SDK.EventHandlers
         {
             if (context == null) throw new ArgumentNullException(nameof(context));
 
-            var eventJson = context.MessageContent?.EventContent?.EventJson
-                ?? throw new JsonSerializationException(
-                    $"Event payload for '{context.EventTypeId}' is missing.");
-            var @event = JsonConvert.DeserializeObject<T_Event>(eventJson, Constants.SafeJsonSettings)
-                ?? throw new JsonSerializationException(
-                    $"Event payload for '{context.EventTypeId}' deserialized to null.");
+            T_Event @event;
+            try
+            {
+                var eventJson = context.MessageContent?.EventContent?.EventJson
+                    ?? throw new JsonSerializationException(
+                        $"Event payload for '{context.EventTypeId}' is missing.");
+                @event = JsonConvert.DeserializeObject<T_Event>(
+                        eventJson,
+                        Constants.CreateSafeJsonSettings())
+                    ?? throw new JsonSerializationException(
+                        $"Event payload for '{context.EventTypeId}' deserialized to null.");
+            }
+            catch (JsonException exception)
+            {
+                // Invalid wire payloads cannot become valid through retry. Normalize
+                // every Newtonsoft parse/serialization failure to the lifecycle's
+                // provider-independent permanent-failure signal.
+                throw new PermanentFailureException(exception);
+            }
+
             var eventHandlercontext = new EventHandlerContext(context)
             {
                 CorrelationId = context.CorrelationId,

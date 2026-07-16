@@ -203,7 +203,9 @@ namespace NimBus.Core.Outbox
                         activity.SetTag(MessagingAttributes.MessageConversationId, outboxMessage.CorrelationId);
                 }
 
-                message = JsonConvert.DeserializeObject<Message>(outboxMessage.Payload, Constants.SafeJsonSettings);
+                message = JsonConvert.DeserializeObject<Message>(
+                    outboxMessage.Payload,
+                    Constants.CreateSafeJsonSettings());
 
                 if (outboxMessage.ScheduledEnqueueTimeUtc.HasValue)
                 {

@@ -94,7 +94,7 @@ public sealed class CosmosDbClientUnitTests
     public async Task SetEndpointMetadata_reports_status_retry_and_safe_context_without_provider_details()
     {
         var logger = new CapturingLogger();
-        var container = new FakeContainerAdapter(logger)
+        var container = new FakeContainerAdapter
         {
             UpsertException = new TestCosmosException(
                 "server=tcp:secret-host;database=secret-db",
@@ -178,7 +178,7 @@ public sealed class CosmosDbClientUnitTests
         Func<CosmosDbClient, Task> operation)
     {
         var logger = new CapturingLogger();
-        var container = new FakeContainerAdapter(logger)
+        var container = new FakeContainerAdapter
         {
             OperationException = new TestCosmosException(
                 "server=tcp:secret-host;database=secret-db",
@@ -264,10 +264,6 @@ public sealed class CosmosDbClientUnitTests
 
     private sealed class FakeContainerAdapter : ICosmosContainerAdapter
     {
-        private readonly ILogger? _logger;
-
-        public FakeContainerAdapter(ILogger? logger = null) => _logger = logger;
-
         public Exception UpsertException { get; set; }
 
         public Exception? OperationException { get; set; }
@@ -288,9 +284,7 @@ public sealed class CosmosDbClientUnitTests
             => throw new NotSupportedException();
 
         public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions requestOptions = null)
-            => CosmosExceptionTranslation.TranslateTransientAsync(
-                () => Task.FromException<ItemResponse<T>>(UpsertException ?? new NotSupportedException()),
-                _logger);
+            => Task.FromException<ItemResponse<T>>(UpsertException ?? new NotSupportedException());
 
         public Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default)
             => throw new NotSupportedException();
@@ -299,9 +293,7 @@ public sealed class CosmosDbClientUnitTests
             => throw new NotSupportedException();
 
         public Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey)
-            => CosmosExceptionTranslation.TranslateTransientAsync(
-                () => Task.FromException<ItemResponse<T>>(OperationException ?? new NotSupportedException()),
-                _logger);
+            => Task.FromException<ItemResponse<T>>(OperationException ?? new NotSupportedException());
 
         public Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey, ItemRequestOptions requestOptions)
             => ReadItemAsync<T>(id, partitionKey);
@@ -313,16 +305,11 @@ public sealed class CosmosDbClientUnitTests
             => Task.FromResult<ContainerResponse>(new FakeContainerResponse());
 
         public Task<FeedResponse<T>> ReadManyItemsAsync<T>(IReadOnlyList<(string id, PartitionKey partitionKey)> items)
-            => CosmosExceptionTranslation.TranslateTransientAsync(
-                () => Task.FromException<FeedResponse<T>>(OperationException ?? new NotSupportedException()),
-                _logger);
+            => Task.FromException<FeedResponse<T>>(OperationException ?? new NotSupportedException());
 
         private FeedIterator<T> CreateQueryIterator<T>() => OperationException is null
             ? new EmptyFeedIterator<T>()
-            : CosmosExceptionTranslation.Wrap(
-                new ThrowingFeedIterator<T>(OperationException),
-                _logger,
-                "GetItemQueryIterator");
+            : new ThrowingFeedIterator<T>(OperationException);
     }
 
     private sealed class EmptyFeedIterator<T> : FeedIterator<T>

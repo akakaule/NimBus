@@ -109,6 +109,13 @@ type names containing `Serialization` / `Deserialization` / `Validation`).
 `PermanentFailureException`. The base `MessageHandler` dead-letters the
 inbound message and notifies the Resolver — there is no retry.
 
+The SDK JSON handler also normalizes missing, `null`, malformed, and
+over-depth payloads directly to `PermanentFailureException`. JSON is read with
+an isolated safe configuration (`TypeNameHandling.None`, maximum depth 32), so
+ambient Newtonsoft defaults cannot enable polymorphic type construction. These
+wire-format failures bypass retry even when a retry policy would otherwise
+match.
+
 ```mermaid
 sequenceDiagram
     participant Ep as Endpoint Topic
@@ -159,6 +166,12 @@ catalog. The message is acked (Complete), no session block, and the Resolver
 records `Unsupported`.
 
 See Flow 9 in [`message-flows.md`](message-flows.md#9-unsupported-event-type).
+
+For native `EventRequest` messages, the `EventTypeId` application property is
+authoritative. Messages produced before that property existed may fall back to
+the body value. If both values are present and disagree, or a known routed type
+has an unreadable body, NimBus treats the message as a permanent malformed
+message and dead-letters it without invoking the user handler.
 
 ### Handler failure with retry policy
 

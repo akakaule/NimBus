@@ -3224,10 +3224,9 @@ export class Client extends ApiClientBase {
 
     /**
      * Preview delete events by status
-     * @param body (optional) 
      * @return OK
      */
-    postAdminDeleteByStatusPreview(endpointId: string, body?: DeleteByStatusRequest | undefined): Promise<CountResponse> {
+    postAdminDeleteByStatusPreview(endpointId: string, body: DeleteByStatusRequest): Promise<CountResponse> {
         let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/delete-by-status-preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
@@ -3272,10 +3271,9 @@ export class Client extends ApiClientBase {
 
     /**
      * Delete events by status
-     * @param body (optional) 
      * @return OK
      */
-    postAdminDeleteByStatus(endpointId: string, body?: DeleteByStatusRequest | undefined): Promise<BulkOperationResult> {
+    postAdminDeleteByStatus(endpointId: string, body: DeleteByStatusRequest): Promise<BulkOperationResult> {
         let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/delete-by-status";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
@@ -3320,10 +3318,9 @@ export class Client extends ApiClientBase {
 
     /**
      * Preview skip messages
-     * @param body (optional) 
      * @return OK
      */
-    postAdminSkipPreview(endpointId: string, body?: SkipRequest | undefined): Promise<CountResponse> {
+    postAdminSkipPreview(endpointId: string, body: SkipRequest): Promise<CountResponse> {
         let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/skip-preview";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
@@ -3368,10 +3365,9 @@ export class Client extends ApiClientBase {
 
     /**
      * Skip messages by status
-     * @param body (optional) 
      * @return OK
      */
-    postAdminSkip(endpointId: string, body?: SkipRequest | undefined): Promise<BulkOperationResult> {
+    postAdminSkip(endpointId: string, body: SkipRequest): Promise<BulkOperationResult> {
         let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/skip";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
@@ -9164,8 +9160,31 @@ export interface IDeleteByToRequest {
     [key: string]: any;
 }
 
+export enum AdminDeleteStatus {
+    Pending = "Pending",
+    Deferred = "Deferred",
+    Failed = "Failed",
+    TooManyRequests = "TooManyRequests",
+    DeadLettered = "DeadLettered",
+    Unsupported = "Unsupported",
+    Published = "Published",
+    Completed = "Completed",
+    Skipped = "Skipped",
+}
+
+export enum AdminSkipSourceStatus {
+    Pending = "Pending",
+    Deferred = "Deferred",
+    Failed = "Failed",
+    TooManyRequests = "TooManyRequests",
+    DeadLettered = "DeadLettered",
+    Unsupported = "Unsupported",
+    Published = "Published",
+}
+
 export class DeleteByStatusRequest implements IDeleteByStatusRequest {
-    statuses?: string[];
+    /** One or more valid ResolutionStatus names. */
+    statuses!: AdminDeleteStatus[];
 
     [key: string]: any;
 
@@ -9175,6 +9194,9 @@ export class DeleteByStatusRequest implements IDeleteByStatusRequest {
                 if (data.hasOwnProperty(property))
                     (this as any)[property] = (data as any)[property];
             }
+        }
+        if (!data) {
+            this.statuses = [];
         }
     }
 
@@ -9222,13 +9244,15 @@ export class DeleteByStatusRequest implements IDeleteByStatusRequest {
 }
 
 export interface IDeleteByStatusRequest {
-    statuses?: string[];
+    /** One or more valid ResolutionStatus names. */
+    statuses: AdminDeleteStatus[];
 
     [key: string]: any;
 }
 
 export class SkipRequest implements ISkipRequest {
-    statuses?: string[];
+    /** Source statuses; Completed and Skipped are terminal and cannot be skipped again. */
+    statuses!: AdminSkipSourceStatus[];
     before?: moment.Moment | undefined;
 
     [key: string]: any;
@@ -9239,6 +9263,9 @@ export class SkipRequest implements ISkipRequest {
                 if (data.hasOwnProperty(property))
                     (this as any)[property] = (data as any)[property];
             }
+        }
+        if (!data) {
+            this.statuses = [];
         }
     }
 
@@ -9288,7 +9315,8 @@ export class SkipRequest implements ISkipRequest {
 }
 
 export interface ISkipRequest {
-    statuses?: string[];
+    /** Source statuses; Completed and Skipped are terminal and cannot be skipped again. */
+    statuses: AdminSkipSourceStatus[];
     before?: moment.Moment | undefined;
 
     [key: string]: any;

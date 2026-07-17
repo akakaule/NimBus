@@ -2,6 +2,8 @@ param appName string
 param appServicePlanId string
 param location string = resourceGroup().location
 param settings array = []
+@secure()
+param secretSettings object = {}
 
 // Identity-based access to AzureWebJobsStorage and the deployment package container.
 param storageAccountName string
@@ -20,7 +22,12 @@ param maximumInstanceCount int = 100
 // Required app settings (no FUNCTIONS_WORKER_RUNTIME / FUNCTIONS_EXTENSION_VERSION
 // / WEBSITE_CONTENTAZUREFILECONNECTIONSTRING / WEBSITE_CONTENTSHARE — those are
 // rejected on Flex).
-var flexAppSettings = concat(settings, [
+var secretAppSettings = [for setting in items(secretSettings): {
+  name: setting.key
+  value: setting.value
+}]
+
+var flexAppSettings = concat(settings, secretAppSettings, [
   {
     name: 'AzureWebJobsStorage__accountName'
     value: storageAccountName

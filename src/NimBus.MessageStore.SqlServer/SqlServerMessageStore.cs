@@ -45,8 +45,16 @@ public sealed class SqlServerMessageStore : INimBusMessageStore
     private async Task<SqlConnection> OpenAsync()
     {
         var conn = new SqlConnection(_options.ConnectionString);
-        await conn.OpenAsync().ConfigureAwait(false);
-        return conn;
+        try
+        {
+            await SqlServerExceptionTranslation.TranslateAsync(() => conn.OpenAsync()).ConfigureAwait(false);
+            return conn;
+        }
+        catch
+        {
+            await conn.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     // Defensive bracket-quoting: SqlServerSchemaInitializer is the primary gate
@@ -105,6 +113,10 @@ WHEN MATCHED THEN UPDATE SET
     FromAddress = @FromAddress,
     QueueTimeMs = @QueueTimeMs,
     ProcessingTimeMs = @ProcessingTimeMs,
+    CloudEventId = @CloudEventId,
+    CloudEventSource = @CloudEventSource,
+    CloudEventType = @CloudEventType,
+    CloudEventSubject = @CloudEventSubject,
     PendingSubStatus = @PendingSubStatus,
     HandoffReason = @HandoffReason,
     ExternalJobId = @ExternalJobId,
@@ -116,6 +128,7 @@ WHEN NOT MATCHED THEN INSERT (
     MessageType, RetryCount, RetryLimit, LastMessageId, OriginatingMessageId, ParentMessageId,
     OriginatingFrom, Reason, DeadLetterReason, DeadLetterErrorDescription, EventTypeId,
     ToAddress, FromAddress, QueueTimeMs, ProcessingTimeMs,
+    CloudEventId, CloudEventSource, CloudEventType, CloudEventSubject,
     PendingSubStatus, HandoffReason, ExternalJobId, ExpectedBy,
     MessageContentJson)
 VALUES (
@@ -123,6 +136,7 @@ VALUES (
     @MessageType, @RetryCount, @RetryLimit, @LastMessageId, @OriginatingMessageId, @ParentMessageId,
     @OriginatingFrom, @Reason, @DeadLetterReason, @DeadLetterErrorDescription, @EventTypeId,
     @ToAddress, @FromAddress, @QueueTimeMs, @ProcessingTimeMs,
+    @CloudEventId, @CloudEventSource, @CloudEventType, @CloudEventSubject,
     @PendingSubStatus, @HandoffReason, @ExternalJobId, @ExpectedBy,
     @MessageContentJson);";
 
@@ -152,6 +166,10 @@ VALUES (
             FromAddress = content.From,
             QueueTimeMs = content.QueueTimeMs,
             ProcessingTimeMs = content.ProcessingTimeMs,
+            content.CloudEventId,
+            content.CloudEventSource,
+            content.CloudEventType,
+            content.CloudEventSubject,
             PendingSubStatus = content.PendingSubStatus,
             HandoffReason = content.HandoffReason,
             ExternalJobId = content.ExternalJobId,
@@ -172,12 +190,14 @@ INSERT INTO {T("Messages")} (
     EventId, MessageId, EndpointId, SessionId, CorrelationId, EventTypeId,
     OriginatingMessageId, ParentMessageId, FromAddress, ToAddress, OriginatingFrom, OriginalSessionId,
     MessageType, EndpointRole, EnqueuedTimeUtc, RetryCount, RetryLimit, DeferralSequence,
-    QueueTimeMs, ProcessingTimeMs, DeadLetterReason, DeadLetterErrorDescription, MessageContentJson)
+    QueueTimeMs, ProcessingTimeMs, CloudEventId, CloudEventSource, CloudEventType, CloudEventSubject,
+    DeadLetterReason, DeadLetterErrorDescription, MessageContentJson)
 VALUES (
     @EventId, @MessageId, @EndpointId, @SessionId, @CorrelationId, @EventTypeId,
     @OriginatingMessageId, @ParentMessageId, @FromAddress, @ToAddress, @OriginatingFrom, @OriginalSessionId,
     @MessageType, @EndpointRole, @EnqueuedTimeUtc, @RetryCount, @RetryLimit, @DeferralSequence,
-    @QueueTimeMs, @ProcessingTimeMs, @DeadLetterReason, @DeadLetterErrorDescription, @MessageContentJson);";
+    @QueueTimeMs, @ProcessingTimeMs, @CloudEventId, @CloudEventSource, @CloudEventType, @CloudEventSubject,
+    @DeadLetterReason, @DeadLetterErrorDescription, @MessageContentJson);";
 
         await using var conn = await OpenAsync();
         await conn.ExecuteAsync(sql, new
@@ -202,6 +222,10 @@ VALUES (
             message.DeferralSequence,
             message.QueueTimeMs,
             message.ProcessingTimeMs,
+            message.CloudEventId,
+            message.CloudEventSource,
+            message.CloudEventType,
+            message.CloudEventSubject,
             message.DeadLetterReason,
             message.DeadLetterErrorDescription,
             MessageContentJson = JsonConvert.SerializeObject(message.MessageContent),
@@ -301,6 +325,10 @@ VALUES (
             DeferralSequence = row.DeferralSequence,
             QueueTimeMs = row.QueueTimeMs,
             ProcessingTimeMs = row.ProcessingTimeMs,
+            CloudEventId = TryReadString(row, "CloudEventId"),
+            CloudEventSource = TryReadString(row, "CloudEventSource"),
+            CloudEventType = TryReadString(row, "CloudEventType"),
+            CloudEventSubject = TryReadString(row, "CloudEventSubject"),
             DeadLetterReason = row.DeadLetterReason ?? string.Empty,
             DeadLetterErrorDescription = row.DeadLetterErrorDescription ?? string.Empty,
             MessageContent = JsonConvert.DeserializeObject<MessageContent>((string)row.MessageContentJson) ?? new MessageContent(),
@@ -312,8 +340,12 @@ VALUES (
     public async Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity, string? endpointId = null, string? eventTypeId = null)
     {
         var sql = $@"
-INSERT INTO {T("MessageAudits")} (EventId, EndpointId, EventTypeId, AuditorName, AuditTimestamp, AuditType, Comment, AccessDenied, Data)
-VALUES (@EventId, @EndpointId, @EventTypeId, @AuditorName, @AuditTimestamp, @AuditType, @Comment, @AccessDenied, @Data)";
+INSERT INTO {T("MessageAudits")} (
+    EventId, EndpointId, EventTypeId, AuditorName, AuditTimestamp, AuditType, Comment, AccessDenied, Data,
+    CloudEventId, CloudEventSource, CloudEventType, CloudEventSubject)
+VALUES (
+    @EventId, @EndpointId, @EventTypeId, @AuditorName, @AuditTimestamp, @AuditType, @Comment, @AccessDenied, @Data,
+    @CloudEventId, @CloudEventSource, @CloudEventType, @CloudEventSubject)";
         await using var conn = await OpenAsync();
         await conn.ExecuteAsync(sql, new
         {
@@ -326,6 +358,10 @@ VALUES (@EventId, @EndpointId, @EventTypeId, @AuditorName, @AuditTimestamp, @Aud
             auditEntity.Comment,
             auditEntity.AccessDenied,
             auditEntity.Data,
+            auditEntity.CloudEventId,
+            auditEntity.CloudEventSource,
+            auditEntity.CloudEventType,
+            auditEntity.CloudEventSubject,
         }, commandTimeout: _commandTimeout);
     }
 
@@ -345,6 +381,10 @@ VALUES (@EventId, @EndpointId, @EventTypeId, @AuditorName, @AuditTimestamp, @Aud
             Data = r.Data,
             EventId = r.EventId,
             EndpointId = r.EndpointId,
+            CloudEventId = TryReadString(r, "CloudEventId"),
+            CloudEventSource = TryReadString(r, "CloudEventSource"),
+            CloudEventType = TryReadString(r, "CloudEventType"),
+            CloudEventSubject = TryReadString(r, "CloudEventSubject"),
         }).ToList();
     }
 
@@ -370,7 +410,8 @@ VALUES (@EventId, @EndpointId, @EventTypeId, @AuditorName, @AuditTimestamp, @Aud
         p.Add("PageSize", pageSize);
 
         var sql = $@"
-SELECT EventId, EndpointId, EventTypeId, AuditorName, AuditTimestamp, AuditType, Comment, AccessDenied, Data, CreatedAtUtc
+SELECT EventId, EndpointId, EventTypeId, AuditorName, AuditTimestamp, AuditType, Comment, AccessDenied, Data,
+       CloudEventId, CloudEventSource, CloudEventType, CloudEventSubject, CreatedAtUtc
 FROM {T("MessageAudits")}
 WHERE {string.Join(" AND ", where)}
 ORDER BY CreatedAtUtc DESC, Id DESC
@@ -395,6 +436,10 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
                 Data = r.Data,
                 EventId = r.EventId,
                 EndpointId = r.EndpointId,
+                CloudEventId = TryReadString(r, "CloudEventId"),
+                CloudEventSource = TryReadString(r, "CloudEventSource"),
+                CloudEventType = TryReadString(r, "CloudEventType"),
+                CloudEventSubject = TryReadString(r, "CloudEventSubject"),
             },
         }).ToList();
 
@@ -664,6 +709,7 @@ SELECT
     MessageType, RetryCount, RetryLimit, LastMessageId, OriginatingMessageId, ParentMessageId,
     OriginatingFrom, Reason, DeadLetterReason, DeadLetterErrorDescription, EventTypeId,
     ToAddress, FromAddress, QueueTimeMs, ProcessingTimeMs,
+    CloudEventId, CloudEventSource, CloudEventType, CloudEventSubject,
     PendingSubStatus, HandoffReason, ExternalJobId, ExpectedBy,
     JSON_MODIFY(MessageContentJson, '$.EventContent.EventJson', NULL) AS MessageContentJson
 FROM {T("UnresolvedEvents")}
@@ -747,8 +793,10 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
             new { EndpointId = endpointId, SessionId = sessionId, Skip = safeSkip, Take = safeTake },
             commandTimeout: _commandTimeout);
 
-        var rows = (await multi.ReadAsync()).ToList();
-        var total = await multi.ReadFirstAsync<int>();
+        var rows = (await SqlServerExceptionTranslation.TranslateAsync(
+            () => multi.ReadAsync())).ToList();
+        var total = await SqlServerExceptionTranslation.TranslateAsync(
+            () => multi.ReadFirstAsync<int>());
 
         return new BlockedMessageEventPage
         {
@@ -814,6 +862,10 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
             From = row.FromAddress ?? string.Empty,
             QueueTimeMs = row.QueueTimeMs,
             ProcessingTimeMs = row.ProcessingTimeMs,
+            CloudEventId = TryReadString(row, "CloudEventId"),
+            CloudEventSource = TryReadString(row, "CloudEventSource"),
+            CloudEventType = TryReadString(row, "CloudEventType"),
+            CloudEventSubject = TryReadString(row, "CloudEventSubject"),
             PendingSubStatus = TryReadString(row, "PendingSubStatus"),
             HandoffReason = TryReadString(row, "HandoffReason"),
             ExternalJobId = TryReadString(row, "ExternalJobId"),
@@ -911,7 +963,8 @@ SELECT
     EventId, MessageId, EndpointId, SessionId, CorrelationId, EventTypeId,
     OriginatingMessageId, ParentMessageId, FromAddress, ToAddress, OriginatingFrom, OriginalSessionId,
     MessageType, EndpointRole, EnqueuedTimeUtc, RetryCount, RetryLimit, DeferralSequence,
-    QueueTimeMs, ProcessingTimeMs, DeadLetterReason, DeadLetterErrorDescription,
+    QueueTimeMs, ProcessingTimeMs, CloudEventId, CloudEventSource, CloudEventType, CloudEventSubject,
+    DeadLetterReason, DeadLetterErrorDescription,
     JSON_MODIFY(MessageContentJson, '$.EventContent.EventJson', NULL) AS MessageContentJson
 FROM {T("Messages")}
 WHERE {string.Join(" AND ", where)}

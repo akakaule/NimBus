@@ -24,13 +24,12 @@ public partial class AdminService
         var sourceEndpointContainer = sourceDb.GetContainer(endpointId);
         var targetEndpointContainer = (await targetDb.CreateContainerIfNotExistsAsync(endpointId, "/id")).Container;
 
-        var copiedEventIds = new HashSet<string>();
+        var copiedEventIds = new HashSet<string>(StringComparer.Ordinal);
         int eventCount = await CopyDocuments(sourceEndpointContainer, targetEndpointContainer,
             BuildEventQuery(from, to, statuses), doc =>
             {
                 var eid = doc["event"]?["EventId"]?.ToString();
                 if (eid != null) copiedEventIds.Add(eid);
-                return doc["id"]?.ToString() ?? "unknown";
             }, batchSize);
 
         // Copy messages
@@ -38,7 +37,7 @@ public partial class AdminService
         var targetMessagesContainer = (await targetDb.CreateContainerIfNotExistsAsync(MessagesContainer, "/eventId")).Container;
 
         int messageCount = await CopyDocuments(sourceMessagesContainer, targetMessagesContainer,
-            BuildMessageQuery(endpointId, from, to), doc => doc["id"]?.ToString() ?? "unknown",
+            BuildMessageQuery(endpointId, from, to), onDocumentCopied: null,
             batchSize, copiedEventIds);
 
         return new CopyResult { EventsCopied = eventCount, MessagesCopied = messageCount };
@@ -77,9 +76,9 @@ public partial class AdminService
         Microsoft.Azure.Cosmos.Container source,
         Microsoft.Azure.Cosmos.Container target,
         QueryDefinition query,
-        Func<JObject, string> getDocId,
+        Action<JObject>? onDocumentCopied,
         int? batchSize = null,
-        HashSet<string> eventIdFilter = null)
+        ISet<string>? eventIdFilter = null)
     {
         int count = 0;
         using var iterator = source.GetItemQueryIterator<JObject>(query);
@@ -87,25 +86,57 @@ public partial class AdminService
         while (iterator.HasMoreResults)
         {
             var batch = await iterator.ReadNextAsync();
-            foreach (var doc in batch)
-            {
-                if (eventIdFilter != null)
-                {
-                    var evId = doc["eventId"]?.ToString();
-                    if (evId == null || !eventIdFilter.Contains(evId))
-                        continue;
-                }
-
-                doc.Remove("ttl");
-                await target.UpsertItemAsync(doc);
-                count++;
-
-                if (batchSize.HasValue && count >= batchSize.Value)
-                    return count;
-            }
+            int? remaining = batchSize.HasValue ? batchSize.Value - count : null;
+            count += await CopyDocumentBatchAsync(
+                batch,
+                async doc => { await target.UpsertItemAsync(doc); },
+                onDocumentCopied,
+                remaining,
+                eventIdFilter);
 
             if (batchSize.HasValue && count >= batchSize.Value)
+                return count;
+        }
+
+        return count;
+    }
+
+    internal static async Task<int> CopyDocumentBatchAsync(
+        IEnumerable<JObject> documents,
+        Func<JObject, Task> upsertDocument,
+        Action<JObject>? onDocumentCopied,
+        int? batchSize,
+        ISet<string>? eventIdFilter)
+    {
+        ArgumentNullException.ThrowIfNull(documents);
+        ArgumentNullException.ThrowIfNull(upsertDocument);
+
+        if (batchSize is <= 0)
+        {
+            return 0;
+        }
+
+        var count = 0;
+        foreach (var doc in documents)
+        {
+            if (eventIdFilter != null)
+            {
+                var eventId = doc["eventId"]?.ToString();
+                if (eventId == null || !eventIdFilter.Contains(eventId))
+                {
+                    continue;
+                }
+            }
+
+            doc.Remove("ttl");
+            await upsertDocument(doc);
+            onDocumentCopied?.Invoke(doc);
+            count++;
+
+            if (batchSize.HasValue && count >= batchSize.Value)
+            {
                 break;
+            }
         }
 
         return count;

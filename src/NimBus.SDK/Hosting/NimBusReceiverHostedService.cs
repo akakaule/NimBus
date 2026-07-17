@@ -6,6 +6,7 @@ using System;
 using System.IO;
 using System.Net.Sockets;
 using System.Net.WebSockets;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -105,7 +106,7 @@ namespace NimBus.SDK.Hosting
                 }
                 finally
                 {
-                    await StopAndDisposeProcessorAsync(CancellationToken.None).ConfigureAwait(false);
+                    await StopAndDisposeProcessorForLoopAsync(stoppingToken).ConfigureAwait(false);
                 }
 
                 if (!stoppingToken.IsCancellationRequested && _options.ProcessorRestartDelay > TimeSpan.Zero)
@@ -145,7 +146,7 @@ namespace NimBus.SDK.Hosting
             return processor;
         }
 
-        private async Task StopAndDisposeProcessorAsync(CancellationToken cancellationToken)
+        internal async Task StopAndDisposeProcessorAsync(CancellationToken cancellationToken)
         {
             var processor = Interlocked.Exchange(ref _processor, null);
             if (processor == null)
@@ -153,44 +154,137 @@ namespace NimBus.SDK.Hosting
                 return;
             }
 
+            OperationCanceledException? cancellationException = null;
+            Task? stopTask = null;
             try
             {
-                await processor.StopProcessingAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    stopTask = processor.StopProcessingAsync(cancellationToken);
+                    await stopTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+                {
+                    cancellationException = ex;
+                    if (stopTask is not null)
+                    {
+                        _ = ObserveProcessorStopAsync(stopTask);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Error while stopping NimBus receiver for {Topic}/{Subscription}",
+                        _options.TopicName,
+                        _options.SubscriptionName);
+                }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            finally
             {
-                throw;
+                Task? disposeTask = null;
+                try
+                {
+                    disposeTask = DisposeProcessorAsync(processor).AsTask();
+                    await disposeTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+                {
+                    cancellationException ??= ex;
+                    if (disposeTask is not null)
+                    {
+                        _ = ObserveProcessorDisposalAsync(disposeTask);
+                    }
+                }
+                catch (Exception ex) when (cancellationException is not null)
+                {
+                    // Preserve cooperative shutdown as the primary outcome even if
+                    // best-effort cleanup also fails. The cleanup failure remains
+                    // observable without replacing the cancellation exception.
+                    _logger.LogWarning(
+                        ex,
+                        "Error while disposing NimBus receiver for {Topic}/{Subscription} after cancelled shutdown",
+                        _options.TopicName,
+                        _options.SubscriptionName);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Error while disposing NimBus receiver for {Topic}/{Subscription}",
+                        _options.TopicName,
+                        _options.SubscriptionName);
+                }
+            }
+
+            if (cancellationException is not null)
+            {
+                ExceptionDispatchInfo.Capture(cancellationException).Throw();
+            }
+        }
+
+        private async Task StopAndDisposeProcessorForLoopAsync(CancellationToken stoppingToken)
+        {
+            if (stoppingToken.IsCancellationRequested)
+            {
+                try
+                {
+                    await StopAndDisposeProcessorAsync(stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    // The loop has already observed host shutdown. Cleanup was
+                    // initiated and any incomplete task is observed in the background.
+                }
+
+                return;
+            }
+
+            using var cleanupCancellation = new CancellationTokenSource(_options.ProcessorShutdownTimeout);
+            try
+            {
+                await StopAndDisposeProcessorAsync(cleanupCancellation.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cleanupCancellation.IsCancellationRequested)
+            {
+                _logger.LogWarning(
+                    "Timed out after {Timeout} while stopping or disposing NimBus receiver for {Topic}/{Subscription}; continuing processor recovery",
+                    _options.ProcessorShutdownTimeout,
+                    _options.TopicName,
+                    _options.SubscriptionName);
+            }
+        }
+
+        private async Task ObserveProcessorStopAsync(Task stopTask)
+        {
+            try
+            {
+                await stopTask.ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(
                     ex,
-                    "Error while stopping NimBus receiver for {Topic}/{Subscription}",
+                    "NimBus receiver stop completed with an error after recovery stopped waiting for {Topic}/{Subscription}",
                     _options.TopicName,
                     _options.SubscriptionName);
             }
+        }
 
-            // Detach only AFTER the processor has stopped: the Azure SDK throws
-            // InvalidOperationException when an event handler is removed from a running
-            // processor, and this method runs on the recovery-restart path — an
-            // unhandled throw here escapes the processor loop and stops the whole host
-            // instead of recovering. Guarded because a failed stop above can leave the
-            // processor in a running state; the DisposeAsync below stops it regardless.
+        private async Task ObserveProcessorDisposalAsync(Task disposeTask)
+        {
             try
             {
-                processor.ProcessMessageAsync -= OnMessageAsync;
-                processor.ProcessErrorAsync -= OnErrorAsync;
+                await disposeTask.ConfigureAwait(false);
             }
-            catch (InvalidOperationException ex)
+            catch (Exception ex)
             {
                 _logger.LogWarning(
                     ex,
-                    "Could not detach handlers from the NimBus receiver for {Topic}/{Subscription}; disposing with handlers attached",
+                    "NimBus receiver disposal completed with an error after shutdown stopped waiting for {Topic}/{Subscription}",
                     _options.TopicName,
                     _options.SubscriptionName);
             }
-
-            await DisposeProcessorAsync(processor).ConfigureAwait(false);
         }
 
         protected virtual ValueTask DisposeProcessorAsync(ServiceBusSessionProcessor processor) =>
@@ -370,6 +464,11 @@ namespace NimBus.SDK.Hosting
             if (options.ProcessorRestartDelay < TimeSpan.Zero)
             {
                 throw new ArgumentOutOfRangeException(nameof(options.ProcessorRestartDelay), "ProcessorRestartDelay cannot be negative.");
+            }
+
+            if (options.ProcessorShutdownTimeout <= TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(options.ProcessorShutdownTimeout), "ProcessorShutdownTimeout must be greater than zero.");
             }
         }
 

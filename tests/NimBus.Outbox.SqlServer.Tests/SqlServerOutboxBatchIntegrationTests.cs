@@ -150,4 +150,5 @@ public sealed class SqlServerOutboxBatchIntegrationTests
         var pending = await outbox.GetPendingAsync(500);
         Assert.AreEqual(0, pending.Count, "Rolling back the ambient transaction must discard the batch.");
     }
+
 }

@@ -85,11 +85,15 @@ namespace NimBus.Core.Outbox
 
         /// <summary>
         /// Marks a message as dispatched after successful send to Service Bus.
+        /// Implementations must be idempotent: marking an already-dispatched id again
+        /// must not fail or replace its original dispatch timestamp.
         /// </summary>
         Task MarkAsDispatchedAsync(string id, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Marks multiple messages as dispatched.
+        /// Marks multiple messages as dispatched. Implementations must be idempotent,
+        /// including when a previous call committed only part of the supplied batch.
+        /// Re-marking an id must preserve its original dispatch timestamp.
         /// </summary>
         Task MarkAsDispatchedAsync(IEnumerable<string> ids, CancellationToken cancellationToken = default);
     }

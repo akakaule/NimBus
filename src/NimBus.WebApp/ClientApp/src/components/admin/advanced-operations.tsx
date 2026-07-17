@@ -158,18 +158,24 @@ export function SubscriptionPurgeCard({ endpoints }: { endpoints: EndpointOption
 
 // ──────────────────── Delete by Status ────────────────────────
 
-const ALL_STATUSES = ["Failed", "Deferred", "DeadLettered", "Unsupported", "Pending"];
+const ALL_STATUSES: api.AdminDeleteStatus[] = [
+  api.AdminDeleteStatus.Failed,
+  api.AdminDeleteStatus.Deferred,
+  api.AdminDeleteStatus.DeadLettered,
+  api.AdminDeleteStatus.Unsupported,
+  api.AdminDeleteStatus.Pending,
+];
 
 export function DeleteByStatusCard({ endpoints }: { endpoints: EndpointOption[] }) {
   const [selected, setSelected] = useState<string[]>([]);
-  const [statuses, setStatuses] = useState<Set<string>>(new Set());
+  const [statuses, setStatuses] = useState<Set<api.AdminDeleteStatus>>(new Set());
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<api.BulkOperationResult | null>(null);
   const [executing, setExecuting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  function toggleStatus(s: string) {
+  function toggleStatus(s: api.AdminDeleteStatus) {
     setStatuses((prev) => { const next = new Set(prev); next.has(s) ? next.delete(s) : next.add(s); return next; });
     setPreviewCount(null);
     setResult(null);
@@ -252,11 +258,19 @@ export function DeleteByStatusCard({ endpoints }: { endpoints: EndpointOption[] 
 
 // ──────────────────── Skip Messages ────────────────────────
 
-const SKIPPABLE_STATUSES = ["Failed", "Deferred", "DeadLettered", "Unsupported", "Pending"];
+const SKIPPABLE_STATUSES: api.AdminSkipSourceStatus[] = [
+  api.AdminSkipSourceStatus.Failed,
+  api.AdminSkipSourceStatus.Deferred,
+  api.AdminSkipSourceStatus.DeadLettered,
+  api.AdminSkipSourceStatus.Unsupported,
+  api.AdminSkipSourceStatus.Pending,
+  api.AdminSkipSourceStatus.TooManyRequests,
+  api.AdminSkipSourceStatus.Published,
+];
 
 export function SkipMessagesCard({ endpoints }: { endpoints: EndpointOption[] }) {
   const [selected, setSelected] = useState<string[]>([]);
-  const [statuses, setStatuses] = useState<Set<string>>(new Set());
+  const [statuses, setStatuses] = useState<Set<api.AdminSkipSourceStatus>>(new Set());
   const [before, setBefore] = useState("");
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -264,7 +278,7 @@ export function SkipMessagesCard({ endpoints }: { endpoints: EndpointOption[] })
   const [executing, setExecuting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  function toggleStatus(s: string) {
+  function toggleStatus(s: api.AdminSkipSourceStatus) {
     setStatuses((prev) => { const next = new Set(prev); next.has(s) ? next.delete(s) : next.add(s); return next; });
     setPreviewCount(null);
     setResult(null);
@@ -305,7 +319,7 @@ export function SkipMessagesCard({ endpoints }: { endpoints: EndpointOption[] })
     <Card>
       <CardHeader>
         <CardTitle>Skip Messages</CardTitle>
-        <CardDescription>Mark events as Skipped (transition from failure/deferred states)</CardDescription>
+        <CardDescription>Mark non-terminal events as Skipped</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">

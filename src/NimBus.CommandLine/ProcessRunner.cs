@@ -4,12 +4,62 @@ using System.Text;
 
 namespace NimBus.CommandLine;
 
-internal sealed class ProcessRunner
+internal interface IProcessRunner
 {
+    Task<ProcessResult> RunAsync(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        bool echoStandardOutput,
+        CancellationToken cancellationToken);
+}
+
+internal interface IProcessTermination
+{
+    void KillEntireProcessTree(Process process);
+
+    Task WaitForExitAsync(Process process, CancellationToken cancellationToken);
+}
+
+internal sealed class ProcessRunner : IProcessRunner
+{
+    private static readonly TimeSpan DefaultTerminationTimeout = TimeSpan.FromSeconds(10);
+    private readonly IProcessTermination _processTermination;
+    private readonly TimeSpan _terminationTimeout;
+
+    public ProcessRunner()
+        : this(new ProcessTermination(), DefaultTerminationTimeout)
+    {
+    }
+
+    internal ProcessRunner(IProcessTermination processTermination, TimeSpan terminationTimeout)
+    {
+        ArgumentNullException.ThrowIfNull(processTermination);
+
+        if (terminationTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(terminationTimeout),
+                terminationTimeout,
+                "The process termination timeout must be greater than zero.");
+        }
+
+        _processTermination = processTermination;
+        _terminationTimeout = terminationTimeout;
+    }
+
+    public Task<ProcessResult> RunAsync(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        CancellationToken cancellationToken) =>
+        RunAsync(fileName, arguments, workingDirectory, echoStandardOutput: true, cancellationToken);
+
     public async Task<ProcessResult> RunAsync(
         string fileName,
         IReadOnlyList<string> arguments,
         string? workingDirectory,
+        bool echoStandardOutput,
         CancellationToken cancellationToken)
     {
         var startInfo = new ProcessStartInfo
@@ -20,6 +70,7 @@ internal sealed class ProcessRunner
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        DeploymentSecrets.RemoveFrom(startInfo.Environment);
 
         if (!string.IsNullOrWhiteSpace(workingDirectory))
         {
@@ -48,7 +99,11 @@ internal sealed class ProcessRunner
         {
             if (args.Data is not null)
             {
-                CliOutput.WriteLine(args.Data);
+                if (echoStandardOutput)
+                {
+                    CliOutput.WriteLine(args.Data);
+                }
+
                 output.AppendLine(args.Data);
             }
         };
@@ -80,10 +135,71 @@ internal sealed class ProcessRunner
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
-        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The deployment command may still be reading an ephemeral ARM
+            // parameter file. Stop the whole child tree and wait for shutdown
+            // before the caller unwinds and deletes that file.
+            await TerminateProcessAsync(process).ConfigureAwait(false);
+            throw;
+        }
 
         return new ProcessResult(process.ExitCode, output.ToString().Trim(), error.ToString().Trim());
     }
+
+    private async Task TerminateProcessAsync(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                _processTermination.KillEntireProcessTree(process);
+            }
+        }
+        catch (Exception exception) when (IsExpectedTerminationFailure(exception))
+        {
+            CliOutput.WriteError(
+                "Warning: Could not terminate the child process tree cleanly (" +
+                exception.GetType().Name +
+                ").");
+        }
+
+        using var timeout = new CancellationTokenSource(_terminationTimeout);
+
+        try
+        {
+            await _processTermination.WaitForExitAsync(process, timeout.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            CliOutput.WriteError("Warning: Timed out waiting for the child process tree to exit.");
+        }
+        catch (Exception exception) when (IsExpectedTerminationFailure(exception))
+        {
+            CliOutput.WriteError(
+                "Warning: Could not confirm that the child process tree exited (" +
+                exception.GetType().Name +
+                ").");
+        }
+    }
+
+    private static bool IsExpectedTerminationFailure(Exception exception) =>
+        exception is Win32Exception
+            or InvalidOperationException
+            or NotSupportedException;
+}
+
+internal sealed class ProcessTermination : IProcessTermination
+{
+    public void KillEntireProcessTree(Process process) =>
+        process.Kill(entireProcessTree: true);
+
+    public Task WaitForExitAsync(Process process, CancellationToken cancellationToken) =>
+        process.WaitForExitAsync(cancellationToken);
 }
 
 internal sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError)

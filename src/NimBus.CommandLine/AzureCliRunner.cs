@@ -2,13 +2,54 @@ using System.Text.Json;
 
 namespace NimBus.CommandLine;
 
-internal sealed class AzureCliRunner
+#pragma warning disable CA1068 // Preserve the established AzureCliRunner method order.
+internal interface IAzureCliRunner
 {
-    private readonly ProcessRunner _processRunner = new();
+    Task EnsureLoggedInAsync(CancellationToken cancellationToken);
+
+    Task EnsureExtensionAsync(string extensionName, CancellationToken cancellationToken);
+
+    Task EnsureSuccessAsync(
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken,
+        string failureMessage);
+
+    Task EnsureSuccessAsync(
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        CancellationToken cancellationToken,
+        string failureMessage);
+
+    Task<string> CaptureValueAsync(
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken,
+        string failureMessage);
+
+    Task<ProcessResult> TryRunAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken);
+}
+#pragma warning restore CA1068
+
+internal sealed class AzureCliRunner : IAzureCliRunner
+{
+    private readonly IProcessRunner _processRunner;
+
+    public AzureCliRunner()
+        : this(new ProcessRunner())
+    {
+    }
+
+    internal AzureCliRunner(IProcessRunner processRunner)
+    {
+        _processRunner = processRunner ?? throw new ArgumentNullException(nameof(processRunner));
+    }
 
     public async Task EnsureLoggedInAsync(CancellationToken cancellationToken)
     {
-        var result = await RunAzAsync(new[] { "account", "show" }, cancellationToken, throwOnFailure: false).ConfigureAwait(false);
+        var result = await RunAzAsync(
+            new[] { "account", "show" },
+            cancellationToken,
+            throwOnFailure: false,
+            echoStandardOutput: false).ConfigureAwait(false);
         if (!result.Succeeded)
         {
             throw new CommandException("Azure CLI is not logged in. Run 'az login' first.");
@@ -26,7 +67,11 @@ internal sealed class AzureCliRunner
 
     public async Task EnsureSuccessAsync(IReadOnlyList<string> arguments, string? workingDirectory, CancellationToken cancellationToken, string failureMessage)
     {
-        var result = await RunAzAsync(arguments, cancellationToken, workingDirectory: workingDirectory, throwOnFailure: false).ConfigureAwait(false);
+        var result = await RunAzAsync(
+            arguments,
+            cancellationToken,
+            workingDirectory: workingDirectory,
+            throwOnFailure: false).ConfigureAwait(false);
         if (!result.Succeeded)
         {
             throw new CommandException($"{failureMessage}{Environment.NewLine}{result.StandardError}");
@@ -38,7 +83,12 @@ internal sealed class AzureCliRunner
 
     public async Task<string> CaptureValueAsync(IReadOnlyList<string> arguments, string? workingDirectory, CancellationToken cancellationToken, string failureMessage)
     {
-        var result = await RunAzAsync(arguments, cancellationToken, workingDirectory: workingDirectory, throwOnFailure: false).ConfigureAwait(false);
+        var result = await RunAzAsync(
+            arguments,
+            cancellationToken,
+            workingDirectory: workingDirectory,
+            throwOnFailure: false,
+            echoStandardOutput: false).ConfigureAwait(false);
         if (!result.Succeeded)
         {
             throw new CommandException($"{failureMessage}{Environment.NewLine}{result.StandardError}");
@@ -54,9 +104,14 @@ internal sealed class AzureCliRunner
     }
 
     public Task<ProcessResult> TryRunAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken) =>
-        RunAzAsync(arguments, cancellationToken, throwOnFailure: false);
+        RunAzAsync(arguments, cancellationToken, throwOnFailure: false, echoStandardOutput: false);
 
-    private async Task<ProcessResult> RunAzAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string? workingDirectory = null, bool throwOnFailure = true)
+    private async Task<ProcessResult> RunAzAsync(
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken,
+        string? workingDirectory = null,
+        bool throwOnFailure = true,
+        bool echoStandardOutput = true)
     {
         var allArguments = new List<string>(arguments.Count + 1);
         allArguments.AddRange(arguments);
@@ -64,7 +119,12 @@ internal sealed class AzureCliRunner
 
         var (fileName, processArguments) = ResolveProcessCommand(allArguments);
 
-        var result = await _processRunner.RunAsync(fileName, processArguments, workingDirectory, cancellationToken).ConfigureAwait(false);
+        var result = await _processRunner.RunAsync(
+            fileName,
+            processArguments,
+            workingDirectory,
+            echoStandardOutput,
+            cancellationToken).ConfigureAwait(false);
         if (throwOnFailure && !result.Succeeded)
         {
             throw new CommandException(result.StandardError);

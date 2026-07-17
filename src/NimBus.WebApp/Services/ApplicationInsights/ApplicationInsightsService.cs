@@ -41,16 +41,18 @@ namespace NimBus.WebApp.Services.ApplicationInsights
                     //(filter.LogSource == null ? "" : $"and tostring(customDimensions['LogSource']) == '{filter.LogSource}' ") +
                     //(filter.EventType == null ? "" : $"and tostring(customDimensions['EventType']) == '{filter.EventType}' ") +
                     //(filter.CorrelationId == null ? "" : $"and tostring(customDimensions['CorrelationId']) == '{filter.CorrelationId}' ") +
-                    (string.IsNullOrEmpty(filter.EventId) ? "" : $"and tostring(customDimensions['NimBus.EventId']) == '{filter.EventId}' ") +
+                    (string.IsNullOrEmpty(filter.EventId) ? "" : $"and tostring(customDimensions['NimBus.EventId']) == {KqlStringLiteral.Format(filter.EventId)} ") +
                     //(filter.PublishedBy == null ? "" : $"and tostring(customDimensions['PublishedBy']) == '{filter.PublishedBy.ToString()}' ") +
                     (filter.MinimumLogLevel == null ? "" : $"and severityLevel >= {(int)filter.MinimumLogLevel} ") +
                     " | top 1000 by timestamp desc";
             var req = $"query?query={HttpUtility.UrlEncode(query)}";
 
             using var response = await client.GetAsync(req);
-            
+            response.EnsureSuccessStatusCode();
+
             var result = await response.Content.ReadAsStringAsync();
-            var obj = JsonConvert.DeserializeObject<AppInsightsResultRaw>(result);
+            var obj = JsonConvert.DeserializeObject<AppInsightsResultRaw>(result)
+                ?? throw new InvalidOperationException("Application Insights returned an empty response.");
 
             return new LogTraceCollection(obj).GetLogEntries();
         }
@@ -88,6 +90,7 @@ namespace NimBus.WebApp.Services.ApplicationInsights
 
             var req = $"query?query={HttpUtility.UrlEncode(query)}";
             using var response = await client.GetAsync(req);
+            response.EnsureSuccessStatusCode();
             var result = await response.Content.ReadAsStringAsync();
             var obj = JsonConvert.DeserializeObject<AppInsightsResultRaw>(result);
 

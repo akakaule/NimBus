@@ -235,6 +235,10 @@ public abstract class MessageTrackingStoreConformanceTests
             SessionId = "s1",
             CorrelationId = "c1",
             EventTypeId = "OrderPlaced",
+            CloudEventId = "ce-message-1",
+            CloudEventSource = "urn:nimbus:conformance",
+            CloudEventType = "com.nimbus.order-placed.v1",
+            CloudEventSubject = "orders/42",
             EnqueuedTimeUtc = DateTime.UtcNow,
             MessageContent = new MessageContent(),
         };
@@ -244,6 +248,63 @@ public abstract class MessageTrackingStoreConformanceTests
 
         Assert.AreEqual(eventId, fetched.EventId);
         Assert.AreEqual(messageId, fetched.MessageId);
+        Assert.AreEqual("ce-message-1", fetched.CloudEventId);
+        Assert.AreEqual("urn:nimbus:conformance", fetched.CloudEventSource);
+        Assert.AreEqual("com.nimbus.order-placed.v1", fetched.CloudEventType);
+        Assert.AreEqual("orders/42", fetched.CloudEventSubject);
+    }
+
+    [TestMethod]
+    public async Task CloudEvent_identity_round_trips_on_tracked_event()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-ce");
+        var eventId = Id("event-ce");
+        var stored = SampleEvent(endpointId, eventId, "session-ce");
+        stored.CloudEventId = "ce-event-1";
+        stored.CloudEventSource = "urn:nimbus:conformance";
+        stored.CloudEventType = "com.nimbus.order-placed.v1";
+        stored.CloudEventSubject = "orders/42";
+
+        await store.UploadFailedMessage(eventId, "session-ce", endpointId, stored);
+
+        var fetched = await store.GetFailedEvent(endpointId, eventId, "session-ce");
+        Assert.AreEqual("ce-event-1", fetched.CloudEventId);
+        Assert.AreEqual("urn:nimbus:conformance", fetched.CloudEventSource);
+        Assert.AreEqual("com.nimbus.order-placed.v1", fetched.CloudEventType);
+        Assert.AreEqual("orders/42", fetched.CloudEventSubject);
+    }
+
+    [TestMethod]
+    public async Task Native_message_and_event_keep_CloudEvent_identity_null()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-native");
+        var eventId = Id("event-native");
+        var messageId = Id("message-native");
+
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = eventId,
+            MessageId = messageId,
+            EndpointId = endpointId,
+            EnqueuedTimeUtc = DateTime.UtcNow,
+            MessageContent = new MessageContent(),
+        });
+        await store.UploadPendingMessage(eventId, "session-native", endpointId,
+            SampleEvent(endpointId, eventId, "session-native"));
+
+        var message = await store.GetMessage(eventId, messageId);
+        var trackedEvent = await store.GetPendingEvent(endpointId, eventId, "session-native");
+
+        Assert.IsNull(message.CloudEventId);
+        Assert.IsNull(message.CloudEventSource);
+        Assert.IsNull(message.CloudEventType);
+        Assert.IsNull(message.CloudEventSubject);
+        Assert.IsNull(trackedEvent.CloudEventId);
+        Assert.IsNull(trackedEvent.CloudEventSource);
+        Assert.IsNull(trackedEvent.CloudEventType);
+        Assert.IsNull(trackedEvent.CloudEventSubject);
     }
 
     [TestMethod]
@@ -667,6 +728,10 @@ public abstract class MessageTrackingStoreConformanceTests
             Data = dataPayload,
             EventId = eventId,
             EndpointId = endpointId,
+            CloudEventId = "ce-audit-1",
+            CloudEventSource = "urn:nimbus:audit",
+            CloudEventType = "com.nimbus.audit.v1",
+            CloudEventSubject = "audits/42",
         }, endpointId, eventTypeId: "OrderPlaced");
 
         var audits = (await store.GetMessageAudits(eventId)).ToList();
@@ -679,6 +744,10 @@ public abstract class MessageTrackingStoreConformanceTests
         // (SQL: read from row columns; Cosmos: from the serialized document; in-memory: from the entity itself).
         Assert.AreEqual(eventId, audit.EventId);
         Assert.AreEqual(endpointId, audit.EndpointId);
+        Assert.AreEqual("ce-audit-1", audit.CloudEventId);
+        Assert.AreEqual("urn:nimbus:audit", audit.CloudEventSource);
+        Assert.AreEqual("com.nimbus.audit.v1", audit.CloudEventType);
+        Assert.AreEqual("audits/42", audit.CloudEventSubject);
     }
 
     [TestMethod]
@@ -701,6 +770,10 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual(1, audits.Count);
         Assert.IsFalse(audits[0].AccessDenied, "legacy row should default AccessDenied to false");
         Assert.IsNull(audits[0].Data, "legacy row should default Data to null");
+        Assert.IsNull(audits[0].CloudEventId, "legacy native-message audit should not gain a CloudEvent id");
+        Assert.IsNull(audits[0].CloudEventSource);
+        Assert.IsNull(audits[0].CloudEventType);
+        Assert.IsNull(audits[0].CloudEventSubject);
     }
 
     [TestMethod]
@@ -720,6 +793,10 @@ public abstract class MessageTrackingStoreConformanceTests
             Data = "context-payload",
             EventId = eventId,
             EndpointId = endpointId,
+            CloudEventId = "ce-audit-search-1",
+            CloudEventSource = "urn:nimbus:audit-search",
+            CloudEventType = "com.nimbus.audit-search.v1",
+            CloudEventSubject = "audits/search/42",
         }, endpointId);
 
         var resp = await store.SearchAudits(new AuditFilter { AuditorName = auditor }, continuationToken: null, maxItemCount: 50);
@@ -728,6 +805,10 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual(1, items.Count);
         Assert.IsTrue(items[0].Audit.AccessDenied);
         Assert.AreEqual("context-payload", items[0].Audit.Data);
+        Assert.AreEqual("ce-audit-search-1", items[0].Audit.CloudEventId);
+        Assert.AreEqual("urn:nimbus:audit-search", items[0].Audit.CloudEventSource);
+        Assert.AreEqual("com.nimbus.audit-search.v1", items[0].Audit.CloudEventType);
+        Assert.AreEqual("audits/search/42", items[0].Audit.CloudEventSubject);
     }
 
     // ───── Prefix-search semantics (cross-provider contract) ─────
@@ -909,6 +990,10 @@ public abstract class MessageTrackingStoreConformanceTests
             HandoffReason = "external work",
             ExternalJobId = "JOB-9",
             ExpectedBy = new DateTime(2026, 6, 1, 9, 0, 0, DateTimeKind.Utc),
+            CloudEventId = "ce-message-search-1",
+            CloudEventSource = "urn:nimbus:message-search",
+            CloudEventType = "com.nimbus.message-search.v1",
+            CloudEventSubject = "messages/42",
             MessageContent = new MessageContent
             {
                 EventContent = new EventContent { EventTypeId = "OrderPlaced", EventJson = "{\"secret\":\"payload\"}" },
@@ -990,5 +1075,9 @@ public abstract class MessageTrackingStoreConformanceTests
         HandoffReason = "external work",
         ExternalJobId = "JOB-9",
         ExpectedBy = new DateTime(2026, 6, 1, 9, 0, 0, DateTimeKind.Utc),
+        CloudEventId = "ce-event-search-1",
+        CloudEventSource = "urn:nimbus:event-search",
+        CloudEventType = "com.nimbus.event-search.v1",
+        CloudEventSubject = "events/42",
     };
 }

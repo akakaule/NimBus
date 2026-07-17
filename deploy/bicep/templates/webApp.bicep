@@ -3,8 +3,15 @@ param appServicePlanId string
 param location string = resourceGroup().location
 param alwaysOn bool = true
 param settings array = []
+@secure()
+param secretSettings object = {}
 
-var appsettings = concat(settings,[
+var secretAppSettings = [for setting in items(secretSettings): {
+  name: setting.key
+  value: setting.value
+}]
+
+var appsettings = concat(settings, secretAppSettings, [
   {
     name: 'WEBSITE_RUN_FROM_PACKAGE'
     value: '1'

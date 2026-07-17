@@ -261,8 +261,13 @@ public class AdminImplementation : IAdminApiController
     {
         if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
+        if (!AdminStatusValidation.TryNormalizeDeleteStatuses(
+                body?.Statuses?.Select(status => status.ToString()),
+                out var statuses,
+                out var error))
+            return new BadRequestObjectResult(error);
 
-        var count = await _adminService.DeleteByStatusPreviewAsync(endpointId, body.Statuses?.ToList() ?? new());
+        var count = await _adminService.DeleteByStatusPreviewAsync(endpointId, statuses);
         return new OkObjectResult(new CountResponse { Count = count });
     }
 
@@ -270,8 +275,13 @@ public class AdminImplementation : IAdminApiController
     {
         if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
+        if (!AdminStatusValidation.TryNormalizeDeleteStatuses(
+                body?.Statuses?.Select(status => status.ToString()),
+                out var statuses,
+                out var error))
+            return new BadRequestObjectResult(error);
 
-        var result = await _adminService.DeleteByStatusAsync(endpointId, body.Statuses?.ToList() ?? new());
+        var result = await _adminService.DeleteByStatusAsync(endpointId, statuses);
         return new OkObjectResult(result);
     }
 
@@ -279,8 +289,14 @@ public class AdminImplementation : IAdminApiController
     {
         if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
+        var before = body?.Before;
+        if (!AdminStatusValidation.TryNormalizeSkipStatuses(
+                body?.Statuses?.Select(status => status.ToString()),
+                out var statuses,
+                out var error))
+            return new BadRequestObjectResult(error);
 
-        var count = await _adminService.SkipMessagesPreviewAsync(endpointId, body.Statuses?.ToList() ?? new(), body.Before);
+        var count = await _adminService.SkipMessagesPreviewAsync(endpointId, statuses, before);
         return new OkObjectResult(new CountResponse { Count = count });
     }
 
@@ -288,8 +304,14 @@ public class AdminImplementation : IAdminApiController
     {
         if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
+        var before = body?.Before;
+        if (!AdminStatusValidation.TryNormalizeSkipStatuses(
+                body?.Statuses?.Select(status => status.ToString()),
+                out var statuses,
+                out var error))
+            return new BadRequestObjectResult(error);
 
-        var result = await _adminService.SkipMessagesAsync(endpointId, body.Statuses?.ToList() ?? new(), body.Before);
+        var result = await _adminService.SkipMessagesAsync(endpointId, statuses, before);
         return new OkObjectResult(result);
     }
 

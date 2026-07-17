@@ -60,6 +60,13 @@ namespace NimBus.Core.Messages
                     await _lifecycleNotifier.NotifyCompleted(messageContext, cancellationToken);
                 }
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Caller-driven shutdown is not a message-processing failure. Let the
+                // transport observe cancellation so it can stop without settling,
+                // retrying, or dead-lettering the in-flight message.
+                throw;
+            }
             catch (TransientException transientException)
             {
                 _logger.LogError(transientException?.InnerException, "Transient Error. Failed to handle message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
@@ -73,6 +80,10 @@ namespace NimBus.Core.Messages
                 try
                 {
                     await messageContext.Abandon(transientException);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
                 }
                 catch (Exception ex)
                 {
@@ -121,6 +132,10 @@ namespace NimBus.Core.Messages
                         await _lifecycleNotifier.NotifyDeadLettered(messageContext, reason, permanentFailure.InnerException, cancellationToken);
                     }
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to dead-letter permanent failure message. EventId:{EventId}", messageContext?.EventId);
@@ -160,6 +175,10 @@ namespace NimBus.Core.Messages
                         await _lifecycleNotifier.NotifyDeadLettered(messageContext, "Failed to handle message.", unexpectedException, cancellationToken);
                     }
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to deadletter message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
@@ -174,6 +193,10 @@ namespace NimBus.Core.Messages
             try
             {
                 await _responseService.SendDeadLetterResponse(messageContext, reason, exception, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception sendException)
             {

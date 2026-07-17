@@ -73,5 +73,6 @@ resource auditsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/con
   }
 }
 
+@secure()
 output connectionString string = cosmosDbAccount.listConnectionStrings().connectionStrings[0].connectionString
 output accountEndpoint string = cosmosDbAccount.properties.documentEndpoint

@@ -91,6 +91,63 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(0, ctx.DeadLetterCalls);
     }
 
+    [TestMethod]
+    public async Task HandleEventRequest_CallerCancellation_PropagatesWithoutFailureSideEffects()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var handler = new FakeEventContextHandler
+        {
+            ThrowOnHandle = new OperationCanceledException(cancellation.Token),
+        };
+        var response = new FakeResponseService();
+        var retryProvider = new FakeRetryPolicyProvider
+        {
+            PolicyToReturn = new RetryPolicy { MaxRetries = 3 },
+        };
+        var sut = new StrictMessageHandler(handler, response, NullLogger.Instance, retryProvider);
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(
+            () => sut.Handle(ctx, cancellation.Token));
+
+        Assert.AreEqual(0, response.ErrorCalls);
+        Assert.AreEqual(0, response.RetryCalls);
+        Assert.AreEqual(0, response.ResolutionCalls);
+        Assert.AreEqual(0, response.DeadLetterCalls);
+        Assert.AreEqual(0, ctx.BlockSessionCalls);
+        Assert.AreEqual(0, ctx.CompletedCalls);
+        Assert.AreEqual(0, ctx.DeadLetterCalls);
+        Assert.AreEqual(0, ctx.AbandonCalls);
+        Assert.AreEqual(0, retryProvider.GetRetryPolicyCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_PermanentPayloadFailure_DeadLettersWithoutRetry()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var handler = new FakeEventContextHandler
+        {
+            ThrowOnHandle = new PermanentFailureException(new FormatException("Malformed payload.")),
+        };
+        var response = new FakeResponseService();
+        var retryProvider = new FakeRetryPolicyProvider
+        {
+            PolicyToReturn = new RetryPolicy { MaxRetries = 3 },
+        };
+        var sut = new StrictMessageHandler(handler, response, NullLogger.Instance, retryProvider);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.DeadLetterCalls);
+        Assert.AreEqual(1, response.DeadLetterCalls);
+        Assert.AreEqual(0, response.ErrorCalls);
+        Assert.AreEqual(0, response.RetryCalls);
+        Assert.AreEqual(0, ctx.BlockSessionCalls);
+        Assert.AreEqual(0, ctx.CompletedCalls);
+        Assert.AreEqual(0, retryProvider.GetRetryPolicyCalls);
+    }
+
     // ── PendingHandoff outcome ──────────────────────────────────────────
 
     [TestMethod]

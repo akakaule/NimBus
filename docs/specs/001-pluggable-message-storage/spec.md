@@ -110,7 +110,7 @@ Independent Test: Run `nb infra apply --storage-provider sqlserver --solution-id
 Acceptance Scenarios:
 
 1. Given `nb infra apply --storage-provider sqlserver`, When deployment completes, Then no Cosmos account is provisioned in the target resource group.
-2. Given `nb infra apply --storage-provider sqlserver --sql-mode external --sql-connection-string ...`, When deployment completes, Then NimBus is configured against the externally provisioned SQL Server.
+2. Given `NIMBUS_SQL_CONNECTION_STRING` is set and `nb infra apply --storage-provider sqlserver --sql-mode external` is run, When deployment completes, Then NimBus is configured against the externally provisioned SQL Server.
 3. Given `nb infra apply --storage-provider cosmos` (or no flag, preserving current behavior), When deployment completes, Then existing Cosmos provisioning behavior is unchanged.
 4. Given the web app Bicep parameters, When `cosmosAccountEndpoint` is omitted, Then it is not written to app settings, and the equivalent SQL connection setting is wired in instead.
 
@@ -182,11 +182,11 @@ Acceptance Scenarios:
 #### Deployment (CLI & Bicep)
 
 - FR-040: `nb infra apply` MUST accept a `--storage-provider {cosmos|sqlserver}` option. When omitted, it defaults to `cosmos` for backwards compatibility.
-- FR-041: When `--storage-provider sqlserver` is used, `nb infra apply` MUST accept a `--sql-mode {provision|external}` option. `provision` deploys an Azure SQL resource via Bicep; `external` accepts `--sql-connection-string` (or a Key Vault reference) for an externally managed SQL Server.
+- FR-041: When `--storage-provider sqlserver` is used, `nb infra apply` MUST accept a `--sql-mode {provision|external}` option. `provision` deploys an Azure SQL resource via Bicep; `external` reads `NIMBUS_SQL_CONNECTION_STRING` for an externally managed SQL Server. Secret values MUST NOT be accepted as command-line arguments.
 - FR-042: `deploy.core.bicep` MUST be parameterized so the Cosmos account/database is conditionally provisioned only when the storage provider is `cosmos`.
 - FR-043: `deploy.core.bicep` MUST conditionally provision an Azure SQL resource (server + database) when the storage provider is `sqlserver` and SQL mode is `provision`.
 - FR-044: `deploy.webapp.bicep` MUST treat `cosmosAccountEndpoint` as optional. When absent, it MUST NOT be written to app settings; the equivalent SQL connection setting MUST be wired in instead.
-- FR-045: `nb infra apply` MUST emit a clear error when `--storage-provider sqlserver` is used without either `--sql-mode provision` or `--sql-mode external --sql-connection-string ...`.
+- FR-045: `nb infra apply` MUST emit a clear error when `--storage-provider sqlserver` is used without the environment secret required by the selected SQL mode (`NIMBUS_SQL_ADMIN_PASSWORD` for `provision`, `NIMBUS_SQL_CONNECTION_STRING` for `external`).
 - FR-046: `nb infra apply` MUST be runnable end-to-end with `--storage-provider sqlserver` against a fresh resource group, producing a working SQL-only NimBus deployment.
 
 #### WebApp / API surface

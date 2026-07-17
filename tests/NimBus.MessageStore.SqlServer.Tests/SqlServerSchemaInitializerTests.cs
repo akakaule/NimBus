@@ -61,6 +61,24 @@ public sealed class SqlServerSchemaInitializerTests
             "IX_MessageAudits_CreatedAtUtc should exist after provisioning.");
     }
 
+    [TestMethod]
+    public async Task AutoApply_adds_nullable_CloudEvent_columns_to_tracking_and_audit_tables()
+    {
+        var schema = NewSchemaName();
+        var initializer = CreateInitializer(schema, SchemaProvisioningMode.AutoApply);
+
+        await initializer.StartAsync(CancellationToken.None);
+
+        foreach (var table in new[] { "Messages", "UnresolvedEvents", "MessageAudits" })
+        {
+            foreach (var column in new[] { "CloudEventId", "CloudEventSource", "CloudEventType", "CloudEventSubject" })
+            {
+                Assert.IsTrue(await NullableColumnExists(schema, table, column),
+                    $"[{schema}].[{table}].[{column}] should exist and remain nullable for legacy native-message rows.");
+            }
+        }
+    }
+
     private static async Task<bool> IndexExists(string schema, string table, string indexName)
     {
         await using var conn = new SqlConnection(SqlServerStoreTestHarness.GetConnectionString());
@@ -75,6 +93,24 @@ WHERE s.name = @Schema AND t.name = @Table AND i.name = @Index";
         cmd.Parameters.AddWithValue("@Schema", schema);
         cmd.Parameters.AddWithValue("@Table", table);
         cmd.Parameters.AddWithValue("@Index", indexName);
+        var result = await cmd.ExecuteScalarAsync();
+        return result is int count && count > 0;
+    }
+
+    private static async Task<bool> NullableColumnExists(string schema, string table, string column)
+    {
+        await using var conn = new SqlConnection(SqlServerStoreTestHarness.GetConnectionString());
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+SELECT COUNT(1)
+FROM sys.columns c
+INNER JOIN sys.tables t ON c.object_id = t.object_id
+INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+WHERE s.name = @Schema AND t.name = @Table AND c.name = @Column AND c.is_nullable = 1";
+        cmd.Parameters.AddWithValue("@Schema", schema);
+        cmd.Parameters.AddWithValue("@Table", table);
+        cmd.Parameters.AddWithValue("@Column", column);
         var result = await cmd.ExecuteScalarAsync();
         return result is int count && count > 0;
     }

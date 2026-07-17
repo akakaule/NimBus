@@ -2,11 +2,20 @@ param appName string
 param appServicePlanId string
 param location string = resourceGroup().location
 param settings array = []
+@secure()
+param secretSettings object = {}
+@secure()
 param storageConnectionString string
+@secure()
 param appInsightsInstrumentationKey string
 param functionAppVersion string = '4'
 
-var appsettings = concat(settings, [
+var secretAppSettings = [for setting in items(secretSettings): {
+  name: setting.key
+  value: setting.value
+}]
+
+var appsettings = concat(settings, secretAppSettings, [
   {
       name: 'AzureWebJobsStorage'
       value: storageConnectionString

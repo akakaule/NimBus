@@ -9,9 +9,11 @@ using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using NimBus.Core.Outbox;
 using NimBus.SDK;
+using NimBus.SDK.EventHandlers;
 using NimBus.SDK.Extensions;
 
 namespace NimBus.SDK.Tests;
@@ -84,6 +86,36 @@ public class SubscriberRegistrationTests
     }
 
     [TestMethod]
+    public async Task AddNimBusSubscriber_ScopedHandler_UsesPerMessageScopeWithValidateScopes()
+    {
+        var probes = new List<ScopedRegistrationProbe>();
+        var services = new ServiceCollection();
+        services.AddSingleton(new ServiceBusClient(FakeConnection));
+        services.AddScoped(_ =>
+        {
+            var probe = new ScopedRegistrationProbe();
+            probes.Add(probe);
+            return probe;
+        });
+        services.AddNimBusSubscriber(
+            "EndpointA",
+            builder => builder.AddHandler<ScopedRegistrationEvent, ScopedRegistrationHandler>());
+
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateScopes = true,
+        });
+        var subscriber = provider.GetRequiredService<ISubscriberClient>();
+        var eventHandlerProvider = (EventHandlerProvider)GetPrivateField(subscriber, "_eventHandlerProvider");
+
+        await eventHandlerProvider.Handle(
+            MessageContextStub.ForEventType(nameof(ScopedRegistrationEvent), "{}"));
+
+        Assert.AreEqual(1, probes.Count);
+        Assert.IsTrue(probes[0].IsDisposed);
+    }
+
+    [TestMethod]
     public void AddNimBusOutboxDispatcher_without_OutboxDispatcherSender_throws_actionable_message()
     {
         // The fail-fast message must name the real registration path.
@@ -116,6 +148,40 @@ public class SubscriberRegistrationTests
     private sealed class SpyPermanentFailureClassifier : IPermanentFailureClassifier
     {
         public bool IsPermanentFailure(Exception exception) => false;
+    }
+
+    public sealed class ScopedRegistrationEvent : Event
+    {
+    }
+
+    public sealed class ScopedRegistrationHandler : IEventHandler<ScopedRegistrationEvent>
+    {
+        private readonly ScopedRegistrationProbe _probe;
+
+        public ScopedRegistrationHandler(ScopedRegistrationProbe probe)
+        {
+            _probe = probe;
+        }
+
+        public Task Handle(
+            ScopedRegistrationEvent message,
+            IEventHandlerContext context,
+            CancellationToken cancellationToken = default)
+        {
+            Assert.IsFalse(_probe.IsDisposed);
+            return Task.CompletedTask;
+        }
+    }
+
+    public sealed class ScopedRegistrationProbe : IAsyncDisposable
+    {
+        public bool IsDisposed { get; private set; }
+
+        public ValueTask DisposeAsync()
+        {
+            IsDisposed = true;
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class NoopOutbox : IOutbox

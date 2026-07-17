@@ -205,8 +205,9 @@ namespace NimBus.SDK.Tests
 
         // ── SP-aware overload: AddDynamicHandler(string, Func<IServiceProvider, IEventJsonHandler>) ──
         //
-        // The DI-aware overload resolves the handler from the IServiceProvider once at
-        // ISubscriberClient construction (mirrored here by reg.Register(sp, provider)).
+        // The DI-aware overload resolves the handler from a per-message IServiceProvider.
+        // Parameterless provider construction below retains the root-provider fallback
+        // used by direct registration tests and older manual integrations.
 
         [TestMethod]
         public async Task AddDynamicHandler_SpFactory_Dispatch_InvokesResolvedHandler()

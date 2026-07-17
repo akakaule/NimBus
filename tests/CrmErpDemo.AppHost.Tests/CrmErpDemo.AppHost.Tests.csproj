@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\samples\CrmErpDemo\CrmErpDemo.Contracts\CrmErpDemo.Contracts.csproj" />
+    <ProjectReference Include="..\..\samples\CrmErpDemo\PartnerPortal\PartnerPortal.csproj" />
   </ItemGroup>
 
 </Project>

@@ -56,5 +56,11 @@ namespace NimBus.SDK.Hosting
         /// Delay before creating a replacement processor after the current processor is stopped and disposed. Default: 5 seconds.
         /// </summary>
         public TimeSpan ProcessorRestartDelay { get; set; } = TimeSpan.FromSeconds(5);
+
+        /// <summary>
+        /// Maximum time recovery waits for a failed processor to stop and dispose
+        /// before creating its replacement. Default: 30 seconds.
+        /// </summary>
+        public TimeSpan ProcessorShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
     }
 }

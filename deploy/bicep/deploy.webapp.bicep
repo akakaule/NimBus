@@ -2,8 +2,10 @@
 param solutionId string
 param environment string = 'dev'
 param webAppVersion string
+@secure()
 param apiKey string
 param appInsightsAppId string
+@secure()
 param instrumentationKey string
 // Cosmos endpoint is optional now: empty when the active provider is SQL Server.
 param cosmosAccountEndpoint string = ''
@@ -88,10 +90,6 @@ var coreWebAppSettings = [
     value: '50'
   }
   {
-    name: 'AppInsights:ApiKey'
-    value: apiKey
-  }
-  {
     name: 'Environment'
     value: environment
   }
@@ -103,23 +101,12 @@ var coreWebAppSettings = [
     name: 'WebAppVersion'
     value: webAppVersion
   }
-  {
-    name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
-    value: instrumentationKey
-  }
 ]
 
 var cosmosSetting = hasCosmos ? [
   {
     name: 'CosmosAccountEndpoint'
     value: cosmosAccountEndpoint
-  }
-] : []
-
-var sqlSetting = hasSql ? [
-  {
-    name: 'SqlConnection'
-    value: sqlConnectionString
   }
 ] : []
 
@@ -130,10 +117,6 @@ var sqlSetting = hasSql ? [
 var identityEnabled = hasSql && !empty(identityAdminEmail)
 var identitySettings = identityEnabled ? [
   {
-    name: 'NimBusIdentity__ConnectionString'
-    value: sqlConnectionString
-  }
-  {
     name: 'NimBusIdentity__RequireEmailConfirmation'
     value: 'false'
   }
@@ -141,13 +124,28 @@ var identitySettings = identityEnabled ? [
     name: 'NimBusIdentity__Bootstrap__Email'
     value: identityAdminEmail
   }
-  {
-    name: 'NimBusIdentity__Bootstrap__Password'
-    value: identityAdminPassword
-  }
 ] : []
 
-var baseWebAppSettings = concat(coreWebAppSettings, cosmosSetting, sqlSetting, identitySettings)
+var baseWebAppSettings = concat(coreWebAppSettings, cosmosSetting, identitySettings)
+
+// Secret settings cross the nested-deployment boundary as a secure object. If
+// they were folded into the ordinary settings array, Azure deployment history
+// could retain their literal values even though the top-level params are secure.
+var coreWebAppSecretSettings = {
+  'AppInsights:ApiKey': apiKey
+  APPINSIGHTS_INSTRUMENTATIONKEY: instrumentationKey
+}
+
+var sqlSecretSettings = hasSql ? {
+  SqlConnection: sqlConnectionString
+} : {}
+
+var identitySecretSettings = identityEnabled ? {
+  NimBusIdentity__ConnectionString: sqlConnectionString
+  NimBusIdentity__Bootstrap__Password: identityAdminPassword
+} : {}
+
+var webAppSecretSettings = union(coreWebAppSecretSettings, sqlSecretSettings, identitySecretSettings)
 
 var developmentDiagnosticSettings = isDevelopmentEnvironment ? [
   {
@@ -170,6 +168,7 @@ module webAppModule 'templates/webApp.bicep' = {
     location:effectiveWebAppLocation
     alwaysOn: alwaysOnEnabled
     settings:webappsettings
+    secretSettings: webAppSecretSettings
   }
 }
 

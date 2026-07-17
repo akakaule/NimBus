@@ -18,22 +18,44 @@ public static class MessageContextStub
     public static IMessageContext ForEventType(string eventTypeId, string eventJson)
         => new StubMessageContext(eventTypeId, eventJson);
 
+    public static IMessageContext ForEventTypes(string eventTypeId, string bodyEventTypeId, string eventJson)
+        => new StubMessageContext(eventTypeId, bodyEventTypeId, eventJson);
+
+    public static IMessageContext WithInvalidContent(string eventTypeId, InvalidMessageException exception)
+        => new StubMessageContext(eventTypeId, exception);
+
     private sealed class StubMessageContext : IMessageContext
     {
+        private readonly MessageContent? _messageContent;
+        private readonly InvalidMessageException? _contentException;
+
         public StubMessageContext(string eventTypeId, string eventJson)
+            : this(eventTypeId, eventTypeId, eventJson)
         {
-            MessageContent = new MessageContent
+        }
+
+        public StubMessageContext(string eventTypeId, string bodyEventTypeId, string eventJson)
+        {
+            _messageContent = new MessageContent
             {
                 EventContent = new EventContent
                 {
-                    EventTypeId = eventTypeId,
+                    EventTypeId = bodyEventTypeId,
                     EventJson = eventJson,
                 }
             };
             EventTypeId = eventTypeId;
         }
 
-        public MessageContent MessageContent { get; }
+        public StubMessageContext(string eventTypeId, InvalidMessageException contentException)
+        {
+            EventTypeId = eventTypeId;
+            _contentException = contentException;
+        }
+
+        public MessageContent MessageContent => _contentException is null
+            ? _messageContent!
+            : throw _contentException;
         public string EventTypeId { get; }
 
         // Minimal stubs — unused by dispatch path

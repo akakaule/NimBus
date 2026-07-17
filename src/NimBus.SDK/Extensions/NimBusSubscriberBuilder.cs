@@ -86,6 +86,125 @@ namespace NimBus.SDK.Extensions
         /// <param name="handlerFactory">Factory invoked per message to create the handler. Must not be null.</param>
         public NimBusSubscriberBuilder AddDynamicHandler(string eventTypeId, Func<IEventJsonHandler> handlerFactory)
         {
+            return AddDynamicRegistration(
+                eventTypeId,
+                handlerFactory,
+                (_, handlerProvider) => handlerProvider.RegisterHandler(eventTypeId, handlerFactory));
+        }
+
+        /// <summary>
+        /// Registers a handler for a dynamically-typed event keyed by its string EventTypeId,
+        /// with a DI-aware factory that receives the root <see cref="IServiceProvider"/> at
+        /// registration time. This is the DI-integrated counterpart to
+        /// <see cref="AddDynamicHandler(string, Func{IEventJsonHandler})"/> — the
+        /// <paramref name="handlerFactory"/> is called once when the
+        /// <see cref="ISubscriberClient"/> singleton is resolved, so the same handler instance
+        /// processes every message. Use
+        /// <see cref="AddScopedDynamicHandler(string, Func{IServiceProvider, IEventJsonHandler})"/>
+        /// when the handler requires scoped dependencies.
+        /// </summary>
+        /// <param name="eventTypeId">The wire EventTypeId string (e.g. "crm.contact.enriched.v1"). Must not be null or whitespace.</param>
+        /// <param name="handlerFactory">Factory that receives the DI container and returns the handler. Must not be null.</param>
+        public NimBusSubscriberBuilder AddDynamicHandler(string eventTypeId, Func<IServiceProvider, IEventJsonHandler> handlerFactory)
+        {
+            return AddDynamicRegistration(
+                eventTypeId,
+                handlerFactory,
+                (provider, handlerProvider) =>
+                {
+                    var handler = handlerFactory(provider);
+                    handlerProvider.RegisterHandler(eventTypeId, () => handler);
+                });
+        }
+
+        /// <summary>
+        /// Registers a handler for a dynamically-typed event keyed by its string EventTypeId,
+        /// resolving the handler from a new dependency-injection scope for each message. The
+        /// scope and its dependencies are disposed after the handler completes.
+        /// </summary>
+        /// <param name="eventTypeId">The wire EventTypeId string (e.g. "crm.contact.enriched.v1"). Must not be null or whitespace.</param>
+        /// <param name="handlerFactory">Factory that receives the per-message scoped service provider and returns the handler. Must not be null.</param>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown during dispatch when the event handler provider has no dependency-injection scope factory.
+        /// </exception>
+        public NimBusSubscriberBuilder AddScopedDynamicHandler(
+            string eventTypeId,
+            Func<IServiceProvider, IEventJsonHandler> handlerFactory)
+        {
+            return AddDynamicRegistration(
+                eventTypeId,
+                handlerFactory,
+                (_, handlerProvider) =>
+                    handlerProvider.RegisterHandler(
+                        eventTypeId,
+                        scopedProvider => handlerFactory(RequireScopedProvider(scopedProvider))));
+        }
+
+        /// <summary>
+        /// Registers a single fallback handler invoked for any event type with no specific
+        /// handler. The factory is called once when the <see cref="ISubscriberClient"/> singleton
+        /// is resolved, so the same handler instance processes every unmatched message. The
+        /// Mapping Executor uses this to consult the mapping registry per message (spec 023).
+        /// Use <see cref="AddScopedDynamicFallbackHandler(Func{IServiceProvider, IEventJsonHandler})"/>
+        /// when the handler requires scoped dependencies.
+        /// </summary>
+        /// <param name="handlerFactory">Factory that receives the DI container and returns the handler. Must not be null.</param>
+        public NimBusSubscriberBuilder AddDynamicFallbackHandler(Func<IServiceProvider, IEventJsonHandler> handlerFactory)
+        {
+            if (handlerFactory == null) throw new ArgumentNullException(nameof(handlerFactory));
+
+            HandlerRegistrations.Add(new HandlerRegistration
+            {
+                EventTypeId = null,
+                EventType = null,
+                HandlerType = null,
+                IsExplicit = true,
+                Register = (provider, handlerProvider) =>
+                {
+                    var handler = handlerFactory(provider);
+                    handlerProvider.RegisterFallbackHandler(() => handler);
+                }
+            });
+
+            return this;
+        }
+
+        /// <summary>
+        /// Registers a single fallback handler invoked for any event type with no specific
+        /// handler, resolving it from a new dependency-injection scope for each message. The
+        /// scope and its dependencies are disposed after the handler completes.
+        /// </summary>
+        /// <param name="handlerFactory">Factory that receives the per-message scoped service provider and returns the handler. Must not be null.</param>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown during dispatch when the event handler provider has no dependency-injection scope factory.
+        /// </exception>
+        public NimBusSubscriberBuilder AddScopedDynamicFallbackHandler(
+            Func<IServiceProvider, IEventJsonHandler> handlerFactory)
+        {
+            if (handlerFactory == null) throw new ArgumentNullException(nameof(handlerFactory));
+
+            HandlerRegistrations.Add(new HandlerRegistration
+            {
+                EventTypeId = null,
+                EventType = null,
+                HandlerType = null,
+                IsExplicit = true,
+                Register = (_, handlerProvider) =>
+                {
+                    handlerProvider.RegisterFallbackHandler(
+                        scopedProvider => handlerFactory(RequireScopedProvider(scopedProvider)));
+                }
+            });
+
+            return this;
+        }
+
+        private NimBusSubscriberBuilder AddDynamicRegistration<THandlerFactory>(
+            string eventTypeId,
+            THandlerFactory handlerFactory,
+            Action<IServiceProvider, EventHandlerProvider> register)
+            where THandlerFactory : class
+        {
             if (string.IsNullOrWhiteSpace(eventTypeId))
                 throw new ArgumentException("Event type id must not be null or empty.", nameof(eventTypeId));
             if (handlerFactory == null) throw new ArgumentNullException(nameof(handlerFactory));
@@ -111,88 +230,16 @@ namespace NimBus.SDK.Extensions
                 EventType = null,
                 HandlerType = null,
                 IsExplicit = true,
-                Register = (_, handlerProvider) =>
-                {
-                    handlerProvider.RegisterHandler(eventTypeId, handlerFactory);
-                }
+                Register = register
             });
 
             return this;
         }
 
-        /// <summary>
-        /// Registers a handler for a dynamically-typed event keyed by its string EventTypeId,
-        /// with a DI-aware factory that receives the <see cref="IServiceProvider"/> at registration
-        /// time. This is the DI-integrated counterpart to
-        /// <see cref="AddDynamicHandler(string, Func{IEventJsonHandler})"/> — the
-        /// <paramref name="handlerFactory"/> is called once when the
-        /// <see cref="ISubscriberClient"/> singleton is resolved, so it behaves like a singleton
-        /// handler (appropriate for handlers whose dependencies are themselves singletons).
-        /// </summary>
-        /// <param name="eventTypeId">The wire EventTypeId string (e.g. "crm.contact.enriched.v1"). Must not be null or whitespace.</param>
-        /// <param name="handlerFactory">Factory that receives the DI container and returns the handler. Must not be null.</param>
-        public NimBusSubscriberBuilder AddDynamicHandler(string eventTypeId, Func<IServiceProvider, IEventJsonHandler> handlerFactory)
+        private static IServiceProvider RequireScopedProvider(IServiceProvider? scopedProvider)
         {
-            if (string.IsNullOrWhiteSpace(eventTypeId))
-                throw new ArgumentException("Event type id must not be null or empty.", nameof(eventTypeId));
-            if (handlerFactory == null) throw new ArgumentNullException(nameof(handlerFactory));
-
-            var existing = HandlerRegistrations.SingleOrDefault(r => r.EventTypeId == eventTypeId);
-            if (existing != null)
-            {
-                throw new InvalidOperationException(
-                    $"EventTypeId '{eventTypeId}' is already registered as a " +
-                    $"{(existing.EventType is null ? "dynamic" : "typed")} handler " +
-                    $"('{existing.HandlerType?.FullName ?? "<dynamic>"}'); " +
-                    "cannot also register a dynamic handler for it. " +
-                    "Register only one handler per EventTypeId.");
-            }
-
-            HandlerRegistrations.Add(new HandlerRegistration
-            {
-                EventTypeId = eventTypeId,
-                EventType = null,
-                HandlerType = null,
-                IsExplicit = true,
-                Register = (provider, handlerProvider) =>
-                {
-                    // Resolve the handler once (at ISubscriberClient singleton creation) and
-                    // register it as a constant factory — this mirrors how AddHandler<TEvent,THandler>
-                    // resolves from IServiceProvider, but for the DI-aware dynamic variant.
-                    var handler = handlerFactory(provider);
-                    handlerProvider.RegisterHandler(eventTypeId, () => handler);
-                }
-            });
-
-            return this;
-        }
-
-        /// <summary>
-        /// Registers a single fallback handler invoked for any event type with no specific
-        /// handler. The Mapping Executor uses this to consult the mapping registry per message (spec 023).
-        /// </summary>
-        /// <param name="handlerFactory">Factory that receives the DI container and returns the handler. Must not be null.</param>
-        public NimBusSubscriberBuilder AddDynamicFallbackHandler(Func<IServiceProvider, IEventJsonHandler> handlerFactory)
-        {
-            if (handlerFactory == null) throw new ArgumentNullException(nameof(handlerFactory));
-
-            HandlerRegistrations.Add(new HandlerRegistration
-            {
-                EventTypeId = null,
-                EventType = null,
-                HandlerType = null,
-                IsExplicit = true,
-                Register = (provider, handlerProvider) =>
-                {
-                    // Resolve the handler once (at ISubscriberClient singleton creation) and
-                    // register it as the fallback — same resolution pattern as the SP-aware
-                    // AddDynamicHandler overload, but targeting RegisterFallbackHandler.
-                    var handler = handlerFactory(provider);
-                    handlerProvider.RegisterFallbackHandler(() => handler);
-                }
-            });
-
-            return this;
+            return scopedProvider ?? throw new InvalidOperationException(
+                $"Scoped dynamic handlers require an {nameof(IServiceScopeFactory)}-configured event handler provider.");
         }
 
         /// <summary>
@@ -289,7 +336,9 @@ namespace NimBus.SDK.Extensions
                 IsExplicit = explicitRegistration,
                 Register = (provider, handlerProvider) =>
                 {
-                    handlerProvider.RegisterHandler(eventType, () => provider.GetRequiredService(expectedHandlerInterface));
+                    handlerProvider.RegisterHandler(
+                        eventType,
+                        scopedProvider => (scopedProvider ?? provider).GetRequiredService(expectedHandlerInterface));
                 }
             });
         }

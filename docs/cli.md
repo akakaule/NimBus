@@ -93,12 +93,23 @@ nb infra apply --solution-id nimbus --environment dev --resource-group rg-nimbus
 | `--webapp-version` | No | Version string for web app settings |
 | `--storage-provider` | No | Storage backend: `cosmos` (default) or `sqlserver` |
 | `--sql-mode` | No | When `--storage-provider sqlserver`: `provision` (default, creates a new Azure SQL server + DB) or `external` (use an existing SQL Server) |
-| `--sql-connection-string` | Conditional | Required when `--sql-mode external` |
 | `--sql-admin-login` | Conditional | Required when `--sql-mode provision` |
-| `--sql-admin-password` | Conditional | Required when `--sql-mode provision` |
 | `--sql-server-name` | No | Override the SQL server name (default: `sql-{solution-id}-{environment}`). Useful when the default DNS name is held in Azure's global namespace from a recent delete (24–72h cooldown). |
 | `--resolver-plan` | No | Resolver Function App hosting plan: `FlexConsumption` (default for new deployments; FC1, scale-to-zero Linux) or `ElasticPremium` (EP1 Windows). Existing deployments keep their current plan type unless this flag is passed. |
 | `--management-plan-sku` | No | SKU for the management App Service Plan hosting the WebApp. Default for new deployments: `B1` for `dev`/`development`, `S1` otherwise. Existing deployments keep their current SKU unless this flag is passed. |
+
+Deployment secrets are intentionally not accepted as command-line options because process arguments can be inspected by other tools. Set the required environment variable before invoking `nb`:
+
+| Environment variable | Required when |
+|---|---|
+| `NIMBUS_SQL_CONNECTION_STRING` | `--storage-provider sqlserver --sql-mode external` |
+| `NIMBUS_SQL_ADMIN_PASSWORD` | `--storage-provider sqlserver --sql-mode provision` |
+| `NIMBUS_IDENTITY_ADMIN_PASSWORD` | `nb setup` is given `--identity-admin-email` |
+
+Canceling `nb` terminates its local Azure CLI process tree before removing the
+ephemeral parameter file. An ARM deployment that Azure already accepted may
+continue server-side, so check the resource group's deployment history after a
+cancellation.
 
 Deploys core infrastructure (Service Bus, App Insights, and either Cosmos DB or Azure SQL depending on `--storage-provider`) and the web app infrastructure via bicep. The provisioned SQL path uses AAD managed-identity auth (`Authentication=Active Directory Default`); the external path uses the supplied connection string verbatim. Automatically creates an Application Insights API key and resolves required resource endpoints/namespace settings.
 
@@ -176,7 +187,7 @@ Run infrastructure, topology, and app deployment in sequence.
 nb setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
-Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-connection-string`, `--sql-admin-login`, `--sql-admin-password`, `--sql-server-name`, `--resolver-plan`, and `--management-plan-sku`.
+Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resolver-plan`, and `--management-plan-sku`. SQL and bootstrap-admin secrets use the environment variables documented under `nb infra apply`.
 
 ---
 
@@ -448,26 +459,28 @@ nb setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 
 Provision a fresh Azure SQL server + database (managed-identity auth from the WebApp / Resolver):
 
-```bash
+```powershell
+$env:NIMBUS_SQL_ADMIN_PASSWORD = '<strong-password>'
 nb setup `
   --solution-id nimbus --environment dev --resource-group rg-nimbus-dev `
   --storage-provider sqlserver `
   --sql-mode provision `
-  --sql-admin-login nimbusadmin `
-  --sql-admin-password '<strong-password>'
+  --sql-admin-login nimbusadmin
+Remove-Item Env:NIMBUS_SQL_ADMIN_PASSWORD
 ```
 
 Reuse an existing SQL Server:
 
-```bash
+```powershell
+$env:NIMBUS_SQL_CONNECTION_STRING = 'Server=tcp:my-existing.database.windows.net,1433;Initial Catalog=MessageDatabase;Authentication=Active Directory Default;Encrypt=true;'
 nb setup `
   --solution-id nimbus --environment dev --resource-group rg-nimbus-dev `
   --storage-provider sqlserver `
-  --sql-mode external `
-  --sql-connection-string 'Server=tcp:my-existing.database.windows.net,1433;Initial Catalog=MessageDatabase;Authentication=Active Directory Default;Encrypt=true;'
+  --sql-mode external
+Remove-Item Env:NIMBUS_SQL_CONNECTION_STRING
 ```
 
-The same flags work on `nb infra apply` if you prefer running infrastructure, topology, and app deployment as separate steps.
+The same options and environment variables work on `nb infra apply` if you prefer running infrastructure, topology, and app deployment as separate steps.
 
 ### Operational maintenance
 

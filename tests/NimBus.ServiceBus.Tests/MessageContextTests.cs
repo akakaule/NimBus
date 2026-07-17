@@ -1,9 +1,15 @@
 #pragma warning disable CA1707, CA1515, CA2007
 using Azure.Messaging.ServiceBus;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Core.Events;
+using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
+using NimBus.Core.Pipeline;
+using NimBus.SDK.EventHandlers;
 using NimBus.ServiceBus;
+using NimBus.Testing;
 using Newtonsoft.Json;
 using System.Text;
 
@@ -79,6 +85,75 @@ public class MessageContextTests
         var ctx = new MessageContext(msg, session);
 
         Assert.IsNull(ctx.EventTypeId);
+    }
+
+    [TestMethod]
+    public void EventTypeId_WhenPropertyMissingAndBodyIsMalformed_ReturnsNull()
+    {
+        var msg = CreateDefaultMessage();
+        msg.Body = Encoding.UTF8.GetBytes("{not-json");
+        var ctx = new MessageContext(msg, new FakeServiceBusSession());
+
+        Assert.IsNull(ctx.EventTypeId);
+    }
+
+    [TestMethod]
+    public void EventTypeId_WhenPropertyEmptyAndBodyIsForeignJson_ReturnsNull()
+    {
+        var msg = CreateDefaultMessage();
+        msg.UserProperties[UserPropertyName.EventTypeId.ToString()] = string.Empty;
+        msg.Body = Encoding.UTF8.GetBytes("\"foreign-body\"");
+        var ctx = new MessageContext(msg, new FakeServiceBusSession());
+
+        Assert.IsNull(ctx.EventTypeId);
+    }
+
+    [TestMethod]
+    public void EventTypeId_MalformedBody_ReadMultipleTimes_ParsesOnlyOnce()
+    {
+        var msg = CreateDefaultMessage();
+        msg.Body = Encoding.UTF8.GetBytes("{not-json");
+        var ctx = new MessageContext(msg, new FakeServiceBusSession());
+
+        Assert.IsNull(ctx.EventTypeId);
+        Assert.IsNull(ctx.EventTypeId);
+        Assert.IsNull(ctx.EventTypeId);
+
+        Assert.AreEqual(1, msg.BodyReadCount, "A failed body parse should be memoized per context.");
+    }
+
+    [TestMethod]
+    public async Task SubscriberPipeline_LegacyBodyOnlyEventTypeId_ReachesTypedHandlerWithNormalizedMetadata()
+    {
+        var session = new FakeServiceBusSession();
+        var context = CreateMessageContext(
+            session: session,
+            content: new MessageContent
+            {
+                EventContent = new EventContent
+                {
+                    EventTypeId = nameof(LegacyBodyOnlyEvent),
+                    EventJson = "{}",
+                },
+            });
+        var handler = new RecordingLegacyEventHandler();
+        var eventHandlerProvider = new EventHandlerProvider();
+        eventHandlerProvider.RegisterHandler<LegacyBodyOnlyEvent>(() => handler);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNimBus(builder =>
+        {
+            builder.AddInMemoryMessageStore();
+            builder.AddPipelineBehavior<ValidationMiddleware>();
+        });
+        using var serviceProvider = services.BuildServiceProvider();
+        var pipeline = serviceProvider.GetRequiredService<MessagePipeline>();
+
+        await pipeline.Execute(context, eventHandlerProvider.Handle);
+
+        Assert.AreEqual(1, handler.Calls);
+        Assert.AreEqual(nameof(LegacyBodyOnlyEvent), handler.EventType);
+        Assert.AreEqual(0, session.DeadLetterCalls);
     }
 
     [TestMethod]
@@ -730,6 +805,27 @@ public class MessageContextTests
     }
 
     // ── Fakes ────────────────────────────────────────────────────────────
+
+    public sealed class LegacyBodyOnlyEvent : Event
+    {
+    }
+
+    private sealed class RecordingLegacyEventHandler : IEventHandler<LegacyBodyOnlyEvent>
+    {
+        public int Calls { get; private set; }
+
+        public string EventType { get; private set; } = string.Empty;
+
+        public Task Handle(
+            LegacyBodyOnlyEvent message,
+            IEventHandlerContext context,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            EventType = context.EventType;
+            return Task.CompletedTask;
+        }
+    }
 
     private sealed class FakeServiceBusMessage : IServiceBusMessage
     {

@@ -34,7 +34,8 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton<IMessageHandler>(sp =>
         {
-            var eventHandlerProvider = new EventHandlerProvider();
+            var eventHandlerProvider = new EventHandlerProvider(
+                sp.GetRequiredService<IServiceScopeFactory>());
             var responseBus = new InMemoryMessageBus();
             var responseService = new ResponseService(responseBus);
 

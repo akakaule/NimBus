@@ -98,6 +98,7 @@ Subscription-scope permissions are **not** required, provided the resource provi
 | Requirement | Detail |
 |---|---|
 | Azure CLI ≥ **2.60.0** | Hard minimum for Flex Consumption zip deploys ([Microsoft-documented](https://learn.microsoft.com/azure/azure-functions/flex-consumption-how-to)); `nb deploy apps` refuses to deploy to a Flex plan with an older CLI. ≥ 2.70 recommended; `.bicepparam` files need ≥ 2.53 |
+| Bicep CLI ≥ **0.35.1** | Required on every deployment path because the templates use `@secure()` outputs. Check with `az bicep version` and update with `az bicep upgrade` ([Microsoft documentation](https://learn.microsoft.com/azure/azure-resource-manager/bicep/outputs#secure-outputs)) |
 | .NET 10 SDK + Node.js 22 | Wherever `nb deploy apps` builds the apps (the WebApp SPA builds during `dotnet publish`); pipeline agents need outbound access to nuget.org and the npm registry |
 | Flex Consumption region availability | Not available in every region — check with `az functionapp list-flexconsumption-locations` |
 | Region consistency | Apps must live in the same region as their plans; the CLI pins existing resources to their current region automatically |

@@ -146,28 +146,28 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
     public CosmosDbClient(CosmosClient cosmosClient, ILogger<CosmosDbClient> logger = null)
     {
-        _cosmosClient = new CosmosClientAdapter(cosmosClient);
         _logger = logger;
+        _cosmosClient = new CosmosClientAdapter(cosmosClient, _logger);
     }
 
     public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient> logger = null)
     {
-        _cosmosClient = cosmosClient;
         _logger = logger;
+        _cosmosClient = new TransientTranslatingCosmosClientAdapter(cosmosClient, _logger);
     }
 
     [Obsolete("Use the Microsoft.Extensions.Logging constructor — NimBus standardizes on Microsoft.Extensions.Logging (ADR-006). This bridge remains for callers that still pass a Serilog logger.")]
     public CosmosDbClient(CosmosClient cosmosClient, Serilog.ILogger logger)
     {
-        _cosmosClient = new CosmosClientAdapter(cosmosClient);
         _logger = logger is null ? null : new SerilogBridgeLogger(logger);
+        _cosmosClient = new CosmosClientAdapter(cosmosClient, _logger);
     }
 
     [Obsolete("Use the Microsoft.Extensions.Logging constructor — NimBus standardizes on Microsoft.Extensions.Logging (ADR-006). This bridge remains for callers that still pass a Serilog logger.")]
     public CosmosDbClient(ICosmosClientAdapter cosmosClient, Serilog.ILogger logger)
     {
-        _cosmosClient = cosmosClient;
         _logger = logger is null ? null : new SerilogBridgeLogger(logger);
+        _cosmosClient = new TransientTranslatingCosmosClientAdapter(cosmosClient, _logger);
     }
 
     /// <summary>
@@ -372,9 +372,14 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                         HandoffReason = x.Event.HandoffReason,
                         ExternalJobId = x.Event.ExternalJobId,
                         ExpectedBy = x.Event.ExpectedBy,
+                        CloudEventId = x.Event.CloudEventId,
+                        CloudEventSource = x.Event.CloudEventSource,
+                        CloudEventType = x.Event.CloudEventType,
+                        CloudEventSubject = x.Event.CloudEventSubject,
                     },
                 })
                 .ToFeedIterator();
+            result = CosmosExceptionTranslation.Wrap(result, _logger);
 
             var pendingEvents = new List<string>();
             var failedEvents = new List<string>();
@@ -497,12 +502,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         {
             _logger?.LogError(e,
                 "COSMOS UPSERT-ERROR: EventId: {EventId}, SessionId: {SessionId}, Status: {Status}", eventId, sessionId, CompletedStatus);
-
-            if (e.StatusCode == HttpStatusCode.TooManyRequests)
-            {
-                throw new RequestLimitException(e.RetryAfter);
-            }
-
             throw;
         }
     }
@@ -538,11 +537,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 // Missing document — nothing to remove (matches the previous
                 // empty-query-result path returning false).
                 return false;
-            }
-
-            if (e.StatusCode == HttpStatusCode.TooManyRequests)
-            {
-                throw new RequestLimitException(e.RetryAfter);
             }
 
             throw;
@@ -930,9 +924,14 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                     HandoffReason = x.Event.HandoffReason,
                     ExternalJobId = x.Event.ExternalJobId,
                     ExpectedBy = x.Event.ExpectedBy,
+                    CloudEventId = x.Event.CloudEventId,
+                    CloudEventSource = x.Event.CloudEventSource,
+                    CloudEventType = x.Event.CloudEventType,
+                    CloudEventSubject = x.Event.CloudEventSubject,
                 },
             })
             .ToFeedIterator();
+        result = CosmosExceptionTranslation.Wrap(result, _logger);
         var events = new List<UnresolvedEvent>();
         var token = "";
         var effectiveLimit = PaginationLimits.Resolve(maxSearchItemsCount);
@@ -1064,6 +1063,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
                 .Where(e => e.Status.Equals(PendingStatus, StringComparison.OrdinalIgnoreCase))
                 .Where(e => !e.Deleted.HasValue || !e.Deleted.Value)
                 .OrderByDescending(e => e.Event.UpdatedAt).ToFeedIterator();
+            queryResult = CosmosExceptionTranslation.Wrap(queryResult, _logger);
             while (queryResult.HasMoreResults)
             {
                 var eventDbo = await queryResult.ReadNextAsync();
@@ -1365,7 +1365,9 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     private async Task<ICosmosContainerAdapter> EnsureContainerExistsAsync(string containerId, string partitionKeyPath)
     {
         var db = _cosmosClient.GetDatabase(DatabaseId);
-        return await db.CreateContainerIfNotExistsAsync(containerId, partitionKeyPath);
+        return await CosmosExceptionTranslation.TranslateTransientAsync(
+            () => db.CreateContainerIfNotExistsAsync(containerId, partitionKeyPath),
+            _logger);
     }
 
     private Task<ICosmosContainerAdapter> GetEndpointContainer(string endpointId)
@@ -1635,12 +1637,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         catch (CosmosException e)
         {
             _logger?.LogError(e, "COSMOS STORE-MESSAGE-ERROR: EventId: {EventId}, MessageId: {MessageId}", message.EventId, message.MessageId);
-
-            if (e.StatusCode == HttpStatusCode.TooManyRequests)
-            {
-                throw new RequestLimitException(e.RetryAfter);
-            }
-
             throw;
         }
     }
@@ -1686,7 +1682,9 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
 
         while (result.HasMoreResults)
         {
-            var feed = await result.ReadNextAsync();
+            var feed = await CosmosExceptionTranslation.TranslateTransientAsync(
+                () => result.ReadNextAsync(),
+                _logger);
             foreach (var doc in feed)
             {
                 messages.Add(doc.Message);
@@ -1783,12 +1781,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         catch (CosmosException e)
         {
             _logger?.LogError(e, "COSMOS STORE-AUDIT-ERROR: EventId: {EventId}", eventId);
-
-            if (e.StatusCode == HttpStatusCode.TooManyRequests)
-            {
-                throw new RequestLimitException(e.RetryAfter);
-            }
-
             throw;
         }
     }
@@ -1966,12 +1958,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         {
             _logger?.LogError(e,
                 "COSMOS UPSERT-ERROR: EventId: {EventId}, SessionId: {SessionId}, Status: {Status}, HttpStatusCode: {StatusCode}", eventId, sessionId, status, e.StatusCode);
-
-            if (e.StatusCode == HttpStatusCode.TooManyRequests)
-            {
-                throw new RequestLimitException(e.RetryAfter);
-            }
-
             throw;
         }
     }
@@ -2062,12 +2048,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         {
             _logger?.LogError(e,
                 "COSMOS UPSERT-ERROR: Metadata upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointMetadata.EndpointId, e.StatusCode);
-
-            if (e.StatusCode == HttpStatusCode.TooManyRequests)
-            {
-                throw new RequestLimitException(e.RetryAfter);
-            }
-
             throw;
         }
     }

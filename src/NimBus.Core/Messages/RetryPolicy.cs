@@ -29,9 +29,30 @@ namespace NimBus.Core.Messages
         public TimeSpan? MaxDelay { get; set; }
 
         /// <summary>
+        /// Gets or sets the jitter mode applied to the calculated backoff delay.
+        /// </summary>
+        public JitterMode Jitter { get; set; } = JitterMode.None;
+
+        /// <summary>
+        /// Gets or sets the maximum proportional increase used by <see cref="JitterMode.Bounded"/>.
+        /// </summary>
+        public double BoundedJitterFactor { get; set; } = 0.25;
+
+        /// <summary>
         /// Calculates the delay for a given retry attempt (0-based).
         /// </summary>
         public TimeSpan GetDelay(int retryAttempt)
+        {
+            return GetDelay(retryAttempt, rng: null);
+        }
+
+        /// <summary>
+        /// Calculates the delay for a given retry attempt (0-based) using the supplied random source for jitter.
+        /// </summary>
+        /// <param name="retryAttempt">The zero-based retry attempt.</param>
+        /// <param name="rng">The random source, or <see langword="null"/> to use <see cref="Random.Shared"/>.</param>
+        /// <returns>The calculated retry delay.</returns>
+        public TimeSpan GetDelay(int retryAttempt, Random? rng = null)
         {
             var delay = Strategy switch
             {
@@ -41,10 +62,26 @@ namespace NimBus.Core.Messages
                 _ => BaseDelay
             };
 
+            delay = Jitter switch
+            {
+                JitterMode.Full => ApplyJitter(delay, rng ?? Random.Shared, 1),
+                JitterMode.Bounded => ApplyJitter(delay, rng ?? Random.Shared, BoundedJitterFactor),
+                _ => delay
+            };
+
             if (MaxDelay.HasValue && delay > MaxDelay.Value)
                 delay = MaxDelay.Value;
 
             return delay;
+        }
+
+        private static TimeSpan ApplyJitter(TimeSpan delay, Random rng, double maximumFactor)
+        {
+            var maximumJitterTicks = delay.Ticks * maximumFactor;
+            var jitterTicks = (long)(maximumJitterTicks * rng.NextDouble());
+            if (maximumJitterTicks > 0 && jitterTicks >= maximumJitterTicks)
+                jitterTicks = (long)Math.Ceiling(maximumJitterTicks) - 1;
+            return TimeSpan.FromTicks(checked(delay.Ticks + jitterTicks));
         }
 
         /// <summary>
@@ -75,5 +112,26 @@ namespace NimBus.Core.Messages
         /// Delay doubles each retry: baseDelay * 2^attempt.
         /// </summary>
         Exponential
+    }
+
+    /// <summary>
+    /// Jitter mode for spreading retry delays.
+    /// </summary>
+    public enum JitterMode
+    {
+        /// <summary>
+        /// No jitter. The calculated backoff delay is used unchanged.
+        /// </summary>
+        None,
+
+        /// <summary>
+        /// Uniformly increases the calculated backoff delay by up to 100 percent.
+        /// </summary>
+        Full,
+
+        /// <summary>
+        /// Uniformly increases the calculated backoff delay by up to the configured bounded factor.
+        /// </summary>
+        Bounded
     }
 }

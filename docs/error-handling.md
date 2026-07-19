@@ -249,10 +249,24 @@ builder.Services.AddNimBusSubscriber("billingendpoint", sub =>
             Strategy   = BackoffStrategy.Exponential,
             BaseDelay  = TimeSpan.FromSeconds(5),
             MaxDelay   = TimeSpan.FromMinutes(5),
+            Jitter     = JitterMode.Bounded,
+            BoundedJitterFactor = 0.25,
         });
     });
 });
 ```
+
+Jitter spreads retries that would otherwise use the same calculated backoff
+delay `d`:
+
+- `JitterMode.None` is the default and keeps the deterministic delay unchanged.
+- `JitterMode.Full` selects a delay uniformly from `[d, 2d)`.
+- `JitterMode.Bounded` selects `d * (1 + U[0, factor))`; the default factor of
+  `0.25` produces delays from `d` up to (but not including) `1.25d`.
+
+`MaxDelay` is applied after jitter. Bounded jitter is useful when retry timing
+must stay close to the configured backoff; full jitter provides a wider spread
+when many sessions are likely to fail together.
 
 Without a retry policy, handler failures stay in `Failed` until an operator
 resubmits or skips them — there is no implicit retry.

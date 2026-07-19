@@ -18,6 +18,15 @@ namespace NimBus.Core.Messages
         Task SendDeadLetterResponse(IMessageContext messageContext, string reason, Exception exception, CancellationToken cancellationToken = default);
         Task SendDeferralResponse(IMessageContext messageContext, SessionBlockedException exception, CancellationToken cancellationToken = default);
         Task SendContinuationRequestToSelf(IMessageContext deferredMessageContext, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Schedules a retry response after the specified delay.
+        /// </summary>
+        /// <param name="messageContext">The failed message context.</param>
+        /// <param name="messageDelay">The precise delay before the retry is enqueued.</param>
+        /// <param name="cancellationToken">A token that can cancel the operation.</param>
+        Task SendRetryResponse(IMessageContext messageContext, TimeSpan messageDelay, CancellationToken cancellationToken = default);
+
         Task SendRetryResponse(IMessageContext messageContext, int messageDelayMinutes, CancellationToken cancellationToken = default);
         Task SendUnsupportedResponse(IMessageContext messageContext, CancellationToken cancellationToken = default);
 

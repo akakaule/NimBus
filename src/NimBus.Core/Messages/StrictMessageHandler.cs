@@ -301,6 +301,9 @@ namespace NimBus.Core.Messages
         private Task SendRetryResponse(IMessageContext messageContext, int messageDelayMinutes, CancellationToken cancellationToken = default) =>
             _responseService.SendRetryResponse(messageContext, messageDelayMinutes, cancellationToken);
 
+        private Task SendRetryResponse(IMessageContext messageContext, TimeSpan messageDelay, CancellationToken cancellationToken = default) =>
+            _responseService.SendRetryResponse(messageContext, messageDelay, cancellationToken);
+
         private Task SendUnsupportedResponse(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
             _responseService.SendUnsupportedResponse(messageContext, cancellationToken);
 
@@ -422,8 +425,8 @@ namespace NimBus.Core.Messages
                 var policy = _retryPolicyProvider.GetRetryPolicy(eventTypeId, exceptionText, messageContext.To);
                 if (policy != null && retryCount < policy.MaxRetries)
                 {
-                    var delayMinutes = policy.GetDelayMinutes(retryCount);
-                    await SendRetryResponse(messageContext, delayMinutes, cancellationToken);
+                    var delay = policy.GetDelay(retryCount);
+                    await SendRetryResponse(messageContext, delay, cancellationToken);
                 }
                 return;
             }

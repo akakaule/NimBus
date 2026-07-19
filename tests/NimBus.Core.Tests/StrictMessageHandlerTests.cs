@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
+using NimBus.Testing;
 
 namespace NimBus.Core.Tests;
 
@@ -444,6 +445,32 @@ public class StrictMessageHandlerTests
 
         Assert.AreEqual(1, response.RetryCalls);
         Assert.AreEqual(1, response.LastRetryDelayMinutes);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_RetryPolicy_SchedulesWithSubMinutePrecision()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest, eventTypeId: "OrderPlaced");
+        var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
+        var sender = new InMemoryMessageBus();
+        var retryProvider = new FakeRetryPolicyProvider
+        {
+            PolicyToReturn = new RetryPolicy
+            {
+                MaxRetries = 1,
+                BaseDelay = TimeSpan.FromSeconds(90),
+            },
+        };
+        var sut = new StrictMessageHandler(handler, new ResponseService(sender), NullLogger.Instance, retryProvider);
+        var before = DateTimeOffset.UtcNow;
+
+        await sut.Handle(ctx);
+
+        var after = DateTimeOffset.UtcNow;
+        var scheduled = sender.ScheduledMessages.Single();
+        Assert.AreEqual(Constants.RetryId, scheduled.Message.To);
+        Assert.IsTrue(scheduled.ScheduledTime >= before.AddSeconds(90));
+        Assert.IsTrue(scheduled.ScheduledTime <= after.AddSeconds(90));
     }
 
     [TestMethod]
@@ -922,6 +949,7 @@ public class StrictMessageHandlerTests
             return Task.CompletedTask;
         }
         public Task SendDeferralResponse(IMessageContext mc, SessionBlockedException ex, CancellationToken ct = default) { DeferralCalls++; return Task.CompletedTask; }
+        public Task SendRetryResponse(IMessageContext mc, TimeSpan delay, CancellationToken ct = default) { RetryCalls++; return Task.CompletedTask; }
         public Task SendRetryResponse(IMessageContext mc, int delay, CancellationToken ct = default) { RetryCalls++; LastRetryDelayMinutes = delay; return Task.CompletedTask; }
         public Task SendUnsupportedResponse(IMessageContext mc, CancellationToken ct = default) { UnsupportedCalls++; return Task.CompletedTask; }
         public Task SendContinuationRequestToSelf(IMessageContext mc, CancellationToken ct = default) { ContinuationCalls++; return Task.CompletedTask; }

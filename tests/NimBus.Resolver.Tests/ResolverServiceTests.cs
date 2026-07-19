@@ -137,6 +137,31 @@ public class ResolverServiceTests
     }
 
     [TestMethod]
+    public async Task Handle_DiscardSkipResponse_UploadsSkippedOutcomeWithReason()
+    {
+        var cosmos = new FakeCosmosDbClient();
+        var message = CreateMessageContext(
+            messageType: MessageType.SkipResponse,
+            to: Constants.ResolverId,
+            from: "BillingEndpoint");
+        message.MessageContent.ErrorContent = new ErrorContent
+        {
+            ErrorText = "InvalidOperationException: Known bad event version. Classified by PartnerFailureDispositionClassifier.",
+            ErrorType = nameof(InvalidOperationException),
+        };
+        var service = CreateService(cosmos);
+
+        await service.Handle(message);
+
+        Assert.AreEqual(1, cosmos.SkippedUploads.Count);
+        var tracked = cosmos.SkippedUploads[0].Content;
+        Assert.AreEqual(ResolutionStatus.Skipped, tracked.ResolutionStatus);
+        Assert.AreEqual(message.MessageContent.ErrorContent.ErrorText, tracked.Reason);
+        Assert.AreEqual(nameof(InvalidOperationException), tracked.MessageContent.ErrorContent.ErrorType);
+        Assert.AreEqual(1, message.CompletedCalls);
+    }
+
+    [TestMethod]
     public async Task Handle_RetryRequest_StoresAuditBeforePersistingMessage()
     {
         var cosmos = new FakeCosmosDbClient();

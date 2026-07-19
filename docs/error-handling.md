@@ -17,8 +17,8 @@ Two distinct call sites can throw inside the subscriber:
 - **Event handler** — your `IEventHandler<TEvent>.Handle(...)`. Exceptions here
   are caught inside `StrictMessageHandler.HandleEventContent` and either
   re-thrown (`TransientException`, `EventHandlerNotFoundException`) or wrapped
-  in `EventContextHandlerException` (or `PermanentFailureException` if the
-  configured `IPermanentFailureClassifier` matches).
+  according to the configured `IFailureDispositionClassifier`. The obsolete
+  `IPermanentFailureClassifier` remains supported as a compatibility bridge.
 
 ## Decision tree
 
@@ -34,8 +34,10 @@ flowchart TD
 
     Hc -- TransientException --> Trans[Abandon → SB redelivers after lock expiry<br/>no Resolver notification]
     Hc -- EventHandlerNotFoundException --> Unsup[SendUnsupportedResponse → Complete<br/>Resolver: Unsupported]
-    Hc -- classifier matches → wrap as PermanentFailureException --> Perm[send dead-letter notification + DeadLetter inbound<br/>Resolver: DeadLettered]
-    Hc -- anything else → wrap as EventContextHandlerException --> Ech[SendErrorResponse + BlockSession + Complete<br/>CheckForRetry → schedule RetryRequest if policy matches<br/>Resolver: Failed]
+    Hc -- ordinary Exception --> Classify{failure disposition}
+    Classify -- DeadLetter --> Perm[wrap as PermanentFailureException<br/>send dead-letter notification + DeadLetter inbound<br/>Resolver: DeadLettered]
+    Classify -- Discard --> Disc[SendDiscardResponse + Complete<br/>session remains or becomes unblocked<br/>Resolver: Skipped with reason]
+    Classify -- Retry --> Ech[wrap as EventContextHandlerException<br/>SendErrorResponse + BlockSession + Complete<br/>CheckForRetry → schedule RetryRequest if policy matches<br/>Resolver: Failed]
 
     classDef terminal fill:#fee2e2,stroke:#b91c1c,color:#7f1d1d
     classDef recover  fill:#dcfce7,stroke:#15803d,color:#14532d
@@ -43,7 +45,7 @@ flowchart TD
 
     class MwDLQ,MwUnex,Perm terminal
     class Trans,Ech recover
-    class Unsup neutral
+    class Unsup,Disc neutral
 ```
 
 ## Exception classification
@@ -53,14 +55,27 @@ flowchart TD
 | `TransientException` | Handler | **Abandon** (lock expires, SB redelivers) | — | Same message redelivered; lifecycle observers fire `OnFailed` only |
 | `EventHandlerNotFoundException` | Handler | Complete | `Unsupported` | One-shot — there's no handler, so nothing replays |
 | `SessionBlockedException` | Handler — internal, raised when session is already blocked | Complete + parked on `Deferred` sub | `Deferred` | Will replay when session unblocks (resubmit / skip / retry success) |
-| `EventContextHandlerException` (auto-wrap of any non-classified `Exception` from handler) | Handler | BlockSession + Complete | `Failed` | Retry scheduled if `IRetryPolicyProvider` matches; otherwise stays Failed until operator action |
-| `PermanentFailureException` (auto-wrap when `IPermanentFailureClassifier` matches) | Handler | **DeadLetter** + notify Resolver | `DeadLettered` | No retry. SB DLQ + Cosmos audit |
+| `EventContextHandlerException` (auto-wrap for the `Retry` disposition) | Handler | BlockSession + Complete | `Failed` | Retry scheduled if `IRetryPolicyProvider` matches; otherwise stays Failed until operator action |
+| `PermanentFailureException` (auto-wrap for the `DeadLetter` disposition) | Handler | **DeadLetter** + notify Resolver | `DeadLettered` | No retry. SB DLQ + audit trail |
+| Discarded handler exception (`Discard` disposition) | Handler | Complete; unblock first when processing a retry/resubmission | `Skipped`, with exception and classifier reason | No retry or DLQ; deferred session work continues |
 | `MessageAlreadyDeadLetteredException` | Middleware (e.g. `ValidationMiddleware`) | already DeadLettered by middleware → notify Resolver only | `DeadLettered` | Validation failures, missing critical fields |
 | Any other `Exception` from middleware | Middleware | **DeadLetter** + notify Resolver | `DeadLettered` | Includes raw user-middleware throws (e.g. demo's `ServiceModeMiddleware`) |
 
 `DeadLettered` and `Failed` records both fall under the **Failed** column on the
 endpoint dashboard (`Mapper.cs` aggregates `state.FailedCount + state.DeadletterCount`).
 `Pending` and `Unsupported` both fall under **Pending** in the same view.
+
+## Failure disposition matrix
+
+| Disposition | Inbound message | Session | Resolver audit trail |
+|---|---|---|---|
+| `Retry` | Sends `ErrorResponse`, completes the inbound message, and schedules `RetryRequest` when policy and budget allow | Blocks after the initial failure; retry success or operator action releases it | `Failed`, including the handler error |
+| `DeadLetter` | Dead-letters immediately; no retry budget is consumed | Does not create a retry block; an already-blocked retry session still requires operator action | `DeadLettered`, including the dead-letter reason |
+| `Discard` | Sends an enriched `SkipResponse` and completes; never retries or enters the DLQ | Never leaves the session blocked; retry/resubmission discard unblocks and resumes deferred work | `Skipped`, with the exception type, message, and classifier name |
+
+With no `IFailureDispositionClassifier` registered, NimBus preserves its prior
+behavior: a registered legacy permanent-failure classifier maps permanent
+exceptions to `DeadLetter`; every other ordinary exception maps to `Retry`.
 
 > **Note on PendingHandoff.** `IEventHandlerContext.MarkPendingHandoff(...)` is
 > **not** an exception path. The handler returns normally and
@@ -99,10 +114,12 @@ sequenceDiagram
     Ep->>Sub: EventRequest (delivery #2)
 ```
 
-### Permanent failure (classifier match → dead-letter)
+### Permanent failure (`DeadLetter` → dead-letter)
 
-The handler throws an exception type the `IPermanentFailureClassifier`
-considers permanent (default classifier matches `FormatException`,
+The handler throws an exception that the `IFailureDispositionClassifier` maps
+to `DeadLetter`. For backward compatibility, a registered
+`IPermanentFailureClassifier` is bridged to the same disposition (the default
+legacy classifier matches `FormatException`,
 `InvalidCastException`, `ArgumentException`, `NotSupportedException`, plus
 type names containing `Serialization` / `Deserialization` / `Validation`).
 `StrictMessageHandler.HandleEventContent` wraps it in
@@ -132,6 +149,16 @@ sequenceDiagram
     Res->>Svc: classified DeadLettered (DLE description set)
     Note over Svc: Cosmos: status = DeadLettered<br/>reason = "Permanent failure: JsonSerializationException"
 ```
+
+### Discarded failure (complete + continue)
+
+Use `Discard` for a known poison message that cannot succeed and does not need
+operator DLQ handling. NimBus records an enriched `SkipResponse`, completes the
+inbound message, and returns normally so lifecycle observers receive
+`OnMessageCompleted`. It sends no `ErrorResponse` or `RetryRequest` and performs
+no dead-letter operation. If the disposition is selected during retry or
+resubmission, NimBus unblocks the session and resumes its deferred messages
+before completing the discarded message.
 
 ### Validation rejection (middleware dead-lettered)
 
@@ -211,9 +238,9 @@ the source of truth and operators can recover via the Manager.
 | Situation | Throw |
 |---|---|
 | Downstream API timed out / connection refused / 503 | `TransientException` — let SB redeliver. Idempotent handlers are required for this to be safe. |
-| Downstream API returned 400 with a structural problem the message can't fix on retry | Throw a permanent type (`FormatException`, `ArgumentException`, etc.) or register your own via `DefaultPermanentFailureClassifier.AddPermanentExceptionType<T>()` — straight to DLQ |
+| Downstream API returned 400 with a structural problem the message can't fix on retry | Return `DeadLetter` from `IFailureDispositionClassifier` when operators need the DLQ payload; return `Discard` when a skipped audit record is sufficient |
 | Downstream API returned 500 / 502 transient | Throw a regular `Exception` — recorded as `Failed`, retried per policy |
-| Local validation failure that should never replay | Same as above — the message goes to `Failed` and your retry policy decides. If you really want it dead-lettered immediately, wrap as a permanent type |
+| Known poison event/version that should neither retry nor create DLQ noise | Return `Discard`; NimBus records `Skipped`, completes, and lets the session continue |
 | Don't have a handler for this event type | Don't catch `EventHandlerNotFoundException` — let it bubble; you'll see it as `Unsupported` |
 
 ### When NOT to swallow
@@ -223,17 +250,31 @@ message look successful (`SendResolutionResponse` fires). This breaks the
 audit trail. Re-throw unless you're explicitly compensating (e.g.
 short-circuit success for known idempotent no-ops).
 
-### Configuring the classifier
+### Configuring failure dispositions
 
 ```csharp
-builder.Services.AddSingleton<IPermanentFailureClassifier>(_ =>
-    new DefaultPermanentFailureClassifier()
-        .AddPermanentExceptionType<MyDomain.InvariantViolationException>()
-        .AddPermanentExceptionNamePattern("Compliance"));
+builder.Services.AddNimBusSubscriber("billingendpoint", subscriber =>
+{
+    subscriber.WithFailureDispositions(new AdapterFailureDispositionClassifier());
+});
+
+sealed class AdapterFailureDispositionClassifier : IFailureDispositionClassifier
+{
+    public FailureDisposition Classify(
+        Exception exception,
+        string eventTypeId,
+        string? endpointName) => exception switch
+    {
+        KnownBadEventVersionException => FailureDisposition.Discard,
+        MyDomain.InvariantViolationException => FailureDisposition.DeadLetter,
+        _ => FailureDisposition.Retry,
+    };
+}
 ```
 
-Permanent classification is opt-in for non-default types — without it,
-domain exceptions go through the standard retry path.
+`IPermanentFailureClassifier` is obsolete but remains functional. When no new
+classifier is registered, its `true` result maps to `DeadLetter`; `false` maps
+to `Retry`. Registering `IFailureDispositionClassifier` takes precedence.
 
 ### Configuring retry
 
@@ -288,7 +329,7 @@ For passive observation (alerting, metrics) without altering the flow:
 | Observer call | Fires for |
 |---|---|
 | `OnMessageReceived` | every message before pipeline runs |
-| `OnMessageCompleted` | success path — pipeline returns without throwing |
+| `OnMessageCompleted` | success and discard paths — pipeline returns without throwing |
 | `OnMessageFailed` | every catch branch in `MessageHandler.Handle` (transient, permanent, validation-rejected, unexpected) |
 | `OnMessageDeadLettered` | only when the message ends up in DLQ — fires *after* the SB DeadLetter call |
 
@@ -301,7 +342,7 @@ don't use it to gate processing — register a pipeline behavior for that.
 |---|---|
 | Catch ladder for the receiver | `src/NimBus.Core/Messages/MessageHandler.cs` |
 | Handler-throw to retry/error mapping | `src/NimBus.Core/Messages/StrictMessageHandler.cs` (`HandleEventRequest`, `HandleEventContent`, `CheckForRetry`) |
-| Default permanent classifier | `src/NimBus.Core/Messages/DefaultPermanentFailureClassifier.cs` |
-| Dead-letter response shape | `src/NimBus.Core/Messages/ResponseService.cs` (`SendDeadLetterResponse`) |
+| Failure disposition contract and legacy bridge | `src/NimBus.Core/Messages/IFailureDispositionClassifier.cs`, `DefaultFailureDispositionClassifier.cs` |
+| Discard/dead-letter response shape | `src/NimBus.Core/Messages/ResponseService.cs` (`SendDiscardResponse`, `SendDeadLetterResponse`) |
 | Validation middleware | `src/NimBus.Core/Pipeline/ValidationMiddleware.cs` |
 | Resolver classification | `src/NimBus.Resolver/Services/ResolverService.cs` (`GetResultingStatus`) |

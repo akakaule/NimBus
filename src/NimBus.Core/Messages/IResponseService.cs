@@ -8,6 +8,23 @@ namespace NimBus.Core.Messages
     {
         Task SendResolutionResponse(IMessageContext messageContext, CancellationToken cancellationToken = default);
         Task SendSkipResponse(IMessageContext messageContext, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Notifies the Resolver that a failed message was intentionally discarded.
+        /// The default implementation preserves compatibility with custom response services
+        /// by sending the existing skipped outcome without enriched failure details.
+        /// </summary>
+        /// <param name="messageContext">The discarded inbound message.</param>
+        /// <param name="exception">The original handler exception.</param>
+        /// <param name="classifierName">The classifier type that selected the discard disposition.</param>
+        /// <param name="cancellationToken">A token used to cancel the operation.</param>
+        Task SendDiscardResponse(
+            IMessageContext messageContext,
+            Exception exception,
+            string classifierName,
+            CancellationToken cancellationToken = default) =>
+            SendSkipResponse(messageContext, cancellationToken);
+
         Task SendErrorResponse(IMessageContext messageContext, Exception exception, CancellationToken cancellationToken = default);
 
         /// <summary>

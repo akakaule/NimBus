@@ -59,6 +59,28 @@ public class ResponseServiceTests
         Assert.IsNotNull(msg.MessageContent);
     }
 
+    [TestMethod]
+    public async Task SendDiscardResponse_RoutesToResolverAsSkippedWithClassifierReason()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var ctx = CreateContext();
+        var exception = new InvalidOperationException("Known bad event version.");
+        var classifierName = "PartnerFailureDispositionClassifier";
+
+        await sut.SendDiscardResponse(ctx, exception, classifierName);
+
+        var msg = sender.SentMessages.Single();
+        Assert.AreEqual(Constants.ResolverId, msg.To);
+        Assert.AreEqual(MessageType.SkipResponse, msg.MessageType);
+        Assert.AreSame(ctx.MessageContent.EventContent, msg.MessageContent.EventContent);
+        Assert.AreEqual(nameof(InvalidOperationException), msg.MessageContent.ErrorContent.ErrorType);
+        StringAssert.Contains(msg.MessageContent.ErrorContent.ErrorText, exception.Message);
+        StringAssert.Contains(msg.MessageContent.ErrorContent.ErrorText, classifierName);
+        Assert.IsNull(msg.DeadLetterReason);
+        Assert.IsNull(msg.DeadLetterErrorDescription);
+    }
+
     // ── SendErrorResponse ───────────────────────────────────────────────
 
     [TestMethod]

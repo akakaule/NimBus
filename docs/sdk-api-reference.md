@@ -420,6 +420,9 @@ await publisher.CancelScheduled(seq);
 
 When using the transactional outbox, scheduled messages are persisted with `ScheduledEnqueueTimeUtc` and dispatched via `ScheduleMessage` by the `OutboxDispatcher`. Note: `CancelScheduledMessage` throws `NotSupportedException` in outbox mode because the Service Bus sequence number is only assigned after dispatch.
 
+For process-manager identity, state/outbox atomicity, and stale-safe timeout
+handling, see [Application-Level Orchestration](orchestration.md).
+
 ---
 
 ## Request/Response

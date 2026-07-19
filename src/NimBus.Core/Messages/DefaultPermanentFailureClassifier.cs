@@ -8,7 +8,9 @@ namespace NimBus.Core.Messages;
 /// Default implementation that classifies common .NET exception types as permanent failures.
 /// Extend via <see cref="AddPermanentExceptionType{T}"/> or <see cref="AddPermanentExceptionNamePattern"/>.
 /// </summary>
+#pragma warning disable CS0618
 public class DefaultPermanentFailureClassifier : IPermanentFailureClassifier
+#pragma warning restore CS0618
 {
     private readonly List<Type> _permanentTypes = new()
     {

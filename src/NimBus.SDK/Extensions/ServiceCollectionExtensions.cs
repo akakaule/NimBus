@@ -228,24 +228,30 @@ namespace NimBus.SDK.Extensions
                     retryPolicyProvider = sp.GetService<IRetryPolicyProvider>();
                 }
 
-                // Resolve pipeline, lifecycle notifier, and permanent failure classifier
+                // Resolve pipeline, lifecycle notifier, and failure classifiers.
                 var pipeline = sp.GetService<MessagePipeline>();
                 var lifecycleNotifier = sp.GetService<MessageLifecycleNotifier>();
+#pragma warning disable CS0618
                 var permanentFailureClassifier = sp.GetService<IPermanentFailureClassifier>();
+#pragma warning restore CS0618
+                var failureDispositionClassifier = sp.GetService<IFailureDispositionClassifier>();
 
                 var logger = sp.GetService<ILogger<StrictMessageHandler>>()
                     ?? (Microsoft.Extensions.Logging.ILogger)NullLogger.Instance;
 
                 // Build StrictMessageHandler with every resolved dependency. All of
-                // retryPolicyProvider, pipeline, lifecycleNotifier and
-                // permanentFailureClassifier are optional/nullable and the widest
+                // retryPolicyProvider, pipeline, lifecycleNotifier and both classifiers
+                // are optional/nullable and the widest
                 // ctor forwards nulls to the base exactly as the narrower ctors did —
                 // so a single unconditional construction is behaviourally identical to
                 // the old branches, and (crucially) never drops a registered
-                // IPermanentFailureClassifier when no pipeline/lifecycle notifier exists.
+                // classifier when no pipeline/lifecycle notifier exists.
+#pragma warning disable CS0618
                 IMessageHandler strictMessageHandler = new StrictMessageHandler(
                     contextHandler, responseService, logger,
-                    retryPolicyProvider, pipeline, lifecycleNotifier, permanentFailureClassifier);
+                    retryPolicyProvider, pipeline, lifecycleNotifier,
+                    permanentFailureClassifier, failureDispositionClassifier);
+#pragma warning restore CS0618
 
                 var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, options.EntityPath, cloudEventReadOptions);
                 return new SubscriberClient(serviceBusAdapter, eventHandlerProvider);

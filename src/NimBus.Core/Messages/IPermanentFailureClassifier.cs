@@ -6,6 +6,7 @@ namespace NimBus.Core.Messages;
 /// Classifies exceptions as permanent (unrecoverable) failures.
 /// Permanent failures are dead-lettered immediately without consuming retry budget.
 /// </summary>
+[Obsolete("Use IFailureDispositionClassifier instead. This interface remains as a backward-compatible bridge.")]
 public interface IPermanentFailureClassifier
 {
     /// <summary>

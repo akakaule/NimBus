@@ -262,7 +262,9 @@ namespace NimBus.Broker.Services
                 LastMessageId = message.MessageId,
                 OriginatingMessageId = message.OriginatingMessageId,
                 ParentMessageId = message.ParentMessageId,
-                Reason = message.DeadLetterErrorDescription,
+                Reason = message.MessageType == MessageType.SkipResponse
+                    ? message.MessageContent?.ErrorContent?.ErrorText
+                    : message.DeadLetterErrorDescription,
                 OriginatingFrom = message.OriginatingFrom,
 
                 EventTypeId = message.EventTypeId,

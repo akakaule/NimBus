@@ -29,6 +29,31 @@ namespace NimBus.Core.Messages
             await _sender.Send(response, cancellationToken: cancellationToken);
         }
 
+        /// <inheritdoc />
+        public async Task SendDiscardResponse(
+            IMessageContext messageContext,
+            Exception exception,
+            string classifierName,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(exception);
+            if (string.IsNullOrWhiteSpace(classifierName))
+                throw new ArgumentException("Classifier name cannot be null, empty, or whitespace.", nameof(classifierName));
+
+            var exceptionType = exception.GetType().Name;
+            var content = new MessageContent
+            {
+                ErrorContent = new ErrorContent
+                {
+                    ErrorText = $"{exceptionType}: {exception.Message} Classified as Discard by {classifierName}.",
+                    ErrorType = exceptionType,
+                },
+                EventContent = (messageContext.MessageContent?.EventContent)!,
+            };
+            IMessage response = CreateResponse(messageContext, MessageType.SkipResponse, content);
+            await _sender.Send(response, cancellationToken: cancellationToken);
+        }
+
         public async Task SendErrorResponse(IMessageContext messageContext, Exception exception, CancellationToken cancellationToken = default)
         {
             IMessage response = CreateResponse(messageContext, MessageType.ErrorResponse, CreateErrorContent(exception, messageContext));

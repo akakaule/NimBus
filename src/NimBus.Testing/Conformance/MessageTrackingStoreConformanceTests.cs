@@ -212,13 +212,23 @@ public abstract class MessageTrackingStoreConformanceTests
         var endpointId = Id("ep-sk");
         var skippedId = Id("sk1");
         var completedId = Id("c1");
-        await store.UploadSkippedMessage(skippedId, "s1", endpointId, SampleEvent(endpointId, skippedId, "s1"));
+        var skippedEvent = SampleEvent(endpointId, skippedId, "s1");
+        skippedEvent.MessageContent.ErrorContent = new ErrorContent
+        {
+            ErrorText = "InvalidOperationException: discarded by PartnerFailureDispositionClassifier",
+            ErrorType = nameof(InvalidOperationException),
+        };
+        await store.UploadSkippedMessage(skippedId, "s1", endpointId, skippedEvent);
         await store.UploadCompletedMessage(completedId, "s1", endpointId, SampleEvent(endpointId, completedId, "s1"));
 
         var completed = (await store.GetCompletedEventsOnEndpoint(endpointId)).ToList();
+        var skipped = await store.GetEvent(endpointId, skippedId);
 
         Assert.AreEqual(1, completed.Count);
         Assert.AreEqual(completedId, completed[0].EventId);
+        Assert.AreEqual(ResolutionStatus.Skipped, skipped.ResolutionStatus);
+        Assert.AreEqual(nameof(InvalidOperationException), skipped.MessageContent.ErrorContent.ErrorType);
+        StringAssert.Contains(skipped.MessageContent.ErrorContent.ErrorText, "PartnerFailureDispositionClassifier");
     }
 
     [TestMethod]

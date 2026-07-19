@@ -1,4 +1,4 @@
-#pragma warning disable CA1707, CA2007
+#pragma warning disable CA1707, CA2007, CS0618
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -56,6 +56,25 @@ public class SubscriberRegistrationTests
         services.AddSingleton(new ServiceBusClient(FakeConnection));
         services.AddNimBusSubscriber("EndpointA", _ => { });
         services.AddNimBusSubscriber("EndpointA", _ => { });
+    }
+
+    [TestMethod]
+    public void AddNimBusSubscriber_WithFailureDispositions_WiresRegisteredClassifier()
+    {
+        var classifier = new SpyFailureDispositionClassifier();
+        var services = new ServiceCollection();
+        services.AddSingleton(new ServiceBusClient(FakeConnection));
+        services.AddNimBusSubscriber(
+            "EndpointA",
+            builder => builder.WithFailureDispositions(classifier));
+
+        using var provider = services.BuildServiceProvider();
+        var subscriber = provider.GetRequiredService<ISubscriberClient>();
+        var adapter = GetPrivateField(subscriber, "_serviceBusAdapter");
+        var handler = GetPrivateField(adapter, "_messageHandler");
+        var wired = GetPrivateField(handler, "_failureDispositionClassifier");
+
+        Assert.AreSame(classifier, wired);
     }
 
     [TestMethod]
@@ -148,6 +167,12 @@ public class SubscriberRegistrationTests
     private sealed class SpyPermanentFailureClassifier : IPermanentFailureClassifier
     {
         public bool IsPermanentFailure(Exception exception) => false;
+    }
+
+    private sealed class SpyFailureDispositionClassifier : IFailureDispositionClassifier
+    {
+        public FailureDisposition Classify(Exception exception, string eventTypeId, string? endpointName) =>
+            FailureDisposition.Retry;
     }
 
     public sealed class ScopedRegistrationEvent : Event

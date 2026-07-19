@@ -13,27 +13,41 @@ namespace NimBus.Core.Messages
         private readonly IEventContextHandler _eventContextHandler;
         private readonly IResponseService _responseService;
         private readonly IRetryPolicyProvider? _retryPolicyProvider;
+#pragma warning disable CS0618
         private readonly IPermanentFailureClassifier? _permanentFailureClassifier;
+#pragma warning restore CS0618
+        private readonly IFailureDispositionClassifier _failureDispositionClassifier;
         private readonly ILogger _logger;
 
         public StrictMessageHandler(IEventContextHandler eventContextHandler, IResponseService responseService, ILogger logger = null)
-            : base(logger ?? NullLogger.Instance, pipeline: null, lifecycleNotifier: null, responseService: responseService)
+            : this(
+                eventContextHandler,
+                responseService,
+                logger,
+                retryPolicyProvider: null,
+                pipeline: null,
+                lifecycleNotifier: null,
+                permanentFailureClassifier: null,
+                failureDispositionClassifier: null)
         {
-            _eventContextHandler = eventContextHandler;
-            _responseService = responseService;
-            _logger = logger ?? NullLogger.Instance;
         }
 
+#pragma warning disable CS0618
         public StrictMessageHandler(
             IEventContextHandler eventContextHandler,
             IResponseService responseService,
             ILogger logger,
-            IRetryPolicyProvider? retryPolicyProvider) : base(logger ?? NullLogger.Instance, pipeline: null, lifecycleNotifier: null, responseService: responseService)
+            IRetryPolicyProvider? retryPolicyProvider)
+            : this(
+                eventContextHandler,
+                responseService,
+                logger,
+                retryPolicyProvider,
+                pipeline: null,
+                lifecycleNotifier: null,
+                permanentFailureClassifier: null,
+                failureDispositionClassifier: null)
         {
-            _eventContextHandler = eventContextHandler;
-            _responseService = responseService;
-            _retryPolicyProvider = retryPolicyProvider;
-            _logger = logger ?? NullLogger.Instance;
         }
 
         public StrictMessageHandler(
@@ -43,14 +57,49 @@ namespace NimBus.Core.Messages
             IRetryPolicyProvider? retryPolicyProvider,
             MessagePipeline pipeline,
             MessageLifecycleNotifier lifecycleNotifier,
-            IPermanentFailureClassifier permanentFailureClassifier = null) : base(logger ?? NullLogger.Instance, pipeline, lifecycleNotifier, responseService)
+            IPermanentFailureClassifier permanentFailureClassifier = null)
+            : this(
+                eventContextHandler,
+                responseService,
+                logger,
+                retryPolicyProvider,
+                pipeline,
+                lifecycleNotifier,
+                permanentFailureClassifier,
+                failureDispositionClassifier: null)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="StrictMessageHandler"/> class.
+        /// </summary>
+        /// <param name="eventContextHandler">The event context handler.</param>
+        /// <param name="responseService">The response service.</param>
+        /// <param name="logger">The logger.</param>
+        /// <param name="retryPolicyProvider">The retry policy provider.</param>
+        /// <param name="pipeline">The message pipeline.</param>
+        /// <param name="lifecycleNotifier">The message lifecycle notifier.</param>
+        /// <param name="permanentFailureClassifier">The legacy permanent-failure classifier.</param>
+        /// <param name="failureDispositionClassifier">The failure disposition classifier.</param>
+        public StrictMessageHandler(
+            IEventContextHandler eventContextHandler,
+            IResponseService responseService,
+            ILogger? logger,
+            IRetryPolicyProvider? retryPolicyProvider,
+            MessagePipeline? pipeline,
+            MessageLifecycleNotifier? lifecycleNotifier,
+            IPermanentFailureClassifier? permanentFailureClassifier,
+            IFailureDispositionClassifier? failureDispositionClassifier) : base(logger ?? NullLogger.Instance, pipeline!, lifecycleNotifier!, responseService)
         {
             _eventContextHandler = eventContextHandler;
             _responseService = responseService;
             _retryPolicyProvider = retryPolicyProvider;
             _permanentFailureClassifier = permanentFailureClassifier;
+            _failureDispositionClassifier = failureDispositionClassifier
+                ?? new DefaultFailureDispositionClassifier(_permanentFailureClassifier);
             _logger = logger ?? NullLogger.Instance;
         }
+#pragma warning restore CS0618
 
         public override async Task HandleEventRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
@@ -59,7 +108,12 @@ namespace NimBus.Core.Messages
                 LogInfo(messageContext, "Handle");
 
                 await VerifySessionIsNotBlocked(messageContext, cancellationToken);
-                await HandleEventContent(messageContext, cancellationToken);
+                var discardedFailure = await HandleEventContent(messageContext, cancellationToken);
+                if (discardedFailure is not null)
+                {
+                    await DiscardMessage(messageContext, discardedFailure, cancellationToken);
+                    return;
+                }
 
                 // PendingHandoff branch — handler handed off to an external system.
                 // Send PendingHandoffResponse, block the session so siblings defer
@@ -109,9 +163,14 @@ namespace NimBus.Core.Messages
             {
                 LogInfo(messageContext, "Handle (RetryRequest)");
                 await VerifySessionIsBlockedByThis(messageContext, cancellationToken);
-                await HandleEventContent(messageContext, cancellationToken);
+                var discardedFailure = await HandleEventContent(messageContext, cancellationToken);
                 await UnblockSession(messageContext, cancellationToken);
                 await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
+                if (discardedFailure is not null)
+                {
+                    await DiscardMessage(messageContext, discardedFailure, cancellationToken);
+                    return;
+                }
                 await SendResolutionResponse(messageContext, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
                 LogInfo(messageContext, "Successfully processed (RetryRequest)");
@@ -137,10 +196,15 @@ namespace NimBus.Core.Messages
             {
                 LogInfo(messageContext, "Handle (Resubmission)");
                 AuthorizeManagerRequest(messageContext);
-                await HandleEventContent(messageContext, cancellationToken);
+                var discardedFailure = await HandleEventContent(messageContext, cancellationToken);
                 if (await messageContext.IsSessionBlockedByThis(cancellationToken))
                     await UnblockSession(messageContext, cancellationToken);
                 await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
+                if (discardedFailure is not null)
+                {
+                    await DiscardMessage(messageContext, discardedFailure, cancellationToken);
+                    return;
+                }
                 await SendResolutionResponse(messageContext, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
                 LogInfo(messageContext, "Successfully processed (Resubmission)");
@@ -350,11 +414,12 @@ namespace NimBus.Core.Messages
                 throw new SessionBlockedException($"Session {messageContext.SessionId} is blocked by {blockedBy}", blockedBy);
         }
 
-        private async Task HandleEventContent(IMessageContext context, CancellationToken cancellationToken = default)
+        private async Task<DiscardedFailure?> HandleEventContent(IMessageContext context, CancellationToken cancellationToken = default)
         {
             try
             {
                 await _eventContextHandler.Handle(context, cancellationToken);
+                return null;
             }
             catch (TransientException)
             {
@@ -381,16 +446,55 @@ namespace NimBus.Core.Messages
             }
             catch (Exception exception)
             {
-                if (_permanentFailureClassifier?.IsPermanentFailure(exception) == true)
-                {
-                    throw new PermanentFailureException(exception);
-                }
+                var disposition = _failureDispositionClassifier.Classify(
+                    exception,
+                    context.EventTypeId,
+                    context.To);
 
-                throw new EventContextHandlerException(exception)
+                switch (disposition)
                 {
-                    Source = exception.Source
-                };
+                    case FailureDisposition.Retry:
+                        throw new EventContextHandlerException(exception)
+                        {
+                            Source = exception.Source
+                        };
+
+                    case FailureDisposition.DeadLetter:
+                        throw new PermanentFailureException(exception);
+
+                    case FailureDisposition.Discard:
+                        var classifierName = _failureDispositionClassifier.GetType().FullName
+                            ?? _failureDispositionClassifier.GetType().Name;
+                        return new DiscardedFailure(exception, classifierName);
+
+                    default:
+                        throw new ArgumentOutOfRangeException(
+                            nameof(disposition),
+                            disposition,
+                            "Failure disposition classifier returned an unsupported value.");
+                }
             }
+        }
+
+        private async Task DiscardMessage(
+            IMessageContext messageContext,
+            DiscardedFailure discardedFailure,
+            CancellationToken cancellationToken)
+        {
+            _logger.LogWarning(
+                discardedFailure.Exception,
+                "Discarding failed message without retry or dead-letter. Classifier:{ClassifierName}, EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
+                discardedFailure.ClassifierName,
+                messageContext.EventTypeId,
+                messageContext.EventId,
+                messageContext.MessageId,
+                messageContext.SessionId);
+            await _responseService.SendDiscardResponse(
+                messageContext,
+                discardedFailure.Exception,
+                discardedFailure.ClassifierName,
+                cancellationToken);
+            await CompleteMessage(messageContext, cancellationToken);
         }
 
         private async Task ContinueWithAnyDeferredMessages(IMessageContext messageContext, CancellationToken cancellationToken = default)
@@ -463,5 +567,7 @@ namespace NimBus.Core.Messages
             _logger.LogError(exception, "{Prefix} EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
                 prefixMessage, messageContext.EventTypeId, messageContext.EventId, messageContext.MessageId, messageContext.SessionId);
         }
+
+        private sealed record DiscardedFailure(Exception Exception, string ClassifierName);
     }
 }

@@ -376,7 +376,8 @@ deferred subscription and replayed after the blocking message is resolved.
 the adapter still needs something to drive replay:
 
 - In a Worker, add a hosted service like
-  [`Crm.Adapter/DeferredProcessorService.cs`](../samples/CrmErpDemo/Crm.Adapter/DeferredProcessorService.cs).
+  [`Crm.Adapter/Program.cs`](../samples/CrmErpDemo/Crm.Adapter/Program.cs),
+  which registers `AddNimBusDeferredProcessorHostedService(...)`.
 - In Azure Functions, add a second non-session `[ServiceBusTrigger]` like
   [`ErpDeferredProcessorFunction.cs`](../samples/CrmErpDemo/Erp.Adapter.Functions/Functions/ErpDeferredProcessorFunction.cs).
 
@@ -564,6 +565,8 @@ session settings, retry counts, and routing rules.
 - [getting-started.md](getting-started.md) - first publisher/subscriber path.
 - [sdk-api-reference.md](sdk-api-reference.md) - publisher, subscriber, retry,
   outbox, and request/response APIs.
+- [orchestration.md](orchestration.md) - application-owned process managers,
+  durable state, timeouts, and compensation.
 - [azure-functions-hosting.md](azure-functions-hosting.md) - isolated worker
   setup, `host.json`, triggers, and deferred processor function.
 - [pipeline-middleware.md](pipeline-middleware.md) - custom middleware and

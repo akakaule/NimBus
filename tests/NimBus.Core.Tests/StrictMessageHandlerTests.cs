@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using NimBus.Testing;
@@ -146,6 +147,155 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(0, response.RetryCalls);
         Assert.AreEqual(0, ctx.BlockSessionCalls);
         Assert.AreEqual(0, ctx.CompletedCalls);
+        Assert.AreEqual(0, retryProvider.GetRetryPolicyCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_Discard_CompletesWithoutDeadLetterOrRetryAndNotifiesLifecycle()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var failure = new InvalidOperationException("Known bad event version.");
+        var handler = new FakeEventContextHandler { ThrowOnHandle = failure };
+        var response = new FakeResponseService();
+        var retryProvider = new FakeRetryPolicyProvider
+        {
+            PolicyToReturn = new RetryPolicy { MaxRetries = 3 },
+        };
+        var classifier = new FakeFailureDispositionClassifier(FailureDisposition.Discard);
+        var observer = new RecordingLifecycleObserver();
+        var notifier = new MessageLifecycleNotifier([observer]);
+#pragma warning disable CS0618
+        var sut = new StrictMessageHandler(
+            handler,
+            response,
+            NullLogger.Instance,
+            retryProvider,
+            pipeline: null,
+            lifecycleNotifier: notifier,
+            permanentFailureClassifier: new AlwaysPermanentFailureClassifier(),
+            failureDispositionClassifier: classifier);
+#pragma warning restore CS0618
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.CompletedCalls);
+        Assert.AreEqual(0, ctx.DeadLetterCalls);
+        Assert.AreEqual(0, ctx.BlockSessionCalls);
+        Assert.AreEqual(1, response.DiscardCalls);
+        Assert.AreSame(failure, response.LastDiscardException);
+        Assert.AreEqual(typeof(FakeFailureDispositionClassifier).FullName, response.LastDiscardClassifierName);
+        Assert.AreEqual(0, response.ErrorCalls);
+        Assert.AreEqual(0, response.RetryCalls);
+        Assert.AreEqual(0, response.ResolutionCalls);
+        Assert.AreEqual(0, retryProvider.GetRetryPolicyCalls);
+        Assert.AreSame(failure, classifier.LastException);
+        Assert.AreEqual(ctx.EventTypeId, classifier.LastEventTypeId);
+        Assert.AreEqual(ctx.To, classifier.LastEndpointName);
+        Assert.AreEqual(1, observer.ReceivedCalls);
+        Assert.AreEqual(1, observer.CompletedCalls);
+        Assert.AreEqual(0, observer.FailedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_Discard_DoesNotBlockNextMessageInSession()
+    {
+        var first = CreateContext(messageType: MessageType.EventRequest, eventId: "event-1");
+        var second = CreateContext(messageType: MessageType.EventRequest, eventId: "event-2");
+        var attempts = 0;
+        var handler = new FakeEventContextHandler
+        {
+            OnHandle = _ =>
+            {
+                attempts++;
+                if (attempts == 1)
+                    throw new InvalidOperationException("discard first");
+            },
+        };
+        var response = new FakeResponseService();
+        var classifier = new FakeFailureDispositionClassifier(FailureDisposition.Discard);
+        var sut = new StrictMessageHandler(
+            handler,
+            response,
+            NullLogger.Instance,
+            retryPolicyProvider: null,
+            pipeline: null,
+            lifecycleNotifier: null,
+            permanentFailureClassifier: null,
+            failureDispositionClassifier: classifier);
+
+        await sut.Handle(first);
+        await sut.Handle(second);
+
+        Assert.AreEqual(first.SessionId, second.SessionId);
+        Assert.AreEqual(2, handler.HandleCalls);
+        Assert.AreEqual(1, first.CompletedCalls);
+        Assert.AreEqual(0, first.BlockSessionCalls);
+        Assert.AreEqual(1, second.CompletedCalls);
+        Assert.AreEqual(1, response.DiscardCalls);
+        Assert.AreEqual(1, response.ResolutionCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleRetryRequest_Discard_UnblocksSessionAndContinuesDeferredMessages()
+    {
+        var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.IsSessionBlockedByThisResult = true;
+        ctx.DeferredCountResult = 1;
+        var handler = new FakeEventContextHandler
+        {
+            ThrowOnHandle = new InvalidOperationException("discard retry"),
+        };
+        var response = new FakeResponseService();
+        var sut = new StrictMessageHandler(
+            handler,
+            response,
+            NullLogger.Instance,
+            retryPolicyProvider: null,
+            pipeline: null,
+            lifecycleNotifier: null,
+            permanentFailureClassifier: null,
+            failureDispositionClassifier: new FakeFailureDispositionClassifier(FailureDisposition.Discard));
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.UnblockSessionCalls);
+        Assert.AreEqual(1, response.ProcessDeferredCalls);
+        Assert.AreEqual(1, response.DiscardCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+        Assert.AreEqual(0, response.ResolutionCalls);
+        Assert.AreEqual(0, ctx.DeadLetterCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_LegacyPermanentClassifier_BridgesToDeadLetter()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var handler = new FakeEventContextHandler
+        {
+            ThrowOnHandle = new InvalidOperationException("legacy permanent"),
+        };
+        var response = new FakeResponseService();
+        var retryProvider = new FakeRetryPolicyProvider
+        {
+            PolicyToReturn = new RetryPolicy { MaxRetries = 3 },
+        };
+#pragma warning disable CS0618
+        var sut = new StrictMessageHandler(
+            handler,
+            response,
+            NullLogger.Instance,
+            retryProvider,
+            pipeline: null,
+            lifecycleNotifier: null,
+            permanentFailureClassifier: new AlwaysPermanentFailureClassifier());
+#pragma warning restore CS0618
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.DeadLetterCalls);
+        Assert.AreEqual(1, response.DeadLetterCalls);
+        Assert.AreEqual(0, response.ErrorCalls);
+        Assert.AreEqual(0, response.RetryCalls);
         Assert.AreEqual(0, retryProvider.GetRetryPolicyCalls);
     }
 
@@ -931,15 +1081,25 @@ public class StrictMessageHandlerTests
         public int SendToDeferredSubscriptionCalls { get; private set; }
         public int ProcessDeferredCalls { get; private set; }
         public int DeadLetterCalls { get; private set; }
+        public int DiscardCalls { get; private set; }
         public int PendingHandoffCalls { get; private set; }
         public HandoffMetadata LastPendingHandoffMetadata { get; private set; }
         public string LastDeadLetterReason { get; private set; }
         public Exception LastDeadLetterException { get; private set; }
         public Exception LastErrorException { get; private set; }
+        public Exception LastDiscardException { get; private set; }
+        public string LastDiscardClassifierName { get; private set; }
         public int? LastRetryDelayMinutes { get; private set; }
 
         public Task SendResolutionResponse(IMessageContext mc, CancellationToken ct = default) { ResolutionCalls++; return Task.CompletedTask; }
         public Task SendSkipResponse(IMessageContext mc, CancellationToken ct = default) { SkipCalls++; return Task.CompletedTask; }
+        public Task SendDiscardResponse(IMessageContext mc, Exception ex, string classifierName, CancellationToken ct = default)
+        {
+            DiscardCalls++;
+            LastDiscardException = ex;
+            LastDiscardClassifierName = classifierName;
+            return Task.CompletedTask;
+        }
         public Task SendErrorResponse(IMessageContext mc, Exception ex, CancellationToken ct = default) { ErrorCalls++; LastErrorException = ex; return Task.CompletedTask; }
         public Task SendDeadLetterResponse(IMessageContext mc, string reason, Exception ex, CancellationToken ct = default)
         {
@@ -974,6 +1134,60 @@ public class StrictMessageHandlerTests
             GetRetryPolicyCalls++;
             LastEventTypeId = eventTypeId;
             return PolicyToReturn;
+        }
+    }
+
+    private sealed class FakeFailureDispositionClassifier : IFailureDispositionClassifier
+    {
+        private readonly FailureDisposition _disposition;
+
+        public FakeFailureDispositionClassifier(FailureDisposition disposition)
+        {
+            _disposition = disposition;
+        }
+
+        public Exception LastException { get; private set; }
+        public string LastEventTypeId { get; private set; }
+        public string? LastEndpointName { get; private set; }
+
+        public FailureDisposition Classify(Exception exception, string eventTypeId, string? endpointName)
+        {
+            LastException = exception;
+            LastEventTypeId = eventTypeId;
+            LastEndpointName = endpointName;
+            return _disposition;
+        }
+    }
+
+#pragma warning disable CS0618
+    private sealed class AlwaysPermanentFailureClassifier : IPermanentFailureClassifier
+    {
+        public bool IsPermanentFailure(Exception exception) => true;
+    }
+#pragma warning restore CS0618
+
+    private sealed class RecordingLifecycleObserver : IMessageLifecycleObserver
+    {
+        public int ReceivedCalls { get; private set; }
+        public int CompletedCalls { get; private set; }
+        public int FailedCalls { get; private set; }
+
+        public Task OnMessageReceived(MessageLifecycleContext context, CancellationToken cancellationToken = default)
+        {
+            ReceivedCalls++;
+            return Task.CompletedTask;
+        }
+
+        public Task OnMessageCompleted(MessageLifecycleContext context, CancellationToken cancellationToken = default)
+        {
+            CompletedCalls++;
+            return Task.CompletedTask;
+        }
+
+        public Task OnMessageFailed(MessageLifecycleContext context, Exception exception, CancellationToken cancellationToken = default)
+        {
+            FailedCalls++;
+            return Task.CompletedTask;
         }
     }
 

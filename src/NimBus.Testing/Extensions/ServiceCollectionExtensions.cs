@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.Core.Diagnostics;
+using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
 using NimBus.OpenTelemetry;
 using NimBus.SDK;
@@ -59,14 +60,19 @@ public static class ServiceCollectionExtensions
             var logger = sp.GetService<ILogger<StrictMessageHandler>>()
                 ?? (Microsoft.Extensions.Logging.ILogger)NullLogger.Instance;
 
-            if (retryPolicyProvider != null)
-            {
-                return new StrictMessageHandler(
-                    eventHandlerProvider, responseService, logger, retryPolicyProvider);
-            }
-
+#pragma warning disable CS0618
+            var permanentFailureClassifier = sp.GetService<IPermanentFailureClassifier>();
+            var failureDispositionClassifier = sp.GetService<IFailureDispositionClassifier>();
             return new StrictMessageHandler(
-                eventHandlerProvider, responseService, logger);
+                eventHandlerProvider,
+                responseService,
+                logger,
+                retryPolicyProvider,
+                sp.GetService<MessagePipeline>(),
+                sp.GetService<MessageLifecycleNotifier>(),
+                permanentFailureClassifier,
+                failureDispositionClassifier);
+#pragma warning restore CS0618
         });
 
         return services;

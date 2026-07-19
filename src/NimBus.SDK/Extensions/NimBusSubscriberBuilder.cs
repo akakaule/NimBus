@@ -252,6 +252,18 @@ namespace NimBus.SDK.Extensions
         }
 
         /// <summary>
+        /// Registers the classifier that selects retry, dead-letter, or discard behavior
+        /// for exceptions thrown by this subscriber's event handlers.
+        /// </summary>
+        /// <param name="classifier">The failure disposition classifier to register.</param>
+        /// <returns>This builder for chaining.</returns>
+        public NimBusSubscriberBuilder WithFailureDispositions(IFailureDispositionClassifier classifier)
+        {
+            Services.AddSingleton(classifier ?? throw new ArgumentNullException(nameof(classifier)));
+            return this;
+        }
+
+        /// <summary>
         /// Configures the permanent failure classifier. Exceptions classified as permanent
         /// are dead-lettered immediately without consuming retry budget.
         /// </summary>

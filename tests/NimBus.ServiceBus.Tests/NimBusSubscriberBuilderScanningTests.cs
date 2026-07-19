@@ -110,6 +110,23 @@ public sealed class NimBusSubscriberBuilderScanningTests
         builder.AddHandlersFromAssemblyContaining<NimBusSubscriberBuilderScanningTests>();
     }
 
+    [TestMethod]
+    public void AddNimBusTestTransport_WithFailureDispositions_WiresClassifier()
+    {
+        var classifier = new RetryFailureDispositionClassifier();
+        var services = new ServiceCollection();
+        services.AddNimBusTestTransport(sub => sub.WithFailureDispositions(classifier));
+
+        using var provider = services.BuildServiceProvider();
+        var handler = provider.GetRequiredService<IMessageHandler>();
+        var field = handler.GetType().GetField(
+            "_failureDispositionClassifier",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.IsNotNull(field);
+        Assert.AreSame(classifier, field.GetValue(handler));
+    }
+
     private static AssemblyBuilder CreateDynamicHandlerAssembly(Type eventType, int handlerCount)
     {
         var assemblyName = new AssemblyName($"NimBus.DynamicHandlerTests.{Guid.NewGuid():N}");
@@ -194,5 +211,11 @@ public sealed class NimBusSubscriberBuilderScanningTests
             HandleCount++;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class RetryFailureDispositionClassifier : IFailureDispositionClassifier
+    {
+        public FailureDisposition Classify(Exception exception, string eventTypeId, string? endpointName) =>
+            FailureDisposition.Retry;
     }
 }

@@ -2,11 +2,17 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Newtonsoft.Json;
+using NimBus.Core.Events;
+using NimBus.Core.Messages;
 using NimBus.Core.Outbox;
 using NimBus.Outbox.SqlServer;
+using NimBus.SDK;
+using NimBus.SDK.EventHandlers;
 
 namespace NimBus.Outbox.SqlServer.Tests;
 
@@ -151,4 +157,82 @@ public sealed class SqlServerOutboxBatchIntegrationTests
         Assert.AreEqual(0, pending.Count, "Rolling back the ambient transaction must discard the batch.");
     }
 
+    [TestMethod]
+    public async Task PublishFromContext_SqlOutboxRoundTrip_MatchesDirectWorkflowMetadata()
+    {
+        var context = new EventHandlerContext
+        {
+            MessageId = "inventory-reserved-1",
+            SessionId = "order-42",
+            CorrelationId = "conversation-7",
+            ParentMessageId = "reserve-inventory-1",
+            OriginatingMessageId = "order-placed-1",
+        };
+        var @event = new WorkflowEvent { OrderId = "order-42" };
+
+        var directSender = new CapturingSender();
+        await new PublisherClient(directSender, "OrderOrchestrator").PublishFromContext(
+            @event,
+            context,
+            messageId: "order-42:capture-payment:1");
+
+        var sqlOutbox = await CreateOutboxAsync();
+        await new PublisherClient(new OutboxSender(sqlOutbox), "OrderOrchestrator").PublishFromContext(
+            @event,
+            context,
+            messageId: "order-42:capture-payment:1");
+
+        var stored = (await sqlOutbox.GetPendingAsync(10)).Single();
+        var roundTripped = JsonConvert.DeserializeObject<Message>(
+            stored.Payload,
+            Constants.CreateSafeJsonSettings());
+        Assert.IsNotNull(roundTripped);
+        AssertEquivalentMetadata(directSender.Sent.Single(), roundTripped);
+    }
+
+    private static void AssertEquivalentMetadata(IMessage expected, Message actual)
+    {
+        Assert.AreEqual(expected.MessageId, actual.MessageId);
+        Assert.AreEqual(expected.SessionId, actual.SessionId);
+        Assert.AreEqual(expected.CorrelationId, actual.CorrelationId);
+        Assert.AreEqual(expected.ParentMessageId, actual.ParentMessageId);
+        Assert.AreEqual(expected.OriginatingMessageId, actual.OriginatingMessageId);
+        Assert.AreEqual(expected.OriginatingFrom, actual.OriginatingFrom);
+    }
+
+    private sealed class WorkflowEvent : Event
+    {
+        public string OrderId { get; set; } = string.Empty;
+
+        public override string GetSessionId() => OrderId;
+    }
+
+    private sealed class CapturingSender : ISender
+    {
+        public List<IMessage> Sent { get; } = new();
+
+        public Task Send(IMessage message, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default)
+        {
+            Sent.Add(message);
+            return Task.CompletedTask;
+        }
+
+        public Task Send(
+            IEnumerable<IMessage> messages,
+            int messageEnqueueDelay = 0,
+            CancellationToken cancellationToken = default)
+        {
+            Sent.AddRange(messages);
+            return Task.CompletedTask;
+        }
+
+        public Task<long> ScheduleMessage(
+            IMessage message,
+            DateTimeOffset scheduledEnqueueTime,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(0L);
+
+        public Task CancelScheduledMessage(long sequenceNumber, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
 }

@@ -49,6 +49,9 @@ namespace NimBus.SDK.EventHandlers
                 EventId = context.EventId,
                 EventType = context.EventTypeId,
                 MessageId = context.MessageId,
+                SessionId = context.SessionId,
+                ParentMessageId = context.ParentMessageId,
+                OriginatingMessageId = context.OriginatingMessageId,
             };
             return _eventHandler.Handle(@event, eventHandlercontext, cancellationToken);
         }

@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.CloudEvents;
 using NimBus.Core.Messages;
 using NimBus.SDK;
+using NimBus.SDK.EventHandlers;
 using NimBus.SDK.Extensions;
 using NimBus.ServiceBus;
 using Newtonsoft.Json.Linq;
@@ -77,6 +78,36 @@ public class CloudEventsPublishTests
         // AC6: correlation id and session id ride as the default extension attributes.
         Assert.AreEqual("corr-99", sent.ApplicationProperties["cloudEvents:correlationid"]);
         Assert.AreEqual("sess-42", sent.ApplicationProperties["cloudEvents:sessionid"]);
+    }
+
+    [TestMethod]
+    public async Task PublishFromContext_PreservesCloudEventsAndNativeWorkflowLineage()
+    {
+        var options = new CloudEventPublisherOptions { Source = new Uri("urn:test:billing") };
+        var (recorder, publisher) = BuildPublisher(options);
+        var context = new EventHandlerContext
+        {
+            MessageId = "inventory-reserved-1",
+            SessionId = "order-42",
+            CorrelationId = "conversation-7",
+            ParentMessageId = "reserve-inventory-1",
+            OriginatingMessageId = "order-placed-1",
+        };
+
+        await publisher.PublishFromContext(
+            new TestEvent { Payload = "x" },
+            context,
+            messageId: "order-42:capture-payment:1");
+
+        var sent = recorder.SentMessages.Single();
+        Assert.AreEqual("order-42:capture-payment:1", sent.MessageId);
+        Assert.AreEqual("order-42:capture-payment:1", sent.ApplicationProperties["cloudEvents:id"]);
+        Assert.AreEqual("order-42", sent.SessionId);
+        Assert.AreEqual("order-42", sent.ApplicationProperties["cloudEvents:sessionid"]);
+        Assert.AreEqual("conversation-7", sent.CorrelationId);
+        Assert.AreEqual("conversation-7", sent.ApplicationProperties["cloudEvents:correlationid"]);
+        Assert.AreEqual("inventory-reserved-1", sent.ApplicationProperties[UserPropertyName.ParentMessageId.ToString()]);
+        Assert.AreEqual("order-placed-1", sent.ApplicationProperties[UserPropertyName.OriginatingMessageId.ToString()]);
     }
 
     [TestMethod]

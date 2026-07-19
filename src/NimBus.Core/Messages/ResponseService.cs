@@ -75,6 +75,13 @@ namespace NimBus.Core.Messages
             await _sender.Send(response, messageDelayMinutes, cancellationToken);
         }
 
+        /// <inheritdoc />
+        public async Task SendRetryResponse(IMessageContext messageContext, TimeSpan messageDelay, CancellationToken cancellationToken = default)
+        {
+            IMessage response = CreateRetryResponse(messageContext, MessageType.RetryRequest, responseContent: messageContext.MessageContent);
+            await _sender.ScheduleMessage(response, DateTimeOffset.UtcNow + messageDelay, cancellationToken);
+        }
+
         public async Task SendContinuationRequestToSelf(IMessageContext deferredMessageContext, CancellationToken cancellationToken = default)
         {
             await _sender.Send(new Message()

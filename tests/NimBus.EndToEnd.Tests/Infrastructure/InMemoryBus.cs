@@ -135,10 +135,11 @@ internal sealed class InMemoryBus : ISender
 
     public Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
     {
+        var enqueueDelay = (int)Math.Ceiling((scheduledEnqueueTime - DateTimeOffset.UtcNow).TotalMinutes);
         lock (_lock)
         {
             _allSentMessages.Add(message);
-            _sentMessagesWithDelay.Add((message, 0));
+            _sentMessagesWithDelay.Add((message, enqueueDelay));
         }
         _messages.Enqueue(message);
         return Task.FromResult(0L);

@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.4" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageReference Include="MSTest.TestAdapter" Version="3.11.1" />
@@ -14,8 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\NimBus.MessageStore.Abstractions\NimBus.MessageStore.Abstractions.csproj" />
-    <ProjectReference Include="..\..\src\NimBus.MessageStore.CosmosDb\NimBus.MessageStore.CosmosDb.csproj" />
+    <ProjectReference Include="..\..\src\NimBus.Inbox.SqlServer\NimBus.Inbox.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\NimBus.Testing\NimBus.Testing.csproj" />
   </ItemGroup>
 

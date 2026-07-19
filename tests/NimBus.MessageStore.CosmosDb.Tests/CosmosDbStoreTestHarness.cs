@@ -1,6 +1,7 @@
 using System;
 using Microsoft.Azure.Cosmos;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Core.Inbox;
 using NimBus.MessageStore.Abstractions;
 
 namespace NimBus.MessageStore.CosmosDb.Tests;
@@ -17,6 +18,9 @@ internal static class CosmosDbStoreTestHarness
 
     public static INimBusMessageStore CreateStore()
         => new CosmosDbClient(Client.Value);
+
+    public static IInboxStore CreateInboxStore()
+        => new CosmosInboxStore(new CosmosClientAdapter(Client.Value));
 
     private static CosmosClient CreateClient()
     {

@@ -30,6 +30,26 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
+    public async Task HandleEventRequest_Duplicate_SendsDuplicateResponseAndCompletes()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest, eventTypeId: "OrderPlaced");
+        var handler = new FakeEventContextHandler
+        {
+            OnHandle = context => context.HandlerOutcome = HandlerOutcome.DuplicateDetected,
+        };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, handler.HandleCalls);
+        Assert.AreEqual(1, response.DuplicateCalls);
+        Assert.AreEqual(0, response.ResolutionCalls);
+        Assert.AreEqual(0, response.PendingHandoffCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
     public async Task HandleEventRequest_EventHandlerNotFound_SendsUnsupportedAndCompletes()
     {
         var ctx = CreateContext(messageType: MessageType.EventRequest);
@@ -678,6 +698,26 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
+    public async Task HandleRetryRequest_Duplicate_UnblocksAndSendsDuplicateResponse()
+    {
+        var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.IsSessionBlockedByThisResult = true;
+        var handler = new FakeEventContextHandler
+        {
+            OnHandle = context => context.HandlerOutcome = HandlerOutcome.DuplicateDetected,
+        };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.UnblockSessionCalls);
+        Assert.AreEqual(1, response.DuplicateCalls);
+        Assert.AreEqual(0, response.ResolutionCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
     public async Task HandleRetryRequest_BlockedByThis_WithLegacyDeferred_SendsContinuationRequest()
     {
         var deferredCtx = CreateContext(messageType: MessageType.EventRequest, eventId: "deferred-event");
@@ -758,6 +798,24 @@ public class StrictMessageHandlerTests
 
         Assert.AreEqual(1, handler.HandleCalls);
         Assert.AreEqual(1, response.ResolutionCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleResubmissionRequest_Duplicate_SendsDuplicateResponse()
+    {
+        var ctx = CreateContext(messageType: MessageType.ResubmissionRequest, from: "Manager");
+        var handler = new FakeEventContextHandler
+        {
+            OnHandle = context => context.HandlerOutcome = HandlerOutcome.DuplicateDetected,
+        };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, response.DuplicateCalls);
+        Assert.AreEqual(0, response.ResolutionCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
     }
 
@@ -1083,6 +1141,7 @@ public class StrictMessageHandlerTests
         public int DeadLetterCalls { get; private set; }
         public int DiscardCalls { get; private set; }
         public int PendingHandoffCalls { get; private set; }
+        public int DuplicateCalls { get; private set; }
         public HandoffMetadata LastPendingHandoffMetadata { get; private set; }
         public string LastDeadLetterReason { get; private set; }
         public Exception LastDeadLetterException { get; private set; }
@@ -1093,6 +1152,7 @@ public class StrictMessageHandlerTests
 
         public Task SendResolutionResponse(IMessageContext mc, CancellationToken ct = default) { ResolutionCalls++; return Task.CompletedTask; }
         public Task SendSkipResponse(IMessageContext mc, CancellationToken ct = default) { SkipCalls++; return Task.CompletedTask; }
+        public Task SendDuplicateResponse(IMessageContext mc, CancellationToken ct = default) { DuplicateCalls++; return Task.CompletedTask; }
         public Task SendDiscardResponse(IMessageContext mc, Exception ex, string classifierName, CancellationToken ct = default)
         {
             DiscardCalls++;

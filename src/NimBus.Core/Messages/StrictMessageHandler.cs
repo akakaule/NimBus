@@ -115,6 +115,14 @@ namespace NimBus.Core.Messages
                     return;
                 }
 
+                if (messageContext.HandlerOutcome == HandlerOutcome.DuplicateDetected)
+                {
+                    await _responseService.SendDuplicateResponse(messageContext, cancellationToken);
+                    await CompleteMessage(messageContext, cancellationToken);
+                    LogInfo(messageContext, "Successfully processed (DuplicateDetected)");
+                    return;
+                }
+
                 // PendingHandoff branch — handler handed off to an external system.
                 // Send PendingHandoffResponse, block the session so siblings defer
                 // until the Manager settles via CompleteHandoff / FailHandoff, and
@@ -171,6 +179,13 @@ namespace NimBus.Core.Messages
                     await DiscardMessage(messageContext, discardedFailure, cancellationToken);
                     return;
                 }
+                if (messageContext.HandlerOutcome == HandlerOutcome.DuplicateDetected)
+                {
+                    await _responseService.SendDuplicateResponse(messageContext, cancellationToken);
+                    await CompleteMessage(messageContext, cancellationToken);
+                    LogInfo(messageContext, "Successfully processed (RetryRequest DuplicateDetected)");
+                    return;
+                }
                 await SendResolutionResponse(messageContext, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
                 LogInfo(messageContext, "Successfully processed (RetryRequest)");
@@ -203,6 +218,13 @@ namespace NimBus.Core.Messages
                 if (discardedFailure is not null)
                 {
                     await DiscardMessage(messageContext, discardedFailure, cancellationToken);
+                    return;
+                }
+                if (messageContext.HandlerOutcome == HandlerOutcome.DuplicateDetected)
+                {
+                    await _responseService.SendDuplicateResponse(messageContext, cancellationToken);
+                    await CompleteMessage(messageContext, cancellationToken);
+                    LogInfo(messageContext, "Successfully processed (Resubmission DuplicateDetected)");
                     return;
                 }
                 await SendResolutionResponse(messageContext, cancellationToken);

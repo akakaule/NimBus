@@ -32,6 +32,7 @@ public static class ServiceCollectionExtensions
 
         var builder = new NimBusSubscriberBuilder(services);
         configureBuilder(builder);
+        InboxRegistration.AddServices(services, builder.InboxConfiguration);
 
         services.TryAddSingleton<IMessageHandler>(sp =>
         {
@@ -44,6 +45,11 @@ public static class ServiceCollectionExtensions
             {
                 registration.Register(sp, eventHandlerProvider);
             }
+
+            IEventContextHandler contextHandler = InboxRegistration.Decorate(
+                sp,
+                eventHandlerProvider,
+                builder.InboxConfiguration);
 
             IRetryPolicyProvider retryPolicyProvider = null;
             if (builder.RetryPolicyConfigurator != null)
@@ -64,7 +70,7 @@ public static class ServiceCollectionExtensions
             var permanentFailureClassifier = sp.GetService<IPermanentFailureClassifier>();
             var failureDispositionClassifier = sp.GetService<IFailureDispositionClassifier>();
             return new StrictMessageHandler(
-                eventHandlerProvider,
+                contextHandler,
                 responseService,
                 logger,
                 retryPolicyProvider,

@@ -41,6 +41,12 @@ namespace NimBus.Core.Extensions
         /// </summary>
         Task OnSessionBlocked(MessageLifecycleContext context, string blockedByEventId, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+
+        /// <summary>
+        /// Called when inbox deduplication skips an already processed message.
+        /// </summary>
+        Task OnDuplicateDetected(MessageLifecycleContext context, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 
     /// <summary>
@@ -53,6 +59,11 @@ namespace NimBus.Core.Extensions
         public string EventTypeId { get; init; }
         public string CorrelationId { get; init; }
         public string SessionId { get; init; }
+
+        /// <summary>
+        /// Gets the endpoint that received the message.
+        /// </summary>
+        public string EndpointId { get; init; }
         public MessageType MessageType { get; init; }
         public DateTimeOffset EnqueuedTimeUtc { get; init; }
         public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
@@ -69,6 +80,7 @@ namespace NimBus.Core.Extensions
                 EventTypeId = messageContext.EventTypeId,
                 CorrelationId = messageContext.CorrelationId,
                 SessionId = messageContext.SessionId,
+                EndpointId = messageContext.To,
                 MessageType = messageContext.MessageType,
                 EnqueuedTimeUtc = messageContext.EnqueuedTimeUtc,
             };

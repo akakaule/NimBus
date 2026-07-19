@@ -151,21 +151,27 @@ namespace NimBus.SDK.Extensions
             // endpoint is benign (TryAdd would keep the first registration anyway);
             // a second call against a *different* endpoint silently bound the
             // second endpoint's handlers to a no-op, which is the bug.
+            var isFirstSubscriberRegistration = true;
             foreach (var descriptor in services)
             {
                 if (descriptor.ServiceType == typeof(SubscriberEndpointMarker)
-                    && descriptor.ImplementationInstance is SubscriberEndpointMarker existing
-                    && !string.Equals(existing.Endpoint, options.Endpoint, StringComparison.Ordinal))
+                    && descriptor.ImplementationInstance is SubscriberEndpointMarker existing)
                 {
-                    throw new InvalidOperationException(
-                        $"AddNimBusSubscriber was already called for endpoint '{existing.Endpoint}'. " +
-                        $"Registering a second subscriber endpoint ('{options.Endpoint}') in the same container " +
-                        "is not supported — ISubscriberClient is a non-keyed singleton. Host one endpoint per " +
-                        "process (matches the Aspire / Functions topology in samples/CrmErpDemo) or file an issue " +
-                        "to discuss keyed-ISubscriberClient support.");
+                    if (!string.Equals(existing.Endpoint, options.Endpoint, StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            $"AddNimBusSubscriber was already called for endpoint '{existing.Endpoint}'. " +
+                            $"Registering a second subscriber endpoint ('{options.Endpoint}') in the same container " +
+                            "is not supported — ISubscriberClient is a non-keyed singleton. Host one endpoint per " +
+                            "process (matches the Aspire / Functions topology in samples/CrmErpDemo) or file an issue " +
+                            "to discuss keyed-ISubscriberClient support.");
+                    }
+
+                    isFirstSubscriberRegistration = false;
                 }
             }
-            services.AddSingleton(new SubscriberEndpointMarker(options.Endpoint));
+            if (isFirstSubscriberRegistration)
+                services.AddSingleton(new SubscriberEndpointMarker(options.Endpoint));
 
             // Match the publisher path — consumer-side spans + meters depend on
             // the same OTel ActivitySource/Meter registrations.
@@ -173,6 +179,8 @@ namespace NimBus.SDK.Extensions
 
             var builder = new NimBusSubscriberBuilder(services);
             configureBuilder(builder);
+            if (isFirstSubscriberRegistration)
+                InboxRegistration.AddServices(services, builder.InboxConfiguration);
 
             // The deferred replay path is part of the subscriber contract: any session-enabled
             // endpoint may park messages on the Deferred subscription and needs this processor
@@ -214,6 +222,10 @@ namespace NimBus.SDK.Extensions
                 Core.Messages.IEventContextHandler contextHandler = cloudEventReadOptions != null
                     ? new CloudEventValidatingContextHandler(eventHandlerProvider)
                     : eventHandlerProvider;
+                contextHandler = InboxRegistration.Decorate(
+                    sp,
+                    contextHandler,
+                    builder.InboxConfiguration);
 
                 // Build retry policy provider
                 IRetryPolicyProvider? retryPolicyProvider = null;

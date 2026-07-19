@@ -3,6 +3,7 @@ using Microsoft.Azure.Cosmos.Linq;
 using Microsoft.Extensions.Logging;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace NimBus.MessageStore;
@@ -16,6 +17,19 @@ public interface ICosmosDatabaseAdapter
 {
     ICosmosContainerAdapter GetContainer(string id);
     Task<ICosmosContainerAdapter> CreateContainerIfNotExistsAsync(string id, string partitionKeyPath);
+
+    /// <summary>
+    /// Creates or resolves a container while propagating cancellation to the provider.
+    /// The default implementation preserves compatibility with existing adapters.
+    /// </summary>
+    Task<ICosmosContainerAdapter> CreateContainerIfNotExistsAsync(
+        string id,
+        string partitionKeyPath,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return CreateContainerIfNotExistsAsync(id, partitionKeyPath);
+    }
 }
 
 public interface ICosmosContainerAdapter
@@ -26,9 +40,52 @@ public interface ICosmosContainerAdapter
     FeedIterator<T> GetItemQueryIterator<T>(string queryText, string continuationToken = null, QueryRequestOptions requestOptions = null);
     IOrderedQueryable<T> GetItemLinqQueryable<T>(bool allowSynchronousQueryExecution = false, string continuationToken = null, QueryRequestOptions requestOptions = null);
     Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default);
+
+    /// <summary>
+    /// Creates an item while propagating cancellation to the provider.
+    /// The default implementation preserves compatibility with existing adapters.
+    /// </summary>
+    Task<ItemResponse<T>> CreateItemAsync<T>(
+        T item,
+        PartitionKey partitionKey,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return CreateItemAsync(item, partitionKey);
+    }
+
     Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions requestOptions = null);
     Task<ItemResponse<T>> DeleteItemAsync<T>(string id, PartitionKey partitionKey);
+
+    /// <summary>
+    /// Deletes an item while propagating cancellation to the provider.
+    /// The default implementation preserves compatibility with existing adapters.
+    /// </summary>
+    Task<ItemResponse<T>> DeleteItemAsync<T>(
+        string id,
+        PartitionKey partitionKey,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return DeleteItemAsync<T>(id, partitionKey);
+    }
+
     Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey);
+
+    /// <summary>
+    /// Reads an item while propagating cancellation to the provider.
+    /// The default implementation preserves compatibility with existing adapters.
+    /// </summary>
+    Task<ItemResponse<T>> ReadItemAsync<T>(
+        string id,
+        PartitionKey partitionKey,
+        ItemRequestOptions requestOptions,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ReadItemAsync<T>(id, partitionKey, requestOptions);
+    }
+
     Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey, ItemRequestOptions requestOptions);
     Task<ItemResponse<T>> PatchItemAsync<T>(string id, PartitionKey partitionKey, IReadOnlyList<PatchOperation> patchOperations);
     Task<ContainerResponse> DeleteContainerAsync();
@@ -74,12 +131,24 @@ internal sealed class TransientTranslatingCosmosDatabaseAdapter : ICosmosDatabas
         return new TransientTranslatingCosmosContainerAdapter(container, _logger);
     }
 
+    /// <inheritdoc />
     public async Task<ICosmosContainerAdapter> CreateContainerIfNotExistsAsync(
         string id,
         string partitionKeyPath)
     {
         var container = await CosmosExceptionTranslation.TranslateTransientAsync(
             () => _inner.CreateContainerIfNotExistsAsync(id, partitionKeyPath),
+            _logger);
+        return new TransientTranslatingCosmosContainerAdapter(container, _logger);
+    }
+
+    public async Task<ICosmosContainerAdapter> CreateContainerIfNotExistsAsync(
+        string id,
+        string partitionKeyPath,
+        CancellationToken cancellationToken)
+    {
+        var container = await CosmosExceptionTranslation.TranslateTransientAsync(
+            () => _inner.CreateContainerIfNotExistsAsync(id, partitionKeyPath, cancellationToken),
             _logger);
         return new TransientTranslatingCosmosContainerAdapter(container, _logger);
     }
@@ -131,11 +200,20 @@ internal sealed class TransientTranslatingCosmosContainerAdapter : ICosmosContai
                 requestOptions),
             _logger);
 
+    /// <inheritdoc />
     public Task<ItemResponse<T>> CreateItemAsync<T>(
         T item,
         PartitionKey partitionKey = default) =>
         CosmosExceptionTranslation.TranslateTransientAsync(
             () => _inner.CreateItemAsync(item, partitionKey),
+            _logger);
+
+    public Task<ItemResponse<T>> CreateItemAsync<T>(
+        T item,
+        PartitionKey partitionKey,
+        CancellationToken cancellationToken) =>
+        CosmosExceptionTranslation.TranslateTransientAsync(
+            () => _inner.CreateItemAsync(item, partitionKey, cancellationToken),
             _logger);
 
     public Task<ItemResponse<T>> UpsertItemAsync<T>(
@@ -146,6 +224,7 @@ internal sealed class TransientTranslatingCosmosContainerAdapter : ICosmosContai
             () => _inner.UpsertItemAsync(item, partitionKey, requestOptions),
             _logger);
 
+    /// <inheritdoc />
     public Task<ItemResponse<T>> DeleteItemAsync<T>(
         string id,
         PartitionKey partitionKey) =>
@@ -153,11 +232,29 @@ internal sealed class TransientTranslatingCosmosContainerAdapter : ICosmosContai
             () => _inner.DeleteItemAsync<T>(id, partitionKey),
             _logger);
 
+    public Task<ItemResponse<T>> DeleteItemAsync<T>(
+        string id,
+        PartitionKey partitionKey,
+        CancellationToken cancellationToken) =>
+        CosmosExceptionTranslation.TranslateTransientAsync(
+            () => _inner.DeleteItemAsync<T>(id, partitionKey, cancellationToken),
+            _logger);
+
+    /// <inheritdoc />
     public Task<ItemResponse<T>> ReadItemAsync<T>(
         string id,
         PartitionKey partitionKey) =>
         CosmosExceptionTranslation.TranslateTransientAsync(
             () => _inner.ReadItemAsync<T>(id, partitionKey),
+            _logger);
+
+    public Task<ItemResponse<T>> ReadItemAsync<T>(
+        string id,
+        PartitionKey partitionKey,
+        ItemRequestOptions requestOptions,
+        CancellationToken cancellationToken) =>
+        CosmosExceptionTranslation.TranslateTransientAsync(
+            () => _inner.ReadItemAsync<T>(id, partitionKey, requestOptions, cancellationToken),
             _logger);
 
     public Task<ItemResponse<T>> ReadItemAsync<T>(
@@ -238,6 +335,21 @@ public sealed class CosmosDatabaseAdapter : ICosmosDatabaseAdapter
             _logger);
         return new CosmosContainerAdapter(response.Container, _logger);
     }
+
+    /// <inheritdoc />
+    public async Task<ICosmosContainerAdapter> CreateContainerIfNotExistsAsync(
+        string id,
+        string partitionKeyPath,
+        CancellationToken cancellationToken)
+    {
+        var response = await CosmosExceptionTranslation.TranslateTransientAsync(
+            () => _database.CreateContainerIfNotExistsAsync(
+                id,
+                partitionKeyPath,
+                cancellationToken: cancellationToken),
+            _logger);
+        return new CosmosContainerAdapter(response.Container, _logger);
+    }
 }
 
 public sealed class CosmosContainerAdapter : ICosmosContainerAdapter
@@ -274,14 +386,46 @@ public sealed class CosmosContainerAdapter : ICosmosContainerAdapter
     public Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default) =>
         CosmosExceptionTranslation.TranslateTransientAsync(() => _container.CreateItemAsync(item, partitionKey), _logger);
 
+    /// <inheritdoc />
+    public Task<ItemResponse<T>> CreateItemAsync<T>(
+        T item,
+        PartitionKey partitionKey,
+        CancellationToken cancellationToken) =>
+        CosmosExceptionTranslation.TranslateTransientAsync(
+            () => _container.CreateItemAsync(item, partitionKey, cancellationToken: cancellationToken),
+            _logger);
+
     public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions requestOptions = null) =>
         CosmosExceptionTranslation.TranslateTransientAsync(() => _container.UpsertItemAsync(item, partitionKey, requestOptions), _logger);
 
     public Task<ItemResponse<T>> DeleteItemAsync<T>(string id, PartitionKey partitionKey) =>
         CosmosExceptionTranslation.TranslateTransientAsync(() => _container.DeleteItemAsync<T>(id, partitionKey), _logger);
 
+    /// <inheritdoc />
+    public Task<ItemResponse<T>> DeleteItemAsync<T>(
+        string id,
+        PartitionKey partitionKey,
+        CancellationToken cancellationToken) =>
+        CosmosExceptionTranslation.TranslateTransientAsync(
+            () => _container.DeleteItemAsync<T>(id, partitionKey, cancellationToken: cancellationToken),
+            _logger);
+
     public Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey) =>
         CosmosExceptionTranslation.TranslateTransientAsync(() => _container.ReadItemAsync<T>(id, partitionKey), _logger);
+
+    /// <inheritdoc />
+    public Task<ItemResponse<T>> ReadItemAsync<T>(
+        string id,
+        PartitionKey partitionKey,
+        ItemRequestOptions requestOptions,
+        CancellationToken cancellationToken) =>
+        CosmosExceptionTranslation.TranslateTransientAsync(
+            () => _container.ReadItemAsync<T>(
+                id,
+                partitionKey,
+                requestOptions,
+                cancellationToken),
+            _logger);
 
     public Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey, ItemRequestOptions requestOptions) =>
         CosmosExceptionTranslation.TranslateTransientAsync(() => _container.ReadItemAsync<T>(id, partitionKey, requestOptions), _logger);

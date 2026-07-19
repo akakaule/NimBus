@@ -104,6 +104,41 @@ internal sealed class EndToEndFixture
             responseService);
     }
 
+    private EndToEndFixture(
+        Func<IEventContextHandler, IEventContextHandler> decorateHandler,
+        MessageLifecycleNotifier? notifier)
+    {
+        ArgumentNullException.ThrowIfNull(decorateHandler);
+
+        _publishBus = new InMemoryBus();
+        _responseBus = new InMemoryBus();
+
+        Publisher = new PublisherClient(_publishBus);
+
+        _eventHandlerProvider = new EventHandlerProvider();
+        var responseService = new ResponseService(_responseBus);
+        var contextHandler = decorateHandler(_eventHandlerProvider);
+
+        _messageHandler = new StrictMessageHandler(
+            contextHandler,
+            responseService,
+            NullLogger.Instance,
+            retryPolicyProvider: null,
+            pipeline: null,
+            lifecycleNotifier: notifier,
+            permanentFailureClassifier: null,
+            failureDispositionClassifier: null);
+    }
+
+    /// <summary>
+    /// Creates a fixture with an event-handler decorator that runs before the
+    /// subscriber publishes its response and settles the broker message.
+    /// </summary>
+    public static EndToEndFixture CreateWithHandlerDecorator(
+        Func<IEventContextHandler, IEventContextHandler> decorateHandler,
+        MessageLifecycleNotifier? notifier = null) =>
+        new(decorateHandler, notifier);
+
     /// <summary>
     /// Registers an event handler factory.
     /// </summary>

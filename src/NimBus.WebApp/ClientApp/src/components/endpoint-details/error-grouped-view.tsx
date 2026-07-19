@@ -3,7 +3,10 @@ import * as api from "api-client";
 import { Badge } from "components/ui/badge";
 import { Button } from "components/ui/button";
 import { normalizeErrorPattern } from "functions/error-normalization";
-import { formatMoment } from "functions/endpoint.functions";
+import {
+  formatMoment,
+  formatResolutionStatus,
+} from "functions/endpoint.functions";
 import TruncatedGuid from "components/common/truncated-guid";
 
 interface ErrorGroupedViewProps {
@@ -220,7 +223,10 @@ const ErrorGroupedView = ({
                                   <TruncatedGuid guid={ev.eventId} />
                                 </td>
                                 <td className="py-1 px-3">
-                                  {ev.resolutionStatus}
+                                  {formatResolutionStatus(
+                                    ev.resolutionStatus,
+                                    ev.reason,
+                                  )}
                                 </td>
                                 <td className="py-1 px-3">
                                   {ev.eventTypeId}

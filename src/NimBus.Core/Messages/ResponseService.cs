@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using NimBus.Core.Diagnostics;
+using NimBus.Core.Inbox;
 
 namespace NimBus.Core.Messages
 {
@@ -26,6 +27,21 @@ namespace NimBus.Core.Messages
         public async Task SendSkipResponse(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
             IMessage response = CreateResponse(messageContext, MessageType.SkipResponse, responseContent: new MessageContent());
+            await _sender.Send(response, cancellationToken: cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public async Task SendDuplicateResponse(IMessageContext messageContext, CancellationToken cancellationToken = default)
+        {
+            var content = new MessageContent
+            {
+                ErrorContent = new ErrorContent
+                {
+                    ErrorText = InboxMiddleware.DuplicateReason,
+                },
+                EventContent = messageContext.MessageContent?.EventContent,
+            };
+            IMessage response = CreateResponse(messageContext, MessageType.SkipResponse, content);
             await _sender.Send(response, cancellationToken: cancellationToken);
         }
 

@@ -28,6 +28,33 @@ for concrete `IEventHandler<TEvent>` implementations. Use
 `AddHandler<TEvent,THandler>()` when you want to register or override a handler
 explicitly.
 
+#### UseInbox
+
+Register a provider and opt a subscriber into record-on-success deduplication:
+
+```csharp
+services.AddNimBusSqlServerInbox(connectionString);
+services.AddNimBusSubscriber("BillingEndpoint", sub =>
+{
+    sub.AddHandler<OrderPlaced, OrderPlacedHandler>();
+    sub.UseInbox(options =>
+    {
+        options.DeduplicationStore = InboxStore.SqlServer;
+        options.RetentionPeriod = TimeSpan.FromDays(7);
+        options.CleanupInterval = TimeSpan.FromHours(1);
+    });
+});
+```
+
+The selectable providers are `InboxStore.SqlServer`, `InboxStore.Cosmos`, and
+`InboxStore.InMemory`. The matching keyed provider registration is mandatory;
+subscriber startup fails if it is missing. A successful handler is recorded
+before the Resolver response and broker settlement. Store failures follow the
+transient redelivery path, while a missing or unsupported-length `MessageId`
+logs a warning and runs the handler without deduplication. See
+[Consumer inbox](inbox-pattern.md) for provider setup, cleanup, and atomicity
+limits.
+
 ### AddNimBusReceiver
 
 ```csharp

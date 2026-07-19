@@ -474,6 +474,28 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
+    public async Task HandleEventRequest_LegacyResponseService_RoundsPrecisePolicyDelay()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest, eventTypeId: "OrderPlaced");
+        var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
+        var response = new FakeResponseService();
+        var retryProvider = new FakeRetryPolicyProvider
+        {
+            PolicyToReturn = new RetryPolicy
+            {
+                MaxRetries = 1,
+                BaseDelay = TimeSpan.FromSeconds(90),
+            },
+        };
+        var sut = new StrictMessageHandler(handler, response, NullLogger.Instance, retryProvider);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, response.RetryCalls);
+        Assert.AreEqual(2, response.LastRetryDelayMinutes);
+    }
+
+    [TestMethod]
     public async Task HandleEventRequest_HandlerThrowsRetryCountExceeded_NoRetryResponse()
     {
         var ctx = CreateContext(messageType: MessageType.EventRequest, eventTypeId: "AliceSaidHelloWithRetry");
@@ -949,7 +971,6 @@ public class StrictMessageHandlerTests
             return Task.CompletedTask;
         }
         public Task SendDeferralResponse(IMessageContext mc, SessionBlockedException ex, CancellationToken ct = default) { DeferralCalls++; return Task.CompletedTask; }
-        public Task SendRetryResponse(IMessageContext mc, TimeSpan delay, CancellationToken ct = default) { RetryCalls++; return Task.CompletedTask; }
         public Task SendRetryResponse(IMessageContext mc, int delay, CancellationToken ct = default) { RetryCalls++; LastRetryDelayMinutes = delay; return Task.CompletedTask; }
         public Task SendUnsupportedResponse(IMessageContext mc, CancellationToken ct = default) { UnsupportedCalls++; return Task.CompletedTask; }
         public Task SendContinuationRequestToSelf(IMessageContext mc, CancellationToken ct = default) { ContinuationCalls++; return Task.CompletedTask; }

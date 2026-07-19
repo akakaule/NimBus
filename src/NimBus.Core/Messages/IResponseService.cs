@@ -25,7 +25,9 @@ namespace NimBus.Core.Messages
         /// <param name="messageContext">The failed message context.</param>
         /// <param name="messageDelay">The precise delay before the retry is enqueued.</param>
         /// <param name="cancellationToken">A token that can cancel the operation.</param>
-        Task SendRetryResponse(IMessageContext messageContext, TimeSpan messageDelay, CancellationToken cancellationToken = default);
+        /// <remarks>Legacy implementations fall back to the whole-minute overload.</remarks>
+        Task SendRetryResponse(IMessageContext messageContext, TimeSpan messageDelay, CancellationToken cancellationToken = default) =>
+            SendRetryResponse(messageContext, (int)Math.Ceiling(messageDelay.TotalMinutes), cancellationToken);
 
         Task SendRetryResponse(IMessageContext messageContext, int messageDelayMinutes, CancellationToken cancellationToken = default);
         Task SendUnsupportedResponse(IMessageContext messageContext, CancellationToken cancellationToken = default);

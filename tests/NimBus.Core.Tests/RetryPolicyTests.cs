@@ -125,6 +125,45 @@ public class RetryPolicyTests
     }
 
     [TestMethod]
+    public void GetDelay_MaxDelayCapsJitterThatWouldOverflowTimeSpan()
+    {
+        var maxDelay = TimeSpan.FromMinutes(5);
+        var fullPolicy = new RetryPolicy
+        {
+            BaseDelay = TimeSpan.FromTicks(long.MaxValue - 1_000),
+            Jitter = JitterMode.Full,
+            MaxDelay = maxDelay,
+        };
+        var boundedPolicy = new RetryPolicy
+        {
+            BaseDelay = TimeSpan.FromSeconds(10),
+            Jitter = JitterMode.Bounded,
+            BoundedJitterFactor = double.MaxValue,
+            MaxDelay = maxDelay,
+        };
+
+        Assert.AreEqual(maxDelay, fullPolicy.GetDelay(0, new FixedRandom(0.5)));
+        Assert.AreEqual(maxDelay, boundedPolicy.GetDelay(0, new FixedRandom(0.5)));
+    }
+
+    [TestMethod]
+    [DataRow(-0.01)]
+    [DataRow(double.NaN)]
+    [DataRow(double.PositiveInfinity)]
+    public void GetDelay_BoundedJitter_RejectsInvalidFactor(double factor)
+    {
+        var policy = new RetryPolicy
+        {
+            BaseDelay = TimeSpan.FromSeconds(10),
+            Jitter = JitterMode.Bounded,
+            BoundedJitterFactor = factor,
+        };
+
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(
+            () => policy.GetDelay(0, new FixedRandom(0.5)));
+    }
+
+    [TestMethod]
     public void NewtonsoftSerialization_PreservesLegacyDefaultsAndJitterSettings()
     {
         const string legacyJson = "{\"MaxRetries\":3,\"Strategy\":2,\"BaseDelay\":\"00:00:05\",\"MaxDelay\":\"00:01:00\"}";

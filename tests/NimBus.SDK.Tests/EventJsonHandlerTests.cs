@@ -25,6 +25,28 @@ public class EventJsonHandlerTests
     }
 
     [TestMethod]
+    public async Task Handle_ExposesInboundWorkflowIdentityAndLineage()
+    {
+        var handler = new RecordingHandler();
+        var sut = new EventJsonHandler<TestEvent>(handler);
+        var messageContext = MessageContextStub.ForWorkflowEvent(
+            nameof(TestEvent),
+            "{}",
+            messageId: "inventory-reserved-1",
+            sessionId: "order-42",
+            correlationId: "conversation-7",
+            parentMessageId: "reserve-inventory-1",
+            originatingMessageId: "order-placed-1");
+
+        await sut.Handle(messageContext);
+
+        Assert.AreEqual("order-42", handler.LastContext?.SessionId);
+        Assert.AreEqual("conversation-7", handler.LastContext?.CorrelationId);
+        Assert.AreEqual("reserve-inventory-1", handler.LastContext?.ParentMessageId);
+        Assert.AreEqual("order-placed-1", handler.LastContext?.OriginatingMessageId);
+    }
+
+    [TestMethod]
     public async Task Handle_LiteralNull_RejectsBeforeInvokingHandler()
     {
         var handler = new RecordingHandler();

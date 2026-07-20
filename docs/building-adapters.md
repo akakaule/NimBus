@@ -167,6 +167,7 @@ await publisher.Publish(
 | `Publish(IEvent)` | Publish one event using the event's session ID and a new correlation ID |
 | `Publish(event, sessionId, correlationId)` | Override the session and correlation IDs |
 | `Publish(event, sessionId, correlationId, messageId)` | Also provide an explicit idempotency-oriented `MessageId` |
+| `PublishFromContext(event, context, messageId, cancellationToken)` | Publish a workflow follow-up with a deterministic ID while preserving inbound session, correlation, and lineage |
 | `PublishBatches(IEnumerable<IEvent>, correlationId)` | **Preferred for bulk publish.** Sends any number of events, automatically paged to the Service Bus batch size; each event is serialized exactly once |
 | `PublishBatch(IEnumerable<IEvent>, correlationId)` | Send multiple events in one Service Bus batch — the caller must respect transport size limits |
 | `GetBatches(List<IEvent>)` | Split a list into transport-sized batches before publishing (legacy pairing with `PublishBatch`; prefer `PublishBatches`) |
@@ -224,10 +225,13 @@ public sealed class AccountCreatedHandler(ICrmApiClient crm, ILogger<AccountCrea
 }
 ```
 
-`IEventHandlerContext` exposes `MessageId`, `EventId`, `EventType`, and
-`CorrelationId`. It also exposes `MarkPendingHandoff(...)` for integrations that
-start long-running external work and need the message recorded as pending rather
-than failed. See [error-handling.md](error-handling.md) and the pending handoff
+`IEventHandlerContext` exposes `MessageId`, `EventId`, `EventType`, `SessionId`,
+`CorrelationId`, `ParentMessageId`, and `OriginatingMessageId`. Pass it to
+`PublishFromContext(...)` for workflow follow-ups; the method requires an
+explicit deterministic outgoing message ID and does not rely on ambient state.
+The context also exposes `MarkPendingHandoff(...)` for integrations that start
+long-running external work and need the message recorded as pending rather than
+failed. See [error-handling.md](error-handling.md) and the pending handoff
 [ADR](adr/012-pending-handoff.md) for the operational implications.
 
 ### Register handlers

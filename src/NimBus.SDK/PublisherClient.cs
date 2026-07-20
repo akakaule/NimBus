@@ -4,6 +4,7 @@ using NimBus.Core.Diagnostics;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using NimBus.OpenTelemetry;
+using NimBus.SDK.EventHandlers;
 using NimBus.SDK.Extensions;
 using NimBus.ServiceBus;
 using Newtonsoft.Json;
@@ -117,6 +118,38 @@ public class PublisherClient : IPublisherClient
         // canonical messaging.* attributes and parents to Activity.Current.
         var message = GetMessage(@event, correlationId, messageId, sessionId);
         await _sender.Send(message);
+    }
+
+    /// <inheritdoc/>
+    public async Task PublishFromContext(
+        IEvent @event,
+        IEventHandlerContext context,
+        string messageId,
+        CancellationToken cancellationToken = default)
+    {
+        if (@event == null) throw new ArgumentNullException(nameof(@event));
+        if (context == null) throw new ArgumentNullException(nameof(context));
+        if (string.IsNullOrWhiteSpace(messageId))
+            throw new ArgumentException("A deterministic outgoing message ID is required.", nameof(messageId));
+        if (string.IsNullOrWhiteSpace(context.MessageId))
+            throw new ArgumentException("The inbound context must have a message ID.", nameof(context));
+        if (string.IsNullOrWhiteSpace(context.SessionId))
+            throw new ArgumentException("The inbound context must have a session ID.", nameof(context));
+        if (string.IsNullOrWhiteSpace(context.CorrelationId))
+            throw new ArgumentException("The inbound context must have a correlation ID.", nameof(context));
+
+        var message = (Message)GetMessage(
+            @event,
+            context.CorrelationId,
+            messageId,
+            context.SessionId);
+        message.ParentMessageId = context.MessageId;
+        message.OriginatingMessageId = string.IsNullOrWhiteSpace(context.OriginatingMessageId)
+            || string.Equals(context.OriginatingMessageId, Constants.Self, StringComparison.OrdinalIgnoreCase)
+                ? context.MessageId
+                : context.OriginatingMessageId;
+
+        await _sender.Send(message, 0, cancellationToken);
     }
 
     /// <inheritdoc/>

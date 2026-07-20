@@ -111,49 +111,57 @@ the same transition must reproduce the same ID; intentionally issuing the step
 again must first persist a new ordinal. Do not use a timestamp, random GUID, or
 retry count in this ID.
 
-The typed publisher accepts all three broker identities explicitly:
+When a handler publishes the next workflow message, use its inbound context:
 
 ```csharp
-await publisher.Publish(
+await publisher.PublishFromContext(
     command,
-    sessionId: state.Id,
-    correlationId: state.CorrelationId,
-    messageId: "order-42:capture-payment:1");
+    context,
+    messageId: "order-42:capture-payment:1",
+    cancellationToken: cancellationToken);
 ```
 
-Although `PublisherClient` derives a deterministic ID from event type and
-serialized payload when `messageId` is omitted, an explicit business ID is
-safer: unrelated serialization changes cannot alter it, and two intentional
-occurrences of the same payload remain distinguishable.
+`PublishFromContext` requires the outgoing `MessageId`; there is no overload
+that silently generates one. Derive it from the durable workflow ID, logical
+transition, and workflow version or attempt. The method copies the inbound
+`SessionId` and `CorrelationId`, sets the outgoing parent to the inbound
+`MessageId`, and retains the original initiating message across later hops.
+
+For application emissions that do not run in an inbound handler, use the
+existing explicit `Publish(event, sessionId, correlationId, messageId)` overload
+and obtain the identities from durable workflow state. Although the older
+publisher overloads can derive an ID from event type and serialized payload, an
+explicit business ID is safer: unrelated serialization changes cannot alter it,
+and two intentional occurrences of the same payload remain distinguishable.
 
 ### Propagate Lineage Explicitly
 
-`IEventHandlerContext` currently exposes `MessageId` and `CorrelationId`, but
-not `SessionId`, `ParentMessageId`, or `OriginatingMessageId`. Do not assume that
-application-generated messages inherit those values implicitly. Put the
-workflow and lineage fields in durable state and in every workflow contract
-emitted after initiation:
+`IEventHandlerContext` exposes `SessionId`, `CorrelationId`, `MessageId`,
+`ParentMessageId`, and `OriginatingMessageId`. Pass that context explicitly to
+`PublishFromContext`; NimBus does not keep an ambient or mutable “current
+message.” For a first-hop legacy message whose origin is absent or `self`, the
+publisher uses the inbound `MessageId` as the origin. On later hops it preserves
+the inbound origin and always reparents to the current inbound `MessageId`.
+
+The native lineage is transport metadata and survives both direct and SQL
+outbox-backed publishing, including CloudEvents mode. A workflow contract may
+also carry business-visible lineage when downstream domain logic requires it,
+but it no longer needs to duplicate the native fields merely to propagate them:
 
 ```csharp
 public abstract class OrderWorkflowEvent : Event
 {
     public required string WorkflowId { get; init; }
-    public required string ConversationCorrelationId { get; init; }
-    public required string OriginatingMessageId { get; init; }
-    public required string ParentMessageId { get; init; }
 
     public override string GetSessionId() => WorkflowId;
 }
 ```
 
-The initiating contract can be a normal domain event without lineage fields.
-Its first handler captures `IEventHandlerContext.MessageId` as the origin in the
-new durable state record; it does not try to mutate the received event. For each
-emitted command or event, keep that stored origin and set `ParentMessageId` to
-the current context's `MessageId`. The low-level `Publish(IMessage, ...)` path
-can also populate NimBus's native lineage fields, but typed application
-contracts remain necessary because the typed handler context does not expose
-the full native lineage.
+Still persist the conversation correlation ID, originating message ID, and
+deterministic outgoing IDs in workflow state. A timeout, reconciliation job, or
+restart may need to emit a message without the original handler context; that
+path must reconstruct explicit metadata from durable state rather than from
+in-memory or ambient state.
 
 NimBus-generated operational response messages use their own correlation and
 lineage rules for Resolver auditing. “One correlation ID” in this guide means
@@ -264,16 +272,13 @@ public sealed class InventoryReservedHandler(
                     WorkflowId = state.Id,
                     OrderId = state.OrderId,
                     Amount = state.Amount,
-                    ConversationCorrelationId = state.CorrelationId,
-                    OriginatingMessageId = state.OriginatingMessageId,
-                    ParentMessageId = context.MessageId,
                 };
 
-                await publisher.Publish(
+                await publisher.PublishFromContext(
                     command,
-                    sessionId: state.Id,
-                    correlationId: state.CorrelationId,
-                    messageId: commandId);
+                    context,
+                    messageId: commandId,
+                    cancellationToken: ct);
             },
             cancellationToken);
     }
@@ -330,7 +335,7 @@ public static async Task RunWithOutboxAsync(
 
         using (SqlServerOutboxAmbientTransaction.Begin(connection, transaction))
         {
-            await work(); // Save workflow state and call publisher.Publish here.
+            await work(); // Save workflow state and call publisher.PublishFromContext here.
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -535,18 +540,15 @@ messages such as `ReleaseInventory` or `RefundPayment`.
 state.Status = OrderWorkflowStatus.Compensating;
 state.RecordCompensation("release-inventory", CompensationStatus.Pending);
 
-await publisher.Publish(
+await publisher.PublishFromContext(
     new ReleaseInventory
     {
         WorkflowId = state.Id,
         ReservationId = state.InventoryReservationId,
-        ConversationCorrelationId = state.CorrelationId,
-        OriginatingMessageId = state.OriginatingMessageId,
-        ParentMessageId = context.MessageId,
     },
-    sessionId: state.Id,
-    correlationId: state.CorrelationId,
-    messageId: state.MessageIdFor("release-inventory", ordinal: 1));
+    context,
+    messageId: state.MessageIdFor("release-inventory", ordinal: 1),
+    cancellationToken: cancellationToken);
 ```
 
 Persist each compensation's status and deterministic message ID. Compensation

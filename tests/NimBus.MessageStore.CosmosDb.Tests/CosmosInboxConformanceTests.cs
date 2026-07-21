@@ -77,7 +77,7 @@ internal sealed class ConformanceCosmosInfrastructure : ICosmosClientAdapter, IC
 
 internal sealed class ConformanceCosmosContainer : ICosmosContainerAdapter
 {
-    private readonly ConcurrentDictionary<string, InboxDocument> _documents = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, (InboxDocument Document, string ETag)> _documents = new(StringComparer.Ordinal);
 
     public FeedIterator<T> GetItemQueryIterator<T>(QueryDefinition queryDefinition)
         => GetItemQueryIterator<T>(queryDefinition, null, null);
@@ -95,10 +95,10 @@ internal sealed class ConformanceCosmosContainer : ICosmosContainerAdapter
             CultureInfo.InvariantCulture,
             DateTimeStyles.RoundtripKind);
         var ids = _documents.Values
-            .Where(document => document.CreatedAtUtc < cutoff)
-            .OrderBy(document => document.CreatedAtUtc)
+            .Where(entry => entry.Document.CreatedAtUtc < cutoff)
+            .OrderBy(entry => entry.Document.CreatedAtUtc)
             .Take(batchSize)
-            .Select(document => (T)(object)new InboxDocumentId { Id = document.Id })
+            .Select(entry => (T)(object)new InboxDocumentId { Id = entry.Document.Id, ETag = entry.ETag })
             .ToArray();
         return new ConformanceFeedIterator<T>(ids);
     }
@@ -128,7 +128,7 @@ internal sealed class ConformanceCosmosContainer : ICosmosContainerAdapter
     {
         cancellationToken.ThrowIfCancellationRequested();
         var document = (InboxDocument)(object)item!;
-        if (!_documents.TryAdd(document.Id, document))
+        if (!_documents.TryAdd(document.Id, (document, Guid.NewGuid().ToString("N"))))
         {
             throw NewCosmosException(HttpStatusCode.Conflict);
         }
@@ -154,6 +154,32 @@ internal sealed class ConformanceCosmosContainer : ICosmosContainerAdapter
         if (!_documents.TryRemove(id, out _))
         {
             throw NewCosmosException(HttpStatusCode.NotFound);
+        }
+
+        return Task.FromResult<ItemResponse<T>>(null!);
+    }
+
+    public Task<ItemResponse<T>> DeleteItemAsync<T>(
+        string id,
+        PartitionKey partitionKey,
+        ItemRequestOptions requestOptions,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_documents.TryGetValue(id, out var entry))
+        {
+            throw NewCosmosException(HttpStatusCode.NotFound);
+        }
+
+        if (requestOptions?.IfMatchEtag is { } etag && !string.Equals(etag, entry.ETag, StringComparison.Ordinal))
+        {
+            throw NewCosmosException(HttpStatusCode.PreconditionFailed);
+        }
+
+        // Value-conditioned removal keeps the compare-and-delete atomic under concurrency.
+        if (!_documents.TryRemove(new KeyValuePair<string, (InboxDocument, string)>(id, entry)))
+        {
+            throw NewCosmosException(HttpStatusCode.PreconditionFailed);
         }
 
         return Task.FromResult<ItemResponse<T>>(null!);

@@ -48,6 +48,23 @@ internal static class InboxRegistration
             serviceProvider.GetService<ILogger<InboxMiddleware>>());
     }
 
+    /// <summary>
+    /// Creates the duplicate detector handed to <c>StrictMessageHandler</c> so the inbox check
+    /// runs before the session-state guards, or <see langword="null"/> when no inbox is configured.
+    /// </summary>
+    public static InboxDuplicateDetector? CreateDuplicateDetector(
+        IServiceProvider serviceProvider,
+        InboxOptions? options)
+    {
+        if (options is null)
+            return null;
+
+        return new InboxDuplicateDetector(
+            ResolveStore(serviceProvider, options),
+            serviceProvider.GetRequiredService<MessageLifecycleNotifier>(),
+            serviceProvider.GetService<ILogger<InboxDuplicateDetector>>());
+    }
+
     private static IInboxStore ResolveStore(
         IServiceProvider serviceProvider,
         InboxOptions options)

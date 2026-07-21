@@ -74,10 +74,12 @@ public sealed class InboxPurgeHostedServiceTests
         public Task SecondPurge => _secondPurge.Task;
 
         public Task<bool> HasProcessedAsync(
+            string endpointId,
             string messageId,
             CancellationToken cancellationToken = default) => Task.FromResult(false);
 
         public Task RecordProcessedAsync(
+            string endpointId,
             string messageId,
             CancellationToken cancellationToken = default) => Task.CompletedTask;
 

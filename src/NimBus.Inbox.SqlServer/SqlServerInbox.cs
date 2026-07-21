@@ -5,10 +5,12 @@ using NimBus.Core.Inbox;
 namespace NimBus.Inbox.SqlServer;
 
 /// <summary>
-/// SQL Server-backed inbox store with concurrency-safe, first-write-wins records.
+/// SQL Server-backed inbox store with concurrency-safe, first-write-wins records
+/// keyed by the (endpoint, message) pair.
 /// </summary>
 public sealed class SqlServerInbox : IInboxStore, IDisposable
 {
+    private const int EndpointIdMaxLength = 260;
     private const int MessageIdMaxLength = 512;
     private const int PurgeBatchSize = 1_000;
     private readonly SemaphoreSlim _initializationLock = new(1, 1);
@@ -52,17 +54,19 @@ public sealed class SqlServerInbox : IInboxStore, IDisposable
 
     /// <inheritdoc />
     public async Task<bool> HasProcessedAsync(
+        string endpointId,
         string messageId,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ValidateMessageId(messageId);
+        ValidateIdentity(endpointId, messageId);
         await EnsureInitializedAsync(cancellationToken);
 
-        var sql = $"SELECT TOP (1) 1 FROM {_options.FullTableName} WHERE [MessageId] = @MessageId;";
+        var sql = $"SELECT TOP (1) 1 FROM {_options.FullTableName} WHERE [EndpointId] = @EndpointId AND [MessageId] = @MessageId;";
         await using var connection = new SqlConnection(_options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection);
+        command.Parameters.Add("@EndpointId", SqlDbType.NVarChar, EndpointIdMaxLength).Value = endpointId;
         command.Parameters.Add("@MessageId", SqlDbType.NVarChar, MessageIdMaxLength).Value = messageId;
 
         return await command.ExecuteScalarAsync(cancellationToken) is not null;
@@ -70,17 +74,19 @@ public sealed class SqlServerInbox : IInboxStore, IDisposable
 
     /// <inheritdoc />
     public async Task RecordProcessedAsync(
+        string endpointId,
         string messageId,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ValidateMessageId(messageId);
+        ValidateIdentity(endpointId, messageId);
         await EnsureInitializedAsync(cancellationToken);
 
-        var sql = $"INSERT INTO {_options.FullTableName} ([MessageId], [CreatedAtUtc]) VALUES (@MessageId, SYSUTCDATETIME());";
+        var sql = $"INSERT INTO {_options.FullTableName} ([EndpointId], [MessageId], [CreatedAtUtc]) VALUES (@EndpointId, @MessageId, SYSUTCDATETIME());";
         await using var connection = new SqlConnection(_options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection);
+        command.Parameters.Add("@EndpointId", SqlDbType.NVarChar, EndpointIdMaxLength).Value = endpointId;
         command.Parameters.Add("@MessageId", SqlDbType.NVarChar, MessageIdMaxLength).Value = messageId;
 
         try
@@ -102,13 +108,16 @@ public sealed class SqlServerInbox : IInboxStore, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         await EnsureInitializedAsync(cancellationToken);
 
+        // READCOMMITTEDLOCK accompanies READPAST because READPAST alone is rejected under
+        // READ_COMMITTED_SNAPSHOT (common on Azure SQL); the pair pins the row-lock semantics
+        // READPAST requires regardless of the database's RCSI setting.
         var sql = $"""
             WITH [ExpiredInboxMessages] AS
             (
-                SELECT TOP (@BatchSize) [MessageId]
-                FROM {_options.FullTableName} WITH (READPAST)
+                SELECT TOP (@BatchSize) [EndpointId], [MessageId]
+                FROM {_options.FullTableName} WITH (READPAST, READCOMMITTEDLOCK)
                 WHERE [CreatedAtUtc] < @OlderThan
-                ORDER BY [CreatedAtUtc], [MessageId]
+                ORDER BY [CreatedAtUtc], [EndpointId], [MessageId]
             )
             DELETE FROM [ExpiredInboxMessages];
             """;
@@ -145,6 +154,10 @@ public sealed class SqlServerInbox : IInboxStore, IDisposable
                 return;
             }
 
+            // The primary key must be NONCLUSTERED: a clustered key is limited to 900 bytes and
+            // the composite (260 + 512 chars) NVARCHAR key needs up to 1,544 — within the 1,700
+            // byte nonclustered limit. The table clusters on CreatedAtUtc instead, which also
+            // keeps the bounded purge an efficient range scan.
             var sql = $"""
                 IF SCHEMA_ID(@Schema) IS NULL
                     EXEC(N'CREATE SCHEMA [{_options.Schema}]');
@@ -153,9 +166,11 @@ public sealed class SqlServerInbox : IInboxStore, IDisposable
                 BEGIN
                     CREATE TABLE {_options.FullTableName}
                     (
-                        [MessageId] NVARCHAR(512) COLLATE Latin1_General_100_BIN2 NOT NULL PRIMARY KEY,
+                        [EndpointId] NVARCHAR(260) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                        [MessageId] NVARCHAR(512) COLLATE Latin1_General_100_BIN2 NOT NULL,
                         [CreatedAtUtc] DATETIME2(7) NOT NULL DEFAULT SYSUTCDATETIME(),
-                        INDEX [IX_InboxMessages_CreatedAtUtc] NONCLUSTERED ([CreatedAtUtc])
+                        CONSTRAINT [PK_{_options.TableName}] PRIMARY KEY NONCLUSTERED ([EndpointId], [MessageId]),
+                        INDEX [IX_{_options.TableName}_CreatedAtUtc] CLUSTERED ([CreatedAtUtc])
                     );
                 END;
                 """;
@@ -173,9 +188,17 @@ public sealed class SqlServerInbox : IInboxStore, IDisposable
         }
     }
 
-    private static void ValidateMessageId(string messageId)
+    private static void ValidateIdentity(string endpointId, string messageId)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(endpointId);
         ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+        if (endpointId.Length > EndpointIdMaxLength)
+        {
+            throw new ArgumentException(
+                $"Endpoint identifiers cannot exceed {EndpointIdMaxLength} characters.",
+                nameof(endpointId));
+        }
+
         if (messageId.Length > MessageIdMaxLength)
         {
             throw new ArgumentException(
@@ -186,10 +209,12 @@ public sealed class SqlServerInbox : IInboxStore, IDisposable
 
     private static void ValidateSqlIdentifier(string value, string parameterName)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 128 || !IsIdentifierStart(value[0]))
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 112 || !IsIdentifierStart(value[0]))
         {
             throw new ArgumentException(
-                "SQL identifiers must be 1-128 ASCII letters, digits, or underscores and cannot start with a digit.",
+                // 112 (not 128) so the derived PK_/IX_..._CreatedAtUtc names stay within the
+                // 128-character SQL identifier limit.
+                "SQL identifiers must be 1-112 ASCII letters, digits, or underscores and cannot start with a digit.",
                 parameterName);
         }
 
@@ -198,7 +223,7 @@ public sealed class SqlServerInbox : IInboxStore, IDisposable
             if (!IsIdentifierPart(value[index]))
             {
                 throw new ArgumentException(
-                    "SQL identifiers must be 1-128 ASCII letters, digits, or underscores and cannot start with a digit.",
+                    "SQL identifiers must be 1-112 ASCII letters, digits, or underscores and cannot start with a digit.",
                     parameterName);
             }
         }

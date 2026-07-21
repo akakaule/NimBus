@@ -37,8 +37,58 @@ public sealed class InboxMiddlewareTests
         CollectionAssert.AreEqual(
             SuccessfulProcessingOrder,
             order);
+        Assert.AreEqual("billing", store.LastCheckedEndpointId);
         Assert.AreEqual("message-1", store.LastCheckedMessageId);
+        Assert.AreEqual("billing", store.LastRecordedEndpointId);
         Assert.AreEqual("message-1", store.LastRecordedMessageId);
+    }
+
+    [TestMethod]
+    public async Task Fan_out_endpoints_sharing_one_store_each_run_their_handler()
+    {
+        var store = new RecordingInboxStore { TrackRecords = true };
+        var billingHandler = new RecordingHandler();
+        var shippingHandler = new RecordingHandler();
+        var billingMiddleware = new InboxMiddleware(billingHandler, store);
+        var shippingMiddleware = new InboxMiddleware(shippingHandler, store);
+
+        // Fan-out preserves the broker MessageId across endpoint copies; the first endpoint's
+        // record must not turn the other endpoint's first delivery into a duplicate skip.
+        await billingMiddleware.Handle(CreateContext("message-1", endpointId: "billing"));
+        var shippingContext = CreateContext("message-1", endpointId: "shipping");
+        await shippingMiddleware.Handle(shippingContext);
+
+        Assert.AreEqual(1, billingHandler.HandleCalls);
+        Assert.AreEqual(1, shippingHandler.HandleCalls);
+        Assert.AreNotEqual(HandlerOutcome.DuplicateDetected, shippingContext.HandlerOutcome);
+
+        var shippingDuplicate = CreateContext("message-1", endpointId: "shipping");
+        await shippingMiddleware.Handle(shippingDuplicate);
+
+        Assert.AreEqual(1, shippingHandler.HandleCalls);
+        Assert.AreEqual(HandlerOutcome.DuplicateDetected, shippingDuplicate.HandlerOutcome);
+    }
+
+    [TestMethod]
+    public async Task Pending_handoff_success_is_not_recorded_so_redelivery_reruns_the_handler()
+    {
+        var store = new RecordingInboxStore { TrackRecords = true };
+        var inner = new RecordingHandler
+        {
+            OnHandle = context => context.HandlerOutcome = HandlerOutcome.PendingHandoff,
+        };
+        var sut = new InboxMiddleware(inner, store);
+
+        // The pending response and session block happen after the middleware; recording here
+        // would make a redelivery skip as duplicate without recreating that pending state.
+        await sut.Handle(CreateContext("message-1"));
+
+        Assert.AreEqual(1, inner.HandleCalls);
+        Assert.AreEqual(0, store.RecordCalls);
+
+        await sut.Handle(CreateContext("message-1"));
+
+        Assert.AreEqual(2, inner.HandleCalls, "An unrecorded pending handoff must be re-run on redelivery.");
     }
 
     [TestMethod]
@@ -168,6 +218,23 @@ public sealed class InboxMiddlewareTests
         var sut = new InboxMiddleware(inner, store);
 
         await sut.Handle(CreateContext(messageId));
+
+        Assert.AreEqual(1, inner.HandleCalls);
+        Assert.AreEqual(0, store.CheckCalls);
+        Assert.AreEqual(0, store.RecordCalls);
+    }
+
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow("")]
+    [DataRow("   ")]
+    public async Task Missing_or_blank_endpoint_id_falls_through_without_store(string endpointId)
+    {
+        var store = new RecordingInboxStore();
+        var inner = new RecordingHandler();
+        var sut = new InboxMiddleware(inner, store);
+
+        await sut.Handle(CreateContext("message-1", endpointId));
 
         Assert.AreEqual(1, inner.HandleCalls);
         Assert.AreEqual(0, store.CheckCalls);
@@ -305,7 +372,7 @@ public sealed class InboxMiddlewareTests
         Assert.AreEqual(HandlerOutcome.DuplicateDetected, duplicate.HandlerOutcome);
     }
 
-    private static InMemoryMessageContext CreateContext(string messageId)
+    private static InMemoryMessageContext CreateContext(string messageId, string endpointId = "billing")
     {
         return new InMemoryMessageContext(
             new Message
@@ -313,7 +380,7 @@ public sealed class InboxMiddlewareTests
                 MessageId = messageId,
                 EventId = "event-1",
                 EventTypeId = "OrderPlaced",
-                To = "billing",
+                To = endpointId,
                 SessionId = "customer-1",
                 CorrelationId = "correlation-1",
                 MessageType = MessageType.EventRequest,
@@ -342,35 +409,45 @@ public sealed class InboxMiddlewareTests
             _order = order;
         }
 
+        private readonly HashSet<(string EndpointId, string MessageId)> _recorded = [];
+
         public bool HasProcessed { get; set; }
+        public bool TrackRecords { get; set; }
         public Exception? CheckException { get; set; }
         public Exception? RecordException { get; set; }
         public int CheckCalls { get; private set; }
         public int RecordCalls { get; private set; }
+        public string? LastCheckedEndpointId { get; private set; }
         public string? LastCheckedMessageId { get; private set; }
+        public string? LastRecordedEndpointId { get; private set; }
         public string? LastRecordedMessageId { get; private set; }
 
         public Task<bool> HasProcessedAsync(
+            string endpointId,
             string messageId,
             CancellationToken cancellationToken = default)
         {
             CheckCalls++;
+            LastCheckedEndpointId = endpointId;
             LastCheckedMessageId = messageId;
             _order?.Add("check");
             if (CheckException is not null)
                 throw CheckException;
-            return Task.FromResult(HasProcessed);
+            return Task.FromResult(HasProcessed || (TrackRecords && _recorded.Contains((endpointId, messageId))));
         }
 
         public Task RecordProcessedAsync(
+            string endpointId,
             string messageId,
             CancellationToken cancellationToken = default)
         {
             RecordCalls++;
+            LastRecordedEndpointId = endpointId;
             LastRecordedMessageId = messageId;
             _order?.Add("record");
             if (RecordException is not null)
                 throw RecordException;
+            _recorded.Add((endpointId, messageId));
             return Task.CompletedTask;
         }
 
@@ -390,6 +467,7 @@ public sealed class InboxMiddlewareTests
 
         public int HandleCalls { get; private set; }
         public Exception? Exception { get; set; }
+        public Action<IMessageContext>? OnHandle { get; set; }
 
         public Task Handle(
             IMessageContext context,
@@ -397,6 +475,7 @@ public sealed class InboxMiddlewareTests
         {
             HandleCalls++;
             _order?.Add("handler-start");
+            OnHandle?.Invoke(context);
             if (Exception is not null)
                 throw Exception;
             _order?.Add("handler-end");

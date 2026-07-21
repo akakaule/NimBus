@@ -1069,13 +1069,148 @@ public class StrictMessageHandlerTests
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
+    // ── Inbox pre-check (duplicate detection before session guards) ──────
+
+    [TestMethod]
+    public async Task HandleRetryRequest_RecordedDuplicate_WithUnblockedSession_SendsDuplicateResponse()
+    {
+        // A successfully handled RetryRequest leaves its session unblocked; without the
+        // pre-check its redelivery would fail VerifySessionIsBlockedByThis and complete
+        // with a normal resolution response, hiding the duplicate.
+        var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.IsSessionBlockedByThisResult = false;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response, inboxStore: new FakeInboxStore { HasProcessed = true });
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, handler.HandleCalls);
+        Assert.AreEqual(1, response.DuplicateCalls);
+        Assert.AreEqual(0, response.ResolutionCalls);
+        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+        Assert.AreEqual(HandlerOutcome.DuplicateDetected, ctx.HandlerOutcome);
+    }
+
+    [TestMethod]
+    public async Task HandleRetryRequest_RecordedDuplicate_WithSessionStillBlockedByThis_UnblocksBeforeCompleting()
+    {
+        // Crash window: the first attempt recorded the inbox entry but crashed before
+        // unblocking. The duplicate path must still release the session and drain deferred
+        // siblings, or the session would stay blocked forever.
+        var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.IsSessionBlockedByThisResult = true;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response, inboxStore: new FakeInboxStore { HasProcessed = true });
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, handler.HandleCalls);
+        Assert.AreEqual(1, ctx.UnblockSessionCalls);
+        Assert.AreEqual(1, response.DuplicateCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_RecordedDuplicate_WhileSessionBlockedByOther_SkipsInsteadOfDeferring()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        ctx.BlockedByEventId = "other-event";
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response, inboxStore: new FakeInboxStore { HasProcessed = true });
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, handler.HandleCalls);
+        Assert.AreEqual(1, response.DuplicateCalls);
+        Assert.AreEqual(0, response.DeferralCalls);
+        Assert.AreEqual(0, response.SendToDeferredSubscriptionCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_PreCheckStoreFailure_AbandonsWithoutRunningHandler()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(
+            handler,
+            response,
+            inboxStore: new FakeInboxStore { CheckException = new InvalidOperationException("provider details") });
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, handler.HandleCalls);
+        Assert.AreEqual(1, ctx.AbandonCalls);
+        Assert.AreEqual(0, ctx.CompletedCalls);
+        Assert.AreEqual(0, ctx.DeadLetterCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_NotRecorded_PreCheckAllowsNormalProcessing()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response, inboxStore: new FakeInboxStore());
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, handler.HandleCalls);
+        Assert.AreEqual(1, response.ResolutionCalls);
+        Assert.AreEqual(0, response.DuplicateCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
     private static StrictMessageHandler CreateHandler(
         FakeEventContextHandler handler,
         FakeResponseService response,
         FakeDeferredMessageProcessor processor = null,
-        string topicName = null)
+        string topicName = null,
+        NimBus.Core.Inbox.IInboxStore inboxStore = null)
     {
-        return new StrictMessageHandler(handler, response, NullLogger.Instance);
+        if (inboxStore is null)
+            return new StrictMessageHandler(handler, response, NullLogger.Instance);
+
+        return new StrictMessageHandler(
+            handler,
+            response,
+            NullLogger.Instance,
+            retryPolicyProvider: null,
+            pipeline: null,
+            lifecycleNotifier: null,
+            permanentFailureClassifier: null,
+            failureDispositionClassifier: null,
+            inboxDuplicateDetector: new NimBus.Core.Inbox.InboxDuplicateDetector(inboxStore));
+    }
+
+    private sealed class FakeInboxStore : NimBus.Core.Inbox.IInboxStore
+    {
+        public bool HasProcessed { get; set; }
+        public Exception CheckException { get; set; }
+
+        public Task<bool> HasProcessedAsync(
+            string endpointId,
+            string messageId,
+            CancellationToken cancellationToken = default)
+        {
+            if (CheckException != null)
+                throw CheckException;
+            return Task.FromResult(HasProcessed);
+        }
+
+        public Task RecordProcessedAsync(
+            string endpointId,
+            string messageId,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<int> PurgeExpiredAsync(
+            DateTimeOffset olderThan,
+            CancellationToken cancellationToken = default) => Task.FromResult(0);
     }
 
     private static FakeMessageContext CreateContext(

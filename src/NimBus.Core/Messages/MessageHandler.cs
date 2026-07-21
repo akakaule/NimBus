@@ -70,7 +70,7 @@ namespace NimBus.Core.Messages
             catch (TransientException transientException)
             {
                 _logger.LogError(transientException?.InnerException, "Transient Error. Failed to handle message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-                    messageContext?.EventId, messageContext.MessageId, messageContext.SessionId);
+                    messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
 
                 if (_lifecycleNotifier?.HasObservers == true)
                 {
@@ -88,7 +88,7 @@ namespace NimBus.Core.Messages
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to abandon message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-                        messageContext?.EventId, messageContext.MessageId, messageContext.SessionId);
+                        messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
                 }
             }
             catch (SessionBlockedException sessionBlocked)
@@ -166,7 +166,7 @@ namespace NimBus.Core.Messages
                 try
                 {
                     _logger.LogError(unexpectedException, "Unexpected Error. Failed to handle message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-                        messageContext?.EventId, messageContext.MessageId, messageContext.SessionId);
+                        messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
                     await NotifyResolverOfDeadLetter(messageContext, "Failed to handle message.", unexpectedException, cancellationToken);
                     await messageContext.DeadLetter("Failed to handle message.", unexpectedException, cancellationToken);
 
@@ -182,7 +182,7 @@ namespace NimBus.Core.Messages
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to deadletter message. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-                        messageContext?.EventId, messageContext.MessageId, messageContext.SessionId);
+                        messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
                 }
             }
         }
@@ -205,7 +205,7 @@ namespace NimBus.Core.Messages
                 // truth — the operator can still resubmit from the Manager.
                 _logger.LogWarning(sendException,
                     "Failed to publish dead-letter notification to Resolver. EventId:{EventId}, MessageId:{MessageId}",
-                    messageContext.EventId, messageContext.MessageId);
+                    messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault());
             }
         }
 

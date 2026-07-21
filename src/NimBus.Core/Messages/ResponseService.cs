@@ -151,14 +151,18 @@ namespace NimBus.Core.Messages
             // persists it on the tracking/audit record. Null (native message) leaves the
             // response byte-identical to today's wire form.
             var cloudEvent = messageContext.GetCloudEvent();
+            // Non-throwing MessageId access: a native message without a MessageId must still be
+            // able to complete its response after the inbox bypass ran its handler; the broker
+            // assigns the outgoing response its own id when this is null.
+            var messageId = messageContext.GetMessageIdOrDefault();
             return new Message()
             {
                 To = Constants.ResolverId,
-                CorrelationId = messageContext.MessageId,
+                CorrelationId = messageId,
                 SessionId = messageContext.SessionId,
                 EventId = messageContext.EventId,
-                OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
-                ParentMessageId = messageContext.MessageId,
+                OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageId,
+                ParentMessageId = messageId,
                 RetryCount = messageContext.RetryCount ?? null,
                 OriginatingFrom = messageContext.From,
                 EventTypeId = messageContext.EventTypeId,

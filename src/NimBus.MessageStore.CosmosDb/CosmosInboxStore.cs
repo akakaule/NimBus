@@ -64,12 +64,13 @@ public sealed class CosmosInboxStore : IInboxStore
 
     /// <inheritdoc />
     public async Task<bool> HasProcessedAsync(
+        string endpointId,
         string messageId,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ValidateMessageId(messageId);
-        var documentId = GetDocumentId(messageId);
+        ValidateIdentity(endpointId, messageId);
+        var documentId = GetDocumentId(endpointId, messageId);
         var container = await GetContainerAsync(cancellationToken);
 
         try
@@ -90,15 +91,17 @@ public sealed class CosmosInboxStore : IInboxStore
 
     /// <inheritdoc />
     public async Task RecordProcessedAsync(
+        string endpointId,
         string messageId,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ValidateMessageId(messageId);
-        var documentId = GetDocumentId(messageId);
+        ValidateIdentity(endpointId, messageId);
+        var documentId = GetDocumentId(endpointId, messageId);
         var document = new InboxDocument
         {
             Id = documentId,
+            EndpointId = endpointId,
             MessageId = messageId,
             CreatedAtUtc = _timeProvider.GetUtcNow().UtcDateTime,
         };
@@ -127,7 +130,7 @@ public sealed class CosmosInboxStore : IInboxStore
         cancellationToken.ThrowIfCancellationRequested();
         var container = await GetContainerAsync(cancellationToken);
         var query = new QueryDefinition(
-                "SELECT TOP @batchSize c.id FROM c WHERE c.createdAtUtc < @olderThan ORDER BY c.createdAtUtc")
+                "SELECT TOP @batchSize c.id, c._etag FROM c WHERE c.createdAtUtc < @olderThan ORDER BY c.createdAtUtc")
             .WithParameter("@batchSize", _options.PurgeBatchSize)
             .WithParameter("@olderThan", olderThan.UtcDateTime.ToString("O", CultureInfo.InvariantCulture));
         var requestOptions = new QueryRequestOptions { MaxItemCount = _options.PurgeBatchSize };
@@ -148,15 +151,20 @@ public sealed class CosmosInboxStore : IInboxStore
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
+                // The ETag precondition pins the delete to the queried document version: a
+                // concurrent worker may delete it first (404), and a redelivery may recreate a
+                // fresh record under the same deterministic id (412). Both are benign races —
+                // an unconditional delete would destroy that fresh, unexpired record.
                 await container.DeleteItemAsync<InboxDocument>(
                     document.Id,
                     new PartitionKey(document.Id),
+                    new ItemRequestOptions { IfMatchEtag = document.ETag },
                     cancellationToken);
                 removed++;
             }
-            catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
+            catch (CosmosException exception) when (
+                exception.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.PreconditionFailed)
             {
-                // Another cleanup worker removed the document after the query.
                 cancellationToken.ThrowIfCancellationRequested();
             }
         }
@@ -164,9 +172,14 @@ public sealed class CosmosInboxStore : IInboxStore
         return removed;
     }
 
-    internal static string GetDocumentId(string messageId)
+    internal static string GetDocumentId(string endpointId, string messageId)
     {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(messageId));
+        // The delimited length prefix makes the concatenation unambiguous for any
+        // endpoint/message content, so distinct (endpoint, message) pairs never collide.
+        var identity = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{endpointId.Length}{endpointId}{messageId}");
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(identity));
         return Convert.ToHexString(bytes);
     }
 
@@ -210,14 +223,20 @@ public sealed class CosmosInboxStore : IInboxStore
             cancellationToken);
     }
 
-    private static void ValidateMessageId(string messageId)
-        => ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+    private static void ValidateIdentity(string endpointId, string messageId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(endpointId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+    }
 }
 
 internal sealed class InboxDocument
 {
     [JsonProperty(PropertyName = "id")]
     public string Id { get; init; } = string.Empty;
+
+    [JsonProperty(PropertyName = "endpointId")]
+    public string EndpointId { get; init; } = string.Empty;
 
     [JsonProperty(PropertyName = "messageId")]
     public string MessageId { get; init; } = string.Empty;
@@ -230,4 +249,7 @@ internal sealed class InboxDocumentId
 {
     [JsonProperty(PropertyName = "id")]
     public string Id { get; init; } = string.Empty;
+
+    [JsonProperty(PropertyName = "_etag")]
+    public string ETag { get; init; } = string.Empty;
 }

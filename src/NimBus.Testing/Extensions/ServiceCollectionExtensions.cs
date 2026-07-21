@@ -77,7 +77,8 @@ public static class ServiceCollectionExtensions
                 sp.GetService<MessagePipeline>(),
                 sp.GetService<MessageLifecycleNotifier>(),
                 permanentFailureClassifier,
-                failureDispositionClassifier);
+                failureDispositionClassifier,
+                InboxRegistration.CreateDuplicateDetector(sp, builder.InboxConfiguration));
 #pragma warning restore CS0618
         });
 

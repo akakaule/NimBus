@@ -69,21 +69,30 @@ namespace NimBus.Core.Extensions
         public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
 
         /// <summary>
-        /// Creates a lifecycle context from a message context.
+        /// Creates a lifecycle context from a message context. Identity fields are read through
+        /// the non-throwing accessors: transport contexts throw
+        /// <see cref="Messages.Exceptions.InvalidMessageException"/> for fields absent on the
+        /// wire, and lifecycle notification must never break processing of such messages.
         /// </summary>
         public static MessageLifecycleContext FromMessageContext(IMessageContext messageContext)
         {
             return new MessageLifecycleContext
             {
-                MessageId = messageContext.MessageId,
-                EventId = messageContext.EventId,
+                MessageId = messageContext.GetMessageIdOrDefault(),
+                EventId = messageContext.GetEventIdOrDefault(),
                 EventTypeId = messageContext.EventTypeId,
-                CorrelationId = messageContext.CorrelationId,
-                SessionId = messageContext.SessionId,
-                EndpointId = messageContext.To,
-                MessageType = messageContext.MessageType,
+                CorrelationId = Safe(() => messageContext.CorrelationId),
+                SessionId = messageContext.GetSessionIdOrDefault(),
+                EndpointId = messageContext.GetEndpointIdOrDefault(),
+                MessageType = Safe(() => messageContext.MessageType),
                 EnqueuedTimeUtc = messageContext.EnqueuedTimeUtc,
             };
+        }
+
+        private static T? Safe<T>(Func<T> read)
+        {
+            try { return read(); }
+            catch (Messages.Exceptions.InvalidMessageException) { return default; }
         }
     }
 }

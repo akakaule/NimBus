@@ -18,21 +18,25 @@ public sealed class CosmosInboxTests
         var infrastructure = new FakeCosmosInfrastructure();
         var timeProvider = new ManualTimeProvider(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero));
         var store = new CosmosInboxStore(infrastructure, new CosmosInboxOptions(), timeProvider);
+        const string endpointId = "billing";
         const string logicalMessageId = "orders/one?#\\customer";
 
-        await store.RecordProcessedAsync(logicalMessageId);
-        var expectedPhysicalId = CosmosInboxStore.GetDocumentId(logicalMessageId);
+        await store.RecordProcessedAsync(endpointId, logicalMessageId);
+        var expectedPhysicalId = CosmosInboxStore.GetDocumentId(endpointId, logicalMessageId);
         var firstDocument = infrastructure.Container.Documents[expectedPhysicalId];
 
         timeProvider.Advance(TimeSpan.FromHours(1));
-        await store.RecordProcessedAsync(logicalMessageId);
+        await store.RecordProcessedAsync(endpointId, logicalMessageId);
 
         Assert.AreEqual(firstDocument.CreatedAtUtc, infrastructure.Container.Documents[expectedPhysicalId].CreatedAtUtc);
+        Assert.AreEqual(endpointId, firstDocument.EndpointId);
         Assert.AreEqual(logicalMessageId, firstDocument.MessageId);
         Assert.IsTrue(Regex.IsMatch(expectedPhysicalId, "^[0-9A-F]{64}$", RegexOptions.CultureInvariant));
-        Assert.AreEqual(expectedPhysicalId, CosmosInboxStore.GetDocumentId(logicalMessageId));
-        Assert.IsTrue(await store.HasProcessedAsync(logicalMessageId));
-        Assert.IsFalse(await store.HasProcessedAsync("missing"));
+        Assert.AreEqual(expectedPhysicalId, CosmosInboxStore.GetDocumentId(endpointId, logicalMessageId));
+        Assert.AreNotEqual(expectedPhysicalId, CosmosInboxStore.GetDocumentId("shipping", logicalMessageId));
+        Assert.IsTrue(await store.HasProcessedAsync(endpointId, logicalMessageId));
+        Assert.IsFalse(await store.HasProcessedAsync("shipping", logicalMessageId));
+        Assert.IsFalse(await store.HasProcessedAsync(endpointId, "missing"));
         CollectionAssert.Contains(infrastructure.Container.ReadIds, expectedPhysicalId);
         Assert.AreEqual(new PartitionKey(expectedPhysicalId), infrastructure.Container.ReadPartitionKeys[0]);
         Assert.AreEqual("MessageDatabase", infrastructure.DatabaseId);
@@ -44,7 +48,12 @@ public sealed class CosmosInboxTests
     public async Task PurgeExpiredAsync_reads_one_bounded_page_and_ignores_delete_races()
     {
         var infrastructure = new FakeCosmosInfrastructure();
-        infrastructure.Container.PurgeIds.AddRange(["id-1", "id-2", "id-3"]);
+        infrastructure.Container.PurgeResults.AddRange(
+        [
+            new InboxDocumentId { Id = "id-1", ETag = "etag-1" },
+            new InboxDocumentId { Id = "id-2", ETag = "etag-2" },
+            new InboxDocumentId { Id = "id-3", ETag = "etag-3" },
+        ]);
         infrastructure.Container.MissingOnDelete.Add("id-2");
         var store = new CosmosInboxStore(infrastructure, new CosmosInboxOptions { PurgeBatchSize = 3 });
         using var cancellation = new CancellationTokenSource();
@@ -58,6 +67,27 @@ public sealed class CosmosInboxTests
         string[] expectedDeletedIds = ["id-1", "id-3"];
         CollectionAssert.AreEquivalent(expectedDeletedIds, infrastructure.Container.DeletedIds);
         Assert.IsTrue(infrastructure.Container.LastQueryText.Contains("TOP @batchSize", StringComparison.Ordinal));
+        Assert.IsTrue(infrastructure.Container.LastQueryText.Contains("c._etag", StringComparison.Ordinal));
+        Assert.AreEqual("etag-1", infrastructure.Container.DeleteRequestEtags["id-1"]);
+        Assert.AreEqual("etag-3", infrastructure.Container.DeleteRequestEtags["id-3"]);
+    }
+
+    [TestMethod]
+    public async Task PurgeExpiredAsync_precondition_failure_spares_a_recreated_record()
+    {
+        // A stale query page can reference a document another worker already purged and a
+        // redelivery recreated under the same deterministic id. The ETag-conditioned delete
+        // gets 412 for that fresh record and must leave it in place as a benign race.
+        var infrastructure = new FakeCosmosInfrastructure();
+        infrastructure.Container.PurgeResults.Add(new InboxDocumentId { Id = "id-1", ETag = "stale-etag" });
+        infrastructure.Container.CurrentEtags["id-1"] = "fresh-etag";
+        var store = new CosmosInboxStore(infrastructure, new CosmosInboxOptions { PurgeBatchSize = 3 });
+
+        var deleted = await store.PurgeExpiredAsync(DateTimeOffset.UtcNow);
+
+        Assert.AreEqual(0, deleted);
+        Assert.AreEqual(0, infrastructure.Container.DeletedIds.Count);
+        Assert.AreEqual("stale-etag", infrastructure.Container.DeleteRequestEtags["id-1"]);
     }
 
     [TestMethod]
@@ -69,9 +99,9 @@ public sealed class CosmosInboxTests
         cancellation.Cancel();
 
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(
-            () => store.RecordProcessedAsync("cancelled-record", cancellation.Token));
+            () => store.RecordProcessedAsync("billing", "cancelled-record", cancellation.Token));
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(
-            () => store.HasProcessedAsync("cancelled-read", cancellation.Token));
+            () => store.HasProcessedAsync("billing", "cancelled-read", cancellation.Token));
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(
             () => store.PurgeExpiredAsync(DateTimeOffset.MaxValue, cancellation.Token));
 
@@ -100,7 +130,7 @@ public sealed class CosmosInboxTests
         options.ContainerId = "changed-container";
         options.PurgeBatchSize = 1_000;
 
-        await store.RecordProcessedAsync("snapshot-message");
+        await store.RecordProcessedAsync("billing", "snapshot-message");
         await store.PurgeExpiredAsync(DateTimeOffset.MinValue);
 
         Assert.AreEqual("MessageDatabase", infrastructure.DatabaseId);
@@ -195,9 +225,13 @@ public sealed class CosmosInboxTests
 
         public List<PartitionKey> ReadPartitionKeys { get; } = [];
 
-        public List<string> PurgeIds { get; } = [];
+        public List<InboxDocumentId> PurgeResults { get; } = [];
 
         public HashSet<string> MissingOnDelete { get; } = new(StringComparer.Ordinal);
+
+        public Dictionary<string, string> CurrentEtags { get; } = new(StringComparer.Ordinal);
+
+        public Dictionary<string, string?> DeleteRequestEtags { get; } = new(StringComparer.Ordinal);
 
         public List<string> DeletedIds { get; } = [];
 
@@ -219,7 +253,7 @@ public sealed class CosmosInboxTests
         {
             LastQueryText = queryDefinition.QueryText;
             QueryMaxItemCount = requestOptions?.MaxItemCount;
-            var items = PurgeIds.Select(id => (T)(object)new InboxDocumentId { Id = id }).ToArray();
+            var items = PurgeResults.Select(result => (T)(object)result).ToArray();
             return new TwoPageFeedIterator<T>(items, this);
         }
 
@@ -269,11 +303,26 @@ public sealed class CosmosInboxTests
             string id,
             PartitionKey partitionKey,
             CancellationToken cancellationToken)
+            => DeleteItemAsync<T>(id, partitionKey, requestOptions: null!, cancellationToken);
+
+        public Task<ItemResponse<T>> DeleteItemAsync<T>(
+            string id,
+            PartitionKey partitionKey,
+            ItemRequestOptions? requestOptions,
+            CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            DeleteRequestEtags[id] = requestOptions?.IfMatchEtag;
             if (MissingOnDelete.Contains(id))
             {
                 throw NewCosmosException(HttpStatusCode.NotFound);
+            }
+
+            if (requestOptions?.IfMatchEtag is { } etag
+                && CurrentEtags.TryGetValue(id, out var currentEtag)
+                && !string.Equals(etag, currentEtag, StringComparison.Ordinal))
+            {
+                throw NewCosmosException(HttpStatusCode.PreconditionFailed);
             }
 
             DeletedIds.Add(id);

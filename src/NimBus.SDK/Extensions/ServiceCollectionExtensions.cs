@@ -262,7 +262,8 @@ namespace NimBus.SDK.Extensions
                 IMessageHandler strictMessageHandler = new StrictMessageHandler(
                     contextHandler, responseService, logger,
                     retryPolicyProvider, pipeline, lifecycleNotifier,
-                    permanentFailureClassifier, failureDispositionClassifier);
+                    permanentFailureClassifier, failureDispositionClassifier,
+                    InboxRegistration.CreateDuplicateDetector(sp, builder.InboxConfiguration));
 #pragma warning restore CS0618
 
                 var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, options.EntityPath, cloudEventReadOptions);

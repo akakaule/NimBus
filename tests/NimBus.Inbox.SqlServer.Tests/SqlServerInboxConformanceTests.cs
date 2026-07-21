@@ -68,7 +68,7 @@ public sealed class SqlServerInboxSchemaTests
         };
         var store = new SqlServerInbox(options);
 
-        Assert.IsFalse(await store.HasProcessedAsync("not-recorded"));
+        Assert.IsFalse(await store.HasProcessedAsync("billing", "not-recorded"));
 
         Assert.IsTrue(await TableExistsAsync(options));
     }
@@ -95,8 +95,8 @@ public sealed class SqlServerInboxSchemaTests
                     UNION ALL
                     SELECT [Value] + 1 FROM [Numbers] WHERE [Value] < 1000
                 )
-                INSERT INTO {options.FullTableName} ([MessageId], [CreatedAtUtc])
-                SELECT N'purge-' + CONVERT(NVARCHAR(10), [Value]), @CreatedAtUtc
+                INSERT INTO {options.FullTableName} ([EndpointId], [MessageId], [CreatedAtUtc])
+                SELECT N'billing', N'purge-' + CONVERT(NVARCHAR(10), [Value]), @CreatedAtUtc
                 FROM [Numbers]
                 OPTION (MAXRECURSION 1001);
                 """;
@@ -125,10 +125,14 @@ public sealed class SqlServerInboxSchemaTests
         await using var connection = new SqlConnection(options.ConnectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
+        // The primary key must be NONCLUSTERED: the composite (EndpointId, MessageId) key can
+        // reach 1,544 bytes, past the 900-byte clustered-key limit but within the 1,700-byte
+        // nonclustered limit. CreatedAtUtc carries the clustered index for bounded purges.
         command.CommandText = """
             SELECT
-                SUM(CASE WHEN i.is_primary_key = 1 AND c.name = N'MessageId' AND ty.name = N'nvarchar' AND c.max_length = 1024 AND c.collation_name = N'Latin1_General_100_BIN2' THEN 1 ELSE 0 END),
-                SUM(CASE WHEN i.is_primary_key = 0 AND c.name = N'CreatedAtUtc' AND ty.name = N'datetime2' AND c.is_nullable = 0 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN i.is_primary_key = 1 AND i.type_desc = N'NONCLUSTERED' AND c.name = N'EndpointId' AND ty.name = N'nvarchar' AND c.max_length = 520 AND c.collation_name = N'Latin1_General_100_BIN2' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN i.is_primary_key = 1 AND i.type_desc = N'NONCLUSTERED' AND c.name = N'MessageId' AND ty.name = N'nvarchar' AND c.max_length = 1024 AND c.collation_name = N'Latin1_General_100_BIN2' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN i.is_primary_key = 0 AND i.type_desc = N'CLUSTERED' AND c.name = N'CreatedAtUtc' AND ty.name = N'datetime2' AND c.is_nullable = 0 THEN 1 ELSE 0 END),
                 SUM(CASE WHEN c.name = N'CreatedAtUtc' AND dc.definition LIKE N'%sysutcdatetime%' THEN 1 ELSE 0 END)
             FROM sys.tables t
             INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
@@ -147,6 +151,62 @@ public sealed class SqlServerInboxSchemaTests
         Assert.AreEqual(1, reader.GetInt32(0));
         Assert.AreEqual(1, reader.GetInt32(1));
         Assert.AreEqual(1, reader.GetInt32(2));
+        Assert.AreEqual(1, reader.GetInt32(3));
+    }
+
+    [TestMethod]
+    public async Task PurgeExpiredAsync_succeeds_on_a_read_committed_snapshot_database()
+    {
+        // READPAST alone is rejected under READ_COMMITTED_SNAPSHOT (Azure SQL's default);
+        // the purge must pair it with READCOMMITTEDLOCK. Exercised against a dedicated
+        // database with RCSI enabled.
+        var serverConnectionString = GetConnectionString();
+        var databaseName = $"nimbus_inbox_rcsi_{Guid.NewGuid():N}"[..30];
+        await using (var connection = new SqlConnection(serverConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var create = new SqlCommand(
+                $"CREATE DATABASE [{databaseName}]; ALTER DATABASE [{databaseName}] SET READ_COMMITTED_SNAPSHOT ON;",
+                connection);
+            await create.ExecuteNonQueryAsync();
+        }
+
+        try
+        {
+            var builder = new SqlConnectionStringBuilder(serverConnectionString)
+            {
+                InitialCatalog = databaseName,
+            };
+            var options = new SqlServerInboxOptions { ConnectionString = builder.ConnectionString };
+            using var store = new SqlServerInbox(options);
+
+            Assert.IsTrue(await IsReadCommittedSnapshotOnAsync(builder.ConnectionString, databaseName));
+
+            await store.RecordProcessedAsync("billing", "rcsi-message");
+            Assert.AreEqual(1, await store.PurgeExpiredAsync(DateTimeOffset.UtcNow.AddMinutes(1)));
+            Assert.IsFalse(await store.HasProcessedAsync("billing", "rcsi-message"));
+        }
+        finally
+        {
+            SqlConnection.ClearAllPools();
+            await using var connection = new SqlConnection(serverConnectionString);
+            await connection.OpenAsync();
+            await using var drop = new SqlCommand(
+                $"ALTER DATABASE [{databaseName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [{databaseName}];",
+                connection);
+            await drop.ExecuteNonQueryAsync();
+        }
+    }
+
+    private static async Task<bool> IsReadCommittedSnapshotOnAsync(string connectionString, string databaseName)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(
+            "SELECT is_read_committed_snapshot_on FROM sys.databases WHERE name = @Name;",
+            connection);
+        command.Parameters.Add("@Name", SqlDbType.NVarChar, 128).Value = databaseName;
+        return (bool)(await command.ExecuteScalarAsync())!;
     }
 
     private static string GetConnectionString()

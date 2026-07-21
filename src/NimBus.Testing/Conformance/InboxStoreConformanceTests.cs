@@ -11,6 +11,8 @@ public abstract class InboxStoreConformanceTests
 {
     private readonly string _scope = $"inbox-ct-{Guid.NewGuid():N}";
 
+    private string EndpointId => $"{_scope}-endpoint";
+
     /// <summary>
     /// Creates an inbox store for the current test.
     /// </summary>
@@ -38,11 +40,11 @@ public abstract class InboxStoreConformanceTests
         var store = await CreateStoreAsync();
         var messageId = NewMessageId("transition");
 
-        Assert.IsFalse(await store.HasProcessedAsync(messageId));
+        Assert.IsFalse(await store.HasProcessedAsync(EndpointId, messageId));
 
-        await store.RecordProcessedAsync(messageId);
+        await store.RecordProcessedAsync(EndpointId, messageId);
 
-        Assert.IsTrue(await store.HasProcessedAsync(messageId));
+        Assert.IsTrue(await store.HasProcessedAsync(EndpointId, messageId));
     }
 
     /// <summary>
@@ -54,10 +56,33 @@ public abstract class InboxStoreConformanceTests
         var store = await CreateStoreAsync();
         var messageId = NewMessageId("concurrent");
 
-        await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => store.RecordProcessedAsync(messageId)));
-        await store.RecordProcessedAsync(messageId);
+        await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => store.RecordProcessedAsync(EndpointId, messageId)));
+        await store.RecordProcessedAsync(EndpointId, messageId);
 
-        Assert.IsTrue(await store.HasProcessedAsync(messageId));
+        Assert.IsTrue(await store.HasProcessedAsync(EndpointId, messageId));
+    }
+
+    /// <summary>
+    /// Verifies a record for one endpoint never marks the message processed for another.
+    /// NimBus fan-out forwards copies of one published message — same broker MessageId — to
+    /// every subscribed endpoint, so endpoints sharing one physical store must be isolated.
+    /// </summary>
+    [TestMethod]
+    public async Task Record_for_one_endpoint_does_not_mark_other_endpoints_processed()
+    {
+        var store = await CreateStoreAsync();
+        var messageId = NewMessageId("fan-out");
+        var billingEndpoint = $"{_scope}-billing";
+        var shippingEndpoint = $"{_scope}-shipping";
+
+        await store.RecordProcessedAsync(billingEndpoint, messageId);
+
+        Assert.IsTrue(await store.HasProcessedAsync(billingEndpoint, messageId));
+        Assert.IsFalse(await store.HasProcessedAsync(shippingEndpoint, messageId));
+
+        await store.RecordProcessedAsync(shippingEndpoint, messageId);
+
+        Assert.IsTrue(await store.HasProcessedAsync(shippingEndpoint, messageId));
     }
 
     /// <summary>
@@ -70,14 +95,37 @@ public abstract class InboxStoreConformanceTests
         var upperCaseMessageId = NewMessageId("Case-Sensitive");
         var lowerCaseMessageId = upperCaseMessageId.ToLowerInvariant();
 
-        await store.RecordProcessedAsync(upperCaseMessageId);
+        await store.RecordProcessedAsync(EndpointId, upperCaseMessageId);
 
-        Assert.IsTrue(await store.HasProcessedAsync(upperCaseMessageId));
-        Assert.IsFalse(await store.HasProcessedAsync(lowerCaseMessageId));
+        Assert.IsTrue(await store.HasProcessedAsync(EndpointId, upperCaseMessageId));
+        Assert.IsFalse(await store.HasProcessedAsync(EndpointId, lowerCaseMessageId));
 
-        await store.RecordProcessedAsync(lowerCaseMessageId);
+        await store.RecordProcessedAsync(EndpointId, lowerCaseMessageId);
 
-        Assert.IsTrue(await store.HasProcessedAsync(lowerCaseMessageId));
+        Assert.IsTrue(await store.HasProcessedAsync(EndpointId, lowerCaseMessageId));
+    }
+
+    /// <summary>
+    /// Verifies identifiers at the documented maximum lengths (260-character endpoint,
+    /// 512-character message id) round-trip on every provider. On SQL Server this exercises
+    /// the composite nonclustered primary key past the 900-byte clustered-key limit.
+    /// </summary>
+    [TestMethod]
+    public async Task Maximum_length_identifiers_are_recorded_and_found()
+    {
+        var store = await CreateStoreAsync();
+        var endpointId = $"{_scope}-max".PadRight(260, 'e');
+        var messageId = NewMessageId("max").PadRight(512, 'm');
+
+        Assert.AreEqual(260, endpointId.Length);
+        Assert.AreEqual(512, messageId.Length);
+        Assert.IsFalse(await store.HasProcessedAsync(endpointId, messageId));
+
+        await store.RecordProcessedAsync(endpointId, messageId);
+        await store.RecordProcessedAsync(endpointId, messageId);
+
+        Assert.IsTrue(await store.HasProcessedAsync(endpointId, messageId));
+        Assert.IsFalse(await store.HasProcessedAsync(endpointId, messageId[..511]));
     }
 
     /// <summary>
@@ -91,17 +139,17 @@ public abstract class InboxStoreConformanceTests
         var expiredMessageId = NewMessageId("expired");
         var retainedMessageId = NewMessageId("retained");
 
-        await store.RecordProcessedAsync(expiredMessageId);
+        await store.RecordProcessedAsync(EndpointId, expiredMessageId);
         var cutoff = await AdvancePastFirstRecordAsync();
 
         // A repeated record must not replace the first timestamp. If it did, the
         // expired row would incorrectly survive this purge.
-        await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => store.RecordProcessedAsync(expiredMessageId)));
-        await store.RecordProcessedAsync(retainedMessageId);
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => store.RecordProcessedAsync(EndpointId, expiredMessageId)));
+        await store.RecordProcessedAsync(EndpointId, retainedMessageId);
 
         Assert.AreEqual(1, await store.PurgeExpiredAsync(cutoff));
-        Assert.IsFalse(await store.HasProcessedAsync(expiredMessageId));
-        Assert.IsTrue(await store.HasProcessedAsync(retainedMessageId));
+        Assert.IsFalse(await store.HasProcessedAsync(EndpointId, expiredMessageId));
+        Assert.IsTrue(await store.HasProcessedAsync(EndpointId, retainedMessageId));
         Assert.AreEqual(0, await store.PurgeExpiredAsync(cutoff));
     }
 
@@ -117,13 +165,13 @@ public abstract class InboxStoreConformanceTests
         cancellation.Cancel();
 
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(
-            () => store.HasProcessedAsync(messageId, cancellation.Token));
+            () => store.HasProcessedAsync(EndpointId, messageId, cancellation.Token));
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(
-            () => store.RecordProcessedAsync(messageId, cancellation.Token));
+            () => store.RecordProcessedAsync(EndpointId, messageId, cancellation.Token));
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(
             () => store.PurgeExpiredAsync(DateTimeOffset.MaxValue, cancellation.Token));
 
-        Assert.IsFalse(await store.HasProcessedAsync(messageId));
+        Assert.IsFalse(await store.HasProcessedAsync(EndpointId, messageId));
     }
 
     private string NewMessageId(string suffix) => $"{_scope}-{suffix}";

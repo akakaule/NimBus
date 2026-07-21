@@ -56,7 +56,7 @@ public sealed class InMemoryInboxStoreTests
 
         for (var index = 0; index < 1_001; index++)
         {
-            await store.RecordProcessedAsync($"message-{index}");
+            await store.RecordProcessedAsync("billing", $"message-{index}");
         }
 
         timeProvider.Advance(TimeSpan.FromMinutes(1));

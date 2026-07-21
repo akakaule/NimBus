@@ -70,6 +70,21 @@ public interface ICosmosContainerAdapter
         return DeleteItemAsync<T>(id, partitionKey);
     }
 
+    /// <summary>
+    /// Deletes an item with request options (e.g. an <see cref="ItemRequestOptions.IfMatchEtag"/>
+    /// precondition) while propagating cancellation to the provider.
+    /// The default implementation preserves compatibility with existing adapters but drops the
+    /// options — adapters used with precondition-dependent callers should override it.
+    /// </summary>
+    Task<ItemResponse<T>> DeleteItemAsync<T>(
+        string id,
+        PartitionKey partitionKey,
+        ItemRequestOptions requestOptions,
+        CancellationToken cancellationToken)
+    {
+        return DeleteItemAsync<T>(id, partitionKey, cancellationToken);
+    }
+
     Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey);
 
     /// <summary>
@@ -240,6 +255,15 @@ internal sealed class TransientTranslatingCosmosContainerAdapter : ICosmosContai
             () => _inner.DeleteItemAsync<T>(id, partitionKey, cancellationToken),
             _logger);
 
+    public Task<ItemResponse<T>> DeleteItemAsync<T>(
+        string id,
+        PartitionKey partitionKey,
+        ItemRequestOptions requestOptions,
+        CancellationToken cancellationToken) =>
+        CosmosExceptionTranslation.TranslateTransientAsync(
+            () => _inner.DeleteItemAsync<T>(id, partitionKey, requestOptions, cancellationToken),
+            _logger);
+
     /// <inheritdoc />
     public Task<ItemResponse<T>> ReadItemAsync<T>(
         string id,
@@ -408,6 +432,16 @@ public sealed class CosmosContainerAdapter : ICosmosContainerAdapter
         CancellationToken cancellationToken) =>
         CosmosExceptionTranslation.TranslateTransientAsync(
             () => _container.DeleteItemAsync<T>(id, partitionKey, cancellationToken: cancellationToken),
+            _logger);
+
+    /// <inheritdoc />
+    public Task<ItemResponse<T>> DeleteItemAsync<T>(
+        string id,
+        PartitionKey partitionKey,
+        ItemRequestOptions requestOptions,
+        CancellationToken cancellationToken) =>
+        CosmosExceptionTranslation.TranslateTransientAsync(
+            () => _container.DeleteItemAsync<T>(id, partitionKey, requestOptions, cancellationToken),
             _logger);
 
     public Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey) =>

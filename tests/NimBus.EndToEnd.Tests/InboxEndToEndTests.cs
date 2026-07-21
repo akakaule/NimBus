@@ -37,9 +37,10 @@ public sealed class InboxEndToEndTests
 
         Assert.AreEqual(1, await dispatcher.DispatchPendingAsync());
         var firstDelivery = await fixture.DeliverAllWithResults();
+        var endpointId = firstDelivery.Single().Context.To;
         Assert.AreEqual(1, handler.ReceivedEvents.Count);
         Assert.IsTrue(firstDelivery.Single().Session.WasCompleted);
-        Assert.IsTrue(await store.HasProcessedAsync("inbox-success-message"));
+        Assert.IsTrue(await store.HasProcessedAsync(endpointId, "inbox-success-message"));
 
         // Simulate the publish-side crash window: the outbox send succeeded but its
         // checkpoint did not, so the same stored message is dispatched again.
@@ -90,14 +91,15 @@ public sealed class InboxEndToEndTests
             "inbox-retry-message");
 
         Assert.AreEqual(1, await dispatcher.DispatchPendingAsync());
-        await fixture.DeliverAllWithResults();
+        var firstDelivery = await fixture.DeliverAllWithResults();
+        var endpointId = firstDelivery.Single().Context.To;
         Assert.AreEqual(1, attempts);
-        Assert.IsFalse(await store.HasProcessedAsync("inbox-retry-message"));
+        Assert.IsFalse(await store.HasProcessedAsync(endpointId, "inbox-retry-message"));
 
         Assert.AreEqual(1, await dispatcher.DispatchPendingAsync());
         await fixture.DeliverAllWithResults();
         Assert.AreEqual(2, attempts, "The unrecorded redelivery must run the handler again.");
-        Assert.IsTrue(await store.HasProcessedAsync("inbox-retry-message"));
+        Assert.IsTrue(await store.HasProcessedAsync(endpointId, "inbox-retry-message"));
 
         Assert.AreEqual(1, await dispatcher.DispatchPendingAsync());
         await fixture.DeliverAllWithResults();

@@ -1,4 +1,5 @@
 using NimBus.Core.Extensions;
+using NimBus.Core.Inbox;
 using NimBus.Core.Messages.Exceptions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,6 +18,7 @@ namespace NimBus.Core.Messages
         private readonly IPermanentFailureClassifier? _permanentFailureClassifier;
 #pragma warning restore CS0618
         private readonly IFailureDispositionClassifier _failureDispositionClassifier;
+        private readonly InboxDuplicateDetector? _inboxDuplicateDetector;
         private readonly ILogger _logger;
 
         public StrictMessageHandler(IEventContextHandler eventContextHandler, IResponseService responseService, ILogger logger = null)
@@ -89,7 +91,45 @@ namespace NimBus.Core.Messages
             MessagePipeline? pipeline,
             MessageLifecycleNotifier? lifecycleNotifier,
             IPermanentFailureClassifier? permanentFailureClassifier,
-            IFailureDispositionClassifier? failureDispositionClassifier) : base(logger ?? NullLogger.Instance, pipeline!, lifecycleNotifier!, responseService)
+            IFailureDispositionClassifier? failureDispositionClassifier)
+            : this(
+                eventContextHandler,
+                responseService,
+                logger,
+                retryPolicyProvider,
+                pipeline,
+                lifecycleNotifier,
+                permanentFailureClassifier,
+                failureDispositionClassifier,
+                inboxDuplicateDetector: null)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="StrictMessageHandler"/> class.
+        /// </summary>
+        /// <param name="eventContextHandler">The event context handler.</param>
+        /// <param name="responseService">The response service.</param>
+        /// <param name="logger">The logger.</param>
+        /// <param name="retryPolicyProvider">The retry policy provider.</param>
+        /// <param name="pipeline">The message pipeline.</param>
+        /// <param name="lifecycleNotifier">The message lifecycle notifier.</param>
+        /// <param name="permanentFailureClassifier">The legacy permanent-failure classifier.</param>
+        /// <param name="failureDispositionClassifier">The failure disposition classifier.</param>
+        /// <param name="inboxDuplicateDetector">
+        /// The optional inbox duplicate detector, consulted before the session-state guards so a
+        /// redelivered duplicate is surfaced as a duplicate even when session state moved on.
+        /// </param>
+        public StrictMessageHandler(
+            IEventContextHandler eventContextHandler,
+            IResponseService responseService,
+            ILogger? logger,
+            IRetryPolicyProvider? retryPolicyProvider,
+            MessagePipeline? pipeline,
+            MessageLifecycleNotifier? lifecycleNotifier,
+            IPermanentFailureClassifier? permanentFailureClassifier,
+            IFailureDispositionClassifier? failureDispositionClassifier,
+            InboxDuplicateDetector? inboxDuplicateDetector) : base(logger ?? NullLogger.Instance, pipeline!, lifecycleNotifier!, responseService)
         {
             _eventContextHandler = eventContextHandler;
             _responseService = responseService;
@@ -97,6 +137,7 @@ namespace NimBus.Core.Messages
             _permanentFailureClassifier = permanentFailureClassifier;
             _failureDispositionClassifier = failureDispositionClassifier
                 ?? new DefaultFailureDispositionClassifier(_permanentFailureClassifier);
+            _inboxDuplicateDetector = inboxDuplicateDetector;
             _logger = logger ?? NullLogger.Instance;
         }
 #pragma warning restore CS0618
@@ -106,6 +147,15 @@ namespace NimBus.Core.Messages
             try
             {
                 LogInfo(messageContext, "Handle");
+
+                // Inbox pre-check ahead of the session guard: a recorded EventRequest that
+                // redelivers while its session is blocked by another event must surface as a
+                // duplicate skip, not defer behind the blocker.
+                if (await IsInboxDuplicate(messageContext, cancellationToken))
+                {
+                    await SendDuplicateResponseAndComplete(messageContext, "DuplicateDetected", cancellationToken);
+                    return;
+                }
 
                 await VerifySessionIsNotBlocked(messageContext, cancellationToken);
                 var discardedFailure = await HandleEventContent(messageContext, cancellationToken);
@@ -117,9 +167,7 @@ namespace NimBus.Core.Messages
 
                 if (messageContext.HandlerOutcome == HandlerOutcome.DuplicateDetected)
                 {
-                    await _responseService.SendDuplicateResponse(messageContext, cancellationToken);
-                    await CompleteMessage(messageContext, cancellationToken);
-                    LogInfo(messageContext, "Successfully processed (DuplicateDetected)");
+                    await SendDuplicateResponseAndComplete(messageContext, "DuplicateDetected", cancellationToken);
                     return;
                 }
 
@@ -170,6 +218,25 @@ namespace NimBus.Core.Messages
             try
             {
                 LogInfo(messageContext, "Handle (RetryRequest)");
+
+                // Inbox pre-check ahead of the blocked-by-this guard: a successfully handled
+                // RetryRequest leaves its session unblocked, so its redelivery would otherwise
+                // fail the guard and complete with a normal response, hiding the duplicate. When
+                // the crash happened between recording and unblocking, the session is still
+                // blocked by this event — release it and drain deferred siblings before
+                // completing the duplicate, or the session would stay blocked forever.
+                if (await IsInboxDuplicate(messageContext, cancellationToken))
+                {
+                    if (await messageContext.IsSessionBlockedByThis(cancellationToken))
+                    {
+                        await UnblockSession(messageContext, cancellationToken);
+                        await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
+                    }
+
+                    await SendDuplicateResponseAndComplete(messageContext, "RetryRequest DuplicateDetected", cancellationToken);
+                    return;
+                }
+
                 await VerifySessionIsBlockedByThis(messageContext, cancellationToken);
                 var discardedFailure = await HandleEventContent(messageContext, cancellationToken);
                 await UnblockSession(messageContext, cancellationToken);
@@ -181,9 +248,7 @@ namespace NimBus.Core.Messages
                 }
                 if (messageContext.HandlerOutcome == HandlerOutcome.DuplicateDetected)
                 {
-                    await _responseService.SendDuplicateResponse(messageContext, cancellationToken);
-                    await CompleteMessage(messageContext, cancellationToken);
-                    LogInfo(messageContext, "Successfully processed (RetryRequest DuplicateDetected)");
+                    await SendDuplicateResponseAndComplete(messageContext, "RetryRequest DuplicateDetected", cancellationToken);
                     return;
                 }
                 await SendResolutionResponse(messageContext, cancellationToken);
@@ -222,9 +287,7 @@ namespace NimBus.Core.Messages
                 }
                 if (messageContext.HandlerOutcome == HandlerOutcome.DuplicateDetected)
                 {
-                    await _responseService.SendDuplicateResponse(messageContext, cancellationToken);
-                    await CompleteMessage(messageContext, cancellationToken);
-                    LogInfo(messageContext, "Successfully processed (Resubmission DuplicateDetected)");
+                    await SendDuplicateResponseAndComplete(messageContext, "Resubmission DuplicateDetected", cancellationToken);
                     return;
                 }
                 await SendResolutionResponse(messageContext, cancellationToken);
@@ -354,6 +417,24 @@ namespace NimBus.Core.Messages
 
         private Task CompleteMessage(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
             messageContext.Complete(cancellationToken);
+
+        private async Task<bool> IsInboxDuplicate(IMessageContext messageContext, CancellationToken cancellationToken)
+        {
+            if (_inboxDuplicateDetector is null)
+                return false;
+
+            return await _inboxDuplicateDetector.IsDuplicateAsync(messageContext, cancellationToken);
+        }
+
+        private async Task SendDuplicateResponseAndComplete(
+            IMessageContext messageContext,
+            string logSuffix,
+            CancellationToken cancellationToken)
+        {
+            await _responseService.SendDuplicateResponse(messageContext, cancellationToken);
+            await CompleteMessage(messageContext, cancellationToken);
+            LogInfo(messageContext, $"Successfully processed ({logSuffix})");
+        }
 
         private Task DeferMessage(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
             messageContext.Defer(cancellationToken);
@@ -511,9 +592,9 @@ namespace NimBus.Core.Messages
                 "Discarding failed message without retry or dead-letter. Classifier:{ClassifierName}, EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
                 discardedFailure.ClassifierName,
                 messageContext.EventTypeId,
-                messageContext.EventId,
-                messageContext.MessageId,
-                messageContext.SessionId);
+                messageContext.GetEventIdOrDefault(),
+                messageContext.GetMessageIdOrDefault(),
+                messageContext.GetSessionIdOrDefault());
             await _responseService.SendDiscardResponse(
                 messageContext,
                 discardedFailure.Exception,
@@ -581,16 +662,19 @@ namespace NimBus.Core.Messages
             return new EventContextHandlerException(inner);
         }
 
+        // Identity fields are read through the non-throwing accessors: the Service Bus context
+        // throws for fields absent on the wire, and diagnostic logging must never abort
+        // processing of such messages (e.g. the missing-MessageId inbox bypass path).
         private void LogInfo(IMessageContext messageContext, string prefixMessage)
         {
             _logger.LogInformation("{Prefix} EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-                prefixMessage, messageContext.EventTypeId, messageContext.EventId, messageContext.MessageId, messageContext.SessionId);
+                prefixMessage, messageContext.EventTypeId, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
         }
 
         private void LogError(IMessageContext messageContext, string prefixMessage, Exception exception)
         {
             _logger.LogError(exception, "{Prefix} EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-                prefixMessage, messageContext.EventTypeId, messageContext.EventId, messageContext.MessageId, messageContext.SessionId);
+                prefixMessage, messageContext.EventTypeId, messageContext.GetEventIdOrDefault(), messageContext.GetMessageIdOrDefault(), messageContext.GetSessionIdOrDefault());
         }
 
         private sealed record DiscardedFailure(Exception Exception, string ClassifierName);

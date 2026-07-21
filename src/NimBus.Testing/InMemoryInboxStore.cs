@@ -5,11 +5,13 @@ namespace NimBus.Testing;
 
 /// <summary>
 /// Thread-safe in-memory inbox store intended for tests and local development.
+/// Records are keyed by the (endpoint, message) pair so endpoints sharing one store
+/// never observe each other's fan-out deliveries.
 /// </summary>
 public sealed class InMemoryInboxStore : IInboxStore
 {
     private const int DefaultPurgeBatchSize = 1_000;
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _processed = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<(string EndpointId, string MessageId), DateTimeOffset> _processed = new();
     private readonly TimeProvider _timeProvider;
     private readonly int _purgeBatchSize;
 
@@ -42,19 +44,25 @@ public sealed class InMemoryInboxStore : IInboxStore
     }
 
     /// <inheritdoc />
-    public Task<bool> HasProcessedAsync(string messageId, CancellationToken cancellationToken = default)
+    public Task<bool> HasProcessedAsync(
+        string endpointId,
+        string messageId,
+        CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ValidateMessageId(messageId);
-        return Task.FromResult(_processed.ContainsKey(messageId));
+        ValidateIdentity(endpointId, messageId);
+        return Task.FromResult(_processed.ContainsKey((endpointId, messageId)));
     }
 
     /// <inheritdoc />
-    public Task RecordProcessedAsync(string messageId, CancellationToken cancellationToken = default)
+    public Task RecordProcessedAsync(
+        string endpointId,
+        string messageId,
+        CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ValidateMessageId(messageId);
-        _processed.TryAdd(messageId, _timeProvider.GetUtcNow());
+        ValidateIdentity(endpointId, messageId);
+        _processed.TryAdd((endpointId, messageId), _timeProvider.GetUtcNow());
         return Task.CompletedTask;
     }
 
@@ -82,6 +90,9 @@ public sealed class InMemoryInboxStore : IInboxStore
         return Task.FromResult(removed);
     }
 
-    private static void ValidateMessageId(string messageId)
-        => ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+    private static void ValidateIdentity(string endpointId, string messageId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(endpointId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+    }
 }

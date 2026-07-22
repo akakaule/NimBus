@@ -205,7 +205,22 @@ namespace NimBus.SDK.Extensions
             services.AddNimBusInstrumentation();
 
             if (isFirstSubscriberRegistration)
-                InboxRegistration.AddServices(services, builder.InboxConfiguration);
+            {
+                InboxRegistration.AddServices(services, options.Endpoint, builder.InboxConfiguration);
+
+                // The registration-time guard above only sees a custom ISubscriberClient added
+                // BEFORE this call. One added afterwards wins DI's last-registration rule and
+                // would silently bypass the inbox decorator, so startup validates that the
+                // effective client is the instance the NimBus factory composed.
+                if (builder.InboxConfiguration != null)
+                {
+                    services.AddSingleton<InboxSubscriberComposition>();
+                    services.AddSingleton<IHostedService>(sp =>
+                        new InboxSubscriberStartupValidator(
+                            sp,
+                            sp.GetRequiredService<InboxSubscriberComposition>()));
+                }
+            }
 
             // The deferred replay path is part of the subscriber contract: any session-enabled
             // endpoint may park messages on the Deferred subscription and needs this processor
@@ -250,7 +265,8 @@ namespace NimBus.SDK.Extensions
                 contextHandler = InboxRegistration.Decorate(
                     sp,
                     contextHandler,
-                    builder.InboxConfiguration);
+                    builder.InboxConfiguration,
+                    options.Endpoint);
 
                 // Build retry policy provider
                 IRetryPolicyProvider? retryPolicyProvider = null;
@@ -288,11 +304,19 @@ namespace NimBus.SDK.Extensions
                     contextHandler, responseService, logger,
                     retryPolicyProvider, pipeline, lifecycleNotifier,
                     permanentFailureClassifier, failureDispositionClassifier,
-                    InboxRegistration.CreateDuplicateDetector(sp, builder.InboxConfiguration));
+                    InboxRegistration.CreateDuplicateDetector(sp, builder.InboxConfiguration, options.Endpoint));
 #pragma warning restore CS0618
 
                 var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, options.EntityPath, cloudEventReadOptions);
-                return new SubscriberClient(serviceBusAdapter, eventHandlerProvider);
+                var subscriberClient = new SubscriberClient(serviceBusAdapter, eventHandlerProvider);
+                if (builder.InboxConfiguration != null)
+                {
+                    // Startup validation compares the effective ISubscriberClient against this
+                    // exact instance to prove the inbox-decorated composition is the one in use.
+                    sp.GetRequiredService<InboxSubscriberComposition>().ComposedClient = subscriberClient;
+                }
+
+                return subscriberClient;
             });
 
             // Handler code in the subscriber process commonly settles its own

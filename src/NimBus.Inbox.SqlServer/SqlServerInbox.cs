@@ -108,21 +108,35 @@ public sealed class SqlServerInbox : IInboxStore, IDisposable
 
     /// <inheritdoc />
     public async Task<int> PurgeExpiredAsync(
+        string endpointId,
         DateTimeOffset olderThan,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrWhiteSpace(endpointId);
+        if (endpointId.Length > EndpointIdMaxLength)
+        {
+            throw new ArgumentException(
+                $"Endpoint identifiers cannot exceed {EndpointIdMaxLength} characters.",
+                nameof(endpointId));
+        }
+
         await EnsureInitializedAsync(cancellationToken);
 
         // READCOMMITTEDLOCK accompanies READPAST because READPAST alone is rejected under
         // READ_COMMITTED_SNAPSHOT (common on Azure SQL); the pair pins the row-lock semantics
         // READPAST requires regardless of the database's RCSI setting.
+        // The DATALENGTH predicate closes SQL Server's trailing-space padding hole: NVARCHAR
+        // equality pads the shorter operand even under BIN2, so "e1" would otherwise also
+        // purge the distinct endpoint "e1 ".
         var sql = $"""
             WITH [ExpiredInboxMessages] AS
             (
                 SELECT TOP (@BatchSize) [IdentityHash]
                 FROM {_options.FullTableName} WITH (READPAST, READCOMMITTEDLOCK)
-                WHERE [CreatedAtUtc] < @OlderThan
+                WHERE [EndpointId] = @EndpointId
+                    AND DATALENGTH([EndpointId]) = DATALENGTH(@EndpointId)
+                    AND [CreatedAtUtc] < @OlderThan
                 ORDER BY [CreatedAtUtc], [IdentityHash]
             )
             DELETE FROM [ExpiredInboxMessages];
@@ -131,6 +145,7 @@ public sealed class SqlServerInbox : IInboxStore, IDisposable
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.Add("@BatchSize", SqlDbType.Int).Value = PurgeBatchSize;
+        command.Parameters.Add("@EndpointId", SqlDbType.NVarChar, EndpointIdMaxLength).Value = endpointId;
         command.Parameters.Add("@OlderThan", SqlDbType.DateTime2).Value = olderThan.UtcDateTime;
 
         return await command.ExecuteNonQueryAsync(cancellationToken);

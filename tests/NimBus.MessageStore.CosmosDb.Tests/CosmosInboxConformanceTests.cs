@@ -43,20 +43,24 @@ public sealed class FakeCosmosInboxConformanceTests : InboxStoreConformanceTests
 [DoNotParallelize]
 public sealed class LiveCosmosInboxConformanceTests : InboxStoreConformanceTests
 {
-    protected override async Task<IInboxStore> CreateStoreAsync()
+    protected override Task<IInboxStore> CreateStoreAsync()
     {
-        var store = CosmosDbStoreTestHarness.CreateInboxStore();
-        while (await store.PurgeExpiredAsync(DateTimeOffset.MaxValue) > 0)
-        {
-        }
-
-        return store;
+        // No cross-run drain is needed: every conformance test instance scopes its endpoint
+        // ids with a fresh GUID, and both purge counting and record checks are now
+        // endpoint-scoped, so leftover documents from earlier runs cannot skew assertions.
+        return Task.FromResult(CosmosDbStoreTestHarness.CreateInboxStore());
     }
 }
 
 internal sealed class ConformanceCosmosInfrastructure : ICosmosClientAdapter, ICosmosDatabaseAdapter
 {
     private readonly ConformanceCosmosContainer _container = new();
+
+    public Task<ConsistencyLevel?> GetAccountConsistencyLevelAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult<ConsistencyLevel?>(ConsistencyLevel.Strong);
+    }
 
     public ICosmosDatabaseAdapter GetDatabase(string id) => this;
 
@@ -90,12 +94,14 @@ internal sealed class ConformanceCosmosContainer : ICosmosContainerAdapter
         var parameters = queryDefinition.GetQueryParameters();
         var cutoffValue = (string)parameters.Single(parameter => parameter.Name == "@olderThan").Value;
         var batchSize = (int)parameters.Single(parameter => parameter.Name == "@batchSize").Value;
+        var endpointId = (string)parameters.Single(parameter => parameter.Name == "@endpointId").Value;
         var cutoff = DateTime.Parse(
             cutoffValue,
             CultureInfo.InvariantCulture,
             DateTimeStyles.RoundtripKind);
         var ids = _documents.Values
-            .Where(entry => entry.Document.CreatedAtUtc < cutoff)
+            .Where(entry => string.Equals(entry.Document.EndpointId, endpointId, StringComparison.Ordinal)
+                && entry.Document.CreatedAtUtc < cutoff)
             .OrderBy(entry => entry.Document.CreatedAtUtc)
             .Take(batchSize)
             .Select(entry => (T)(object)new InboxDocumentId { Id = entry.Document.Id, ETag = entry.ETag })

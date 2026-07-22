@@ -58,7 +58,7 @@ public sealed class CosmosInboxTests
         var store = new CosmosInboxStore(infrastructure, new CosmosInboxOptions { PurgeBatchSize = 3 });
         using var cancellation = new CancellationTokenSource();
 
-        var deleted = await store.PurgeExpiredAsync(DateTimeOffset.UtcNow, cancellation.Token);
+        var deleted = await store.PurgeExpiredAsync("billing", DateTimeOffset.UtcNow, cancellation.Token);
 
         Assert.AreEqual(2, deleted);
         Assert.AreEqual(1, infrastructure.Container.QueryReadCount);
@@ -68,6 +68,9 @@ public sealed class CosmosInboxTests
         CollectionAssert.AreEquivalent(expectedDeletedIds, infrastructure.Container.DeletedIds);
         Assert.IsTrue(infrastructure.Container.LastQueryText.Contains("TOP @batchSize", StringComparison.Ordinal));
         Assert.IsTrue(infrastructure.Container.LastQueryText.Contains("c._etag", StringComparison.Ordinal));
+        Assert.IsTrue(
+            infrastructure.Container.LastQueryText.Contains("c.endpointId = @endpointId", StringComparison.Ordinal),
+            "Purge must be scoped to the calling endpoint on a shared container.");
         Assert.AreEqual("etag-1", infrastructure.Container.DeleteRequestEtags["id-1"]);
         Assert.AreEqual("etag-3", infrastructure.Container.DeleteRequestEtags["id-3"]);
     }
@@ -83,7 +86,7 @@ public sealed class CosmosInboxTests
         infrastructure.Container.CurrentEtags["id-1"] = "fresh-etag";
         var store = new CosmosInboxStore(infrastructure, new CosmosInboxOptions { PurgeBatchSize = 3 });
 
-        var deleted = await store.PurgeExpiredAsync(DateTimeOffset.UtcNow);
+        var deleted = await store.PurgeExpiredAsync("billing", DateTimeOffset.UtcNow);
 
         Assert.AreEqual(0, deleted);
         Assert.AreEqual(0, infrastructure.Container.DeletedIds.Count);
@@ -99,15 +102,101 @@ public sealed class CosmosInboxTests
         // to the unconditional delete.
         var infrastructure = new LegacyCosmosInfrastructure();
         infrastructure.PurgeResults.Add(new InboxDocumentId { Id = "id-1", ETag = "stale-etag" });
-        var store = new CosmosInboxStore(infrastructure, new CosmosInboxOptions { PurgeBatchSize = 3 });
+        // AllowRelaxedConsistency keeps this test on the delete path: a legacy adapter cannot
+        // report consistency either, and that gate is covered by its own fail-closed test.
+        var store = new CosmosInboxStore(
+            infrastructure,
+            new CosmosInboxOptions { PurgeBatchSize = 3, AllowRelaxedConsistency = true });
 
         await Assert.ThrowsExactlyAsync<NotSupportedException>(
-            () => store.PurgeExpiredAsync(DateTimeOffset.UtcNow));
+            () => store.PurgeExpiredAsync("billing", DateTimeOffset.UtcNow));
 
         Assert.AreEqual(
             0,
             infrastructure.UnconditionalDeleteCalls,
             "The legacy unconditional delete must never run for a precondition-carrying purge delete.");
+    }
+
+    [TestMethod]
+    public async Task Session_consistency_is_rejected_before_any_read_by_default()
+    {
+        // A duplicate check must observe the latest committed record even when another process
+        // wrote it and crashed before broker settlement. Session tokens never cross processes,
+        // so anything weaker than Strong leaves a stale-miss window — the store must refuse to
+        // start rather than silently reopen it.
+        var infrastructure = new FakeCosmosInfrastructure
+        {
+            AccountConsistencyLevel = ConsistencyLevel.Session,
+        };
+        var store = new CosmosInboxStore(infrastructure, new CosmosInboxOptions());
+
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => store.HasProcessedAsync("billing", "m-1"));
+
+        StringAssert.Contains(exception.Message, "Strong");
+        StringAssert.Contains(exception.Message, nameof(CosmosInboxOptions.AllowRelaxedConsistency));
+        Assert.AreEqual(0, infrastructure.CreateContainerCalls, "Validation must fail before container access");
+        Assert.AreEqual(0, infrastructure.Container.ReadIds.Count, "No duplicate check may run against an unvalidated account");
+    }
+
+    [TestMethod]
+    public async Task Consistency_unaware_adapter_fails_closed_by_default()
+    {
+        // An adapter compiled against the pre-consistency surface cannot prove reads observe
+        // the latest committed records; guessing would silently reopen the cross-replica
+        // duplicate window, so the store must fail with guidance instead.
+        var infrastructure = new LegacyCosmosInfrastructure();
+        var store = new CosmosInboxStore(infrastructure, new CosmosInboxOptions());
+
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => store.HasProcessedAsync("billing", "m-1"));
+
+        StringAssert.Contains(exception.Message, nameof(ICosmosClientAdapter.GetAccountConsistencyLevelAsync));
+        StringAssert.Contains(exception.Message, nameof(CosmosInboxOptions.AllowRelaxedConsistency));
+        Assert.IsInstanceOfType<NotSupportedException>(exception.InnerException);
+    }
+
+    [TestMethod]
+    public async Task Strong_consistency_is_validated_once_per_store()
+    {
+        var infrastructure = new FakeCosmosInfrastructure();
+        var store = new CosmosInboxStore(infrastructure, new CosmosInboxOptions());
+
+        await store.RecordProcessedAsync("billing", "m-1");
+        Assert.IsTrue(await store.HasProcessedAsync("billing", "m-1"));
+        Assert.IsFalse(await store.HasProcessedAsync("billing", "m-2"));
+
+        Assert.AreEqual(1, infrastructure.ConsistencyReads, "Validation shares the lazy container task and runs once");
+    }
+
+    [TestMethod]
+    public async Task Relaxed_consistency_opt_in_accepts_the_cross_replica_stale_miss()
+    {
+        // The multi-client crash window this opt-in acknowledges: client A records a success
+        // and crashes before broker settlement; the redelivery lands on client B whose replica
+        // has not observed the write. B's duplicate check misses, the handler re-runs, and the
+        // recording conflict is silently swallowed. Under default options this configuration is
+        // rejected at startup (see Session_consistency_is_rejected_before_any_read_by_default);
+        // with AllowRelaxedConsistency the caller explicitly accepts this residual duplicate.
+        var infrastructure = new FakeCosmosInfrastructure
+        {
+            AccountConsistencyLevel = ConsistencyLevel.Session,
+        };
+        var relaxedOptions = new CosmosInboxOptions { AllowRelaxedConsistency = true };
+        var writerStore = new CosmosInboxStore(infrastructure, relaxedOptions);
+        var readerStore = new CosmosInboxStore(infrastructure, relaxedOptions);
+
+        await writerStore.RecordProcessedAsync("billing", "m-1");
+        var documentId = CosmosInboxStore.GetDocumentId("billing", "m-1");
+        infrastructure.Container.StaleOnRead.Add(documentId);
+
+        Assert.IsFalse(
+            await readerStore.HasProcessedAsync("billing", "m-1"),
+            "The stale replica misses the committed record, so the handler re-runs — the acknowledged risk");
+        await readerStore.RecordProcessedAsync("billing", "m-1");
+
+        Assert.AreEqual(0, infrastructure.ConsistencyReads, "The opt-in bypasses account validation entirely");
+        Assert.AreEqual(1, infrastructure.Container.Documents.Count, "The original record survives the swallowed conflict");
     }
 
     [TestMethod]
@@ -123,7 +212,7 @@ public sealed class CosmosInboxTests
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(
             () => store.HasProcessedAsync("billing", "cancelled-read", cancellation.Token));
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(
-            () => store.PurgeExpiredAsync(DateTimeOffset.MaxValue, cancellation.Token));
+            () => store.PurgeExpiredAsync("billing", DateTimeOffset.MaxValue, cancellation.Token));
 
         Assert.AreEqual(0, infrastructure.CreateContainerCalls);
         Assert.AreEqual(0, infrastructure.Container.Documents.Count);
@@ -151,7 +240,7 @@ public sealed class CosmosInboxTests
         options.PurgeBatchSize = 1_000;
 
         await store.RecordProcessedAsync("billing", "snapshot-message");
-        await store.PurgeExpiredAsync(DateTimeOffset.MinValue);
+        await store.PurgeExpiredAsync("billing", DateTimeOffset.MinValue);
 
         Assert.AreEqual("MessageDatabase", infrastructure.DatabaseId);
         Assert.AreEqual("inbox", infrastructure.ContainerId);
@@ -209,6 +298,17 @@ public sealed class CosmosInboxTests
 
         public int CreateContainerCalls { get; private set; }
 
+        public ConsistencyLevel? AccountConsistencyLevel { get; set; } = ConsistencyLevel.Strong;
+
+        public int ConsistencyReads { get; private set; }
+
+        public Task<ConsistencyLevel?> GetAccountConsistencyLevelAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ConsistencyReads++;
+            return Task.FromResult(AccountConsistencyLevel);
+        }
+
         public ICosmosDatabaseAdapter GetDatabase(string id)
         {
             DatabaseId = id;
@@ -248,6 +348,10 @@ public sealed class CosmosInboxTests
         public List<InboxDocumentId> PurgeResults { get; } = [];
 
         public HashSet<string> MissingOnDelete { get; } = new(StringComparer.Ordinal);
+
+        // Simulates a replica that has not yet observed another client's committed write
+        // (Session tokens do not cross process boundaries): reads miss, writes still conflict.
+        public HashSet<string> StaleOnRead { get; } = new(StringComparer.Ordinal);
 
         public Dictionary<string, string> CurrentEtags { get; } = new(StringComparer.Ordinal);
 
@@ -361,7 +465,7 @@ public sealed class CosmosInboxTests
             cancellationToken.ThrowIfCancellationRequested();
             ReadIds.Add(id);
             ReadPartitionKeys.Add(partitionKey);
-            if (!Documents.ContainsKey(id))
+            if (StaleOnRead.Contains(id) || !Documents.ContainsKey(id))
             {
                 throw NewCosmosException(HttpStatusCode.NotFound);
             }

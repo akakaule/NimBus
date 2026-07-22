@@ -11,6 +11,10 @@ namespace NimBus.Core.Messages
 {
     public class StrictMessageHandler : MessageHandler
     {
+        // Upper bound for the best-effort deferred-sequence restore, which must run even
+        // when the caller's token is already cancelled and so cannot inherit its lifetime.
+        private static readonly TimeSpan DeferredRestoreTimeout = TimeSpan.FromSeconds(30);
+
         private readonly IEventContextHandler _eventContextHandler;
         private readonly IResponseService _responseService;
         private readonly IRetryPolicyProvider? _retryPolicyProvider;
@@ -441,7 +445,7 @@ namespace NimBus.Core.Messages
                     // broker-deferred and unsettled after its only sequence reference
                     // was popped. Restore the reference so the redelivered
                     // continuation — or a later drain — can still reach it.
-                    await RestoreDeferredBestEffort(messageContext, deferredMessageContext, cancellationToken);
+                    await RestoreDeferredBestEffort(messageContext, deferredMessageContext);
                     throw;
                 }
 
@@ -540,7 +544,7 @@ namespace NimBus.Core.Messages
                 // A popped mismatch was never dispatched; put its sequence back so a
                 // later drain can still reach it instead of orphaning it.
                 if (removeFromQueue && nextDeferred != null)
-                    await RestoreDeferredBestEffort(messageContext, nextDeferred, cancellationToken);
+                    await RestoreDeferredBestEffort(messageContext, nextDeferred);
                 throw new NextDeferredException($"Unable to continue with {messageContext.EventId}, because it is not the next deferred event request in this session.");
             }
 
@@ -549,12 +553,17 @@ namespace NimBus.Core.Messages
 
         private async Task RestoreDeferredBestEffort(
             IMessageContext messageContext,
-            IMessageContext deferredMessageContext,
-            CancellationToken cancellationToken)
+            IMessageContext deferredMessageContext)
         {
             try
             {
-                await messageContext.RestoreNextDeferred(deferredMessageContext, cancellationToken);
+                // Cancellation is itself one of the failure modes that leaves the popped
+                // message unsettled, so the caller's token is typically already cancelled
+                // here — reusing it would cancel the session-state write and silently skip
+                // the restore. The recovery I/O runs under its own bounded token instead;
+                // the original failure still owns settlement and rethrows unchanged.
+                using var restoreCancellation = new CancellationTokenSource(DeferredRestoreTimeout);
+                await messageContext.RestoreNextDeferred(deferredMessageContext, restoreCancellation.Token);
             }
             catch (Exception restoreException)
             {

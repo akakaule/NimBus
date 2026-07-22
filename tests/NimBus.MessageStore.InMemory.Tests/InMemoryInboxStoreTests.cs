@@ -61,8 +61,8 @@ public sealed class InMemoryInboxStoreTests
 
         timeProvider.Advance(TimeSpan.FromMinutes(1));
 
-        Assert.AreEqual(1_000, await store.PurgeExpiredAsync(timeProvider.GetUtcNow()));
-        Assert.AreEqual(1, await store.PurgeExpiredAsync(timeProvider.GetUtcNow()));
+        Assert.AreEqual(1_000, await store.PurgeExpiredAsync("billing", timeProvider.GetUtcNow()));
+        Assert.AreEqual(1, await store.PurgeExpiredAsync("billing", timeProvider.GetUtcNow()));
     }
 
     [TestMethod]

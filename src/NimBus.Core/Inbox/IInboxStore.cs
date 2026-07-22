@@ -40,12 +40,17 @@ public interface IInboxStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Removes records created before the supplied cutoff, across all endpoints.
+    /// Removes the given endpoint's records created before the supplied cutoff.
+    /// Retention is configured per subscriber, so cleanup must never cross endpoints:
+    /// a short-retention subscriber purging a shared table or container would otherwise
+    /// delete another subscriber's still-valid records and reopen its duplicate window.
     /// </summary>
+    /// <param name="endpointId">The consuming endpoint whose expired records are removed.</param>
     /// <param name="olderThan">The exclusive creation-time cutoff.</param>
     /// <param name="cancellationToken">A token that can cancel the operation.</param>
     /// <returns>The number of records removed.</returns>
     Task<int> PurgeExpiredAsync(
+        string endpointId,
         DateTimeOffset olderThan,
         CancellationToken cancellationToken = default);
 }

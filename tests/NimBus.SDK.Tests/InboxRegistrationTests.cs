@@ -170,6 +170,65 @@ public sealed class InboxRegistrationTests
     }
 
     [TestMethod]
+    public async Task Subscriber_client_registered_after_UseInbox_fails_at_startup_validation()
+    {
+        // The registration-time guard only sees a custom client added BEFORE
+        // AddNimBusSubscriber. One added afterwards wins DI's last-registration rule, so
+        // receivers would use an undecorated client while the purge host stays active —
+        // startup must fail instead of silently disabling the opted-in deduplication.
+        var services = CreateServices();
+        services.AddKeyedSingleton<IInboxStore>(InboxStore.InMemory, new NoopInboxStore());
+        services.AddNimBusSubscriber(
+            "Billing",
+            builder => builder.UseInbox(options =>
+                options.DeduplicationStore = InboxStore.InMemory));
+        services.AddSingleton<ISubscriberClient>(new FakeSubscriberClient());
+
+        using var provider = services.BuildServiceProvider();
+        var validator = provider.GetServices<IHostedService>()
+            .OfType<InboxSubscriberStartupValidator>()
+            .Single();
+
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => validator.StartAsync(CancellationToken.None));
+
+        StringAssert.Contains(exception.Message, nameof(ISubscriberClient));
+        StringAssert.Contains(exception.Message, "UseInbox");
+    }
+
+    [TestMethod]
+    public async Task Startup_validation_passes_when_the_nimbus_composed_client_is_effective()
+    {
+        var services = CreateServices();
+        services.AddKeyedSingleton<IInboxStore>(InboxStore.InMemory, new NoopInboxStore());
+        services.AddNimBusSubscriber(
+            "Billing",
+            builder => builder.UseInbox(options =>
+                options.DeduplicationStore = InboxStore.InMemory));
+
+        using var provider = services.BuildServiceProvider();
+        var validator = provider.GetServices<IHostedService>()
+            .OfType<InboxSubscriberStartupValidator>()
+            .Single();
+
+        await validator.StartAsync(CancellationToken.None);
+        await validator.StopAsync(CancellationToken.None);
+    }
+
+    [TestMethod]
+    public void Subscriber_without_UseInbox_registers_no_startup_validator()
+    {
+        var services = CreateServices();
+        services.AddNimBusSubscriber("Billing", _ => { });
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.AreEqual(
+            0,
+            provider.GetServices<IHostedService>().OfType<InboxSubscriberStartupValidator>().Count());
+    }
+
+    [TestMethod]
     public void Later_same_endpoint_registration_cannot_partially_enable_inbox()
     {
         var services = CreateServices();
@@ -255,6 +314,7 @@ public sealed class InboxRegistrationTests
             CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task<int> PurgeExpiredAsync(
+            string endpointId,
             DateTimeOffset olderThan,
             CancellationToken cancellationToken = default) => Task.FromResult(0);
     }

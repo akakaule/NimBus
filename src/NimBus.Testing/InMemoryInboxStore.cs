@@ -68,16 +68,20 @@ public sealed class InMemoryInboxStore : IInboxStore
 
     /// <inheritdoc />
     public Task<int> PurgeExpiredAsync(
+        string endpointId,
         DateTimeOffset olderThan,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrWhiteSpace(endpointId);
 
         var removed = 0;
         foreach (var entry in _processed)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (entry.Value < olderThan && _processed.TryRemove(entry))
+            if (string.Equals(entry.Key.EndpointId, endpointId, StringComparison.Ordinal)
+                && entry.Value < olderThan
+                && _processed.TryRemove(entry))
             {
                 removed++;
                 if (removed >= _purgeBatchSize)

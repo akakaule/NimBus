@@ -17,6 +17,7 @@ public sealed class InboxPurgeHostedService : BackgroundService
 {
     private const string PurgeOperation = "purge";
     private readonly IInboxStore _inboxStore;
+    private readonly string _endpointId;
     private readonly InboxOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<InboxPurgeHostedService> _logger;
@@ -25,16 +26,24 @@ public sealed class InboxPurgeHostedService : BackgroundService
     /// Initializes a new instance of the <see cref="InboxPurgeHostedService"/> class.
     /// </summary>
     /// <param name="inboxStore">The selected inbox-store provider.</param>
+    /// <param name="endpointId">
+    /// The subscriber endpoint whose records this host purges. Retention is configured per
+    /// subscriber, so cleanup is scoped to that endpoint — purging a shared store globally
+    /// would let a short-retention subscriber delete another endpoint's still-valid records.
+    /// </param>
     /// <param name="options">The inbox retention and cleanup options.</param>
     /// <param name="timeProvider">The clock and timer provider.</param>
     /// <param name="logger">The optional structured logger.</param>
     public InboxPurgeHostedService(
         IInboxStore inboxStore,
+        string endpointId,
         InboxOptions options,
         TimeProvider timeProvider,
         ILogger<InboxPurgeHostedService>? logger = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(endpointId);
         _inboxStore = inboxStore ?? throw new ArgumentNullException(nameof(inboxStore));
+        _endpointId = endpointId;
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _logger = logger ?? NullLogger<InboxPurgeHostedService>.Instance;
@@ -51,10 +60,11 @@ public sealed class InboxPurgeHostedService : BackgroundService
                 try
                 {
                     var cutoff = _timeProvider.GetUtcNow() - _options.RetentionPeriod;
-                    var purged = await _inboxStore.PurgeExpiredAsync(cutoff, stoppingToken);
+                    var purged = await _inboxStore.PurgeExpiredAsync(_endpointId, cutoff, stoppingToken);
                     _logger.LogInformation(
-                        "Inbox cleanup purged {PurgedRecordCount} expired records.",
-                        purged);
+                        "Inbox cleanup purged {PurgedRecordCount} expired records. EndpointId:{EndpointId}",
+                        purged,
+                        _endpointId);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {

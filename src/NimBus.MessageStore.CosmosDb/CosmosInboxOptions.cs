@@ -21,6 +21,18 @@ public sealed class CosmosInboxOptions
     /// </summary>
     public int PurgeBatchSize { get; set; } = 100;
 
+    /// <summary>
+    /// Gets or sets a value acknowledging that the account's effective consistency level is
+    /// weaker than <c>Strong</c>. By default the store validates <c>Strong</c> at first use and
+    /// fails fast otherwise: under Session (or weaker) consistency a duplicate check on another
+    /// process can read a stale miss for a record a crashed consumer already committed, re-run
+    /// the handler, and silently swallow the conflicting record — session tokens do not cross
+    /// process boundaries, so no read strategy inside one client can close that window. Enable
+    /// this only when a single consumer process serves the endpoint (no cross-replica
+    /// redelivery) or the residual duplicate-side-effect risk is explicitly accepted.
+    /// </summary>
+    public bool AllowRelaxedConsistency { get; set; }
+
     internal void Validate()
     {
         ValidateResourceId(DatabaseId, nameof(DatabaseId));

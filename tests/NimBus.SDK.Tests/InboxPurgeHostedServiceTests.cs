@@ -25,6 +25,7 @@ public sealed class InboxPurgeHostedServiceTests
         };
         var sut = new InboxPurgeHostedService(
             store,
+            "Billing",
             options,
             timeProvider,
             NullLogger<InboxPurgeHostedService>.Instance);
@@ -35,6 +36,7 @@ public sealed class InboxPurgeHostedServiceTests
 
         Assert.IsGreaterThanOrEqualTo(2, store.PurgeCalls);
         Assert.AreEqual(now - options.RetentionPeriod, store.LastCutoff);
+        Assert.AreEqual("Billing", store.LastEndpointId, "Cleanup must stay scoped to this subscriber's endpoint");
     }
 
     [TestMethod]
@@ -47,6 +49,7 @@ public sealed class InboxPurgeHostedServiceTests
         };
         var sut = new InboxPurgeHostedService(
             store,
+            "Billing",
             options,
             TimeProvider.System,
             NullLogger<InboxPurgeHostedService>.Instance);
@@ -68,6 +71,7 @@ public sealed class InboxPurgeHostedServiceTests
         public bool FailFirstPurge { get; set; }
         public bool BlockUntilCancelled { get; set; }
         public int PurgeCalls { get; private set; }
+        public string? LastEndpointId { get; private set; }
         public DateTimeOffset LastCutoff { get; private set; }
         public bool ObservedCancellation { get; private set; }
         public Task PurgeStarted => _purgeStarted.Task;
@@ -84,10 +88,12 @@ public sealed class InboxPurgeHostedServiceTests
             CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public async Task<int> PurgeExpiredAsync(
+            string endpointId,
             DateTimeOffset olderThan,
             CancellationToken cancellationToken = default)
         {
             PurgeCalls++;
+            LastEndpointId = endpointId;
             LastCutoff = olderThan;
             _purgeStarted.TrySetResult();
 

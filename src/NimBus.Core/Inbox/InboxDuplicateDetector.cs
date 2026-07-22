@@ -35,6 +35,7 @@ public sealed class InboxDuplicateDetector
     private readonly IInboxStore _inboxStore;
     private readonly MessageLifecycleNotifier? _lifecycleNotifier;
     private readonly ILogger _logger;
+    private readonly string? _endpointScope;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InboxDuplicateDetector"/> class.
@@ -42,14 +43,23 @@ public sealed class InboxDuplicateDetector
     /// <param name="inboxStore">The selected inbox-store provider.</param>
     /// <param name="lifecycleNotifier">The optional lifecycle notifier.</param>
     /// <param name="logger">The optional structured logger.</param>
+    /// <param name="endpointScope">
+    /// The configured subscriber endpoint used as the stable deduplication scope. When
+    /// <see langword="null"/>, the scope falls back to the message's <c>To</c> address —
+    /// acceptable only for native NimBus messages, because an external CloudEvent carries no
+    /// <c>user.To</c> and the transport substitutes the mapped event type, which is neither
+    /// unique per endpoint nor stable across endpoints sharing one store.
+    /// </param>
     public InboxDuplicateDetector(
         IInboxStore inboxStore,
         MessageLifecycleNotifier? lifecycleNotifier = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        string? endpointScope = null)
     {
         _inboxStore = inboxStore ?? throw new ArgumentNullException(nameof(inboxStore));
         _lifecycleNotifier = lifecycleNotifier;
         _logger = logger ?? NullLogger.Instance;
+        _endpointScope = string.IsNullOrWhiteSpace(endpointScope) ? null : endpointScope;
     }
 
     /// <summary>
@@ -105,16 +115,18 @@ public sealed class InboxDuplicateDetector
 
     /// <summary>
     /// Resolves the (endpoint, message) deduplication identity, or <see langword="null"/> when
-    /// the message cannot participate in deduplication. Identity is read through the
-    /// non-throwing accessors — a real Service Bus context throws on a missing MessageId, and a
-    /// message without one must bypass deduplication and still reach the handler.
+    /// the message cannot participate in deduplication. The endpoint side prefers the
+    /// configured subscriber endpoint over the message's <c>To</c> address, which for external
+    /// CloudEvents is only the mapped event type. Identity is read through the non-throwing
+    /// accessors — a real Service Bus context throws on a missing MessageId, and a message
+    /// without one must bypass deduplication and still reach the handler.
     /// </summary>
     /// <param name="context">The message context.</param>
     /// <returns>The deduplication identity, or <see langword="null"/> to bypass the inbox.</returns>
     internal (string EndpointId, string MessageId)? GetIdentityOrBypass(IMessageContext context)
     {
         var messageId = context.GetMessageIdOrDefault();
-        var endpointId = context.GetEndpointIdOrDefault();
+        var endpointId = _endpointScope ?? context.GetEndpointIdOrDefault();
         if (string.IsNullOrWhiteSpace(messageId) || string.IsNullOrWhiteSpace(endpointId))
         {
             _logger.LogWarning(

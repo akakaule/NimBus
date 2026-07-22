@@ -11,6 +11,21 @@ namespace NimBus.MessageStore;
 public interface ICosmosClientAdapter
 {
     ICosmosDatabaseAdapter GetDatabase(string id);
+
+    /// <summary>
+    /// Reports the effective consistency level requests issued through this client observe:
+    /// the client-level override when one is configured, otherwise the account default.
+    /// The default implementation fails closed: an adapter that cannot report the level cannot
+    /// prove that inbox duplicate checks observe the latest committed records, and guessing
+    /// would silently reopen the cross-replica duplicate window — so it throws instead.
+    /// </summary>
+    /// <param name="cancellationToken">A token that can cancel the account read.</param>
+    /// <returns>The effective consistency level, or <see langword="null"/> when the provider reports none.</returns>
+    Task<ConsistencyLevel?> GetAccountConsistencyLevelAsync(CancellationToken cancellationToken)
+        => throw new NotSupportedException(
+            $"This {nameof(ICosmosClientAdapter)} implementation does not report the account consistency level. " +
+            $"Override {nameof(GetAccountConsistencyLevelAsync)} to report it, or acknowledge relaxed consistency " +
+            "where the consuming feature offers that option.");
 }
 
 public interface ICosmosDatabaseAdapter
@@ -135,6 +150,14 @@ internal sealed class TransientTranslatingCosmosClientAdapter : ICosmosClientAda
             _logger);
         return new TransientTranslatingCosmosDatabaseAdapter(database, _logger);
     }
+
+    // Forward explicitly: default interface dispatch happens on this wrapper's type, so
+    // without the forward an inner adapter's override would be unreachable and the
+    // fail-closed default would fire even for consistency-aware adapters.
+    public Task<ConsistencyLevel?> GetAccountConsistencyLevelAsync(CancellationToken cancellationToken) =>
+        CosmosExceptionTranslation.TranslateTransientAsync(
+            () => _inner.GetAccountConsistencyLevelAsync(cancellationToken),
+            _logger);
 }
 
 internal sealed class TransientTranslatingCosmosDatabaseAdapter : ICosmosDatabaseAdapter
@@ -342,6 +365,25 @@ public sealed class CosmosClientAdapter : ICosmosClientAdapter
     }
 
     public ICosmosDatabaseAdapter GetDatabase(string id) => new CosmosDatabaseAdapter(_client.GetDatabase(id), _logger);
+
+    /// <inheritdoc />
+    public async Task<ConsistencyLevel?> GetAccountConsistencyLevelAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // A client-level override is what reads issued through this client actually request
+        // (the SDK only permits weakening the account default); otherwise the account default
+        // applies.
+        if (_client.ClientOptions?.ConsistencyLevel is { } clientLevel)
+        {
+            return clientLevel;
+        }
+
+        var account = await CosmosExceptionTranslation.TranslateTransientAsync(
+            () => _client.ReadAccountAsync(),
+            _logger);
+        return account?.Consistency?.DefaultConsistencyLevel;
+    }
 }
 
 public sealed class CosmosDatabaseAdapter : ICosmosDatabaseAdapter

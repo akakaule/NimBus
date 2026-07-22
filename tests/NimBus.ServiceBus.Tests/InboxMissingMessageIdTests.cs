@@ -134,6 +134,7 @@ public class InboxMissingMessageIdTests
         }
 
         public Task<int> PurgeExpiredAsync(
+            string endpointId,
             DateTimeOffset olderThan,
             CancellationToken cancellationToken = default) => Task.FromResult(0);
     }

@@ -45,17 +45,24 @@ public sealed class InboxMiddleware : IEventContextHandler
     /// to <c>StrictMessageHandler</c>) before this decorator is reached, and the middleware only
     /// records successes. This keeps a fresh delivery at exactly one store check and one record.
     /// </param>
+    /// <param name="endpointScope">
+    /// The configured subscriber endpoint used as the stable deduplication scope. When
+    /// <see langword="null"/>, the scope falls back to the message's <c>To</c> address, which
+    /// for external CloudEvents is only the mapped event type — pass the endpoint whenever the
+    /// composition knows it.
+    /// </param>
     public InboxMiddleware(
         IEventContextHandler inner,
         IInboxStore inboxStore,
         MessageLifecycleNotifier? lifecycleNotifier = null,
         ILogger<InboxMiddleware>? logger = null,
-        bool checkHandledUpstream = false)
+        bool checkHandledUpstream = false,
+        string? endpointScope = null)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _inboxStore = inboxStore ?? throw new ArgumentNullException(nameof(inboxStore));
         _logger = logger ?? NullLogger<InboxMiddleware>.Instance;
-        _duplicateDetector = new InboxDuplicateDetector(inboxStore, lifecycleNotifier, _logger);
+        _duplicateDetector = new InboxDuplicateDetector(inboxStore, lifecycleNotifier, _logger, endpointScope);
         _checkHandledUpstream = checkHandledUpstream;
     }
 

@@ -20,7 +20,12 @@ internal static class CosmosDbStoreTestHarness
         => new CosmosDbClient(Client.Value);
 
     public static IInboxStore CreateInboxStore()
-        => new CosmosInboxStore(new CosmosClientAdapter(Client.Value));
+        // The emulator only offers Session consistency, so the live suite acknowledges the
+        // relaxed level; the strong-consistency startup gate itself is covered by the fake
+        // adapter tests in CosmosInboxTests.
+        => new CosmosInboxStore(
+            new CosmosClientAdapter(Client.Value),
+            new CosmosInboxOptions { AllowRelaxedConsistency = true });
 
     private static CosmosClient CreateClient()
     {

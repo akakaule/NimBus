@@ -13,7 +13,7 @@ namespace NimBus.SDK.Extensions;
 
 internal static class InboxRegistration
 {
-    public static void AddServices(IServiceCollection services, InboxOptions? options)
+    public static void AddServices(IServiceCollection services, string endpointId, InboxOptions? options)
     {
         if (options is null)
             return;
@@ -28,6 +28,7 @@ internal static class InboxRegistration
         services.AddSingleton<IHostedService>(serviceProvider =>
             new InboxPurgeHostedService(
                 ResolveStore(serviceProvider, options),
+                endpointId,
                 options,
                 serviceProvider.GetRequiredService<TimeProvider>(),
                 serviceProvider.GetService<ILogger<InboxPurgeHostedService>>()));
@@ -36,7 +37,8 @@ internal static class InboxRegistration
     public static IEventContextHandler Decorate(
         IServiceProvider serviceProvider,
         IEventContextHandler inner,
-        InboxOptions? options)
+        InboxOptions? options,
+        string endpointId)
     {
         if (options is null)
             return inner;
@@ -44,21 +46,28 @@ internal static class InboxRegistration
         // checkHandledUpstream: this composition also hands StrictMessageHandler the
         // pre-session-guard detector (CreateDuplicateDetector below), so the decorator is
         // record-only — a fresh delivery costs exactly one store check and one record.
+        // endpointScope: the configured subscriber endpoint keeps the deduplication key
+        // stable — an external CloudEvent has no user.To, so the transport would otherwise
+        // substitute the mapped event type.
         return new InboxMiddleware(
             inner,
             ResolveStore(serviceProvider, options),
             serviceProvider.GetRequiredService<MessageLifecycleNotifier>(),
             serviceProvider.GetService<ILogger<InboxMiddleware>>(),
-            checkHandledUpstream: true);
+            checkHandledUpstream: true,
+            endpointScope: endpointId);
     }
 
     /// <summary>
     /// Creates the duplicate detector handed to <c>StrictMessageHandler</c> so the inbox check
     /// runs before the session-state guards, or <see langword="null"/> when no inbox is configured.
+    /// The detector is scoped to the configured subscriber endpoint so external CloudEvents
+    /// (whose <c>To</c> is only the mapped event type) share the same stable key.
     /// </summary>
     public static InboxDuplicateDetector? CreateDuplicateDetector(
         IServiceProvider serviceProvider,
-        InboxOptions? options)
+        InboxOptions? options,
+        string endpointId)
     {
         if (options is null)
             return null;
@@ -66,7 +75,8 @@ internal static class InboxRegistration
         return new InboxDuplicateDetector(
             ResolveStore(serviceProvider, options),
             serviceProvider.GetRequiredService<MessageLifecycleNotifier>(),
-            serviceProvider.GetService<ILogger<InboxDuplicateDetector>>());
+            serviceProvider.GetService<ILogger<InboxDuplicateDetector>>(),
+            endpointScope: endpointId);
     }
 
     private static IInboxStore ResolveStore(

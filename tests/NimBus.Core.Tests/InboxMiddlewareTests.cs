@@ -511,6 +511,7 @@ public sealed class InboxMiddlewareTests
         }
 
         public Task<int> PurgeExpiredAsync(
+            string endpointId,
             DateTimeOffset olderThan,
             CancellationToken cancellationToken = default) => Task.FromResult(0);
     }

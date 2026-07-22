@@ -1121,6 +1121,36 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(0, ctx.CompletedCalls);
     }
 
+    [TestMethod]
+    public async Task HandleContinuationRequest_CancellationAfterPop_RestoresDeferredWithFreshToken()
+    {
+        // Cancellation is itself one of the failure modes that leaves the popped message
+        // unsettled. If the restore reuses the caller's already-cancelled token, the
+        // session-state write cancels immediately, the best-effort catch swallows it, and
+        // the deferred message is orphaned — exactly the loss the restore exists to prevent.
+        var deferredCtx = CreateContext(messageType: MessageType.EventRequest, eventId: "event-1");
+        var ctx = CreateContext(messageType: MessageType.ContinuationRequest, from: "Continuation", eventId: "event-1");
+        ctx.NextDeferredWithPopResult = deferredCtx;
+        using var cancellation = new CancellationTokenSource();
+        var handler = new FakeEventContextHandler
+        {
+            OnHandle = _ =>
+            {
+                cancellation.Cancel();
+                throw new OperationCanceledException(cancellation.Token);
+            },
+        };
+        var sut = CreateHandler(handler, new FakeResponseService());
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(
+            () => sut.Handle(ctx, cancellation.Token));
+
+        Assert.AreEqual(0, deferredCtx.CompletedCalls, "Deferred message must stay unsettled");
+        Assert.AreEqual(1, ctx.RestoreNextDeferredCalls, "Restore must still run when the caller token is already cancelled");
+        Assert.IsFalse(ctx.LastRestoreToken.IsCancellationRequested, "Restore must run under a fresh bounded token, not the cancelled caller token");
+        Assert.AreEqual(0, ctx.CompletedCalls, "Cancellation must propagate to the transport without settling");
+    }
+
     // HandleProcessDeferredRequest tests removed — deferred processing
     // is now handled by a separate DeferredProcessorFunction in subscriber apps,
     // not by StrictMessageHandler.
@@ -1393,6 +1423,7 @@ public class StrictMessageHandlerTests
         }
 
         public Task<int> PurgeExpiredAsync(
+            string endpointId,
             DateTimeOffset olderThan,
             CancellationToken cancellationToken = default) => Task.FromResult(0);
     }
@@ -1633,6 +1664,7 @@ public class StrictMessageHandlerTests
         public int ResetDeferredCountCalls { get; private set; }
         public int RestoreNextDeferredCalls { get; private set; }
         public IMessageContext LastRestoredDeferred { get; private set; }
+        public CancellationToken LastRestoreToken { get; private set; }
 
         public Task Complete(CancellationToken ct = default) { CompletedCalls++; return Task.CompletedTask; }
         public Task Abandon(TransientException ex) { AbandonCalls++; return Task.CompletedTask; }
@@ -1641,7 +1673,16 @@ public class StrictMessageHandlerTests
         public Task DeferOnly(CancellationToken ct = default) => Task.CompletedTask;
         public Task<IMessageContext> ReceiveNextDeferred(CancellationToken ct = default) => Task.FromResult(NextDeferredResult);
         public Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken ct = default) => Task.FromResult(NextDeferredWithPopResult);
-        public Task RestoreNextDeferred(IMessageContext deferredMessage, CancellationToken ct = default) { RestoreNextDeferredCalls++; LastRestoredDeferred = deferredMessage; return Task.CompletedTask; }
+        public Task RestoreNextDeferred(IMessageContext deferredMessage, CancellationToken ct = default)
+        {
+            // Mirror the real transport contexts: restoring writes session state, and that
+            // I/O observes the token before doing anything.
+            ct.ThrowIfCancellationRequested();
+            RestoreNextDeferredCalls++;
+            LastRestoredDeferred = deferredMessage;
+            LastRestoreToken = ct;
+            return Task.CompletedTask;
+        }
         public Task BlockSession(CancellationToken ct = default) { BlockSessionCalls++; return Task.CompletedTask; }
         public Task UnblockSession(CancellationToken ct = default) { UnblockSessionCalls++; return Task.CompletedTask; }
         public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));

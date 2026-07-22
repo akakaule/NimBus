@@ -175,10 +175,39 @@ public abstract class InboxStoreConformanceTests
         await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => store.RecordProcessedAsync(EndpointId, expiredMessageId)));
         await store.RecordProcessedAsync(EndpointId, retainedMessageId);
 
-        Assert.AreEqual(1, await store.PurgeExpiredAsync(cutoff));
+        Assert.AreEqual(1, await store.PurgeExpiredAsync(EndpointId, cutoff));
         Assert.IsFalse(await store.HasProcessedAsync(EndpointId, expiredMessageId));
         Assert.IsTrue(await store.HasProcessedAsync(EndpointId, retainedMessageId));
-        Assert.AreEqual(0, await store.PurgeExpiredAsync(cutoff));
+        Assert.AreEqual(0, await store.PurgeExpiredAsync(EndpointId, cutoff));
+    }
+
+    /// <summary>
+    /// Verifies cleanup is scoped to the requested endpoint. Retention is configured per
+    /// subscriber, so one endpoint's purge must never delete another endpoint's records from a
+    /// shared store — including an endpoint differing only by trailing whitespace, which a
+    /// provider with padding string comparisons would otherwise sweep along.
+    /// </summary>
+    [TestMethod]
+    public async Task PurgeExpiredAsync_is_scoped_to_the_requested_endpoint()
+    {
+        var store = await CreateStoreAsync();
+        var messageId = NewMessageId("purge-scope");
+        var otherEndpoint = $"{_scope}-other";
+        var paddedEndpoint = EndpointId + " ";
+
+        await store.RecordProcessedAsync(EndpointId, messageId);
+        await store.RecordProcessedAsync(otherEndpoint, messageId);
+        await store.RecordProcessedAsync(paddedEndpoint, messageId);
+        var cutoff = await AdvancePastFirstRecordAsync();
+
+        Assert.AreEqual(1, await store.PurgeExpiredAsync(EndpointId, cutoff));
+        Assert.IsFalse(await store.HasProcessedAsync(EndpointId, messageId));
+        Assert.IsTrue(
+            await store.HasProcessedAsync(otherEndpoint, messageId),
+            "Another endpoint's records must survive this endpoint's purge.");
+        Assert.IsTrue(
+            await store.HasProcessedAsync(paddedEndpoint, messageId),
+            "An endpoint differing only by trailing whitespace must survive this endpoint's purge.");
     }
 
     /// <summary>
@@ -197,7 +226,7 @@ public abstract class InboxStoreConformanceTests
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(
             () => store.RecordProcessedAsync(EndpointId, messageId, cancellation.Token));
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(
-            () => store.PurgeExpiredAsync(DateTimeOffset.MaxValue, cancellation.Token));
+            () => store.PurgeExpiredAsync(EndpointId, DateTimeOffset.MaxValue, cancellation.Token));
 
         Assert.IsFalse(await store.HasProcessedAsync(EndpointId, messageId));
     }

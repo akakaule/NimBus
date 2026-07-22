@@ -108,9 +108,9 @@ public sealed class SqlServerInboxSchemaTests
             Assert.AreEqual(1_001, await command.ExecuteNonQueryAsync());
         }
 
-        Assert.AreEqual(1_000, await store.PurgeExpiredAsync(DateTimeOffset.UtcNow));
-        Assert.AreEqual(1, await store.PurgeExpiredAsync(DateTimeOffset.UtcNow));
-        Assert.AreEqual(0, await store.PurgeExpiredAsync(DateTimeOffset.UtcNow));
+        Assert.AreEqual(1_000, await store.PurgeExpiredAsync("billing", DateTimeOffset.UtcNow));
+        Assert.AreEqual(1, await store.PurgeExpiredAsync("billing", DateTimeOffset.UtcNow));
+        Assert.AreEqual(0, await store.PurgeExpiredAsync("billing", DateTimeOffset.UtcNow));
     }
 
     [TestMethod]
@@ -221,7 +221,7 @@ public sealed class SqlServerInboxSchemaTests
             Assert.IsTrue(await IsReadCommittedSnapshotOnAsync(builder.ConnectionString, databaseName));
 
             await store.RecordProcessedAsync("billing", "rcsi-message");
-            Assert.AreEqual(1, await store.PurgeExpiredAsync(DateTimeOffset.UtcNow.AddMinutes(1)));
+            Assert.AreEqual(1, await store.PurgeExpiredAsync("billing", DateTimeOffset.UtcNow.AddMinutes(1)));
             Assert.IsFalse(await store.HasProcessedAsync("billing", "rcsi-message"));
         }
         finally

@@ -55,6 +55,7 @@ public sealed class CosmosInboxStore : IInboxStore
             DatabaseId = configuredOptions.DatabaseId,
             ContainerId = configuredOptions.ContainerId,
             PurgeBatchSize = configuredOptions.PurgeBatchSize,
+            AllowRelaxedConsistency = configuredOptions.AllowRelaxedConsistency,
         };
         _cosmosClient = new TransientTranslatingCosmosClientAdapter(cosmosClient, logger: null);
         _timeProvider = timeProvider;
@@ -122,14 +123,20 @@ public sealed class CosmosInboxStore : IInboxStore
 
     /// <inheritdoc />
     public async Task<int> PurgeExpiredAsync(
+        string endpointId,
         DateTimeOffset olderThan,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrWhiteSpace(endpointId);
         var container = await GetContainerAsync(cancellationToken);
+        // Retention is configured per subscriber, so the purge is scoped to the caller's
+        // endpoint — a short-retention subscriber must never delete another endpoint's
+        // still-valid records from a shared container.
         var query = new QueryDefinition(
-                "SELECT TOP @batchSize c.id, c._etag FROM c WHERE c.createdAtUtc < @olderThan ORDER BY c.createdAtUtc")
+                "SELECT TOP @batchSize c.id, c._etag FROM c WHERE c.endpointId = @endpointId AND c.createdAtUtc < @olderThan ORDER BY c.createdAtUtc")
             .WithParameter("@batchSize", _options.PurgeBatchSize)
+            .WithParameter("@endpointId", endpointId)
             .WithParameter("@olderThan", olderThan.UtcDateTime.ToString("O", CultureInfo.InvariantCulture));
         var requestOptions = new QueryRequestOptions { MaxItemCount = _options.PurgeBatchSize };
         using var iterator = container.GetItemQueryIterator<InboxDocumentId>(
@@ -208,13 +215,54 @@ public sealed class CosmosInboxStore : IInboxStore
         }
     }
 
-    private Task<ICosmosContainerAdapter> CreateContainerAsync(CancellationToken cancellationToken)
+    private async Task<ICosmosContainerAdapter> CreateContainerAsync(CancellationToken cancellationToken)
     {
+        // The validation shares the lazy container task, so it runs once per store and is
+        // retried together with container creation after a failure.
+        if (!_options.AllowRelaxedConsistency)
+        {
+            await ValidateStrongConsistencyAsync(cancellationToken);
+        }
+
         var database = _cosmosClient.GetDatabase(_options.DatabaseId);
-        return database.CreateContainerIfNotExistsAsync(
+        return await database.CreateContainerIfNotExistsAsync(
             _options.ContainerId,
             "/id",
             cancellationToken);
+    }
+
+    private async Task ValidateStrongConsistencyAsync(CancellationToken cancellationToken)
+    {
+        // The duplicate check must observe the latest committed record even when another
+        // process wrote it and crashed before broker settlement. Cosmos session tokens never
+        // cross process boundaries, so only Strong consistency gives that guarantee; anything
+        // weaker leaves a cross-replica window where a stale miss re-runs the handler and the
+        // recording conflict is silently swallowed.
+        ConsistencyLevel? effectiveLevel;
+        try
+        {
+            effectiveLevel = await _cosmosClient.GetAccountConsistencyLevelAsync(cancellationToken);
+        }
+        catch (NotSupportedException exception)
+        {
+            throw new InvalidOperationException(
+                $"The configured {nameof(ICosmosClientAdapter)} cannot report the account consistency level, " +
+                "so the inbox cannot verify that duplicate checks observe the latest committed records. " +
+                $"Override {nameof(ICosmosClientAdapter.GetAccountConsistencyLevelAsync)} on the adapter, or set " +
+                $"{nameof(CosmosInboxOptions)}.{nameof(CosmosInboxOptions.AllowRelaxedConsistency)} to acknowledge " +
+                "the cross-replica duplicate window.",
+                exception);
+        }
+
+        if (effectiveLevel != ConsistencyLevel.Strong)
+        {
+            throw new InvalidOperationException(
+                $"The Cosmos account's effective consistency level is '{effectiveLevel?.ToString() ?? "unknown"}', " +
+                "but the inbox requires 'Strong' so a duplicate check on any process observes records committed by " +
+                "a consumer that crashed before broker settlement. Configure the account for Strong consistency, or " +
+                $"set {nameof(CosmosInboxOptions)}.{nameof(CosmosInboxOptions.AllowRelaxedConsistency)} to accept " +
+                "the residual duplicate-side-effect risk (for example when a single consumer process serves the endpoint).");
+        }
     }
 
     private static void ValidateIdentity(string endpointId, string messageId)

@@ -151,28 +151,76 @@ namespace NimBus.SDK.Extensions
             // endpoint is benign (TryAdd would keep the first registration anyway);
             // a second call against a *different* endpoint silently bound the
             // second endpoint's handlers to a no-op, which is the bug.
+            var isFirstSubscriberRegistration = true;
             foreach (var descriptor in services)
             {
                 if (descriptor.ServiceType == typeof(SubscriberEndpointMarker)
-                    && descriptor.ImplementationInstance is SubscriberEndpointMarker existing
-                    && !string.Equals(existing.Endpoint, options.Endpoint, StringComparison.Ordinal))
+                    && descriptor.ImplementationInstance is SubscriberEndpointMarker existing)
                 {
-                    throw new InvalidOperationException(
-                        $"AddNimBusSubscriber was already called for endpoint '{existing.Endpoint}'. " +
-                        $"Registering a second subscriber endpoint ('{options.Endpoint}') in the same container " +
-                        "is not supported — ISubscriberClient is a non-keyed singleton. Host one endpoint per " +
-                        "process (matches the Aspire / Functions topology in samples/CrmErpDemo) or file an issue " +
-                        "to discuss keyed-ISubscriberClient support.");
+                    if (!string.Equals(existing.Endpoint, options.Endpoint, StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            $"AddNimBusSubscriber was already called for endpoint '{existing.Endpoint}'. " +
+                            $"Registering a second subscriber endpoint ('{options.Endpoint}') in the same container " +
+                            "is not supported — ISubscriberClient is a non-keyed singleton. Host one endpoint per " +
+                            "process (matches the Aspire / Functions topology in samples/CrmErpDemo) or file an issue " +
+                            "to discuss keyed-ISubscriberClient support.");
+                    }
+
+                    isFirstSubscriberRegistration = false;
                 }
             }
-            services.AddSingleton(new SubscriberEndpointMarker(options.Endpoint));
+            var builder = new NimBusSubscriberBuilder(services);
+            configureBuilder(builder);
+
+            // UseInbox can only take effect through the ISubscriberClient factory
+            // registered below, and that factory is registered with TryAddSingleton —
+            // a pre-existing custom ISubscriberClient registration wins, so the inbox
+            // decorator would never run on the effective client while the purge host
+            // and lifecycle notifier still installed. Fail fast, before mutating the
+            // collection, instead of silently skipping the deduplication the caller
+            // opted into.
+            if (isFirstSubscriberRegistration && builder.InboxConfiguration != null)
+            {
+                foreach (var descriptor in services)
+                {
+                    if (descriptor.ServiceType == typeof(ISubscriberClient))
+                    {
+                        throw new InvalidOperationException(
+                            $"UseInbox cannot take effect because an {nameof(ISubscriberClient)} is already registered " +
+                            "in this service collection: AddNimBusSubscriber registers its subscriber factory with " +
+                            "TryAddSingleton, so the pre-existing registration wins and the inbox decorator would " +
+                            $"never run on the effective client. Remove the custom {nameof(ISubscriberClient)} " +
+                            "registration, or drop UseInbox and apply inbox deduplication inside the custom " +
+                            "subscriber composition.");
+                    }
+                }
+            }
+
+            if (isFirstSubscriberRegistration)
+                services.AddSingleton(new SubscriberEndpointMarker(options.Endpoint));
 
             // Match the publisher path — consumer-side spans + meters depend on
             // the same OTel ActivitySource/Meter registrations.
             services.AddNimBusInstrumentation();
 
-            var builder = new NimBusSubscriberBuilder(services);
-            configureBuilder(builder);
+            if (isFirstSubscriberRegistration)
+            {
+                InboxRegistration.AddServices(services, options.Endpoint, builder.InboxConfiguration);
+
+                // The registration-time guard above only sees a custom ISubscriberClient added
+                // BEFORE this call. One added afterwards wins DI's last-registration rule and
+                // would silently bypass the inbox decorator, so startup validates that the
+                // effective client is the instance the NimBus factory composed.
+                if (builder.InboxConfiguration != null)
+                {
+                    services.AddSingleton<InboxSubscriberComposition>();
+                    services.AddSingleton<IHostedService>(sp =>
+                        new InboxSubscriberStartupValidator(
+                            sp,
+                            sp.GetRequiredService<InboxSubscriberComposition>()));
+                }
+            }
 
             // The deferred replay path is part of the subscriber contract: any session-enabled
             // endpoint may park messages on the Deferred subscription and needs this processor
@@ -214,6 +262,11 @@ namespace NimBus.SDK.Extensions
                 Core.Messages.IEventContextHandler contextHandler = cloudEventReadOptions != null
                     ? new CloudEventValidatingContextHandler(eventHandlerProvider)
                     : eventHandlerProvider;
+                contextHandler = InboxRegistration.Decorate(
+                    sp,
+                    contextHandler,
+                    builder.InboxConfiguration,
+                    options.Endpoint);
 
                 // Build retry policy provider
                 IRetryPolicyProvider? retryPolicyProvider = null;
@@ -250,11 +303,20 @@ namespace NimBus.SDK.Extensions
                 IMessageHandler strictMessageHandler = new StrictMessageHandler(
                     contextHandler, responseService, logger,
                     retryPolicyProvider, pipeline, lifecycleNotifier,
-                    permanentFailureClassifier, failureDispositionClassifier);
+                    permanentFailureClassifier, failureDispositionClassifier,
+                    InboxRegistration.CreateDuplicateDetector(sp, builder.InboxConfiguration, options.Endpoint));
 #pragma warning restore CS0618
 
                 var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, options.EntityPath, cloudEventReadOptions);
-                return new SubscriberClient(serviceBusAdapter, eventHandlerProvider);
+                var subscriberClient = new SubscriberClient(serviceBusAdapter, eventHandlerProvider);
+                if (builder.InboxConfiguration != null)
+                {
+                    // Startup validation compares the effective ISubscriberClient against this
+                    // exact instance to prove the inbox-decorated composition is the one in use.
+                    sp.GetRequiredService<InboxSubscriberComposition>().ComposedClient = subscriberClient;
+                }
+
+                return subscriberClient;
             });
 
             // Handler code in the subscriber process commonly settles its own

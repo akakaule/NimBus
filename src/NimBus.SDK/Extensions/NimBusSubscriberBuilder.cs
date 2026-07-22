@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using NimBus.Core.Events;
+using NimBus.Core.Inbox;
 using NimBus.Core.Messages;
 using NimBus.SDK.EventHandlers;
 using System;
@@ -17,6 +18,7 @@ namespace NimBus.SDK.Extensions
         internal readonly IServiceCollection Services;
         internal readonly List<HandlerRegistration> HandlerRegistrations = new();
         internal Action<DefaultRetryPolicyProvider> RetryPolicyConfigurator;
+        internal InboxOptions? InboxConfiguration { get; private set; }
 
         public NimBusSubscriberBuilder(IServiceCollection services)
         {
@@ -248,6 +250,38 @@ namespace NimBus.SDK.Extensions
         public NimBusSubscriberBuilder ConfigureRetryPolicies(Action<DefaultRetryPolicyProvider> configure)
         {
             RetryPolicyConfigurator = configure ?? throw new ArgumentNullException(nameof(configure));
+            return this;
+        }
+
+        /// <summary>
+        /// Enables record-on-success inbox deduplication for this subscriber.
+        /// </summary>
+        /// <param name="configure">Configures retention, cleanup frequency, and the explicitly selected keyed provider.</param>
+        /// <returns>This builder for chaining.</returns>
+        public NimBusSubscriberBuilder UseInbox(Action<InboxOptions> configure)
+        {
+            if (InboxConfiguration is not null)
+                throw new InvalidOperationException("Inbox deduplication is already configured for this subscriber.");
+
+            ArgumentNullException.ThrowIfNull(configure);
+            var options = new InboxOptions();
+            configure(options);
+
+            if (options.DeduplicationStore is not { } provider)
+            {
+                throw new InvalidOperationException(
+                    $"{nameof(InboxOptions.DeduplicationStore)} must be selected explicitly when enabling the inbox.");
+            }
+
+            if (!Enum.IsDefined(typeof(InboxStore), provider))
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(InboxOptions.DeduplicationStore),
+                    provider,
+                    "The selected inbox provider is not supported.");
+            }
+
+            InboxConfiguration = options;
             return this;
         }
 

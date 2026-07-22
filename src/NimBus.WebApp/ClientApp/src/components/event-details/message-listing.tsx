@@ -21,7 +21,10 @@ import HandoffHero, {
   type HandoffState,
 } from "components/event-details/handoff-hero";
 import { useToast } from "components/ui/toast";
-import { formatMoment } from "functions/endpoint.functions";
+import {
+  formatMoment,
+  formatResolutionStatus,
+} from "functions/endpoint.functions";
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 
@@ -820,7 +823,10 @@ export default function MessageListing(props: IMessageListingProps) {
                       : "text-status-success"
                   }
                 >
-                  {props.eventDetails?.resolutionStatus}
+                  {formatResolutionStatus(
+                    props.eventDetails?.resolutionStatus,
+                    props.eventDetails?.reason,
+                  )}
                 </span>
               </span>
             }
@@ -935,7 +941,10 @@ export default function MessageListing(props: IMessageListingProps) {
                   )}
                   size="sm"
                 >
-                  {props.eventDetails?.resolutionStatus ?? "—"}
+                  {formatResolutionStatus(
+                    props.eventDetails?.resolutionStatus,
+                    props.eventDetails?.reason,
+                  ) ?? "—"}
                 </Badge>
                 {isPendingHandoff(
                   props.eventDetails?.resolutionStatus,

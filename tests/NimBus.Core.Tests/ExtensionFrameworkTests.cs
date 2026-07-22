@@ -233,6 +233,20 @@ public class MessageLifecycleNotifierTests
     }
 
     [TestMethod]
+    public async Task NotifyDuplicateDetected_IncludesEndpointFromMessageDestination()
+    {
+        var observer = new RecordingObserver();
+        var notifier = new MessageLifecycleNotifier([observer]);
+        var context = CreateContext();
+        context.To = "billing";
+
+        await notifier.NotifyDuplicateDetected(context);
+
+        Assert.AreEqual(1, observer.DuplicateEvents.Count);
+        Assert.AreEqual("billing", observer.DuplicateEvents[0].EndpointId);
+    }
+
+    [TestMethod]
     public async Task NoObservers_DoesNotThrow()
     {
         var notifier = new MessageLifecycleNotifier([]);
@@ -254,6 +268,7 @@ public class MessageLifecycleNotifierTests
         public List<MessageLifecycleContext> CompletedEvents { get; } = [];
         public List<(MessageLifecycleContext Context, Exception Exception)> FailedEvents { get; } = [];
         public List<(MessageLifecycleContext Context, string Reason)> DeadLetteredEvents { get; } = [];
+        public List<MessageLifecycleContext> DuplicateEvents { get; } = [];
 
         public Task OnMessageReceived(MessageLifecycleContext context, CancellationToken ct = default)
         {
@@ -276,6 +291,12 @@ public class MessageLifecycleNotifierTests
         public Task OnMessageDeadLettered(MessageLifecycleContext context, string reason, Exception exception = null, CancellationToken ct = default)
         {
             DeadLetteredEvents.Add((context, reason));
+            return Task.CompletedTask;
+        }
+
+        public Task OnDuplicateDetected(MessageLifecycleContext context, CancellationToken ct = default)
+        {
+            DuplicateEvents.Add(context);
             return Task.CompletedTask;
         }
     }

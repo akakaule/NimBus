@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using NimBus.Core.Diagnostics;
+using NimBus.Core.Inbox;
 
 namespace NimBus.Core.Messages
 {
@@ -26,6 +27,21 @@ namespace NimBus.Core.Messages
         public async Task SendSkipResponse(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
             IMessage response = CreateResponse(messageContext, MessageType.SkipResponse, responseContent: new MessageContent());
+            await _sender.Send(response, cancellationToken: cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public async Task SendDuplicateResponse(IMessageContext messageContext, CancellationToken cancellationToken = default)
+        {
+            var content = new MessageContent
+            {
+                ErrorContent = new ErrorContent
+                {
+                    ErrorText = InboxMiddleware.DuplicateReason,
+                },
+                EventContent = messageContext.MessageContent?.EventContent,
+            };
+            IMessage response = CreateResponse(messageContext, MessageType.SkipResponse, content);
             await _sender.Send(response, cancellationToken: cancellationToken);
         }
 
@@ -135,14 +151,18 @@ namespace NimBus.Core.Messages
             // persists it on the tracking/audit record. Null (native message) leaves the
             // response byte-identical to today's wire form.
             var cloudEvent = messageContext.GetCloudEvent();
+            // Non-throwing MessageId access: a native message without a MessageId must still be
+            // able to complete its response after the inbox bypass ran its handler; the broker
+            // assigns the outgoing response its own id when this is null.
+            var messageId = messageContext.GetMessageIdOrDefault();
             return new Message()
             {
                 To = Constants.ResolverId,
-                CorrelationId = messageContext.MessageId,
+                CorrelationId = messageId,
                 SessionId = messageContext.SessionId,
                 EventId = messageContext.EventId,
-                OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
-                ParentMessageId = messageContext.MessageId,
+                OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageId,
+                ParentMessageId = messageId,
                 RetryCount = messageContext.RetryCount ?? null,
                 OriginatingFrom = messageContext.From,
                 EventTypeId = messageContext.EventTypeId,

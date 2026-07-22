@@ -28,6 +28,52 @@ for concrete `IEventHandler<TEvent>` implementations. Use
 `AddHandler<TEvent,THandler>()` when you want to register or override a handler
 explicitly.
 
+#### UseInbox
+
+Register a provider and opt a subscriber into record-on-success deduplication:
+
+```csharp
+services.AddNimBusSqlServerInbox(connectionString);
+services.AddNimBusSubscriber("BillingEndpoint", sub =>
+{
+    sub.AddHandler<OrderPlaced, OrderPlacedHandler>();
+    sub.UseInbox(options =>
+    {
+        options.DeduplicationStore = InboxStore.SqlServer;
+        options.RetentionPeriod = TimeSpan.FromDays(7);
+        options.CleanupInterval = TimeSpan.FromHours(1);
+    });
+});
+```
+
+The selectable providers are `InboxStore.SqlServer`, `InboxStore.Cosmos`, and
+`InboxStore.InMemory`. The matching keyed provider registration is mandatory;
+subscriber startup fails if it is missing. Records are keyed by the
+`(endpoint, MessageId)` pair — byte-exact on every provider via a shared
+identity hash, so ids differing only by case or trailing whitespace stay
+distinct — and endpoints sharing one physical store never skip each other's
+fan-out deliveries. The endpoint side of the key is the configured
+`NimBusSubscriberOptions.Endpoint`, not the message's `To` address, so
+external CloudEvents (whose `To` is only the mapped event type) deduplicate
+under the same stable scope as native messages. A fresh delivery costs
+exactly one store check (run ahead of the session-state guards) and one
+record. A successful handler is recorded before the Resolver response and
+broker settlement; pending handoffs are not recorded so redelivery can
+recreate the pending state. Store failures follow the transient redelivery
+path, while a missing or unsupported-length `MessageId` logs a warning and
+runs the handler without deduplication. Cleanup is scoped to the subscriber's
+own endpoint, so differently configured retention periods can share one
+physical store. The Cosmos provider additionally requires the account's
+effective consistency level to be `Strong` (or an explicit
+`CosmosInboxOptions.AllowRelaxedConsistency` acknowledgment) so duplicate
+checks observe records committed by a crashed consumer on another replica.
+`UseInbox` requires NimBus's own subscriber wiring: registration fails fast
+when a custom `ISubscriberClient` is already present, and startup validation
+fails the host when one is registered afterwards and would override the
+NimBus-composed client, because the inbox decorator could never reach that
+client. See [Consumer inbox](inbox-pattern.md) for provider setup, cleanup,
+and atomicity limits.
+
 ### AddNimBusReceiver
 
 ```csharp

@@ -9,7 +9,10 @@ import DataTable, {
 } from "components/data-table";
 import ColumnChooser from "components/data-table/column-chooser";
 import { useParams } from "react-router-dom";
-import { formatMoment } from "functions/endpoint.functions";
+import {
+  formatMoment,
+  formatResolutionStatus,
+} from "functions/endpoint.functions";
 import EventFiltering from "./filter/event-filtering";
 import type { AdvancedFilters } from "./filter/advanced-filters";
 import AdvancedFiltersPopover, {
@@ -614,7 +617,10 @@ const EventsPanel = (props: EventsPanelProps) => {
                     variant={statusToBadgeVariant(item.resolutionStatus)}
                     size="sm"
                   >
-                    {item.resolutionStatus ?? "—"}
+                    {formatResolutionStatus(
+                      item.resolutionStatus,
+                      item.reason,
+                    ) ?? "—"}
                   </Badge>
                   {isHandoffEvent(item) && (
                     <Badge variant="info" size="sm">

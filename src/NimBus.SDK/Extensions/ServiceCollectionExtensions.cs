@@ -170,6 +170,33 @@ namespace NimBus.SDK.Extensions
                     isFirstSubscriberRegistration = false;
                 }
             }
+            var builder = new NimBusSubscriberBuilder(services);
+            configureBuilder(builder);
+
+            // UseInbox can only take effect through the ISubscriberClient factory
+            // registered below, and that factory is registered with TryAddSingleton —
+            // a pre-existing custom ISubscriberClient registration wins, so the inbox
+            // decorator would never run on the effective client while the purge host
+            // and lifecycle notifier still installed. Fail fast, before mutating the
+            // collection, instead of silently skipping the deduplication the caller
+            // opted into.
+            if (isFirstSubscriberRegistration && builder.InboxConfiguration != null)
+            {
+                foreach (var descriptor in services)
+                {
+                    if (descriptor.ServiceType == typeof(ISubscriberClient))
+                    {
+                        throw new InvalidOperationException(
+                            $"UseInbox cannot take effect because an {nameof(ISubscriberClient)} is already registered " +
+                            "in this service collection: AddNimBusSubscriber registers its subscriber factory with " +
+                            "TryAddSingleton, so the pre-existing registration wins and the inbox decorator would " +
+                            $"never run on the effective client. Remove the custom {nameof(ISubscriberClient)} " +
+                            "registration, or drop UseInbox and apply inbox deduplication inside the custom " +
+                            "subscriber composition.");
+                    }
+                }
+            }
+
             if (isFirstSubscriberRegistration)
                 services.AddSingleton(new SubscriberEndpointMarker(options.Endpoint));
 
@@ -177,8 +204,6 @@ namespace NimBus.SDK.Extensions
             // the same OTel ActivitySource/Meter registrations.
             services.AddNimBusInstrumentation();
 
-            var builder = new NimBusSubscriberBuilder(services);
-            configureBuilder(builder);
             if (isFirstSubscriberRegistration)
                 InboxRegistration.AddServices(services, builder.InboxConfiguration);
 

@@ -130,6 +130,46 @@ public sealed class InboxRegistrationTests
     }
 
     [TestMethod]
+    public void UseInbox_with_preregistered_subscriber_client_fails_fast()
+    {
+        // TryAddSingleton discards NimBus's subscriber factory when a custom
+        // ISubscriberClient is already registered, so UseInbox could never decorate the
+        // effective client — yet the purge host and notifier would still install.
+        // Registration must fail clearly instead of silently skipping deduplication.
+        var services = CreateServices();
+        services.AddSingleton<ISubscriberClient>(new FakeSubscriberClient());
+
+        var exception = Assert.ThrowsExactly<InvalidOperationException>(() =>
+            services.AddNimBusSubscriber(
+                "Billing",
+                builder => builder.UseInbox(options =>
+                    options.DeduplicationStore = InboxStore.InMemory)));
+
+        StringAssert.Contains(exception.Message, nameof(ISubscriberClient));
+        StringAssert.Contains(exception.Message, "UseInbox");
+        Assert.AreEqual(
+            0,
+            services.Count(descriptor => descriptor.ServiceType == typeof(IHostedService)),
+            "No inbox sidecar may be registered when the subscriber factory is discarded");
+    }
+
+    [TestMethod]
+    public void Preregistered_subscriber_client_without_UseInbox_installs_no_sidecars()
+    {
+        var services = CreateServices();
+        var custom = new FakeSubscriberClient();
+        services.AddSingleton<ISubscriberClient>(custom);
+        services.AddNimBusSubscriber("Billing", _ => { });
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.AreSame(custom, provider.GetRequiredService<ISubscriberClient>());
+        Assert.AreEqual(
+            0,
+            provider.GetServices<IHostedService>().OfType<InboxPurgeHostedService>().Count());
+    }
+
+    [TestMethod]
     public void Later_same_endpoint_registration_cannot_partially_enable_inbox()
     {
         var services = CreateServices();
@@ -172,6 +212,34 @@ public sealed class InboxRegistrationTests
             BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.IsNotNull(field, $"Expected private field '{fieldName}' on {target.GetType().Name}.");
         return field.GetValue(target)!;
+    }
+
+    private sealed class FakeSubscriberClient : ISubscriberClient
+    {
+        public void RegisterHandler<T_Event>(Func<EventHandlers.IEventHandler<T_Event>> eventHandlerFactory)
+            where T_Event : Core.Events.IEvent
+        {
+        }
+
+        public Task Handle(
+            ServiceBusReceivedMessage message,
+            Microsoft.Azure.Functions.Worker.ServiceBusSessionMessageActions sessionActions,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task Handle(
+            ServiceBusReceivedMessage message,
+            Microsoft.Azure.Functions.Worker.ServiceBusMessageActions messageActions,
+            Microsoft.Azure.Functions.Worker.ServiceBusSessionMessageActions sessionActions,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task Handle(
+            ServiceBusReceivedMessage message,
+            ServiceBusSessionReceiver sessionReceiver,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task Handle(
+            ProcessSessionMessageEventArgs args,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class NoopInboxStore : IInboxStore

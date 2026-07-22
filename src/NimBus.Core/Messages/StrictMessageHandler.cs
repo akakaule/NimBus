@@ -417,7 +417,34 @@ namespace NimBus.Core.Messages
 
                 AuthorizeContinuationRequest(messageContext);
                 IMessageContext deferredMessageContext = await ReceiveNextDeferredAndVerifyEventId(messageContext, true, cancellationToken);
-                await HandleEventRequest(deferredMessageContext, cancellationToken);
+                try
+                {
+                    await HandleEventRequest(deferredMessageContext, cancellationToken);
+                }
+                catch (EventContextHandlerException)
+                {
+                    // The nested dispatch settled the deferred message itself (error
+                    // response sent, session blocked, message completed) — its sequence
+                    // must stay popped.
+                    throw;
+                }
+                catch (SessionBlockedException)
+                {
+                    // The nested dispatch re-deferred the message to the Deferred
+                    // subscription and completed it — its reference lives there now.
+                    throw;
+                }
+                catch (Exception)
+                {
+                    // Anything else (inbox check/record outage, transient handler
+                    // failure, cancellation, unexpected) left the deferred message
+                    // broker-deferred and unsettled after its only sequence reference
+                    // was popped. Restore the reference so the redelivered
+                    // continuation — or a later drain — can still reach it.
+                    await RestoreDeferredBestEffort(messageContext, deferredMessageContext, cancellationToken);
+                    throw;
+                }
+
                 await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
             }
@@ -509,8 +536,33 @@ namespace NimBus.Core.Messages
             }
 
             if (!messageContext.EventId.Equals(nextDeferred?.EventId, StringComparison.OrdinalIgnoreCase))
+            {
+                // A popped mismatch was never dispatched; put its sequence back so a
+                // later drain can still reach it instead of orphaning it.
+                if (removeFromQueue && nextDeferred != null)
+                    await RestoreDeferredBestEffort(messageContext, nextDeferred, cancellationToken);
                 throw new NextDeferredException($"Unable to continue with {messageContext.EventId}, because it is not the next deferred event request in this session.");
+            }
+
             return nextDeferred;
+        }
+
+        private async Task RestoreDeferredBestEffort(
+            IMessageContext messageContext,
+            IMessageContext deferredMessageContext,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                await messageContext.RestoreNextDeferred(deferredMessageContext, cancellationToken);
+            }
+            catch (Exception restoreException)
+            {
+                // Best-effort: the original failure still owns settlement of the outer
+                // message; losing the restore only degrades to today's behaviour, so it
+                // must never mask that failure.
+                LogError(messageContext, "Failed to restore the popped deferred sequence; the deferred message may need operator recovery", restoreException);
+            }
         }
 
         private void AuthorizeManagerRequest(IMessageContext messageContext)

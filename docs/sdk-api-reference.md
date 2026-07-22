@@ -57,7 +57,10 @@ of the session-state guards) and one record. A successful handler is recorded
 before the Resolver response and broker settlement; pending handoffs are not
 recorded so redelivery can recreate the pending state. Store failures follow
 the transient redelivery path, while a missing or unsupported-length
-`MessageId` logs a warning and runs the handler without deduplication. See
+`MessageId` logs a warning and runs the handler without deduplication.
+`UseInbox` requires NimBus's own subscriber wiring: registration fails fast
+when a custom `ISubscriberClient` is already present, because the inbox
+decorator could never reach that client. See
 [Consumer inbox](inbox-pattern.md) for provider setup, cleanup, and atomicity
 limits.
 

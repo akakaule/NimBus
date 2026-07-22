@@ -954,6 +954,7 @@ public class StrictMessageHandlerTests
 
         Assert.AreEqual(1, handler.HandleCalls, "Should handle the deferred event");
         Assert.AreEqual(1, ctx.CompletedCalls, "Should complete the continuation message");
+        Assert.AreEqual(0, ctx.RestoreNextDeferredCalls, "Settled deferred message must keep its sequence popped");
     }
 
     [TestMethod]
@@ -1013,6 +1014,10 @@ public class StrictMessageHandlerTests
 
         Assert.AreEqual(0, handler.HandleCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
+        // The mismatched message was popped but never dispatched; its sequence must be
+        // restored so a later drain can still reach it instead of orphaning it.
+        Assert.AreEqual(1, ctx.RestoreNextDeferredCalls);
+        Assert.AreSame(deferredCtx, ctx.LastRestoredDeferred);
     }
 
     [TestMethod]
@@ -1030,6 +1035,90 @@ public class StrictMessageHandlerTests
         // Both deferred and continuation messages get completed
         Assert.AreEqual(1, deferredCtx.CompletedCalls, "Deferred message completed via error handling in HandleEventRequest");
         Assert.AreEqual(1, ctx.CompletedCalls, "Continuation message completed via EventContextHandlerException catch");
+        Assert.AreEqual(0, ctx.RestoreNextDeferredCalls, "Settled deferred message must keep its sequence popped");
+    }
+
+    [TestMethod]
+    public async Task HandleContinuationRequest_InboxCheckFails_RestoresDeferredAndAbandons()
+    {
+        // The sequence was popped before the nested dispatch; a store outage during the
+        // inbox pre-check must put it back, or the deferred message stays broker-deferred
+        // with no remaining reference and redelivery of the continuation cannot recover it.
+        var deferredCtx = CreateContext(messageType: MessageType.EventRequest, eventId: "event-1");
+        var ctx = CreateContext(messageType: MessageType.ContinuationRequest, from: "Continuation", eventId: "event-1");
+        ctx.NextDeferredWithPopResult = deferredCtx;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(
+            handler,
+            response,
+            inboxStore: new FakeInboxStore { CheckException = new InvalidOperationException("provider details") });
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, handler.HandleCalls);
+        Assert.AreEqual(0, deferredCtx.CompletedCalls, "Deferred message must stay unsettled");
+        Assert.AreEqual(1, ctx.RestoreNextDeferredCalls, "Popped sequence must be restored for redelivery");
+        Assert.AreSame(deferredCtx, ctx.LastRestoredDeferred);
+        Assert.AreEqual(1, ctx.AbandonCalls, "Continuation must abandon for redelivery");
+        Assert.AreEqual(0, ctx.CompletedCalls);
+        Assert.AreEqual(0, ctx.DeadLetterCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleContinuationRequest_InboxRecordFails_RestoresDeferredAndAbandons()
+    {
+        // Record-on-success failure after the handler ran: the nested message is still
+        // unsettled, so the popped sequence must be restored and the continuation abandoned
+        // so the redelivery can re-run the (idempotent) handler and record again.
+        var deferredCtx = CreateContext(messageType: MessageType.EventRequest, eventId: "event-1");
+        var ctx = CreateContext(messageType: MessageType.ContinuationRequest, from: "Continuation", eventId: "event-1");
+        ctx.NextDeferredWithPopResult = deferredCtx;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var store = new FakeInboxStore { RecordException = new InvalidOperationException("provider details") };
+        // Production composition: record-only middleware at the handler seam plus the
+        // pre-session-guard detector on StrictMessageHandler.
+        var middleware = new NimBus.Core.Inbox.InboxMiddleware(handler, store, checkHandledUpstream: true);
+        var sut = new StrictMessageHandler(
+            middleware,
+            response,
+            NullLogger.Instance,
+            retryPolicyProvider: null,
+            pipeline: null,
+            lifecycleNotifier: null,
+            permanentFailureClassifier: null,
+            failureDispositionClassifier: null,
+            inboxDuplicateDetector: new NimBus.Core.Inbox.InboxDuplicateDetector(store));
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, handler.HandleCalls, "Handler ran before the record failed");
+        Assert.AreEqual(0, deferredCtx.CompletedCalls, "Deferred message must stay unsettled");
+        Assert.AreEqual(0, response.ResolutionCalls, "No resolution may be published for an unrecorded success");
+        Assert.AreEqual(1, ctx.RestoreNextDeferredCalls, "Popped sequence must be restored for redelivery");
+        Assert.AreSame(deferredCtx, ctx.LastRestoredDeferred);
+        Assert.AreEqual(1, ctx.AbandonCalls, "Continuation must abandon for redelivery");
+        Assert.AreEqual(0, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleContinuationRequest_TransientHandlerFailure_RestoresDeferredAndAbandons()
+    {
+        var deferredCtx = CreateContext(messageType: MessageType.EventRequest, eventId: "event-1");
+        var ctx = CreateContext(messageType: MessageType.ContinuationRequest, from: "Continuation", eventId: "event-1");
+        ctx.NextDeferredWithPopResult = deferredCtx;
+        var handler = new FakeEventContextHandler { ThrowOnHandle = new TransientException("transient") };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, handler.HandleCalls);
+        Assert.AreEqual(0, deferredCtx.CompletedCalls, "Deferred message must stay unsettled");
+        Assert.AreEqual(1, ctx.RestoreNextDeferredCalls, "Popped sequence must be restored for redelivery");
+        Assert.AreEqual(1, ctx.AbandonCalls);
+        Assert.AreEqual(0, ctx.CompletedCalls);
     }
 
     // HandleProcessDeferredRequest tests removed — deferred processing
@@ -1281,6 +1370,7 @@ public class StrictMessageHandlerTests
     {
         public bool HasProcessed { get; set; }
         public Exception CheckException { get; set; }
+        public Exception RecordException { get; set; }
 
         public Task<bool> HasProcessedAsync(
             string endpointId,
@@ -1295,7 +1385,12 @@ public class StrictMessageHandlerTests
         public Task RecordProcessedAsync(
             string endpointId,
             string messageId,
-            CancellationToken cancellationToken = default) => Task.CompletedTask;
+            CancellationToken cancellationToken = default)
+        {
+            if (RecordException != null)
+                throw RecordException;
+            return Task.CompletedTask;
+        }
 
         public Task<int> PurgeExpiredAsync(
             DateTimeOffset olderThan,
@@ -1536,6 +1631,8 @@ public class StrictMessageHandlerTests
         public int UnblockSessionCalls { get; private set; }
         public int IncrementDeferredCountCalls { get; private set; }
         public int ResetDeferredCountCalls { get; private set; }
+        public int RestoreNextDeferredCalls { get; private set; }
+        public IMessageContext LastRestoredDeferred { get; private set; }
 
         public Task Complete(CancellationToken ct = default) { CompletedCalls++; return Task.CompletedTask; }
         public Task Abandon(TransientException ex) { AbandonCalls++; return Task.CompletedTask; }
@@ -1544,6 +1641,7 @@ public class StrictMessageHandlerTests
         public Task DeferOnly(CancellationToken ct = default) => Task.CompletedTask;
         public Task<IMessageContext> ReceiveNextDeferred(CancellationToken ct = default) => Task.FromResult(NextDeferredResult);
         public Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken ct = default) => Task.FromResult(NextDeferredWithPopResult);
+        public Task RestoreNextDeferred(IMessageContext deferredMessage, CancellationToken ct = default) { RestoreNextDeferredCalls++; LastRestoredDeferred = deferredMessage; return Task.CompletedTask; }
         public Task BlockSession(CancellationToken ct = default) { BlockSessionCalls++; return Task.CompletedTask; }
         public Task UnblockSession(CancellationToken ct = default) { UnblockSessionCalls++; return Task.CompletedTask; }
         public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));

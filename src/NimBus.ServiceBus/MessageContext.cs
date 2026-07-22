@@ -455,6 +455,24 @@ namespace NimBus.ServiceBus
             return null;
         }
 
+        public async Task RestoreNextDeferred(IMessageContext deferredMessage, CancellationToken cancellationToken = default)
+        {
+            if (deferredMessage == null)
+                throw new ArgumentNullException(nameof(deferredMessage));
+            if (deferredMessage is not MessageContext deferredContext)
+                throw new ArgumentException($"Expected a {nameof(MessageContext)} produced by {nameof(ReceiveNextDeferredWithPop)}.", nameof(deferredMessage));
+
+            long sequenceNumber = deferredContext._sbMessage.SequenceNumber;
+            SessionState state = await GetSessionState(cancellationToken);
+            if (state.DeferredSequenceNumbers.Contains(sequenceNumber))
+                return;
+
+            // Front of the list: ReceiveNextDeferred(WithPop) always takes the first
+            // entry, so restoring anywhere else would break session ordering.
+            state.DeferredSequenceNumbers.Insert(0, sequenceNumber);
+            await UpdateSessionState(state, cancellationToken);
+        }
+
         private string GetUserProperty(UserPropertyName userPropertyName)
         {
             var raw = _sbMessage.GetUserProperty(userPropertyName);

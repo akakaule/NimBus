@@ -25,6 +25,8 @@ builder.Services.AddNimBusSubscriber("BillingEndpoint", subscriber =>
 
 The inbox is opt-in. A subscriber that does not call `UseInbox` does not resolve an inbox store, add a handler decorator, or run the cleanup service.
 
+`UseInbox` requires NimBus's own subscriber wiring: if a custom `ISubscriberClient` is already registered in the service collection, `AddNimBusSubscriber` fails fast with a configuration error instead of installing the cleanup service and lifecycle notifier against a subscriber the inbox decorator can never reach.
+
 The supported providers are:
 
 - `AddNimBusSqlServerInbox(...)` from `NimBus.Inbox.SqlServer`;
@@ -49,6 +51,8 @@ A fresh delivery costs exactly one store check and one record: the hosted compos
 A duplicate whose session is no longer blocked at all also triggers the deferred-sibling drain before completing — this covers a crash between the first attempt's session unblock and its deferred drain, where the redelivered duplicate is the only remaining trigger. A session blocked by an unrelated later event is left untouched; that blocker's settlement owns the drain.
 
 Recording before the handler would be unsafe: if the handler then failed, the broker redelivery would look processed and the work would be lost. Record-on-success keeps a failed attempt eligible for redelivery. A check or record store failure also follows the transient-failure path so the broker can redeliver; a store outage is never interpreted as a duplicate.
+
+The legacy deferred-continuation path removes the next deferred message's sequence reference from session state before dispatching it. If the inbox check or record — or any other transient failure — then aborts that dispatch before the message settles, the reference is restored to the front of the session's deferred order, so the redelivered continuation (or a later drain) can still reach the message instead of orphaning it in the broker's deferred state.
 
 When the check finds an existing ID, NimBus does not invoke the application handler. It emits the `OnDuplicateDetected` lifecycle signal, records bounded-cardinality telemetry, publishes a `Skipped` outcome to the Resolver with reason `DuplicateDetected`, and completes the broker message. Logs contain message identity and routing metadata, never the message payload.
 

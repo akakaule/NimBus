@@ -73,8 +73,10 @@ public interface ICosmosContainerAdapter
     /// <summary>
     /// Deletes an item with request options (e.g. an <see cref="ItemRequestOptions.IfMatchEtag"/>
     /// precondition) while propagating cancellation to the provider.
-    /// The default implementation preserves compatibility with existing adapters but drops the
-    /// options — adapters used with precondition-dependent callers should override it.
+    /// The default implementation fails closed: an adapter that has not overridden this overload
+    /// cannot honor a precondition, and silently dropping it would let a stale delete remove a
+    /// freshly recreated document — so non-null options throw instead of degrading to an
+    /// unconditional delete. A null options value forwards for compatibility.
     /// </summary>
     Task<ItemResponse<T>> DeleteItemAsync<T>(
         string id,
@@ -82,7 +84,15 @@ public interface ICosmosContainerAdapter
         ItemRequestOptions requestOptions,
         CancellationToken cancellationToken)
     {
-        return DeleteItemAsync<T>(id, partitionKey, cancellationToken);
+        if (requestOptions is null)
+        {
+            return DeleteItemAsync<T>(id, partitionKey, cancellationToken);
+        }
+
+        throw new NotSupportedException(
+            $"This {nameof(ICosmosContainerAdapter)} implementation does not support conditional deletes. " +
+            "Override DeleteItemAsync(id, partitionKey, requestOptions, cancellationToken) to honor " +
+            $"{nameof(ItemRequestOptions)} preconditions such as {nameof(ItemRequestOptions.IfMatchEtag)}.");
     }
 
     Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey);

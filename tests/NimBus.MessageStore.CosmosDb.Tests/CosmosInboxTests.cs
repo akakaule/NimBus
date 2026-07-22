@@ -91,6 +91,26 @@ public sealed class CosmosInboxTests
     }
 
     [TestMethod]
+    public async Task Purge_with_a_legacy_adapter_fails_closed_instead_of_deleting_unconditionally()
+    {
+        // An adapter compiled against the pre-options delete surface cannot honor the ETag
+        // precondition. Silently dropping the options would let a stale purge page delete a
+        // freshly recreated record, so the interface default must throw instead of degrading
+        // to the unconditional delete.
+        var infrastructure = new LegacyCosmosInfrastructure();
+        infrastructure.PurgeResults.Add(new InboxDocumentId { Id = "id-1", ETag = "stale-etag" });
+        var store = new CosmosInboxStore(infrastructure, new CosmosInboxOptions { PurgeBatchSize = 3 });
+
+        await Assert.ThrowsExactlyAsync<NotSupportedException>(
+            () => store.PurgeExpiredAsync(DateTimeOffset.UtcNow));
+
+        Assert.AreEqual(
+            0,
+            infrastructure.UnconditionalDeleteCalls,
+            "The legacy unconditional delete must never run for a precondition-carrying purge delete.");
+    }
+
+    [TestMethod]
     public async Task Operations_stop_before_container_access_when_pre_cancelled()
     {
         var infrastructure = new FakeCosmosInfrastructure();
@@ -370,6 +390,97 @@ public sealed class CosmosInboxTests
 
         private static CosmosException NewCosmosException(HttpStatusCode statusCode)
             => new("Simulated Cosmos response.", statusCode, 0, "test-activity", 0);
+    }
+
+    /// <summary>
+    /// Simulates a third-party adapter compiled against the original adapter surface: it
+    /// implements only the abstract interface members, so every options- and
+    /// cancellation-aware overload falls back to the interface defaults.
+    /// </summary>
+    private sealed class LegacyCosmosInfrastructure : ICosmosClientAdapter, ICosmosDatabaseAdapter, ICosmosContainerAdapter
+    {
+        public List<InboxDocumentId> PurgeResults { get; } = [];
+
+        public int UnconditionalDeleteCalls { get; private set; }
+
+        public ICosmosDatabaseAdapter GetDatabase(string id) => this;
+
+        public ICosmosContainerAdapter GetContainer(string id) => this;
+
+        public Task<ICosmosContainerAdapter> CreateContainerIfNotExistsAsync(string id, string partitionKeyPath)
+            => Task.FromResult<ICosmosContainerAdapter>(this);
+
+        public FeedIterator<T> GetItemQueryIterator<T>(QueryDefinition queryDefinition)
+            => GetItemQueryIterator<T>(queryDefinition, null, null);
+
+        public FeedIterator<T> GetItemQueryIterator<T>(
+            QueryDefinition queryDefinition,
+            string? continuationToken = null,
+            QueryRequestOptions? requestOptions = null)
+            => new SinglePageFeedIterator<T>(PurgeResults.Select(result => (T)(object)result).ToArray());
+
+        public FeedIterator<T> GetItemQueryIterator<T>(string queryText)
+            => throw new NotSupportedException();
+
+        public FeedIterator<T> GetItemQueryIterator<T>(
+            string queryText,
+            string? continuationToken = null,
+            QueryRequestOptions? requestOptions = null)
+            => throw new NotSupportedException();
+
+        public IOrderedQueryable<T> GetItemLinqQueryable<T>(
+            bool allowSynchronousQueryExecution = false,
+            string? continuationToken = null,
+            QueryRequestOptions? requestOptions = null)
+            => throw new NotSupportedException();
+
+        public Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default)
+            => Task.FromResult<ItemResponse<T>>(null!);
+
+        public Task<ItemResponse<T>> UpsertItemAsync<T>(
+            T item,
+            PartitionKey partitionKey = default,
+            ItemRequestOptions? requestOptions = null)
+            => throw new NotSupportedException();
+
+        public Task<ItemResponse<T>> DeleteItemAsync<T>(string id, PartitionKey partitionKey)
+        {
+            UnconditionalDeleteCalls++;
+            return Task.FromResult<ItemResponse<T>>(null!);
+        }
+
+        public Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey)
+            => throw new CosmosException("Simulated Cosmos response.", HttpStatusCode.NotFound, 0, "test-activity", 0);
+
+        public Task<ItemResponse<T>> ReadItemAsync<T>(
+            string id,
+            PartitionKey partitionKey,
+            ItemRequestOptions? requestOptions)
+            => ReadItemAsync<T>(id, partitionKey);
+
+        public Task<ItemResponse<T>> PatchItemAsync<T>(
+            string id,
+            PartitionKey partitionKey,
+            IReadOnlyList<PatchOperation> patchOperations)
+            => throw new NotSupportedException();
+
+        public Task<ContainerResponse> DeleteContainerAsync()
+            => throw new NotSupportedException();
+
+        public Task<FeedResponse<T>> ReadManyItemsAsync<T>(
+            IReadOnlyList<(string id, PartitionKey partitionKey)> items)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class SinglePageFeedIterator<T>(IReadOnlyList<T> items) : FeedIterator<T>
+    {
+        public override bool HasMoreResults => true;
+
+        public override Task<FeedResponse<T>> ReadNextAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<FeedResponse<T>>(new ListFeedResponse<T>(items));
+        }
     }
 
     private sealed class TwoPageFeedIterator<T>(IReadOnlyList<T> items, FakeInboxContainer owner) : FeedIterator<T>

@@ -12,6 +12,7 @@ public sealed class SqlServerInbox : IInboxStore, IDisposable
 {
     private const int EndpointIdMaxLength = 260;
     private const int MessageIdMaxLength = 512;
+    private const int IdentityHashLength = 32;
     private const int PurgeBatchSize = 1_000;
     private readonly SemaphoreSlim _initializationLock = new(1, 1);
     private readonly SqlServerInboxOptions _options;
@@ -62,12 +63,15 @@ public sealed class SqlServerInbox : IInboxStore, IDisposable
         ValidateIdentity(endpointId, messageId);
         await EnsureInitializedAsync(cancellationToken);
 
-        var sql = $"SELECT TOP (1) 1 FROM {_options.FullTableName} WHERE [EndpointId] = @EndpointId AND [MessageId] = @MessageId;";
+        // Lookups go through the exact identity hash, never NVARCHAR equality: SQL Server pads
+        // NVARCHAR operands with trailing spaces for comparisons regardless of collation, which
+        // would report the distinct message id "m1 " as processed after "m1" was recorded.
+        var sql = $"SELECT TOP (1) 1 FROM {_options.FullTableName} WHERE [IdentityHash] = @IdentityHash;";
         await using var connection = new SqlConnection(_options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection);
-        command.Parameters.Add("@EndpointId", SqlDbType.NVarChar, EndpointIdMaxLength).Value = endpointId;
-        command.Parameters.Add("@MessageId", SqlDbType.NVarChar, MessageIdMaxLength).Value = messageId;
+        command.Parameters.Add("@IdentityHash", SqlDbType.Binary, IdentityHashLength).Value =
+            InboxIdentity.ComputeHash(endpointId, messageId);
 
         return await command.ExecuteScalarAsync(cancellationToken) is not null;
     }
@@ -82,10 +86,12 @@ public sealed class SqlServerInbox : IInboxStore, IDisposable
         ValidateIdentity(endpointId, messageId);
         await EnsureInitializedAsync(cancellationToken);
 
-        var sql = $"INSERT INTO {_options.FullTableName} ([EndpointId], [MessageId], [CreatedAtUtc]) VALUES (@EndpointId, @MessageId, SYSUTCDATETIME());";
+        var sql = $"INSERT INTO {_options.FullTableName} ([IdentityHash], [EndpointId], [MessageId], [CreatedAtUtc]) VALUES (@IdentityHash, @EndpointId, @MessageId, SYSUTCDATETIME());";
         await using var connection = new SqlConnection(_options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(sql, connection);
+        command.Parameters.Add("@IdentityHash", SqlDbType.Binary, IdentityHashLength).Value =
+            InboxIdentity.ComputeHash(endpointId, messageId);
         command.Parameters.Add("@EndpointId", SqlDbType.NVarChar, EndpointIdMaxLength).Value = endpointId;
         command.Parameters.Add("@MessageId", SqlDbType.NVarChar, MessageIdMaxLength).Value = messageId;
 
@@ -114,10 +120,10 @@ public sealed class SqlServerInbox : IInboxStore, IDisposable
         var sql = $"""
             WITH [ExpiredInboxMessages] AS
             (
-                SELECT TOP (@BatchSize) [EndpointId], [MessageId]
+                SELECT TOP (@BatchSize) [IdentityHash]
                 FROM {_options.FullTableName} WITH (READPAST, READCOMMITTEDLOCK)
                 WHERE [CreatedAtUtc] < @OlderThan
-                ORDER BY [CreatedAtUtc], [EndpointId], [MessageId]
+                ORDER BY [CreatedAtUtc], [IdentityHash]
             )
             DELETE FROM [ExpiredInboxMessages];
             """;
@@ -154,10 +160,13 @@ public sealed class SqlServerInbox : IInboxStore, IDisposable
                 return;
             }
 
-            // The primary key must be NONCLUSTERED: a clustered key is limited to 900 bytes and
-            // the composite (260 + 512 chars) NVARCHAR key needs up to 1,544 — within the 1,700
-            // byte nonclustered limit. The table clusters on CreatedAtUtc instead, which also
-            // keeps the bounded purge an efficient range scan.
+            // The key is the 32-byte identity hash, not the NVARCHAR pair: SQL Server pads
+            // NVARCHAR operands with trailing spaces for equality and unique-key comparisons
+            // even under a BIN2 collation, so "m1" and "m1 " would collide as raw key columns.
+            // The hash (shared with the Cosmos document id derivation) is byte-exact for any
+            // identifier content. The raw columns are retained for diagnostics only. The PK
+            // stays NONCLUSTERED — a random hash would fragment a clustered index — and the
+            // table clusters on CreatedAtUtc, which keeps the bounded purge a range scan.
             var sql = $"""
                 IF SCHEMA_ID(@Schema) IS NULL
                     EXEC(N'CREATE SCHEMA [{_options.Schema}]');
@@ -166,10 +175,11 @@ public sealed class SqlServerInbox : IInboxStore, IDisposable
                 BEGIN
                     CREATE TABLE {_options.FullTableName}
                     (
+                        [IdentityHash] BINARY(32) NOT NULL,
                         [EndpointId] NVARCHAR(260) COLLATE Latin1_General_100_BIN2 NOT NULL,
                         [MessageId] NVARCHAR(512) COLLATE Latin1_General_100_BIN2 NOT NULL,
                         [CreatedAtUtc] DATETIME2(7) NOT NULL DEFAULT SYSUTCDATETIME(),
-                        CONSTRAINT [PK_{_options.TableName}] PRIMARY KEY NONCLUSTERED ([EndpointId], [MessageId]),
+                        CONSTRAINT [PK_{_options.TableName}] PRIMARY KEY NONCLUSTERED ([IdentityHash]),
                         INDEX [IX_{_options.TableName}_CreatedAtUtc] CLUSTERED ([CreatedAtUtc])
                     );
                 END;

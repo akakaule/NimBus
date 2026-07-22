@@ -224,12 +224,20 @@ namespace NimBus.Core.Messages
                 // fail the guard and complete with a normal response, hiding the duplicate. When
                 // the crash happened between recording and unblocking, the session is still
                 // blocked by this event — release it and drain deferred siblings before
-                // completing the duplicate, or the session would stay blocked forever.
+                // completing the duplicate, or the session would stay blocked forever. When the
+                // crash happened between unblocking and the deferred drain, the session is not
+                // blocked at all — the duplicate path is then the only remaining drain trigger,
+                // so run it here. A session blocked by an unrelated later event is left alone;
+                // that blocker owns the drain.
                 if (await IsInboxDuplicate(messageContext, cancellationToken))
                 {
                     if (await messageContext.IsSessionBlockedByThis(cancellationToken))
                     {
                         await UnblockSession(messageContext, cancellationToken);
+                        await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
+                    }
+                    else if (string.IsNullOrEmpty(await messageContext.GetBlockedByEventId(cancellationToken)))
+                    {
                         await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
                     }
 
@@ -276,6 +284,20 @@ namespace NimBus.Core.Messages
             {
                 LogInfo(messageContext, "Handle (Resubmission)");
                 AuthorizeManagerRequest(messageContext);
+
+                // Inbox pre-check: the decorator at the handler seam is record-only in hosted
+                // compositions (one check, one record per delivery), so every entry point that
+                // dispatches the handler must run the check itself. The session handling below
+                // mirrors the normal resubmission path.
+                if (await IsInboxDuplicate(messageContext, cancellationToken))
+                {
+                    if (await messageContext.IsSessionBlockedByThis(cancellationToken))
+                        await UnblockSession(messageContext, cancellationToken);
+                    await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
+                    await SendDuplicateResponseAndComplete(messageContext, "Resubmission DuplicateDetected", cancellationToken);
+                    return;
+                }
+
                 var discardedFailure = await HandleEventContent(messageContext, cancellationToken);
                 if (await messageContext.IsSessionBlockedByThis(cancellationToken))
                     await UnblockSession(messageContext, cancellationToken);

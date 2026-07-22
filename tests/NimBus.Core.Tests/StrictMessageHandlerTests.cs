@@ -1166,6 +1166,95 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, ctx.CompletedCalls);
     }
 
+    [TestMethod]
+    public async Task HandleRetryRequest_RecordedDuplicate_WithUnblockedSession_DrainsDeferredSiblings()
+    {
+        // Crash window: the first attempt recorded and unblocked, then died before the
+        // deferred drain. The redelivered duplicate is the only remaining drain trigger —
+        // completing it without draining would park deferred siblings indefinitely.
+        var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.IsSessionBlockedByThisResult = false;
+        ctx.BlockedByEventId = null;
+        ctx.DeferredCountResult = 2;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response, inboxStore: new FakeInboxStore { HasProcessed = true });
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, handler.HandleCalls);
+        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(1, response.ProcessDeferredCalls);
+        Assert.AreEqual(1, response.DuplicateCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleRetryRequest_RecordedDuplicate_WithUnblockedSession_DrainsLegacyDeferredSibling()
+    {
+        var deferredCtx = CreateContext(messageType: MessageType.EventRequest, eventId: "deferred-event");
+        var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.IsSessionBlockedByThisResult = false;
+        ctx.BlockedByEventId = null;
+        ctx.NextDeferredResult = deferredCtx;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response, inboxStore: new FakeInboxStore { HasProcessed = true });
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, handler.HandleCalls);
+        Assert.AreEqual(1, response.ContinuationCalls);
+        Assert.AreEqual(1, response.DuplicateCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleRetryRequest_RecordedDuplicate_WithSessionBlockedByOther_LeavesBlockerAndSkipsDrain()
+    {
+        // An unrelated later event owns the session and its eventual settlement owns the
+        // drain; the duplicate must neither unblock nor trigger it early.
+        var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.IsSessionBlockedByThisResult = false;
+        ctx.BlockedByEventId = "other-event";
+        ctx.DeferredCountResult = 2;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response, inboxStore: new FakeInboxStore { HasProcessed = true });
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, handler.HandleCalls);
+        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(0, response.ProcessDeferredCalls);
+        Assert.AreEqual(0, response.ContinuationCalls);
+        Assert.AreEqual(1, response.DuplicateCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleResubmissionRequest_RecordedDuplicate_PreCheckSkipsHandler()
+    {
+        // The handler-seam decorator is record-only in hosted compositions, so the
+        // resubmission entry point must run the pre-check itself.
+        var ctx = CreateContext(messageType: MessageType.ResubmissionRequest, from: "Manager");
+        ctx.DeferredCountResult = 1;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response, inboxStore: new FakeInboxStore { HasProcessed = true });
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, handler.HandleCalls);
+        Assert.AreEqual(1, response.DuplicateCalls);
+        Assert.AreEqual(0, response.ResolutionCalls);
+        // Mirrors the normal resubmission path: no unblock when not blocked by this,
+        // and the unconditional deferred drain still runs.
+        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(1, response.ProcessDeferredCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
     private static StrictMessageHandler CreateHandler(
         FakeEventContextHandler handler,
         FakeResponseService response,

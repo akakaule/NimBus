@@ -1,7 +1,5 @@
 using System.Globalization;
 using System.Net;
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json;
 using NimBus.Core.Inbox;
@@ -174,13 +172,9 @@ public sealed class CosmosInboxStore : IInboxStore
 
     internal static string GetDocumentId(string endpointId, string messageId)
     {
-        // The delimited length prefix makes the concatenation unambiguous for any
-        // endpoint/message content, so distinct (endpoint, message) pairs never collide.
-        var identity = string.Create(
-            CultureInfo.InvariantCulture,
-            $"{endpointId.Length}{endpointId}{messageId}");
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(identity));
-        return Convert.ToHexString(bytes);
+        // The shared hash keeps the Cosmos document id and the SQL provider's key derived from
+        // one canonical, unambiguous (endpoint, message) encoding.
+        return Convert.ToHexString(InboxIdentity.ComputeHash(endpointId, messageId));
     }
 
     private async Task<ICosmosContainerAdapter> GetContainerAsync(CancellationToken cancellationToken)

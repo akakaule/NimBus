@@ -95,8 +95,12 @@ public sealed class SqlServerInboxSchemaTests
                     UNION ALL
                     SELECT [Value] + 1 FROM [Numbers] WHERE [Value] < 1000
                 )
-                INSERT INTO {options.FullTableName} ([EndpointId], [MessageId], [CreatedAtUtc])
-                SELECT N'billing', N'purge-' + CONVERT(NVARCHAR(10), [Value]), @CreatedAtUtc
+                INSERT INTO {options.FullTableName} ([IdentityHash], [EndpointId], [MessageId], [CreatedAtUtc])
+                SELECT
+                    CONVERT(BINARY(32), HASHBYTES('SHA2_256', N'purge-' + CONVERT(NVARCHAR(10), [Value]))),
+                    N'billing',
+                    N'purge-' + CONVERT(NVARCHAR(10), [Value]),
+                    @CreatedAtUtc
                 FROM [Numbers]
                 OPTION (MAXRECURSION 1001);
                 """;
@@ -125,22 +129,54 @@ public sealed class SqlServerInboxSchemaTests
         await using var connection = new SqlConnection(options.ConnectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        // The primary key must be NONCLUSTERED: the composite (EndpointId, MessageId) key can
-        // reach 1,544 bytes, past the 900-byte clustered-key limit but within the 1,700-byte
-        // nonclustered limit. CreatedAtUtc carries the clustered index for bounded purges.
+        // The primary key is the 32-byte identity hash — never the raw NVARCHAR pair, whose
+        // trailing-space padding under SQL comparison rules would conflate distinct ids. It
+        // stays NONCLUSTERED (a random hash would fragment a clustered index); CreatedAtUtc
+        // carries the clustered index for bounded purges. The raw identifier columns are
+        // retained for diagnostics.
         command.CommandText = """
             SELECT
-                SUM(CASE WHEN i.is_primary_key = 1 AND i.type_desc = N'NONCLUSTERED' AND c.name = N'EndpointId' AND ty.name = N'nvarchar' AND c.max_length = 520 AND c.collation_name = N'Latin1_General_100_BIN2' THEN 1 ELSE 0 END),
-                SUM(CASE WHEN i.is_primary_key = 1 AND i.type_desc = N'NONCLUSTERED' AND c.name = N'MessageId' AND ty.name = N'nvarchar' AND c.max_length = 1024 AND c.collation_name = N'Latin1_General_100_BIN2' THEN 1 ELSE 0 END),
-                SUM(CASE WHEN i.is_primary_key = 0 AND i.type_desc = N'CLUSTERED' AND c.name = N'CreatedAtUtc' AND ty.name = N'datetime2' AND c.is_nullable = 0 THEN 1 ELSE 0 END),
-                SUM(CASE WHEN c.name = N'CreatedAtUtc' AND dc.definition LIKE N'%sysutcdatetime%' THEN 1 ELSE 0 END)
+                (SELECT COUNT(1)
+                 FROM sys.indexes i
+                 INNER JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                 INNER JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+                 INNER JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+                 WHERE i.object_id = t.object_id AND i.is_primary_key = 1),
+                (SELECT COUNT(1)
+                 FROM sys.indexes i
+                 INNER JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                 INNER JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+                 INNER JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+                 WHERE i.object_id = t.object_id AND i.is_primary_key = 1
+                   AND i.type_desc = N'NONCLUSTERED' AND c.name = N'IdentityHash'
+                   AND ty.name = N'binary' AND c.max_length = 32),
+                (SELECT COUNT(1)
+                 FROM sys.indexes i
+                 INNER JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                 INNER JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+                 INNER JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+                 WHERE i.object_id = t.object_id AND i.is_primary_key = 0
+                   AND i.type_desc = N'CLUSTERED' AND c.name = N'CreatedAtUtc'
+                   AND ty.name = N'datetime2' AND c.is_nullable = 0),
+                (SELECT COUNT(1)
+                 FROM sys.columns c
+                 INNER JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+                 WHERE c.object_id = t.object_id AND c.name = N'EndpointId'
+                   AND ty.name = N'nvarchar' AND c.max_length = 520
+                   AND c.collation_name = N'Latin1_General_100_BIN2'),
+                (SELECT COUNT(1)
+                 FROM sys.columns c
+                 INNER JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+                 WHERE c.object_id = t.object_id AND c.name = N'MessageId'
+                   AND ty.name = N'nvarchar' AND c.max_length = 1024
+                   AND c.collation_name = N'Latin1_General_100_BIN2'),
+                (SELECT COUNT(1)
+                 FROM sys.columns c
+                 LEFT JOIN sys.default_constraints dc ON dc.object_id = c.default_object_id
+                 WHERE c.object_id = t.object_id AND c.name = N'CreatedAtUtc'
+                   AND dc.definition LIKE N'%sysutcdatetime%')
             FROM sys.tables t
             INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
-            INNER JOIN sys.indexes i ON i.object_id = t.object_id
-            INNER JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
-            INNER JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
-            INNER JOIN sys.types ty ON ty.user_type_id = c.user_type_id
-            LEFT JOIN sys.default_constraints dc ON dc.object_id = c.default_object_id
             WHERE s.name = @Schema AND t.name = @TableName;
             """;
         command.Parameters.Add("@Schema", SqlDbType.NVarChar, 128).Value = options.Schema;
@@ -148,10 +184,12 @@ public sealed class SqlServerInboxSchemaTests
 
         await using var reader = await command.ExecuteReaderAsync();
         Assert.IsTrue(await reader.ReadAsync());
-        Assert.AreEqual(1, reader.GetInt32(0));
-        Assert.AreEqual(1, reader.GetInt32(1));
-        Assert.AreEqual(1, reader.GetInt32(2));
-        Assert.AreEqual(1, reader.GetInt32(3));
+        Assert.AreEqual(1, reader.GetInt32(0), "The primary key must cover exactly the single IdentityHash column.");
+        Assert.AreEqual(1, reader.GetInt32(1), "The primary key must be NONCLUSTERED on IdentityHash BINARY(32).");
+        Assert.AreEqual(1, reader.GetInt32(2), "CreatedAtUtc must carry the clustered purge index.");
+        Assert.AreEqual(1, reader.GetInt32(3), "The EndpointId diagnostic column must be NVARCHAR(260) BIN2.");
+        Assert.AreEqual(1, reader.GetInt32(4), "The MessageId diagnostic column must be NVARCHAR(512) BIN2.");
+        Assert.AreEqual(1, reader.GetInt32(5), "CreatedAtUtc must default to SYSUTCDATETIME().");
     }
 
     [TestMethod]

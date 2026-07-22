@@ -15,11 +15,13 @@ namespace NimBus.Core.Inbox;
 /// signals (handler outcome, telemetry, structured log, lifecycle notification).
 /// </summary>
 /// <remarks>
-/// The check is shared by two call sites: <see cref="InboxMiddleware"/> at the handler seam, and
-/// <c>StrictMessageHandler</c> before its session-state guards — so a redelivered duplicate whose
-/// session state has already moved on (for example a successfully handled RetryRequest that
-/// unblocked its session) is still surfaced as a duplicate rather than falling into a state-guard
-/// branch that hides it.
+/// The check is shared by two call sites: <see cref="InboxMiddleware"/> at the handler seam
+/// (standalone compositions only), and <c>StrictMessageHandler</c> before its session-state
+/// guards — so a redelivered duplicate whose session state has already moved on (for example a
+/// successfully handled RetryRequest that unblocked its session) is still surfaced as a
+/// duplicate rather than falling into a state-guard branch that hides it. Hosted compositions
+/// run the check exclusively in <c>StrictMessageHandler</c> and configure the middleware as
+/// record-only, keeping a fresh delivery at one check plus one record.
 /// </remarks>
 public sealed class InboxDuplicateDetector
 {

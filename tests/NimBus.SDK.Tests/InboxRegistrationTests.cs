@@ -100,6 +100,11 @@ public sealed class InboxRegistrationTests
 
         Assert.IsInstanceOfType<InboxMiddleware>(contextHandler);
         Assert.AreSame(sqlServer, GetPrivateField(contextHandler, "_inboxStore"));
+        // One-check/one-record contract: the composition hands StrictMessageHandler the
+        // pre-session-guard detector and configures the decorator as record-only, so a
+        // fresh delivery performs exactly one store check and one record.
+        Assert.IsNotNull(GetPrivateField(strictHandler, "_inboxDuplicateDetector"));
+        Assert.IsTrue((bool)GetPrivateField(contextHandler, "_checkHandledUpstream"));
         Assert.IsNotNull(provider.GetService<MessageLifecycleNotifier>());
         Assert.AreEqual(
             1,

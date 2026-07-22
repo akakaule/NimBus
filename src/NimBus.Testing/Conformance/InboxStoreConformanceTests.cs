@@ -106,9 +106,37 @@ public abstract class InboxStoreConformanceTests
     }
 
     /// <summary>
+    /// Verifies identifiers differing only by trailing whitespace stay distinct. Broker message
+    /// ids are opaque byte-exact keys; a provider whose native string comparison pads trailing
+    /// spaces (SQL Server NVARCHAR equality does, regardless of collation) would otherwise
+    /// silently skip the distinct id "m1 " after "m1" was recorded.
+    /// </summary>
+    [TestMethod]
+    public async Task Identifiers_differing_only_by_trailing_whitespace_are_distinct()
+    {
+        var store = await CreateStoreAsync();
+        var messageId = NewMessageId("padded");
+        var paddedMessageId = messageId + " ";
+        var paddedEndpointId = EndpointId + " ";
+
+        await store.RecordProcessedAsync(EndpointId, messageId);
+
+        Assert.IsTrue(await store.HasProcessedAsync(EndpointId, messageId));
+        Assert.IsFalse(await store.HasProcessedAsync(EndpointId, paddedMessageId));
+        Assert.IsFalse(await store.HasProcessedAsync(paddedEndpointId, messageId));
+
+        await store.RecordProcessedAsync(EndpointId, paddedMessageId);
+        await store.RecordProcessedAsync(paddedEndpointId, messageId);
+
+        Assert.IsTrue(await store.HasProcessedAsync(EndpointId, paddedMessageId));
+        Assert.IsTrue(await store.HasProcessedAsync(paddedEndpointId, messageId));
+        Assert.IsTrue(await store.HasProcessedAsync(EndpointId, messageId));
+    }
+
+    /// <summary>
     /// Verifies identifiers at the documented maximum lengths (260-character endpoint,
-    /// 512-character message id) round-trip on every provider. On SQL Server this exercises
-    /// the composite nonclustered primary key past the 900-byte clustered-key limit.
+    /// 512-character message id) round-trip on every provider, including providers that key
+    /// on a derived identity hash rather than the raw identifier columns.
     /// </summary>
     [TestMethod]
     public async Task Maximum_length_identifiers_are_recorded_and_found()

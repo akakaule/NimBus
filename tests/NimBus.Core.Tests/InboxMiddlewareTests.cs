@@ -341,6 +341,65 @@ public sealed class InboxMiddlewareTests
     }
 
     [TestMethod]
+    public async Task Check_handled_upstream_mode_records_without_a_second_check()
+    {
+        // In hosted compositions StrictMessageHandler runs the duplicate pre-check before the
+        // session guards; the decorator must then be record-only or every fresh delivery pays
+        // a duplicated store round-trip.
+        var store = new RecordingInboxStore();
+        var inner = new RecordingHandler();
+        var sut = new InboxMiddleware(inner, store, checkHandledUpstream: true);
+
+        await sut.Handle(CreateContext("message-1"));
+
+        Assert.AreEqual(0, store.CheckCalls);
+        Assert.AreEqual(1, store.RecordCalls);
+        Assert.AreEqual(1, inner.HandleCalls);
+    }
+
+    [TestMethod]
+    public async Task Composed_transport_performs_one_check_and_one_record_per_fresh_delivery()
+    {
+        // The one-check/one-record contract, asserted through the real InboxRegistration
+        // composition (the same Decorate + CreateDuplicateDetector pairing the production
+        // subscriber uses): the pre-check runs in StrictMessageHandler, the decorator only
+        // records, so a fresh delivery costs exactly one check plus one record and a
+        // duplicate costs exactly one further check.
+        var store = new RecordingInboxStore { TrackRecords = true };
+        var handlerCalls = 0;
+        var services = new ServiceCollection();
+        services.AddKeyedSingleton<NimBus.Core.Inbox.IInboxStore>(InboxStore.InMemory, store);
+        services.AddNimBusTestTransport(builder =>
+        {
+            builder.AddDynamicHandler(
+                "OrderPlaced",
+                () => new DelegateEventJsonHandler((_, _) =>
+                {
+                    handlerCalls++;
+                    return Task.CompletedTask;
+                }));
+            builder.UseInbox(options => options.DeduplicationStore = InboxStore.InMemory);
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var messageHandler = provider.GetRequiredService<IMessageHandler>();
+
+        await messageHandler.Handle(CreateContext("message-1"));
+
+        Assert.AreEqual(1, handlerCalls);
+        Assert.AreEqual(1, store.CheckCalls, "A fresh delivery must consult the store exactly once.");
+        Assert.AreEqual(1, store.RecordCalls, "A fresh delivery must record exactly once.");
+
+        var duplicate = CreateContext("message-1");
+        await messageHandler.Handle(duplicate);
+
+        Assert.AreEqual(1, handlerCalls);
+        Assert.AreEqual(2, store.CheckCalls, "A duplicate must consult the store exactly once.");
+        Assert.AreEqual(1, store.RecordCalls, "A duplicate must not be re-recorded.");
+        Assert.AreEqual(HandlerOutcome.DuplicateDetected, duplicate.HandlerOutcome);
+    }
+
+    [TestMethod]
     public async Task Test_transport_honors_UseInbox_without_Azure_Service_Bus()
     {
         var handlerCalls = 0;

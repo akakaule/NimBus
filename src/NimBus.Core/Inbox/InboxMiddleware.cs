@@ -29,6 +29,7 @@ public sealed class InboxMiddleware : IEventContextHandler
     private readonly IEventContextHandler _inner;
     private readonly IInboxStore _inboxStore;
     private readonly InboxDuplicateDetector _duplicateDetector;
+    private readonly bool _checkHandledUpstream;
     private readonly ILogger<InboxMiddleware> _logger;
 
     /// <summary>
@@ -38,16 +39,24 @@ public sealed class InboxMiddleware : IEventContextHandler
     /// <param name="inboxStore">The selected inbox-store provider.</param>
     /// <param name="lifecycleNotifier">The optional lifecycle notifier.</param>
     /// <param name="logger">The optional structured logger.</param>
+    /// <param name="checkHandledUpstream">
+    /// When <see langword="true"/>, the pre-dispatch duplicate check is skipped because the
+    /// hosting composition already runs it (via the <see cref="InboxDuplicateDetector"/> handed
+    /// to <c>StrictMessageHandler</c>) before this decorator is reached, and the middleware only
+    /// records successes. This keeps a fresh delivery at exactly one store check and one record.
+    /// </param>
     public InboxMiddleware(
         IEventContextHandler inner,
         IInboxStore inboxStore,
         MessageLifecycleNotifier? lifecycleNotifier = null,
-        ILogger<InboxMiddleware>? logger = null)
+        ILogger<InboxMiddleware>? logger = null,
+        bool checkHandledUpstream = false)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _inboxStore = inboxStore ?? throw new ArgumentNullException(nameof(inboxStore));
         _logger = logger ?? NullLogger<InboxMiddleware>.Instance;
         _duplicateDetector = new InboxDuplicateDetector(inboxStore, lifecycleNotifier, _logger);
+        _checkHandledUpstream = checkHandledUpstream;
     }
 
     /// <inheritdoc />
@@ -64,8 +73,11 @@ public sealed class InboxMiddleware : IEventContextHandler
             return;
         }
 
-        if (await _duplicateDetector.IsDuplicateAsync(context, cancellationToken))
+        if (!_checkHandledUpstream
+            && await _duplicateDetector.IsDuplicateAsync(context, cancellationToken))
+        {
             return;
+        }
 
         await _inner.Handle(context, cancellationToken);
 

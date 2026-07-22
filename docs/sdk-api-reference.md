@@ -49,12 +49,15 @@ services.AddNimBusSubscriber("BillingEndpoint", sub =>
 The selectable providers are `InboxStore.SqlServer`, `InboxStore.Cosmos`, and
 `InboxStore.InMemory`. The matching keyed provider registration is mandatory;
 subscriber startup fails if it is missing. Records are keyed by the
-`(endpoint, MessageId)` pair, so endpoints sharing one physical store never
-skip each other's fan-out deliveries. A successful handler is recorded before
-the Resolver response and broker settlement; pending handoffs are not recorded
-so redelivery can recreate the pending state. Store failures follow the
-transient redelivery path, while a missing or unsupported-length `MessageId`
-logs a warning and runs the handler without deduplication. See
+`(endpoint, MessageId)` pair — byte-exact on every provider via a shared
+identity hash, so ids differing only by case or trailing whitespace stay
+distinct — and endpoints sharing one physical store never skip each other's
+fan-out deliveries. A fresh delivery costs exactly one store check (run ahead
+of the session-state guards) and one record. A successful handler is recorded
+before the Resolver response and broker settlement; pending handoffs are not
+recorded so redelivery can recreate the pending state. Store failures follow
+the transient redelivery path, while a missing or unsupported-length
+`MessageId` logs a warning and runs the handler without deduplication. See
 [Consumer inbox](inbox-pattern.md) for provider setup, cleanup, and atomicity
 limits.
 

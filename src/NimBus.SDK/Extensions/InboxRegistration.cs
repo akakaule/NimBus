@@ -41,11 +41,15 @@ internal static class InboxRegistration
         if (options is null)
             return inner;
 
+        // checkHandledUpstream: this composition also hands StrictMessageHandler the
+        // pre-session-guard detector (CreateDuplicateDetector below), so the decorator is
+        // record-only — a fresh delivery costs exactly one store check and one record.
         return new InboxMiddleware(
             inner,
             ResolveStore(serviceProvider, options),
             serviceProvider.GetRequiredService<MessageLifecycleNotifier>(),
-            serviceProvider.GetService<ILogger<InboxMiddleware>>());
+            serviceProvider.GetService<ILogger<InboxMiddleware>>(),
+            checkHandledUpstream: true);
     }
 
     /// <summary>

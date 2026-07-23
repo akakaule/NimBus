@@ -243,6 +243,9 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task<AuditSearchResult> SearchAudits(AuditFilter filter, string? continuationToken, int maxItemCount) =>
         InstrumentAsync(nameof(SearchAudits), () => _inner.SearchAudits(filter, continuationToken, maxItemCount));
 
+    public Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds) =>
+        InstrumentAsync(nameof(GetResubmitCounts), () => _inner.GetResubmitCounts(endpointId, eventIds));
+
     // ── Endpoint diagnostics ────────────────────────────────────────────
 
     public Task<string> GetEndpointErrorList(string endpointId) =>

@@ -2473,6 +2473,12 @@ components:
           type: string
           format: date-time
           nullable: true
+        resubmitCount:
+          type: integer
+          description: >-
+            Number of resubmissions recorded in the audit trail (Resubmit +
+            ResubmitWithChanges, denied attempts excluded). Enriched on search
+            responses; 0 when never resubmitted.
         messageContent:
           type: object
           properties:

@@ -4802,6 +4802,7 @@ namespace NimBus.WebApp.ManagementApi
         private string _handoffReason;
         private string _externalJobId;
         private System.DateTime? _expectedBy;
+        private int _resubmitCount;
         private MessageContent _messageContent;
 
         [Newtonsoft.Json.JsonProperty("updatedAt", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
@@ -5150,6 +5151,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_expectedBy != value)
                 {
                     _expectedBy = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Number of resubmissions recorded in the audit trail (Resubmit + ResubmitWithChanges, denied attempts excluded). Enriched on search responses; 0 when never resubmitted.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("resubmitCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int ResubmitCount    {
+            get { return _resubmitCount; }
+            set
+            {
+                if (_resubmitCount != value)
+                {
+                    _resubmitCount = value;
                     RaisePropertyChanged();
                 }
             }

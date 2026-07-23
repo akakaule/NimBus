@@ -317,6 +317,11 @@ public class InMemoryMessageStore : INimBusMessageStore
 
     public virtual Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity, string? endpointId = null, string? eventTypeId = null)
     {
+        // Mirror the call arguments onto the entity (like SQL columns / Cosmos
+        // document fields) so scoped queries such as GetResubmitCounts can
+        // filter on them.
+        auditEntity.EventId ??= eventId;
+        auditEntity.EndpointId ??= endpointId;
         _audits.GetOrAdd(eventId, _ => new List<MessageAuditEntity>()).Add(auditEntity);
         return Task.CompletedTask;
     }
@@ -338,6 +343,26 @@ public class InMemoryMessageStore : INimBusMessageStore
         if (filter.AuditType.HasValue) allAudits = allAudits.Where(a => a.Audit.AuditType == filter.AuditType.Value);
         var results = allAudits.OrderByDescending(a => a.CreatedAt).Take(maxItemCount > 0 ? maxItemCount : 100).ToList();
         return Task.FromResult(new AuditSearchResult { Audits = results });
+    }
+
+    public Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds)
+    {
+        var ids = new HashSet<string>((eventIds ?? Array.Empty<string>()).Where(e => !string.IsNullOrEmpty(e)));
+        var counts = new Dictionary<string, int>();
+        if (string.IsNullOrEmpty(endpointId) || ids.Count == 0)
+            return Task.FromResult<IReadOnlyDictionary<string, int>>(counts);
+
+        foreach (var (eventId, audits) in _audits)
+        {
+            if (!ids.Contains(eventId)) continue;
+            var count = audits.Count(a =>
+                a.EndpointId == endpointId &&
+                !a.AccessDenied &&
+                a.AuditType is MessageAuditType.Resubmit or MessageAuditType.ResubmitWithChanges);
+            if (count > 0) counts[eventId] = count;
+        }
+
+        return Task.FromResult<IReadOnlyDictionary<string, int>>(counts);
     }
 
     private static bool HasPrefix(string? value, string prefix)

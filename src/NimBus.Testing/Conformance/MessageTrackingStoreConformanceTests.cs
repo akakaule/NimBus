@@ -821,6 +821,46 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual("audits/search/42", items[0].Audit.CloudEventSubject);
     }
 
+    [TestMethod]
+    public async Task GetResubmitCounts_counts_resubmit_audits_per_event_excluding_denied()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-rc");
+        var eventA = Id("evt-rc-a");
+        var eventB = Id("evt-rc-b");
+
+        // eventA: two granted resubmits (one plain, one with changes), one denied
+        // attempt (must not count), one unrelated audit type (must not count).
+        await store.StoreMessageAudit(eventA, new MessageAuditEntity { AuditorName = Id("alice"), AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Resubmit, EventId = eventA, EndpointId = endpointId }, endpointId);
+        await store.StoreMessageAudit(eventA, new MessageAuditEntity { AuditorName = Id("alice"), AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.ResubmitWithChanges, EventId = eventA, EndpointId = endpointId }, endpointId);
+        await store.StoreMessageAudit(eventA, new MessageAuditEntity { AuditorName = Id("mallory"), AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Resubmit, AccessDenied = true, EventId = eventA, EndpointId = endpointId }, endpointId);
+        await store.StoreMessageAudit(eventA, new MessageAuditEntity { AuditorName = Id("alice"), AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Skip, EventId = eventA, EndpointId = endpointId }, endpointId);
+        // eventB: no resubmit audits at all — must be absent from the result.
+        await store.StoreMessageAudit(eventB, new MessageAuditEntity { AuditorName = Id("bob"), AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Comment, EventId = eventB, EndpointId = endpointId }, endpointId);
+
+        var counts = await store.GetResubmitCounts(endpointId, new[] { eventA, eventB });
+
+        Assert.AreEqual(2, counts.GetValueOrDefault(eventA), "granted Resubmit + ResubmitWithChanges count; denied and unrelated audits do not");
+        Assert.IsFalse(counts.ContainsKey(eventB), "events without resubmit audits are absent (missing = 0)");
+    }
+
+    [TestMethod]
+    public async Task GetResubmitCounts_returns_empty_for_empty_input_or_foreign_endpoint()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-rc2");
+        var eventId = Id("evt-rc2");
+        await store.StoreMessageAudit(eventId, new MessageAuditEntity { AuditorName = Id("alice"), AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Resubmit, EventId = eventId, EndpointId = endpointId }, endpointId);
+
+        var emptyIds = await store.GetResubmitCounts(endpointId, Array.Empty<string>());
+        Assert.AreEqual(0, emptyIds.Count);
+
+        // Audits are endpoint-scoped: the same event id queried under another
+        // endpoint must not leak counts across endpoints.
+        var foreign = await store.GetResubmitCounts(Id("ep-other"), new[] { eventId });
+        Assert.AreEqual(0, foreign.Count);
+    }
+
     // ───── Prefix-search semantics (cross-provider contract) ─────
     // ID-like filter fields match by case-insensitive PREFIX on every provider:
     // Cosmos STARTSWITH(x, y, true), SQL Server LIKE 'y%' (CI collation),

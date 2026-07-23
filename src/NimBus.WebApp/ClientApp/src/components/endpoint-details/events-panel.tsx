@@ -150,6 +150,7 @@ export const EVENT_COLUMNS: EventColumn[] = [
   { id: "status", label: "Status", numeric: false, width: "8%" },
   { id: "sessionId", label: "Session Id", numeric: false, width: "10%" },
   { id: "eventTypeId", label: "Event Type", numeric: false, width: "15%" },
+  { id: "resubmitCount", label: "Resubmits", numeric: true, width: "7%" },
   { id: "updated", label: "Updated", numeric: false, width: "12%" },
   { id: "added", label: "Added", numeric: false, width: "12%" },
 ];
@@ -641,6 +642,20 @@ const EventsPanel = (props: EventsPanelProps) => {
             {
               value: item?.eventTypeId,
               searchValue: item?.eventTypeId || "",
+            },
+          ],
+          [
+            "resubmitCount",
+            {
+              value:
+                (item.resubmitCount ?? 0) > 0 ? (
+                  <Badge variant="info" size="sm">
+                    {item.resubmitCount}
+                  </Badge>
+                ) : (
+                  <span className="text-muted-foreground">0</span>
+                ),
+              searchValue: String(item.resubmitCount ?? 0),
             },
           ],
           [

@@ -771,11 +771,13 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 var reponse = await cosmosClient.GetEventsByFilter(filter, body.ContinuationToken, body.MaxSearchItemsCount);
                 await auditLogService.LogAuditAsync(MessageAuditType.SearchEvents, httpContextAccessor.HttpContext,
                     data: searchDataJson, endpointId: endpointId);
+                var events = reponse.Events
+                    .Select(Mapper.EventFromMessageStoreEvent)
+                    .ToList();
+                await AttachResubmitCounts(endpointId, events);
                 return new SearchResponse
                 {
-                    Events = reponse.Events
-                    .Select(Mapper.EventFromMessageStoreEvent)
-                    .ToList(),
+                    Events = events,
                     ContinuationToken = reponse.ContinuationToken
                 };
             }
@@ -788,6 +790,34 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
             }
         }
+        // Fills each event's ResubmitCount from the audit log in a single batched
+        // query, so the event list can show how many times an event was
+        // resubmitted without a per-row round-trip. Fail-soft: the count is a
+        // display nicety — an enrichment failure must not break search.
+        private async Task AttachResubmitCounts(string endpointId, List<Event> events)
+        {
+            var eventIds = events
+                .Select(e => e.EventId)
+                .Where(id => !string.IsNullOrEmpty(id))
+                .Distinct()
+                .ToList();
+            if (eventIds.Count == 0) return;
+
+            try
+            {
+                var counts = await cosmosClient.GetResubmitCounts(endpointId, eventIds);
+                foreach (var ev in events)
+                {
+                    if (ev.EventId != null && counts.TryGetValue(ev.EventId, out var count))
+                        ev.ResubmitCount = count;
+                }
+            }
+            catch (Exception e)
+            {
+                logger.LogWarning("AttachResubmitCounts failed for endpoint {EndpointId}: {Exception}", endpointId, e.Message);
+            }
+        }
+
         // The detail-page Payload should reflect the event request that was
         // processed, not whatever the last message on the event happened to carry
         // (a ResolutionResponse, handoff control message, etc.). Returns the

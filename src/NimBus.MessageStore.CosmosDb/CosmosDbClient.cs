@@ -1913,6 +1913,63 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         return new AuditSearchResult { Audits = audits, ContinuationToken = token };
     }
 
+    public async Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds)
+    {
+        var ids = (eventIds ?? Array.Empty<string>())
+            .Where(e => !string.IsNullOrEmpty(e))
+            .Distinct()
+            .ToList();
+
+        var counts = new Dictionary<string, int>();
+        if (string.IsNullOrEmpty(endpointId) || ids.Count == 0)
+            return counts;
+
+        // Document-level ids are camelCase ([JsonProperty] on AuditDocument);
+        // the nested audit entity serializes with PascalCase names and a NUMERIC
+        // AuditType (no attributes / no StringEnumConverter) — see SearchAudits.
+        // AccessDenied=false-or-undefined excludes denied resubmit attempts while
+        // keeping legacy documents (written before the field existed) counted.
+        // The audits container is partitioned by /eventId, so this GROUP BY is
+        // cross-partition — but bounded by the explicit event-id list, it stays a
+        // single cheap fan-out instead of one round-trip per row on the page.
+        var resubmitTypes = new[]
+        {
+            (int)MessageAuditType.Resubmit,
+            (int)MessageAuditType.ResubmitWithChanges,
+        };
+
+        var query = new QueryDefinition(
+                "SELECT c.eventId AS EventId, COUNT(1) AS Count FROM c " +
+                "WHERE c.endpointId = @endpointId " +
+                "AND ARRAY_CONTAINS(@types, c.audit.AuditType) " +
+                "AND ARRAY_CONTAINS(@eventIds, c.eventId) " +
+                "AND (NOT IS_DEFINED(c.audit.AccessDenied) OR c.audit.AccessDenied = false) " +
+                "GROUP BY c.eventId")
+            .WithParameter("@endpointId", endpointId)
+            .WithParameter("@types", resubmitTypes)
+            .WithParameter("@eventIds", ids);
+
+        var container = await GetAuditsContainer();
+        var iterator = container.GetItemQueryIterator<AuditCountRow>(query);
+        while (iterator.HasMoreResults)
+        {
+            foreach (var row in await iterator.ReadNextAsync())
+            {
+                if (!string.IsNullOrEmpty(row.EventId))
+                    counts[row.EventId] = row.Count;
+            }
+        }
+
+        return counts;
+    }
+
+    private sealed class AuditCountRow
+    {
+        public string EventId { get; set; }
+
+        public int Count { get; set; }
+    }
+
     public async Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId)
     {
         var container = await GetEndpointContainer(endpointId);

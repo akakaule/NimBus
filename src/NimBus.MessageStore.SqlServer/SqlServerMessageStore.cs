@@ -450,6 +450,52 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         };
     }
 
+    public async Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds)
+    {
+        var ids = (eventIds ?? Array.Empty<string>())
+            .Where(e => !string.IsNullOrEmpty(e))
+            .Distinct()
+            .ToList();
+
+        var result = new Dictionary<string, int>();
+        if (string.IsNullOrEmpty(endpointId) || ids.Count == 0)
+            return result;
+
+        // AuditType is persisted as the enum *name* (see StoreMessageAudit), so
+        // match on the string names. AccessDenied = 0 excludes denied resubmit
+        // attempts (the WebApp logs those audit rows before returning
+        // Unauthorized) — they never resubmitted.
+        var sql = $@"
+SELECT EventId, COUNT(*) AS Cnt
+FROM {T("MessageAudits")}
+WHERE EndpointId = @EndpointId
+  AND AuditType IN @AuditTypes
+  AND EventId IN @EventIds
+  AND AccessDenied = 0
+GROUP BY EventId";
+
+        await using var conn = await OpenAsync();
+        var rows = await conn.QueryAsync(sql, new
+        {
+            EndpointId = endpointId,
+            AuditTypes = new[]
+            {
+                nameof(MessageAuditType.Resubmit),
+                nameof(MessageAuditType.ResubmitWithChanges),
+            },
+            EventIds = ids,
+        }, commandTimeout: _commandTimeout);
+
+        foreach (var row in rows)
+        {
+            string eventId = (string)row.EventId;
+            if (!string.IsNullOrEmpty(eventId))
+                result[eventId] = Convert.ToInt32(row.Cnt);
+        }
+
+        return result;
+    }
+
     // ───────── State counts ─────────
 
     public async Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId)

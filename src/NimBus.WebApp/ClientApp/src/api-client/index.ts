@@ -6179,6 +6179,8 @@ export class Event implements IEvent {
     handoffReason?: string | undefined;
     externalJobId?: string | undefined;
     expectedBy?: moment.Moment | undefined;
+    /** Number of resubmissions recorded in the audit trail (Resubmit + ResubmitWithChanges, denied attempts excluded). Enriched on search responses; 0 when never resubmitted. */
+    resubmitCount?: number;
     messageContent?: MessageContent;
 
     [key: string]: any;
@@ -6225,6 +6227,7 @@ export class Event implements IEvent {
             this.handoffReason = _data["handoffReason"];
             this.externalJobId = _data["externalJobId"];
             this.expectedBy = _data["expectedBy"] ? moment(_data["expectedBy"].toString()) : undefined as any;
+            this.resubmitCount = _data["resubmitCount"];
             this.messageContent = _data["messageContent"] ? MessageContent.fromJS(_data["messageContent"]) : undefined as any;
         }
     }
@@ -6269,6 +6272,7 @@ export class Event implements IEvent {
         data["handoffReason"] = this.handoffReason;
         data["externalJobId"] = this.externalJobId;
         data["expectedBy"] = this.expectedBy ? this.expectedBy.toISOString() : undefined as any;
+        data["resubmitCount"] = this.resubmitCount;
         data["messageContent"] = this.messageContent ? this.messageContent.toJSON() : undefined as any;
         return data;
     }
@@ -6309,6 +6313,8 @@ export interface IEvent {
     handoffReason?: string | undefined;
     externalJobId?: string | undefined;
     expectedBy?: moment.Moment | undefined;
+    /** Number of resubmissions recorded in the audit trail (Resubmit + ResubmitWithChanges, denied attempts excluded). Enriched on search responses; 0 when never resubmitted. */
+    resubmitCount?: number;
     messageContent?: MessageContent;
 
     [key: string]: any;

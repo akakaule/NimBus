@@ -131,6 +131,17 @@ public interface IMessageTrackingStore
     /// </summary>
     Task<AuditSearchResult> SearchAudits(AuditFilter filter, string? continuationToken, int maxItemCount);
 
+    /// <summary>
+    /// Number of resubmissions per event, counted from the audit trail
+    /// (<see cref="MessageAuditType.Resubmit"/> + <see cref="MessageAuditType.ResubmitWithChanges"/>),
+    /// for the given events on <paramref name="endpointId"/>. Denied attempts
+    /// (<see cref="MessageAuditEntity.AccessDenied"/>) are excluded — they never
+    /// resubmitted. Events with no resubmit audits are absent from the result
+    /// (treat missing as 0). Implementations answer with a single grouped query
+    /// so callers can enrich a whole search page in one round trip.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds);
+
     // Endpoint diagnostics
     Task<string> GetEndpointErrorList(string endpointId);
 }

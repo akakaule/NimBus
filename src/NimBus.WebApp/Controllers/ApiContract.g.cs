@@ -674,6 +674,21 @@ namespace NimBus.WebApp.ManagementApi
 
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SearchResponse>> PostApiEventEndpointIdGetByFilterAsync(SearchRequest body, string endpointId);
 
+        /// <summary>
+        /// Toggle the per-event "reported" marker
+        /// </summary>
+
+        /// <remarks>
+        /// Marks (or unmarks) an event as reported, optionally recording the external ticket id it was reported under. The marker is a manual operational flag shared between operators, not a ticket-system integration.
+        /// </remarks>
+
+        /// <param name="body">reportEventBody</param>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostReportEventAsync(ReportEventRequest body, string endpointId, string eventId);
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -911,6 +926,21 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.PostApiEventEndpointIdGetByFilterAsync(body, endpointId);
+        }
+
+        /// <summary>
+        /// Toggle the per-event "reported" marker
+        /// </summary>
+        /// <remarks>
+        /// Marks (or unmarks) an event as reported, optionally recording the external ticket id it was reported under. The marker is a manual operational flag shared between operators, not a ticket-system integration.
+        /// </remarks>
+        /// <param name="body">reportEventBody</param>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/event/{endpointId}/{eventId}/report")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostReportEvent([Microsoft.AspNetCore.Mvc.FromBody] ReportEventRequest body, string endpointId, string eventId)
+        {
+
+            return _implementation.PostReportEventAsync(body, endpointId, eventId);
         }
 
     }
@@ -3570,6 +3600,7 @@ namespace NimBus.WebApp.ManagementApi
         private string _env;
         private string _platformVersion;
         private string _storageProvider;
+        private string _ticketLinkTemplate;
 
         [Newtonsoft.Json.JsonProperty("env", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string Env    {
@@ -3608,6 +3639,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_storageProvider != value)
                 {
                     _storageProvider = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// URL template for deep-linking reported events to the external ticket system, with "{ticket}" as the ticket-id placeholder (e.g. "https://support.example.com/browse/{ticket}"). Null or empty when no ticket system is configured — the UI then renders a plain "Reported" badge without a link.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("ticketLinkTemplate", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string TicketLinkTemplate    {
+            get { return _ticketLinkTemplate; }
+            set
+            {
+                if (_ticketLinkTemplate != value)
+                {
+                    _ticketLinkTemplate = value;
                     RaisePropertyChanged();
                 }
             }
@@ -4015,6 +4062,75 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return Newtonsoft.Json.JsonConvert.DeserializeObject<MessageAudit>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class ReportEventRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private bool _reported;
+        private string _ticketId;
+
+        /// <summary>
+        /// True to mark the event reported, false to clear the marker.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("reported", Required = Newtonsoft.Json.Required.Always)]
+        public bool Reported    {
+            get { return _reported; }
+            set
+            {
+                if (_reported != value)
+                {
+                    _reported = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Optional external ticket reference (letters, digits, ".", "_", "-"; max 64 chars). Ignored when clearing the marker.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("ticketId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string TicketId    {
+            get { return _ticketId; }
+            set
+            {
+                if (_ticketId != value)
+                {
+                    _ticketId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static ReportEventRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<ReportEventRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
 
         }
         public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
@@ -4803,6 +4919,10 @@ namespace NimBus.WebApp.ManagementApi
         private string _externalJobId;
         private System.DateTime? _expectedBy;
         private int _resubmitCount;
+        private bool _isReported;
+        private string _reportedBy;
+        private System.DateTime? _reportedAtUtc;
+        private string _ticketId;
         private MessageContent _messageContent;
 
         [Newtonsoft.Json.JsonProperty("updatedAt", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
@@ -5167,6 +5287,64 @@ namespace NimBus.WebApp.ManagementApi
                 if (_resubmitCount != value)
                 {
                     _resubmitCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether an operator has marked this event as reported. Enriched on search responses from the event-report store.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("isReported", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool IsReported    {
+            get { return _isReported; }
+            set
+            {
+                if (_isReported != value)
+                {
+                    _isReported = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("reportedBy", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ReportedBy    {
+            get { return _reportedBy; }
+            set
+            {
+                if (_reportedBy != value)
+                {
+                    _reportedBy = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("reportedAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ReportedAtUtc    {
+            get { return _reportedAtUtc; }
+            set
+            {
+                if (_reportedAtUtc != value)
+                {
+                    _reportedAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// External ticket reference the event was reported under, or null when marked reported without a ticket.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("ticketId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string TicketId    {
+            get { return _ticketId; }
+            set
+            {
+                if (_ticketId != value)
+                {
+                    _ticketId = value;
                     RaisePropertyChanged();
                 }
             }
@@ -10383,11 +10561,20 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"disableEndpoint")]
         DisableEndpoint = 11,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"enableEndpointSend")]
+        EnableEndpointSend = 12,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"disableEndpointSend")]
+        DisableEndpointSend = 13,
+
         [System.Runtime.Serialization.EnumMember(Value = @"purgeMessages")]
-        PurgeMessages = 12,
+        PurgeMessages = 14,
 
         [System.Runtime.Serialization.EnumMember(Value = @"compose")]
-        Compose = 13,
+        Compose = 15,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"reportEvent")]
+        ReportEvent = 16,
 
     }
 
@@ -10593,11 +10780,20 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"disableEndpoint")]
         DisableEndpoint = 11,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"enableEndpointSend")]
+        EnableEndpointSend = 12,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"disableEndpointSend")]
+        DisableEndpointSend = 13,
+
         [System.Runtime.Serialization.EnumMember(Value = @"purgeMessages")]
-        PurgeMessages = 12,
+        PurgeMessages = 14,
 
         [System.Runtime.Serialization.EnumMember(Value = @"compose")]
-        Compose = 13,
+        Compose = 15,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"reportEvent")]
+        ReportEvent = 16,
 
     }
 
@@ -10641,11 +10837,20 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"disableEndpoint")]
         DisableEndpoint = 11,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"enableEndpointSend")]
+        EnableEndpointSend = 12,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"disableEndpointSend")]
+        DisableEndpointSend = 13,
+
         [System.Runtime.Serialization.EnumMember(Value = @"purgeMessages")]
-        PurgeMessages = 12,
+        PurgeMessages = 14,
 
         [System.Runtime.Serialization.EnumMember(Value = @"compose")]
-        Compose = 13,
+        Compose = 15,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"reportEvent")]
+        ReportEvent = 16,
 
     }
 

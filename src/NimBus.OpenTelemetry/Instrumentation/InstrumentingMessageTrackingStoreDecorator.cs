@@ -246,6 +246,12 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds) =>
         InstrumentAsync(nameof(GetResubmitCounts), () => _inner.GetResubmitCounts(endpointId, eventIds));
 
+    public Task SetEventReport(string endpointId, string eventId, bool isReported, string? reportedBy, string? ticketId) =>
+        InstrumentAsync(nameof(SetEventReport), () => _inner.SetEventReport(endpointId, eventId, isReported, reportedBy, ticketId));
+
+    public Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds) =>
+        InstrumentAsync(nameof(GetEventReports), () => _inner.GetEventReports(endpointId, eventIds));
+
     // ── Endpoint diagnostics ────────────────────────────────────────────
 
     public Task<string> GetEndpointErrorList(string endpointId) =>

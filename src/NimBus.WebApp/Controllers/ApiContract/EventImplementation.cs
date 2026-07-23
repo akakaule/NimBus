@@ -287,6 +287,47 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 });
         }
 
+        public async Task<IActionResult> PostReportEventAsync(ReportEventRequest body, string endpointId, string eventId)
+        {
+            if (body == null) return new BadRequestObjectResult("Request body is required.");
+            if (string.IsNullOrEmpty(endpointId) || string.IsNullOrEmpty(eventId))
+                return new BadRequestObjectResult("endpointId and eventId are required.");
+
+            if (!authorizationService.IsManagerOfEndpoint(endpointId))
+            {
+                await auditLogService.LogAuditAsync(MessageAuditType.ReportEvent, httpContextAccessor.HttpContext,
+                    accessDenied: true, eventId: eventId, endpointId: endpointId);
+                return new ForbidResult();
+            }
+
+            if (!EndpointVerificationService.EndpointExists(platform, endpointId))
+                return new NotFoundObjectResult("Endpoint not found");
+
+            string ticketId = null;
+            if (body.Reported && !string.IsNullOrWhiteSpace(body.TicketId))
+            {
+                ticketId = body.TicketId.Trim();
+                if (!TicketIdPattern.IsMatch(ticketId))
+                {
+                    return new BadRequestObjectResult("Ticket id may use letters, digits, '.', '_' and '-' (max 64 chars).");
+                }
+            }
+
+            var reportedBy = authorizationService.GetCurrentUserName() ?? "anonymous";
+            await cosmosClient.SetEventReport(endpointId, eventId, body.Reported, reportedBy, ticketId);
+            await auditLogService.LogAuditAsync(MessageAuditType.ReportEvent, httpContextAccessor.HttpContext,
+                eventId: eventId, endpointId: endpointId,
+                data: JsonConvert.SerializeObject(new { reported = body.Reported, ticketId }));
+
+            return new OkResult();
+        }
+
+        // Generic external-ticket reference: a sane cross-tool subset (Jira keys,
+        // ServiceNow INC numbers, plain ids). Mirrored by the frontend's
+        // normalizeTicketId and the EventReports TicketId column width (64).
+        private static readonly System.Text.RegularExpressions.Regex TicketIdPattern =
+            new(@"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
         // Operator entry to the two handoff-settlement actions. Does the operator-only
         // pre-checks (endpoint exists, caller manages it) and then delegates the load →
         // PendingHandoff guard → settle → audit core to the shared IHandoffSettlementService,
@@ -775,6 +816,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                     .Select(Mapper.EventFromMessageStoreEvent)
                     .ToList();
                 await AttachResubmitCounts(endpointId, events);
+                await AttachReportFlags(endpointId, events);
                 return new SearchResponse
                 {
                     Events = events,
@@ -815,6 +857,38 @@ namespace NimBus.WebApp.Controllers.ApiContract
             catch (Exception e)
             {
                 logger.LogWarning("AttachResubmitCounts failed for endpoint {EndpointId}: {Exception}", endpointId, e.Message);
+            }
+        }
+
+        // Fills each event's "reported" marker (flag + who/when + ticket) from
+        // the report store in a single batched lookup. Fail-soft like
+        // AttachResubmitCounts.
+        private async Task AttachReportFlags(string endpointId, List<Event> events)
+        {
+            var eventIds = events
+                .Select(e => e.EventId)
+                .Where(id => !string.IsNullOrEmpty(id))
+                .Distinct()
+                .ToList();
+            if (eventIds.Count == 0) return;
+
+            try
+            {
+                var reports = await cosmosClient.GetEventReports(endpointId, eventIds);
+                foreach (var ev in events)
+                {
+                    if (ev.EventId != null && reports.TryGetValue(ev.EventId, out var report))
+                    {
+                        ev.IsReported = report.IsReported;
+                        ev.ReportedBy = report.ReportedBy;
+                        ev.ReportedAtUtc = report.ReportedAtUtc;
+                        ev.TicketId = report.TicketId;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                logger.LogWarning("AttachReportFlags failed for endpoint {EndpointId}: {Exception}", endpointId, e.Message);
             }
         }
 

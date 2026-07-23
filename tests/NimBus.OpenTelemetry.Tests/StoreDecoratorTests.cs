@@ -220,5 +220,7 @@ internal sealed class ThrowingStore : IMessageTrackingStore
     public Task<IEnumerable<NimBus.MessageStore.MessageAuditEntity>> GetMessageAudits(string eventId) => _passthrough.GetMessageAudits(eventId);
     public Task<NimBus.MessageStore.AuditSearchResult> SearchAudits(NimBus.MessageStore.AuditFilter filter, string? continuationToken, int maxItemCount) => _passthrough.SearchAudits(filter, continuationToken, maxItemCount);
     public Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds) => _passthrough.GetResubmitCounts(endpointId, eventIds);
+    public Task SetEventReport(string endpointId, string eventId, bool isReported, string? reportedBy, string? ticketId) => _passthrough.SetEventReport(endpointId, eventId, isReported, reportedBy, ticketId);
+    public Task<IReadOnlyDictionary<string, NimBus.MessageStore.States.EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds) => _passthrough.GetEventReports(endpointId, eventIds);
     public Task<string> GetEndpointErrorList(string endpointId) => _passthrough.GetEndpointErrorList(endpointId);
 }

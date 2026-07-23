@@ -2282,6 +2282,61 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Toggle the per-event "reported" marker
+     * @param body (optional) reportEventBody
+     * @return OK
+     */
+    postReportEvent(endpointId: string, eventId: string, body?: ReportEventRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/event/{endpointId}/{eventId}/report";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        if (eventId === undefined || eventId === null)
+            throw new globalThis.Error("The parameter 'eventId' must be defined.");
+        url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostReportEvent(_response);
+        });
+    }
+
+    protected processPostReportEvent(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Bad Request", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Not Found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
      * Your GET endpoint
      * @return OK
      */
@@ -5198,6 +5253,8 @@ export class ApplicationStatus implements IApplicationStatus {
     platformVersion?: string;
     /** Human-readable name of the active NimBus message-store provider (e.g. "Cosmos DB", "SQL Server", "InMemory"). */
     storageProvider?: string;
+    /** URL template for deep-linking reported events to the external ticket system, with "{ticket}" as the ticket-id placeholder (e.g. "https://support.example.com/browse/{ticket}"). Null or empty when no ticket system is configured — the UI then renders a plain "Reported" badge without a link. */
+    ticketLinkTemplate?: string | undefined;
 
     [key: string]: any;
 
@@ -5219,6 +5276,7 @@ export class ApplicationStatus implements IApplicationStatus {
             this.env = _data["env"];
             this.platformVersion = _data["platformVersion"];
             this.storageProvider = _data["storageProvider"];
+            this.ticketLinkTemplate = _data["ticketLinkTemplate"];
         }
     }
 
@@ -5238,6 +5296,7 @@ export class ApplicationStatus implements IApplicationStatus {
         data["env"] = this.env;
         data["platformVersion"] = this.platformVersion;
         data["storageProvider"] = this.storageProvider;
+        data["ticketLinkTemplate"] = this.ticketLinkTemplate;
         return data;
     }
 
@@ -5254,6 +5313,8 @@ export interface IApplicationStatus {
     platformVersion?: string;
     /** Human-readable name of the active NimBus message-store provider (e.g. "Cosmos DB", "SQL Server", "InMemory"). */
     storageProvider?: string;
+    /** URL template for deep-linking reported events to the external ticket system, with "{ticket}" as the ticket-id placeholder (e.g. "https://support.example.com/browse/{ticket}"). Null or empty when no ticket system is configured — the UI then renders a plain "Reported" badge without a link. */
+    ticketLinkTemplate?: string | undefined;
 
     [key: string]: any;
 }
@@ -5546,6 +5607,69 @@ export interface IMessageAudit {
     auditTimestamp?: moment.Moment;
     auditType?: MessageAuditAuditType;
     comment?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class ReportEventRequest implements IReportEventRequest {
+    /** True to mark the event reported, false to clear the marker. */
+    reported!: boolean;
+    /** Optional external ticket reference (letters, digits, ".", "_", "-"; max 64 chars). Ignored when clearing the marker. */
+    ticketId?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IReportEventRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.reported = _data["reported"];
+            this.ticketId = _data["ticketId"];
+        }
+    }
+
+    static fromJS(data: any): ReportEventRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new ReportEventRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["reported"] = this.reported;
+        data["ticketId"] = this.ticketId;
+        return data;
+    }
+
+    clone(): ReportEventRequest {
+        const json = this.toJSON();
+        let result = new ReportEventRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IReportEventRequest {
+    /** True to mark the event reported, false to clear the marker. */
+    reported: boolean;
+    /** Optional external ticket reference (letters, digits, ".", "_", "-"; max 64 chars). Ignored when clearing the marker. */
+    ticketId?: string | undefined;
 
     [key: string]: any;
 }
@@ -6181,6 +6305,12 @@ export class Event implements IEvent {
     expectedBy?: moment.Moment | undefined;
     /** Number of resubmissions recorded in the audit trail (Resubmit + ResubmitWithChanges, denied attempts excluded). Enriched on search responses; 0 when never resubmitted. */
     resubmitCount?: number;
+    /** Whether an operator has marked this event as reported. Enriched on search responses from the event-report store. */
+    isReported?: boolean;
+    reportedBy?: string | undefined;
+    reportedAtUtc?: moment.Moment | undefined;
+    /** External ticket reference the event was reported under, or null when marked reported without a ticket. */
+    ticketId?: string | undefined;
     messageContent?: MessageContent;
 
     [key: string]: any;
@@ -6228,6 +6358,10 @@ export class Event implements IEvent {
             this.externalJobId = _data["externalJobId"];
             this.expectedBy = _data["expectedBy"] ? moment(_data["expectedBy"].toString()) : undefined as any;
             this.resubmitCount = _data["resubmitCount"];
+            this.isReported = _data["isReported"];
+            this.reportedBy = _data["reportedBy"];
+            this.reportedAtUtc = _data["reportedAtUtc"] ? moment(_data["reportedAtUtc"].toString()) : undefined as any;
+            this.ticketId = _data["ticketId"];
             this.messageContent = _data["messageContent"] ? MessageContent.fromJS(_data["messageContent"]) : undefined as any;
         }
     }
@@ -6273,6 +6407,10 @@ export class Event implements IEvent {
         data["externalJobId"] = this.externalJobId;
         data["expectedBy"] = this.expectedBy ? this.expectedBy.toISOString() : undefined as any;
         data["resubmitCount"] = this.resubmitCount;
+        data["isReported"] = this.isReported;
+        data["reportedBy"] = this.reportedBy;
+        data["reportedAtUtc"] = this.reportedAtUtc ? this.reportedAtUtc.toISOString() : undefined as any;
+        data["ticketId"] = this.ticketId;
         data["messageContent"] = this.messageContent ? this.messageContent.toJSON() : undefined as any;
         return data;
     }
@@ -6315,6 +6453,12 @@ export interface IEvent {
     expectedBy?: moment.Moment | undefined;
     /** Number of resubmissions recorded in the audit trail (Resubmit + ResubmitWithChanges, denied attempts excluded). Enriched on search responses; 0 when never resubmitted. */
     resubmitCount?: number;
+    /** Whether an operator has marked this event as reported. Enriched on search responses from the event-report store. */
+    isReported?: boolean;
+    reportedBy?: string | undefined;
+    reportedAtUtc?: moment.Moment | undefined;
+    /** External ticket reference the event was reported under, or null when marked reported without a ticket. */
+    ticketId?: string | undefined;
     messageContent?: MessageContent;
 
     [key: string]: any;
@@ -10461,8 +10605,11 @@ export enum MessageAuditAuditType {
     GetEndpointDetails = "getEndpointDetails",
     EnableEndpoint = "enableEndpoint",
     DisableEndpoint = "disableEndpoint",
+    EnableEndpointSend = "enableEndpointSend",
+    DisableEndpointSend = "disableEndpointSend",
     PurgeMessages = "purgeMessages",
     Compose = "compose",
+    ReportEvent = "reportEvent",
 }
 
 export class MessageContent implements IMessageContent {
@@ -10573,8 +10720,11 @@ export enum AuditSearchFilterAuditType {
     GetEndpointDetails = "getEndpointDetails",
     EnableEndpoint = "enableEndpoint",
     DisableEndpoint = "disableEndpoint",
+    EnableEndpointSend = "enableEndpointSend",
+    DisableEndpointSend = "disableEndpointSend",
     PurgeMessages = "purgeMessages",
     Compose = "compose",
+    ReportEvent = "reportEvent",
 }
 
 export enum AuditEntryAuditType {
@@ -10590,8 +10740,11 @@ export enum AuditEntryAuditType {
     GetEndpointDetails = "getEndpointDetails",
     EnableEndpoint = "enableEndpoint",
     DisableEndpoint = "disableEndpoint",
+    EnableEndpointSend = "enableEndpointSend",
+    DisableEndpointSend = "disableEndpointSend",
     PurgeMessages = "purgeMessages",
     Compose = "compose",
+    ReportEvent = "reportEvent",
 }
 
 export enum AgentSettleRequestOutcome {

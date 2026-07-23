@@ -16,6 +16,7 @@ import { Spinner } from "components/ui/spinner";
 import { Checkbox } from "components/ui/checkbox";
 import { Button } from "components/ui/button";
 import { Input } from "components/ui/input";
+import { Tooltip } from "components/ui/tooltip";
 import type {
   ITableRow,
   ITableHeadCell,
@@ -116,7 +117,17 @@ export function DataTable({
       cols.push({
         id: cell.id,
         accessorFn: (row) => row.data.get(cell.id)?.searchValue ?? "",
-        header: () => cell.label,
+        header: () =>
+          cell.info ? (
+            <span className="inline-flex items-center gap-1">
+              {cell.label}
+              <Tooltip content={cell.info} position="bottom">
+                <InfoIcon />
+              </Tooltip>
+            </span>
+          ) : (
+            cell.label
+          ),
         cell: ({ row }) => {
           const cellData = row.original.data.get(cell.id);
           return (
@@ -413,6 +424,26 @@ export function DataTable({
   );
 }
 
+// Info icon for header-cell help tooltips
+function InfoIcon() {
+  return (
+    <svg
+      className="w-3.5 h-3.5 text-muted-foreground cursor-help"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
+    </svg>
+  );
+}
+
 // Sort icon component
 function SortIcon({ direction }: { direction: false | "asc" | "desc" }) {
   if (!direction) {
@@ -493,6 +524,7 @@ function TableRow({ row, rowData }: { row: any; rowData: ITableRow }) {
     <tr
       className={cn(
         "group hover:bg-primary-tint dark:hover:bg-primary/15 transition-colors",
+        rowData.tone === "reported" && "bg-green-50/60 dark:bg-green-900/15",
         row.getIsSelected() && "bg-primary-50 dark:bg-primary/10",
         rowData.route && "cursor-pointer",
       )}

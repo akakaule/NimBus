@@ -94,5 +94,12 @@ namespace NimBus.MessageStore
 
         /// <summary>Operator composed and published a new event from the WebApp.</summary>
         Compose,
+
+        /// <summary>
+        /// Operator toggled the per-event "reported" marker (records the flag and
+        /// ticket id as Data). Appended last: SQL persists enum names but Cosmos
+        /// persists numeric values, so existing members must keep their positions.
+        /// </summary>
+        ReportEvent,
     }
 }

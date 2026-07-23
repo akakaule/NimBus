@@ -142,6 +142,25 @@ public interface IMessageTrackingStore
     /// </summary>
     Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds);
 
+    // Event reports ("reported" markers)
+
+    /// <summary>
+    /// Upserts the per-event "reported" marker keyed on
+    /// (<paramref name="endpointId"/>, <paramref name="eventId"/>).
+    /// <see cref="EventReport.ReportedAtUtc"/> is stamped with the current UTC
+    /// time on every toggle; clearing the marker (<paramref name="isReported"/>
+    /// false) also drops the ticket reference.
+    /// </summary>
+    Task SetEventReport(string endpointId, string eventId, bool isReported, string? reportedBy, string? ticketId);
+
+    /// <summary>
+    /// Batched lookup of "reported" markers for the given events on
+    /// <paramref name="endpointId"/>. Events that were never reported are absent
+    /// from the result. Implementations answer with a single query so callers
+    /// can enrich a whole search page in one round trip.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds);
+
     // Endpoint diagnostics
     Task<string> GetEndpointErrorList(string endpointId);
 }

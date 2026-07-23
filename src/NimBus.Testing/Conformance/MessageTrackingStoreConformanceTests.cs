@@ -861,6 +861,70 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual(0, foreign.Count);
     }
 
+    [TestMethod]
+    public async Task SetEventReport_roundtrips_and_updates_in_place()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-rep");
+        var eventId = Id("evt-rep");
+
+        await store.SetEventReport(endpointId, eventId, isReported: true, reportedBy: Id("alice"), ticketId: "INC0042");
+
+        var reports = await store.GetEventReports(endpointId, new[] { eventId });
+        Assert.IsTrue(reports.TryGetValue(eventId, out var report));
+        Assert.IsTrue(report!.IsReported);
+        Assert.AreEqual(Id("alice"), report.ReportedBy);
+        Assert.AreEqual("INC0042", report.TicketId);
+        Assert.IsNotNull(report.ReportedAtUtc);
+
+        // Upsert: a second toggle for the same (endpoint, event) replaces the
+        // marker instead of adding a row.
+        await store.SetEventReport(endpointId, eventId, isReported: true, reportedBy: Id("bob"), ticketId: "JIRA-7");
+        reports = await store.GetEventReports(endpointId, new[] { eventId });
+        Assert.AreEqual(1, reports.Count);
+        Assert.AreEqual(Id("bob"), reports[eventId].ReportedBy);
+        Assert.AreEqual("JIRA-7", reports[eventId].TicketId);
+    }
+
+    [TestMethod]
+    public async Task SetEventReport_clearing_drops_the_ticket_reference()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-rep2");
+        var eventId = Id("evt-rep2");
+
+        await store.SetEventReport(endpointId, eventId, isReported: true, reportedBy: Id("alice"), ticketId: "INC0042");
+        await store.SetEventReport(endpointId, eventId, isReported: false, reportedBy: Id("alice"), ticketId: "INC0042");
+
+        var reports = await store.GetEventReports(endpointId, new[] { eventId });
+        Assert.IsTrue(reports.TryGetValue(eventId, out var report));
+        Assert.IsFalse(report!.IsReported);
+        Assert.IsNull(report.TicketId, "clearing the marker must drop the ticket reference");
+    }
+
+    [TestMethod]
+    public async Task GetEventReports_batches_and_scopes_by_endpoint()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-rep3");
+        var reported = Id("evt-rep3-a");
+        var unreported = Id("evt-rep3-b");
+        await store.SetEventReport(endpointId, reported, isReported: true, reportedBy: Id("alice"), ticketId: null);
+
+        var reports = await store.GetEventReports(endpointId, new[] { reported, unreported });
+        Assert.AreEqual(1, reports.Count, "events never reported are absent (missing = not reported)");
+        Assert.IsTrue(reports.ContainsKey(reported));
+        Assert.IsNull(reports[reported].TicketId, "reporting without a ticket keeps TicketId null");
+
+        var empty = await store.GetEventReports(endpointId, Array.Empty<string>());
+        Assert.AreEqual(0, empty.Count);
+
+        // Markers are endpoint-scoped: the same event id under another endpoint
+        // must not leak.
+        var foreign = await store.GetEventReports(Id("ep-rep3-other"), new[] { reported });
+        Assert.AreEqual(0, foreign.Count);
+    }
+
     // ───── Prefix-search semantics (cross-provider contract) ─────
     // ID-like filter fields match by case-insensitive PREFIX on every provider:
     // Cosmos STARTSWITH(x, y, true), SQL Server LIKE 'y%' (CI collation),

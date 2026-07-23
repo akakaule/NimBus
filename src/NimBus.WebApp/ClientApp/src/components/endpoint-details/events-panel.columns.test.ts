@@ -43,6 +43,7 @@ describe("EVENT_COLUMNS", () => {
       "sessionId",
       "eventTypeId",
       "resubmitCount",
+      "reported",
       "updated",
       "added",
     ]);
@@ -63,6 +64,7 @@ describe("getVisibleColumns", () => {
       "sessionId",
       "eventTypeId",
       "resubmitCount",
+      "reported",
       "updated",
     ]);
   });

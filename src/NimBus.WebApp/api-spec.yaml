@@ -1082,6 +1082,41 @@ paths:
             schema:
               $ref: '#/components/schemas/SearchRequest'
         description: getByFilterBody
+  '/api/event/{endpointId}/{eventId}/report':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: eventId
+        in: path
+        required: true
+    post:
+      summary: Toggle the per-event "reported" marker
+      operationId: post-report-event
+      description: >-
+        Marks (or unmarks) an event as reported, optionally recording the
+        external ticket id it was reported under. The marker is a manual
+        operational flag shared between operators, not a ticket-system
+        integration.
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Bad Request
+        '404':
+          description: Not Found
+      tags:
+        - Event
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportEventRequest'
+        description: reportEventBody
   '/api/metadata/{endpointId}':
     parameters:
       - schema:
@@ -2215,6 +2250,15 @@ components:
         storageProvider:
           type: string
           description: Human-readable name of the active NimBus message-store provider (e.g. "Cosmos DB", "SQL Server", "InMemory").
+        ticketLinkTemplate:
+          type: string
+          nullable: true
+          description: >-
+            URL template for deep-linking reported events to the external
+            ticket system, with "{ticket}" as the ticket-id placeholder (e.g.
+            "https://support.example.com/browse/{ticket}"). Null or empty when
+            no ticket system is configured — the UI then renders a plain
+            "Reported" badge without a link.
     EndpointStatusCount:
       title: EndpointStatusCount
       type: object
@@ -2287,11 +2331,29 @@ components:
             - getEndpointDetails
             - enableEndpoint
             - disableEndpoint
+            - enableEndpointSend
+            - disableEndpointSend
             - purgeMessages
             - compose
+            - reportEvent
         comment:
           type: string
           nullable: true
+    ReportEventRequest:
+      title: ReportEventRequest
+      type: object
+      required:
+        - reported
+      properties:
+        reported:
+          type: boolean
+          description: True to mark the event reported, false to clear the marker.
+        ticketId:
+          type: string
+          nullable: true
+          description: >-
+            Optional external ticket reference (letters, digits, ".", "_", "-";
+            max 64 chars). Ignored when clearing the marker.
     BlockedEvent:
       title: BlockedEvent
       type: object
@@ -2479,6 +2541,24 @@ components:
             Number of resubmissions recorded in the audit trail (Resubmit +
             ResubmitWithChanges, denied attempts excluded). Enriched on search
             responses; 0 when never resubmitted.
+        isReported:
+          type: boolean
+          description: >-
+            Whether an operator has marked this event as reported. Enriched on
+            search responses from the event-report store.
+        reportedBy:
+          type: string
+          nullable: true
+        reportedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        ticketId:
+          type: string
+          nullable: true
+          description: >-
+            External ticket reference the event was reported under, or null
+            when marked reported without a ticket.
         messageContent:
           type: object
           properties:
@@ -3095,8 +3175,11 @@ components:
             - getEndpointDetails
             - enableEndpoint
             - disableEndpoint
+            - enableEndpointSend
+            - disableEndpointSend
             - purgeMessages
             - compose
+            - reportEvent
         createdAtFrom:
           type: string
           format: date-time
@@ -3288,8 +3371,11 @@ components:
             - getEndpointDetails
             - enableEndpoint
             - disableEndpoint
+            - enableEndpointSend
+            - disableEndpointSend
             - purgeMessages
             - compose
+            - reportEvent
         comment:
           type: string
           nullable: true

@@ -21,6 +21,9 @@ export interface ITableRow {
   data: Map<string, ITableData>;
   bodyActions?: ITableBodyAction[];
   hoverText?: string;
+  // Optional row tint. "reported" gives reported events a subtle green
+  // background so they stand out at a glance.
+  tone?: "reported";
 }
 
 export interface ITableHeadCell {
@@ -28,6 +31,8 @@ export interface ITableHeadCell {
   label: string;
   numeric: boolean;
   width?: number | string;
+  // Optional help text shown via an info icon next to the column label.
+  info?: string;
 }
 
 export type SortDirection = "asc" | "desc";

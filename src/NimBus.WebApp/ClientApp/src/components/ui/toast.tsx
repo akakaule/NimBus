@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useState,
   useCallback,
   type ReactNode,
@@ -16,6 +17,8 @@ export interface Toast {
   description?: string;
   variant?: ToastVariant;
   duration?: number;
+  /** Optional inline action (e.g. "Undo"). Dismisses the toast on click. */
+  action?: { label: string; onClick: () => void };
 }
 
 interface ToastContextType {
@@ -25,6 +28,23 @@ interface ToastContextType {
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
+
+// Imperative emitter so non-React callers (class components, async catch
+// blocks, top-level error handlers) can show toasts without needing the
+// context. ToastProvider registers itself here on mount; if nothing has
+// registered yet, calls fall through to console.warn so toasts don't
+// silently drop in tests / non-UI contexts.
+type ToastEmitter = (toast: Omit<Toast, "id">) => void;
+let imperativeEmit: ToastEmitter | null = null;
+
+export const emitToast: ToastEmitter = (toast) => {
+  if (imperativeEmit) {
+    imperativeEmit(toast);
+  } else if (typeof console !== "undefined") {
+    // eslint-disable-next-line no-console
+    console.warn("[toast]", toast.variant ?? "info", toast.title ?? "", toast.description ?? "");
+  }
+};
 
 export const useToast = () => {
   const context = useContext(ToastContext);
@@ -54,6 +74,13 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  useEffect(() => {
+    imperativeEmit = addToast;
+    return () => {
+      if (imperativeEmit === addToast) imperativeEmit = null;
+    };
+  }, [addToast]);
 
   return (
     <ToastContext.Provider value={{ toasts, addToast, removeToast }}>
@@ -181,6 +208,18 @@ const ToastItem = ({
           <p className="text-sm text-muted-foreground mt-0.5">
             {toast.description}
           </p>
+        )}
+        {toast.action && (
+          <button
+            type="button"
+            onClick={() => {
+              toast.action!.onClick();
+              onClose();
+            }}
+            className="mt-1 font-mono text-xs font-semibold text-primary-600 underline-offset-2 hover:underline"
+          >
+            {toast.action.label}
+          </button>
         )}
       </div>
       <button

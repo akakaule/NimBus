@@ -20,9 +20,16 @@ import TruncatedGuid from "components/common/truncated-guid";
 import ErrorGroupedView from "./error-grouped-view";
 import { useUrlFilters } from "hooks/use-url-filters";
 import { Badge } from "components/ui/badge";
+import { Tooltip } from "components/ui/tooltip";
+import { Checkbox } from "components/ui/checkbox";
 import { StatTile, StatRow } from "components/ui/stat-tile";
 import { EmptyState } from "components/ui/empty-state";
 import { cn } from "lib/utils";
+import ReportPopover from "./report-popover";
+import { notifyWithUndo, notifyError } from "functions/notifications.functions";
+import { reportedCellState } from "functions/reported.functions";
+import { getTicketLinkTemplate } from "hooks/app-status";
+import { useCurrentUser } from "hooks/use-current-user";
 
 const isHandoffEvent = (event: api.Event): boolean =>
   event.resolutionStatus === api.ResolutionStatus.Pending &&
@@ -151,6 +158,13 @@ export const EVENT_COLUMNS: EventColumn[] = [
   { id: "sessionId", label: "Session Id", numeric: false, width: "10%" },
   { id: "eventTypeId", label: "Event Type", numeric: false, width: "15%" },
   { id: "resubmitCount", label: "Resubmits", numeric: true, width: "7%" },
+  {
+    id: "reported",
+    label: "Reported",
+    numeric: false,
+    width: 140,
+    info: "Whether this event has been reported, with an optional ticket reference",
+  },
   { id: "updated", label: "Updated", numeric: false, width: "12%" },
   { id: "added", label: "Added", numeric: false, width: "12%" },
 ];
@@ -277,6 +291,18 @@ const EventsPanel = (props: EventsPanelProps) => {
   const [currentFilter, setCurrentFilter] = React.useState<
     api.EventFilter | undefined
   >();
+  // Client-side toggle so watchers can hide events already reported.
+  const [hideReported, setHideReported] = React.useState<boolean>(false);
+  // "Reported" column state. ticketLinkTemplate is a configured deep-link
+  // template ("…/{ticket}"); undefined → ticket chips render as plain text.
+  // currentUser names the operator on optimistic marks so the who/when tooltip
+  // is populated before the next refetch.
+  const ticketLinkTemplate = getTicketLinkTemplate();
+  const { user: currentUser } = useCurrentUser();
+  const [reportTarget, setReportTarget] = React.useState<{
+    event: api.Event;
+    anchor: HTMLElement;
+  } | null>(null);
   // Bumped on every full fetch (mount, Search, Reset, filter/URL change). A late
   // out-of-order response — including its background session-status batch — only
   // commits while its ticket is still current, so a slow older fetch can't
@@ -537,6 +563,111 @@ const EventsPanel = (props: EventsPanelProps) => {
     }
   };
 
+  // Optimistically set/clear an event's "reported" marker, persist it, and
+  // revert the in-memory event if the request fails. Mutates the event in place
+  // (matching the rest of this panel) then nudges `events` to re-render.
+  const applyReportFlag = (
+    event: api.Event,
+    reported: boolean,
+    ticketId: string | null,
+  ): void => {
+    const prev = {
+      isReported: event.isReported,
+      reportedBy: event.reportedBy,
+      reportedAtUtc: event.reportedAtUtc,
+      ticketId: event.ticketId,
+    };
+
+    event.isReported = reported;
+    event.reportedBy = reported
+      ? (currentUser?.displayName ?? currentUser?.email ?? prev.reportedBy)
+      : undefined;
+    event.reportedAtUtc = reported ? moment() : undefined;
+    event.ticketId = reported ? (ticketId ?? undefined) : undefined;
+    setEvents((current) => [...current]);
+
+    const body = new api.ReportEventRequest();
+    body.reported = reported;
+    body.ticketId = reported ? (ticketId ?? undefined) : undefined;
+    client.postReportEvent(endpointId, event.eventId!, body).catch((error) => {
+      console.error("Failed to update reported flag:", error);
+      event.isReported = prev.isReported;
+      event.reportedBy = prev.reportedBy;
+      event.reportedAtUtc = prev.reportedAtUtc;
+      event.ticketId = prev.ticketId;
+      setEvents((current) => [...current]);
+      notifyError("Could not update reported status");
+    });
+  };
+
+  const markReported = (event: api.Event, ticketId: string | null): void => {
+    applyReportFlag(event, true, ticketId);
+    notifyWithUndo(
+      ticketId ? `Reported under ${ticketId}.` : "Marked as reported.",
+      () => applyReportFlag(event, false, null),
+    );
+  };
+
+  const renderReportedCell = (item: api.Event): React.ReactNode => {
+    const state = reportedCellState({
+      isReported: item.isReported,
+      ticketId: item.ticketId,
+      reportedBy: item.reportedBy,
+      reportedAtFormatted: item.reportedAtUtc
+        ? formatMoment(item.reportedAtUtc)
+        : undefined,
+      ticketLinkTemplate,
+    });
+
+    if (state.kind === "ticket") {
+      const chip = (
+        <Badge variant="info" size="sm" withDot={false} className="font-mono">
+          {state.ticketId}
+        </Badge>
+      );
+      return (
+        <Tooltip content={state.tooltip} position="top">
+          {state.href ? (
+            <a
+              href={state.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`Open ${state.ticketId}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {chip}
+            </a>
+          ) : (
+            <span>{chip}</span>
+          )}
+        </Tooltip>
+      );
+    }
+
+    if (state.kind === "done") {
+      return (
+        <Tooltip content={state.tooltip} position="top">
+          <Badge variant="completed" size="sm" withDot={false}>
+            ✓ Reported
+          </Badge>
+        </Tooltip>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setReportTarget({ event: item, anchor: e.currentTarget });
+        }}
+        className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-card px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:border-primary hover:bg-primary/10 hover:text-primary-600"
+      >
+        ⚑ Report
+      </button>
+    );
+  };
+
   const getViableBodyActions = (event: api.Event): ITableBodyAction[] => {
     if (!isActionableEvent(event)) {
       return [];
@@ -574,8 +705,15 @@ const EventsPanel = (props: EventsPanelProps) => {
     return actions;
   };
 
+  // Events actually shown — optionally hiding the ones already reported. The
+  // KPI tiles still count over all loaded events.
+  const visibleEvents = React.useMemo(
+    () => (hideReported ? events.filter((e) => !e.isReported) : events),
+    [events, hideReported],
+  );
+
   const mapEvents = (): ITableRow[] => {
-    return events.map((item) => {
+    return visibleEvents.map((item) => {
       const hasSessionData = isActionableStatus(item.resolutionStatus);
       const sessionData = sessions[item.sessionId!];
 
@@ -583,6 +721,7 @@ const EventsPanel = (props: EventsPanelProps) => {
         id: item.eventId!,
         route: `/Message/Index/${endpointId}/${item.eventId}/0`,
         bodyActions: getViableBodyActions(item),
+        tone: item.isReported ? "reported" : undefined,
         data: new Map([
           [
             "eventId",
@@ -659,6 +798,15 @@ const EventsPanel = (props: EventsPanelProps) => {
             },
           ],
           [
+            "reported",
+            {
+              value: renderReportedCell(item),
+              searchValue: item.isReported
+                ? (item.ticketId ?? "reported")
+                : "",
+            },
+          ],
+          [
             "updated",
             {
               value: formatMoment(item?.updatedAt, true),
@@ -678,11 +826,14 @@ const EventsPanel = (props: EventsPanelProps) => {
     });
   };
 
-  // Derive the table rows from the fetched events + hydrated session counts.
-  // Memoised on [events, sessions] so we only re-map when the underlying data
-  // changes — no redundant state mirror + effect (which cost an extra render
-  // per fetch).
-  const rows = React.useMemo(() => mapEvents(), [events, sessions]);
+  // Derive the table rows from the shown events + hydrated session counts.
+  // Memoised so we only re-map when the underlying data changes — no redundant
+  // state mirror + effect (which cost an extra render per fetch).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rows = React.useMemo(
+    () => mapEvents(),
+    [visibleEvents, sessions, ticketLinkTemplate, currentUser],
+  );
 
   const doActionSelectedRows = (
     selectedRows: ITableRow[],
@@ -933,12 +1084,22 @@ const EventsPanel = (props: EventsPanelProps) => {
           </div>
           <div className="ml-auto flex items-center gap-3">
             {viewMode === "list" && (
-              <ColumnChooser
-                columns={EVENT_COLUMNS}
-                hidden={hiddenCols}
-                onToggle={toggleColumn}
-                onReset={resetColumns}
-              />
+              <>
+                <label className="inline-flex cursor-pointer select-none items-center gap-2 text-muted-foreground">
+                  <Checkbox
+                    checked={hideReported}
+                    onChange={(e) => setHideReported(e.target.checked)}
+                    aria-label="Hide reported events"
+                  />
+                  Hide reported
+                </label>
+                <ColumnChooser
+                  columns={EVENT_COLUMNS}
+                  hidden={hiddenCols}
+                  onToggle={toggleColumn}
+                  onReset={resetColumns}
+                />
+              </>
             )}
             <AdvancedFiltersPopover
               value={advancedValue}
@@ -1000,6 +1161,16 @@ const EventsPanel = (props: EventsPanelProps) => {
           />
         )}
       </div>
+      {reportTarget && (
+        <ReportPopover
+          anchor={reportTarget.anchor}
+          onClose={() => setReportTarget(null)}
+          onSubmit={(ticketId) => {
+            markReported(reportTarget.event, ticketId);
+            setReportTarget(null);
+          }}
+        />
+      )}
     </FilterContext.Provider>
   );
 };

@@ -83,3 +83,18 @@ export const getStorageProvider = () => {
   }, []);
   return result;
 };
+
+// "{ticket}" placeholder URL template for reported-event deep links; undefined
+// or empty when no ticket system is configured (the Reported column then
+// renders a plain badge without a link).
+export const getTicketLinkTemplate = () => {
+  const [result, setResult] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const fetchData = async () => {
+      const data = await getApplicationStatus();
+      setResult(data?.ticketLinkTemplate ?? undefined);
+    };
+    fetchData().catch(console.error);
+  }, []);
+  return result;
+};

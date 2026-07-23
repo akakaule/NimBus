@@ -143,6 +143,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     private const string MessagesContainer = "messages";
     private const string AuditsContainer = "audits";
     private const string EventSchemasContainer = "eventschemas";
+    private const string EventReportsContainer = "eventreports";
 
     public CosmosDbClient(CosmosClient cosmosClient, ILogger<CosmosDbClient> logger = null)
     {
@@ -1391,6 +1392,11 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     private Task<ICosmosContainerAdapter> GetEventSchemasContainer() =>
         GetCachedContainerAsync(EventSchemasContainer, "/id");
 
+    // EventReport serializes with PascalCase names (only "id" is attributed), so
+    // the partition path is /EndpointId — all lookups are endpoint-scoped.
+    private Task<ICosmosContainerAdapter> GetEventReportsContainer() =>
+        GetCachedContainerAsync(EventReportsContainer, "/EndpointId");
+
     // ── IEventSchemaStore ──────────────────────────────────────────────────────
 
     public async Task<EventSchema?> GetSchema(string eventTypeId)
@@ -1968,6 +1974,60 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         public string EventId { get; set; }
 
         public int Count { get; set; }
+    }
+
+    public async Task SetEventReport(string endpointId, string eventId, bool isReported, string? reportedBy, string? ticketId)
+    {
+        if (string.IsNullOrEmpty(endpointId)) throw new ArgumentNullException(nameof(endpointId));
+        if (string.IsNullOrEmpty(eventId)) throw new ArgumentNullException(nameof(eventId));
+
+        var report = new EventReport
+        {
+            Id = $"{endpointId}_{eventId}",
+            EndpointId = endpointId,
+            EventId = eventId,
+            IsReported = isReported,
+            ReportedBy = reportedBy,
+            ReportedAtUtc = DateTime.UtcNow,
+            // Only retain a ticket reference while the event is reported; clearing
+            // the marker drops the ticket too.
+            TicketId = isReported ? ticketId : null,
+        };
+
+        var container = await GetEventReportsContainer();
+        await container.UpsertItemAsync(report, new PartitionKey(report.EndpointId));
+    }
+
+    public async Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds)
+    {
+        var ids = (eventIds ?? Array.Empty<string>())
+            .Where(e => !string.IsNullOrEmpty(e))
+            .Distinct()
+            .ToList();
+
+        var result = new Dictionary<string, EventReport>();
+        if (string.IsNullOrEmpty(endpointId) || ids.Count == 0)
+            return result;
+
+        // Single-partition batched read (EndpointId is the partition key).
+        var query = new QueryDefinition(
+                $"SELECT * FROM c WHERE c.{nameof(EventReport.EndpointId)} = @endpointId " +
+                $"AND ARRAY_CONTAINS(@eventIds, c.{nameof(EventReport.EventId)})")
+            .WithParameter("@endpointId", endpointId)
+            .WithParameter("@eventIds", ids);
+
+        var container = await GetEventReportsContainer();
+        var iterator = container.GetItemQueryIterator<EventReport>(query);
+        while (iterator.HasMoreResults)
+        {
+            foreach (var report in await iterator.ReadNextAsync())
+            {
+                if (!string.IsNullOrEmpty(report.EventId))
+                    result[report.EventId] = report;
+            }
+        }
+
+        return result;
     }
 
     public async Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId)

@@ -49,6 +49,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 Env = _config.GetValue<string>("Environment"),
                 PlatformVersion = platformVersion,
                 StorageProvider = _storageProvider.ProviderName,
+                // "{ticket}" placeholder URL template for reported-event deep
+                // links; null/empty disables the link (plain badge).
+                TicketLinkTemplate = _config.GetValue<string>("TicketLinkTemplate"),
             };
 
             return new OkObjectResult(statusResponse);

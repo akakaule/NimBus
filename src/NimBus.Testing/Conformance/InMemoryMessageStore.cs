@@ -27,6 +27,7 @@ public class InMemoryMessageStore : INimBusMessageStore
     private readonly ConcurrentDictionary<(string EventId, string MessageId), MessageEntity> _messages = new();
     private readonly ConcurrentDictionary<string, List<MessageAuditEntity>> _audits = new();
     private readonly ConcurrentDictionary<string, EndpointSubscription> _subscriptions = new();
+    private readonly ConcurrentDictionary<string, EventReport> _eventReports = new();
     private readonly ConcurrentDictionary<string, EndpointMetadata> _metadata = new();
     private readonly ConcurrentDictionary<string, EventSchema> _schemas = new();
 
@@ -363,6 +364,40 @@ public class InMemoryMessageStore : INimBusMessageStore
         }
 
         return Task.FromResult<IReadOnlyDictionary<string, int>>(counts);
+    }
+
+    public Task SetEventReport(string endpointId, string eventId, bool isReported, string? reportedBy, string? ticketId)
+    {
+        if (string.IsNullOrEmpty(endpointId)) throw new ArgumentNullException(nameof(endpointId));
+        if (string.IsNullOrEmpty(eventId)) throw new ArgumentNullException(nameof(eventId));
+
+        _eventReports[$"{endpointId}_{eventId}"] = new EventReport
+        {
+            Id = $"{endpointId}_{eventId}",
+            EndpointId = endpointId,
+            EventId = eventId,
+            IsReported = isReported,
+            ReportedBy = reportedBy,
+            ReportedAtUtc = DateTime.UtcNow,
+            // Clearing the marker drops the ticket reference too.
+            TicketId = isReported ? ticketId : null,
+        };
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds)
+    {
+        var result = new Dictionary<string, EventReport>();
+        if (string.IsNullOrEmpty(endpointId) || eventIds is not { Count: > 0 })
+            return Task.FromResult<IReadOnlyDictionary<string, EventReport>>(result);
+
+        foreach (var eventId in eventIds.Where(e => !string.IsNullOrEmpty(e)).Distinct())
+        {
+            if (_eventReports.TryGetValue($"{endpointId}_{eventId}", out var report))
+                result[eventId] = report;
+        }
+
+        return Task.FromResult<IReadOnlyDictionary<string, EventReport>>(result);
     }
 
     private static bool HasPrefix(string? value, string prefix)

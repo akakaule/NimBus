@@ -78,12 +78,21 @@ const ACTIONABLE_STATUSES = [
   api.ResolutionStatus.Deferred,
 ];
 
-// URL sentinel meaning "user explicitly wants no status filter". We need this
-// because an absent `status` param falls back to defaults (Failed/DeadLettered/Unsupported/Pending) — so without
-// the sentinel, "show all statuses" would silently revert to the default after
-// any navigation. Pressing "All statuses" or removing the last chip writes
-// `?status=*`; buildEventFilterFromParams translates it back to no filter
-// before hitting the API, and the chip combobox treats it as zero chips.
+// One-click triage set applied by the "Failed" button: the terminal failed
+// statuses an operator acts on. Deliberately narrower than ACTIONABLE_STATUSES
+// (no Deferred — those retry on their own).
+export const FAILED_STATUS_SET = [
+  api.ResolutionStatus.Failed,
+  api.ResolutionStatus.DeadLettered,
+  api.ResolutionStatus.Unsupported,
+];
+
+// URL sentinel meaning "user explicitly wants no status filter". The default
+// is already "all statuses", but removing the last status chip still writes
+// `?status=*` so the intent survives navigation explicitly rather than
+// depending on param absence; buildEventFilterFromParams translates it back to
+// no filter before hitting the API, and the chip combobox treats it as zero
+// chips.
 const STATUS_ALL_SENTINEL = "*";
 
 function isAllStatusesSentinel(status: string[]): boolean {
@@ -93,13 +102,12 @@ function isAllStatusesSentinel(status: string[]): boolean {
 // URL-driven filter shape. Basic fields come from the filter bar; the advanced
 // fields (Updated/Added ranges + payload) come from the Advanced-filters
 // popover and round-trip through the URL like everything else, so a bookmarked
-// or Back-navigated URL restores them. The default `status` set of
-// "Failed + DeadLettered + Unsupported + Pending" matches the operator UX where
-// the page opens pre-filtered to messages that need attention (failed states)
-// plus in-flight Pending entries — most importantly Pending+Handoff rows, which
-// stay Pending until an external system settles them and are exactly what
-// operators want to see at a glance. Declared as a closed `type` so it
-// satisfies the index-signature constraint of `useUrlFilters<T>`.
+// or Back-navigated URL restores them. The default `status` is empty — no
+// status predicate — so the page opens showing the *latest* events of every
+// status; operators most often want to see recent traffic first, and the
+// one-click "Failed" button applies the triage set when needed. Declared as a
+// closed `type` so it satisfies the index-signature constraint of
+// `useUrlFilters<T>`.
 type EndpointFilterParams = {
   status: string[];
   eventTypeId: string[];
@@ -114,13 +122,8 @@ type EndpointFilterParams = {
   maxResults: string;
 };
 
-const DEFAULT_ENDPOINT_FILTER_PARAMS: EndpointFilterParams = {
-  status: [
-    api.ResolutionStatus.Failed,
-    api.ResolutionStatus.DeadLettered,
-    api.ResolutionStatus.Unsupported,
-    api.ResolutionStatus.Pending,
-  ],
+export const DEFAULT_ENDPOINT_FILTER_PARAMS: EndpointFilterParams = {
+  status: [],
   eventTypeId: [],
   eventId: "",
   sessionId: "",
@@ -691,16 +694,14 @@ const EventsPanel = (props: EventsPanelProps) => {
     setSearchNonce((n) => n + 1);
   };
 
-  // Reset — clear all URL filter params back to defaults (failed-message statuses).
+  // Reset — clear all URL filter params back to defaults (all statuses).
   const handleReset = (): void => {
     resetFilters();
   };
 
-  // "All statuses" — show every status. Writes the explicit sentinel so the
-  // intent survives navigation; an absent param would otherwise fall back to
-  // the default failed-message statuses on the next render.
-  const handleClearStatus = (): void => {
-    applyFilters({ ...applied, status: [STATUS_ALL_SENTINEL] });
+  // One-click triage view: the actionable failed statuses.
+  const handleFailedOnly = (): void => {
+    applyFilters({ ...applied, status: [...FAILED_STATUS_SET] });
   };
 
   // Commit-on-change for the Status combobox: chip add/remove writes to the
@@ -792,15 +793,11 @@ const EventsPanel = (props: EventsPanelProps) => {
   // need a dedicated stats endpoint — this gives an honest "what's on screen"
   // summary that matches the operator's mental model of the result set.
   const counts = React.useMemo(() => {
-    let completed = 0;
     let failed = 0;
     let deferred = 0;
     let pending = 0;
     for (const e of events) {
       switch (e.resolutionStatus) {
-        case api.ResolutionStatus.Completed:
-          completed += 1;
-          break;
         case api.ResolutionStatus.Failed:
         case api.ResolutionStatus.DeadLettered:
         case api.ResolutionStatus.Unsupported:
@@ -814,7 +811,7 @@ const EventsPanel = (props: EventsPanelProps) => {
           break;
       }
     }
-    return { completed, failed, deferred, pending };
+    return { failed, deferred, pending };
   }, [events]);
 
   // Applied advanced filters, surfaced through the Advanced-filters popover
@@ -828,7 +825,7 @@ const EventsPanel = (props: EventsPanelProps) => {
   };
 
   const hasActiveFilters =
-    !isAllStatusesSentinel(applied.status) ||
+    (applied.status.length > 0 && !isAllStatusesSentinel(applied.status)) ||
     applied.eventTypeId.length > 0 ||
     applied.eventId.length > 0 ||
     applied.sessionId.length > 0 ||
@@ -852,30 +849,34 @@ const EventsPanel = (props: EventsPanelProps) => {
         {/* Promote summary metrics above the table — design rec §03.
             Status-coloured tiles answer "how is this endpoint doing?"
             before the operator scans rows. */}
-        <StatRow>
+        <StatRow columns={3}>
           <StatTile
-            label="Completed"
-            value={counts.completed.toLocaleString()}
-            delta="on screen"
-            tone="muted"
+            label="Failed"
+            value={isLoading ? "—" : counts.failed.toLocaleString()}
+            tone={counts.failed > 0 ? "danger" : "muted"}
+            delta={
+              isLoading
+                ? "…"
+                : counts.failed === 0
+                  ? "all clear"
+                  : "Failed + DeadLettered + Unsupported"
+            }
           />
           <StatTile
             label="Deferred"
-            value={counts.deferred.toLocaleString()}
-            delta={counts.deferred ? "needs attention" : "—"}
-            tone={counts.deferred ? "warning" : "muted"}
-          />
-          <StatTile
-            label="Failed"
-            value={counts.failed.toLocaleString()}
-            delta={counts.failed ? "needs attention" : "—"}
-            tone={counts.failed ? "danger" : "muted"}
+            value={isLoading ? "—" : counts.deferred.toLocaleString()}
+            tone={counts.deferred > 0 ? "warning" : "muted"}
+            delta={
+              isLoading ? "…" : counts.deferred === 0 ? "none" : "awaiting retry"
+            }
           />
           <StatTile
             label="Pending"
-            value={counts.pending.toLocaleString()}
-            delta="in-flight"
-            tone="muted"
+            value={isLoading ? "—" : counts.pending.toLocaleString()}
+            tone={counts.pending > 0 ? "warning" : "muted"}
+            delta={
+              isLoading ? "…" : counts.pending === 0 ? "none" : "in-flight"
+            }
           />
         </StatRow>
 
@@ -883,7 +884,7 @@ const EventsPanel = (props: EventsPanelProps) => {
           key={filterRemountKey}
           handleFilterClicked={handleFilterClicked}
           onReset={handleReset}
-          onClearStatus={handleClearStatus}
+          onApplyFailed={handleFailedOnly}
           onStatusChange={handleStatusChange}
           initialStatuses={displayedStatuses}
           initialEventTypes={applied.eventTypeId}

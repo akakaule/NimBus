@@ -44,7 +44,8 @@ const ResetIcon = () => (
 interface EventFilteringProps {
   handleFilterClicked: (eventFilter: api.EventFilter) => void;
   onReset?: () => void;
-  onClearStatus?: () => void;
+  /** One-click triage filter — applies the failed statuses (Failed/DeadLettered/Unsupported). */
+  onApplyFailed?: () => void;
   /** Commit-on-change for status — persists chip add/remove to the URL immediately. */
   onStatusChange?: (next: api.ResolutionStatus[]) => void;
   initialStatuses?: api.ResolutionStatus[];
@@ -65,9 +66,10 @@ const EventFiltering = (props: EventFilteringProps) => {
     props.onReset?.();
   };
 
-  const handleClearStatus = () => {
+  const handleApplyFailed = () => {
+    // Re-key StatusFiltering so its chips re-seed from the new URL state.
     setStatusKey((prev) => prev + 1);
-    props.onClearStatus?.();
+    props.onApplyFailed?.();
   };
 
   return (
@@ -104,6 +106,15 @@ const EventFiltering = (props: EventFilteringProps) => {
               <option value={500}>500</option>
             </select>
           )}
+          {props.onApplyFailed && (
+            <Button
+              variant="outline"
+              aria-label="show failed events"
+              onClick={handleApplyFailed}
+            >
+              Failed
+            </Button>
+          )}
           {props.onReset && (
             <Button
               variant="outline"
@@ -112,15 +123,6 @@ const EventFiltering = (props: EventFilteringProps) => {
               onClick={handleReset}
             >
               Reset
-            </Button>
-          )}
-          {props.onClearStatus && (
-            <Button
-              variant="outline"
-              aria-label="clear status filter"
-              onClick={handleClearStatus}
-            >
-              All statuses
             </Button>
           )}
           <Button

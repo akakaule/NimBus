@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import * as api from "api-client";
 import {
+  DEFAULT_ENDPOINT_FILTER_PARAMS,
   EVENT_COLUMNS,
+  FAILED_STATUS_SET,
   HIDDEN_COLUMNS_STORAGE_KEY,
   getVisibleColumns,
   loadHiddenColumns,
@@ -8,6 +11,22 @@ import {
 } from "./events-panel";
 
 const ALL_IDS = EVENT_COLUMNS.map((c) => c.id);
+
+describe("default filter params", () => {
+  it("opens with no status filter — all messages, newest first", () => {
+    expect(DEFAULT_ENDPOINT_FILTER_PARAMS.status).toEqual([]);
+  });
+});
+
+describe("FAILED_STATUS_SET", () => {
+  it("is the one-click triage set (no Deferred — those retry on their own)", () => {
+    expect(FAILED_STATUS_SET).toEqual([
+      api.ResolutionStatus.Failed,
+      api.ResolutionStatus.DeadLettered,
+      api.ResolutionStatus.Unsupported,
+    ]);
+  });
+});
 
 describe("EVENT_COLUMNS", () => {
   it("locks exactly the identity column (Event Id)", () => {

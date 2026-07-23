@@ -9485,6 +9485,8 @@ namespace NimBus.WebApp.ManagementApi
         private System.DateTime _auditTimestamp;
         private AuditEntryAuditType _auditType;
         private string _comment;
+        private bool _accessDenied;
+        private string _data;
         private System.DateTime _createdAt;
 
         [Newtonsoft.Json.JsonProperty("eventId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
@@ -9574,6 +9576,38 @@ namespace NimBus.WebApp.ManagementApi
                 if (_comment != value)
                 {
                     _comment = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// True when the audited action was rejected by the authorization layer (the user attempted the action without permission).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("accessDenied", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool AccessDenied    {
+            get { return _accessDenied; }
+            set
+            {
+                if (_accessDenied != value)
+                {
+                    _accessDenied = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Optional structured context for the action (search filter JSON, resubmit-with-changes body, report toggle, ...).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("data", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Data    {
+            get { return _data; }
+            set
+            {
+                if (_data != value)
+                {
+                    _data = value;
                     RaisePropertyChanged();
                 }
             }

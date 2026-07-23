@@ -6,6 +6,7 @@ export { Badge, type BadgeProps, type BadgeVariant } from "./badge";
 export { Input, type InputProps } from "./input";
 export { Select, type SelectProps } from "./select";
 export { Checkbox, type CheckboxProps } from "./checkbox";
+export { RadioGroup, Radio, type RadioGroupProps, type RadioProps } from "./radio-group";
 export { Textarea, type TextareaProps } from "./textarea";
 export { Label, type LabelProps } from "./label";
 

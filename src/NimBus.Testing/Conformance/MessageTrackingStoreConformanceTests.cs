@@ -862,6 +862,23 @@ public abstract class MessageTrackingStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task SearchAudits_scopes_by_endpointId()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-audit-scope");
+        var auditor = Id("carol");
+        await store.StoreMessageAudit(Id("evt-as1"), new MessageAuditEntity { AuditorName = auditor, AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Resubmit, EventId = Id("evt-as1"), EndpointId = endpointId }, endpointId);
+        await store.StoreMessageAudit(Id("evt-as2"), new MessageAuditEntity { AuditorName = auditor, AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Skip, EventId = Id("evt-as2"), EndpointId = Id("ep-audit-other") }, Id("ep-audit-other"));
+
+        var resp = await store.SearchAudits(new AuditFilter { EndpointId = endpointId }, continuationToken: null, maxItemCount: 50);
+
+        var items = resp.Audits.ToList();
+        Assert.AreEqual(1, items.Count, "only the requested endpoint's audits are returned");
+        Assert.AreEqual(Id("evt-as1"), items[0].EventId);
+        Assert.AreEqual(endpointId, items[0].EndpointId, "EndpointId is projected so callers can build routes");
+    }
+
+    [TestMethod]
     public async Task SetEventReport_roundtrips_and_updates_in_place()
     {
         var store = CreateStore();

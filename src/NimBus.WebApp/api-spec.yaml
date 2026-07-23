@@ -3379,6 +3379,17 @@ components:
         comment:
           type: string
           nullable: true
+        accessDenied:
+          type: boolean
+          description: >-
+            True when the audited action was rejected by the authorization
+            layer (the user attempted the action without permission).
+        data:
+          type: string
+          nullable: true
+          description: >-
+            Optional structured context for the action (search filter JSON,
+            resubmit-with-changes body, report toggle, ...).
         createdAt:
           type: string
           format: date-time

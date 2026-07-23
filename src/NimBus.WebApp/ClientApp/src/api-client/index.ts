@@ -9803,6 +9803,10 @@ export class AuditEntry implements IAuditEntry {
     auditTimestamp?: moment.Moment;
     auditType?: AuditEntryAuditType;
     comment?: string | undefined;
+    /** True when the audited action was rejected by the authorization layer (the user attempted the action without permission). */
+    accessDenied?: boolean;
+    /** Optional structured context for the action (search filter JSON, resubmit-with-changes body, report toggle, ...). */
+    data?: string | undefined;
     createdAt?: moment.Moment;
 
     [key: string]: any;
@@ -9829,6 +9833,8 @@ export class AuditEntry implements IAuditEntry {
             this.auditTimestamp = _data["auditTimestamp"] ? moment(_data["auditTimestamp"].toString()) : undefined as any;
             this.auditType = _data["auditType"];
             this.comment = _data["comment"];
+            this.accessDenied = _data["accessDenied"];
+            this.data = _data["data"];
             this.createdAt = _data["createdAt"] ? moment(_data["createdAt"].toString()) : undefined as any;
         }
     }
@@ -9853,6 +9859,8 @@ export class AuditEntry implements IAuditEntry {
         data["auditTimestamp"] = this.auditTimestamp ? this.auditTimestamp.toISOString() : undefined as any;
         data["auditType"] = this.auditType;
         data["comment"] = this.comment;
+        data["accessDenied"] = this.accessDenied;
+        data["data"] = this.data;
         data["createdAt"] = this.createdAt ? this.createdAt.toISOString() : undefined as any;
         return data;
     }
@@ -9873,6 +9881,10 @@ export interface IAuditEntry {
     auditTimestamp?: moment.Moment;
     auditType?: AuditEntryAuditType;
     comment?: string | undefined;
+    /** True when the audited action was rejected by the authorization layer (the user attempted the action without permission). */
+    accessDenied?: boolean;
+    /** Optional structured context for the action (search filter JSON, resubmit-with-changes body, report toggle, ...). */
+    data?: string | undefined;
     createdAt?: moment.Moment;
 
     [key: string]: any;

@@ -13,16 +13,30 @@ namespace NimBus.WebApp.Controllers.ApiContract
     {
         private readonly INimBusMessageStore _cosmosClient;
         private readonly ILogger<AuditImplementation> _logger;
+        private readonly Services.IEndpointAuthorizationService _authorizationService;
 
-        public AuditImplementation(INimBusMessageStore cosmosClient, ILogger<AuditImplementation> logger)
+        public AuditImplementation(
+            INimBusMessageStore cosmosClient,
+            ILogger<AuditImplementation> logger,
+            Services.IEndpointAuthorizationService authorizationService)
         {
             _cosmosClient = cosmosClient;
             _logger = logger;
+            _authorizationService = authorizationService;
         }
 
         public async Task<ActionResult<AuditSearchResponse>> PostAuditsSearchAsync(AuditSearchRequest body)
         {
             var filter = MapFilter(body.Filter);
+
+            // An endpoint-scoped audit search (the endpoint Audit tab) is gated on
+            // managing that endpoint, matching the other per-endpoint reads. The
+            // cross-endpoint Audit Log page (no endpoint filter) stays as-is.
+            if (!string.IsNullOrEmpty(filter.EndpointId)
+                && !_authorizationService.IsManagerOfEndpoint(filter.EndpointId))
+            {
+                return new ForbidResult();
+            }
             // Clamp page size to [1, 200] with a default of 50. The upper bound prevents
             // unbounded scans against Cosmos / SQL when an external caller forgets a sensible value.
             var maxItems = body.MaxItemCount <= 0 ? 50 : Math.Min(body.MaxItemCount, 200);
@@ -40,6 +54,8 @@ namespace NimBus.WebApp.Controllers.ApiContract
                     AuditTimestamp = a.Audit.AuditTimestamp,
                     AuditType = Enum.Parse<AuditEntryAuditType>(a.Audit.AuditType.ToString()),
                     Comment = a.Audit.Comment,
+                    AccessDenied = a.Audit.AccessDenied,
+                    Data = a.Audit.Data,
                     CreatedAt = a.CreatedAt
                 }).ToList(),
                 ContinuationToken = result.ContinuationToken

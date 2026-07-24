@@ -210,6 +210,8 @@ public sealed class EventImplementationPlainResubmitTests
     {
         public bool IsManagerOfEndpoint(string endpointId) => true;
 
+        public bool IsPlatformAdministrator() => true;
+
         [Obsolete("Bridge member required by the interface; not used in these tests.")]
         public MessageAuditEntity GetMessageAuditEntity(MessageAuditType type) => throw new NotSupportedException();
 

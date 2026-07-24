@@ -2342,12 +2342,15 @@ components:
     ReportEventRequest:
       title: ReportEventRequest
       type: object
-      required:
-        - reported
       properties:
         reported:
           type: boolean
-          description: True to mark the event reported, false to clear the marker.
+          nullable: true
+          description: >-
+            True to mark the event reported, false to clear the marker.
+            Required in practice: the server rejects requests that omit it
+            (modelled nullable so an omitted value binds as null instead of
+            silently defaulting to false and clearing the marker).
         ticketId:
           type: string
           nullable: true

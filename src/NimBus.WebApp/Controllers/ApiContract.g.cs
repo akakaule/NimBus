@@ -4077,14 +4077,14 @@ namespace NimBus.WebApp.ManagementApi
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class ReportEventRequest : System.ComponentModel.INotifyPropertyChanged
     {
-        private bool _reported;
+        private bool? _reported;
         private string _ticketId;
 
         /// <summary>
-        /// True to mark the event reported, false to clear the marker.
+        /// True to mark the event reported, false to clear the marker. Required in practice: the server rejects requests that omit it (modelled nullable so an omitted value binds as null instead of silently defaulting to false and clearing the marker).
         /// </summary>
-        [Newtonsoft.Json.JsonProperty("reported", Required = Newtonsoft.Json.Required.Always)]
-        public bool Reported    {
+        [Newtonsoft.Json.JsonProperty("reported", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool? Reported    {
             get { return _reported; }
             set
             {

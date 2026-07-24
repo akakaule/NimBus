@@ -5612,8 +5612,8 @@ export interface IMessageAudit {
 }
 
 export class ReportEventRequest implements IReportEventRequest {
-    /** True to mark the event reported, false to clear the marker. */
-    reported!: boolean;
+    /** True to mark the event reported, false to clear the marker. Required in practice: the server rejects requests that omit it (modelled nullable so an omitted value binds as null instead of silently defaulting to false and clearing the marker). */
+    reported?: boolean | undefined;
     /** Optional external ticket reference (letters, digits, ".", "_", "-"; max 64 chars). Ignored when clearing the marker. */
     ticketId?: string | undefined;
 
@@ -5666,8 +5666,8 @@ export class ReportEventRequest implements IReportEventRequest {
 }
 
 export interface IReportEventRequest {
-    /** True to mark the event reported, false to clear the marker. */
-    reported: boolean;
+    /** True to mark the event reported, false to clear the marker. Required in practice: the server rejects requests that omit it (modelled nullable so an omitted value binds as null instead of silently defaulting to false and clearing the marker). */
+    reported?: boolean | undefined;
     /** Optional external ticket reference (letters, digits, ".", "_", "-"; max 64 chars). Ignored when clearing the marker. */
     ticketId?: string | undefined;
 

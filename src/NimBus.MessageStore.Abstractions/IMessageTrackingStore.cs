@@ -139,8 +139,12 @@ public interface IMessageTrackingStore
     /// resubmitted. Events with no resubmit audits are absent from the result
     /// (treat missing as 0). Implementations answer with a single grouped query
     /// so callers can enrich a whole search page in one round trip.
+    /// <para>Default implementation returns an empty map so pre-existing
+    /// external providers keep compiling; the UI then simply shows 0
+    /// resubmissions.</para>
     /// </summary>
-    Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds);
+    Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds)
+        => Task.FromResult<IReadOnlyDictionary<string, int>>(new Dictionary<string, int>());
 
     // Event reports ("reported" markers)
 
@@ -150,16 +154,23 @@ public interface IMessageTrackingStore
     /// <see cref="EventReport.ReportedAtUtc"/> is stamped with the current UTC
     /// time on every toggle; clearing the marker (<paramref name="isReported"/>
     /// false) also drops the ticket reference.
+    /// <para>Default implementation throws <see cref="NotSupportedException"/>
+    /// so pre-existing external providers keep compiling while a write cannot
+    /// silently succeed without being persisted.</para>
     /// </summary>
-    Task SetEventReport(string endpointId, string eventId, bool isReported, string? reportedBy, string? ticketId);
+    Task SetEventReport(string endpointId, string eventId, bool isReported, string? reportedBy, string? ticketId)
+        => throw new NotSupportedException($"This {nameof(IMessageTrackingStore)} implementation does not support event reports.");
 
     /// <summary>
     /// Batched lookup of "reported" markers for the given events on
     /// <paramref name="endpointId"/>. Events that were never reported are absent
     /// from the result. Implementations answer with a single query so callers
     /// can enrich a whole search page in one round trip.
+    /// <para>Default implementation returns an empty map so pre-existing
+    /// external providers keep compiling; events then render as unreported.</para>
     /// </summary>
-    Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds);
+    Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds)
+        => Task.FromResult<IReadOnlyDictionary<string, EventReport>>(new Dictionary<string, EventReport>());
 
     // Endpoint diagnostics
     Task<string> GetEndpointErrorList(string endpointId);

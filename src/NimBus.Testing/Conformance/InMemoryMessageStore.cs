@@ -27,7 +27,9 @@ public class InMemoryMessageStore : INimBusMessageStore
     private readonly ConcurrentDictionary<(string EventId, string MessageId), MessageEntity> _messages = new();
     private readonly ConcurrentDictionary<string, List<MessageAuditEntity>> _audits = new();
     private readonly ConcurrentDictionary<string, EndpointSubscription> _subscriptions = new();
-    private readonly ConcurrentDictionary<string, EventReport> _eventReports = new();
+    // Tuple key, not string concatenation — ("a_b","c") and ("a","b_c") must
+    // not collide.
+    private readonly ConcurrentDictionary<(string EndpointId, string EventId), EventReport> _eventReports = new();
     private readonly ConcurrentDictionary<string, EndpointMetadata> _metadata = new();
     private readonly ConcurrentDictionary<string, EventSchema> _schemas = new();
 
@@ -373,7 +375,7 @@ public class InMemoryMessageStore : INimBusMessageStore
         if (string.IsNullOrEmpty(endpointId)) throw new ArgumentNullException(nameof(endpointId));
         if (string.IsNullOrEmpty(eventId)) throw new ArgumentNullException(nameof(eventId));
 
-        _eventReports[$"{endpointId}_{eventId}"] = new EventReport
+        _eventReports[(endpointId, eventId)] = new EventReport
         {
             Id = $"{endpointId}_{eventId}",
             EndpointId = endpointId,
@@ -395,7 +397,7 @@ public class InMemoryMessageStore : INimBusMessageStore
 
         foreach (var eventId in eventIds.Where(e => !string.IsNullOrEmpty(e)).Distinct())
         {
-            if (_eventReports.TryGetValue($"{endpointId}_{eventId}", out var report))
+            if (_eventReports.TryGetValue((endpointId, eventId), out var report))
                 result[eventId] = report;
         }
 

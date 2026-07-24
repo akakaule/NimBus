@@ -303,6 +303,13 @@ const EventsPanel = (props: EventsPanelProps) => {
     event: api.Event;
     anchor: HTMLElement;
   } | null>(null);
+  // Per-event chain of in-flight report writes. Mark→Undo fires two requests
+  // back-to-back; without serialization their completion order is undefined and
+  // storage could finish "reported" while the UI shows unreported.
+  const reportWriteChains = React.useRef(new Map<string, Promise<void>>());
+  // Guards nextPage against overlapping auto-refill calls (see the
+  // hide-reported effect below).
+  const isPagingRef = React.useRef(false);
   // Bumped on every full fetch (mount, Search, Reset, filter/URL change). A late
   // out-of-order response — including its background session-status batch — only
   // commits while its ticket is still current, so a slow older fetch can't
@@ -484,6 +491,7 @@ const EventsPanel = (props: EventsPanelProps) => {
 
   const nextPage = async (): Promise<void> => {
     if (
+      isPagingRef.current ||
       !continuationToken ||
       continuationToken === "" ||
       continuationToken === "null" ||
@@ -491,6 +499,7 @@ const EventsPanel = (props: EventsPanelProps) => {
     ) {
       return;
     }
+    isPagingRef.current = true;
 
     // Pagination extends the current fetch generation rather than starting a new
     // one — read the ticket without bumping it, so a concurrent full re-fetch
@@ -530,6 +539,8 @@ const EventsPanel = (props: EventsPanelProps) => {
       if (ticket === fetchTicket.current) {
         console.error("Failed to fetch next page:", error);
       }
+    } finally {
+      isPagingRef.current = false;
     }
   };
 
@@ -589,15 +600,27 @@ const EventsPanel = (props: EventsPanelProps) => {
     const body = new api.ReportEventRequest();
     body.reported = reported;
     body.ticketId = reported ? (ticketId ?? undefined) : undefined;
-    client.postReportEvent(endpointId, event.eventId!, body).catch((error) => {
-      console.error("Failed to update reported flag:", error);
-      event.isReported = prev.isReported;
-      event.reportedBy = prev.reportedBy;
-      event.reportedAtUtc = prev.reportedAtUtc;
-      event.ticketId = prev.ticketId;
-      setEvents((current) => [...current]);
-      notifyError("Could not update reported status");
-    });
+    // Serialize writes per event: chain this request after any in-flight one so
+    // a rapid mark→Undo pair reaches the server in order.
+    const eventKey = event.eventId!;
+    const prior = reportWriteChains.current.get(eventKey) ?? Promise.resolve();
+    const write = prior
+      .then(() => client.postReportEvent(endpointId, eventKey, body))
+      .catch((error) => {
+        console.error("Failed to update reported flag:", error);
+        event.isReported = prev.isReported;
+        event.reportedBy = prev.reportedBy;
+        event.reportedAtUtc = prev.reportedAtUtc;
+        event.ticketId = prev.ticketId;
+        setEvents((current) => [...current]);
+        notifyError("Could not update reported status");
+      })
+      .then(() => {
+        if (reportWriteChains.current.get(eventKey) === write) {
+          reportWriteChains.current.delete(eventKey);
+        }
+      });
+    reportWriteChains.current.set(eventKey, write);
   };
 
   const markReported = (event: api.Event, ticketId: string | null): void => {
@@ -711,6 +734,19 @@ const EventsPanel = (props: EventsPanelProps) => {
     () => (hideReported ? events.filter((e) => !e.isReported) : events),
     [events, hideReported],
   );
+
+  // Hide-reported filters only the LOADED batch, which can thin the visible
+  // rows below one client page while the server still has more — the table's
+  // Next button would then dead-end. Keep appending server pages until a client
+  // page is filled or the continuation token runs dry. nextPage's isPagingRef
+  // guard prevents overlapping fetches; each append re-runs this effect.
+  React.useEffect(() => {
+    if (!hideReported || isLoading) return;
+    if (!continuationToken || continuationToken === "null") return;
+    if (visibleEvents.length >= 20) return; // one DataTable page (dataRowsPerPage)
+    void nextPage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hideReported, visibleEvents.length, continuationToken, isLoading]);
 
   const mapEvents = (): ITableRow[] => {
     return visibleEvents.map((item) => {

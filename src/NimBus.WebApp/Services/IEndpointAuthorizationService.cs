@@ -16,6 +16,14 @@ public interface IEndpointAuthorizationService
     bool IsManagerOfEndpoint(string endpointId);
 
     /// <summary>
+    /// Checks if the current user is a platform administrator — someone who can
+    /// manage every endpoint (the EIP_Management security group, or any user when
+    /// <c>BypassEndpointAuthorization</c> is enabled). Gates cross-endpoint
+    /// surfaces such as unscoped audit searches.
+    /// </summary>
+    bool IsPlatformAdministrator();
+
+    /// <summary>
     /// Creates a message audit entity for the current user with the specified audit type.
     /// </summary>
     /// <param name="type">The type of audit action.</param>

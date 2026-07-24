@@ -455,8 +455,11 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         if (string.IsNullOrEmpty(endpointId)) throw new ArgumentNullException(nameof(endpointId));
         if (string.IsNullOrEmpty(eventId)) throw new ArgumentNullException(nameof(eventId));
 
+        // HOLDLOCK (serializable range lock) closes the classic MERGE upsert
+        // race: without it two concurrent first writes for the same key can both
+        // miss the MATCHED branch and collide on the primary key.
         var sql = $@"
-MERGE {T("EventReports")} AS target
+MERGE {T("EventReports")} WITH (HOLDLOCK) AS target
 USING (SELECT @EndpointId AS EndpointId, @EventId AS EventId) AS src
 ON target.EndpointId = src.EndpointId AND target.EventId = src.EventId
 WHEN MATCHED THEN

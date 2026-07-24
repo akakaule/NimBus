@@ -289,7 +289,12 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
         public async Task<IActionResult> PostReportEventAsync(ReportEventRequest body, string endpointId, string eventId)
         {
-            if (body == null) return new BadRequestObjectResult("Request body is required.");
+            // `Reported` is modelled nullable so an omitted value binds as null
+            // (MVC binds with System.Text.Json, which ignores the generated
+            // Newtonsoft Required attribute) — an empty `{}` body must be a 400,
+            // not a silent "clear the marker".
+            if (body?.Reported is not bool reported)
+                return new BadRequestObjectResult("The 'reported' field is required.");
             if (string.IsNullOrEmpty(endpointId) || string.IsNullOrEmpty(eventId))
                 return new BadRequestObjectResult("endpointId and eventId are required.");
 
@@ -303,8 +308,14 @@ namespace NimBus.WebApp.Controllers.ApiContract
             if (!EndpointVerificationService.EndpointExists(platform, endpointId))
                 return new NotFoundObjectResult("Endpoint not found");
 
+            // Store under the platform's canonical endpoint casing: authorization
+            // and existence checks are case-insensitive, but Cosmos partitions
+            // (and the enrichment lookups) match the endpoint id exactly — a
+            // lowercase request must not create a marker searches never find.
+            endpointId = CanonicalEndpointId(endpointId);
+
             string ticketId = null;
-            if (body.Reported && !string.IsNullOrWhiteSpace(body.TicketId))
+            if (reported && !string.IsNullOrWhiteSpace(body.TicketId))
             {
                 ticketId = body.TicketId.Trim();
                 if (!TicketIdPattern.IsMatch(ticketId))
@@ -314,13 +325,20 @@ namespace NimBus.WebApp.Controllers.ApiContract
             }
 
             var reportedBy = authorizationService.GetCurrentUserName() ?? "anonymous";
-            await cosmosClient.SetEventReport(endpointId, eventId, body.Reported, reportedBy, ticketId);
+            await cosmosClient.SetEventReport(endpointId, eventId, reported, reportedBy, ticketId);
             await auditLogService.LogAuditAsync(MessageAuditType.ReportEvent, httpContextAccessor.HttpContext,
                 eventId: eventId, endpointId: endpointId,
-                data: JsonConvert.SerializeObject(new { reported = body.Reported, ticketId }));
+                data: JsonConvert.SerializeObject(new { reported, ticketId }));
 
             return new OkResult();
         }
+
+        // The platform definition's casing is canonical — store writes and
+        // exact-match lookups (Cosmos partition keys, audit grouping) must all
+        // use it regardless of the casing the request arrived with.
+        private string CanonicalEndpointId(string endpointId) =>
+            platform.Endpoints.FirstOrDefault(e => e.Id.Equals(endpointId, StringComparison.OrdinalIgnoreCase))?.Id
+                ?? endpointId;
 
         // Generic external-ticket reference: a sane cross-tool subset (Jira keys,
         // ServiceNow INC numbers, plain ids). Mirrored by the frontend's
@@ -792,6 +810,11 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 return new NotFoundObjectResult("Endpoint not found");
             }
+
+            // Canonical casing keeps the audit rows and the exact-match
+            // enrichment lookups (resubmit counts, report flags) consistent
+            // regardless of the casing the request arrived with.
+            endpointId = CanonicalEndpointId(endpointId);
 
             // Spec 008 FR-032: pass the search filter (serialized) as Data so
             // operators answering "what searches has user X run?" see the

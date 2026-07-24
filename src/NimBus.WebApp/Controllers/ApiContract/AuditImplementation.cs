@@ -29,11 +29,24 @@ namespace NimBus.WebApp.Controllers.ApiContract
         {
             var filter = MapFilter(body.Filter);
 
-            // An endpoint-scoped audit search (the endpoint Audit tab) is gated on
-            // managing that endpoint, matching the other per-endpoint reads. The
-            // cross-endpoint Audit Log page (no endpoint filter) stays as-is.
-            if (!string.IsNullOrEmpty(filter.EndpointId)
-                && !_authorizationService.IsManagerOfEndpoint(filter.EndpointId))
+            // Audit rows can carry sensitive Data payloads (search filters,
+            // resubmit-with-changes bodies, report toggles), so the search is
+            // never open-ended:
+            // - Unscoped (no endpoint filter, the cross-endpoint Audit Log page)
+            //   requires a platform administrator.
+            // - Endpoint-scoped requires managing that endpoint, and the results
+            //   are additionally reduced to EXACT endpoint matches below —
+            //   the store contract treats EndpointId as a case-insensitive
+            //   PREFIX, so authorizing "Orders" must not leak "OrdersArchive".
+            var scopedEndpointId = filter.EndpointId;
+            if (string.IsNullOrEmpty(scopedEndpointId))
+            {
+                if (!_authorizationService.IsPlatformAdministrator())
+                {
+                    return new ForbidResult();
+                }
+            }
+            else if (!_authorizationService.IsManagerOfEndpoint(scopedEndpointId))
             {
                 return new ForbidResult();
             }
@@ -43,9 +56,16 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             var result = await _cosmosClient.SearchAudits(filter, body.ContinuationToken, maxItems);
 
+            // Exact-match reduction for scoped searches (see authorization note
+            // above). Pages may come back short, but the continuation token still
+            // advances, so "Load more" walks the full result set.
+            var audits = string.IsNullOrEmpty(scopedEndpointId)
+                ? result.Audits
+                : result.Audits.Where(a => string.Equals(a.EndpointId, scopedEndpointId, StringComparison.OrdinalIgnoreCase));
+
             return new AuditSearchResponse
             {
-                Audits = result.Audits.Select(a => new AuditEntry
+                Audits = audits.Select(a => new AuditEntry
                 {
                     EventId = a.EventId,
                     EndpointId = a.EndpointId,

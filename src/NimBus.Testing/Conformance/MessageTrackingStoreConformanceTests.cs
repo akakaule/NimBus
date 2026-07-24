@@ -920,6 +920,22 @@ public abstract class MessageTrackingStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task EventReports_do_not_collide_on_ambiguous_composite_keys()
+    {
+        // ("a_b", "c") and ("a", "b_c") concatenate to the same string — the
+        // store key must be the (endpointId, eventId) PAIR, not a joined string.
+        var store = CreateStore();
+        var prefix = Id("ep-amb");
+        await store.SetEventReport($"{prefix}_x", "y", isReported: true, reportedBy: Id("alice"), ticketId: "T-1");
+
+        var other = await store.GetEventReports(prefix, new[] { "x_y" });
+        Assert.AreEqual(0, other.Count, "a report on endpoint '{prefix}_x' must not surface for endpoint '{prefix}'");
+
+        var own = await store.GetEventReports($"{prefix}_x", new[] { "y" });
+        Assert.AreEqual(1, own.Count);
+    }
+
+    [TestMethod]
     public async Task GetEventReports_batches_and_scopes_by_endpoint()
     {
         var store = CreateStore();

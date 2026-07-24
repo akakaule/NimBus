@@ -151,13 +151,15 @@ export function DataTable({
                   key={i}
                   size="xs"
                   variant="outline"
-                  disabled={Object.keys(rowSelection).length === 0}
+                  disabled={!rows.some((r) => rowSelection[r.id])}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    const selectedRows = rows.filter(
-                      (_, idx) => rowSelection[idx],
-                    );
+                    // Selection is keyed by stable row id (getRowId below), so
+                    // filtering/reordering the rows prop can never redirect an
+                    // action to a different event. Hidden-but-selected rows are
+                    // excluded because they are absent from `rows`.
+                    const selectedRows = rows.filter((r) => rowSelection[r.id]);
                     try {
                       action.onClick(selectedRows);
                     } finally {
@@ -224,6 +226,10 @@ export function DataTable({
       rowSelection,
       globalFilter,
     },
+    // Stable identity: selection state is keyed by the caller's row id, not the
+    // array index — indices shift when rows are filtered (e.g. Hide reported)
+    // and index-keyed selection would then target the wrong rows.
+    getRowId: (row) => row.id,
     enableRowSelection: withCheckboxes,
     onSortingChange: setSorting,
     onRowSelectionChange: setRowSelection,
@@ -262,7 +268,7 @@ export function DataTable({
   }, [pageIndex, onPageChange, rows.length, table]);
 
   const selectedRows = useMemo(() => {
-    return rows.filter((_, idx) => rowSelection[idx]);
+    return rows.filter((r) => rowSelection[r.id]);
   }, [rows, rowSelection]);
 
   return (

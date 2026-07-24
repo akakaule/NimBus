@@ -402,9 +402,14 @@ VALUES (
         if (!string.IsNullOrEmpty(filter.EndpointId))
         {
             // Exact scope (authorization-sensitive callers) vs. the historical
-            // prefix match — see AuditFilter.EndpointIdExact. CI collation makes
-            // '=' case-insensitive, matching the other providers.
-            if (filter.EndpointIdExact) { where.Add("EndpointId = @EndpointId"); p.Add("EndpointId", filter.EndpointId); }
+            // prefix match — see AuditFilter.EndpointIdExact. The comparison is
+            // pinned to a fixed case-insensitive, accent-sensitive collation so
+            // the semantics don't drift with the deployment's database collation
+            // (a CS database would miss authorized case variants; a linguistic
+            // AI collation could equate identifiers authorization treats as
+            // distinct). The explicit COLLATE costs an index seek on this
+            // predicate — acceptable for the endpoint-scoped audit page sizes.
+            if (filter.EndpointIdExact) { where.Add("EndpointId COLLATE Latin1_General_100_CI_AS = @EndpointId"); p.Add("EndpointId", filter.EndpointId); }
             else { where.Add(@"EndpointId LIKE @EndpointId ESCAPE '\'"); p.Add("EndpointId", LikePrefix(filter.EndpointId)); }
         }
         if (!string.IsNullOrEmpty(filter.AuditorName)) { where.Add(@"AuditorName LIKE @AuditorName ESCAPE '\'"); p.Add("AuditorName", LikePrefix(filter.AuditorName)); }

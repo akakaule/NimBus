@@ -316,6 +316,17 @@ const EventsPanel = (props: EventsPanelProps) => {
   // back over a newer operation's optimistic state (e.g. Mark fails slowly
   // after the user already did Undo → Mark again).
   const reportRevisions = React.useRef(new Map<string, number>());
+  // Last state the SERVER is known to hold per event: seeded from the fetched
+  // event on first touch, advanced only on write success. Failure rollback
+  // restores this — never another operation's unconfirmed optimistic snapshot
+  // (Mark ok → Undo fails → Mark-again fails must end reported, not unreported).
+  type ReportState = {
+    isReported?: boolean;
+    reportedBy?: string;
+    reportedAtUtc?: moment.Moment;
+    ticketId?: string;
+  };
+  const confirmedReportStates = React.useRef(new Map<string, ReportState>());
   // Guards nextPage against overlapping auto-refill calls (see the
   // hide-reported effect below).
   const isPagingRef = React.useRef(false);
@@ -325,6 +336,11 @@ const EventsPanel = (props: EventsPanelProps) => {
   // overwrite a newer one. Pagination continues the current generation (see
   // nextPage), so it reads the ticket without bumping it.
   const fetchTicket = React.useRef(0);
+  // Generation that the CURRENT continuationToken/currentFilter belong to.
+  // nextPage must extend this generation, not whatever fetch happens to be the
+  // newest — a page requested mid-refresh would otherwise run the OLD query
+  // under the NEW ticket and get appended to the new result set.
+  const tokenGeneration = React.useRef(0);
   // Columns the operator has chosen to hide via the column chooser (persisted;
   // locked columns are never included).
   const [hiddenCols, setHiddenCols] =
@@ -456,6 +472,10 @@ const EventsPanel = (props: EventsPanelProps) => {
   const fetchEvents = async (filter: api.EventFilter): Promise<void> => {
     const ticket = ++fetchTicket.current;
     setIsLoading(true);
+    // Invalidate the previous generation's pagination inputs immediately so a
+    // Next click during the refresh can't issue a page for the old query.
+    setContinuationToken(undefined);
+    setCurrentFilter(undefined);
     try {
       const reqBody = new api.SearchRequest();
       reqBody.eventFilter = filter;
@@ -471,6 +491,7 @@ const EventsPanel = (props: EventsPanelProps) => {
         setEvents(fetchedEvents);
         setContinuationToken(response.continuationToken);
         setCurrentFilter(filter);
+        tokenGeneration.current = ticket;
       }
 
       // Hydrate the per-session count columns in the background so the table
@@ -510,11 +531,11 @@ const EventsPanel = (props: EventsPanelProps) => {
     }
     isPagingRef.current = true;
 
-    // Pagination extends the current fetch generation rather than starting a new
-    // one — read the ticket without bumping it, so a concurrent full re-fetch
-    // (filter/URL change) still invalidates this append while this append does
-    // not invalidate the current fetch's session-status batch.
-    const ticket = fetchTicket.current;
+    // Pagination extends the generation the token/filter BELONG to (not the
+    // newest fetch) — if a full re-fetch has started since that generation
+    // committed, this append is already stale and every ticket guard below
+    // rejects it.
+    const ticket = tokenGeneration.current;
 
     try {
       const reqBody = new api.SearchRequest();
@@ -597,6 +618,11 @@ const EventsPanel = (props: EventsPanelProps) => {
       reportedAtUtc: event.reportedAtUtc,
       ticketId: event.ticketId,
     };
+    // First touch: the pre-op state came from the server (search enrichment) —
+    // that's the confirmed baseline until a write succeeds.
+    if (!confirmedReportStates.current.has(event.eventId!)) {
+      confirmedReportStates.current.set(event.eventId!, prev);
+    }
 
     event.isReported = reported;
     event.reportedBy = reported
@@ -605,6 +631,12 @@ const EventsPanel = (props: EventsPanelProps) => {
     event.reportedAtUtc = reported ? moment() : undefined;
     event.ticketId = reported ? (ticketId ?? undefined) : undefined;
     setEvents((current) => [...current]);
+    const applied = {
+      isReported: event.isReported,
+      reportedBy: event.reportedBy,
+      reportedAtUtc: event.reportedAtUtc,
+      ticketId: event.ticketId,
+    };
 
     const body = new api.ReportEventRequest();
     body.reported = reported;
@@ -617,16 +649,23 @@ const EventsPanel = (props: EventsPanelProps) => {
     const prior = reportWriteChains.current.get(eventKey) ?? Promise.resolve();
     const write = prior
       .then(() => client.postReportEvent(endpointId, eventKey, body))
+      .then(() => {
+        // Server accepted this write — its state is now what we applied.
+        confirmedReportStates.current.set(eventKey, applied);
+      })
       .catch((error) => {
         console.error("Failed to update reported flag:", error);
         // Only the LATEST operation may roll the UI back — a stale failure
         // must not overwrite a newer operation's optimistic state (the newer
         // write is queued behind this one and will settle the server state).
+        // The rollback target is the last CONFIRMED state, never another
+        // operation's unconfirmed optimistic snapshot.
         if (reportRevisions.current.get(eventKey) === revision) {
-          event.isReported = prev.isReported;
-          event.reportedBy = prev.reportedBy;
-          event.reportedAtUtc = prev.reportedAtUtc;
-          event.ticketId = prev.ticketId;
+          const confirmed = confirmedReportStates.current.get(eventKey) ?? prev;
+          event.isReported = confirmed.isReported;
+          event.reportedBy = confirmed.reportedBy;
+          event.reportedAtUtc = confirmed.reportedAtUtc;
+          event.ticketId = confirmed.ticketId;
           setEvents((current) => [...current]);
         }
         notifyError("Could not update reported status");

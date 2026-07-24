@@ -479,8 +479,19 @@ public class EndpointImplementation : IEndpointApiController
             return new ForbidResult();
         }
 
+        // Owner identity uses the SAME null-safe resolution the delete path
+        // checks against (GetCurrentUserName). An oid/groups-only principal has
+        // no name claim — creating an ownerless subscription would make it
+        // undeletable for that same non-admin manager, so reject instead.
+        var author = GetCurrentUsersMail() ?? _authorizationService.GetCurrentUserName();
+        if (string.IsNullOrEmpty(author))
+        {
+            return new BadRequestObjectResult(
+                "The authenticated identity carries no name claim to record as the subscription owner.");
+        }
+
         var subscriptionStatus = await cosmosClient.SubscribeToEndpointNotification(endpointId, body.Mail,
-            body.Type, GetCurrentUsersMail(), body.Url, body.EventTypes, body.Payload, body.Frequency);
+            body.Type, author, body.Url, body.EventTypes, body.Payload, body.Frequency);
         return new OkObjectResult(subscriptionStatus);
     }
 
@@ -517,12 +528,14 @@ public class EndpointImplementation : IEndpointApiController
         // body: only the subscription's author (or a platform administrator)
         // may remove it. Admin access is evaluated first so a principal whose
         // claims carry no display name (groups/oid only) can still delete —
-        // GetCurrentUserName is null-safe, unlike claim.Value lookups.
+        // the claim lookups are null-safe. Both name resolutions are accepted
+        // because creation records GetCurrentUsersMail() ?? GetCurrentUserName()
+        // and the two can surface different claims for the same principal.
         if (!_authorizationService.IsPlatformAdministrator())
         {
-            var currentUser = _authorizationService.GetCurrentUserName();
-            var isOwner = !string.IsNullOrEmpty(currentUser)
-                && string.Equals(subscription.AuthorId, currentUser, StringComparison.OrdinalIgnoreCase);
+            var candidates = new[] { _authorizationService.GetCurrentUserName(), GetCurrentUsersMail() };
+            var isOwner = candidates.Any(c => !string.IsNullOrEmpty(c)
+                && string.Equals(subscription.AuthorId, c, StringComparison.OrdinalIgnoreCase));
             if (!isOwner)
             {
                 return new ForbidResult();

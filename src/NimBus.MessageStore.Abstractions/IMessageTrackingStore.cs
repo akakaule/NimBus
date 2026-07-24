@@ -127,7 +127,11 @@ public interface IMessageTrackingStore
     /// <summary>
     /// Filtered audit search. ID-like string filters (event id, endpoint id,
     /// auditor name, event type id) match by case-insensitive PREFIX on every
-    /// provider.
+    /// provider — except that <see cref="AuditFilter.EndpointIdExact"/> switches
+    /// the endpoint id to case-insensitive EQUALITY (used by
+    /// authorization-scoped callers). Providers unaware of the flag fall back to
+    /// prefix semantics; security-sensitive callers must therefore keep a final
+    /// exact check on the results.
     /// </summary>
     Task<AuditSearchResult> SearchAudits(AuditFilter filter, string? continuationToken, int maxItemCount);
 

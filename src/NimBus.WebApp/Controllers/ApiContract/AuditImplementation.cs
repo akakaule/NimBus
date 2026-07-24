@@ -63,9 +63,19 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             var result = await _cosmosClient.SearchAudits(filter, body.ContinuationToken, maxItems);
 
+            // Fail-closed belt-and-braces: EndpointIdExact is an OPTIONAL store
+            // capability — a provider that predates the flag silently applies
+            // prefix semantics, which would leak prefix-siblings. First-party
+            // providers filter exactly in storage (keeping pages full); this
+            // final check only ever removes rows a non-conforming provider let
+            // through.
+            var audits = string.IsNullOrEmpty(scopedEndpointId)
+                ? result.Audits
+                : result.Audits.Where(a => string.Equals(a.EndpointId, scopedEndpointId, StringComparison.OrdinalIgnoreCase));
+
             return new AuditSearchResponse
             {
-                Audits = result.Audits.Select(a => new AuditEntry
+                Audits = audits.Select(a => new AuditEntry
                 {
                     EventId = a.EventId,
                     EndpointId = a.EndpointId,

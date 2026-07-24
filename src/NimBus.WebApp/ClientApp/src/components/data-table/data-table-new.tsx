@@ -46,6 +46,14 @@ interface DataTableProps {
   styles?: React.CSSProperties;
   count?: number;
   onPageChange?: () => void;
+  /**
+   * True while the server can produce more rows (a continuation token exists).
+   * Keeps Next enabled on the last local page — clicking it then invokes
+   * onPageChange to fetch the next server page instead of dead-ending, which
+   * matters when a client-side filter (e.g. Hide reported) thins the loaded
+   * rows below the local page count.
+   */
+  hasMoreRows?: boolean;
   endpointIds?: string[];
   checkedEndpointIds?: string[];
   checked?: (name: string, state: boolean) => void;
@@ -70,6 +78,7 @@ export function DataTable({
   styles,
   count,
   onPageChange,
+  hasMoreRows = false,
   endpointIds,
   checkedEndpointIds,
   checked,
@@ -419,8 +428,17 @@ export function DataTable({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
+            onClick={() => {
+              if (table.getCanNextPage()) {
+                table.nextPage();
+              } else {
+                // Last local page but the server has more — fetch the next
+                // server page; the appended rows extend the current page (or
+                // create the next one).
+                onPageChange?.();
+              }
+            }}
+            disabled={!table.getCanNextPage() && !hasMoreRows}
           >
             Next
           </Button>

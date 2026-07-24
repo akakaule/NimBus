@@ -879,6 +879,31 @@ public abstract class MessageTrackingStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task SearchAudits_EndpointIdExact_excludes_prefix_siblings()
+    {
+        // Authorization-scoped queries must not let a manager of "Orders" read
+        // "OrdersArchive" rows through the default prefix semantics.
+        var store = CreateStore();
+        var endpointId = Id("Orders");
+        var sibling = Id("Orders") + "Archive";
+        var auditor = Id("dave");
+        await store.StoreMessageAudit(Id("evt-ex1"), new MessageAuditEntity { AuditorName = auditor, AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Resubmit, EventId = Id("evt-ex1"), EndpointId = endpointId }, endpointId);
+        await store.StoreMessageAudit(Id("evt-ex2"), new MessageAuditEntity { AuditorName = auditor, AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Skip, EventId = Id("evt-ex2"), EndpointId = sibling }, sibling);
+
+        var prefix = await store.SearchAudits(new AuditFilter { EndpointId = endpointId }, continuationToken: null, maxItemCount: 50);
+        Assert.AreEqual(2, prefix.Audits.Count(), "default prefix semantics include the sibling");
+
+        var exact = await store.SearchAudits(new AuditFilter { EndpointId = endpointId, EndpointIdExact = true }, continuationToken: null, maxItemCount: 50);
+        var items = exact.Audits.ToList();
+        Assert.AreEqual(1, items.Count, "exact scope excludes prefix-siblings");
+        Assert.AreEqual(Id("evt-ex1"), items[0].EventId);
+
+        // Equality stays case-insensitive like the rest of the contract.
+        var upper = await store.SearchAudits(new AuditFilter { EndpointId = endpointId.ToUpperInvariant(), EndpointIdExact = true }, continuationToken: null, maxItemCount: 50);
+        Assert.AreEqual(1, upper.Audits.Count());
+    }
+
+    [TestMethod]
     public async Task SetEventReport_roundtrips_and_updates_in_place()
     {
         var store = CreateStore();

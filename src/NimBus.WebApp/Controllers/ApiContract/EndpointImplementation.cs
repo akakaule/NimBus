@@ -515,13 +515,18 @@ public class EndpointImplementation : IEndpointApiController
 
         // Ownership comes from authenticated claims, never from the request
         // body: only the subscription's author (or a platform administrator)
-        // may remove it.
-        var currentUser = GetCurrentUsersMail();
-        var isOwner = !string.IsNullOrEmpty(currentUser)
-            && string.Equals(subscription.AuthorId, currentUser, StringComparison.OrdinalIgnoreCase);
-        if (!isOwner && !_authorizationService.IsPlatformAdministrator())
+        // may remove it. Admin access is evaluated first so a principal whose
+        // claims carry no display name (groups/oid only) can still delete —
+        // GetCurrentUserName is null-safe, unlike claim.Value lookups.
+        if (!_authorizationService.IsPlatformAdministrator())
         {
-            return new ForbidResult();
+            var currentUser = _authorizationService.GetCurrentUserName();
+            var isOwner = !string.IsNullOrEmpty(currentUser)
+                && string.Equals(subscription.AuthorId, currentUser, StringComparison.OrdinalIgnoreCase);
+            if (!isOwner)
+            {
+                return new ForbidResult();
+            }
         }
 
         var success = await cosmosClient.DeleteSubscription(subscription.Id);
@@ -556,8 +561,10 @@ public class EndpointImplementation : IEndpointApiController
     {
         var name = _context.User.Identities.FirstOrDefault()?.Name;
 
+        // Null-safe: a groups/oid-only principal has no Name claim — that must
+        // not turn into a 500.
         if (string.IsNullOrEmpty(name))
-            name = _context.User.FindFirst(ClaimTypes.Name).Value;
+            name = _context.User.FindFirst(ClaimTypes.Name)?.Value;
 
         return name;
     }

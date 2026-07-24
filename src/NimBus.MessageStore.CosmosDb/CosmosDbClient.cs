@@ -1835,7 +1835,12 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         if (!string.IsNullOrEmpty(filter.EndpointId))
         {
             var p = NextParam();
-            conditions.Add($"STARTSWITH(c.endpointId, {p}, true)");
+            // Exact scope (authorization-sensitive callers) vs. the historical
+            // prefix match — see AuditFilter.EndpointIdExact. STRINGEQUALS with
+            // ignoreCase matches the other providers' case-insensitive equality.
+            conditions.Add(filter.EndpointIdExact
+                ? $"STRINGEQUALS(c.endpointId, {p}, true)"
+                : $"STARTSWITH(c.endpointId, {p}, true)");
             parameters[p] = filter.EndpointId;
         }
 

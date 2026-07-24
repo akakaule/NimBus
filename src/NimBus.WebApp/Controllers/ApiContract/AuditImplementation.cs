@@ -34,10 +34,12 @@ namespace NimBus.WebApp.Controllers.ApiContract
             // never open-ended:
             // - Unscoped (no endpoint filter, the cross-endpoint Audit Log page)
             //   requires a platform administrator.
-            // - Endpoint-scoped requires managing that endpoint, and the results
-            //   are additionally reduced to EXACT endpoint matches below —
-            //   the store contract treats EndpointId as a case-insensitive
-            //   PREFIX, so authorizing "Orders" must not leak "OrdersArchive".
+            // - Endpoint-scoped requires managing that endpoint, and the query
+            //   is switched to EXACT endpoint matching in storage — the default
+            //   contract treats EndpointId as a case-insensitive PREFIX, so
+            //   authorizing "Orders" must not leak "OrdersArchive". Exact
+            //   matching in storage (not post-filtering a fetched page) keeps
+            //   pages full even when prefix-siblings dominate the data.
             var scopedEndpointId = filter.EndpointId;
             if (string.IsNullOrEmpty(scopedEndpointId))
             {
@@ -46,9 +48,14 @@ namespace NimBus.WebApp.Controllers.ApiContract
                     return new ForbidResult();
                 }
             }
-            else if (!_authorizationService.IsManagerOfEndpoint(scopedEndpointId))
+            else
             {
-                return new ForbidResult();
+                if (!_authorizationService.IsManagerOfEndpoint(scopedEndpointId))
+                {
+                    return new ForbidResult();
+                }
+
+                filter.EndpointIdExact = true;
             }
             // Clamp page size to [1, 200] with a default of 50. The upper bound prevents
             // unbounded scans against Cosmos / SQL when an external caller forgets a sensible value.
@@ -56,16 +63,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             var result = await _cosmosClient.SearchAudits(filter, body.ContinuationToken, maxItems);
 
-            // Exact-match reduction for scoped searches (see authorization note
-            // above). Pages may come back short, but the continuation token still
-            // advances, so "Load more" walks the full result set.
-            var audits = string.IsNullOrEmpty(scopedEndpointId)
-                ? result.Audits
-                : result.Audits.Where(a => string.Equals(a.EndpointId, scopedEndpointId, StringComparison.OrdinalIgnoreCase));
-
             return new AuditSearchResponse
             {
-                Audits = audits.Select(a => new AuditEntry
+                Audits = result.Audits.Select(a => new AuditEntry
                 {
                     EventId = a.EventId,
                     EndpointId = a.EndpointId,

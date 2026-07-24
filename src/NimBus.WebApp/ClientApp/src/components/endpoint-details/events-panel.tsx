@@ -85,6 +85,11 @@ const ACTIONABLE_STATUSES = [
   api.ResolutionStatus.Deferred,
 ];
 
+// Cap on the pages the hide-reported toggle may auto-append to fill a client
+// page. Bounds memory and storage load on endpoints whose recent history is
+// entirely reported; past the cap the operator pages on explicitly via Next.
+const MAX_HIDE_REPORTED_REFILL_PAGES = 3;
+
 // One-click triage set applied by the "Failed" button: the terminal failed
 // statuses an operator acts on. Deliberately narrower than ACTIONABLE_STATUSES
 // (no Deferred — those retry on their own).
@@ -307,6 +312,10 @@ const EventsPanel = (props: EventsPanelProps) => {
   // back-to-back; without serialization their completion order is undefined and
   // storage could finish "reported" while the UI shows unreported.
   const reportWriteChains = React.useRef(new Map<string, Promise<void>>());
+  // Per-event operation revision: a FAILED older write must not roll the UI
+  // back over a newer operation's optimistic state (e.g. Mark fails slowly
+  // after the user already did Undo → Mark again).
+  const reportRevisions = React.useRef(new Map<string, number>());
   // Guards nextPage against overlapping auto-refill calls (see the
   // hide-reported effect below).
   const isPagingRef = React.useRef(false);
@@ -603,16 +612,23 @@ const EventsPanel = (props: EventsPanelProps) => {
     // Serialize writes per event: chain this request after any in-flight one so
     // a rapid mark→Undo pair reaches the server in order.
     const eventKey = event.eventId!;
+    const revision = (reportRevisions.current.get(eventKey) ?? 0) + 1;
+    reportRevisions.current.set(eventKey, revision);
     const prior = reportWriteChains.current.get(eventKey) ?? Promise.resolve();
     const write = prior
       .then(() => client.postReportEvent(endpointId, eventKey, body))
       .catch((error) => {
         console.error("Failed to update reported flag:", error);
-        event.isReported = prev.isReported;
-        event.reportedBy = prev.reportedBy;
-        event.reportedAtUtc = prev.reportedAtUtc;
-        event.ticketId = prev.ticketId;
-        setEvents((current) => [...current]);
+        // Only the LATEST operation may roll the UI back — a stale failure
+        // must not overwrite a newer operation's optimistic state (the newer
+        // write is queued behind this one and will settle the server state).
+        if (reportRevisions.current.get(eventKey) === revision) {
+          event.isReported = prev.isReported;
+          event.reportedBy = prev.reportedBy;
+          event.reportedAtUtc = prev.reportedAtUtc;
+          event.ticketId = prev.ticketId;
+          setEvents((current) => [...current]);
+        }
         notifyError("Could not update reported status");
       })
       .then(() => {
@@ -736,14 +752,23 @@ const EventsPanel = (props: EventsPanelProps) => {
   );
 
   // Hide-reported filters only the LOADED batch, which can thin the visible
-  // rows below one client page while the server still has more — the table's
-  // Next button would then dead-end. Keep appending server pages until a client
-  // page is filled or the continuation token runs dry. nextPage's isPagingRef
-  // guard prevents overlapping fetches; each append re-runs this effect.
+  // rows below one client page while the server still has more. Top up with a
+  // STRICTLY BOUNDED number of extra pages (an endpoint whose history is
+  // entirely reported must not be paged into memory wholesale); beyond the
+  // budget the user continues explicitly via the table's Next button, which
+  // stays enabled while a server continuation token remains (hasMoreRows).
+  const refillBudget = React.useRef(0);
+  React.useEffect(() => {
+    // Re-arm on toggle / new result-set generation.
+    refillBudget.current = hideReported ? MAX_HIDE_REPORTED_REFILL_PAGES : 0;
+  }, [hideReported, applied, searchNonce]);
+
   React.useEffect(() => {
     if (!hideReported || isLoading) return;
+    if (refillBudget.current <= 0) return;
     if (!continuationToken || continuationToken === "null") return;
     if (visibleEvents.length >= 20) return; // one DataTable page (dataRowsPerPage)
+    refillBudget.current -= 1;
     void nextPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hideReported, visibleEvents.length, continuationToken, isLoading]);
@@ -1193,6 +1218,7 @@ const EventsPanel = (props: EventsPanelProps) => {
             hideDense={true}
             dataRowsPerPage={20}
             onPageChange={nextPage}
+            hasMoreRows={!!continuationToken && continuationToken !== "null"}
             fixedWidth={"-webkit-fill-available"}
           />
         )}

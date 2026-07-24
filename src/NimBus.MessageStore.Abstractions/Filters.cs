@@ -29,6 +29,16 @@ public class AuditFilter
 {
     public string? EventId { get; set; }
     public string? EndpointId { get; set; }
+
+    /// <summary>
+    /// When true, <see cref="EndpointId"/> matches by case-insensitive EQUALITY
+    /// instead of the default case-insensitive prefix. Used by authorization-
+    /// scoped queries (the endpoint Audit tab), where a prefix match would let
+    /// a manager of "Orders" read "OrdersArchive" rows. Default false preserves
+    /// the historical prefix semantics for existing callers.
+    /// </summary>
+    public bool EndpointIdExact { get; set; }
+
     public string? AuditorName { get; set; }
     public string? EventTypeId { get; set; }
     public MessageAuditType? AuditType { get; set; }

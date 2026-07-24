@@ -343,7 +343,13 @@ public class InMemoryMessageStore : INimBusMessageStore
         }));
         // ID-like fields use case-insensitive PREFIX matching — see GetEventsByFilter.
         if (!string.IsNullOrEmpty(filter.EventId)) allAudits = allAudits.Where(a => HasPrefix(a.EventId, filter.EventId));
-        if (!string.IsNullOrEmpty(filter.EndpointId)) allAudits = allAudits.Where(a => HasPrefix(a.EndpointId, filter.EndpointId));
+        if (!string.IsNullOrEmpty(filter.EndpointId))
+        {
+            // Exact scope vs. historical prefix — see AuditFilter.EndpointIdExact.
+            allAudits = filter.EndpointIdExact
+                ? allAudits.Where(a => string.Equals(a.EndpointId, filter.EndpointId, StringComparison.OrdinalIgnoreCase))
+                : allAudits.Where(a => HasPrefix(a.EndpointId, filter.EndpointId));
+        }
         if (!string.IsNullOrEmpty(filter.AuditorName)) allAudits = allAudits.Where(a => HasPrefix(a.Audit.AuditorName, filter.AuditorName));
         if (filter.AuditType.HasValue) allAudits = allAudits.Where(a => a.Audit.AuditType == filter.AuditType.Value);
         var results = allAudits.OrderByDescending(a => a.CreatedAt).Take(maxItemCount > 0 ? maxItemCount : 100).ToList();

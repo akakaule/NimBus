@@ -399,7 +399,14 @@ VALUES (
         // Prefix matching on ID-like fields — see SearchMessages for the
         // cross-provider semantics and collation note.
         if (!string.IsNullOrEmpty(filter.EventId)) { where.Add(@"EventId LIKE @EventId ESCAPE '\'"); p.Add("EventId", LikePrefix(filter.EventId)); }
-        if (!string.IsNullOrEmpty(filter.EndpointId)) { where.Add(@"EndpointId LIKE @EndpointId ESCAPE '\'"); p.Add("EndpointId", LikePrefix(filter.EndpointId)); }
+        if (!string.IsNullOrEmpty(filter.EndpointId))
+        {
+            // Exact scope (authorization-sensitive callers) vs. the historical
+            // prefix match — see AuditFilter.EndpointIdExact. CI collation makes
+            // '=' case-insensitive, matching the other providers.
+            if (filter.EndpointIdExact) { where.Add("EndpointId = @EndpointId"); p.Add("EndpointId", filter.EndpointId); }
+            else { where.Add(@"EndpointId LIKE @EndpointId ESCAPE '\'"); p.Add("EndpointId", LikePrefix(filter.EndpointId)); }
+        }
         if (!string.IsNullOrEmpty(filter.AuditorName)) { where.Add(@"AuditorName LIKE @AuditorName ESCAPE '\'"); p.Add("AuditorName", LikePrefix(filter.AuditorName)); }
         if (!string.IsNullOrEmpty(filter.EventTypeId)) { where.Add(@"EventTypeId LIKE @EventTypeId ESCAPE '\'"); p.Add("EventTypeId", LikePrefix(filter.EventTypeId)); }
         if (filter.AuditType.HasValue) { where.Add("AuditType = @AuditType"); p.Add("AuditType", filter.AuditType.Value.ToString()); }

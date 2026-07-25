@@ -1,7 +1,7 @@
 import * as React from "react";
 const { useEffect, useState } = React;
 import { cn } from "lib/utils";
-import { getEnv } from "hooks/app-status";
+import { useEnv } from "hooks/app-status";
 
 interface CurrentUser {
   isAuthenticated: boolean;
@@ -40,7 +40,7 @@ const SignOutIcon = () => (
 const SidebarUserFooter: React.FC = () => {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [endpointMissing, setEndpointMissing] = useState(false);
-  const env = getEnv();
+  const env = useEnv();
 
   useEffect(() => {
     let cancelled = false;

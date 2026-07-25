@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import moment from "moment";
 import { cn } from "lib/utils";
-import { getEnv, getApplicationStatus } from "hooks/app-status";
+import { useEnv, getApplicationStatus } from "hooks/app-status";
 import {
   useMonitorData,
   type MonitorEndpoint,
@@ -25,7 +25,7 @@ import {
  */
 export default function Monitor() {
   const data = useMonitorData();
-  const envFromHook = getEnv();
+  const envFromHook = useEnv();
   const [tenantLabel, setTenantLabel] = useState<string | undefined>();
   const [now, setNow] = useState(() => new Date());
   const [showCursor, setShowCursor] = useState(true);

@@ -41,7 +41,6 @@ export const emitToast: ToastEmitter = (toast) => {
   if (imperativeEmit) {
     imperativeEmit(toast);
   } else if (typeof console !== "undefined") {
-    // eslint-disable-next-line no-console
     console.warn("[toast]", toast.variant ?? "info", toast.title ?? "", toast.description ?? "");
   }
 };

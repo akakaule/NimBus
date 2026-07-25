@@ -28,7 +28,7 @@ import { cn } from "lib/utils";
 import ReportPopover from "./report-popover";
 import { notifyWithUndo, notifyError } from "functions/notifications.functions";
 import { reportedCellState } from "functions/reported.functions";
-import { getTicketLinkTemplate } from "hooks/app-status";
+import { useTicketLinkTemplate } from "hooks/app-status";
 import { useCurrentUser } from "hooks/use-current-user";
 
 const isHandoffEvent = (event: api.Event): boolean =>
@@ -302,7 +302,7 @@ const EventsPanel = (props: EventsPanelProps) => {
   // template ("…/{ticket}"); undefined → ticket chips render as plain text.
   // currentUser names the operator on optimistic marks so the who/when tooltip
   // is populated before the next refetch.
-  const ticketLinkTemplate = getTicketLinkTemplate();
+  const ticketLinkTemplate = useTicketLinkTemplate();
   const { user: currentUser } = useCurrentUser();
   const [reportTarget, setReportTarget] = React.useState<{
     event: api.Event;
@@ -929,9 +929,9 @@ const EventsPanel = (props: EventsPanelProps) => {
   // Derive the table rows from the shown events + hydrated session counts.
   // Memoised so we only re-map when the underlying data changes — no redundant
   // state mirror + effect (which cost an extra render per fetch).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const rows = React.useMemo(
     () => mapEvents(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [visibleEvents, sessions, ticketLinkTemplate, currentUser],
   );
 

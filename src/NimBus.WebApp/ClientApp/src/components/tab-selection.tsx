@@ -1,9 +1,10 @@
+import * as React from "react";
 import { useLocation } from "react-router-dom";
 import { Tabs, TabList, Tab, TabPanels, TabPanel } from "components/ui/tabs";
 
 export interface ITab {
   name: string;
-  content: JSX.Element;
+  content: React.JSX.Element;
   isEnabled: boolean;
 }
 

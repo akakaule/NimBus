@@ -239,7 +239,7 @@ export default class EndpointsList extends React.Component<
     return this.mergeStatuses(existing, endpoints);
   }
 
-  createTableNew(): JSX.Element {
+  createTableNew(): React.JSX.Element {
     // Derive the visible rows from the status cache: the checked endpoints, or
     // the whole list when nothing is checked. Rows are re-sorted by the table.
     const visibleIds =
@@ -339,7 +339,7 @@ export default class EndpointsList extends React.Component<
     };
   }
 
-  mapStatusToIcon = (status: EndpointStatus): JSX.Element => {
+  mapStatusToIcon = (status: EndpointStatus): React.JSX.Element => {
     const colorClass = mapStatusToColor(status);
     let IconComponent: React.FC<{ className?: string }> = CheckCircleIcon;
     let colorTailwind = "text-green-500";

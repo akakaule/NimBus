@@ -34,7 +34,7 @@ namespace NimBus.Core.Messages
         public JitterMode Jitter { get; set; } = JitterMode.None;
 
         /// <summary>
-        /// Gets or sets the maximum proportional increase used by <see cref="JitterMode.Bounded"/>.
+        /// Gets or sets the non-negative, finite maximum proportional increase used by <see cref="JitterMode.Bounded"/>.
         /// </summary>
         public double BoundedJitterFactor { get; set; } = 0.25;
 
@@ -64,8 +64,8 @@ namespace NimBus.Core.Messages
 
             delay = Jitter switch
             {
-                JitterMode.Full => ApplyJitter(delay, rng ?? Random.Shared, 1),
-                JitterMode.Bounded => ApplyJitter(delay, rng ?? Random.Shared, BoundedJitterFactor),
+                JitterMode.Full => ApplyJitter(delay, rng ?? Random.Shared, 1, MaxDelay),
+                JitterMode.Bounded => ApplyJitter(delay, rng ?? Random.Shared, GetBoundedJitterFactor(), MaxDelay),
                 _ => delay
             };
 
@@ -75,12 +75,24 @@ namespace NimBus.Core.Messages
             return delay;
         }
 
-        private static TimeSpan ApplyJitter(TimeSpan delay, Random rng, double maximumFactor)
+        private double GetBoundedJitterFactor()
+        {
+            if (!double.IsFinite(BoundedJitterFactor) || BoundedJitterFactor < 0)
+                throw new ArgumentOutOfRangeException(nameof(BoundedJitterFactor), BoundedJitterFactor, "The bounded jitter factor must be finite and non-negative.");
+
+            return BoundedJitterFactor;
+        }
+
+        private static TimeSpan ApplyJitter(TimeSpan delay, Random rng, double maximumFactor, TimeSpan? maxDelay)
         {
             var maximumJitterTicks = delay.Ticks * maximumFactor;
             var jitterTicks = (long)(maximumJitterTicks * rng.NextDouble());
             if (maximumJitterTicks > 0 && jitterTicks >= maximumJitterTicks)
                 jitterTicks = (long)Math.Ceiling(maximumJitterTicks) - 1;
+
+            if (maxDelay.HasValue && (decimal)delay.Ticks + jitterTicks > maxDelay.Value.Ticks)
+                return maxDelay.Value;
+
             return TimeSpan.FromTicks(checked(delay.Ticks + jitterTicks));
         }
 

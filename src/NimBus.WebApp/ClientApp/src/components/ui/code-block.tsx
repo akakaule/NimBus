@@ -168,7 +168,7 @@ function tokenizeJson(
       }
 
       // Punctuation / whitespace passthrough.
-      const punctMatch = rest.match(/^(\s*)([{}\[\],:])/);
+      const punctMatch = rest.match(/^(\s*)([{}[\],:])/);
       if (punctMatch) {
         const [full, lead, punct] = punctMatch;
         if (lead) nodes.push(lead);

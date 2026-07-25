@@ -143,6 +143,7 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     private const string MessagesContainer = "messages";
     private const string AuditsContainer = "audits";
     private const string EventSchemasContainer = "eventschemas";
+    private const string EventReportsContainer = "eventreports";
 
     public CosmosDbClient(CosmosClient cosmosClient, ILogger<CosmosDbClient> logger = null)
     {
@@ -1391,6 +1392,11 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
     private Task<ICosmosContainerAdapter> GetEventSchemasContainer() =>
         GetCachedContainerAsync(EventSchemasContainer, "/id");
 
+    // EventReport serializes with PascalCase names (only "id" is attributed), so
+    // the partition path is /EndpointId — all lookups are endpoint-scoped.
+    private Task<ICosmosContainerAdapter> GetEventReportsContainer() =>
+        GetCachedContainerAsync(EventReportsContainer, "/EndpointId");
+
     // ── IEventSchemaStore ──────────────────────────────────────────────────────
 
     public async Task<EventSchema?> GetSchema(string eventTypeId)
@@ -1829,7 +1835,12 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         if (!string.IsNullOrEmpty(filter.EndpointId))
         {
             var p = NextParam();
-            conditions.Add($"STARTSWITH(c.endpointId, {p}, true)");
+            // Exact scope (authorization-sensitive callers) vs. the historical
+            // prefix match — see AuditFilter.EndpointIdExact. STRINGEQUALS with
+            // ignoreCase matches the other providers' case-insensitive equality.
+            conditions.Add(filter.EndpointIdExact
+                ? $"STRINGEQUALS(c.endpointId, {p}, true)"
+                : $"STARTSWITH(c.endpointId, {p}, true)");
             parameters[p] = filter.EndpointId;
         }
 
@@ -1911,6 +1922,117 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         }
 
         return new AuditSearchResult { Audits = audits, ContinuationToken = token };
+    }
+
+    public async Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds)
+    {
+        var ids = (eventIds ?? Array.Empty<string>())
+            .Where(e => !string.IsNullOrEmpty(e))
+            .Distinct()
+            .ToList();
+
+        var counts = new Dictionary<string, int>();
+        if (string.IsNullOrEmpty(endpointId) || ids.Count == 0)
+            return counts;
+
+        // Document-level ids are camelCase ([JsonProperty] on AuditDocument);
+        // the nested audit entity serializes with PascalCase names and a NUMERIC
+        // AuditType (no attributes / no StringEnumConverter) — see SearchAudits.
+        // AccessDenied=false-or-undefined excludes denied resubmit attempts while
+        // keeping legacy documents (written before the field existed) counted.
+        // The audits container is partitioned by /eventId, so this GROUP BY is
+        // cross-partition — but bounded by the explicit event-id list, it stays a
+        // single cheap fan-out instead of one round-trip per row on the page.
+        var resubmitTypes = new[]
+        {
+            (int)MessageAuditType.Resubmit,
+            (int)MessageAuditType.ResubmitWithChanges,
+        };
+
+        var query = new QueryDefinition(
+                "SELECT c.eventId AS EventId, COUNT(1) AS Count FROM c " +
+                "WHERE c.endpointId = @endpointId " +
+                "AND ARRAY_CONTAINS(@types, c.audit.AuditType) " +
+                "AND ARRAY_CONTAINS(@eventIds, c.eventId) " +
+                "AND (NOT IS_DEFINED(c.audit.AccessDenied) OR c.audit.AccessDenied = false) " +
+                "GROUP BY c.eventId")
+            .WithParameter("@endpointId", endpointId)
+            .WithParameter("@types", resubmitTypes)
+            .WithParameter("@eventIds", ids);
+
+        var container = await GetAuditsContainer();
+        var iterator = container.GetItemQueryIterator<AuditCountRow>(query);
+        while (iterator.HasMoreResults)
+        {
+            foreach (var row in await iterator.ReadNextAsync())
+            {
+                if (!string.IsNullOrEmpty(row.EventId))
+                    counts[row.EventId] = row.Count;
+            }
+        }
+
+        return counts;
+    }
+
+    private sealed class AuditCountRow
+    {
+        public string EventId { get; set; }
+
+        public int Count { get; set; }
+    }
+
+    public async Task SetEventReport(string endpointId, string eventId, bool isReported, string? reportedBy, string? ticketId)
+    {
+        if (string.IsNullOrEmpty(endpointId)) throw new ArgumentNullException(nameof(endpointId));
+        if (string.IsNullOrEmpty(eventId)) throw new ArgumentNullException(nameof(eventId));
+
+        var report = new EventReport
+        {
+            Id = $"{endpointId}_{eventId}",
+            EndpointId = endpointId,
+            EventId = eventId,
+            IsReported = isReported,
+            ReportedBy = reportedBy,
+            ReportedAtUtc = DateTime.UtcNow,
+            // Only retain a ticket reference while the event is reported; clearing
+            // the marker drops the ticket too.
+            TicketId = isReported ? ticketId : null,
+        };
+
+        var container = await GetEventReportsContainer();
+        await container.UpsertItemAsync(report, new PartitionKey(report.EndpointId));
+    }
+
+    public async Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds)
+    {
+        var ids = (eventIds ?? Array.Empty<string>())
+            .Where(e => !string.IsNullOrEmpty(e))
+            .Distinct()
+            .ToList();
+
+        var result = new Dictionary<string, EventReport>();
+        if (string.IsNullOrEmpty(endpointId) || ids.Count == 0)
+            return result;
+
+        // Single-partition batched read (EndpointId is the partition key).
+        var query = new QueryDefinition(
+                $"SELECT * FROM c WHERE c.{nameof(EventReport.EndpointId)} = @endpointId " +
+                $"AND ARRAY_CONTAINS(@eventIds, c.{nameof(EventReport.EventId)})")
+            .WithParameter("@endpointId", endpointId)
+            .WithParameter("@eventIds", ids);
+
+        var container = await GetEventReportsContainer();
+        var iterator = container.GetItemQueryIterator<EventReport>(query);
+        while (iterator.HasMoreResults)
+        {
+            foreach (var report in await iterator.ReadNextAsync())
+            {
+                if (!string.IsNullOrEmpty(report.EventId))
+                    result[report.EventId] = report;
+            }
+        }
+
+        return result;
     }
 
     public async Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId)

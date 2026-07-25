@@ -16,6 +16,7 @@ import { Spinner } from "components/ui/spinner";
 import { Checkbox } from "components/ui/checkbox";
 import { Button } from "components/ui/button";
 import { Input } from "components/ui/input";
+import { Tooltip } from "components/ui/tooltip";
 import type {
   ITableRow,
   ITableHeadCell,
@@ -45,6 +46,14 @@ interface DataTableProps {
   styles?: React.CSSProperties;
   count?: number;
   onPageChange?: () => void;
+  /**
+   * True while the server can produce more rows (a continuation token exists).
+   * Keeps Next enabled on the last local page — clicking it then invokes
+   * onPageChange to fetch the next server page instead of dead-ending, which
+   * matters when a client-side filter (e.g. Hide reported) thins the loaded
+   * rows below the local page count.
+   */
+  hasMoreRows?: boolean;
   endpointIds?: string[];
   checkedEndpointIds?: string[];
   checked?: (name: string, state: boolean) => void;
@@ -69,6 +78,7 @@ export function DataTable({
   styles,
   count,
   onPageChange,
+  hasMoreRows = false,
   endpointIds,
   checkedEndpointIds,
   checked,
@@ -116,7 +126,17 @@ export function DataTable({
       cols.push({
         id: cell.id,
         accessorFn: (row) => row.data.get(cell.id)?.searchValue ?? "",
-        header: () => cell.label,
+        header: () =>
+          cell.info ? (
+            <span className="inline-flex items-center gap-1">
+              {cell.label}
+              <Tooltip content={cell.info} position="bottom">
+                <InfoIcon />
+              </Tooltip>
+            </span>
+          ) : (
+            cell.label
+          ),
         cell: ({ row }) => {
           const cellData = row.original.data.get(cell.id);
           return (
@@ -140,13 +160,15 @@ export function DataTable({
                   key={i}
                   size="xs"
                   variant="outline"
-                  disabled={Object.keys(rowSelection).length === 0}
+                  disabled={!rows.some((r) => rowSelection[r.id])}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    const selectedRows = rows.filter(
-                      (_, idx) => rowSelection[idx],
-                    );
+                    // Selection is keyed by stable row id (getRowId below), so
+                    // filtering/reordering the rows prop can never redirect an
+                    // action to a different event. Hidden-but-selected rows are
+                    // excluded because they are absent from `rows`.
+                    const selectedRows = rows.filter((r) => rowSelection[r.id]);
                     try {
                       action.onClick(selectedRows);
                     } finally {
@@ -213,6 +235,10 @@ export function DataTable({
       rowSelection,
       globalFilter,
     },
+    // Stable identity: selection state is keyed by the caller's row id, not the
+    // array index — indices shift when rows are filtered (e.g. Hide reported)
+    // and index-keyed selection would then target the wrong rows.
+    getRowId: (row) => row.id,
     enableRowSelection: withCheckboxes,
     onSortingChange: setSorting,
     onRowSelectionChange: setRowSelection,
@@ -251,7 +277,7 @@ export function DataTable({
   }, [pageIndex, onPageChange, rows.length, table]);
 
   const selectedRows = useMemo(() => {
-    return rows.filter((_, idx) => rowSelection[idx]);
+    return rows.filter((r) => rowSelection[r.id]);
   }, [rows, rowSelection]);
 
   return (
@@ -402,14 +428,43 @@ export function DataTable({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
+            onClick={() => {
+              if (table.getCanNextPage()) {
+                table.nextPage();
+              } else {
+                // Last local page but the server has more — fetch the next
+                // server page; the appended rows extend the current page (or
+                // create the next one).
+                onPageChange?.();
+              }
+            }}
+            disabled={!table.getCanNextPage() && !hasMoreRows}
           >
             Next
           </Button>
         </div>
       </div>
     </div>
+  );
+}
+
+// Info icon for header-cell help tooltips
+function InfoIcon() {
+  return (
+    <svg
+      className="w-3.5 h-3.5 text-muted-foreground cursor-help"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
+    </svg>
   );
 }
 
@@ -493,6 +548,7 @@ function TableRow({ row, rowData }: { row: any; rowData: ITableRow }) {
     <tr
       className={cn(
         "group hover:bg-primary-tint dark:hover:bg-primary/15 transition-colors",
+        rowData.tone === "reported" && "bg-green-50/60 dark:bg-green-900/15",
         row.getIsSelected() && "bg-primary-50 dark:bg-primary/10",
         rowData.route && "cursor-pointer",
       )}

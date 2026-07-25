@@ -1,0 +1,982 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="An infographic explaining NimBus saga support, platform fit, value, gaps, and recommended investment.">
+  <title>NimBus and Sagas — Capability &amp; Platform Fit</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --night: #07151f;
+      --night-2: #0d2230;
+      --night-3: #173649;
+      --ink: #14252f;
+      --muted: #60727d;
+      --paper: #f4f7f6;
+      --white: #ffffff;
+      --line: #d9e3e1;
+      --mint: #31c69b;
+      --mint-dark: #087d60;
+      --mint-soft: #e7f8f2;
+      --coral: #f0775d;
+      --coral-dark: #a63e2b;
+      --coral-soft: #fff0ec;
+      --amber: #e4a52c;
+      --amber-dark: #8a5c00;
+      --amber-soft: #fff6df;
+      --blue: #5e8ff5;
+      --blue-dark: #315ebd;
+      --blue-soft: #edf3ff;
+      --slate-soft: #edf2f3;
+      --shadow: 0 20px 55px rgba(13, 34, 48, .09);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: "Segoe UI", Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 16px;
+      line-height: 1.55;
+    }
+
+    a { color: inherit; }
+    code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+
+    .shell {
+      width: min(1160px, calc(100% - 40px));
+      margin-inline: auto;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      min-height: 640px;
+      color: var(--white);
+      background:
+        radial-gradient(circle at 83% 14%, rgba(94,143,245,.27), transparent 27%),
+        radial-gradient(circle at 10% 90%, rgba(49,198,155,.18), transparent 32%),
+        linear-gradient(145deg, var(--night), var(--night-2));
+      isolation: isolate;
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      opacity: .17;
+      background-image:
+        linear-gradient(rgba(255,255,255,.12) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.12) 1px, transparent 1px);
+      background-size: 56px 56px;
+      mask-image: linear-gradient(90deg, transparent, #000 35%);
+    }
+
+    .hero-inner { padding: 38px 0 58px; }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 72px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 780;
+      letter-spacing: .01em;
+    }
+
+    .brand-mark {
+      position: relative;
+      width: 34px;
+      height: 34px;
+      border: 1px solid rgba(255,255,255,.3);
+      border-radius: 11px;
+      background: rgba(255,255,255,.07);
+    }
+
+    .brand-mark::before,
+    .brand-mark::after {
+      content: "";
+      position: absolute;
+      border-radius: 50%;
+    }
+
+    .brand-mark::before { width: 9px; height: 9px; left: 7px; top: 7px; background: var(--mint); box-shadow: 11px 11px 0 var(--blue); }
+    .brand-mark::after { width: 15px; height: 2px; left: 10px; top: 16px; border-radius: 2px; background: #94d8c5; transform: rotate(45deg); }
+
+    .adr-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 13px;
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 999px;
+      color: #c5d3dc;
+      background: rgba(255,255,255,.055);
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(340px, .75fr);
+      gap: 62px;
+      align-items: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+      color: #85e6c9;
+      font-size: 11px;
+      font-weight: 850;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before { content: ""; width: 28px; height: 2px; background: currentColor; }
+
+    h1 {
+      max-width: 720px;
+      margin: 0;
+      font-size: clamp(45px, 6.2vw, 76px);
+      line-height: .99;
+      letter-spacing: -.055em;
+    }
+
+    h1 span {
+      display: block;
+      color: transparent;
+      background: linear-gradient(90deg, #8eefd1, #a9c2ff 75%);
+      -webkit-background-clip: text;
+      background-clip: text;
+    }
+
+    .hero-copy {
+      max-width: 690px;
+      margin: 24px 0 0;
+      color: #c2d1da;
+      font-size: clamp(17px, 2vw, 21px);
+    }
+
+    .hero-copy strong { color: var(--white); }
+
+    .verdict {
+      position: relative;
+      padding: 27px;
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: 23px;
+      background: rgba(7,21,31,.55);
+      box-shadow: 0 30px 75px rgba(0,0,0,.26);
+      backdrop-filter: blur(12px);
+    }
+
+    .verdict-label {
+      margin-bottom: 20px;
+      color: #91a7b5;
+      font-size: 10px;
+      font-weight: 850;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    .verdict-row {
+      display: grid;
+      grid-template-columns: 40px 1fr;
+      gap: 13px;
+      align-items: start;
+      padding: 15px 0;
+      border-top: 1px solid rgba(255,255,255,.1);
+    }
+
+    .verdict-row:first-of-type { border-top: 0; padding-top: 0; }
+
+    .verdict-icon {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 11px;
+      font-weight: 900;
+    }
+
+    .verdict-row.no .verdict-icon { color: #ffb09f; background: rgba(240,119,93,.15); }
+    .verdict-row.yes .verdict-icon { color: #8aefd1; background: rgba(49,198,155,.15); }
+    .verdict-row b { display: block; margin-bottom: 3px; font-size: 15px; }
+    .verdict-row small { display: block; color: #91a7b5; font-size: 11px; line-height: 1.45; }
+
+    .verdict-stamp {
+      margin-top: 14px;
+      padding: 10px 12px;
+      border: 1px solid rgba(49,198,155,.28);
+      border-radius: 10px;
+      color: #a6eed8;
+      background: rgba(49,198,155,.09);
+      font-size: 11px;
+      font-weight: 750;
+      text-align: center;
+    }
+
+    main { padding: 68px 0 82px; }
+    .section { margin-top: 76px; }
+    .section:first-child { margin-top: 0; }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: 76px minmax(0, 1fr);
+      gap: 18px;
+      margin-bottom: 27px;
+    }
+
+    .section-no {
+      padding-top: 5px;
+      color: var(--mint-dark);
+      font-size: 11px;
+      font-weight: 850;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(30px, 4vw, 43px);
+      line-height: 1.08;
+      letter-spacing: -.038em;
+    }
+
+    .section-copy {
+      max-width: 780px;
+      margin: 9px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .support-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .support-card {
+      min-height: 290px;
+      padding: 27px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--white);
+      box-shadow: var(--shadow);
+    }
+
+    .support-card.absent { border-top: 6px solid var(--coral); }
+    .support-card.present { border-top: 6px solid var(--mint); }
+
+    .support-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 21px;
+      padding: 5px 9px;
+      border-radius: 7px;
+      font-size: 10px;
+      font-weight: 850;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .absent .support-kicker { color: var(--coral-dark); background: var(--coral-soft); }
+    .present .support-kicker { color: var(--mint-dark); background: var(--mint-soft); }
+    .support-card h3 { margin: 0 0 11px; font-size: 25px; line-height: 1.15; letter-spacing: -.025em; }
+    .support-card > p { margin: 0; color: var(--muted); font-size: 13px; }
+
+    .token-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 23px;
+    }
+
+    .token {
+      padding: 6px 9px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: #52646f;
+      background: #f8faf9;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .orchestration {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: var(--white);
+      box-shadow: var(--shadow);
+    }
+
+    .workflow {
+      display: grid;
+      grid-template-columns: 1fr 54px 1.25fr 54px 1fr 54px 1fr;
+      align-items: stretch;
+      gap: 4px;
+      padding: 30px;
+    }
+
+    .event-node,
+    .orchestrator-node {
+      position: relative;
+      min-height: 170px;
+      padding: 19px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fafcfc;
+    }
+
+    .event-node .kind,
+    .orchestrator-node .kind {
+      display: block;
+      margin-bottom: 24px;
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 850;
+      letter-spacing: .11em;
+      text-transform: uppercase;
+    }
+
+    .event-node b,
+    .orchestrator-node b { display: block; margin-bottom: 6px; font-size: 16px; }
+    .event-node p,
+    .orchestrator-node p { margin: 0; color: var(--muted); font-size: 11px; }
+
+    .orchestrator-node {
+      color: var(--white);
+      border-color: var(--night-3);
+      background: linear-gradient(145deg, var(--night-2), var(--night-3));
+    }
+
+    .orchestrator-node .kind { color: #86e4c8; }
+    .orchestrator-node p { color: #a9bcc8; }
+
+    .node-arrow {
+      display: grid;
+      place-items: center;
+      color: #8da09f;
+      font-size: 23px;
+      font-weight: 850;
+    }
+
+    .orchestrator-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-top: 14px;
+    }
+
+    .orchestrator-actions span {
+      padding: 5px 6px;
+      border: 1px solid rgba(255,255,255,.11);
+      border-radius: 6px;
+      color: #c9d7df;
+      background: rgba(255,255,255,.055);
+      font-size: 8px;
+      text-align: center;
+    }
+
+    .session-rail {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 25px;
+      color: #36584e;
+      background: var(--mint-soft);
+      border-top: 1px solid #c6eadf;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .session-rail::before,
+    .session-rail::after { content: ""; height: 1px; background: #acd9cc; }
+
+    .failure-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      padding: 20px 30px 30px;
+    }
+
+    .failure-card {
+      display: grid;
+      grid-template-columns: 36px 1fr;
+      gap: 12px;
+      align-items: start;
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: #fafcfc;
+    }
+
+    .failure-card span {
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      font-weight: 900;
+    }
+
+    .failure-card.timeout span { color: var(--amber-dark); background: var(--amber-soft); }
+    .failure-card.compensate span { color: var(--coral-dark); background: var(--coral-soft); }
+    .failure-card b { display: block; font-size: 12px; }
+    .failure-card small { display: block; color: var(--muted); font-size: 10px; }
+
+    .boundary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--white);
+      box-shadow: var(--shadow);
+    }
+
+    .boundary-side { padding: 27px; }
+    .boundary-side + .boundary-side { border-left: 1px solid var(--line); }
+    .boundary-side.nimbus { background: linear-gradient(145deg, #f7fffc, var(--mint-soft)); }
+    .boundary-side.app { background: linear-gradient(145deg, #fffdf8, var(--amber-soft)); }
+    .boundary-side h3 { margin: 0 0 20px; font-size: 22px; }
+    .boundary-side h3 small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+
+    .ownership-list { display: grid; gap: 10px; }
+    .ownership-item { display: grid; grid-template-columns: 25px 1fr; gap: 10px; align-items: center; color: var(--muted); font-size: 12px; }
+    .ownership-item span { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 7px; font-size: 10px; font-weight: 900; }
+    .nimbus .ownership-item span { color: var(--mint-dark); background: rgba(49,198,155,.15); }
+    .app .ownership-item span { color: var(--amber-dark); background: rgba(228,165,44,.16); }
+    .ownership-item b { color: var(--ink); }
+
+    .not-saga {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      margin-top: 16px;
+      padding: 14px 17px;
+      border: 1px dashed #c9d5d3;
+      border-radius: 12px;
+      color: var(--muted);
+      background: rgba(255,255,255,.55);
+      font-size: 11px;
+    }
+
+    .not-saga strong { color: var(--ink); }
+
+    .gaps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 13px;
+    }
+
+    .gap-card {
+      min-height: 190px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--white);
+      box-shadow: 0 10px 28px rgba(13,34,48,.05);
+    }
+
+    .gap-no { display: block; margin-bottom: 22px; color: var(--coral-dark); font-size: 10px; font-weight: 850; letter-spacing: .11em; }
+    .gap-card h3 { margin: 0 0 7px; font-size: 15px; }
+    .gap-card p { margin: 0; color: var(--muted); font-size: 11px; }
+
+    .value-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+    }
+
+    .value-card {
+      min-height: 205px;
+      padding: 21px;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: var(--white);
+      box-shadow: 0 10px 30px rgba(13,34,48,.05);
+    }
+
+    .value-icon {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      margin-bottom: 28px;
+      border-radius: 12px;
+      color: var(--blue-dark);
+      background: var(--blue-soft);
+      font-size: 17px;
+      font-weight: 850;
+    }
+
+    .value-card:nth-child(2) .value-icon { color: var(--mint-dark); background: var(--mint-soft); }
+    .value-card:nth-child(3) .value-icon { color: var(--coral-dark); background: var(--coral-soft); }
+    .value-card:nth-child(4) .value-icon { color: var(--amber-dark); background: var(--amber-soft); }
+    .value-card h3 { margin: 0 0 7px; font-size: 16px; }
+    .value-card p { margin: 0; color: var(--muted); font-size: 11px; }
+
+    .fit {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 21px;
+      background: var(--white);
+      box-shadow: var(--shadow);
+    }
+
+    .fit-row {
+      display: grid;
+      grid-template-columns: 1.4fr 190px 1.6fr;
+      gap: 20px;
+      align-items: center;
+      min-height: 83px;
+      padding: 15px 22px;
+      border-top: 1px solid var(--line);
+    }
+
+    .fit-row:first-child { border-top: 0; }
+    .fit-row h3 { margin: 0; font-size: 14px; }
+    .fit-row p { margin: 0; color: var(--muted); font-size: 11px; }
+
+    .fit-rating {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 5px;
+      align-items: center;
+    }
+
+    .fit-rating i { height: 8px; border-radius: 999px; background: #e2e9e8; }
+    .fit-rating.strong i { background: var(--mint); }
+    .fit-rating.good i:nth-child(-n+3) { background: var(--blue); }
+    .fit-rating.weak i:first-child { background: var(--amber); }
+    .fit-rating.poor i:first-child { background: var(--coral); opacity: .5; }
+
+    .fit-label { grid-column: 1 / -1; color: var(--muted); font-size: 9px; font-style: normal; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+
+    .roadmap {
+      display: grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 18px;
+    }
+
+    .recommended,
+    .avoid {
+      padding: 27px;
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+    }
+
+    .recommended { color: var(--white); background: linear-gradient(145deg, var(--night-2), var(--night-3)); }
+    .avoid { border: 1px solid #f0d2ca; background: var(--coral-soft); }
+    .roadmap-tag { display: inline-block; margin-bottom: 20px; padding: 5px 8px; border-radius: 6px; font-size: 9px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+    .recommended .roadmap-tag { color: #9aedd5; background: rgba(49,198,155,.13); }
+    .avoid .roadmap-tag { color: var(--coral-dark); background: rgba(240,119,93,.13); }
+    .roadmap h3 { margin: 0 0 8px; font-size: 24px; line-height: 1.16; }
+    .recommended > p { margin: 0; color: #aebfc9; font-size: 12px; }
+    .avoid > p { margin: 0; color: #825046; font-size: 12px; }
+
+    .roadmap-steps {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 22px;
+    }
+
+    .roadmap-step {
+      display: grid;
+      grid-template-columns: 26px 1fr;
+      gap: 8px;
+      align-items: center;
+      padding: 9px;
+      border: 1px solid rgba(255,255,255,.11);
+      border-radius: 9px;
+      background: rgba(255,255,255,.045);
+      color: #c7d5dd;
+      font-size: 10px;
+    }
+
+    .roadmap-step span { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; color: #8be4c8; background: rgba(49,198,155,.12); font-size: 9px; font-weight: 850; }
+
+    .effort {
+      display: grid;
+      gap: 10px;
+      margin-top: 24px;
+    }
+
+    .effort-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.11); color: #aebfc9; font-size: 10px; }
+    .effort-row strong { color: var(--white); font-size: 13px; }
+    .avoid .effort-row { border-color: rgba(166,62,43,.14); color: #825046; }
+    .avoid .effort-row strong { color: var(--coral-dark); }
+
+    .decision {
+      display: grid;
+      grid-template-columns: 64px 1fr;
+      gap: 20px;
+      align-items: center;
+      margin-top: 74px;
+      padding: 24px 28px;
+      border: 1px solid #bce7da;
+      border-radius: 18px;
+      background: var(--mint-soft);
+    }
+
+    .decision-icon { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 18px; color: var(--white); background: var(--mint-dark); font-size: 25px; font-weight: 900; }
+    .decision span { display: block; margin-bottom: 4px; color: var(--mint-dark); font-size: 10px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+    .decision b { display: block; font-size: 20px; line-height: 1.25; }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      margin-top: 34px;
+      padding-top: 22px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    footer strong { color: var(--ink); }
+
+    @media (max-width: 980px) {
+      .hero-grid { grid-template-columns: 1fr; }
+      .verdict { max-width: 650px; }
+      .workflow { grid-template-columns: 1fr 40px 1.2fr 40px 1fr; }
+      .workflow .node-arrow:nth-of-type(3),
+      .workflow .event-node:last-child { display: none; }
+      .gaps { grid-template-columns: 1fr 1fr; }
+      .value-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 720px) {
+      .shell { width: min(100% - 28px, 1160px); }
+      .hero { min-height: 0; }
+      .hero-inner { padding-top: 27px; }
+      .nav { margin-bottom: 48px; }
+      .adr-link span { display: none; }
+      h1 { font-size: 45px; }
+      .hero-grid { gap: 36px; }
+      main { padding-top: 54px; }
+      .section { margin-top: 58px; }
+      .section-head { grid-template-columns: 1fr; gap: 4px; }
+      .support-grid { grid-template-columns: 1fr; }
+      .workflow { grid-template-columns: 1fr; gap: 8px; }
+      .workflow .node-arrow { transform: rotate(90deg); min-height: 32px; }
+      .workflow .node-arrow:nth-of-type(3),
+      .workflow .event-node:last-child { display: grid; }
+      .failure-row { grid-template-columns: 1fr; padding: 18px 20px 22px; }
+      .boundary { grid-template-columns: 1fr; }
+      .boundary-side + .boundary-side { border-left: 0; border-top: 1px solid var(--line); }
+      .gaps { grid-template-columns: 1fr; }
+      .fit-row { grid-template-columns: 1fr; gap: 8px; padding: 19px; }
+      .fit-rating { max-width: 220px; }
+      .roadmap { grid-template-columns: 1fr; }
+      .decision { grid-template-columns: 1fr; }
+      footer { flex-direction: column; }
+    }
+
+    @media (max-width: 480px) {
+      .value-grid { grid-template-columns: 1fr; }
+      .roadmap-steps { grid-template-columns: 1fr; }
+      .support-card, .boundary-side, .recommended, .avoid { padding: 21px; }
+      .workflow { padding: 20px; }
+    }
+
+    @media print {
+      body { background: var(--white); }
+      .hero { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .support-card, .orchestration, .boundary, .gap-card, .value-card, .fit, .recommended, .avoid { box-shadow: none; }
+      .section { break-inside: avoid; }
+      .adr-link { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="shell hero-inner">
+      <nav class="nav" aria-label="Document context">
+        <div class="brand"><span class="brand-mark" aria-hidden="true"></span>NimBus</div>
+        <a class="adr-link" href="adr/009-orchestration-via-application-services.md"><span>Read the architecture decision</span> ADR-009 ↗</a>
+      </nav>
+
+      <div class="hero-grid">
+        <div>
+          <div class="eyebrow">Capability &amp; platform-fit brief</div>
+          <h1>Saga-capable.<span>Not a saga framework.</span></h1>
+          <p class="hero-copy">
+            NimBus deliberately supplies the <strong>messaging mechanics for long-running workflows</strong>
+            while the application owns business state, transitions, and compensation.
+          </p>
+        </div>
+
+        <aside class="verdict" aria-label="Saga support verdict">
+          <div class="verdict-label">Current verdict</div>
+          <div class="verdict-row no">
+            <span class="verdict-icon">×</span>
+            <div><b>No first-class saga engine</b><small>No <code>Saga&lt;T&gt;</code>, state-machine DSL, saga repository, or saga dashboard.</small></div>
+          </div>
+          <div class="verdict-row yes">
+            <span class="verdict-icon">✓</span>
+            <div><b>Yes to saga workflows</b><small>Build a plain-C# orchestration service on sessions, outbox, scheduling, retry, and Resolver.</small></div>
+          </div>
+          <div class="verdict-stamp">Accepted platform boundary · ADR-009</div>
+        </aside>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="section" aria-labelledby="support">
+      <div class="section-head">
+        <div class="section-no">01 · Answer</div>
+        <div>
+          <h2 id="support">What “support” means today</h2>
+          <p class="section-copy">The platform supports the saga pattern through application services; it does not absorb workflow logic into the NimBus framework.</p>
+        </div>
+      </div>
+
+      <div class="support-grid">
+        <article class="support-card absent">
+          <span class="support-kicker">Not built in</span>
+          <h3>Framework-owned saga</h3>
+          <p>NimBus does not create, persist, correlate, migrate, or visualize a business-process state machine on the application’s behalf.</p>
+          <div class="token-list" aria-label="Missing framework features">
+            <span class="token">No Saga&lt;TState&gt;</span>
+            <span class="token">No state-machine DSL</span>
+            <span class="token">No saga store</span>
+            <span class="token">No automatic compensation</span>
+            <span class="token">No saga dashboard</span>
+          </div>
+        </article>
+
+        <article class="support-card present">
+          <span class="support-kicker">Available now</span>
+          <h3>Application orchestrator</h3>
+          <p>A dedicated subscriber owns workflow state and reacts to events using ordinary handlers and domain code.</p>
+          <div class="token-list" aria-label="Available NimBus building blocks">
+            <span class="token">Session FIFO</span>
+            <span class="token">Transactional outbox</span>
+            <span class="token">Scheduled delivery</span>
+            <span class="token">Retry + deferred replay</span>
+            <span class="token">Resolver audit</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="flow">
+      <div class="section-head">
+        <div class="section-no">02 · Pattern</div>
+        <div>
+          <h2 id="flow">How a workflow runs</h2>
+          <p class="section-copy">Every event for one order shares the same session and correlation identity. The orchestrator applies one durable, idempotent transition at a time.</p>
+        </div>
+      </div>
+
+      <div class="orchestration">
+        <div class="workflow">
+          <article class="event-node"><span class="kind">Initiating event</span><b>OrderPlaced</b><p>Starts the process with <code>SessionId = OrderId</code>.</p></article>
+          <div class="node-arrow" aria-hidden="true">→</div>
+          <article class="orchestrator-node">
+            <span class="kind">Application service</span>
+            <b>OrderOrchestrator</b>
+            <p>Loads state, validates the transition, commits state plus an outgoing command.</p>
+            <div class="orchestrator-actions"><span>State DB</span><span>SQL outbox</span><span>Idempotency</span><span>Version check</span></div>
+          </article>
+          <div class="node-arrow" aria-hidden="true">→</div>
+          <article class="event-node"><span class="kind">Command / result</span><b>ReserveInventory</b><p>Inventory answers with <code>InventoryReserved</code> or a failure.</p></article>
+          <div class="node-arrow" aria-hidden="true">→</div>
+          <article class="event-node"><span class="kind">Continue</span><b>Pay → Ship</b><p>Each response returns to the orchestrator until Completed.</p></article>
+        </div>
+
+        <div class="session-rail">One ordered lane · SessionId = OrderId · CorrelationId = WorkflowId</div>
+
+        <div class="failure-row">
+          <div class="failure-card timeout"><span>⌛</span><div><b>Timeout path</b><small>Schedule a deadline event; when it arrives, re-read state and act only if the workflow is still waiting.</small></div></div>
+          <div class="failure-card compensate"><span>↶</span><div><b>Compensation path</b><small>Publish explicit domain commands such as ReleaseInventory, RefundPayment, or CancelOrder.</small></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="boundary">
+      <div class="section-head">
+        <div class="section-no">03 · Boundary</div>
+        <div>
+          <h2 id="boundary">Who owns what?</h2>
+          <p class="section-copy">This separation is the core architectural choice. NimBus guarantees message mechanics; the application remains authoritative for business truth.</p>
+        </div>
+      </div>
+
+      <div class="boundary">
+        <article class="boundary-side nimbus">
+          <h3>NimBus owns<small>Messaging infrastructure</small></h3>
+          <div class="ownership-list">
+            <div class="ownership-item"><span>01</span><div><b>Ordered delivery</b> per workflow session</div></div>
+            <div class="ownership-item"><span>02</span><div><b>Retries, dead-lettering</b> and failure classification</div></div>
+            <div class="ownership-item"><span>03</span><div><b>Blocked sessions</b> and deferred FIFO replay</div></div>
+            <div class="ownership-item"><span>04</span><div><b>Outbox dispatch</b> and scheduled delivery</div></div>
+            <div class="ownership-item"><span>05</span><div><b>Resolver audit</b>, lineage, metrics and operator recovery</div></div>
+          </div>
+        </article>
+
+        <article class="boundary-side app">
+          <h3>Application owns<small>Business process</small></h3>
+          <div class="ownership-list">
+            <div class="ownership-item"><span>01</span><div><b>Workflow state</b> and its database schema</div></div>
+            <div class="ownership-item"><span>02</span><div><b>Valid transitions</b> and domain invariants</div></div>
+            <div class="ownership-item"><span>03</span><div><b>Idempotency</b> for state changes and side effects</div></div>
+            <div class="ownership-item"><span>04</span><div><b>Timeout meaning</b> and deadline policy</div></div>
+            <div class="ownership-item"><span>05</span><div><b>Compensation</b> and completion semantics</div></div>
+          </div>
+        </article>
+      </div>
+
+      <div class="not-saga"><strong>Important distinction:</strong> PendingHandoff tracks one message waiting on external work. Request/response waits for one answer. Neither is a multi-step saga state machine.</div>
+    </section>
+
+    <section class="section" aria-labelledby="gaps">
+      <div class="section-head">
+        <div class="section-no">04 · Gaps</div>
+        <div>
+          <h2 id="gaps">What keeps it from feeling complete</h2>
+          <p class="section-copy">The primitives are credible, but teams still need conventions and reliability plumbing before the pattern is production-friendly.</p>
+        </div>
+      </div>
+
+      <div class="gaps">
+        <article class="gap-card"><span class="gap-no">GAP 01</span><h3>No consumer inbox</h3><p>Every transition must defend manually against redelivery, resubmit, and partial side effects.</p></article>
+        <article class="gap-card"><span class="gap-no">GAP 02</span><h3>Publishing needs discipline</h3><p>Handlers must explicitly preserve session, correlation, lineage, and deterministic message IDs.</p></article>
+        <article class="gap-card"><span class="gap-no">GAP 03</span><h3>Timeout API mismatch</h3><p>Scheduling is concrete-client-only, and scheduled-message cancellation cannot work through the outbox.</p></article>
+        <article class="gap-card"><span class="gap-no">GAP 04</span><h3>No reference workflow</h3><p>The architecture decision exists, but the planned guide and executable orchestrator sample do not.</p></article>
+        <article class="gap-card"><span class="gap-no">GAP 05</span><h3>No saga-level view</h3><p>The WebApp shows message history, not authoritative workflow state, deadline, or current step.</p></article>
+        <article class="gap-card"><span class="gap-no">GAP 06</span><h3>Atomicity is provider-specific</h3><p>SQL can share state and outbox transactions; Cosmos needs its own transactional outbox pattern.</p></article>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="value">
+      <div class="section-head">
+        <div class="section-no">05 · Value</div>
+        <div>
+          <h2 id="value">Why saga-ready support matters</h2>
+          <p class="section-copy">The value is strongest in cross-system processes where partial failure is normal and distributed transactions are unavailable.</p>
+        </div>
+      </div>
+
+      <div class="value-grid">
+        <article class="value-card"><span class="value-icon">↻</span><h3>Process resilience</h3><p>Orders, refunds, provisioning, and imports can recover after one participant fails.</p></article>
+        <article class="value-card"><span class="value-icon">≡</span><h3>Per-entity consistency</h3><p>Sessions prevent concurrent transitions for the same workflow while preserving scale across workflows.</p></article>
+        <article class="value-card"><span class="value-icon">↶</span><h3>Explicit recovery</h3><p>Compensation and timeout behavior become visible domain decisions instead of hidden retry side effects.</p></article>
+        <article class="value-card"><span class="value-icon">◎</span><h3>Operational clarity</h3><p>Resolver, deferred replay, and operator actions provide a strong recovery surface for long-running flows.</p></article>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="fit">
+      <div class="section-head">
+        <div class="section-no">06 · Fit</div>
+        <div>
+          <h2 id="fit">How far should NimBus go?</h2>
+          <p class="section-copy">The closer the investment stays to messaging reliability and operations, the better it fits the platform.</p>
+        </div>
+      </div>
+
+      <div class="fit">
+        <div class="fit-row">
+          <h3>Carry application-owned saga workflows</h3>
+          <div class="fit-rating strong" aria-label="Strong fit"><i></i><i></i><i></i><i></i><em class="fit-label">Strong fit</em></div>
+          <p>Directly exercises NimBus strengths: sessions, failure recovery, audit, and operator intervention.</p>
+        </div>
+        <div class="fit-row">
+          <h3>Orchestration guide, helpers, and test kit</h3>
+          <div class="fit-rating strong" aria-label="Strong fit"><i></i><i></i><i></i><i></i><em class="fit-label">Strong fit</em></div>
+          <p>Reduces repeated mistakes without taking ownership of business state or workflow logic.</p>
+        </div>
+        <div class="fit-row">
+          <h3>Optional lightweight orchestration package</h3>
+          <div class="fit-rating good" aria-label="Good fit"><i></i><i></i><i></i><i></i><em class="fit-label">Good fit</em></div>
+          <p>Useful if it standardizes correlation, timeouts, telemetry, and testing—without introducing a DSL.</p>
+        </div>
+        <div class="fit-row">
+          <h3>Framework-owned saga state machine</h3>
+          <div class="fit-rating weak" aria-label="Weak fit"><i></i><i></i><i></i><i></i><em class="fit-label">Weak fit</em></div>
+          <p>Creates coupling, provider complexity, migration concerns, and long-term framework responsibility.</p>
+        </div>
+        <div class="fit-row">
+          <h3>General workflow or BPM engine</h3>
+          <div class="fit-rating poor" aria-label="Poor fit"><i></i><i></i><i></i><i></i><em class="fit-label">Poor fit</em></div>
+          <p>Moves NimBus away from its messaging-platform identity and into a fundamentally different product category.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="investment">
+      <div class="section-head">
+        <div class="section-no">07 · Path</div>
+        <div>
+          <h2 id="investment">Recommended investment</h2>
+          <p class="section-copy">Make NimBus exceptionally good at hosting process managers; do not make it the owner of business workflow state.</p>
+        </div>
+      </div>
+
+      <div class="roadmap">
+        <article class="recommended">
+          <span class="roadmap-tag">Recommended · Saga-ready platform</span>
+          <h3>Strengthen the application-orchestration path</h3>
+          <p>Close the reliability and usability gaps while keeping workflow logic in plain C# and state in the application database.</p>
+          <div class="roadmap-steps">
+            <div class="roadmap-step"><span>01</span>Guide + executable order sample</div>
+            <div class="roadmap-step"><span>02</span>Consumer inbox</div>
+            <div class="roadmap-step"><span>03</span>Context-aware publishing</div>
+            <div class="roadmap-step"><span>04</span>Timeout conventions</div>
+            <div class="roadmap-step"><span>05</span>Workflow test helpers</div>
+            <div class="roadmap-step"><span>06</span>Session-grouped UI view</div>
+          </div>
+          <div class="effort">
+            <div class="effort-row"><span>Documentation + sample</span><strong>≈ 1 week</strong></div>
+            <div class="effort-row"><span>Production-friendly saga-ready package</span><strong>≈ 4–8 weeks</strong></div>
+          </div>
+        </article>
+
+        <article class="avoid">
+          <span class="roadmap-tag">Do not pursue now</span>
+          <h3>Full saga framework</h3>
+          <p>Would require a DSL, provider-neutral saga store, automatic correlation, optimistic concurrency, state migrations, timeout persistence, inbox/outbox coordination, operational UI, and permanent compatibility commitments.</p>
+          <div class="effort">
+            <div class="effort-row"><span>Credible first version</span><strong>Several months</strong></div>
+            <div class="effort-row"><span>Mature multi-provider product</span><strong>Ongoing product area</strong></div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <div class="decision">
+      <div class="decision-icon">✓</div>
+      <div><span>Decision</span><b>Keep ADR-009: support sagas as application-level process managers, and invest in the messaging primitives and tooling that make that pattern safe.</b></div>
+    </div>
+
+    <footer>
+      <span><strong>NimBus</strong> · Azure-native event-driven integration platform</span>
+      <span>Saga capability &amp; platform-fit assessment · 19 July 2026</span>
+    </footer>
+  </main>
+</body>
+</html>

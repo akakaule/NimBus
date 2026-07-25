@@ -50,7 +50,7 @@ const MetadataColumn = (props: IMetadataColumnProps) => {
   const [hasTechnicalContact, sethasTechnicalContact] =
     React.useState<boolean>(false);
   const [feedback, setFeedback] = useState("");
-  const timeoutIdRef = React.useRef<NodeJS.Timeout>();
+  const timeoutIdRef = React.useRef<NodeJS.Timeout | undefined>(undefined);
   const [feedbackColour, setFBcolour] = useState("text-green-500");
 
   React.useEffect(() => {

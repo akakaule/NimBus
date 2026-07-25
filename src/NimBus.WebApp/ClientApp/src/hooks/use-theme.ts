@@ -33,8 +33,13 @@ function applyTheme(theme: Theme) {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
-    const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
-    return stored ?? "system";
+    // Storage can be unavailable in hardened browsers or test runners.
+    try {
+      const stored = window.localStorage?.getItem(STORAGE_KEY) as Theme | null;
+      return stored ?? "system";
+    } catch {
+      return "system";
+    }
   });
 
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(() =>
@@ -55,7 +60,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [theme]);
 
   const setTheme = (next: Theme) => {
-    localStorage.setItem(STORAGE_KEY, next);
+    try {
+      window.localStorage?.setItem(STORAGE_KEY, next);
+    } catch {
+      // Preference simply won't persist.
+    }
     setThemeState(next);
   };
 

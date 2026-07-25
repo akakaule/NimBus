@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { cn } from "lib/utils";
-import { getEnv } from "hooks/app-status";
+import { useEnv } from "hooks/app-status";
 import SidebarUserFooter from "components/sidebar-user-footer";
 
 interface NavItem {
@@ -239,7 +239,7 @@ const LogoMark = ({ size = 22 }: { size?: number }) => (
 );
 
 const Sidebar = () => {
-  const env = getEnv();
+  const env = useEnv();
 
   return (
     <aside

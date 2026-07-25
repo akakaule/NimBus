@@ -8,7 +8,7 @@ import type * as api from "api-client";
 let cachedStatus: api.ApplicationStatus | null = null;
 let pendingRequest: Promise<api.ApplicationStatus> | null = null;
 
-export const getEnv = () => {
+export const useEnv = () => {
   const [result, setResult] = useState<string | undefined>(undefined);
   useEffect(() => {
     const fetchData = async () => {
@@ -52,7 +52,7 @@ export const getApplicationStatus = async () => {
   return pendingRequest;
 };
 
-/* export const getPlatformVersion = () => {
+/* export const usePlatformVersion = () => {
   const data = useAsyncMemo(async () => {
     return getApplicationStatus()
   }, [])
@@ -60,7 +60,7 @@ export const getApplicationStatus = async () => {
   return data?.platformVersion;
 };*/
 
-export const getPlatformVersion = () => {
+export const usePlatformVersion = () => {
   const [result, setResult] = useState<string | undefined>(undefined);
   useEffect(() => {
     const fetchData = async () => {
@@ -72,12 +72,27 @@ export const getPlatformVersion = () => {
   return result;
 };
 
-export const getStorageProvider = () => {
+export const useStorageProvider = () => {
   const [result, setResult] = useState<string | undefined>(undefined);
   useEffect(() => {
     const fetchData = async () => {
       const data = await getApplicationStatus();
       setResult(data?.storageProvider);
+    };
+    fetchData().catch(console.error);
+  }, []);
+  return result;
+};
+
+// "{ticket}" placeholder URL template for reported-event deep links; undefined
+// or empty when no ticket system is configured (the Reported column then
+// renders a plain badge without a link).
+export const useTicketLinkTemplate = () => {
+  const [result, setResult] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const fetchData = async () => {
+      const data = await getApplicationStatus();
+      setResult(data?.ticketLinkTemplate ?? undefined);
     };
     fetchData().catch(console.error);
   }, []);

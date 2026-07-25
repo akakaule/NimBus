@@ -821,6 +821,168 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual("audits/search/42", items[0].Audit.CloudEventSubject);
     }
 
+    [TestMethod]
+    public async Task GetResubmitCounts_counts_resubmit_audits_per_event_excluding_denied()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-rc");
+        var eventA = Id("evt-rc-a");
+        var eventB = Id("evt-rc-b");
+
+        // eventA: two granted resubmits (one plain, one with changes), one denied
+        // attempt (must not count), one unrelated audit type (must not count).
+        await store.StoreMessageAudit(eventA, new MessageAuditEntity { AuditorName = Id("alice"), AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Resubmit, EventId = eventA, EndpointId = endpointId }, endpointId);
+        await store.StoreMessageAudit(eventA, new MessageAuditEntity { AuditorName = Id("alice"), AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.ResubmitWithChanges, EventId = eventA, EndpointId = endpointId }, endpointId);
+        await store.StoreMessageAudit(eventA, new MessageAuditEntity { AuditorName = Id("mallory"), AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Resubmit, AccessDenied = true, EventId = eventA, EndpointId = endpointId }, endpointId);
+        await store.StoreMessageAudit(eventA, new MessageAuditEntity { AuditorName = Id("alice"), AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Skip, EventId = eventA, EndpointId = endpointId }, endpointId);
+        // eventB: no resubmit audits at all — must be absent from the result.
+        await store.StoreMessageAudit(eventB, new MessageAuditEntity { AuditorName = Id("bob"), AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Comment, EventId = eventB, EndpointId = endpointId }, endpointId);
+
+        var counts = await store.GetResubmitCounts(endpointId, new[] { eventA, eventB });
+
+        Assert.AreEqual(2, counts.GetValueOrDefault(eventA), "granted Resubmit + ResubmitWithChanges count; denied and unrelated audits do not");
+        Assert.IsFalse(counts.ContainsKey(eventB), "events without resubmit audits are absent (missing = 0)");
+    }
+
+    [TestMethod]
+    public async Task GetResubmitCounts_returns_empty_for_empty_input_or_foreign_endpoint()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-rc2");
+        var eventId = Id("evt-rc2");
+        await store.StoreMessageAudit(eventId, new MessageAuditEntity { AuditorName = Id("alice"), AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Resubmit, EventId = eventId, EndpointId = endpointId }, endpointId);
+
+        var emptyIds = await store.GetResubmitCounts(endpointId, Array.Empty<string>());
+        Assert.AreEqual(0, emptyIds.Count);
+
+        // Audits are endpoint-scoped: the same event id queried under another
+        // endpoint must not leak counts across endpoints.
+        var foreign = await store.GetResubmitCounts(Id("ep-other"), new[] { eventId });
+        Assert.AreEqual(0, foreign.Count);
+    }
+
+    [TestMethod]
+    public async Task SearchAudits_scopes_by_endpointId()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-audit-scope");
+        var auditor = Id("carol");
+        await store.StoreMessageAudit(Id("evt-as1"), new MessageAuditEntity { AuditorName = auditor, AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Resubmit, EventId = Id("evt-as1"), EndpointId = endpointId }, endpointId);
+        await store.StoreMessageAudit(Id("evt-as2"), new MessageAuditEntity { AuditorName = auditor, AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Skip, EventId = Id("evt-as2"), EndpointId = Id("ep-audit-other") }, Id("ep-audit-other"));
+
+        var resp = await store.SearchAudits(new AuditFilter { EndpointId = endpointId }, continuationToken: null, maxItemCount: 50);
+
+        var items = resp.Audits.ToList();
+        Assert.AreEqual(1, items.Count, "only the requested endpoint's audits are returned");
+        Assert.AreEqual(Id("evt-as1"), items[0].EventId);
+        Assert.AreEqual(endpointId, items[0].EndpointId, "EndpointId is projected so callers can build routes");
+    }
+
+    [TestMethod]
+    public async Task SearchAudits_EndpointIdExact_excludes_prefix_siblings()
+    {
+        // Authorization-scoped queries must not let a manager of "Orders" read
+        // "OrdersArchive" rows through the default prefix semantics.
+        var store = CreateStore();
+        var endpointId = Id("Orders");
+        var sibling = Id("Orders") + "Archive";
+        var auditor = Id("dave");
+        await store.StoreMessageAudit(Id("evt-ex1"), new MessageAuditEntity { AuditorName = auditor, AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Resubmit, EventId = Id("evt-ex1"), EndpointId = endpointId }, endpointId);
+        await store.StoreMessageAudit(Id("evt-ex2"), new MessageAuditEntity { AuditorName = auditor, AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Skip, EventId = Id("evt-ex2"), EndpointId = sibling }, sibling);
+
+        var prefix = await store.SearchAudits(new AuditFilter { EndpointId = endpointId }, continuationToken: null, maxItemCount: 50);
+        Assert.AreEqual(2, prefix.Audits.Count(), "default prefix semantics include the sibling");
+
+        var exact = await store.SearchAudits(new AuditFilter { EndpointId = endpointId, EndpointIdExact = true }, continuationToken: null, maxItemCount: 50);
+        var items = exact.Audits.ToList();
+        Assert.AreEqual(1, items.Count, "exact scope excludes prefix-siblings");
+        Assert.AreEqual(Id("evt-ex1"), items[0].EventId);
+
+        // Equality stays case-insensitive like the rest of the contract.
+        var upper = await store.SearchAudits(new AuditFilter { EndpointId = endpointId.ToUpperInvariant(), EndpointIdExact = true }, continuationToken: null, maxItemCount: 50);
+        Assert.AreEqual(1, upper.Audits.Count());
+    }
+
+    [TestMethod]
+    public async Task SetEventReport_roundtrips_and_updates_in_place()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-rep");
+        var eventId = Id("evt-rep");
+
+        await store.SetEventReport(endpointId, eventId, isReported: true, reportedBy: Id("alice"), ticketId: "INC0042");
+
+        var reports = await store.GetEventReports(endpointId, new[] { eventId });
+        Assert.IsTrue(reports.TryGetValue(eventId, out var report));
+        Assert.IsTrue(report!.IsReported);
+        Assert.AreEqual(Id("alice"), report.ReportedBy);
+        Assert.AreEqual("INC0042", report.TicketId);
+        Assert.IsNotNull(report.ReportedAtUtc);
+
+        // Upsert: a second toggle for the same (endpoint, event) replaces the
+        // marker instead of adding a row.
+        await store.SetEventReport(endpointId, eventId, isReported: true, reportedBy: Id("bob"), ticketId: "JIRA-7");
+        reports = await store.GetEventReports(endpointId, new[] { eventId });
+        Assert.AreEqual(1, reports.Count);
+        Assert.AreEqual(Id("bob"), reports[eventId].ReportedBy);
+        Assert.AreEqual("JIRA-7", reports[eventId].TicketId);
+    }
+
+    [TestMethod]
+    public async Task SetEventReport_clearing_drops_the_ticket_reference()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-rep2");
+        var eventId = Id("evt-rep2");
+
+        await store.SetEventReport(endpointId, eventId, isReported: true, reportedBy: Id("alice"), ticketId: "INC0042");
+        await store.SetEventReport(endpointId, eventId, isReported: false, reportedBy: Id("alice"), ticketId: "INC0042");
+
+        var reports = await store.GetEventReports(endpointId, new[] { eventId });
+        Assert.IsTrue(reports.TryGetValue(eventId, out var report));
+        Assert.IsFalse(report!.IsReported);
+        Assert.IsNull(report.TicketId, "clearing the marker must drop the ticket reference");
+    }
+
+    [TestMethod]
+    public async Task EventReports_do_not_collide_on_ambiguous_composite_keys()
+    {
+        // ("a_b", "c") and ("a", "b_c") concatenate to the same string — the
+        // store key must be the (endpointId, eventId) PAIR, not a joined string.
+        var store = CreateStore();
+        var prefix = Id("ep-amb");
+        await store.SetEventReport($"{prefix}_x", "y", isReported: true, reportedBy: Id("alice"), ticketId: "T-1");
+
+        var other = await store.GetEventReports(prefix, new[] { "x_y" });
+        Assert.AreEqual(0, other.Count, "a report on endpoint '{prefix}_x' must not surface for endpoint '{prefix}'");
+
+        var own = await store.GetEventReports($"{prefix}_x", new[] { "y" });
+        Assert.AreEqual(1, own.Count);
+    }
+
+    [TestMethod]
+    public async Task GetEventReports_batches_and_scopes_by_endpoint()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-rep3");
+        var reported = Id("evt-rep3-a");
+        var unreported = Id("evt-rep3-b");
+        await store.SetEventReport(endpointId, reported, isReported: true, reportedBy: Id("alice"), ticketId: null);
+
+        var reports = await store.GetEventReports(endpointId, new[] { reported, unreported });
+        Assert.AreEqual(1, reports.Count, "events never reported are absent (missing = not reported)");
+        Assert.IsTrue(reports.ContainsKey(reported));
+        Assert.IsNull(reports[reported].TicketId, "reporting without a ticket keeps TicketId null");
+
+        var empty = await store.GetEventReports(endpointId, Array.Empty<string>());
+        Assert.AreEqual(0, empty.Count);
+
+        // Markers are endpoint-scoped: the same event id under another endpoint
+        // must not leak.
+        var foreign = await store.GetEventReports(Id("ep-rep3-other"), new[] { reported });
+        Assert.AreEqual(0, foreign.Count);
+    }
+
     // ───── Prefix-search semantics (cross-provider contract) ─────
     // ID-like filter fields match by case-insensitive PREFIX on every provider:
     // Cosmos STARTSWITH(x, y, true), SQL Server LIKE 'y%' (CI collation),

@@ -21,6 +21,23 @@ public static class MessageContextStub
     public static IMessageContext ForEventTypes(string eventTypeId, string bodyEventTypeId, string eventJson)
         => new StubMessageContext(eventTypeId, bodyEventTypeId, eventJson);
 
+    public static IMessageContext ForWorkflowEvent(
+        string eventTypeId,
+        string eventJson,
+        string messageId,
+        string sessionId,
+        string correlationId,
+        string parentMessageId,
+        string originatingMessageId)
+        => new StubMessageContext(
+            eventTypeId,
+            eventJson,
+            messageId,
+            sessionId,
+            correlationId,
+            parentMessageId,
+            originatingMessageId);
+
     public static IMessageContext WithInvalidContent(string eventTypeId, InvalidMessageException exception)
         => new StubMessageContext(eventTypeId, exception);
 
@@ -47,6 +64,23 @@ public static class MessageContextStub
             EventTypeId = eventTypeId;
         }
 
+        public StubMessageContext(
+            string eventTypeId,
+            string eventJson,
+            string messageId,
+            string sessionId,
+            string correlationId,
+            string parentMessageId,
+            string originatingMessageId)
+            : this(eventTypeId, eventJson)
+        {
+            MessageId = messageId;
+            SessionId = sessionId;
+            CorrelationId = correlationId;
+            ParentMessageId = parentMessageId;
+            OriginatingMessageId = originatingMessageId;
+        }
+
         public StubMessageContext(string eventTypeId, InvalidMessageException contentException)
         {
             EventTypeId = eventTypeId;
@@ -61,12 +95,12 @@ public static class MessageContextStub
         // Minimal stubs — unused by dispatch path
         public string EventId => string.Empty;
         public string To => string.Empty;
-        public string SessionId => string.Empty;
-        public string CorrelationId => string.Empty;
-        public string MessageId => string.Empty;
+        public string SessionId { get; } = string.Empty;
+        public string CorrelationId { get; } = string.Empty;
+        public string MessageId { get; } = string.Empty;
         public MessageType MessageType => MessageType.EventRequest;
-        public string ParentMessageId => string.Empty;
-        public string OriginatingMessageId => string.Empty;
+        public string ParentMessageId { get; } = string.Empty;
+        public string OriginatingMessageId { get; } = string.Empty;
         public int? RetryCount => null;
         public string From => string.Empty;
         public string OriginatingFrom => string.Empty;

@@ -18,6 +18,30 @@ namespace NimBus.SDK.EventHandlers
         string CorrelationId { get; }
 
         /// <summary>
+        /// Gets the inbound session identifier used for ordered processing.
+        /// The default implementation returns <c>null</c> so existing custom
+        /// context implementations remain compatible.
+        /// </summary>
+        string SessionId => null;
+
+        /// <summary>
+        /// Gets the identifier of the message that caused the inbound message.
+        /// A value of <see cref="Constants.Self"/> indicates that legacy inbound
+        /// metadata did not identify a parent. The default implementation returns
+        /// <c>null</c> so existing custom context implementations remain compatible.
+        /// </summary>
+        string ParentMessageId => null;
+
+        /// <summary>
+        /// Gets the identifier of the message that initiated the inbound message's
+        /// lineage. A value of <see cref="Constants.Self"/> indicates that legacy
+        /// inbound metadata did not identify an origin. The default implementation
+        /// returns <c>null</c> so existing custom context implementations remain
+        /// compatible.
+        /// </summary>
+        string OriginatingMessageId => null;
+
+        /// <summary>
         /// The outcome signalled by the handler. Defaults to
         /// <see cref="HandlerOutcome.Default"/>; flips to
         /// <see cref="HandlerOutcome.PendingHandoff"/> after
@@ -77,6 +101,15 @@ namespace NimBus.SDK.EventHandlers
         public string EventType { get; set; }
 
         public string CorrelationId { get; set; }
+
+        /// <inheritdoc/>
+        public string SessionId { get; set; }
+
+        /// <inheritdoc/>
+        public string ParentMessageId { get; set; }
+
+        /// <inheritdoc/>
+        public string OriginatingMessageId { get; set; }
 
         public HandlerOutcome Outcome { get; private set; }
 

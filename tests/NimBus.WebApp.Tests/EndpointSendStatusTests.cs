@@ -215,6 +215,8 @@ public sealed class EndpointSendStatusTests
 
         public bool IsManagerOfEndpoint(string endpointId) => _canManage;
 
+        public bool IsPlatformAdministrator() => _canManage;
+
         [Obsolete("Bridge member required by the interface; not used in these tests.")]
         public MessageAuditEntity GetMessageAuditEntity(MessageAuditType type) => throw new NotSupportedException();
 

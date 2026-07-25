@@ -469,13 +469,30 @@ public class EndpointImplementation : IEndpointApiController
     public async Task<IActionResult> PostEndpointSubscribeAsync(EndpointSubscription body, string endpointId)
     {
         var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);
-        if (endpointIdValid)
+        if (!endpointIdValid)
         {
-            var subscriptionStatus = await cosmosClient.SubscribeToEndpointNotification(endpointId, body.Mail,
-            body.Type, GetCurrentUsersMail(), body.Url, body.EventTypes, body.Payload, body.Frequency);
-            return new OkObjectResult(subscriptionStatus);
+            return new NotFoundObjectResult("Endpoint not found");
         }
-        return new NotFoundObjectResult("Endpoint not found");
+
+        if (!_authorizationService.IsManagerOfEndpoint(endpointId))
+        {
+            return new ForbidResult();
+        }
+
+        // Owner identity uses the SAME null-safe resolution the delete path
+        // checks against (GetCurrentUserName). An oid/groups-only principal has
+        // no name claim — creating an ownerless subscription would make it
+        // undeletable for that same non-admin manager, so reject instead.
+        var author = GetCurrentUsersMail() ?? _authorizationService.GetCurrentUserName();
+        if (string.IsNullOrEmpty(author))
+        {
+            return new BadRequestObjectResult(
+                "The authenticated identity carries no name claim to record as the subscription owner.");
+        }
+
+        var subscriptionStatus = await cosmosClient.SubscribeToEndpointNotification(endpointId, body.Mail,
+            body.Type, author, body.Url, body.EventTypes, body.Payload, body.Frequency);
+        return new OkObjectResult(subscriptionStatus);
     }
 
     public async Task<IActionResult> DeleteEndpointSubscribeAsync(SubscriptionAuthor body, string endpointId)
@@ -487,7 +504,45 @@ public class EndpointImplementation : IEndpointApiController
             return new NotFoundObjectResult("Endpoint not found");
         }
 
-        var success = await cosmosClient.DeleteSubscription(body.Id);
+        if (!_authorizationService.IsManagerOfEndpoint(endpointId))
+        {
+            return new ForbidResult();
+        }
+
+        if (string.IsNullOrEmpty(body?.Id))
+        {
+            return new BadRequestObjectResult("Subscription id is required.");
+        }
+
+        // The store deletes by global subscription id, so first pin the id to
+        // THIS endpoint — a manager of endpoint A must not be able to delete
+        // endpoint B's subscriptions by guessing ids.
+        var subscriptions = await cosmosClient.GetSubscriptionsOnEndpoint(endpointId);
+        var subscription = subscriptions.FirstOrDefault(s => string.Equals(s.Id, body.Id, StringComparison.Ordinal));
+        if (subscription == null)
+        {
+            return new NotFoundObjectResult("Subscription not found on this endpoint");
+        }
+
+        // Ownership comes from authenticated claims, never from the request
+        // body: only the subscription's author (or a platform administrator)
+        // may remove it. Admin access is evaluated first so a principal whose
+        // claims carry no display name (groups/oid only) can still delete —
+        // the claim lookups are null-safe. Both name resolutions are accepted
+        // because creation records GetCurrentUsersMail() ?? GetCurrentUserName()
+        // and the two can surface different claims for the same principal.
+        if (!_authorizationService.IsPlatformAdministrator())
+        {
+            var candidates = new[] { _authorizationService.GetCurrentUserName(), GetCurrentUsersMail() };
+            var isOwner = candidates.Any(c => !string.IsNullOrEmpty(c)
+                && string.Equals(subscription.AuthorId, c, StringComparison.OrdinalIgnoreCase));
+            if (!isOwner)
+            {
+                return new ForbidResult();
+            }
+        }
+
+        var success = await cosmosClient.DeleteSubscription(subscription.Id);
 
         if (success)
             return new OkResult();
@@ -499,20 +554,30 @@ public class EndpointImplementation : IEndpointApiController
         string endpointId)
     {
         var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);
-        if (endpointIdValid)
+        if (!endpointIdValid)
         {
-            var subscriptions = await cosmosClient.GetSubscriptionsOnEndpoint(endpointId);
-            return new OkObjectResult(Mapper.SubscriptionsFromEndpointsubscriptions(subscriptions));
+            return new NotFoundObjectResult("Endpoint not found");
         }
-        return new NotFoundObjectResult("Endpoint not found");
+
+        // Subscriptions expose recipient mail addresses / webhook urls — gate the
+        // listing on managing the endpoint like the other per-endpoint reads.
+        if (!_authorizationService.IsManagerOfEndpoint(endpointId))
+        {
+            return new ForbidResult();
+        }
+
+        var subscriptions = await cosmosClient.GetSubscriptionsOnEndpoint(endpointId);
+        return new OkObjectResult(Mapper.SubscriptionsFromEndpointsubscriptions(subscriptions));
     }
 
     private string GetCurrentUsersMail()
     {
         var name = _context.User.Identities.FirstOrDefault()?.Name;
 
+        // Null-safe: a groups/oid-only principal has no Name claim — that must
+        // not turn into a 500.
         if (string.IsNullOrEmpty(name))
-            name = _context.User.FindFirst(ClaimTypes.Name).Value;
+            name = _context.User.FindFirst(ClaimTypes.Name)?.Value;
 
         return name;
     }

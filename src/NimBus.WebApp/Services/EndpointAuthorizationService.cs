@@ -94,6 +94,19 @@ public class EndpointAuthorizationService : IEndpointAuthorizationService
     }
 
     /// <inheritdoc/>
+    public bool IsPlatformAdministrator()
+    {
+        if (_configuration.GetValue<bool>("BypassEndpointAuthorization", false))
+        {
+            return true;
+        }
+
+        var userClaims = _httpContextAccessor.HttpContext?.User?.Identities.FirstOrDefault()?.Claims;
+        // Restrict to the "groups" claim type — see IsManagerOfEndpoint.
+        return userClaims != null && userClaims.Any(c => c.Type == "groups" && c.Value == "EIP_Management");
+    }
+
+    /// <inheritdoc/>
     [Obsolete("Use IAuditLogService.LogAuditAsync — see spec 008 (centralized audit log service). This bridge remains for any legacy caller that has not yet migrated; it will be removed in a follow-up release.", error: false)]
     public MessageAuditEntity GetMessageAuditEntity(MessageAuditType type)
     {

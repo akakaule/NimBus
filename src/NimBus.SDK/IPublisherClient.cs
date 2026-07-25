@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
+using NimBus.SDK.EventHandlers;
 using System.Threading.Tasks;
 
 namespace NimBus.SDK
@@ -20,6 +21,36 @@ namespace NimBus.SDK
         Task Publish(IEvent @event, string sessionId, string correlationId);
 
         Task Publish(IEvent @event, string sessionId, string correlationId, string messageId);
+
+        /// <summary>
+        /// Publishes a workflow follow-up using the inbound handler context's session,
+        /// correlation, and lineage metadata. The outgoing parent is the inbound
+        /// <see cref="IEventHandlerContext.MessageId"/>. The originating message is
+        /// preserved across later hops and falls back to the inbound message for a
+        /// first hop whose legacy lineage is absent.
+        /// </summary>
+        /// <param name="event">The command or event to publish.</param>
+        /// <param name="context">The context of the inbound message causing the follow-up.</param>
+        /// <param name="messageId">
+        /// An explicit deterministic identifier for the logical transition. Derive it
+        /// from durable workflow identity, transition name, and version or attempt, and
+        /// reproduce the same value when retrying that transition.
+        /// </param>
+        /// <param name="cancellationToken">Cancellation token propagated to the configured sender.</param>
+        /// <returns>A task that completes when the message has been sent or stored in the outbox.</returns>
+        /// <exception cref="NotSupportedException">
+        /// The publisher implementation does not support context-aware publishing.
+        /// </exception>
+        Task PublishFromContext(
+            IEvent @event,
+            IEventHandlerContext context,
+            string messageId,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException(
+                "Context-aware workflow publishing requires a compatible publisher implementation. Use PublisherClient or update the custom IPublisherClient implementation.");
+        }
+
         /// <summary>
         /// Pre-release - use with care!
         /// Publish multiple messages at once. Make sure batch size enforced by Azure Service Bus is taken into account.

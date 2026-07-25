@@ -1,0 +1,1437 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Visual explanation of the NimBus review follow-up fixes in commit e6aa9a4.">
+  <title>NimBus review fixes — visual explainer</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #f4f2ea;
+      --surface: #faf8f2;
+      --surface-2: #ece7da;
+      --ink: #1a1814;
+      --ink-2: #4a463d;
+      --ink-3: #7a7465;
+      --hairline: #e5dfce;
+      --border: #c9c1ab;
+      --coral: #e8743c;
+      --coral-dark: #a94b1d;
+      --coral-tint: #fceedd;
+      --green: #2e8f5e;
+      --green-ink: #1f6b45;
+      --green-tint: #dcefe4;
+      --red: #c2412e;
+      --red-ink: #8e2c1f;
+      --red-tint: #f4d9d3;
+      --amber: #c98a1b;
+      --amber-ink: #8a5e0f;
+      --amber-tint: #f6e7c7;
+      --blue: #3a6fb0;
+      --blue-ink: #234e80;
+      --blue-tint: #d8e3f2;
+      --purple: #6b3fa3;
+      --purple-tint: #ece2f4;
+      --dark: #1a1814;
+      --dark-2: #2a2620;
+      --dark-3: #3d3830;
+      --white: #f4f2ea;
+      --shadow: 0 18px 40px rgba(26, 24, 20, 0.08), 0 4px 12px rgba(26, 24, 20, 0.04);
+      --shadow-sm: 0 4px 12px rgba(26, 24, 20, 0.06);
+      --radius: 18px;
+      --radius-sm: 10px;
+      --max: 1240px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      background: var(--canvas);
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 8% 8%, rgba(232, 116, 60, 0.09), transparent 22rem),
+        radial-gradient(circle at 92% 30%, rgba(58, 111, 176, 0.08), transparent 26rem),
+        var(--canvas);
+      color: var(--ink);
+      font-family: Manrope, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      line-height: 1.5;
+      text-rendering: optimizeLegibility;
+    }
+
+    a { color: inherit; }
+
+    .skip-link {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 99;
+      transform: translateY(-150%);
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+      font-weight: 800;
+    }
+
+    .skip-link:focus { transform: translateY(0); }
+
+    .shell {
+      width: min(calc(100% - 32px), var(--max));
+      margin: 0 auto;
+    }
+
+    .hero {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      margin: 18px auto 0;
+      border: 1px solid var(--dark-3);
+      border-radius: 24px;
+      background: var(--dark);
+      color: var(--white);
+      box-shadow: var(--shadow);
+    }
+
+    .hero::before,
+    .hero::after {
+      position: absolute;
+      z-index: -1;
+      border-radius: 50%;
+      content: "";
+      filter: blur(2px);
+    }
+
+    .hero::before {
+      width: 500px;
+      height: 500px;
+      top: -330px;
+      right: -100px;
+      border: 1px solid rgba(232, 116, 60, 0.32);
+      box-shadow: 0 0 0 70px rgba(232, 116, 60, 0.035), 0 0 0 140px rgba(232, 116, 60, 0.025);
+    }
+
+    .hero::after {
+      width: 320px;
+      height: 320px;
+      bottom: -250px;
+      left: 24%;
+      background: rgba(58, 111, 176, 0.12);
+    }
+
+    .hero-inner { padding: 24px 28px 30px; }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--dark-2);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 20px;
+      font-weight: 850;
+      letter-spacing: -0.03em;
+    }
+
+    .brand span { color: #c9c1ab; font-weight: 650; }
+
+    .commit-pill,
+    .eyebrow,
+    .status-pill,
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      width: fit-content;
+      border-radius: 999px;
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .commit-pill {
+      padding: 8px 11px;
+      border: 1px solid var(--dark-3);
+      background: var(--dark-2);
+      color: #c9c1ab;
+    }
+
+    .dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(390px, 0.95fr);
+      gap: 36px;
+      align-items: center;
+      padding-top: 44px;
+    }
+
+    .eyebrow {
+      padding: 7px 10px;
+      background: rgba(232, 116, 60, 0.14);
+      color: #f2a47c;
+    }
+
+    h1,
+    h2,
+    h3,
+    p { margin-top: 0; }
+
+    h1 {
+      max-width: 760px;
+      margin: 18px 0 18px;
+      font-size: clamp(44px, 6vw, 78px);
+      line-height: 0.98;
+      letter-spacing: -0.058em;
+    }
+
+    .hero-copy > p {
+      max-width: 690px;
+      margin-bottom: 0;
+      color: #c9c1ab;
+      font-size: clamp(16px, 2vw, 20px);
+      line-height: 1.65;
+    }
+
+    .hero-copy strong { color: var(--white); }
+
+    .decision-card {
+      padding: 18px;
+      border: 1px solid var(--dark-3);
+      border-radius: 16px;
+      background: rgba(42, 38, 32, 0.72);
+      backdrop-filter: blur(12px);
+    }
+
+    .decision-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 15px;
+    }
+
+    .decision-title h2 {
+      margin: 0;
+      font-size: 14px;
+      letter-spacing: 0.01em;
+    }
+
+    .decision-title span {
+      color: #8a8473;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 10px;
+    }
+
+    .decision-row {
+      display: grid;
+      grid-template-columns: 1fr 26px 1fr;
+      align-items: center;
+      gap: 7px;
+      padding: 11px 0;
+      border-top: 1px solid var(--dark-3);
+    }
+
+    .decision-row:first-of-type { border-top: 0; }
+
+    .signal,
+    .outcome {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+    }
+
+    .signal-icon,
+    .outcome-icon,
+    .feature-icon {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: 9px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    .signal div:last-child,
+    .outcome div:last-child { min-width: 0; }
+
+    .signal strong,
+    .outcome strong {
+      display: block;
+      overflow: hidden;
+      color: var(--white);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .signal small,
+    .outcome small {
+      display: block;
+      color: #8a8473;
+      font-size: 10px;
+    }
+
+    .decision-arrow {
+      color: #6f6a5c;
+      text-align: center;
+      font-size: 18px;
+    }
+
+    .tone-blue { background: rgba(58, 111, 176, 0.22); color: #9bc0ee; }
+    .tone-green { background: rgba(46, 143, 94, 0.20); color: #8fd3a8; }
+    .tone-red { background: rgba(194, 65, 46, 0.20); color: #f0a094; }
+    .tone-amber { background: rgba(201, 138, 27, 0.20); color: #e8c06e; }
+    .tone-purple { background: rgba(107, 63, 163, 0.22); color: #c8a9ed; }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      margin-top: 34px;
+      overflow: hidden;
+      border: 1px solid var(--dark-3);
+      border-radius: 14px;
+      background: var(--dark-3);
+    }
+
+    .metric {
+      padding: 16px 18px;
+      background: var(--dark-2);
+    }
+
+    .metric strong {
+      display: block;
+      color: var(--white);
+      font-size: clamp(22px, 3vw, 32px);
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+
+    .metric span {
+      display: block;
+      margin-top: 7px;
+      color: #8a8473;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    main { padding: 68px 0 28px; }
+
+    .section {
+      scroll-margin-top: 20px;
+      margin-bottom: 70px;
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: 86px minmax(0, 1fr) minmax(240px, 0.45fr);
+      gap: 22px;
+      align-items: start;
+      margin-bottom: 26px;
+    }
+
+    .section-no {
+      padding-top: 6px;
+      color: var(--coral-dark);
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 13px;
+      font-weight: 850;
+      letter-spacing: 0.08em;
+    }
+
+    .section h2 {
+      margin-bottom: 8px;
+      font-size: clamp(30px, 4vw, 48px);
+      line-height: 1.04;
+      letter-spacing: -0.045em;
+    }
+
+    .section-head p {
+      margin-bottom: 0;
+      color: var(--ink-2);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    .section-summary {
+      padding-left: 16px;
+      border-left: 3px solid var(--coral);
+      color: var(--ink-2);
+      font-size: 13px;
+    }
+
+    .section-summary strong {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--ink);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .panel {
+      overflow: hidden;
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .panel-pad { padding: 24px; }
+
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .compare-side {
+      min-width: 0;
+      padding: 22px;
+      border: 1px solid var(--hairline);
+      border-radius: 14px;
+      background: #fffdf8;
+    }
+
+    .compare-side.before { border-top: 4px solid var(--red); }
+    .compare-side.after { border-top: 4px solid var(--green); }
+
+    .compare-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    .before .compare-label { color: var(--red-ink); }
+    .after .compare-label { color: var(--green-ink); }
+
+    .mini-flow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      overflow-x: auto;
+      padding: 2px 0 10px;
+      scrollbar-width: thin;
+    }
+
+    .flow-box {
+      min-width: 118px;
+      padding: 11px 10px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface);
+      text-align: center;
+    }
+
+    .flow-box strong {
+      display: block;
+      font-size: 12px;
+      line-height: 1.25;
+    }
+
+    .flow-box small {
+      display: block;
+      margin-top: 4px;
+      color: var(--ink-3);
+      font-size: 9px;
+      line-height: 1.25;
+    }
+
+    .flow-box.bad { border-color: #e1aaa1; background: var(--red-tint); }
+    .flow-box.good { border-color: #9bc7ad; background: var(--green-tint); }
+    .flow-box.info { border-color: #afc5df; background: var(--blue-tint); }
+    .flow-box.warn { border-color: #ddbf80; background: var(--amber-tint); }
+
+    .flow-arrow {
+      flex: 0 0 auto;
+      color: var(--ink-3);
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .compare-note {
+      margin: 10px 0 0;
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+
+    .outcome-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .outcome-chip {
+      padding: 13px;
+      border-radius: 10px;
+      background: var(--surface-2);
+      text-align: center;
+    }
+
+    .outcome-chip b {
+      display: block;
+      color: var(--green-ink);
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    .outcome-chip span {
+      display: block;
+      margin-top: 5px;
+      color: var(--ink-2);
+      font-size: 10px;
+      font-weight: 750;
+      text-transform: uppercase;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+      gap: 18px;
+    }
+
+    .diagram-title {
+      margin-bottom: 6px;
+      font-size: 16px;
+      letter-spacing: -0.02em;
+    }
+
+    .diagram-subtitle {
+      margin-bottom: 18px;
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+
+    .stack {
+      position: relative;
+      display: grid;
+      gap: 9px;
+      padding-left: 28px;
+    }
+
+    .stack::before {
+      position: absolute;
+      top: 18px;
+      bottom: 18px;
+      left: 9px;
+      width: 2px;
+      background: linear-gradient(var(--blue), var(--purple), var(--green));
+      content: "";
+    }
+
+    .stack-item {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 13px 14px;
+      border: 1px solid var(--hairline);
+      border-radius: 10px;
+      background: #fffdf8;
+    }
+
+    .stack-item::before {
+      position: absolute;
+      left: -25px;
+      width: 10px;
+      height: 10px;
+      border: 3px solid var(--surface);
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 0 1px var(--blue);
+      content: "";
+    }
+
+    .stack-item:nth-child(3)::before,
+    .stack-item:nth-child(4)::before { background: var(--purple); box-shadow: 0 0 0 1px var(--purple); }
+    .stack-item:nth-child(5)::before { background: var(--green); box-shadow: 0 0 0 1px var(--green); }
+
+    .stack-item strong { font-size: 12px; }
+    .stack-item span { color: var(--ink-3); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 9px; }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 15px;
+    }
+
+    .status-code {
+      padding: 10px 8px;
+      border: 1px solid #afc5df;
+      border-radius: 8px;
+      background: var(--blue-tint);
+      color: var(--blue-ink);
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 850;
+      text-align: center;
+    }
+
+    .translation-result {
+      display: grid;
+      gap: 10px;
+    }
+
+    .result-card {
+      padding: 15px;
+      border-radius: 11px;
+    }
+
+    .result-card strong { display: block; font-size: 12px; }
+    .result-card span { display: block; margin-top: 5px; font-size: 11px; line-height: 1.45; }
+    .result-card.limit { border: 1px solid #ddbf80; background: var(--amber-tint); color: var(--amber-ink); }
+    .result-card.transient { border: 1px solid #afc5df; background: var(--blue-tint); color: var(--blue-ink); }
+    .result-card.safe { border: 1px solid #9bc7ad; background: var(--green-tint); color: var(--green-ink); }
+
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(9, auto);
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 30px 20px;
+      border-bottom: 1px solid var(--hairline);
+      background: linear-gradient(180deg, #fffdf8, var(--surface));
+    }
+
+    .pipe-node {
+      display: grid;
+      min-width: 128px;
+      min-height: 100px;
+      place-items: center;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+      text-align: center;
+    }
+
+    .pipe-node .feature-icon { margin-bottom: 9px; }
+    .pipe-node strong { font-size: 12px; }
+    .pipe-node small { display: block; margin-top: 3px; color: var(--ink-3); font-size: 9px; }
+    .pipe-arrow { color: var(--ink-3); font-size: 20px; }
+
+    .branch-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      padding: 18px;
+    }
+
+    .branch-card {
+      min-height: 136px;
+      padding: 16px;
+      border-radius: 11px;
+      background: var(--surface-2);
+    }
+
+    .branch-card .tag { padding: 5px 8px; }
+    .branch-card h3 { margin: 12px 0 5px; font-size: 14px; }
+    .branch-card p { margin: 0; color: var(--ink-2); font-size: 11px; }
+
+    .tag-green { background: var(--green-tint); color: var(--green-ink); }
+    .tag-red { background: var(--red-tint); color: var(--red-ink); }
+    .tag-blue { background: var(--blue-tint); color: var(--blue-ink); }
+    .tag-purple { background: var(--purple-tint); color: var(--purple); }
+    .tag-amber { background: var(--amber-tint); color: var(--amber-ink); }
+
+    .security-band {
+      display: grid;
+      grid-template-columns: 90px minmax(0, 1fr);
+      gap: 20px;
+      align-items: center;
+      margin-top: 18px;
+      padding: 20px;
+      border: 1px solid #b7a4d1;
+      border-radius: 14px;
+      background: var(--purple-tint);
+    }
+
+    .shield {
+      display: grid;
+      width: 76px;
+      height: 82px;
+      place-items: center;
+      clip-path: polygon(50% 0, 92% 15%, 84% 72%, 50% 100%, 16% 72%, 8% 15%);
+      background: var(--purple);
+      color: white;
+      font-size: 28px;
+      font-weight: 850;
+    }
+
+    .security-band h3 { margin: 0 0 5px; font-size: 16px; }
+    .security-band p { margin: 0; color: #4d306f; font-size: 12px; }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      align-items: start;
+      padding: 32px 20px 24px;
+    }
+
+    .time-step {
+      position: relative;
+      padding: 36px 8px 0;
+      text-align: center;
+    }
+
+    .time-step::before {
+      position: absolute;
+      top: 9px;
+      left: 50%;
+      z-index: 2;
+      width: 17px;
+      height: 17px;
+      transform: translateX(-50%);
+      border: 4px solid var(--surface);
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 0 1px var(--blue);
+      content: "";
+    }
+
+    .time-step::after {
+      position: absolute;
+      top: 17px;
+      left: 50%;
+      width: 100%;
+      height: 2px;
+      background: var(--border);
+      content: "";
+    }
+
+    .time-step:last-child::after { display: none; }
+    .time-step.warn-step::before { background: var(--amber); box-shadow: 0 0 0 1px var(--amber); }
+    .time-step.good-step::before { background: var(--green); box-shadow: 0 0 0 1px var(--green); }
+    .time-step strong { display: block; font-size: 11px; }
+    .time-step small { display: block; margin-top: 5px; color: var(--ink-3); font-size: 9px; line-height: 1.35; }
+
+    .tree-wrap {
+      padding: 22px;
+      border-top: 1px solid var(--hairline);
+      background: var(--surface-2);
+    }
+
+    .tree-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+      gap: 24px;
+      align-items: center;
+    }
+
+    .process-tree {
+      display: grid;
+      grid-template-columns: 1fr 34px 1fr;
+      grid-template-rows: auto 30px auto;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .process-node {
+      padding: 13px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      text-align: center;
+    }
+
+    .process-node strong { display: block; font-size: 12px; }
+    .process-node small { display: block; margin-top: 3px; color: var(--ink-3); font-size: 9px; }
+    .process-node.root { grid-column: 1; grid-row: 1 / 4; border-color: #afc5df; background: var(--blue-tint); color: var(--blue-ink); }
+    .tree-line { color: var(--ink-3); text-align: center; }
+    .tree-line.one { grid-column: 2; grid-row: 1; }
+    .tree-line.two { grid-column: 2; grid-row: 3; }
+    .process-node.child-one { grid-column: 3; grid-row: 1; }
+    .process-node.child-two { grid-column: 3; grid-row: 3; }
+
+    .tree-copy h3 { margin-bottom: 8px; font-size: 18px; }
+    .tree-copy p { color: var(--ink-2); font-size: 12px; }
+
+    .bullet-list {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .bullet-list li {
+      display: flex;
+      gap: 9px;
+      align-items: flex-start;
+      color: var(--ink-2);
+      font-size: 11px;
+    }
+
+    .bullet-list li::before {
+      width: 7px;
+      height: 7px;
+      flex: 0 0 auto;
+      margin-top: 5px;
+      border-radius: 50%;
+      background: var(--green);
+      content: "";
+    }
+
+    .compat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .compat-card {
+      position: relative;
+      min-height: 225px;
+      overflow: hidden;
+      padding: 20px;
+      border: 1px solid var(--hairline);
+      border-radius: 14px;
+      background: var(--surface);
+    }
+
+    .compat-card::after {
+      position: absolute;
+      right: -24px;
+      bottom: -34px;
+      width: 100px;
+      height: 100px;
+      border: 18px solid rgba(232, 116, 60, 0.07);
+      border-radius: 50%;
+      content: "";
+    }
+
+    .compat-card .feature-icon { margin-bottom: 20px; }
+    .compat-card h3 { margin-bottom: 7px; font-size: 15px; }
+    .compat-card p { margin-bottom: 0; color: var(--ink-2); font-size: 11px; }
+    .compat-card code { font-size: 10px; }
+
+    .proof {
+      display: grid;
+      grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+      gap: 18px;
+    }
+
+    .score-card {
+      display: grid;
+      min-height: 330px;
+      place-items: center;
+      padding: 28px;
+      background: var(--dark);
+      color: var(--white);
+      text-align: center;
+    }
+
+    .score-ring {
+      display: grid;
+      width: 190px;
+      height: 190px;
+      place-items: center;
+      border: 18px solid var(--dark-3);
+      border-top-color: var(--green);
+      border-right-color: var(--green);
+      border-bottom-color: var(--green);
+      border-radius: 50%;
+      box-shadow: inset 0 0 0 1px #0f0e0b, 0 0 0 1px var(--dark-3);
+    }
+
+    .score-ring strong {
+      display: block;
+      font-size: 42px;
+      line-height: 0.9;
+      letter-spacing: -0.06em;
+    }
+
+    .score-ring span {
+      display: block;
+      margin-top: 9px;
+      color: #8fd3a8;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .score-note {
+      max-width: 330px;
+      margin: 18px auto 0;
+      color: #8a8473;
+      font-size: 11px;
+    }
+
+    .check-list {
+      display: grid;
+      gap: 1px;
+      overflow: hidden;
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius);
+      background: var(--hairline);
+    }
+
+    .check-row {
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: center;
+      padding: 17px 18px;
+      background: var(--surface);
+    }
+
+    .check-mark {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--green-tint);
+      color: var(--green-ink);
+      font-weight: 900;
+    }
+
+    .check-row strong { display: block; font-size: 12px; }
+    .check-row small { display: block; margin-top: 2px; color: var(--ink-3); font-size: 10px; }
+
+    .status-pill { padding: 6px 9px; }
+    .status-pass { background: var(--green-tint); color: var(--green-ink); }
+    .status-note { background: var(--amber-tint); color: var(--amber-ink); }
+
+    .footer {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 20px;
+      align-items: center;
+      margin-bottom: 28px;
+      padding: 24px 26px;
+      border-radius: 18px;
+      background: var(--dark);
+      color: var(--white);
+    }
+
+    .footer h2 { margin-bottom: 4px; font-size: 20px; }
+    .footer p { margin-bottom: 0; color: #8a8473; font-size: 11px; }
+    .footer a {
+      padding: 10px 13px;
+      border: 1px solid var(--dark-3);
+      border-radius: 9px;
+      background: var(--dark-2);
+      color: #c9c1ab;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 10px;
+      text-decoration: none;
+    }
+
+    .footer a:hover,
+    .footer a:focus-visible { border-color: var(--coral); color: var(--white); outline: none; }
+
+    code {
+      padding: 2px 5px;
+      border-radius: 5px;
+      background: var(--surface-2);
+      color: var(--ink);
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    @media (max-width: 980px) {
+      .hero-grid,
+      .split,
+      .proof,
+      .tree-grid { grid-template-columns: 1fr; }
+      .hero-grid { gap: 28px; }
+      .section-head { grid-template-columns: 65px 1fr; }
+      .section-summary { grid-column: 2; }
+      .compat-grid { grid-template-columns: 1fr 1fr; }
+      .pipeline { grid-template-columns: 1fr 24px 1fr; }
+      .pipe-node:nth-of-type(3) { grid-column: 1; }
+      .pipeline .pipe-arrow:nth-of-type(4) { transform: rotate(90deg); }
+      .branch-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 700px) {
+      .shell { width: min(calc(100% - 18px), var(--max)); }
+      .hero { margin-top: 9px; border-radius: 18px; }
+      .hero-inner { padding: 18px 16px 20px; }
+      .topbar { align-items: flex-start; }
+      .brand span { display: none; }
+      .hero-grid { grid-template-columns: minmax(0, 1fr); padding-top: 30px; }
+      h1 { font-size: 43px; }
+      .metrics { grid-template-columns: 1fr 1fr; }
+      .compare,
+      .compat-grid,
+      .branch-grid { grid-template-columns: 1fr; }
+      .section-head { grid-template-columns: 1fr; gap: 8px; }
+      .section-no { padding: 0; }
+      .section-summary { grid-column: 1; }
+      .outcome-strip { grid-template-columns: 1fr 1fr; }
+      .pipeline { display: flex; flex-direction: column; }
+      .pipe-node { width: 100%; }
+      .pipe-arrow { transform: rotate(90deg); }
+      .timeline { grid-template-columns: 1fr; padding: 16px 20px; }
+      .time-step { padding: 8px 0 8px 40px; text-align: left; }
+      .time-step::before { top: 12px; left: 10px; }
+      .time-step::after { top: 28px; bottom: -8px; left: 9px; width: 2px; height: auto; }
+      .footer { grid-template-columns: 1fr; }
+      .check-row { grid-template-columns: 36px minmax(0, 1fr); }
+      .check-row .status-pill { grid-column: 2; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+
+    @media print {
+      @page { size: A3 portrait; margin: 12mm; }
+      body { background: white; }
+      .shell { width: 100%; }
+      .hero { margin-top: 0; box-shadow: none; }
+      .section { break-inside: avoid; margin-bottom: 34px; }
+      .panel, .compat-card { box-shadow: none; }
+      .footer { margin-bottom: 0; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to the visual explanation</a>
+
+  <header class="hero shell">
+    <div class="hero-inner">
+      <div class="topbar">
+        <div class="brand" aria-label="NimBus">
+          <svg width="32" height="32" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+            <path d="M5 22c0-3.5 2.8-6.3 6.3-6.3.7 0 1.4.1 2 .3.8-3.7 4.1-6.5 8-6.5 4.2 0 7.6 3.2 8.1 7.2 2.7.4 4.8 2.7 4.8 5.5 0 3.1-2.5 5.5-5.5 5.5H11.3C7.8 27.7 5 25 5 22z" stroke="#F4F2EA" stroke-width="2.5" stroke-linejoin="round"/>
+            <circle cx="29" cy="11" r="3" fill="#E8743C"/>
+          </svg>
+          NimBus <span>/ review follow-up</span>
+        </div>
+        <div class="commit-pill"><i class="dot" style="color:#8fd3a8"></i> e6aa9a4 · pushed</div>
+      </div>
+
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <div class="eyebrow"><i class="dot"></i> Visual change brief</div>
+          <h1>Harder boundaries.<br>Safer failure modes.</h1>
+          <p>
+            The follow-up makes one rule explicit across NimBus: <strong>classify the signal at the boundary</strong>,
+            then take exactly one lifecycle action. Shutdown propagates. Storage transients redeliver.
+            Malformed payloads dead-letter immediately. Recovery remains bounded.
+          </p>
+        </div>
+
+        <aside class="decision-card" aria-label="Failure routing decision map">
+          <div class="decision-title">
+            <h2>Signal → lifecycle outcome</h2>
+            <span>decision map</span>
+          </div>
+
+          <div class="decision-row">
+            <div class="signal">
+              <div class="signal-icon tone-blue">OCE</div>
+              <div><strong>Host cancellation</strong><small>control flow</small></div>
+            </div>
+            <div class="decision-arrow">→</div>
+            <div class="outcome">
+              <div class="outcome-icon tone-blue">↑</div>
+              <div><strong>Propagate</strong><small>no settlement</small></div>
+            </div>
+          </div>
+
+          <div class="decision-row">
+            <div class="signal">
+              <div class="signal-icon tone-amber">503</div>
+              <div><strong>Storage transient</strong><small>provider-specific</small></div>
+            </div>
+            <div class="decision-arrow">→</div>
+            <div class="outcome">
+              <div class="outcome-icon tone-amber">↻</div>
+              <div><strong>Redeliver</strong><small>hint optional</small></div>
+            </div>
+          </div>
+
+          <div class="decision-row">
+            <div class="signal">
+              <div class="signal-icon tone-red">{!</div>
+              <div><strong>Malformed payload</strong><small>cannot heal</small></div>
+            </div>
+            <div class="decision-arrow">→</div>
+            <div class="outcome">
+              <div class="outcome-icon tone-red">DLQ</div>
+              <div><strong>Dead-letter now</strong><small>zero retries</small></div>
+            </div>
+          </div>
+
+          <div class="decision-row">
+            <div class="signal">
+              <div class="signal-icon tone-purple">EX</div>
+              <div><strong>Handler failure</strong><small>application logic</small></div>
+            </div>
+            <div class="decision-arrow">→</div>
+            <div class="outcome">
+              <div class="outcome-icon tone-purple">POL</div>
+              <div><strong>Existing policy</strong><small>retry or fail</small></div>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <div class="metrics" aria-label="Change and verification summary">
+        <div class="metric"><strong>24</strong><span>files changed</span></div>
+        <div class="metric"><strong>849</strong><span>lines added</span></div>
+        <div class="metric"><strong>1,137</strong><span>tests passed</span></div>
+        <div class="metric"><strong>0</strong><span>release errors</span></div>
+      </div>
+    </div>
+  </header>
+
+  <main id="content" class="shell">
+    <section class="section" id="cancellation">
+      <div class="section-head">
+        <div class="section-no">01 / 05</div>
+        <div>
+          <h2>Cancellation stays cancellation</h2>
+          <p>Resolver shutdown can arrive while storing, notifying, or completing. It now exits through one dedicated lane instead of entering generic failure handling.</p>
+        </div>
+        <div class="section-summary"><strong>Invariant</strong>An <code>OperationCanceledException</code> caused by the caller never becomes business failure.</div>
+      </div>
+
+      <div class="panel panel-pad">
+        <div class="compare">
+          <div class="compare-side before">
+            <div class="compare-label"><span>Before</span><span>signal corruption</span></div>
+            <div class="mini-flow" aria-label="Old cancellation flow">
+              <div class="flow-box info"><strong>Host stops</strong><small>token cancelled</small></div>
+              <div class="flow-arrow">→</div>
+              <div class="flow-box bad"><strong>Generic catch</strong><small>looks like failure</small></div>
+              <div class="flow-arrow">→</div>
+              <div class="flow-box bad"><strong>Settle</strong><small>DLQ / abandon risk</small></div>
+            </div>
+            <p class="compare-note">A transport-control signal could be translated into an irreversible message outcome.</p>
+          </div>
+
+          <div class="compare-side after">
+            <div class="compare-label"><span>Now</span><span>signal preserved</span></div>
+            <div class="mini-flow" aria-label="New cancellation flow">
+              <div class="flow-box info"><strong>Host stops</strong><small>token cancelled</small></div>
+              <div class="flow-arrow">→</div>
+              <div class="flow-box good"><strong>Dedicated catch</strong><small>recognize control flow</small></div>
+              <div class="flow-arrow">→</div>
+              <div class="flow-box good"><strong>Rethrow</strong><small>leave unsettled</small></div>
+            </div>
+            <p class="compare-note">The transport owns shutdown; the message can be delivered safely after restart.</p>
+          </div>
+        </div>
+
+        <div class="outcome-strip" aria-label="Cancellation side effects">
+          <div class="outcome-chip"><b>0</b><span>completes</span></div>
+          <div class="outcome-chip"><b>0</b><span>abandons</span></div>
+          <div class="outcome-chip"><b>0</b><span>dead-letters</span></div>
+          <div class="outcome-chip"><b>0</b><span>redelivery schedules</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="storage">
+      <div class="section-head">
+        <div class="section-no">02 / 05</div>
+        <div>
+          <h2>Cosmos adapters cannot leak transient semantics</h2>
+          <p>The public adapter extension point is now decorated at every level, so custom implementations receive the same provider-neutral behavior as the built-in adapter.</p>
+        </div>
+        <div class="section-summary"><strong>Boundary</strong>Cosmos details stop inside the message-store package. Resolver sees only NimBus storage exceptions.</div>
+      </div>
+
+      <div class="split">
+        <div class="panel panel-pad">
+          <h3 class="diagram-title">Decorator path</h3>
+          <p class="diagram-subtitle">Every operation crosses the transient translator before returning to <code>CosmosDbClient</code>.</p>
+          <div class="stack" aria-label="Cosmos adapter decorator stack">
+            <div class="stack-item"><strong>CosmosDbClient</strong><span>public store API</span></div>
+            <div class="stack-item"><strong>Client translator</strong><span>GetDatabase</span></div>
+            <div class="stack-item"><strong>Database translator</strong><span>Get / create container</span></div>
+            <div class="stack-item"><strong>Container translator</strong><span>CRUD · query · read many</span></div>
+            <div class="stack-item"><strong>Built-in or custom adapter</strong><span>extension point</span></div>
+          </div>
+          <div class="status-grid" aria-label="Translated Cosmos HTTP status codes">
+            <div class="status-code">408</div><div class="status-code">410</div><div class="status-code">429</div>
+            <div class="status-code">449</div><div class="status-code">500</div><div class="status-code">502</div>
+            <div class="status-code">503</div><div class="status-code">504</div><div class="status-code">query</div>
+          </div>
+        </div>
+
+        <div class="panel panel-pad">
+          <h3 class="diagram-title">What comes back</h3>
+          <p class="diagram-subtitle">The resolver no longer needs to know which storage provider produced the signal.</p>
+          <div class="translation-result">
+            <div class="result-card limit">
+              <strong>HTTP 429 → RequestLimitException</strong>
+              <span>Preserves a positive <code>RetryAfter</code> when Cosmos supplies one.</span>
+            </div>
+            <div class="result-card transient">
+              <strong>Other transient status → StorageProviderTransientException</strong>
+              <span>Redelivery still occurs when there is no retry hint—the bug that previously fell into the generic catch.</span>
+            </div>
+            <div class="result-card safe">
+              <strong>Scrubbed diagnostic surface</strong>
+              <span>No account host, database name, activity ID, or provider exception crosses the boundary.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel panel-pad" style="margin-top:18px">
+        <div class="compare">
+          <div class="compare-side before">
+            <div class="compare-label"><span>Custom adapter before</span><span>raw provider leak</span></div>
+            <div class="mini-flow">
+              <div class="flow-box bad"><strong>Cosmos 503</strong><small>raw exception</small></div><div class="flow-arrow">→</div>
+              <div class="flow-box bad"><strong>Generic catch</strong><small>not recognized</small></div><div class="flow-arrow">→</div>
+              <div class="flow-box bad"><strong>DLQ</strong><small>wrong outcome</small></div>
+            </div>
+          </div>
+          <div class="compare-side after">
+            <div class="compare-label"><span>Custom adapter now</span><span>normalized</span></div>
+            <div class="mini-flow">
+              <div class="flow-box info"><strong>Cosmos 503</strong><small>provider signal</small></div><div class="flow-arrow">→</div>
+              <div class="flow-box good"><strong>Transient</strong><small>provider-neutral</small></div><div class="flow-arrow">→</div>
+              <div class="flow-box good"><strong>Redeliver</strong><small>correct outcome</small></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="payloads">
+      <div class="section-head">
+        <div class="section-no">03 / 05</div>
+        <div>
+          <h2>Malformed input fails closed—and only once</h2>
+          <p>Message metadata remains readable for lifecycle decisions, while invalid wire payloads are normalized into a permanent outcome before user code runs.</p>
+        </div>
+        <div class="section-summary"><strong>Security rule</strong>Untrusted JSON always gets a fresh, sealed-by-construction settings instance.</div>
+      </div>
+
+      <div class="panel">
+        <div class="pipeline" aria-label="Safe message deserialization pipeline">
+          <div class="pipe-node">
+            <div class="feature-icon tone-blue">SB</div>
+            <strong>Service Bus body</strong><small>untrusted bytes</small>
+          </div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-node">
+            <div class="feature-icon tone-amber">1×</div>
+            <strong>Memoized parse</strong><small>failures cached too</small>
+          </div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-node">
+            <div class="feature-icon tone-purple">ID</div>
+            <strong>Type agreement</strong><small>header is authority</small>
+          </div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-node">
+            <div class="feature-icon tone-green">✓</div>
+            <strong>Safe JSON</strong><small>fresh settings</small>
+          </div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-node">
+            <div class="feature-icon tone-green">H</div>
+            <strong>User handler</strong><small>valid payload only</small>
+          </div>
+        </div>
+
+        <div class="branch-grid">
+          <article class="branch-card">
+            <div class="tag tag-red"><i class="dot"></i> Permanent</div>
+            <h3>Missing / null / malformed</h3>
+            <p>Wrapped as <code>PermanentFailureException</code>; dead-lettered without burning the retry cycle.</p>
+          </article>
+          <article class="branch-card">
+            <div class="tag tag-red"><i class="dot"></i> Permanent</div>
+            <h3>Depth &gt; 32</h3>
+            <p><code>JsonReaderException</code> follows the same immediate-DLQ path as every other invalid payload.</p>
+          </article>
+          <article class="branch-card">
+            <div class="tag tag-red"><i class="dot"></i> Permanent</div>
+            <h3>Header / body mismatch</h3>
+            <p>The application property is authoritative. A conflicting body cannot redirect dispatch.</p>
+          </article>
+          <article class="branch-card">
+            <div class="tag tag-blue"><i class="dot"></i> Compatible</div>
+            <h3>Legacy header missing</h3>
+            <p>Native messages produced before the property existed still fall back to the body EventTypeId.</p>
+          </article>
+        </div>
+      </div>
+
+      <div class="security-band">
+        <div class="shield" aria-hidden="true">{ }</div>
+        <div>
+          <h3>Fresh settings defeat hostile ambient configuration</h3>
+          <p><code>TypeNameHandling.None</code> + <code>MaxDepth = 32</code> is created for each internal deserialization in the message context, event handler, and outbox dispatcher. Mutating the legacy public settings object—or setting hostile Newtonsoft defaults—cannot enable polymorphic type construction.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="recovery">
+      <div class="section-head">
+        <div class="section-no">04 / 05</div>
+        <div>
+          <h2>Shutdown and recovery have finite clocks</h2>
+          <p>A failed receiver can no longer pin the recovery loop forever, and CLI cancellation preserves its original meaning even when process termination races.</p>
+        </div>
+        <div class="section-summary"><strong>Defaults</strong>Receiver cleanup: 30 s. CLI process confirmation: 10 s.</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-pad" style="padding-bottom:0">
+          <h3 class="diagram-title">Receiver recovery timeline</h3>
+          <p class="diagram-subtitle">Stop and dispose are initiated, bounded, and observed—even when their tasks complete later.</p>
+        </div>
+        <div class="timeline" aria-label="Receiver recovery timeline">
+          <div class="time-step"><strong>Fault</strong><small>recoverable threshold reached</small></div>
+          <div class="time-step"><strong>Detach</strong><small>capture current processor</small></div>
+          <div class="time-step"><strong>Stop</strong><small>await with token</small></div>
+          <div class="time-step warn-step"><strong>30 s bound</strong><small>timeout is logged</small></div>
+          <div class="time-step"><strong>Dispose</strong><small>late task observed</small></div>
+          <div class="time-step good-step"><strong>Replace</strong><small>new processor starts</small></div>
+          <div class="time-step good-step"><strong>Recover</strong><small>loop remains alive</small></div>
+        </div>
+
+        <div class="tree-wrap">
+          <div class="tree-grid">
+            <div class="process-tree" aria-label="Azure CLI process tree">
+              <div class="process-node root"><strong>nb CLI</strong><small>cancellation owner</small></div>
+              <div class="tree-line one">→</div>
+              <div class="process-node child-one"><strong>az deployment</strong><small>parent process</small></div>
+              <div class="tree-line two">→</div>
+              <div class="process-node child-two"><strong>descendants</strong><small>whole tree</small></div>
+            </div>
+            <div class="tree-copy">
+              <div class="tag tag-amber"><i class="dot"></i> Process-tree safety</div>
+              <h3>Kill the tree, then confirm exit</h3>
+              <p>Cancellation attempts <code>Kill(entireProcessTree: true)</code>, waits for exit on a bounded cleanup token, logs expected race/access failures, and then rethrows the original cancellation.</p>
+              <ul class="bullet-list">
+                <li>The normal path waits for the Azure CLI tree before the ephemeral parameter-file scope unwinds.</li>
+                <li><code>Win32Exception</code>, mid-exit races, and unsupported tree-kill behavior do not replace cancellation.</li>
+                <li>Tests launch a real descendant process and prove both parent and child terminate.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="compatibility">
+      <div class="section-head">
+        <div class="section-no">05 / 05</div>
+        <div>
+          <h2>The behavioral contract is now explicit</h2>
+          <p>Release-sensitive behavior moved out of tribal knowledge and into the deployment, error-handling, and SDK documentation.</p>
+        </div>
+        <div class="section-summary"><strong>Why it matters</strong>Operators and custom provider authors can validate compatibility before rollout.</div>
+      </div>
+
+      <div class="compat-grid">
+        <article class="compat-card">
+          <div class="feature-icon tone-amber">ID</div>
+          <h3>EventTypeId authority</h3>
+          <p>Header/body disagreement is a permanent malformed message. Property-less legacy messages retain the body fallback.</p>
+        </article>
+        <article class="compat-card">
+          <div class="feature-icon tone-red">32</div>
+          <h3>JSON depth ceiling</h3>
+          <p>Payloads deeper than 32 now fail immediately. Ambient <code>JsonConvert.DefaultSettings</code> are ignored.</p>
+        </article>
+        <article class="compat-card">
+          <div class="feature-icon tone-purple">BI</div>
+          <h3>Bicep ≥ 0.35.1</h3>
+          <p>All deployment paths need secure-output support. The prerequisite is pinned in both deployment references.</p>
+        </article>
+        <article class="compat-card">
+          <div class="feature-icon tone-green">OB</div>
+          <h3>Outbox provider contract</h3>
+          <p>Checkpoint replay must be idempotent, survive partial batch commits, and preserve the original dispatch timestamp.</p>
+        </article>
+      </div>
+
+      <div class="proof" style="margin-top:18px">
+        <div class="panel score-card">
+          <div>
+            <div class="score-ring" aria-label="1137 tests passed">
+              <div><strong>1,137</strong><span>passed</span></div>
+            </div>
+            <p class="score-note">141 provider/environment-gated tests were skipped; the executable unit and in-memory paths are green.</p>
+          </div>
+        </div>
+
+        <div class="check-list" aria-label="Verification checklist">
+          <div class="check-row">
+            <div class="check-mark">✓</div>
+            <div><strong>Release solution build</strong><small>All projects compiled; no errors.</small></div>
+            <div class="status-pill status-pass"><i class="dot"></i> Pass</div>
+          </div>
+          <div class="check-row">
+            <div class="check-mark">✓</div>
+            <div><strong>Full .NET test suite</strong><small>Cancellation, custom adapters, hostile JSON, receiver hangs, and process trees included.</small></div>
+            <div class="status-pill status-pass"><i class="dot"></i> Pass</div>
+          </div>
+          <div class="check-row">
+            <div class="check-mark">✓</div>
+            <div><strong>Core Bicep entry point</strong><small>Compiled with Bicep CLI 0.39.26.</small></div>
+            <div class="status-pill status-pass"><i class="dot"></i> Pass</div>
+          </div>
+          <div class="check-row">
+            <div class="check-mark">✓</div>
+            <div><strong>WebApp Bicep entry point</strong><small>Compiled; only existing linter warnings remain.</small></div>
+            <div class="status-pill status-pass"><i class="dot"></i> Pass</div>
+          </div>
+          <div class="check-row">
+            <div class="check-mark">✓</div>
+            <div><strong>Scoped diff audit</strong><small>24 intended files in commit e6aa9a4; unrelated workspace files excluded.</small></div>
+            <div class="status-pill status-pass"><i class="dot"></i> Pass</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer shell">
+    <div>
+      <h2>One signal. One outcome. No accidental side effects.</h2>
+      <p>Visual brief for <code style="background:#2a2620;color:#c9c1ab">fix: harden cancellation and transient boundaries</code></p>
+    </div>
+    <a href="https://github.com/akakaule/NimBus/commit/e6aa9a49ddb995bae0b34ab6b4c7749c9fce3e77">View commit e6aa9a4 ↗</a>
+  </footer>
+</body>
+</html>

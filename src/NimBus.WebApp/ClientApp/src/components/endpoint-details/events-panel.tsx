@@ -23,9 +23,16 @@ import TruncatedGuid from "components/common/truncated-guid";
 import ErrorGroupedView from "./error-grouped-view";
 import { useUrlFilters } from "hooks/use-url-filters";
 import { Badge } from "components/ui/badge";
+import { Tooltip } from "components/ui/tooltip";
+import { Checkbox } from "components/ui/checkbox";
 import { StatTile, StatRow } from "components/ui/stat-tile";
 import { EmptyState } from "components/ui/empty-state";
 import { cn } from "lib/utils";
+import ReportPopover from "./report-popover";
+import { notifyWithUndo, notifyError } from "functions/notifications.functions";
+import { reportedCellState } from "functions/reported.functions";
+import { useTicketLinkTemplate } from "hooks/app-status";
+import { useCurrentUser } from "hooks/use-current-user";
 
 const isHandoffEvent = (event: api.Event): boolean =>
   event.resolutionStatus === api.ResolutionStatus.Pending &&
@@ -81,12 +88,26 @@ const ACTIONABLE_STATUSES = [
   api.ResolutionStatus.Deferred,
 ];
 
-// URL sentinel meaning "user explicitly wants no status filter". We need this
-// because an absent `status` param falls back to defaults (Failed/DeadLettered/Unsupported/Pending) — so without
-// the sentinel, "show all statuses" would silently revert to the default after
-// any navigation. Pressing "All statuses" or removing the last chip writes
-// `?status=*`; buildEventFilterFromParams translates it back to no filter
-// before hitting the API, and the chip combobox treats it as zero chips.
+// Cap on the pages the hide-reported toggle may auto-append to fill a client
+// page. Bounds memory and storage load on endpoints whose recent history is
+// entirely reported; past the cap the operator pages on explicitly via Next.
+const MAX_HIDE_REPORTED_REFILL_PAGES = 3;
+
+// One-click triage set applied by the "Failed" button: the terminal failed
+// statuses an operator acts on. Deliberately narrower than ACTIONABLE_STATUSES
+// (no Deferred — those retry on their own).
+export const FAILED_STATUS_SET = [
+  api.ResolutionStatus.Failed,
+  api.ResolutionStatus.DeadLettered,
+  api.ResolutionStatus.Unsupported,
+];
+
+// URL sentinel meaning "user explicitly wants no status filter". The default
+// is already "all statuses", but removing the last status chip still writes
+// `?status=*` so the intent survives navigation explicitly rather than
+// depending on param absence; buildEventFilterFromParams translates it back to
+// no filter before hitting the API, and the chip combobox treats it as zero
+// chips.
 const STATUS_ALL_SENTINEL = "*";
 
 function isAllStatusesSentinel(status: string[]): boolean {
@@ -96,13 +117,12 @@ function isAllStatusesSentinel(status: string[]): boolean {
 // URL-driven filter shape. Basic fields come from the filter bar; the advanced
 // fields (Updated/Added ranges + payload) come from the Advanced-filters
 // popover and round-trip through the URL like everything else, so a bookmarked
-// or Back-navigated URL restores them. The default `status` set of
-// "Failed + DeadLettered + Unsupported + Pending" matches the operator UX where
-// the page opens pre-filtered to messages that need attention (failed states)
-// plus in-flight Pending entries — most importantly Pending+Handoff rows, which
-// stay Pending until an external system settles them and are exactly what
-// operators want to see at a glance. Declared as a closed `type` so it
-// satisfies the index-signature constraint of `useUrlFilters<T>`.
+// or Back-navigated URL restores them. The default `status` is empty — no
+// status predicate — so the page opens showing the *latest* events of every
+// status; operators most often want to see recent traffic first, and the
+// one-click "Failed" button applies the triage set when needed. Declared as a
+// closed `type` so it satisfies the index-signature constraint of
+// `useUrlFilters<T>`.
 type EndpointFilterParams = {
   status: string[];
   eventTypeId: string[];
@@ -117,13 +137,8 @@ type EndpointFilterParams = {
   maxResults: string;
 };
 
-const DEFAULT_ENDPOINT_FILTER_PARAMS: EndpointFilterParams = {
-  status: [
-    api.ResolutionStatus.Failed,
-    api.ResolutionStatus.DeadLettered,
-    api.ResolutionStatus.Unsupported,
-    api.ResolutionStatus.Pending,
-  ],
+export const DEFAULT_ENDPOINT_FILTER_PARAMS: EndpointFilterParams = {
+  status: [],
   eventTypeId: [],
   eventId: "",
   sessionId: "",
@@ -150,6 +165,14 @@ export const EVENT_COLUMNS: EventColumn[] = [
   { id: "status", label: "Status", numeric: false, width: "8%" },
   { id: "sessionId", label: "Session Id", numeric: false, width: "10%" },
   { id: "eventTypeId", label: "Event Type", numeric: false, width: "15%" },
+  { id: "resubmitCount", label: "Resubmits", numeric: true, width: "7%" },
+  {
+    id: "reported",
+    label: "Reported",
+    numeric: false,
+    width: 140,
+    info: "Whether this event has been reported, with an optional ticket reference",
+  },
   { id: "updated", label: "Updated", numeric: false, width: "12%" },
   { id: "added", label: "Added", numeric: false, width: "12%" },
 ];
@@ -276,12 +299,51 @@ const EventsPanel = (props: EventsPanelProps) => {
   const [currentFilter, setCurrentFilter] = React.useState<
     api.EventFilter | undefined
   >();
+  // Client-side toggle so watchers can hide events already reported.
+  const [hideReported, setHideReported] = React.useState<boolean>(false);
+  // "Reported" column state. ticketLinkTemplate is a configured deep-link
+  // template ("…/{ticket}"); undefined → ticket chips render as plain text.
+  // currentUser names the operator on optimistic marks so the who/when tooltip
+  // is populated before the next refetch.
+  const ticketLinkTemplate = useTicketLinkTemplate();
+  const { user: currentUser } = useCurrentUser();
+  const [reportTarget, setReportTarget] = React.useState<{
+    event: api.Event;
+    anchor: HTMLElement;
+  } | null>(null);
+  // Per-event chain of in-flight report writes. Mark→Undo fires two requests
+  // back-to-back; without serialization their completion order is undefined and
+  // storage could finish "reported" while the UI shows unreported.
+  const reportWriteChains = React.useRef(new Map<string, Promise<void>>());
+  // Per-event operation revision: a FAILED older write must not roll the UI
+  // back over a newer operation's optimistic state (e.g. Mark fails slowly
+  // after the user already did Undo → Mark again).
+  const reportRevisions = React.useRef(new Map<string, number>());
+  // Last state the SERVER is known to hold per event: seeded from the fetched
+  // event on first touch, advanced only on write success. Failure rollback
+  // restores this — never another operation's unconfirmed optimistic snapshot
+  // (Mark ok → Undo fails → Mark-again fails must end reported, not unreported).
+  type ReportState = {
+    isReported?: boolean;
+    reportedBy?: string;
+    reportedAtUtc?: moment.Moment;
+    ticketId?: string;
+  };
+  const confirmedReportStates = React.useRef(new Map<string, ReportState>());
+  // Guards nextPage against overlapping auto-refill calls (see the
+  // hide-reported effect below).
+  const isPagingRef = React.useRef(false);
   // Bumped on every full fetch (mount, Search, Reset, filter/URL change). A late
   // out-of-order response — including its background session-status batch — only
   // commits while its ticket is still current, so a slow older fetch can't
   // overwrite a newer one. Pagination continues the current generation (see
   // nextPage), so it reads the ticket without bumping it.
   const fetchTicket = React.useRef(0);
+  // Generation that the CURRENT continuationToken/currentFilter belong to.
+  // nextPage must extend this generation, not whatever fetch happens to be the
+  // newest — a page requested mid-refresh would otherwise run the OLD query
+  // under the NEW ticket and get appended to the new result set.
+  const tokenGeneration = React.useRef(0);
   // Columns the operator has chosen to hide via the column chooser (persisted;
   // locked columns are never included).
   const [hiddenCols, setHiddenCols] =
@@ -413,6 +475,10 @@ const EventsPanel = (props: EventsPanelProps) => {
   const fetchEvents = async (filter: api.EventFilter): Promise<void> => {
     const ticket = ++fetchTicket.current;
     setIsLoading(true);
+    // Invalidate the previous generation's pagination inputs immediately so a
+    // Next click during the refresh can't issue a page for the old query.
+    setContinuationToken(undefined);
+    setCurrentFilter(undefined);
     try {
       const reqBody = new api.SearchRequest();
       reqBody.eventFilter = filter;
@@ -428,6 +494,7 @@ const EventsPanel = (props: EventsPanelProps) => {
         setEvents(fetchedEvents);
         setContinuationToken(response.continuationToken);
         setCurrentFilter(filter);
+        tokenGeneration.current = ticket;
       }
 
       // Hydrate the per-session count columns in the background so the table
@@ -457,6 +524,7 @@ const EventsPanel = (props: EventsPanelProps) => {
 
   const nextPage = async (): Promise<void> => {
     if (
+      isPagingRef.current ||
       !continuationToken ||
       continuationToken === "" ||
       continuationToken === "null" ||
@@ -464,12 +532,13 @@ const EventsPanel = (props: EventsPanelProps) => {
     ) {
       return;
     }
+    isPagingRef.current = true;
 
-    // Pagination extends the current fetch generation rather than starting a new
-    // one — read the ticket without bumping it, so a concurrent full re-fetch
-    // (filter/URL change) still invalidates this append while this append does
-    // not invalidate the current fetch's session-status batch.
-    const ticket = fetchTicket.current;
+    // Pagination extends the generation the token/filter BELONG to (not the
+    // newest fetch) — if a full re-fetch has started since that generation
+    // committed, this append is already stale and every ticket guard below
+    // rejects it.
+    const ticket = tokenGeneration.current;
 
     try {
       const reqBody = new api.SearchRequest();
@@ -503,6 +572,8 @@ const EventsPanel = (props: EventsPanelProps) => {
       if (ticket === fetchTicket.current) {
         console.error("Failed to fetch next page:", error);
       }
+    } finally {
+      isPagingRef.current = false;
     }
   };
 
@@ -534,6 +605,148 @@ const EventsPanel = (props: EventsPanelProps) => {
     } catch (err) {
       console.error("Failed to reprocess deferred messages for session", sessionId, err);
     }
+  };
+
+  // Optimistically set/clear an event's "reported" marker, persist it, and
+  // revert the in-memory event if the request fails. Mutates the event in place
+  // (matching the rest of this panel) then nudges `events` to re-render.
+  const applyReportFlag = (
+    event: api.Event,
+    reported: boolean,
+    ticketId: string | null,
+  ): void => {
+    const prev = {
+      isReported: event.isReported,
+      reportedBy: event.reportedBy,
+      reportedAtUtc: event.reportedAtUtc,
+      ticketId: event.ticketId,
+    };
+    // First touch: the pre-op state came from the server (search enrichment) —
+    // that's the confirmed baseline until a write succeeds.
+    if (!confirmedReportStates.current.has(event.eventId!)) {
+      confirmedReportStates.current.set(event.eventId!, prev);
+    }
+
+    event.isReported = reported;
+    event.reportedBy = reported
+      ? (currentUser?.displayName ?? currentUser?.email ?? prev.reportedBy)
+      : undefined;
+    event.reportedAtUtc = reported ? moment() : undefined;
+    event.ticketId = reported ? (ticketId ?? undefined) : undefined;
+    setEvents((current) => [...current]);
+    const applied = {
+      isReported: event.isReported,
+      reportedBy: event.reportedBy,
+      reportedAtUtc: event.reportedAtUtc,
+      ticketId: event.ticketId,
+    };
+
+    const body = new api.ReportEventRequest();
+    body.reported = reported;
+    body.ticketId = reported ? (ticketId ?? undefined) : undefined;
+    // Serialize writes per event: chain this request after any in-flight one so
+    // a rapid mark→Undo pair reaches the server in order.
+    const eventKey = event.eventId!;
+    const revision = (reportRevisions.current.get(eventKey) ?? 0) + 1;
+    reportRevisions.current.set(eventKey, revision);
+    const prior = reportWriteChains.current.get(eventKey) ?? Promise.resolve();
+    const write = prior
+      .then(() => client.postReportEvent(endpointId, eventKey, body))
+      .then(() => {
+        // Server accepted this write — its state is now what we applied.
+        confirmedReportStates.current.set(eventKey, applied);
+      })
+      .catch((error) => {
+        console.error("Failed to update reported flag:", error);
+        // Only the LATEST operation may roll the UI back — a stale failure
+        // must not overwrite a newer operation's optimistic state (the newer
+        // write is queued behind this one and will settle the server state).
+        // The rollback target is the last CONFIRMED state, never another
+        // operation's unconfirmed optimistic snapshot.
+        if (reportRevisions.current.get(eventKey) === revision) {
+          const confirmed = confirmedReportStates.current.get(eventKey) ?? prev;
+          event.isReported = confirmed.isReported;
+          event.reportedBy = confirmed.reportedBy;
+          event.reportedAtUtc = confirmed.reportedAtUtc;
+          event.ticketId = confirmed.ticketId;
+          setEvents((current) => [...current]);
+        }
+        notifyError("Could not update reported status");
+      })
+      .then(() => {
+        if (reportWriteChains.current.get(eventKey) === write) {
+          reportWriteChains.current.delete(eventKey);
+        }
+      });
+    reportWriteChains.current.set(eventKey, write);
+  };
+
+  const markReported = (event: api.Event, ticketId: string | null): void => {
+    applyReportFlag(event, true, ticketId);
+    notifyWithUndo(
+      ticketId ? `Reported under ${ticketId}.` : "Marked as reported.",
+      () => applyReportFlag(event, false, null),
+    );
+  };
+
+  const renderReportedCell = (item: api.Event): React.ReactNode => {
+    const state = reportedCellState({
+      isReported: item.isReported,
+      ticketId: item.ticketId,
+      reportedBy: item.reportedBy,
+      reportedAtFormatted: item.reportedAtUtc
+        ? formatMoment(item.reportedAtUtc)
+        : undefined,
+      ticketLinkTemplate,
+    });
+
+    if (state.kind === "ticket") {
+      const chip = (
+        <Badge variant="info" size="sm" withDot={false} className="font-mono">
+          {state.ticketId}
+        </Badge>
+      );
+      return (
+        <Tooltip content={state.tooltip} position="top">
+          {state.href ? (
+            <a
+              href={state.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`Open ${state.ticketId}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {chip}
+            </a>
+          ) : (
+            <span>{chip}</span>
+          )}
+        </Tooltip>
+      );
+    }
+
+    if (state.kind === "done") {
+      return (
+        <Tooltip content={state.tooltip} position="top">
+          <Badge variant="completed" size="sm" withDot={false}>
+            ✓ Reported
+          </Badge>
+        </Tooltip>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setReportTarget({ event: item, anchor: e.currentTarget });
+        }}
+        className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-card px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:border-primary hover:bg-primary/10 hover:text-primary-600"
+      >
+        ⚑ Report
+      </button>
+    );
   };
 
   const getViableBodyActions = (event: api.Event): ITableBodyAction[] => {
@@ -573,8 +786,37 @@ const EventsPanel = (props: EventsPanelProps) => {
     return actions;
   };
 
+  // Events actually shown — optionally hiding the ones already reported. The
+  // KPI tiles still count over all loaded events.
+  const visibleEvents = React.useMemo(
+    () => (hideReported ? events.filter((e) => !e.isReported) : events),
+    [events, hideReported],
+  );
+
+  // Hide-reported filters only the LOADED batch, which can thin the visible
+  // rows below one client page while the server still has more. Top up with a
+  // STRICTLY BOUNDED number of extra pages (an endpoint whose history is
+  // entirely reported must not be paged into memory wholesale); beyond the
+  // budget the user continues explicitly via the table's Next button, which
+  // stays enabled while a server continuation token remains (hasMoreRows).
+  const refillBudget = React.useRef(0);
+  React.useEffect(() => {
+    // Re-arm on toggle / new result-set generation.
+    refillBudget.current = hideReported ? MAX_HIDE_REPORTED_REFILL_PAGES : 0;
+  }, [hideReported, applied, searchNonce]);
+
+  React.useEffect(() => {
+    if (!hideReported || isLoading) return;
+    if (refillBudget.current <= 0) return;
+    if (!continuationToken || continuationToken === "null") return;
+    if (visibleEvents.length >= 20) return; // one DataTable page (dataRowsPerPage)
+    refillBudget.current -= 1;
+    void nextPage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hideReported, visibleEvents.length, continuationToken, isLoading]);
+
   const mapEvents = (): ITableRow[] => {
-    return events.map((item) => {
+    return visibleEvents.map((item) => {
       const hasSessionData = isActionableStatus(item.resolutionStatus);
       const sessionData = sessions[item.sessionId!];
 
@@ -582,6 +824,7 @@ const EventsPanel = (props: EventsPanelProps) => {
         id: item.eventId!,
         route: `/Message/Index/${endpointId}/${item.eventId}/0`,
         bodyActions: getViableBodyActions(item),
+        tone: item.isReported ? "reported" : undefined,
         data: new Map([
           [
             "eventId",
@@ -647,6 +890,29 @@ const EventsPanel = (props: EventsPanelProps) => {
             },
           ],
           [
+            "resubmitCount",
+            {
+              value:
+                (item.resubmitCount ?? 0) > 0 ? (
+                  <Badge variant="info" size="sm">
+                    {item.resubmitCount}
+                  </Badge>
+                ) : (
+                  <span className="text-muted-foreground">0</span>
+                ),
+              searchValue: String(item.resubmitCount ?? 0),
+            },
+          ],
+          [
+            "reported",
+            {
+              value: renderReportedCell(item),
+              searchValue: item.isReported
+                ? (item.ticketId ?? "reported")
+                : "",
+            },
+          ],
+          [
             "updated",
             {
               value: formatMoment(item?.updatedAt, true),
@@ -666,11 +932,14 @@ const EventsPanel = (props: EventsPanelProps) => {
     });
   };
 
-  // Derive the table rows from the fetched events + hydrated session counts.
-  // Memoised on [events, sessions] so we only re-map when the underlying data
-  // changes — no redundant state mirror + effect (which cost an extra render
-  // per fetch).
-  const rows = React.useMemo(() => mapEvents(), [events, sessions]);
+  // Derive the table rows from the shown events + hydrated session counts.
+  // Memoised so we only re-map when the underlying data changes — no redundant
+  // state mirror + effect (which cost an extra render per fetch).
+  const rows = React.useMemo(
+    () => mapEvents(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visibleEvents, sessions, ticketLinkTemplate, currentUser],
+  );
 
   const doActionSelectedRows = (
     selectedRows: ITableRow[],
@@ -697,16 +966,14 @@ const EventsPanel = (props: EventsPanelProps) => {
     setSearchNonce((n) => n + 1);
   };
 
-  // Reset — clear all URL filter params back to defaults (failed-message statuses).
+  // Reset — clear all URL filter params back to defaults (all statuses).
   const handleReset = (): void => {
     resetFilters();
   };
 
-  // "All statuses" — show every status. Writes the explicit sentinel so the
-  // intent survives navigation; an absent param would otherwise fall back to
-  // the default failed-message statuses on the next render.
-  const handleClearStatus = (): void => {
-    applyFilters({ ...applied, status: [STATUS_ALL_SENTINEL] });
+  // One-click triage view: the actionable failed statuses.
+  const handleFailedOnly = (): void => {
+    applyFilters({ ...applied, status: [...FAILED_STATUS_SET] });
   };
 
   // Commit-on-change for the Status combobox: chip add/remove writes to the
@@ -798,15 +1065,11 @@ const EventsPanel = (props: EventsPanelProps) => {
   // need a dedicated stats endpoint — this gives an honest "what's on screen"
   // summary that matches the operator's mental model of the result set.
   const counts = React.useMemo(() => {
-    let completed = 0;
     let failed = 0;
     let deferred = 0;
     let pending = 0;
     for (const e of events) {
       switch (e.resolutionStatus) {
-        case api.ResolutionStatus.Completed:
-          completed += 1;
-          break;
         case api.ResolutionStatus.Failed:
         case api.ResolutionStatus.DeadLettered:
         case api.ResolutionStatus.Unsupported:
@@ -820,7 +1083,7 @@ const EventsPanel = (props: EventsPanelProps) => {
           break;
       }
     }
-    return { completed, failed, deferred, pending };
+    return { failed, deferred, pending };
   }, [events]);
 
   // Applied advanced filters, surfaced through the Advanced-filters popover
@@ -834,7 +1097,7 @@ const EventsPanel = (props: EventsPanelProps) => {
   };
 
   const hasActiveFilters =
-    !isAllStatusesSentinel(applied.status) ||
+    (applied.status.length > 0 && !isAllStatusesSentinel(applied.status)) ||
     applied.eventTypeId.length > 0 ||
     applied.eventId.length > 0 ||
     applied.sessionId.length > 0 ||
@@ -858,30 +1121,34 @@ const EventsPanel = (props: EventsPanelProps) => {
         {/* Promote summary metrics above the table — design rec §03.
             Status-coloured tiles answer "how is this endpoint doing?"
             before the operator scans rows. */}
-        <StatRow>
+        <StatRow columns={3}>
           <StatTile
-            label="Completed"
-            value={counts.completed.toLocaleString()}
-            delta="on screen"
-            tone="muted"
+            label="Failed"
+            value={isLoading ? "—" : counts.failed.toLocaleString()}
+            tone={counts.failed > 0 ? "danger" : "muted"}
+            delta={
+              isLoading
+                ? "…"
+                : counts.failed === 0
+                  ? "all clear"
+                  : "Failed + DeadLettered + Unsupported"
+            }
           />
           <StatTile
             label="Deferred"
-            value={counts.deferred.toLocaleString()}
-            delta={counts.deferred ? "needs attention" : "—"}
-            tone={counts.deferred ? "warning" : "muted"}
-          />
-          <StatTile
-            label="Failed"
-            value={counts.failed.toLocaleString()}
-            delta={counts.failed ? "needs attention" : "—"}
-            tone={counts.failed ? "danger" : "muted"}
+            value={isLoading ? "—" : counts.deferred.toLocaleString()}
+            tone={counts.deferred > 0 ? "warning" : "muted"}
+            delta={
+              isLoading ? "…" : counts.deferred === 0 ? "none" : "awaiting retry"
+            }
           />
           <StatTile
             label="Pending"
-            value={counts.pending.toLocaleString()}
-            delta="in-flight"
-            tone="muted"
+            value={isLoading ? "—" : counts.pending.toLocaleString()}
+            tone={counts.pending > 0 ? "warning" : "muted"}
+            delta={
+              isLoading ? "…" : counts.pending === 0 ? "none" : "in-flight"
+            }
           />
         </StatRow>
 
@@ -889,7 +1156,7 @@ const EventsPanel = (props: EventsPanelProps) => {
           key={filterRemountKey}
           handleFilterClicked={handleFilterClicked}
           onReset={handleReset}
-          onClearStatus={handleClearStatus}
+          onApplyFailed={handleFailedOnly}
           onStatusChange={handleStatusChange}
           initialStatuses={displayedStatuses}
           initialEventTypes={applied.eventTypeId}
@@ -923,12 +1190,22 @@ const EventsPanel = (props: EventsPanelProps) => {
           </div>
           <div className="ml-auto flex items-center gap-3">
             {viewMode === "list" && (
-              <ColumnChooser
-                columns={EVENT_COLUMNS}
-                hidden={hiddenCols}
-                onToggle={toggleColumn}
-                onReset={resetColumns}
-              />
+              <>
+                <label className="inline-flex cursor-pointer select-none items-center gap-2 text-muted-foreground">
+                  <Checkbox
+                    checked={hideReported}
+                    onChange={(e) => setHideReported(e.target.checked)}
+                    aria-label="Hide reported events"
+                  />
+                  Hide reported
+                </label>
+                <ColumnChooser
+                  columns={EVENT_COLUMNS}
+                  hidden={hiddenCols}
+                  onToggle={toggleColumn}
+                  onReset={resetColumns}
+                />
+              </>
             )}
             <AdvancedFiltersPopover
               value={advancedValue}
@@ -986,10 +1263,21 @@ const EventsPanel = (props: EventsPanelProps) => {
             hideDense={true}
             dataRowsPerPage={20}
             onPageChange={nextPage}
+            hasMoreRows={!!continuationToken && continuationToken !== "null"}
             fixedWidth={"-webkit-fill-available"}
           />
         )}
       </div>
+      {reportTarget && (
+        <ReportPopover
+          anchor={reportTarget.anchor}
+          onClose={() => setReportTarget(null)}
+          onSubmit={(ticketId) => {
+            markReported(reportTarget.event, ticketId);
+            setReportTarget(null);
+          }}
+        />
+      )}
     </FilterContext.Provider>
   );
 };

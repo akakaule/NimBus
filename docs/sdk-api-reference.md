@@ -111,6 +111,8 @@ public interface IPublisherClient
     Task Publish(IEvent @event);
     Task Publish(IEvent @event, string sessionId, string correlationId);
     Task Publish(IEvent @event, string sessionId, string correlationId, string messageId);
+    Task PublishFromContext(IEvent @event, IEventHandlerContext context,
+        string messageId, CancellationToken cancellationToken = default);
     Task PublishBatch(IEnumerable<IEvent> events);
     Task PublishBatches(IEnumerable<IEvent> events, string correlationId = null);
 }
@@ -121,6 +123,7 @@ public interface IPublisherClient
 | `Publish(event)` | Publish a single event. SessionId from `event.GetSessionId()`, auto-generated CorrelationId and MessageId. |
 | `Publish(event, sessionId, correlationId)` | Publish with explicit session and correlation IDs. Overrides `GetSessionId()`. |
 | `Publish(event, sessionId, correlationId, messageId)` | Publish with all IDs explicit (for deterministic deduplication). |
+| `PublishFromContext(event, context, messageId, cancellationToken)` | Publish a workflow follow-up with an explicit deterministic ID while preserving the inbound session, correlation, and origin lineage and setting the inbound message as parent. |
 | `PublishBatch(events)` | Publish multiple events as a Service Bus batch. Respect batch size limits. |
 | `PublishBatches(events, correlationId)` | **Preferred for bulk publish.** Publishes any number of events, automatically paged to the Service Bus batch size; each event is built and serialized exactly once. |
 
@@ -135,7 +138,21 @@ await publisher.Publish(order, customerId.ToString(), correlationId);
 
 // Explicit with deterministic message ID for deduplication
 await publisher.Publish(order, customerId.ToString(), correlationId, $"order-{order.OrderId}");
+
+// Workflow follow-up: preserve inbound ordering, correlation, and lineage
+await publisher.PublishFromContext(
+    reserveInventory,
+    context,
+    messageId: $"{order.OrderId}:reserve-inventory:{state.Version}",
+    cancellationToken: cancellationToken);
 ```
+
+`PublishFromContext` requires a non-empty outgoing `MessageId`. Derive it from
+durable workflow identity, logical transition, and workflow version or attempt;
+retries of the same transition must reproduce the same value. The built-in
+`PublisherClient` supports native and CloudEvents publishing through both the
+direct sender and transactional SQL outbox. Custom `IPublisherClient`
+implementations must implement this additive method before using it.
 
 ---
 
@@ -153,7 +170,7 @@ public interface IEventHandler<T> where T : IEvent
 | Parameter | Type | Description |
 |---|---|---|
 | `message` | `T` | Deserialized event object |
-| `context` | `IEventHandlerContext` | Message metadata (EventId, CorrelationId, EventType) |
+| `context` | `IEventHandlerContext` | Message metadata, including workflow session, correlation, and lineage |
 | `cancellationToken` | `CancellationToken` | For async cancellation |
 
 Handlers are resolved from DI — use constructor injection for dependencies.
@@ -167,6 +184,9 @@ public interface IEventHandlerContext
     string CorrelationId { get; }
     string EventType { get; }
     string MessageId { get; }
+    string SessionId { get; }
+    string ParentMessageId { get; }
+    string OriginatingMessageId { get; }
 
     // Read-only state set by MarkPendingHandoff (default: HandlerOutcome.Default).
     HandlerOutcome Outcome { get; }
@@ -177,6 +197,12 @@ public interface IEventHandlerContext
     void MarkPendingHandoff(string reason, string externalJobId = null, TimeSpan? expectedBy = null);
 }
 ```
+
+`ParentMessageId` identifies the message that caused the inbound message.
+`OriginatingMessageId` identifies the first message in its lineage. Legacy
+messages without those application properties expose `self` through the
+built-in context; additive interface defaults keep existing custom context
+implementations source-compatible.
 
 #### Async completion via PendingHandoff
 

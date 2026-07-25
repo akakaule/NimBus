@@ -27,6 +27,9 @@ public class InMemoryMessageStore : INimBusMessageStore
     private readonly ConcurrentDictionary<(string EventId, string MessageId), MessageEntity> _messages = new();
     private readonly ConcurrentDictionary<string, List<MessageAuditEntity>> _audits = new();
     private readonly ConcurrentDictionary<string, EndpointSubscription> _subscriptions = new();
+    // Tuple key, not string concatenation — ("a_b","c") and ("a","b_c") must
+    // not collide.
+    private readonly ConcurrentDictionary<(string EndpointId, string EventId), EventReport> _eventReports = new();
     private readonly ConcurrentDictionary<string, EndpointMetadata> _metadata = new();
     private readonly ConcurrentDictionary<string, EventSchema> _schemas = new();
 
@@ -317,6 +320,11 @@ public class InMemoryMessageStore : INimBusMessageStore
 
     public virtual Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity, string? endpointId = null, string? eventTypeId = null)
     {
+        // Mirror the call arguments onto the entity (like SQL columns / Cosmos
+        // document fields) so scoped queries such as GetResubmitCounts can
+        // filter on them.
+        auditEntity.EventId ??= eventId;
+        auditEntity.EndpointId ??= endpointId;
         _audits.GetOrAdd(eventId, _ => new List<MessageAuditEntity>()).Add(auditEntity);
         return Task.CompletedTask;
     }
@@ -329,15 +337,77 @@ public class InMemoryMessageStore : INimBusMessageStore
         var allAudits = _audits.SelectMany(kvp => kvp.Value.Select(a => new AuditSearchItem
         {
             EventId = kvp.Key,
+            EndpointId = a.EndpointId,
             Audit = a,
             CreatedAt = a.AuditTimestamp,
         }));
         // ID-like fields use case-insensitive PREFIX matching — see GetEventsByFilter.
         if (!string.IsNullOrEmpty(filter.EventId)) allAudits = allAudits.Where(a => HasPrefix(a.EventId, filter.EventId));
+        if (!string.IsNullOrEmpty(filter.EndpointId))
+        {
+            // Exact scope vs. historical prefix — see AuditFilter.EndpointIdExact.
+            allAudits = filter.EndpointIdExact
+                ? allAudits.Where(a => string.Equals(a.EndpointId, filter.EndpointId, StringComparison.OrdinalIgnoreCase))
+                : allAudits.Where(a => HasPrefix(a.EndpointId, filter.EndpointId));
+        }
         if (!string.IsNullOrEmpty(filter.AuditorName)) allAudits = allAudits.Where(a => HasPrefix(a.Audit.AuditorName, filter.AuditorName));
         if (filter.AuditType.HasValue) allAudits = allAudits.Where(a => a.Audit.AuditType == filter.AuditType.Value);
         var results = allAudits.OrderByDescending(a => a.CreatedAt).Take(maxItemCount > 0 ? maxItemCount : 100).ToList();
         return Task.FromResult(new AuditSearchResult { Audits = results });
+    }
+
+    public Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds)
+    {
+        var ids = new HashSet<string>((eventIds ?? Array.Empty<string>()).Where(e => !string.IsNullOrEmpty(e)));
+        var counts = new Dictionary<string, int>();
+        if (string.IsNullOrEmpty(endpointId) || ids.Count == 0)
+            return Task.FromResult<IReadOnlyDictionary<string, int>>(counts);
+
+        foreach (var (eventId, audits) in _audits)
+        {
+            if (!ids.Contains(eventId)) continue;
+            var count = audits.Count(a =>
+                a.EndpointId == endpointId &&
+                !a.AccessDenied &&
+                a.AuditType is MessageAuditType.Resubmit or MessageAuditType.ResubmitWithChanges);
+            if (count > 0) counts[eventId] = count;
+        }
+
+        return Task.FromResult<IReadOnlyDictionary<string, int>>(counts);
+    }
+
+    public Task SetEventReport(string endpointId, string eventId, bool isReported, string? reportedBy, string? ticketId)
+    {
+        if (string.IsNullOrEmpty(endpointId)) throw new ArgumentNullException(nameof(endpointId));
+        if (string.IsNullOrEmpty(eventId)) throw new ArgumentNullException(nameof(eventId));
+
+        _eventReports[(endpointId, eventId)] = new EventReport
+        {
+            Id = $"{endpointId}_{eventId}",
+            EndpointId = endpointId,
+            EventId = eventId,
+            IsReported = isReported,
+            ReportedBy = reportedBy,
+            ReportedAtUtc = DateTime.UtcNow,
+            // Clearing the marker drops the ticket reference too.
+            TicketId = isReported ? ticketId : null,
+        };
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds)
+    {
+        var result = new Dictionary<string, EventReport>();
+        if (string.IsNullOrEmpty(endpointId) || eventIds is not { Count: > 0 })
+            return Task.FromResult<IReadOnlyDictionary<string, EventReport>>(result);
+
+        foreach (var eventId in eventIds.Where(e => !string.IsNullOrEmpty(e)).Distinct())
+        {
+            if (_eventReports.TryGetValue((endpointId, eventId), out var report))
+                result[eventId] = report;
+        }
+
+        return Task.FromResult<IReadOnlyDictionary<string, EventReport>>(result);
     }
 
     private static bool HasPrefix(string? value, string prefix)

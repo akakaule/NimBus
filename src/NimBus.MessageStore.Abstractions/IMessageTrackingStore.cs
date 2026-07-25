@@ -127,9 +127,54 @@ public interface IMessageTrackingStore
     /// <summary>
     /// Filtered audit search. ID-like string filters (event id, endpoint id,
     /// auditor name, event type id) match by case-insensitive PREFIX on every
-    /// provider.
+    /// provider — except that <see cref="AuditFilter.EndpointIdExact"/> switches
+    /// the endpoint id to case-insensitive EQUALITY (used by
+    /// authorization-scoped callers). Providers unaware of the flag fall back to
+    /// prefix semantics; security-sensitive callers must therefore keep a final
+    /// exact check on the results.
     /// </summary>
     Task<AuditSearchResult> SearchAudits(AuditFilter filter, string? continuationToken, int maxItemCount);
+
+    /// <summary>
+    /// Number of resubmissions per event, counted from the audit trail
+    /// (<see cref="MessageAuditType.Resubmit"/> + <see cref="MessageAuditType.ResubmitWithChanges"/>),
+    /// for the given events on <paramref name="endpointId"/>. Denied attempts
+    /// (<see cref="MessageAuditEntity.AccessDenied"/>) are excluded — they never
+    /// resubmitted. Events with no resubmit audits are absent from the result
+    /// (treat missing as 0). Implementations answer with a single grouped query
+    /// so callers can enrich a whole search page in one round trip.
+    /// <para>Default implementation returns an empty map so pre-existing
+    /// external providers keep compiling; the UI then simply shows 0
+    /// resubmissions.</para>
+    /// </summary>
+    Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds)
+        => Task.FromResult<IReadOnlyDictionary<string, int>>(new Dictionary<string, int>());
+
+    // Event reports ("reported" markers)
+
+    /// <summary>
+    /// Upserts the per-event "reported" marker keyed on
+    /// (<paramref name="endpointId"/>, <paramref name="eventId"/>).
+    /// <see cref="EventReport.ReportedAtUtc"/> is stamped with the current UTC
+    /// time on every toggle; clearing the marker (<paramref name="isReported"/>
+    /// false) also drops the ticket reference.
+    /// <para>Default implementation throws <see cref="NotSupportedException"/>
+    /// so pre-existing external providers keep compiling while a write cannot
+    /// silently succeed without being persisted.</para>
+    /// </summary>
+    Task SetEventReport(string endpointId, string eventId, bool isReported, string? reportedBy, string? ticketId)
+        => throw new NotSupportedException($"This {nameof(IMessageTrackingStore)} implementation does not support event reports.");
+
+    /// <summary>
+    /// Batched lookup of "reported" markers for the given events on
+    /// <paramref name="endpointId"/>. Events that were never reported are absent
+    /// from the result. Implementations answer with a single query so callers
+    /// can enrich a whole search page in one round trip.
+    /// <para>Default implementation returns an empty map so pre-existing
+    /// external providers keep compiling; events then render as unreported.</para>
+    /// </summary>
+    Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds)
+        => Task.FromResult<IReadOnlyDictionary<string, EventReport>>(new Dictionary<string, EventReport>());
 
     // Endpoint diagnostics
     Task<string> GetEndpointErrorList(string endpointId);

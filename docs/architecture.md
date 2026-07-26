@@ -500,6 +500,10 @@ Notes:
 - domain events derive from the abstractions layer and concrete event types are provided by `NimBus`
 - routing uses event type metadata and session IDs for ordering/correlation
 
+#### Commands
+
+A command is an event with imperative intent and exactly one recipient. `NimBus.Core.Events.Command` is a marker base class deriving from `Event` — wire format, session ordering, pipeline, and Resolver audit are identical to events. The difference is contractual: `PlatformValidation.EnsureCommandConsumers` runs during topology provisioning and fails when a `Command`-derived type has zero declared consumers (every send would dead-letter) or more than one (the instruction would broadcast). Use imperative names for commands (`PlaceCustomerOnCreditHold`) and past tense for events (`CustomerCreated`). See [ADR-014](adr/014-commands-single-consumer.md).
+
 ### 2. Subscriber processing flow
 
 ```mermaid

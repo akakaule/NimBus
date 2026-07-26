@@ -294,6 +294,16 @@ public abstract class Event : IEvent
 
 The base class provides a default `GetSessionId()` that returns a random GUID (no ordering). Use `[SessionKey]` or override `GetSessionId()` for ordered processing.
 
+### Command (base class)
+
+```csharp
+public abstract class Command : Event
+{
+}
+```
+
+A marker for messages with imperative intent and exactly one recipient. Commands publish, route, order, and audit exactly like events; the platform additionally enforces at provisioning time that a `Command`-derived type has exactly one consuming endpoint declared in the catalog (`PlatformValidation.EnsureCommandConsumers` — zero or multiple consumers fail `nb topology apply`). Prefer imperative names (`PlaceCustomerOnCreditHold`) for commands and past tense (`CustomerCreated`) for events. See [ADR-014](adr/014-commands-single-consumer.md).
+
 ### SessionKey Attribute
 
 Declare the ordering key declaratively — no method override needed:

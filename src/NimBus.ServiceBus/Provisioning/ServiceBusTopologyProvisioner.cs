@@ -78,6 +78,7 @@ public sealed class ServiceBusTopologyProvisioner
     public async Task ApplyAsync(CancellationToken cancellationToken)
     {
         var platform = _platformFactory();
+        PlatformValidation.EnsureCommandConsumers(platform);
         await ApplyCoreAsync(_client, platform, _isEmulator, _log, cancellationToken).ConfigureAwait(false);
     }
 

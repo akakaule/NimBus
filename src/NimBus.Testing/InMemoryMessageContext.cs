@@ -108,6 +108,20 @@ public class InMemoryMessageContext : IMessageContext
         return ReceiveNextDeferred(cancellationToken);
     }
 
+    public Task RestoreNextDeferred(IMessageContext deferredMessage, CancellationToken cancellationToken = default)
+    {
+        if (deferredMessage is InMemoryMessageContext deferredContext
+            && !_sessionState.DeferredMessages.Contains(deferredContext._message))
+        {
+            // Front of the list: ReceiveNextDeferred always takes the first entry, so
+            // restoring anywhere else would break session ordering.
+            _sessionState.DeferredMessages.Insert(0, deferredContext._message);
+            _sessionState.DeferredCount++;
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task BlockSession(CancellationToken cancellationToken = default)
     {
         _sessionState.BlockedByEventId = EventId;

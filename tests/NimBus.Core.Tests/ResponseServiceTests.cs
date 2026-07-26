@@ -60,6 +60,22 @@ public class ResponseServiceTests
     }
 
     [TestMethod]
+    public async Task SendDuplicateResponse_RoutesToResolverAsSkippedWithStableReasonAndEvent()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var context = CreateContext();
+
+        await sut.SendDuplicateResponse(context);
+
+        var message = sender.SentMessages.Single();
+        Assert.AreEqual(Constants.ResolverId, message.To);
+        Assert.AreEqual(MessageType.SkipResponse, message.MessageType);
+        Assert.AreEqual("DuplicateDetected", message.MessageContent.ErrorContent.ErrorText);
+        Assert.AreSame(context.MessageContent.EventContent, message.MessageContent.EventContent);
+    }
+
+    [TestMethod]
     public async Task SendDiscardResponse_RoutesToResolverAsSkippedWithClassifierReason()
     {
         var sender = new RecordingSender();

@@ -15,10 +15,18 @@ namespace NimBus.Testing.Extensions;
 
 public static class ServiceCollectionExtensions
 {
+    /// <summary>
+    /// Registers the in-memory test transport. <paramref name="endpoint"/> names the logical
+    /// subscriber endpoint the composition models; when <c>UseInbox</c> is configured it becomes
+    /// the deduplication scope and the cleanup host's purge scope, mirroring the production
+    /// subscriber where the configured endpoint — never the message's <c>To</c> — keys the inbox.
+    /// </summary>
     public static IServiceCollection AddNimBusTestTransport(
         this IServiceCollection services,
-        Action<NimBusSubscriberBuilder> configureBuilder)
+        Action<NimBusSubscriberBuilder> configureBuilder,
+        string endpoint = "in-memory")
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
         services.AddNimBusInstrumentation();
 
         var bus = new InMemoryMessageBus();
@@ -32,6 +40,7 @@ public static class ServiceCollectionExtensions
 
         var builder = new NimBusSubscriberBuilder(services);
         configureBuilder(builder);
+        InboxRegistration.AddServices(services, endpoint, builder.InboxConfiguration);
 
         services.TryAddSingleton<IMessageHandler>(sp =>
         {
@@ -44,6 +53,12 @@ public static class ServiceCollectionExtensions
             {
                 registration.Register(sp, eventHandlerProvider);
             }
+
+            IEventContextHandler contextHandler = InboxRegistration.Decorate(
+                sp,
+                eventHandlerProvider,
+                builder.InboxConfiguration,
+                endpoint);
 
             IRetryPolicyProvider retryPolicyProvider = null;
             if (builder.RetryPolicyConfigurator != null)
@@ -64,14 +79,15 @@ public static class ServiceCollectionExtensions
             var permanentFailureClassifier = sp.GetService<IPermanentFailureClassifier>();
             var failureDispositionClassifier = sp.GetService<IFailureDispositionClassifier>();
             return new StrictMessageHandler(
-                eventHandlerProvider,
+                contextHandler,
                 responseService,
                 logger,
                 retryPolicyProvider,
                 sp.GetService<MessagePipeline>(),
                 sp.GetService<MessageLifecycleNotifier>(),
                 permanentFailureClassifier,
-                failureDispositionClassifier);
+                failureDispositionClassifier,
+                InboxRegistration.CreateDuplicateDetector(sp, builder.InboxConfiguration, endpoint));
 #pragma warning restore CS0618
         });
 

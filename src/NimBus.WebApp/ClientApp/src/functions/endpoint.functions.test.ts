@@ -1,5 +1,25 @@
 import { describe, it, expect } from "vitest";
-import { parseBlockedByEventId } from "./endpoint.functions";
+import {
+  formatResolutionStatus,
+  parseBlockedByEventId,
+} from "./endpoint.functions";
+
+describe("formatResolutionStatus", () => {
+  it("distinguishes only a skipped event with the exact duplicate reason token", () => {
+    expect(formatResolutionStatus("Skipped", "DuplicateDetected")).toBe(
+      "Skipped (duplicate)",
+    );
+    expect(formatResolutionStatus("Skipped", "Operator requested skip")).toBe(
+      "Skipped",
+    );
+    expect(formatResolutionStatus("Skipped", "duplicatedetected")).toBe(
+      "Skipped",
+    );
+    expect(formatResolutionStatus("Completed", "DuplicateDetected")).toBe(
+      "Completed",
+    );
+  });
+});
 
 // Spec 006 — parser unit tests. The function extracts the blocking event GUID
 // out of a StrictMessageHandler-formatted deferral error text. It must be a

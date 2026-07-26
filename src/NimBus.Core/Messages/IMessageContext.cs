@@ -35,6 +35,20 @@ namespace NimBus.Core.Messages
 
         Task<IMessageContext> ReceiveNextDeferred(CancellationToken cancellationToken = default);
         Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Re-inserts a deferred message previously removed by
+        /// <see cref="ReceiveNextDeferredWithPop"/> at the FRONT of the session's deferred
+        /// order, so a message that could not reach settlement (for example because an
+        /// inbox-store outage aborted its dispatch) keeps a recoverable sequence reference
+        /// instead of being orphaned in the broker's deferred state. Implementations must
+        /// not duplicate a reference that is still present. The default implementation is
+        /// a no-op so existing transport/test implementers are forward-compatible.
+        /// </summary>
+        /// <param name="deferredMessage">The context returned by <see cref="ReceiveNextDeferredWithPop"/>.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        Task RestoreNextDeferred(IMessageContext deferredMessage, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
         Task BlockSession(CancellationToken cancellationToken = default);
         Task UnblockSession(CancellationToken cancellationToken = default);
         Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default);

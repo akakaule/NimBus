@@ -71,5 +71,18 @@ namespace NimBus.Core.Extensions
                 await observer.OnSessionBlocked(lifecycleContext, blockedByEventId, cancellationToken);
             }
         }
+
+        /// <summary>
+        /// Notifies observers that inbox deduplication skipped a message.
+        /// </summary>
+        public async Task NotifyDuplicateDetected(IMessageContext context, CancellationToken cancellationToken = default)
+        {
+            if (!HasObservers) return;
+            var lifecycleContext = MessageLifecycleContext.FromMessageContext(context);
+            foreach (var observer in _observers)
+            {
+                await observer.OnDuplicateDetected(lifecycleContext, cancellationToken);
+            }
+        }
     }
 }

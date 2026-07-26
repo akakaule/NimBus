@@ -356,9 +356,11 @@ SQL from message payloads or workflow identifiers.
 
 After commit, the dispatcher sends pending outbox rows. Delivery remains
 at-least-once: a dispatcher can send successfully and crash before marking the
-row dispatched, and Service Bus or an operator can redeliver a message. NimBus
-does not currently provide a consumer inbox, so each transition and downstream
-side effect must be idempotent.
+row dispatched, and Service Bus or an operator can redeliver a message. NimBus's
+optional [consumer inbox](inbox-pattern.md) can skip a redelivery after the same
+`MessageId` was recorded successfully. The inbox write is separate from the
+application transaction, so each transition and downstream side effect must
+still be idempotent.
 
 ### Cosmos Workflow State
 
@@ -589,8 +591,10 @@ integration test for real scheduling behavior where needed.
 
 - NimBus has no framework-owned saga DSL, saga repository, automatic
   compensation engine, or authoritative business-workflow state.
-- There is no consumer inbox. Outbox dispatch, Service Bus delivery, retry, and
-  operator resubmit are at-least-once paths.
+- The consumer inbox is opt-in and records after the application handler. Its
+  write is not atomic with application state, so outbox dispatch, Service Bus
+  delivery, retry, and operator replay remain at-least-once at the side-effect
+  boundary.
 - High-level scheduling and cancellation are only on concrete
   `PublisherClient`; `IPublisherClient` does not expose them or metadata
   override overloads.

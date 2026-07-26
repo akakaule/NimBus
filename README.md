@@ -27,6 +27,7 @@ Key projects:
 - `src/NimBus.AppHost` / `src/NimBus.ServiceDefaults`: Aspire host and shared defaults for local orchestration.
 - `src/NimBus.Testing`: in-memory transport plus the storage conformance suite that all message-store providers run against.
 - `src/NimBus.Outbox.SqlServer`: SQL Server transactional outbox implementation.
+- `src/NimBus.Inbox.SqlServer`: SQL Server consumer inbox implementation.
 
 Samples live under `samples/`:
 
@@ -381,6 +382,7 @@ The **[Deployment Guide](docs/deployment.md)** covers the full setup for every p
 | [Error Handling](docs/error-handling.md) | Adapter error-handling reference (transient, retry, dead-letter, classification) |
 | [Deferred Messages](docs/deferred-messages.md) | Session blocking and deferral mechanics with Mermaid diagrams |
 | [Pipeline Middleware](docs/pipeline-middleware.md) | Built-in middleware, custom behaviors, and lifecycle observers |
+| [Consumer Inbox](docs/inbox-pattern.md) | Opt-in redelivery deduplication, providers, retention, and remaining idempotency windows |
 | [Testing Guide](docs/testing.md) | Test layers, conformance suites, OpenTelemetry coverage, and diagrams |
 | [CLI Reference](docs/cli.md) | All `nb` commands: infra, topology, deploy, endpoint, container, catalog |
 | [SDK API Reference](docs/sdk-api-reference.md) | Interfaces: IPublisherClient, IEventHandler, RetryPolicy, IOutbox |

@@ -39,6 +39,12 @@ public static class NimBusMeters
     public static readonly Histogram<double> EndToEndLatency = Consumer.CreateHistogram<double>(
         "nimbus.message.e2e_latency", "ms", "End-to-end broker-enqueue to handler-completion latency.");
 
+    public static readonly Counter<long> InboxDuplicatesDetected = Consumer.CreateCounter<long>(
+        "nimbus.inbox.duplicate_detected", "{messages}", "Messages skipped because their inbox record already exists.");
+
+    public static readonly Counter<long> InboxOperationFailed = Consumer.CreateCounter<long>(
+        "nimbus.inbox.operation.failed", "{operations}", "Inbox store operations that failed.");
+
     public static readonly Meter Outbox = new(NimBusInstrumentation.OutboxMeterName);
 
     public static readonly Counter<long> OutboxEnqueued = Outbox.CreateCounter<long>(

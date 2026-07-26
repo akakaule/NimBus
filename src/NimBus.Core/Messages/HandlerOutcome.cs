@@ -12,6 +12,11 @@ namespace NimBus.Core.Messages
     public enum HandlerOutcome
     {
         Default = 0,
-        PendingHandoff = 1
+        PendingHandoff = 1,
+
+        /// <summary>
+        /// The inbox identified a previously processed message and skipped handler dispatch.
+        /// </summary>
+        DuplicateDetected = 2
     }
 }

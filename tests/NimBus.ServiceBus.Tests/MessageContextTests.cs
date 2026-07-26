@@ -722,6 +722,43 @@ public class MessageContextTests
         Assert.AreEqual(0, session.State.DeferredSequenceNumbers.Count, "Should have removed the sequence");
     }
 
+    [TestMethod]
+    public async Task RestoreNextDeferred_ReinsertsPoppedSequenceAtFront()
+    {
+        var deferredMsg = new FakeServiceBusMessage { MessageId = "deferred-1", SessionId = "s1", SequenceNumber = 100 };
+        SetDefaultProperties(deferredMsg);
+        var session = new FakeServiceBusSession();
+        session.State.DeferredSequenceNumbers.Add(100);
+        session.State.DeferredSequenceNumbers.Add(200);
+        session.DeferredMessages[100] = deferredMsg;
+        var ctx = CreateMessageContext(session: session);
+        var popped = await ctx.ReceiveNextDeferredWithPop();
+        CollectionAssert.AreEqual(new List<long> { 200 }, session.State.DeferredSequenceNumbers);
+
+        await ctx.RestoreNextDeferred(popped);
+
+        CollectionAssert.AreEqual(
+            new List<long> { 100, 200 },
+            session.State.DeferredSequenceNumbers,
+            "Popped sequence must return to the FRONT so ordering is preserved");
+    }
+
+    [TestMethod]
+    public async Task RestoreNextDeferred_SequenceAlreadyPresent_DoesNotDuplicate()
+    {
+        var deferredMsg = new FakeServiceBusMessage { MessageId = "deferred-1", SessionId = "s1", SequenceNumber = 100 };
+        SetDefaultProperties(deferredMsg);
+        var session = new FakeServiceBusSession();
+        session.State.DeferredSequenceNumbers.Add(100);
+        session.DeferredMessages[100] = deferredMsg;
+        var ctx = CreateMessageContext(session: session);
+        var deferredCtx = await ctx.ReceiveNextDeferred();
+
+        await ctx.RestoreNextDeferred(deferredCtx);
+
+        CollectionAssert.AreEqual(new List<long> { 100 }, session.State.DeferredSequenceNumbers);
+    }
+
     // ── EnqueuedTimeUtc ─────────────────────────────────────────────────
 
     [TestMethod]

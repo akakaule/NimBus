@@ -10,6 +10,13 @@ namespace NimBus.Core.Messages
         Task SendSkipResponse(IMessageContext messageContext, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Notifies the Resolver that inbox deduplication skipped a message.
+        /// The default implementation preserves compatibility with existing custom response services.
+        /// </summary>
+        Task SendDuplicateResponse(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
+            SendSkipResponse(messageContext, cancellationToken);
+
+        /// <summary>
         /// Notifies the Resolver that a failed message was intentionally discarded.
         /// The default implementation preserves compatibility with custom response services
         /// by sending the existing skipped outcome without enriched failure details.

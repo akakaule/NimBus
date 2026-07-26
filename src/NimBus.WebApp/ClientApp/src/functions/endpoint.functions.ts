@@ -59,6 +59,17 @@ export const formatMoment = (moment?: moment.Moment, slim = false): string => {
     : "Invalid timestamp";
 };
 
+// Duplicate delivery is persisted as an ordinary Skipped outcome. Keep the
+// wire status untouched and derive the operator-facing distinction solely
+// from the stable Resolver reason token.
+export const formatResolutionStatus = (
+  resolutionStatus: string | undefined,
+  reason: string | undefined,
+): string | undefined =>
+  resolutionStatus === "Skipped" && reason === "DuplicateDetected"
+    ? "Skipped (duplicate)"
+    : resolutionStatus;
+
 // Spec 006: parse the blocking event GUID out of a StrictMessageHandler-formatted
 // deferral error text ("Session {sessionId} is blocked by {eventId}"). Anchored
 // on the `is blocked by` phrase (case-insensitive) so wrapping prefixes/suffixes

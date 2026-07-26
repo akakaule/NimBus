@@ -162,6 +162,29 @@ public class ResolverServiceTests
     }
 
     [TestMethod]
+    public async Task Handle_DuplicateSkipResponse_UploadsSkippedOutcomeWithStableReason()
+    {
+        const string duplicateReason = "DuplicateDetected";
+        var cosmos = new FakeCosmosDbClient();
+        var message = CreateMessageContext(
+            messageType: MessageType.SkipResponse,
+            to: Constants.ResolverId,
+            from: "BillingEndpoint");
+        message.MessageContent.ErrorContent = new ErrorContent
+        {
+            ErrorText = duplicateReason,
+        };
+        var service = CreateService(cosmos);
+
+        await service.Handle(message);
+
+        Assert.AreEqual(1, cosmos.SkippedUploads.Count);
+        var tracked = cosmos.SkippedUploads[0].Content;
+        Assert.AreEqual(ResolutionStatus.Skipped, tracked.ResolutionStatus);
+        Assert.AreEqual(duplicateReason, tracked.Reason);
+    }
+
+    [TestMethod]
     public async Task Handle_RetryRequest_StoresAuditBeforePersistingMessage()
     {
         var cosmos = new FakeCosmosDbClient();

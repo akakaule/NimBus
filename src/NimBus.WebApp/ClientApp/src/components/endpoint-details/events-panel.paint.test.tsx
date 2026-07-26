@@ -1,5 +1,12 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { act, render, screen, cleanup, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import * as api from "api-client";
 
@@ -83,5 +90,48 @@ describe("EventsPanel paints before the session-status batch resolves", () => {
     });
 
     await waitFor(() => expect(screen.getByText("3")).toBeTruthy());
+  });
+});
+
+describe("EventsPanel duplicate status display", () => {
+  it("labels exact duplicate skips while leaving ordinary skips unchanged", async () => {
+    const duplicate = Object.assign(new api.Event(), {
+      eventId: "evt-duplicate",
+      sessionId: "sess-duplicate",
+      eventTypeId: "DuplicateEvent",
+      lastMessageId: "msg-duplicate",
+      resolutionStatus: api.ResolutionStatus.Skipped,
+      reason: "DuplicateDetected",
+    });
+    const ordinarySkip = Object.assign(new api.Event(), {
+      eventId: "evt-ordinary-skip",
+      sessionId: "sess-ordinary-skip",
+      eventTypeId: "OrdinarySkippedEvent",
+      lastMessageId: "msg-ordinary-skip",
+      resolutionStatus: api.ResolutionStatus.Skipped,
+      reason: "Operator requested skip",
+    });
+    getByFilterMock.mockResolvedValue({
+      events: [duplicate, ordinarySkip],
+      continuationToken: undefined,
+    });
+
+    const { default: EventsPanel } = await import("./events-panel");
+    render(
+      <MemoryRouter>
+        <EventsPanel endpointId="ep-1" />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("Skipped (duplicate)")).toBeTruthy(),
+    );
+    expect(screen.getAllByText("Skipped")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Grouped by Error" }));
+    fireEvent.click(screen.getByText("Unknown").closest("tr")!);
+
+    expect(screen.getByText("Skipped (duplicate)")).toBeTruthy();
+    expect(screen.getAllByText("Skipped")).toHaveLength(1);
   });
 });

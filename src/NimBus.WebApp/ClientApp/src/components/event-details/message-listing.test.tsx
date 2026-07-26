@@ -208,6 +208,33 @@ describe("MessageListing timing bar (spec 005)", () => {
     renderListing(eventFixture({ queueTimeMs: 0 }), []);
     expect(screen.getByText(/Queue\s+0ms/)).toBeTruthy();
   });
+
+  it("labels an exact duplicate skip in both visible status locations", () => {
+    stubMe();
+    renderListing(
+      eventFixture({
+        resolutionStatus: "Skipped",
+        reason: "DuplicateDetected",
+      }),
+      [],
+    );
+
+    expect(screen.getAllByText("Skipped (duplicate)")).toHaveLength(2);
+  });
+
+  it("leaves an ordinary skipped status unchanged", () => {
+    stubMe();
+    renderListing(
+      eventFixture({
+        resolutionStatus: "Skipped",
+        reason: "Operator requested skip",
+      }),
+      [],
+    );
+
+    expect(screen.getAllByText("Skipped")).toHaveLength(2);
+    expect(screen.queryByText("Skipped (duplicate)")).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

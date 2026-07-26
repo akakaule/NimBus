@@ -17,4 +17,8 @@ public class Customer
 
     // Soft delete: rows are kept after a delete so the audit trail is preserved.
     public bool IsDeleted { get; set; }
+
+    // Set by the PlaceCustomerOnCreditHold command from CRM; read back by the
+    // ErpCreditCheckRequested request/reply handler.
+    public bool CreditHold { get; set; }
 }

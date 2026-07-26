@@ -112,5 +112,6 @@ if (!initSucceeded)
 app.MapAccountEndpoints();
 app.MapContactEndpoints();
 app.MapAuditEndpoints();
+app.MapErpIntegrationEndpoints();
 
 app.Run();

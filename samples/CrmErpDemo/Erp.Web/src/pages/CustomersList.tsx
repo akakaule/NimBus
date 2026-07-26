@@ -48,7 +48,7 @@ export default function CustomersList() {
                 <td className="px-4 py-2">{r.countryCode}</td>
                 <td className="px-4 py-2"><OriginBadge origin={r.origin} /></td>
                 <td className="px-4 py-2 text-xs text-slate-500">{r.crmAccountId ?? '—'}</td>
-                <td className="px-4 py-2"><StatusBadge isDeleted={r.isDeleted} /></td>
+                <td className="px-4 py-2"><StatusBadge isDeleted={r.isDeleted} creditHold={r.creditHold} /></td>
                 <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap">{formatDate(r.createdAt)}</td>
                 <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap">{formatDate(r.updatedAt)}</td>
               </tr>
@@ -70,10 +70,12 @@ function OriginBadge({ origin }: { origin?: string }) {
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${styles}`}>{origin}</span>;
 }
 
-function StatusBadge({ isDeleted }: { isDeleted?: boolean }) {
-  return isDeleted
-    ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-rose-50 text-rose-700 ring-1 ring-rose-200">Deleted</span>
-    : <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">Active</span>;
+function StatusBadge({ isDeleted, creditHold }: { isDeleted?: boolean; creditHold?: boolean }) {
+  if (isDeleted)
+    return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-rose-50 text-rose-700 ring-1 ring-rose-200">Deleted</span>;
+  if (creditHold)
+    return <span data-testid="credit-hold-badge" className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 ring-1 ring-amber-200">Credit hold</span>;
+  return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">Active</span>;
 }
 
 function formatDate(value?: string | null) {

@@ -1,3 +1,4 @@
+using CrmErpDemo.Contracts.Commands;
 using CrmErpDemo.Contracts.Events;
 using NimBus.Core.Endpoints;
 
@@ -13,6 +14,11 @@ public class CrmEndpoint : Endpoint
         Produces<CrmContactCreated>();
         Produces<CrmContactUpdated>();
         Produces<CrmContactDeleted>();
+
+        // Request/reply request (answered on CrmEndpoint-reply) and the
+        // credit-hold command (single consumer: ErpEndpoint).
+        Produces<ErpCreditCheckRequested>();
+        Produces<PlaceCustomerOnCreditHold>();
 
         Consumes<ErpCustomerCreated>();
         Consumes<ErpCustomerUpdated>();

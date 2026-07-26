@@ -36,6 +36,29 @@ public static class CustomerEndpoints
             return Results.Created($"/api/customers/{input.Id}", input);
         });
 
+        // Lookup by CRM account id — used by the ERP adapter's credit-check
+        // request handler (request/reply showcase).
+        group.MapGet("/by-crm/{crmAccountId:guid}", async (Guid crmAccountId, ErpDbContext db) =>
+            await db.Customers.FirstOrDefaultAsync(c => c.CrmAccountId == crmAccountId) is { } c
+                ? Results.Ok(c)
+                : Results.NotFound());
+
+        // Adapter-side execution of the PlaceCustomerOnCreditHold command (command
+        // showcase). Sets the flag; the DbContext audit interceptor records the
+        // change. Deliberately publishes NO event — the hold becomes visible via
+        // the ERP UI and the credit-check reply, keeping the command additive.
+        group.MapPut("/credit-hold/by-crm/{crmAccountId:guid}", async (Guid crmAccountId, CreditHoldRequest req, ErpDbContext db) =>
+        {
+            var existing = await db.Customers.FirstOrDefaultAsync(c => c.CrmAccountId == crmAccountId);
+            if (existing is null) return Results.NotFound();
+            if (existing.CreditHold) return Results.Ok(existing);
+
+            existing.CreditHold = true;
+            existing.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync();
+            return Results.Ok(existing);
+        });
+
         // Upsert used by the ERP adapter when CRM originates an account.
         // Idempotent on CrmAccountId: repeated events for the same account are no-ops.
         // Origin is set to "Crm" on insert and never changed on update — the
@@ -135,3 +158,5 @@ public static class CustomerEndpoints
 }
 
 public record CustomerUpsertRequest(Guid? ErpCustomerId, string LegalName, string? TaxId, string CountryCode);
+
+public record CreditHoldRequest(string? Reason);

@@ -1,3 +1,4 @@
+using CrmErpDemo.Contracts.Commands;
 using CrmErpDemo.Contracts.Events;
 using NimBus.Core.Endpoints;
 
@@ -20,6 +21,12 @@ public class ErpEndpoint : Endpoint, ICloudEventsAware
         Consumes<CrmContactCreated>();
         Consumes<CrmContactUpdated>();
         Consumes<CrmContactDeleted>();
+
+        // Credit-check request (answered over the reply subscription) and the
+        // credit-hold command — ErpEndpoint must stay this command's ONLY
+        // consumer, or platform validation fails provisioning.
+        Consumes<ErpCreditCheckRequested>();
+        Consumes<PlaceCustomerOnCreditHold>();
     }
 
     public override ISystem System => new ErpSystem();

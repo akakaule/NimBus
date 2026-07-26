@@ -1,4 +1,6 @@
 using Azure.Messaging.ServiceBus;
+using CrmErpDemo.Contracts.Dtos;
+using CrmErpDemo.Contracts.Events;
 using Erp.Adapter.Functions.Clients;
 using Erp.Adapter.Functions.HandoffMode;
 using Erp.Adapter.Functions.Handlers;
@@ -77,6 +79,10 @@ builder.Services.AddNimBus(n =>
 builder.Services.AddNimBusSubscriber("ErpEndpoint", sub =>
 {
     sub.AddHandlersFromAssemblyContaining<CrmAccountCreatedHandler>();
+
+    // Request/reply responder — request handlers are registered explicitly
+    // (not assembly-scanned); the reply travels back on CrmEndpoint-reply.
+    sub.AddRequestHandler<ErpCreditCheckRequested, ErpCreditCheckResult, ErpCreditCheckRequestedHandler>();
 });
 
 // Demo notifications: when an inbound ERP message fails, dead-letters, or blocks its session,

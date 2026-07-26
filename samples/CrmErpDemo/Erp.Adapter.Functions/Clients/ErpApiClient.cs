@@ -56,4 +56,31 @@ public sealed class ErpApiClient(HttpClient http) : IErpApiClient
             ApiName,
             ct);
     }
+
+    public async Task<ErpCustomerStatusResponse?> GetCustomerByCrmAccountIdAsync(Guid crmAccountId, CancellationToken ct)
+    {
+        var response = await http.GetAsync($"/api/customers/by-crm/{crmAccountId}", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            return null;
+        await response.EnsureSuccessOrThrowAsync(
+            $"Get ERP customer by CRM account {crmAccountId}",
+            ApiName,
+            ct);
+        return await response.Content.ReadFromJsonAsync<ErpCustomerStatusResponse>(cancellationToken: ct);
+    }
+
+    public async Task<bool> PlaceCreditHoldByCrmIdAsync(Guid crmAccountId, string? reason, CancellationToken ct)
+    {
+        var response = await http.PutAsJsonAsync(
+            $"/api/customers/credit-hold/by-crm/{crmAccountId}",
+            new { Reason = reason },
+            ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            return false;
+        await response.EnsureSuccessOrThrowAsync(
+            $"Place credit hold on ERP customer by CRM account {crmAccountId}",
+            ApiName,
+            ct);
+        return true;
+    }
 }

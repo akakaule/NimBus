@@ -9,6 +9,7 @@ export interface Customer {
   updatedAt?: string | null;
   origin?: string;
   isDeleted?: boolean;
+  creditHold?: boolean;
 }
 
 export interface AuditEntry {

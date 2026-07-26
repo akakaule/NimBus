@@ -95,4 +95,42 @@ export class CrmApiClient {
       throw new Error(`CRM DELETE /api/accounts/${id} → ${res.status()}`);
     }
   }
+
+  /**
+   * Request/reply showcase: synchronous ERP credit check. Returns the typed
+   * result on 200; returns null on 504 (ERP did not reply within the timeout)
+   * so timeout specs can assert on it without try/catch.
+   */
+  async creditCheck(accountId: string): Promise<CreditCheckResult | null> {
+    const res = await this.api.post(`/api/accounts/${accountId}/credit-check`, {
+      // The server-side request/reply timeout is 10s; leave headroom.
+      timeout: 30_000,
+    });
+    if (res.status() === 504) return null;
+    if (!res.ok()) throw new Error(`CRM POST credit-check → ${res.status()} ${await res.text()}`);
+    return (await res.json()) as CreditCheckResult;
+  }
+
+  /** Command showcase: fire-and-forget PlaceCustomerOnCreditHold. */
+  async placeCreditHold(accountId: string, reason?: string): Promise<void> {
+    const res = await this.api.post(`/api/accounts/${accountId}/credit-hold`, {
+      data: { reason: reason ?? null },
+    });
+    if (!res.ok()) throw new Error(`CRM POST credit-hold → ${res.status()} ${await res.text()}`);
+  }
+
+  /** Audit rows for one entity — used to prove inbox-skipped duplicates ran no handler. */
+  async getAuditLog(entityType: "Account" | "Contact", entityId: string): Promise<unknown[]> {
+    const res = await this.api.get(`/api/audit/${entityType}/${entityId}`);
+    if (!res.ok()) throw new Error(`CRM GET audit → ${res.status()}`);
+    return (await res.json()) as unknown[];
+  }
+}
+
+export interface CreditCheckResult {
+  accountId: string;
+  approved: boolean;
+  status: "Active" | "OnHold" | "NotFound" | "Deleted" | string;
+  customerNumber?: string | null;
+  checkedAt: string;
 }

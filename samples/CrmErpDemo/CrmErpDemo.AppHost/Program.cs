@@ -207,6 +207,10 @@ if (provisioner is not null) crmApi = crmApi.WaitFor(provisioner);
 var crmAdapter = builder.AddProject<Projects.Crm_Adapter>("crm-adapter")
     .WithReference(servicebus)
     .WithReference(crmApi)
+    // The crm business DB doubles as the inbox deduplication store
+    // ([nimbus].[InboxMessages]) — see the inbox showcase in the README.
+    .WithReference(crmDb)
+    .WaitFor(crmDb)
     .WaitFor(crmApi);
 if (provisioner is not null) crmAdapter.WaitFor(provisioner);
 

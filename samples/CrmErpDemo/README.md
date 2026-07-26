@@ -66,6 +66,9 @@ graph TB
 - **Two hosting models, identical handlers** — same `IEventHandler<T>` works in a worker container (CRM) and in Azure Functions (ERP). Demonstrates that hosting is a deployment concern, not a code concern.
 - **Session-based ordering** — `[SessionKey(nameof(AccountId))]` keeps the round-trip `CrmAccountCreated → ErpCustomerCreated → link-erp` ordered for each account.
 - **Operator surface** — reuses the existing `NimBus.WebApp` + Resolver from the main repo for full audit trail and resubmit/skip.
+- **Inbox deduplication on CRM** — `Crm.Adapter` opts into platform-level dedup (`UseInbox`, SQL store in the crm DB); a nimbus-ops resubmit of a Completed event is skipped as `DuplicateDetected`, contrasting with ERP's application-level idempotent upserts.
+- **Request/reply (synchronous credit check)** — CRM asks ERP for a customer's credit standing via `PublisherClient.Request` and gets a typed answer back over the `CrmEndpoint-reply` session subscription.
+- **Commands (imperative, exactly one consumer)** — `PlaceCustomerOnCreditHold : Command` is fire-and-forget with a single declared consumer (`ErpEndpoint`); platform validation fails provisioning if anyone adds a second consumer (ADR-014).
 
 ## Domains in v1
 
@@ -507,6 +510,122 @@ Key mechanics on display:
    `InvalidCloudEventException` and the message lands in the
    `PartnerInbound/CrmEndpoint` dead-letter queue.
 
+## Showcase: Inbox deduplication (CrmEndpoint)
+
+NimBus fan-out forwards copies of one published message — with the same broker
+`MessageId` — so redelivery and operator resubmits can hand a subscriber the same
+message twice. `Crm.Adapter` opts into the platform-level inbox so a second delivery
+of an already-processed `MessageId` is skipped instead of re-invoking the handler:
+
+```csharp
+builder.Services.AddNimBusSqlServerInbox(crmDbConnectionString);   // [nimbus].[InboxMessages] in the crm DB
+
+sub.UseInbox(options =>
+{
+    options.DeduplicationStore = InboxStore.SqlServer;
+    options.RetentionPeriod = TimeSpan.FromDays(2);
+    options.CleanupInterval = TimeSpan.FromMinutes(15);
+});
+```
+
+The demo deliberately contrasts two idempotency strategies: the CRM side uses
+**platform-level** dedup (handlers never see the duplicate), while the ERP side keeps
+**application-level** idempotency (upserts keyed on `CrmAccountId` — duplicates run but
+converge). The crm business DB doubling as the dedup store mirrors the erp DB hosting
+the outbox table: `[crm].[nimbus].[InboxMessages]` vs `[erp].[nimbus].[OutboxMessages]`,
+both browsable in DbGate.
+
+### Manual smoke flow
+
+1. AppHost up → create a customer in **erp-web** → wait until the account appears in **crm-web**.
+2. Open **nimbus-ops** → CrmEndpoint → find the Completed `ErpCustomerCreated` event → **Resubmit** it.
+3. The redelivery carries the original `MessageId`; **crm-adapter** logs `Inbox duplicate detected`
+   and the event history shows the skip with reason `DuplicateDetected` — no second CRM API call,
+   no new CRM audit row.
+4. DbGate → crm DB → `SELECT * FROM nimbus.InboxMessages` shows one row per processed message.
+
+### Automated coverage
+
+`tests/NimBus.EndToEnd.Tests/InboxEndToEndTests.cs` (core) and `e2e/tests/08-inbox-dedup.spec.ts` (demo).
+
+## Showcase: Request/reply (synchronous ERP credit check)
+
+The account page in **crm-web** has a **Run ERP credit check** button — a synchronous
+question ("can this customer buy on credit *right now*?") that doesn't fit fire-and-forget
+pub/sub. `Crm.Api` uses the request/reply pattern:
+
+```mermaid
+sequenceDiagram
+    participant W as crm-web
+    participant CA as Crm.Api (requester)
+    participant SB as Service Bus
+    participant EF as Erp.Adapter.Functions (responder)
+    participant EA as Erp.Api
+
+    W->>CA: POST /api/accounts/{id}/credit-check
+    CA->>SB: ErpCreditCheckRequested (ReplyTo=CrmEndpoint)
+    SB->>EF: routed by event type to ErpEndpoint
+    EF->>EA: GET /api/customers/by-crm/{id}
+    EA-->>EF: customer (CreditHold, IsDeleted)
+    EF->>SB: reply -> CrmEndpoint-reply (session = ReplyToSessionId)
+    SB-->>CA: ErpCreditCheckResult
+    CA-->>W: Approved / OnHold / NotFound (or 504 on timeout)
+```
+
+The request is a normal audited NimBus event; the **reply** is a raw session message on
+the auto-provisioned `CrmEndpoint-reply` subscription — no audit row, 5-minute TTL.
+A responder-side exception comes back as `RequestReplyException` (fail-fast) instead of
+a timeout. Note the request shares the account's `[SessionKey]`, so a blocked session
+for that account surfaces as a visible timeout.
+
+### Manual smoke flow
+
+1. Create an account in **crm-web**, wait for the ERP sync, open the account → **Run ERP credit check** → green **Approved** badge with the ERP customer number, typically well under a second.
+2. Timeout path: open **erp-web** → Admin → enable **maintenance mode** → run the check again → the request is rejected on the ERP side and the button reports the 10 s timeout. Disable maintenance mode afterwards.
+
+### Automated coverage
+
+`tests/NimBus.SDK.Tests/RequestJsonHandlerTests.cs` + `PublisherClientRequestTests.cs`,
+`tests/NimBus.EndToEnd.Tests/RequestReplyEndToEndTests.cs` (core) and
+`e2e/tests/09-request-reply-credit-check.spec.ts` (demo).
+
+## Showcase: Commands (imperative, exactly one consumer)
+
+All 13 domain events are past-tense notifications ("this happened") with any number of
+observers. **Place credit hold in ERP** on the crm-web account page sends the demo's one
+command — an imperative instruction with exactly one recipient:
+
+```csharp
+[SessionKey(nameof(AccountId))]
+public class PlaceCustomerOnCreditHold : Command   // <- not Event
+{
+    public Guid AccountId { get; set; }
+    public string? Reason { get; set; }
+    ...
+}
+```
+
+Commands travel exactly like events (same topics, session ordering, Resolver audit); the
+difference is contractual: `PlatformValidation.EnsureCommandConsumers` runs at provisioning
+time (real provisioner *and* emulator config generation) and fails if a `Command`-derived
+type has zero or multiple declared consumers. Add
+`Consumes<PlaceCustomerOnCreditHold>()` to a second endpoint and the AppHost refuses to
+start — see `tests/CrmErpDemo.AppHost.Tests/CommandCatalogTests.cs`. Rationale: ADR-014.
+
+The handler sets `CreditHold` on the ERP customer and publishes **no** event back — the
+hold becomes visible through the ERP UI (amber **Credit hold** badge) and through the next
+credit check returning **On hold**, which is also how the two showcases prove each other.
+
+### Manual smoke flow
+
+1. Create an account in **crm-web**, wait for ERP sync, run a credit check → **Approved**.
+2. **Place credit hold in ERP** → confirm. **erp-web** → Customers shows the amber **Credit hold** badge (audit trail records the `CreditHold` field change).
+3. Run the credit check again → amber **On hold**, `Approved=false`.
+
+### Automated coverage
+
+`tests/NimBus.Core.Tests/PlatformValidationTests.cs` + `tests/CrmErpDemo.AppHost.Tests/CommandCatalogTests.cs` (core/catalog) and `e2e/tests/10-credit-hold-command.spec.ts` (demo).
+
 ## Out of scope (v1)
 
 No authn/authz, no multi-tenant, no production deployment scripts, no non-Azure transports, no realistic tax/currency/shipping math, no automated browser tests, no UI i18n, no Sales Orders/Products/Inventory.
@@ -525,3 +644,8 @@ No authn/authz, no multi-tenant, no production deployment scripts, no non-Azure 
 | Aspire wiring                           | `CrmErpDemo.AppHost/Program.cs`                                                            |
 | CloudEvents partner (external, no NimBus) | `PartnerPortal/Program.cs`                                                               |
 | CloudEvents inbound handler             | `Crm.Adapter/Handlers/PartnerLeadSubmittedHandler.cs`                                      |
+| Inbox dedup wiring                      | `Crm.Adapter/Program.cs` (`AddNimBusSqlServerInbox` + `UseInbox`)                          |
+| Request/reply requester + command sender | `Crm.Api/Endpoints/ErpIntegrationEndpoints.cs`                                            |
+| Request/reply responder                 | `Erp.Adapter.Functions/Handlers/ErpCreditCheckRequestedHandler.cs`                          |
+| Command contract + handler              | `CrmErpDemo.Contracts/Commands/PlaceCustomerOnCreditHold.cs` + `Erp.Adapter.Functions/Handlers/PlaceCustomerOnCreditHoldHandler.cs` |
+| Command catalog enforcement             | `tests/CrmErpDemo.AppHost.Tests/CommandCatalogTests.cs`                                     |

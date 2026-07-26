@@ -36,6 +36,14 @@ export interface Contact {
   isDeleted?: boolean;
 }
 
+export interface CreditCheckResult {
+  accountId: string;
+  approved: boolean;
+  status: 'Active' | 'OnHold' | 'NotFound' | 'Deleted' | string;
+  customerNumber?: string | null;
+  checkedAt: string;
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -82,4 +90,18 @@ export const api = {
 
   getAuditLog: (entityType: 'Account' | 'Contact', entityId: string) =>
     fetch(`/api/audit/${entityType}/${entityId}`).then(json<AuditEntry[]>),
+
+  // Request/reply showcase: synchronous ERP credit check (blocks up to ~10s).
+  creditCheck: (accountId: string) =>
+    fetch(`/api/accounts/${accountId}/credit-check`, { method: 'POST' }).then(json<CreditCheckResult>),
+
+  // Command showcase: fire-and-forget PlaceCustomerOnCreditHold to ERP.
+  placeCreditHold: (accountId: string, reason?: string) =>
+    fetch(`/api/accounts/${accountId}/credit-hold`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: reason ?? null }),
+    }).then((res) => {
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    }),
 };

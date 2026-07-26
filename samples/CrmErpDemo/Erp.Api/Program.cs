@@ -117,6 +117,8 @@ for (var attempt = 1; attempt <= 10 && !initSucceeded; attempt++)
                 ALTER TABLE dbo.Customers ADD IsDeleted BIT NOT NULL CONSTRAINT DF_Customers_IsDeleted DEFAULT 0;
             IF COL_LENGTH('dbo.Contacts', 'IsDeleted') IS NULL
                 ALTER TABLE dbo.Contacts ADD IsDeleted BIT NOT NULL CONSTRAINT DF_Contacts_IsDeleted DEFAULT 0;
+            IF COL_LENGTH('dbo.Customers', 'CreditHold') IS NULL
+                ALTER TABLE dbo.Customers ADD CreditHold BIT NOT NULL CONSTRAINT DF_Customers_CreditHold DEFAULT 0;
             IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Audits' AND schema_id = SCHEMA_ID('dbo'))
             BEGIN
                 CREATE TABLE dbo.Audits (

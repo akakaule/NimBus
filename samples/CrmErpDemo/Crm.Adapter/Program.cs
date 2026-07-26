@@ -2,7 +2,9 @@ using Crm.Adapter.Clients;
 using Crm.Adapter.Handlers;
 using NimBus.Core.CloudEvents;
 using NimBus.Core.Extensions;
+using NimBus.Core.Inbox;
 using NimBus.Core.Pipeline;
+using NimBus.Inbox.SqlServer;
 using NimBus.SDK.Extensions;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -16,6 +18,14 @@ var crmApiBaseUrl = builder.Configuration["services:crm-api:https:0"]
     ?? throw new InvalidOperationException("Crm API base URL is required (service discovery or Crm:ApiBaseUrl).");
 
 builder.Services.AddHttpClient<ICrmApiClient, CrmApiClient>(c => c.BaseAddress = new Uri(crmApiBaseUrl));
+
+// Inbox deduplication store (showcase): the crm business database doubles as the
+// dedup store — [nimbus].[InboxMessages] mirrors the erp database's outbox table.
+// The crm DB is always provisioned by the AppHost regardless of storage provider,
+// so the showcase works in both sqlserver and cosmos platform-storage modes.
+var crmDbConnectionString = builder.Configuration.GetConnectionString("crm")
+    ?? throw new InvalidOperationException("ConnectionStrings:crm is required for the inbox deduplication store.");
+builder.Services.AddNimBusSqlServerInbox(crmDbConnectionString);
 
 // Middleware pipeline. Crm.Adapter is a pure subscriber adapter: CRM-originated
 // events are published directly by Crm.Api, while the ERP side is the sample
@@ -39,6 +49,17 @@ builder.Services.AddNimBusSubscriber(
     configureBuilder: sub =>
     {
         sub.AddHandlersFromAssemblyContaining<ErpCustomerCreatedHandler>();
+
+        // Inbox showcase: platform-level dedup on (CrmEndpoint, MessageId).
+        // Resubmitting an already-Completed event from nimbus-ops redelivers the
+        // same MessageId and is skipped with reason DuplicateDetected — contrast
+        // with the ERP side, which relies on application-level idempotent upserts.
+        sub.UseInbox(options =>
+        {
+            options.DeduplicationStore = InboxStore.SqlServer;
+            options.RetentionPeriod = TimeSpan.FromDays(2);
+            options.CleanupInterval = TimeSpan.FromMinutes(15);
+        });
     });
 builder.Services.AddNimBusReceiver(opts =>
 {

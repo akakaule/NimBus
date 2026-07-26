@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Account, api } from '../api';
+import { Account, CreditCheckResult, api } from '../api';
 import { randomCompany } from '../fakeData';
 import AuditLog from '../components/AuditLog';
 
@@ -10,6 +10,37 @@ export default function AccountForm() {
   const [form, setForm] = useState<Partial<Account>>({ legalName: '', countryCode: 'DE' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState<CreditCheckResult | null>(null);
+  const [checkError, setCheckError] = useState<string | null>(null);
+  const [holdRequested, setHoldRequested] = useState(false);
+
+  async function runCreditCheck() {
+    if (!id) return;
+    setChecking(true);
+    setCheckResult(null);
+    setCheckError(null);
+    const started = Date.now();
+    try {
+      setCheckResult(await api.creditCheck(id));
+    } catch (err) {
+      const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+      setCheckError(`${err instanceof Error ? err.message : String(err)} (after ${elapsed}s)`);
+    } finally { setChecking(false); }
+  }
+
+  async function placeHold() {
+    if (!id) return;
+    if (!confirm('Send PlaceCustomerOnCreditHold to ERP? This is a command: imperative, one consumer.')) return;
+    setHoldRequested(false);
+    setCheckError(null);
+    try {
+      await api.placeCreditHold(id, 'Requested from CRM UI');
+      setHoldRequested(true);
+    } catch (err) {
+      setCheckError(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   useEffect(() => {
     if (id) api.getAccount(id).then(setForm);
@@ -71,6 +102,57 @@ export default function AccountForm() {
         )}
       </div>
     </form>
+    {id && !form.isDeleted && (
+      <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-3">
+        <h2 className="text-sm font-semibold text-slate-700">ERP integration</h2>
+        <div className="flex flex-wrap gap-2 items-center">
+          <button
+            type="button"
+            onClick={runCreditCheck}
+            disabled={checking}
+            className="px-3 py-2 text-sm bg-indigo-600 text-white rounded-md disabled:opacity-60 hover:bg-indigo-700"
+          >
+            {checking ? 'Checking…' : 'Run ERP credit check'}
+          </button>
+          <button
+            type="button"
+            onClick={placeHold}
+            className="px-3 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700"
+          >
+            Place credit hold in ERP
+          </button>
+          {checkResult && (
+            <span
+              data-testid="credit-check-result"
+              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ring-1 ${
+                checkResult.approved
+                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                  : checkResult.status === 'OnHold'
+                    ? 'bg-amber-50 text-amber-700 ring-amber-200'
+                    : 'bg-rose-50 text-rose-700 ring-rose-200'
+              }`}
+            >
+              {checkResult.approved ? 'Approved' : checkResult.status === 'OnHold' ? 'On hold' : checkResult.status}
+              {checkResult.customerNumber ? ` · ${checkResult.customerNumber}` : ''}
+            </span>
+          )}
+          {holdRequested && (
+            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+              Hold command sent
+            </span>
+          )}
+        </div>
+        {checkError && (
+          <div data-testid="credit-check-error" className="rounded-md bg-rose-50 border border-rose-200 text-rose-800 px-3 py-2 text-sm">
+            Credit check failed: {checkError}
+          </div>
+        )}
+        <p className="text-xs text-slate-500">
+          Credit check = synchronous request/reply over the CrmEndpoint-reply subscription.
+          Credit hold = fire-and-forget command consumed only by ErpEndpoint.
+        </p>
+      </div>
+    )}
     {id && <AuditLog entityType="Account" entityId={id} />}
     </div>
   );

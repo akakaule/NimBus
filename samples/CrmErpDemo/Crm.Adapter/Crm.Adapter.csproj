@@ -17,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\src\NimBus.Inbox.SqlServer\NimBus.Inbox.SqlServer.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.SDK\NimBus.SDK.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.ServiceDefaults\NimBus.ServiceDefaults.csproj" />
     <ProjectReference Include="..\CrmErpDemo.Contracts\CrmErpDemo.Contracts.csproj" />

@@ -11,6 +11,7 @@ export interface ErpCustomer {
   crmAccountId?: string | null;
   origin: string;
   isDeleted: boolean;
+  creditHold?: boolean;
   createdAt: string;
   updatedAt?: string | null;
 }

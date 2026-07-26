@@ -199,7 +199,7 @@
         /* ── Code ── */
         .code-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            grid-template-columns: repeat(2, 1fr);
             gap: 24px;
         }
 
@@ -467,6 +467,9 @@
         }
 
         /* ── Responsive ── */
+        @media (max-width: 960px) {
+            .code-grid { grid-template-columns: 1fr; }
+        }
         @media (max-width: 768px) {
             .hero { padding: 48px 0 56px; }
             .hero-banner { max-width: 320px; }

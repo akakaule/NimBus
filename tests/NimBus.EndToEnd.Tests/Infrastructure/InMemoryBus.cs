@@ -183,6 +183,8 @@ internal sealed class InMemoryBus : ISender
             messageId: sbOutgoing.MessageId,
             sessionId: sbOutgoing.SessionId,
             correlationId: sbOutgoing.CorrelationId,
+            replyTo: sbOutgoing.ReplyTo,
+            replyToSessionId: sbOutgoing.ReplyToSessionId,
             properties: properties,
             enqueuedTime: DateTimeOffset.UtcNow);
     }

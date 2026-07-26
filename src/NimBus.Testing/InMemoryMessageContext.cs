@@ -34,6 +34,8 @@ public class InMemoryMessageContext : IMessageContext
     public string EventTypeId => _message.EventTypeId;
     public string OriginalSessionId => _message.OriginalSessionId;
     public int? DeferralSequence => _message.DeferralSequence;
+    public string ReplyTo => _message.ReplyTo;
+    public string ReplyToSessionId => _message.ReplyToSessionId;
 
     // IReceivedMessage
     public DateTime EnqueuedTimeUtc { get; }

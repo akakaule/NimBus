@@ -23,6 +23,10 @@ public static class EmulatorTopologyConfigBuilder
 {
     public static string Build(IPlatform platform)
     {
+        // Fail fast at emulator-config generation, mirroring the real
+        // provisioner's validation in ServiceBusTopologyProvisioner.ApplyAsync.
+        PlatformValidation.EnsureCommandConsumers(platform);
+
         var endpoints = platform.Endpoints
             .OrderBy(e => e.Id, StringComparer.Ordinal)
             .ToList();
@@ -131,6 +135,19 @@ public static class EmulatorTopologyConfigBuilder
                 Rules = new object[]
                 {
                     Rule("DeferredProcessorFilter", "user.To = 'DeferredProcessor'", action: null),
+                },
+            },
+            // Request/reply: replies to this endpoint's Request<TReq,TResp> calls
+            // land here, correlated by ReplyToSessionId. Mirrors the real
+            // provisioner's EnsureReplySubscriptionAsync — filter string must
+            // stay byte-identical.
+            new
+            {
+                Name = $"{endpoint.Id}-reply",
+                Properties = SessionSubscriptionProperties(forwardTo: null),
+                Rules = new object[]
+                {
+                    Rule("ReplyFilter", $"user.To = '{endpoint.Id}-reply'", action: null),
                 },
             },
         };

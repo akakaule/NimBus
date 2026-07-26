@@ -110,7 +110,12 @@ namespace NimBus.SDK.Extensions
             }
 
             services.TryAddSingleton<ISender>(BuildPublisherSender);
-            services.TryAddSingleton<IPublisherClient>(sp => new PublisherClient(BuildPublisherSender(sp), options.Endpoint, options.CloudEvents));
+            services.TryAddSingleton<IPublisherClient>(sp => new PublisherClient(BuildPublisherSender(sp), options.Endpoint, options.CloudEvents)
+            {
+                // Request/reply needs the raw client to accept the reply session.
+                // Set here (not a ctor param) so the ctor surface stays unchanged.
+                ReplyServiceBusClient = sp.GetRequiredService<ServiceBusClient>(),
+            });
 
             return services;
         }
@@ -203,6 +208,11 @@ namespace NimBus.SDK.Extensions
             // Match the publisher path — consumer-side spans + meters depend on
             // the same OTel ActivitySource/Meter registrations.
             services.AddNimBusInstrumentation();
+
+            // Request handlers reply through this dispatcher. TryAdd so tests and
+            // custom hosts can substitute an in-memory implementation.
+            services.TryAddSingleton<IReplyDispatcher>(sp =>
+                new ReplyDispatcher(sp.GetRequiredService<ServiceBusClient>()));
 
             if (isFirstSubscriberRegistration)
             {

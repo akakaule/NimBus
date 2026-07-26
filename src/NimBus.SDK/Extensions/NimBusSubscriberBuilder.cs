@@ -40,6 +40,56 @@ namespace NimBus.SDK.Extensions
         }
 
         /// <summary>
+        /// Registers a request handler for the request/reply pattern. The handler is resolved
+        /// from DI per message; its response is JSON-serialized and sent to the requester's
+        /// <c>{endpoint}-reply</c> subscription when the inbound message carries a
+        /// <c>ReplyTo</c> address (see <see cref="Core.Messages.IReplyDispatcher"/>).
+        /// When the request type is published as a plain event (no <c>ReplyTo</c>), the
+        /// handler still runs and the response is discarded.
+        /// </summary>
+        /// <typeparam name="TRequest">The request event type.</typeparam>
+        /// <typeparam name="TResponse">The response type (serialized as JSON).</typeparam>
+        /// <typeparam name="THandler">The handler implementation type.</typeparam>
+        public NimBusSubscriberBuilder AddRequestHandler<TRequest, TResponse, THandler>()
+            where TRequest : IEvent
+            where TResponse : class
+            where THandler : class, IRequestHandler<TRequest, TResponse>
+        {
+            var eventTypeId = new EventType(typeof(TRequest)).Id;
+            var existing = HandlerRegistrations.SingleOrDefault(r => r.EventTypeId == eventTypeId);
+            if (existing != null)
+            {
+                throw new InvalidOperationException(
+                    $"EventTypeId '{eventTypeId}' is already registered as a " +
+                    $"{(existing.EventType is null ? "dynamic" : "typed")} handler " +
+                    $"('{existing.HandlerType?.FullName ?? "<dynamic>"}'); " +
+                    $"cannot also register a request handler ('{typeof(THandler).FullName}') for it. " +
+                    "Register only one handler per EventTypeId.");
+            }
+
+            Services.AddTransient<IRequestHandler<TRequest, TResponse>, THandler>();
+
+            HandlerRegistrations.Add(new HandlerRegistration
+            {
+                EventTypeId = eventTypeId,
+                EventType = typeof(TRequest),
+                HandlerType = typeof(THandler),
+                IsExplicit = true,
+                Register = (provider, handlerProvider) =>
+                {
+                    var replyDispatcher = provider.GetRequiredService<IReplyDispatcher>();
+                    handlerProvider.RegisterHandler(
+                        eventTypeId,
+                        (IServiceProvider? scopedProvider) => new RequestJsonHandler<TRequest, TResponse>(
+                            (scopedProvider ?? provider).GetRequiredService<IRequestHandler<TRequest, TResponse>>(),
+                            replyDispatcher));
+                }
+            });
+
+            return this;
+        }
+
+        /// <summary>
         /// Registers all concrete <see cref="IEventHandler{T}"/> implementations from
         /// the assembly containing <typeparamref name="TMarker"/>.
         /// </summary>

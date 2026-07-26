@@ -147,6 +147,23 @@ internal sealed class EndToEndFixture
         _eventHandlerProvider.RegisterHandler(handlerFactory);
     }
 
+    /// <summary>Replies captured from request handlers registered via <see cref="RegisterRequestHandler{TRequest,TResponse}"/>.</summary>
+    public Testing.InMemoryReplyDispatcher ReplyDispatcher { get; } = new();
+
+    /// <summary>
+    /// Registers a request/reply handler; responses are captured on <see cref="ReplyDispatcher"/>
+    /// when the delivered request message carries a ReplyTo address.
+    /// </summary>
+    public void RegisterRequestHandler<TRequest, TResponse>(Func<IRequestHandler<TRequest, TResponse>> handlerFactory)
+        where TRequest : IEvent
+        where TResponse : class
+    {
+        var eventTypeId = new EventType(typeof(TRequest)).Id;
+        _eventHandlerProvider.RegisterHandler(
+            eventTypeId,
+            () => new RequestJsonHandler<TRequest, TResponse>(handlerFactory(), ReplyDispatcher));
+    }
+
     /// <summary>
     /// Registers a handler for a dynamically-typed event keyed only by its EventTypeId string
     /// (no compiled IEvent class) — the agent-zone consumer path for spec 022.

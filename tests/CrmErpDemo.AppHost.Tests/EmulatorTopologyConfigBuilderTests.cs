@@ -19,6 +19,38 @@ public sealed class EmulatorTopologyConfigBuilderTests
         JsonDocument.Parse(EmulatorTopologyConfigBuilder.Build(new CrmErpPlatformConfiguration()));
 
     [TestMethod]
+    public void Build_EveryEndpointTopic_HasSessionEnabledReplySubscriptionWithReplyFilter()
+    {
+        using var doc = BuildConfig();
+        var platform = new CrmErpPlatformConfiguration();
+
+        foreach (var endpoint in platform.Endpoints)
+        {
+            var topic = FindTopic(doc, endpoint.Id);
+            Assert.IsNotNull(topic, $"Topic '{endpoint.Id}' not found in generated config");
+
+            var replySub = FindSubscription(topic.Value, $"{endpoint.Id}-reply");
+            Assert.IsNotNull(replySub, $"Reply subscription '{endpoint.Id}-reply' not found on topic '{endpoint.Id}'");
+
+            var requiresSession = replySub.Value
+                .GetProperty("Properties")
+                .GetProperty("RequiresSession")
+                .GetBoolean();
+            Assert.IsTrue(requiresSession, $"'{endpoint.Id}-reply' must require sessions (reply correlation)");
+
+            var rule = FindRule(replySub.Value, "ReplyFilter");
+            Assert.IsNotNull(rule, $"Rule 'ReplyFilter' not found on '{endpoint.Id}-reply'");
+            var sqlFilter = rule.Value
+                .GetProperty("Properties")
+                .GetProperty("SqlFilter")
+                .GetProperty("SqlExpression")
+                .GetString();
+            Assert.AreEqual($"user.To = '{endpoint.Id}-reply'", sqlFilter,
+                "ReplyFilter must match the byte-identical filter the real provisioner emits");
+        }
+    }
+
+    [TestMethod]
     public void Build_DynamicForward_AgentZoneEndpoint_HasForwardSubscriptionToDataPlatform()
     {
         using var doc = BuildConfig();

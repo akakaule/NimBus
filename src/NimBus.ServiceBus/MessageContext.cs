@@ -150,6 +150,10 @@ namespace NimBus.ServiceBus
             }
         }
 
+        public string ReplyTo => _sbMessage.ReplyTo;
+
+        public string ReplyToSessionId => _sbMessage.ReplyToSessionId;
+
         public MessageContent MessageContent => GetContent() ?? throw new InvalidMessageException($"MessageContent is null.");
 
         public bool IsDeferred => _isDeferred;

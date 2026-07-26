@@ -525,16 +525,16 @@ var status = await publisher.Request<GetOrderStatus, OrderStatusResponse>(
 | `timeout` | `TimeSpan` | Maximum time to wait for a response |
 | `cancellationToken` | `CancellationToken` | Optional cancellation |
 
-Returns `TResponse` or throws `TimeoutException` if no response is received within the timeout.
+Returns `TResponse`, or throws `TimeoutException` if no response is received within the timeout, or `RequestReplyException` when the responder's handler failed (the error reply carries the remote exception's type and message so callers fail fast instead of waiting out the timeout).
 
-**Requirements:** The `PublisherClient` must be created with a `ServiceBusClient` (via `CreateAsync` or the `ServiceBusClient` constructor). The ISender-only constructor does not support request/response.
+**Requirements:** The `PublisherClient` must know its endpoint identity and have a `ServiceBusClient` — `AddNimBusPublisher` registrations, `CreateAsync`, and the `ServiceBusClient` constructor all qualify. The reply arrives on the publisher's own `{endpoint}-reply` session subscription, provisioned automatically by `nb topology apply`.
 
 ### How it works
 
-1. Requester generates a unique `replySessionId` and sets `ReplyTo` and `ReplyToSessionId` on the outgoing message
-2. Requester opens a `ServiceBusSessionReceiver` on a reply subscription filtered by the `replySessionId`
-3. Responder handles the request and sends a JSON-serialized response to the `ReplyTo` address with the matching session ID
-4. Requester receives the response, deserializes it as `TResponse`, and returns
+1. Requester generates a unique `replySessionId` and stamps `ReplyTo = {its own endpoint}` and `ReplyToSessionId` on the outgoing request (which routes by event type like any event)
+2. Requester opens a `ServiceBusSessionReceiver` on its own `{endpoint}-reply` subscription for that session id
+3. Responder's `RequestJsonHandler` invokes the registered `IRequestHandler` and sends the JSON-serialized response as a raw session message to the `ReplyTo` topic (application property `To = '{endpoint}-reply'` matches the reply subscription's rule and nothing else — replies are not NimBus events and are not audited)
+4. Requester receives the reply, checks its `ReplyStatus`, deserializes the body as `TResponse`, and returns
 
 ### IRequestHandler\<TRequest, TResponse\>
 
@@ -593,6 +593,19 @@ public class GetOrderStatusHandler : IRequestHandler<GetOrderStatus, OrderStatus
 }
 ```
 
+### Registering the responder
+
+```csharp
+services.AddNimBusSubscriber("OrdersEndpoint", sub =>
+{
+    sub.AddRequestHandler<GetOrderStatus, OrderStatusResponse, GetOrderStatusHandler>();
+});
+```
+
+The handler is resolved from DI per message. If the request type is published as a plain event (no `ReplyTo`), the handler still runs and the response is discarded. A handler exception sends a best-effort error reply and then rethrows — the normal Resolver audit, retry policy, and session-blocking behavior are unchanged.
+
+In-memory testing: `NimBusTestFixture.RegisterRequestHandler` dispatches requests through the same `RequestJsonHandler` and captures replies on `fixture.ReplyDispatcher.SentReplies`; the live `Request` session receive itself needs real Service Bus.
+
 ### Message model properties
 
 | Property | Type | Description |
@@ -607,14 +620,18 @@ These are set automatically by `PublisherClient.Request()` and mapped to the cor
 | Scenario | Behavior |
 |---|---|
 | No response within timeout | Throws `TimeoutException` |
+| Responder's handler threw | Throws `RequestReplyException` (carries remote `ErrorType`/`ErrorText`) |
 | Caller cancels via `CancellationToken` | Throws `OperationCanceledException` |
-| No `ServiceBusClient` available | Throws `InvalidOperationException` |
+| No `ServiceBusClient` or endpoint identity | Throws `InvalidOperationException` |
+| Reply subscription missing | Throws `InvalidOperationException` with `nb topology apply` guidance |
 
 ### Limitations
 
-- Requires a reply subscription on the Service Bus topic (e.g., `{EndpointName}-reply` with session support)
+- The `{endpoint}-reply` session subscription must exist (created by `nb topology apply` and the emulator topology; endpoint ids must stay ≤ 44 characters to fit Service Bus's 50-character subscription-name cap)
 - Not supported via the transactional outbox (request/response is inherently synchronous)
 - Each request creates and disposes a `ServiceBusSessionReceiver` — not suited for high-throughput scenarios (use pub/sub for that)
+- **At most one reply per request.** With inbox deduplication enabled on the responder, a redelivered duplicate request skips the handler and sends no reply — the requester times out. Orphaned replies expire after 5 minutes (message TTL)
+- Give a request type exactly one consuming endpoint, or multiple responders will race to reply (first reply wins). Deriving request types from `Command` enforces this at provisioning time
 
 ---
 

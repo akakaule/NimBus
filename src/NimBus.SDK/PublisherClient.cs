@@ -24,6 +24,18 @@ public class PublisherClient : IPublisherClient
     private readonly CloudEventPublisherOptions _cloudEvents;
     private ServiceBusClient _serviceBusClient;
 
+    /// <summary>
+    /// The raw client used by <see cref="Request{TRequest,TResponse}"/> to accept the
+    /// reply session. Set by <c>AddNimBusPublisher</c> (and by <see cref="CreateAsync"/> /
+    /// the obsolete client ctor) — internal so the DI factory can enable request/reply
+    /// without widening the public constructor surface.
+    /// </summary>
+    internal ServiceBusClient ReplyServiceBusClient
+    {
+        get => _serviceBusClient;
+        set => _serviceBusClient = value;
+    }
+
     // There is a 256 KB limit per message sent on Azure Service Bus (Standard
     // tier; 1 MB on Premium) and a 64 KB header limit. Our user properties are
     // significant, so half the remaining size is reserved for them as well.
@@ -242,20 +254,29 @@ public class PublisherClient : IPublisherClient
 
     /// <summary>
     /// Sends a request and awaits a typed response with timeout.
-    /// Uses Azure Service Bus sessions for reply correlation.
-    /// Requires a PublisherClient created with a ServiceBusClient (via CreateAsync or constructor).
+    /// Uses Azure Service Bus sessions for reply correlation: the reply arrives on this
+    /// publisher's own <c>{endpoint}-reply</c> subscription (provisioned by
+    /// <c>nb topology apply</c>). Requires a PublisherClient created via
+    /// <c>AddNimBusPublisher</c>, <see cref="CreateAsync"/>, or the ServiceBusClient constructor.
     /// </summary>
+    /// <exception cref="TimeoutException">No reply arrived within <paramref name="timeout"/>.</exception>
+    /// <exception cref="Core.Messages.Exceptions.RequestReplyException">The responder's handler threw; the error reply carries its type and message.</exception>
     public async Task<TResponse> Request<TRequest, TResponse>(TRequest request, TimeSpan timeout, CancellationToken cancellationToken = default)
         where TRequest : IEvent
         where TResponse : class
     {
         if (_serviceBusClient == null)
             throw new InvalidOperationException(
-                "Request/response requires a ServiceBusClient. Use PublisherClient.CreateAsync(client, endpoint) or the ServiceBusClient constructor.");
+                "Request/response requires a ServiceBusClient. Use AddNimBusPublisher, PublisherClient.CreateAsync(client, endpoint), or the ServiceBusClient constructor.");
+        if (string.IsNullOrEmpty(_publisherEndpoint))
+            throw new InvalidOperationException(
+                "Request/response requires the publisher's endpoint identity: the reply is received on the '{endpoint}-reply' subscription. Construct the client with an endpoint (AddNimBusPublisher / CreateAsync).");
 
         var replySessionId = Guid.NewGuid().ToString();
         var msg = (Message)GetMessage(request);
-        msg.ReplyTo = msg.To;
+        // The reply address is this publisher's OWN topic — msg.To carries the event
+        // type id for routing and would point the responder at a non-existent topic.
+        msg.ReplyTo = _publisherEndpoint;
         msg.ReplyToSessionId = replySessionId;
         var message = (IMessage)msg;
 
@@ -264,17 +285,35 @@ public class PublisherClient : IPublisherClient
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(timeout);
 
+        var replySubscription = ReplyConstants.ReplySubscriptionName(_publisherEndpoint);
         ServiceBusSessionReceiver receiver = null;
         try
         {
-            receiver = await _serviceBusClient.AcceptSessionAsync(
-                message.To, $"{message.To}-reply", replySessionId, cancellationToken: cts.Token);
+            try
+            {
+                receiver = await _serviceBusClient.AcceptSessionAsync(
+                    _publisherEndpoint, replySubscription, replySessionId, cancellationToken: cts.Token);
+            }
+            catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+            {
+                throw new InvalidOperationException(
+                    $"Reply subscription '{_publisherEndpoint}/{replySubscription}' does not exist. " +
+                    "Provision the topology (nb topology apply) with a NimBus version that creates reply subscriptions.", ex);
+            }
 
             var reply = await receiver.ReceiveMessageAsync(timeout, cts.Token);
             if (reply == null)
                 throw new TimeoutException($"No response received within {timeout}");
 
             await receiver.CompleteMessageAsync(reply, cts.Token);
+
+            if (reply.ApplicationProperties.TryGetValue(ReplyConstants.ReplyStatusProperty, out var status)
+                && ReplyConstants.StatusError.Equals(status as string, StringComparison.Ordinal))
+            {
+                reply.ApplicationProperties.TryGetValue(ReplyConstants.ErrorTypeProperty, out var errorType);
+                reply.ApplicationProperties.TryGetValue(ReplyConstants.ErrorTextProperty, out var errorText);
+                throw new Core.Messages.Exceptions.RequestReplyException(errorType as string, errorText as string);
+            }
 
             var body = reply.Body.ToString();
             return Newtonsoft.Json.JsonConvert.DeserializeObject<TResponse>(body);

@@ -127,6 +127,15 @@ public sealed class ServiceBusTopologyProvisioner
         await EnsureSessionSubscriptionAsync(client, endpoint.Id, endpoint.Id, forwardTo: null, keepDefaultRule: false, log, cancellationToken).ConfigureAwait(false);
         await EnsureRuleAsync(client, endpoint.Id, endpoint.Id, $"to-{endpoint.Id}", $"user.To = '{endpoint.Id}'", action: null, log, cancellationToken).ConfigureAwait(false);
 
+        // Request/reply: replies land on the requesting endpoint's own topic in a
+        // session subscription named '{endpoint}-reply'. Replies carry a 5-minute
+        // message TTL (set by ReplyDispatcher), so orphaned replies self-clean.
+        // The filter string must stay byte-identical to ServiceBusManagement's
+        // CreateReplySubscription — both provisioning paths emit this rule.
+        var replySubscription = $"{endpoint.Id}-reply";
+        await EnsureSessionSubscriptionAsync(client, endpoint.Id, replySubscription, forwardTo: null, keepDefaultRule: false, log, cancellationToken).ConfigureAwait(false);
+        await EnsureRuleAsync(client, endpoint.Id, replySubscription, "ReplyFilter", $"user.To = '{replySubscription}'", action: null, log, cancellationToken).ConfigureAwait(false);
+
         await EnsureForwardSubscriptionAsync(client, endpoint.Id, Constants.ResolverId, Constants.ResolverId, log, cancellationToken).ConfigureAwait(false);
         await EnsureRuleAsync(client, endpoint.Id, Constants.ResolverId, $"from-{endpoint.Id}", $"user.To = '{Constants.ResolverId}'", $"SET user.From = '{endpoint.Id}'", log, cancellationToken).ConfigureAwait(false);
         await EnsureRuleAsync(client, endpoint.Id, Constants.ResolverId, $"to-{endpoint.Id}", $"user.To = '{endpoint.Id}'", action: null, log, cancellationToken).ConfigureAwait(false);

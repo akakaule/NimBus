@@ -160,8 +160,11 @@ public sealed class ServiceBusTopologyProvisionerTests
             requiresSession: true));
         client.SeedSubscription("orders", MakeSubscriptionProperties("orders", Constants.DeferredProcessorId,
             requiresSession: false));
+        client.SeedSubscription("orders", MakeSubscriptionProperties("orders", "orders-reply",
+            requiresSession: true));
 
         client.SeedRule("orders", "orders", ServiceBusModelFactory.RuleProperties("to-orders", new SqlRuleFilter("user.To = 'orders'")));
+        client.SeedRule("orders", "orders-reply", ServiceBusModelFactory.RuleProperties("ReplyFilter", new SqlRuleFilter("user.To = 'orders-reply'")));
         client.SeedRule("orders", Constants.ResolverId, ServiceBusModelFactory.RuleProperties("from-orders", new SqlRuleFilter($"user.To = '{Constants.ResolverId}'"),
             new SqlRuleAction("SET user.From = 'orders'")));
         client.SeedRule("orders", Constants.ResolverId, ServiceBusModelFactory.RuleProperties("to-orders", new SqlRuleFilter("user.To = 'orders'")));

@@ -35,6 +35,19 @@ namespace NimBus.ServiceBus
         /// </summary>
         string ContentType => null;
 
+        /// <summary>
+        /// The AMQP reply-to address of the inbound message (the requesting endpoint's
+        /// topic for request/reply). Defaults to <c>null</c> so existing implementers
+        /// are forward-compatible.
+        /// </summary>
+        string ReplyTo => null;
+
+        /// <summary>
+        /// The AMQP reply-to session id correlating a request to its awaited reply.
+        /// Defaults to <c>null</c> so existing implementers are forward-compatible.
+        /// </summary>
+        string ReplyToSessionId => null;
+
         internal ServiceBusReceivedMessage Message { get; }
     }
 
@@ -65,6 +78,10 @@ namespace NimBus.ServiceBus
         public DateTime EnqueuedTimeUtc => _message.EnqueuedTime.UtcDateTime;
 
         public string ContentType => _message.ContentType;
+
+        public string ReplyTo => _message.ReplyTo;
+
+        public string ReplyToSessionId => _message.ReplyToSessionId;
 
         ServiceBusReceivedMessage IServiceBusMessage.Message => _message;
 

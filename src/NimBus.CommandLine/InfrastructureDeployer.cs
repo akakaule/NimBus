@@ -329,6 +329,10 @@ internal sealed class InfrastructureDeployer
             $"cosmosAccountEndpoint={cosmosAccountEndpoint}",
             $"serviceBusFullyQualifiedNamespace={serviceBusFullyQualifiedNamespace}",
             $"alwaysOnEnabled={(alwaysOnEnabled ? "true" : "false")}",
+            // Lets the template read the site's current app settings and preserve the
+            // out-of-band ones (AzureAd__*, ServiceBusManagement__*) across the
+            // full-replace appSettings deployment.
+            $"webAppExists={(existingLocations.ContainsKey(names.WebAppName) ? "true" : "false")}",
         };
 
         if (!string.IsNullOrWhiteSpace(options.IdentityAdminEmail))

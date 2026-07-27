@@ -187,6 +187,8 @@ trap - EXIT
 
 The Service Bus namespace follows the convention `sb-{solutionId}-{environment}.servicebus.windows.net`.
 
+**Re-running against an existing WebApp?** Pass `webAppExists=true`. The app-settings deployment is a full replace, and the WebApp's Entra ID sign-in settings (`AzureAd__*`) plus the optional portal deep-link settings (`ServiceBusManagement__*`) are configured out of band — `webAppExists=true` makes the template read the site's current settings and carry those keys forward instead of wiping them (which takes authentication down). The `nb` CLI passes this automatically from its resource discovery; only raw-Bicep deployments need it by hand. Leave it `false` on first deployment — the template cannot read settings from a site that does not exist yet.
+
 ### 4.3 Topology and apps (still required)
 
 ```bash

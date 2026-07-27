@@ -43,6 +43,11 @@ param managementAppServicePlanLocation string = ''
 // false when the management plan runs on a Free/Shared SKU (F1/D1).
 param alwaysOnEnabled bool = true
 
+// True when the WebApp already exists in the resource group (the CLI passes this
+// from its resource discovery). Gates the list() call below, which fails against
+// a site that has not been created yet.
+param webAppExists bool = false
+
 //##############################################
 // Define names Azure resource names
 //##############################################
@@ -145,7 +150,20 @@ var identitySecretSettings = identityEnabled ? {
   NimBusIdentity__Bootstrap__Password: identityAdminPassword
 } : {}
 
-var webAppSecretSettings = union(coreWebAppSecretSettings, sqlSecretSettings, identitySecretSettings)
+// The WebApp's Entra ID sign-in config (AzureAd__*) and the optional portal
+// deep-link config (ServiceBusManagement__*) are set out of band — this template
+// creates no app registration, so it cannot produce them. appSettings deployment
+// is a FULL REPLACE, so without carrying the current values forward every re-run
+// would wipe them and take authentication down. They flow through the secure
+// settings object because AzureAd__ClientSecret must stay out of deployment
+// history; template-managed settings win on any future key collision.
+var existingAppSettings = webAppExists ? list(resourceId('Microsoft.Web/sites/config', managementWebAppName, 'appsettings'), '2022-03-01').properties : {}
+var preservedExistingSettings = toObject(
+  filter(items(existingAppSettings), s => startsWith(s.key, 'AzureAd__') || startsWith(s.key, 'ServiceBusManagement__')),
+  s => s.key,
+  s => s.value)
+
+var webAppSecretSettings = union(preservedExistingSettings, coreWebAppSecretSettings, sqlSecretSettings, identitySecretSettings)
 
 var developmentDiagnosticSettings = isDevelopmentEnvironment ? [
   {

@@ -328,7 +328,7 @@ public sealed class EventCatalogExporterTests
             Id = id;
             Name = id;
             Description = description ?? $"{id} description";
-            System = system ?? (hasSystem ? new FakeSystem(id) : null);
+            System = (system ?? (hasSystem ? new FakeSystem(id) : null))!;
             EventTypesProduced = (produces ?? Array.Empty<Type>()).Select(t => (IEventType)new EventType(t)).ToList();
             EventTypesConsumed = (consumes ?? Array.Empty<Type>()).Select(t => (IEventType)new EventType(t)).ToList();
         }
@@ -338,7 +338,9 @@ public sealed class EventCatalogExporterTests
         public string Description { get; }
         public string Namespace => "Tests";
         public string SecurityGroupName => string.Empty;
-        public ISystem? System { get; }
+        // IEndpoint declares a non-nullable System; the fake models "no system"
+        // with a null the exporter must tolerate, so suppress the mismatch here.
+        public ISystem System { get; }
         public IEnumerable<IEventType> EventTypesProduced { get; }
         public IEnumerable<IEventType> EventTypesConsumed { get; }
         public IEnumerable<IRoleAssignment> RoleAssignments => Array.Empty<IRoleAssignment>();

@@ -110,13 +110,6 @@
 	  <Exec WorkingDirectory="$(ProjectDir)" EnvironmentVariables="ASPNETCORE_ENVIRONMENT=Development" Command="$(NSwagExe_Net100) run api-gen.nswag" />
   </Target>
 
-  <Target Name="CopySpaFiles" AfterTargets="Build">
-    <ItemGroup>
-      <SpaFilesToCopy Include="$(ProjectDir)ClientApp/build/public/**/*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(SpaFilesToCopy)" DestinationFiles="@(SpaFilesToCopy->'$(ProjectDir)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')" />
-  </Target>
-
   <Target Name="NpmInstall" BeforeTargets="Build">
     <!-- Ensure Node.js is installed -->
     <Exec Command="node --version" ContinueOnError="true">
@@ -136,17 +129,13 @@
   </Target>
 
   <Target Name="PublishRunWebpack" AfterTargets="ComputeFilesToPublish">
-    <!-- As part of publishing, ensure the JS resources are freshly built in production mode -->
-    <Exec WorkingDirectory="$(SpaRoot)" Command="npm install" />
-    <Exec WorkingDirectory="$(SpaRoot)" Command="npm run build" />
-    <Exec WorkingDirectory="$(SpaRoot)" Command="npm run clean" />
-    <Exec WorkingDirectory="$(SpaRoot)" Command="npm run buildpro" />
-
-
-    <!-- Include the newly-built files in the publish output -->
+    <!-- The SPA is already freshly built by the Build-stage targets (NpmInstall +
+         RebuildClientAssets), which dotnet publish runs first — publishing only needs
+         to include that output. node_modules is deliberately NOT published: it was
+         only ever needed for the Jering SSR path, which is unused (no server.js is
+         built and SsrResult has no callers). -->
     <ItemGroup>
       <DistFiles Include="$(SpaRoot)build\**" />
-      <DistFiles Include="$(SpaRoot)node_modules\**" />
       <ResolvedFileToPublish Include="@(DistFiles->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">
         <RelativePath>%(DistFiles.Identity)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>

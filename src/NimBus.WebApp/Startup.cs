@@ -580,7 +580,7 @@ namespace NimBus.WebApp
                 var loginPath = app.ApplicationServices.GetService(
                     Type.GetType("NimBus.Extensions.Identity.INimBusIdentityMarker, NimBus.Extensions.Identity")
                     ?? typeof(object)) != null ? "/account/login" : "/login";
-                endpoints.MapFallbackToFile("index.html", new StaticFileOptions
+                var fallbackOptions = new StaticFileOptions
                 {
                     OnPrepareResponse = ctx =>
                     {
@@ -594,8 +594,19 @@ namespace NimBus.WebApp
                         {
                             ctx.Context.Response.Redirect(loginPath);
                         }
-                    }
-                });
+                    },
+                };
+
+                // The SPA (index.html included) lives only under ClientApp/build/public —
+                // wwwroot holds no copy, so the fallback must use the SPA file provider
+                // rather than the default WebRoot one. The Directory.Exists guard keeps
+                // hosts without a built SPA (unit tests) constructible.
+                if (System.IO.Directory.Exists(spaAssetRoot))
+                {
+                    fallbackOptions.FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(spaAssetRoot);
+                }
+
+                endpoints.MapFallbackToFile("index.html", fallbackOptions);
             });
         }
     }

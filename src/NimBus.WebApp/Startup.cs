@@ -71,6 +71,9 @@ namespace NimBus.WebApp
 
                 if (Configuration.GetValue<bool>("EnableLocalDevAuthentication", false))
                     throw new InvalidOperationException("SECURITY: EnableLocalDevAuthentication must not be enabled outside Development environment. Remove this setting from production configuration.");
+
+                if (Configuration.GetValue<bool>("Authorization:GrantPiiReaderInDevelopment", false))
+                    throw new InvalidOperationException("SECURITY: Authorization:GrantPiiReaderInDevelopment must not be enabled outside Development environment. Remove this setting from production configuration.");
             }
 
             // Opt into ASP.NET Core Identity-backed username/password sign-in when the

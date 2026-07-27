@@ -15,20 +15,32 @@ public class MetricsImplementation : IMetricsApiController
 {
     private readonly INimBusMessageStore _cosmosClient;
     private readonly IStoreResultCache _storeResultCache;
+    private readonly IEndpointAuthorizationService _authorizationService;
 
     // Metrics aggregates are period-keyed and carry no per-user data, so a 30s
     // TTL bounds the (RU-expensive) cross-partition aggregate queries to at
     // most one run per period per window regardless of how many dashboards poll.
     private static readonly TimeSpan MetricsTtl = TimeSpan.FromSeconds(30);
 
-    public MetricsImplementation(INimBusMessageStore cosmosClient, IStoreResultCache storeResultCache)
+    public MetricsImplementation(
+        INimBusMessageStore cosmosClient,
+        IStoreResultCache storeResultCache,
+        IEndpointAuthorizationService authorizationService)
     {
         _cosmosClient = cosmosClient;
         _storeResultCache = storeResultCache;
+        _authorizationService = authorizationService;
     }
+
+    // Metrics are cross-endpoint aggregates, so the read floor is a site role
+    // (spec 026 phase D).
+    private Task<bool> IsSiteReaderAsync() => _authorizationService.HasRoleAsync(AccessRole.Reader);
 
     public async Task<ActionResult<MetricsOverview>> GetMetricsOverviewAsync(Period period)
     {
+        if (!await IsSiteReaderAsync())
+            return new ForbidResult();
+
         var result = await _storeResultCache.GetOrCreateAsync(
             $"metrics:overview:{period}",
             MetricsTtl,
@@ -63,6 +75,9 @@ public class MetricsImplementation : IMetricsApiController
 
     public async Task<ActionResult<LatencyOverview>> GetMetricsLatencyAsync(Period period)
     {
+        if (!await IsSiteReaderAsync())
+            return new ForbidResult();
+
         // Aggregated server-side in Cosmos against the per-message timings the
         // Resolver persists on every outcome document — no App Insights
         // dependency, no in-memory raw-value scan. Percentiles are
@@ -105,6 +120,9 @@ public class MetricsImplementation : IMetricsApiController
 
     public async Task<ActionResult<FailedInsightsOverview>> GetMetricsFailedInsightsAsync(Period period)
     {
+        if (!await IsSiteReaderAsync())
+            return new ForbidResult();
+
         var from = DateTime.UtcNow - PeriodToTimeSpan(period);
         var messages = await _cosmosClient.GetFailedMessageInsights(from);
 
@@ -149,6 +167,9 @@ public class MetricsImplementation : IMetricsApiController
 
     public async Task<ActionResult<TimeSeriesOverview>> GetMetricsTimeseriesAsync(Period period)
     {
+        if (!await IsSiteReaderAsync())
+            return new ForbidResult();
+
         var result = await _storeResultCache.GetOrCreateAsync(
             $"metrics:timeseries:{period}",
             MetricsTtl,

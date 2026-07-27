@@ -57,7 +57,17 @@ namespace NimBus.WebApp.Tests
             return new EventTypeImplementation(
                 new FakePlatform(knownTypes),
                 new NullCodeRepoService(),
-                new FakeEventPayloadGenerator());
+                new FakeEventPayloadGenerator(),
+                new AllowAllAuthorizationService());
+        }
+
+        private sealed class AllowAllAuthorizationService : NimBus.WebApp.Services.IEndpointAuthorizationService
+        {
+            public Task<bool> HasRoleAsync(NimBus.WebApp.Services.AccessRole required, string? endpointId = null) => Task.FromResult(true);
+            public Task<bool> CanReadPiiAsync() => Task.FromResult(true);
+            public Task<NimBus.WebApp.Services.CurrentUserAccess> GetCurrentUserAccessAsync()
+                => Task.FromResult(new NimBus.WebApp.Services.CurrentUserAccess { SiteRole = NimBus.WebApp.Services.AccessRole.Owner });
+            public string GetCurrentUserName() => "test-user";
         }
 
         [TestMethod]

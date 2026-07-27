@@ -129,9 +129,12 @@ public class EndpointAuthorizationService : IEndpointAuthorizationService
         }
 
         // PII reveal: store grant or an Entra-issued PiiReader app role. Never
-        // implied by Owner/compat (spec 021 — masked by default everywhere).
+        // implied by Owner/compat (spec 021 — masked by default everywhere,
+        // including local dev). The explicit dev opt-in flag is safe to read
+        // unconditionally: Startup fail-fasts when it is set outside Development.
         var isPiiReader = MatchesAny(snapshot.Site?.PiiReaders, identifiers)
-            || user.IsInRole(PiiReaderRoleName);
+            || user.IsInRole(PiiReaderRoleName)
+            || _configuration.GetValue<bool>("Authorization:GrantPiiReaderInDevelopment", false);
 
         return new CurrentUserAccess
         {

@@ -118,7 +118,17 @@ public sealed class EventTypesByEndpointTests
         return new EventTypeImplementation(
             new FakePlatform(endpoint, producers ?? Array.Empty<string>(), consumers ?? Array.Empty<string>()),
             new StubCodeRepoService(),
-            new FakeEventPayloadGenerator());
+            new FakeEventPayloadGenerator(),
+            new AllowAllAuthorizationService());
+    }
+
+    private sealed class AllowAllAuthorizationService : NimBus.WebApp.Services.IEndpointAuthorizationService
+    {
+        public Task<bool> HasRoleAsync(NimBus.WebApp.Services.AccessRole required, string? endpointId = null) => Task.FromResult(true);
+        public Task<bool> CanReadPiiAsync() => Task.FromResult(true);
+        public Task<NimBus.WebApp.Services.CurrentUserAccess> GetCurrentUserAccessAsync()
+            => Task.FromResult(new NimBus.WebApp.Services.CurrentUserAccess { SiteRole = NimBus.WebApp.Services.AccessRole.Owner });
+        public string GetCurrentUserName() => "test-user";
     }
 
     private static IEventType Et(string name, string ns) => new FakeEventType(name, ns);

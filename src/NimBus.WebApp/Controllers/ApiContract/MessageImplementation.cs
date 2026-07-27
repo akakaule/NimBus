@@ -1,6 +1,7 @@
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
 using NimBus.WebApp.ManagementApi;
+using NimBus.WebApp.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using System;
@@ -13,15 +14,24 @@ namespace NimBus.WebApp.Controllers.ApiContract
     {
         private readonly INimBusMessageStore _cosmosClient;
         private readonly ILogger<MessageImplementation> _logger;
+        private readonly IEndpointAuthorizationService _authorizationService;
 
-        public MessageImplementation(INimBusMessageStore cosmosClient, ILogger<MessageImplementation> logger)
+        public MessageImplementation(
+            INimBusMessageStore cosmosClient,
+            ILogger<MessageImplementation> logger,
+            IEndpointAuthorizationService authorizationService)
         {
             _cosmosClient = cosmosClient;
             _logger = logger;
+            _authorizationService = authorizationService;
         }
 
         public async Task<ActionResult<MessageSearchResponse>> PostMessagesSearchAsync(MessageSearchRequest body)
         {
+            // Cross-endpoint search: the read floor is a site role (spec 026 phase D).
+            if (!await _authorizationService.HasRoleAsync(AccessRole.Reader))
+                return new ForbidResult();
+
             var filter = MapFilter(body.Filter);
             // Clamp page size to [1, 200] with a default of 50. The upper bound prevents
             // unbounded scans against Cosmos / SQL when an external caller forgets a sensible value.
@@ -29,9 +39,13 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             var result = await _cosmosClient.SearchMessages(filter, body.ContinuationToken, maxItems);
 
+            var messages = result.Messages.Select(Mapper.MessageFromMessageEntity).ToList();
+            if (!await _authorizationService.CanReadPiiAsync())
+                messages.ForEach(m => PayloadRedaction.Redact(m));
+
             return new MessageSearchResponse
             {
-                Messages = result.Messages.Select(Mapper.MessageFromMessageEntity).ToList(),
+                Messages = messages,
                 ContinuationToken = result.ContinuationToken
             };
         }

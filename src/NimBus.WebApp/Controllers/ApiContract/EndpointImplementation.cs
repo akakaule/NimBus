@@ -130,6 +130,9 @@ public class EndpointImplementation : IEndpointApiController
             return new NotFoundObjectResult("Endpoint not found");
         }
 
+        if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointName))
+            return new ForbidResult();
+
         try
         {
             var endpointState = await cosmosClient.DownloadEndpointStatePaging(endpointName, InitialEvents, "");
@@ -146,6 +149,12 @@ public class EndpointImplementation : IEndpointApiController
 
             var events = await cosmosClient.GetEventsByIds(endpointName, eventIds);
             var res = events.ToDictionary(e => e.EventId, Mapper.EventFromMessageStoreEvent);
+
+            if (!await _authorizationService.CanReadPiiAsync())
+            {
+                foreach (var e in res.Values)
+                    PayloadRedaction.Redact(e);
+            }
 
             return new OkObjectResult(res);
         }
@@ -164,8 +173,14 @@ public class EndpointImplementation : IEndpointApiController
         var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointName);
         if (endpointIdValid)
         {
+            if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointName))
+                return new ForbidResult();
+
             var endpoint = await cosmosClient.DownloadEndpointStatePaging(endpointName, InitialEvents, "");
-            return new OkObjectResult(Mapper.EndpointStatusFromEndpointState(endpoint));
+            var status = Mapper.EndpointStatusFromEndpointState(endpoint);
+            if (!await _authorizationService.CanReadPiiAsync())
+                PayloadRedaction.Redact(status);
+            return new OkObjectResult(status);
         }
         return new NotFoundObjectResult("Endpoint not found");
     }
@@ -176,6 +191,9 @@ public class EndpointImplementation : IEndpointApiController
         var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);
         if (endpointIdValid)
         {
+            if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
+                return new ForbidResult();
+
             try
             {
                 var sessionState = await cosmosClient.DownloadEndpointSessionStateCount(endpointId, sessionId);
@@ -199,8 +217,14 @@ public class EndpointImplementation : IEndpointApiController
         var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointName);
         if (endpointIdValid)
         {
+            if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointName))
+                return new ForbidResult();
+
             var endpoint = await cosmosClient.DownloadEndpointStatePaging(endpointName, PagingEvents, body.Token);
-            return new OkObjectResult(Mapper.EndpointStatusFromEndpointState(endpoint));
+            var status = Mapper.EndpointStatusFromEndpointState(endpoint);
+            if (!await _authorizationService.CanReadPiiAsync())
+                PayloadRedaction.Redact(status);
+            return new OkObjectResult(status);
         }
         return new NotFoundObjectResult("Endpoint not found");
     }
@@ -305,6 +329,9 @@ public class EndpointImplementation : IEndpointApiController
             return new NotFoundObjectResult("Endpoint not found");
         }
 
+        if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointName))
+            return new ForbidResult();
+
         try
         {
             var endpointState = await cosmosClient.DownloadEndpointStatePaging(endpointName, InitialEvents, "");
@@ -321,6 +348,12 @@ public class EndpointImplementation : IEndpointApiController
 
             var events = await cosmosClient.GetEventsByIds(endpointName, eventIds);
             var res = events.ToDictionary(e => e.EventId, Mapper.EventFromMessageStoreEvent);
+
+            if (!await _authorizationService.CanReadPiiAsync())
+            {
+                foreach (var e in res.Values)
+                    PayloadRedaction.Redact(e);
+            }
 
             return new OkObjectResult(res);
         }
@@ -381,8 +414,14 @@ public class EndpointImplementation : IEndpointApiController
         var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointName);
         if (endpointIdValid)
         {
+            if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointName))
+                return new ForbidResult();
+
             var endpoint = await cosmosClient.DownloadEndpointStatePaging(endpointName, PagingEvents, body.Token);
-            return new OkObjectResult(Mapper.EndpointStatusFromEndpointState(endpoint));
+            var status = Mapper.EndpointStatusFromEndpointState(endpoint);
+            if (!await _authorizationService.CanReadPiiAsync())
+                PayloadRedaction.Redact(status);
+            return new OkObjectResult(status);
         }
         return new NotFoundObjectResult("Endpoint not found");
     }
@@ -392,6 +431,9 @@ public class EndpointImplementation : IEndpointApiController
         var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);
         if (endpointIdValid)
         {
+            if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
+                return new ForbidResult();
+
             try
             {
                 var sessionState = await cosmosClient.DownloadEndpointSessionStateCount(endpointId, sessionId);
@@ -416,6 +458,9 @@ public class EndpointImplementation : IEndpointApiController
         {
             return new NotFoundObjectResult("Endpoint not found");
         }
+
+        if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
+            return new ForbidResult();
 
         try
         {
@@ -579,7 +624,14 @@ public class EndpointImplementation : IEndpointApiController
         }
 
         var subscriptions = await cosmosClient.GetSubscriptionsOnEndpoint(endpointId);
-        return new OkObjectResult(Mapper.SubscriptionsFromEndpointsubscriptions(subscriptions));
+        var mapped = Mapper.SubscriptionsFromEndpointsubscriptions(subscriptions);
+
+        // Subscription payload filters are payload fragments — visible only to
+        // PiiReaders (spec 026 phase D).
+        if (!await _authorizationService.CanReadPiiAsync())
+            mapped.ForEach(s => PayloadRedaction.RedactSubscription(s));
+
+        return new OkObjectResult(mapped);
     }
 
     private string GetCurrentUsersMail()
@@ -601,6 +653,9 @@ public class EndpointImplementation : IEndpointApiController
         {
             return new NotFoundObjectResult("Endpoint not found");
         }
+
+        if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
+            return new ForbidResult();
 
         var builder = new StringBuilder();
 
@@ -704,6 +759,9 @@ public class EndpointImplementation : IEndpointApiController
             return new NotFoundObjectResult("Endpoint not found");
         }
 
+        if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
+            return new ForbidResult();
+
         var endpointManagement = new EndpointManagement(serviceBusManagement);
         var subscriptionState = await endpointManagement.GetEndpointSubscriptionState(endpointId);
         if (subscriptionState == SubscriptionState.Active)
@@ -775,6 +833,9 @@ public class EndpointImplementation : IEndpointApiController
             return new NotFoundObjectResult("Endpoint not found");
         }
 
+        if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
+            return new ForbidResult();
+
         var endpointManagement = new EndpointManagement(serviceBusManagement);
         var sendState = await endpointManagement.GetEndpointSendState(endpointId);
         if (sendState == TopicSendState.Enabled)
@@ -798,6 +859,9 @@ public class EndpointImplementation : IEndpointApiController
             return new NotFoundObjectResult("Endpoint not found");
         }
 
+        if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
+            return new ForbidResult();
+
         var metadata = await cosmosClient.GetEndpointMetadata(endpointId);
         if (metadata == null)
             return new NotFoundObjectResult($"Metadata for {endpointId} not found");
@@ -814,7 +878,15 @@ public class EndpointImplementation : IEndpointApiController
 
     public async Task<ActionResult<IEnumerable<MetadataShort>>> PostApiMetadatashortAsync(IEnumerable<string> body)
     {
-        var endpointIds = body.ToList();
+        // Per-endpoint Reader filter (like the status-count batch) so an
+        // endpoint-scoped Reader still gets metadata for their endpoints.
+        var endpointIds = new List<string>();
+        foreach (var id in body)
+        {
+            if (await _authorizationService.HasRoleAsync(AccessRole.Reader, id))
+                endpointIds.Add(id);
+        }
+
         var metadataList = await cosmosClient.GetMetadatas(endpointIds) ?? endpointIds.Select(x => new EndpointMetadata { EndpointId = x }).ToList();
 
         foreach (var id in endpointIds)
@@ -823,7 +895,7 @@ public class EndpointImplementation : IEndpointApiController
             {
                 return new NotFoundObjectResult(String.Format("Endpoint with id {0} not found",id));
             }
-        } 
+        }
 
         foreach (var s in endpointIds.Where(s => !metadataList.Exists(m => m.EndpointId.Equals(s, StringComparison.OrdinalIgnoreCase))))
         {

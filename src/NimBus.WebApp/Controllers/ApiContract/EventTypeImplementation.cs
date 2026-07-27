@@ -16,16 +16,29 @@ namespace NimBus.WebApp.Controllers.ApiContract
         private readonly IPlatform platform;
         private readonly ICodeRepoService codeRepoService;
         private readonly FakeEventPayloadGenerator fakePayloadGenerator;
+        private readonly IEndpointAuthorizationService authorizationService;
 
-        public EventTypeImplementation(IPlatform platform, ICodeRepoService codeRepoService, FakeEventPayloadGenerator fakePayloadGenerator)
+        public EventTypeImplementation(
+            IPlatform platform,
+            ICodeRepoService codeRepoService,
+            FakeEventPayloadGenerator fakePayloadGenerator,
+            IEndpointAuthorizationService authorizationService)
         {
             this.platform = platform;
             this.codeRepoService = codeRepoService;
             this.fakePayloadGenerator = fakePayloadGenerator;
+            this.authorizationService = authorizationService;
         }
+
+        // Event-type catalog data is platform-wide, so the read floor is a site
+        // role (spec 026 phase D).
+        private Task<bool> IsSiteReaderAsync() => authorizationService.HasRoleAsync(AccessRole.Reader);
 
         public async Task<ActionResult<IEnumerable<ManagementApi.EventType>>> GetEventTypesAsync()
         {
+            if (!await IsSiteReaderAsync())
+                return new ForbidResult();
+
             var eventTypes = platform.EventTypes.Select(e =>
             {
                 var producers = platform.GetProducers(e).Select(p => p.Name).ToList();
@@ -42,6 +55,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 return new NotFoundObjectResult("Endpoint not found");
             }
+
+            if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
+                return new ForbidResult();
 
             IEndpoint endpoint = platform.Endpoints.FirstOrDefault(e => e.Name.Equals(endpointId, StringComparison.OrdinalIgnoreCase));
             if (endpoint == null)
@@ -83,6 +99,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
         public async Task<ActionResult<EventTypeDetails>> GetEventtypesEventtypeidAsync(string eventtypeid)
         {
+            if (!await IsSiteReaderAsync())
+                return new ForbidResult();
+
             var eventType = platform.EventTypes.FirstOrDefault(et => et.Id.Equals(eventtypeid, StringComparison.OrdinalIgnoreCase));
             if (eventType == null)
             {
@@ -101,6 +120,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
         public async Task<ActionResult<FakeEventPayload>> GetEventtypesEventtypeidFakeAsync(string eventtypeid)
         {
+            if (!await IsSiteReaderAsync())
+                return new ForbidResult();
+
             var eventType = platform.EventTypes.FirstOrDefault(et => et.Id.Equals(eventtypeid, StringComparison.OrdinalIgnoreCase));
             if (eventType == null)
             {

@@ -77,12 +77,19 @@ namespace NimBus.WebApp.Controllers.ApiContract
         }
         public async Task<ActionResult<Message>> GetEventIdsAsync(string eventId, string messageId)
         {
+            // Cross-endpoint message lookup (no endpoint scope on the route) —
+            // the read floor is a site role (spec 026 phase D).
+            if (!await authorizationService.HasRoleAsync(AccessRole.Reader))
+                return new ForbidResult();
+
             try
             {
                 var messageEntity = await cosmosClient.GetMessage(eventId, messageId);
                 if (messageEntity != null)
                 {
                     var message = Mapper.MessageFromMessageEntity(messageEntity);
+                    if (!await authorizationService.CanReadPiiAsync())
+                        PayloadRedaction.Redact(message);
                     return message;
                 }
                 return new NotFoundObjectResult("Event Message not found");
@@ -102,10 +109,16 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new NotFoundObjectResult("Endpoint not found");
             }
 
+            if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
+                return new ForbidResult();
+
             try
             {
                 var unresolvedEvent = await cosmosClient.GetFailedEvent(endpointId, eventId, sessionId);
-                return Mapper.EventFromMessageStoreEvent(unresolvedEvent);
+                var result = Mapper.EventFromMessageStoreEvent(unresolvedEvent);
+                if (!await authorizationService.CanReadPiiAsync())
+                    PayloadRedaction.Redact(result);
+                return result;
             }
             catch (Exception e)
             {
@@ -116,6 +129,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
         public async Task<ActionResult<IEnumerable<MessageAudit>>> GetMessageAuditsEventIdAsync(string eventId)
         {
+            if (!await authorizationService.HasRoleAsync(AccessRole.Reader))
+                return new ForbidResult();
+
             var audits = await cosmosClient.GetMessageAudits(eventId);
             if (audits != null)
             {
@@ -127,6 +143,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
         public async Task<IActionResult> PostMessageAuditAsync(MessageAudit body, string eventId)
         {
+            // Writing an operator comment/audit row is an action, not a read.
+            if (!await authorizationService.HasRoleAsync(AccessRole.Contributor))
+                return new ForbidResult();
+
             try
             {
                 var audit = Mapper.MessageAuditEntityFromMessageAudit(body);
@@ -394,6 +414,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new NotFoundObjectResult("Endpoint not found");
             }
 
+            if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpoint))
+                return new ForbidResult();
+
             try
             {
                 var unresolvedEvent = await cosmosClient.GetEvent(endpoint, id);
@@ -415,6 +438,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
                     result.MessageContent.EventContent ??= new ManagementApi.EventContent();
                     result.MessageContent.EventContent.EventJson = requestJson;
                 }
+
+                if (!await authorizationService.CanReadPiiAsync())
+                    PayloadRedaction.Redact(result);
 
                 return result;
             }
@@ -460,7 +486,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                         eventDetails.OriginatingMessage = Mapper.MessageFromMessageEntity(downloadedMsg);
                     }
 
-                    return eventDetails;
+                    return await RedactDetailsForNonPiiReadersAsync(eventDetails);
                 }
 
                 var deadletteredMessage = await cosmosClient.GetDeadletteredMessage(id, endpoint);
@@ -476,7 +502,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                         {
                             eventDetails.FailedMessage = Mapper.MessageFromMessageEntity(completedMsg);
                         }
-                        return eventDetails;
+                        return await RedactDetailsForNonPiiReadersAsync(eventDetails);
                     }
 
                     eventDetails.FailedMessage = Mapper.MessageFromMessageEntity(deadletteredMessage);
@@ -489,7 +515,16 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 logger.LogWarning("GetEventDetailsIdAsync: {Exception}", e.Message);
             }
 
-            return eventDetails;
+            return await RedactDetailsForNonPiiReadersAsync(eventDetails);
+        }
+
+        // Every GetEventDetailsIdAsync return path funnels through here so no
+        // branch can leak a raw payload to a non-PiiReader (spec 026 phase D).
+        private async Task<EventDetails> RedactDetailsForNonPiiReadersAsync(EventDetails details)
+        {
+            if (!await authorizationService.CanReadPiiAsync())
+                PayloadRedaction.Redact(details);
+            return details;
         }
 
         public async Task<ActionResult<IEnumerable<EventLogEntry>>> GetEventDetailsLogsIdAsync(string id, string endpointId)
@@ -499,6 +534,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 return new NotFoundObjectResult("Endpoint not found");
             }
+
+            if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
+                return new ForbidResult();
 
             var logs = new List<EventLogEntry>();
             try
@@ -512,6 +550,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 logger.LogWarning("GetEventDetailsLogsIdAsync: {Exception}", e.Message);
             }
+
+            if (!await authorizationService.CanReadPiiAsync())
+                logs.ForEach(l => PayloadRedaction.Redact(l));
+
             return logs;
         }
 
@@ -522,6 +564,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 return new NotFoundObjectResult("Endpoint not found");
             }
+
+            if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
+                return new ForbidResult();
 
             var histories = new List<Message>();
             try
@@ -536,6 +581,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 logger.LogWarning("GetEventDetailsHistoryIdAsync: {Exception}", e.Message);
             }
+
+            if (!await authorizationService.CanReadPiiAsync())
+                histories.ForEach(m => PayloadRedaction.Redact(m));
+
             return histories;
         }
 
@@ -679,6 +728,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new NotFoundObjectResult("Endpoint not found");
             }
 
+            if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
+                return new ForbidResult();
+
             // Server-side bounds: skip is non-negative; take clamps to [1, 200] with a default of 50.
             // NSwag binds the route's optional query params with their schema defaults (skip=0, take=50);
             // the clamping below is belt-and-braces against external callers passing negatives or huge values.
@@ -713,11 +765,17 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new NotFoundObjectResult("Endpoint not found");
             }
 
+            if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
+                return new ForbidResult();
+
             try
             {
                 var events = (await cosmosClient.GetPendingEventsOnSession(endpointId))
                     .Select(Mapper.EventFromMessageStoreEvent)
                     .ToList();
+
+                if (!await authorizationService.CanReadPiiAsync())
+                    PayloadRedaction.Redact(events);
 
                 return events;
             }
@@ -738,6 +796,9 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 return new NotFoundObjectResult("Endpoint not found");
             }
+
+            if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpointId))
+                return new ForbidResult();
 
             try
             {
@@ -765,10 +826,16 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new NotFoundObjectResult("Endpoint not found");
             }
 
+            if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
+                return new ForbidResult();
+
             try
             {
                 var result = await cosmosClient.GetUnsupportedEvent(endpointId, eventId, sessionId);
-                return Mapper.EventFromMessageStoreEvent(result);
+                var mapped = Mapper.EventFromMessageStoreEvent(result);
+                if (!await authorizationService.CanReadPiiAsync())
+                    PayloadRedaction.Redact(mapped);
+                return mapped;
             }
             catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
             {
@@ -788,10 +855,16 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new NotFoundObjectResult("Endpoint not found");
             }
 
+            if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
+                return new ForbidResult();
+
             try
             {
                 var result = await cosmosClient.GetDeadletteredEvent(endpointId, eventId, sessionId);
-                return Mapper.EventFromMessageStoreEvent(result);
+                var mapped = Mapper.EventFromMessageStoreEvent(result);
+                if (!await authorizationService.CanReadPiiAsync())
+                    PayloadRedaction.Redact(mapped);
+                return mapped;
             }
             catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
             {
@@ -828,6 +901,22 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new ForbidResult();
             }
 
+            var canReadPii = await authorizationService.CanReadPiiAsync();
+
+            // A payload-content predicate is an oracle even when results are
+            // redacted (hit/miss counts reveal payload contents), so the
+            // predicate itself requires the PiiReader capability.
+            if (!canReadPii && !string.IsNullOrWhiteSpace(body.EventFilter?.Payload))
+            {
+                await auditLogService.LogAuditAsync(MessageAuditType.SearchEvents, httpContextAccessor.HttpContext,
+                    accessDenied: true, data: searchDataJson, endpointId: endpointId);
+                return new ObjectResult(
+                    "The PiiReader role is required for payload filters. A site Owner can grant it on the Access Control page.")
+                {
+                    StatusCode = StatusCodes.Status403Forbidden,
+                };
+            }
+
             try
             {
                 var filter = Mapper.MapFilter(body.EventFilter);
@@ -840,6 +929,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
                     .ToList();
                 await AttachResubmitCounts(endpointId, events);
                 await AttachReportFlags(endpointId, events);
+
+                if (!canReadPii)
+                    PayloadRedaction.Redact(events);
+
                 return new SearchResponse
                 {
                     Events = events,

@@ -120,7 +120,7 @@ public sealed class StoreResultCacheTests
     {
         var store = new CountingStore();
         var cache = NewCache();
-        var sut = new MetricsImplementation(store, cache);
+        var sut = new MetricsImplementation(store, cache, new AllowAllAuthorizationService());
 
         await sut.GetMetricsOverviewAsync(Period._1d);
         await sut.GetMetricsOverviewAsync(Period._1d);

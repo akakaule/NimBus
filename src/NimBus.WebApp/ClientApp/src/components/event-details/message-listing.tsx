@@ -600,6 +600,10 @@ export default function MessageListing(props: IMessageListingProps) {
     [resubmitPayload],
   );
 
+  // Spec 026: the server replaces the whole payload with "[REDACTED]" for
+  // users without the PII Reader role — nothing to blur or reveal client-side.
+  const isRedacted = resubmitPayload === "[REDACTED]";
+
   // Pretty-print the payload / hand-off result once and reuse across the
   // inline blocks and the resubmit-with-changes modal, so a keystroke
   // elsewhere in the subtree doesn't re-run JSON.parse/JSON.stringify over
@@ -1069,7 +1073,20 @@ export default function MessageListing(props: IMessageListingProps) {
           payload, falling back to the event's own). For a hand-off this is
           the EventRequest, not the terminal settlement message which carries
           no original payload. */}
-      {resubmitPayload && (
+      {resubmitPayload && isRedacted && (
+        <div className="mt-4 flex items-center gap-2.5 bg-card border border-border rounded-nb-md px-4 py-3">
+          <svg className="w-4 h-4 shrink-0 text-muted-foreground" viewBox="0 0 16 16" fill="none">
+            <rect x="3" y="7" width="10" height="6" rx="1.4" stroke="currentColor" strokeWidth="1.4" />
+            <path d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7" stroke="currentColor" strokeWidth="1.4" />
+          </svg>
+          <span className="text-[13px] text-muted-foreground">
+            The payload is hidden — viewing raw event payloads requires the PII
+            Reader role. A site Owner can grant it on the Access Control page.
+          </span>
+        </div>
+      )}
+
+      {resubmitPayload && !isRedacted && (
         <div className="mt-4">
           {/* Masked payloads carry "$piiMasked": true. Keep the (already
               server-hashed) values blurred by default so PII tokens aren't

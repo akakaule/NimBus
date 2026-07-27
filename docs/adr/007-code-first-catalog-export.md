@@ -70,3 +70,43 @@ concept mapping lives in `docs/asyncapi-mapping.md`.
 
 Deferred (follow-up): management-UI download, `asyncapi validate`/`diff`, contract-first
 validation, and fluent per-publish `AsyncApi` options.
+
+## Update: full runnable EventCatalog export (native MDX)
+
+The original `nb catalog export` predated the issue-#69 upgrade and had drifted badly behind the
+AsyncAPI exporter: hardcoded `PlatformConfiguration` and versions, no schemas, no `Command`
+awareness (ADR-014), no `[AsyncApiMessage]` enrichment, no `DynamicForward`s, unescaped
+frontmatter, and no tests. Meanwhile the official route into EventCatalog —
+`@eventcatalog/generator-asyncapi` — turned out to require a **paid EventCatalog Scale license**
+(the generator hard-exits without a key), while EventCatalog core and its native markdown format
+are MIT.
+
+**Decision:** rewrite the exporter to emit EventCatalog's **native MDX format** directly (the
+free path), producing a *full runnable catalog*, and attach a **per-service AsyncAPI 3.0
+document** via the free `specifications:` frontmatter so specs still render in the EventCatalog
+UI. The native format is also strictly more expressive here: first-class `commands/` (from the
+`Command` marker), domains from `ISystem`, and channels with delivery guarantees.
+
+Key semantics:
+
+- Builder (`EventCatalogExporter.Build`) is pure and deterministic (relative path → content,
+  ordinal ordering); `EventCatalogCli` owns disk semantics and exit codes.
+- The five generated directories (`domains/ services/ events/ commands/ channels/`) are fully
+  owned and regenerated every run; scaffold files (`eventcatalog.config.js` with a
+  generated-once `cId`, `package.json`, `.gitignore`, `public/`) are create-if-missing only.
+- `sends`/`receives` route through the endpoint's own `.topic` channel (`to:`/`from:` pointers),
+  matching the auto-forward delivery reality documented above.
+- Message versions come from `[AsyncApiMessage]`/fluent `Version` (default `1.0.0`) and the same
+  value pins every service reference, so pointers never dangle. Enrichment resolution and JSON
+  Schema generation are shared with the AsyncAPI exporter (`AsyncApiEnrichmentResolver`,
+  `JsonSchemaBuilder`); each message gets a standalone `schema.json` with nested types under
+  `$defs`.
+- Per-service AsyncAPI documents are produced by running the existing exporter over a
+  single-endpoint platform view; cross-endpoint forward-subscription detail intentionally stays
+  in the platform-wide `nb asyncapi export`.
+
+Deferred (follow-up): fluent-registry enrichment via a host provider abstraction (the
+`--assembly` path sees attribute enrichment only), generated `users/`/`teams/` resources so
+Owner/Team can become real `owners:` pointers instead of badges, request/reply `triggers:`
+mapping (needs request→reply metadata in the catalog model), and runtime schema-registry
+(spec 022) schemas for dynamic events.

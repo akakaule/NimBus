@@ -328,26 +328,36 @@ Cannot skip events that are already `Completed` or `Skipped`.
 
 ### `nb catalog export`
 
-Export platform topology to EventCatalog-compatible markdown structure.
+Export the platform as a **full runnable [EventCatalog](https://www.eventcatalog.dev/)** in EventCatalog's native MDX format (the free path — the official EventCatalog AsyncAPI generator requires a paid Scale license), with a filtered AsyncAPI 3.0 document attached to every service via the `specifications` frontmatter so specs render in the EventCatalog UI.
 
 ```bash
 nb catalog export -o ./eventcatalog
+cd ./eventcatalog && npm install && npm run dev   # requires Node 22+
 ```
 
 | Option | Required | Description |
 |---|---|---|
-| `-o`, `--output` | No | Output directory (default: `./eventcatalog`) |
-
-Generates markdown files for domains, services, events, and channels from `PlatformConfiguration`. Output can be consumed directly by [EventCatalog](https://www.eventcatalog.dev/) for interactive architecture visualization.
+| `-o`, `--output` | No | Catalog directory (default: `./eventcatalog`) |
+| `-a`, `--assembly` | No | Host assembly exposing a public parameterless `IPlatform`; default is the built-in platform. Attribute (`[AsyncApiMessage]`) enrichment applies; fluent host-DI enrichment is not observable through this path. |
+| `--platform` | No | `IPlatform` type name when the assembly exposes more than one |
+| `-t`, `--title` | No | Catalog title/organization, used only when scaffolding a missing `eventcatalog.config.js` (default: `NimBus`) |
 
 Generated structure:
 ```
 eventcatalog/
-├── domains/{SystemId}/index.mdx
-├── services/{EndpointId}/index.mdx
-├── events/{EventTypeId}/index.mdx
-└── channels/{EndpointId}.events/index.mdx
+├── eventcatalog.config.js       # scaffolded once (stable cId), never overwritten
+├── package.json / .gitignore / public/   # scaffolded once, never overwritten
+├── domains/{SystemId}/index.mdx          # one per ISystem ('platform' fallback)
+├── services/{EndpointId}/index.mdx       # sends/receives routed via the endpoint's channel
+├── services/{EndpointId}/asyncapi.yaml   # per-service AsyncAPI 3.0, attached via specifications
+├── events/{EventTypeId}/index.mdx        # + schema.json (self-contained JSON Schema, $defs)
+├── commands/{EventTypeId}/index.mdx      # Command-derived contracts (ADR-014) + schema.json
+└── channels/{EndpointId}.topic/index.mdx # Service Bus topic: address, amqp, at-least-once
 ```
+
+Mapping highlights: `[AsyncApiMessage]` `Version` drives the message version and every service pin; `Deprecated` renders EventCatalog's deprecation banner; `Owner`/`Team`/`Tags` surface as badges; `[SessionKey]` is documented in the message body; dynamically-typed events (spec 022 `DynamicForward`) appear under `events/` with a `Dynamic event` badge and no schema.
+
+> **Ownership rule.** The exporter fully owns the five generated directories `domains/`, `services/`, `events/`, `commands/`, `channels/` — they are **deleted and regenerated on every run** (removing resources for renamed/deleted endpoints and events). Everything else in the catalog directory — the scaffold files, `public/`, `teams/`, `users/`, custom pages, and any resources you add outside those five directories — is never touched. Scaffold files are created only when missing, so `eventcatalog.config.js` customizations (and its generated-once `cId`) survive re-export.
 
 ---
 
@@ -517,8 +527,11 @@ nb catalog asyncapi -o ./docs/asyncapi.yaml
 | `src/NimBus.CommandLine/Endpoint.cs` | Session delete, topic cleanup, subscription purge |
 | `src/NimBus.CommandLine/Container.cs` | Cosmos DB operations (delete, resubmit, copy, skip) |
 | `src/NimBus.CommandLine/CommandRunner.cs` | Connection string handling and client factory |
-| `src/NimBus.CommandLine/EventCatalogExporter.cs` | EventCatalog markdown generation |
-| `src/NimBus.CommandLine/AsyncApiExporter.cs` | AsyncAPI 3.0 YAML generation |
+| `src/NimBus.CommandLine/EventCatalogExporter.cs` | EventCatalog native-MDX catalog builder (pure, in-memory) |
+| `src/NimBus.CommandLine/EventCatalogCli.cs` | `nb catalog export` disk semantics: scaffold, refresh, exit codes |
+| `src/NimBus.CommandLine/PlatformLoader.cs` | Loads a public parameterless `IPlatform` from a host assembly |
+| `src/NimBus.ServiceBus/AsyncApi/AsyncApiExporter.cs` | AsyncAPI 3.0 generation (canonical; the CommandLine `AsyncApiExporter.cs` is an obsolete bridge) |
+| `src/NimBus.ServiceBus/AsyncApi/JsonSchemaBuilder.cs` | Shared reflection JSON Schema generation (AsyncAPI components + standalone `schema.json`) |
 | `src/NimBus.CommandLine/ServiceBusTopologyProvisioner.cs` | Service Bus topology provisioning |
 | `src/NimBus.CommandLine/InfrastructureDeployer.cs` | Azure infrastructure deployment |
 | `src/NimBus.CommandLine/AppDeploymentService.cs` | App build and deployment |

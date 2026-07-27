@@ -687,21 +687,30 @@ internal static class Program
 
             catalogCommand.Command("export", exportCommand =>
             {
-                exportCommand.Description = "Export platform topology to EventCatalog-compatible markdown structure";
+                exportCommand.Description = "Export the platform as a runnable EventCatalog (native MDX + per-service AsyncAPI)";
 
                 var outputOption = exportCommand.Option("-o|--output <PATH>",
-                    "Output directory path (defaults to ./eventcatalog in current directory)",
+                    "Catalog directory (defaults to ./eventcatalog in current directory)",
                     CommandOptionType.SingleValue);
 
-                exportCommand.OnExecuteAsync(async ct =>
-                {
-                    var outputPath = outputOption.HasValue()
-                        ? outputOption.Value()!
-                        : Path.Combine(Environment.CurrentDirectory, "eventcatalog");
+                var assemblyOption = exportCommand.Option("-a|--assembly <PATH>",
+                    "Host assembly exposing a public parameterless IPlatform; default is the built-in platform",
+                    CommandOptionType.SingleValue);
 
-                    await EventCatalogExporter.ExportAsync(outputPath);
-                    return 0;
-                });
+                var platformOption = exportCommand.Option("--platform <TYPE>",
+                    "IPlatform type name when the assembly exposes more than one",
+                    CommandOptionType.SingleValue);
+
+                var titleOption = exportCommand.Option("-t|--title <TITLE>",
+                    "Catalog title/organization, used only when scaffolding a missing eventcatalog.config.js (default: NimBus)",
+                    CommandOptionType.SingleValue);
+
+                exportCommand.OnExecute(() => EventCatalogCli.RunExport(
+                    outputOption.Value(),
+                    Console.Out,
+                    assemblyOption.Value(),
+                    platformOption.Value(),
+                    titleOption.Value()));
             });
 
             catalogCommand.Command("asyncapi", asyncApiCommand =>

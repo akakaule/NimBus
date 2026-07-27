@@ -1,295 +1,357 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.Threading.Tasks;
 using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using NimBus.ServiceBus.AsyncApi;
+using YamlDotNet.Serialization;
+using CoreAsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
+using Map = System.Collections.Generic.Dictionary<string, object>;
 
 namespace NimBus.CommandLine;
 
 /// <summary>
-/// Generates an EventCatalog-compatible directory structure from PlatformConfiguration.
-/// Creates markdown files for domains, services, events, and channels that can be
-/// consumed by EventCatalog (https://www.eventcatalog.dev/).
+/// Builds an EventCatalog (https://www.eventcatalog.dev/) catalog from an <see cref="IPlatform"/>
+/// in EventCatalog's native MDX format — the free path; the official AsyncAPI generator requires a
+/// paid Scale license. Domains come from <see cref="ISystem"/>, services from endpoints (with
+/// <c>sends</c>/<c>receives</c> routed through the endpoint's topic channel), events/commands from
+/// the event contracts (a <see cref="Command"/>-derived contract lands in <c>commands/</c>), each
+/// with a standalone <c>schema.json</c>, and every service gets a filtered AsyncAPI 3.0 document
+/// attached via the <c>specifications</c> frontmatter so the spec renders in the EventCatalog UI.
 /// </summary>
 public static class EventCatalogExporter
 {
-    public static async Task ExportAsync(string outputPath)
+    private const string DefaultVersion = "1.0.0";
+
+    /// <summary>Exports the built-in platform. Kept as a bridge for pre-rewrite callers.</summary>
+    [Obsolete("Use EventCatalogCli.RunExport (nb catalog export) instead; this bridge exports the built-in platform only.")]
+    public static Task ExportAsync(string outputPath)
     {
-        var platform = new PlatformConfiguration();
-
-        Directory.CreateDirectory(outputPath);
-
-        // Collect all event types across the platform
-        var allEventTypes = platform.Endpoints
-            .SelectMany(ep => ep.EventTypesProduced.Concat(ep.EventTypesConsumed))
-            .DistinctBy(et => et.Id)
-            .ToList();
-
-        // Group endpoints by system for domains
-        var domains = platform.Endpoints
-            .GroupBy(ep => ep.System.SystemId)
-            .ToList();
-
-        // Write domains
-        foreach (var domain in domains)
-        {
-            await WriteDomain(outputPath, domain.Key, domain.ToList(), platform);
-        }
-
-        // Write services (endpoints)
-        foreach (var endpoint in platform.Endpoints)
-        {
-            await WriteService(outputPath, endpoint);
-        }
-
-        // Write events
-        foreach (var eventType in allEventTypes)
-        {
-            var producers = platform.Endpoints
-                .Where(ep => ep.EventTypesProduced.Any(et => et.Id == eventType.Id))
-                .ToList();
-            var consumers = platform.Endpoints
-                .Where(ep => ep.EventTypesConsumed.Any(et => et.Id == eventType.Id))
-                .ToList();
-
-            await WriteEvent(outputPath, eventType, producers, consumers);
-        }
-
-        // Write channels (one per endpoint topic)
-        foreach (var endpoint in platform.Endpoints)
-        {
-            if (endpoint.EventTypesProduced.Any())
-            {
-                await WriteChannel(outputPath, endpoint);
-            }
-        }
-
-        Console.WriteLine($"EventCatalog exported to: {outputPath}");
-        Console.WriteLine($"  {domains.Count} domains, {platform.Endpoints.Count()} services, {allEventTypes.Count} events");
+        EventCatalogCli.RunExport(outputPath, Console.Out);
+        return Task.CompletedTask;
     }
 
-    private static async Task WriteDomain(string outputPath, string systemId, List<IEndpoint> endpoints, IPlatform platform)
+    /// <summary>
+    /// Builds the full catalog as relative path (forward slashes) → file content. Pure and
+    /// deterministic: no I/O, ordinal ordering throughout, so output is diffable in CI.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> Build(
+        IPlatform platform, AsyncApiEnrichmentRegistry? enrichment = null)
     {
-        var domainDir = Path.Combine(outputPath, "domains", systemId);
-        Directory.CreateDirectory(domainDir);
+        if (platform is null) throw new ArgumentNullException(nameof(platform));
 
-        var sends = endpoints
-            .SelectMany(ep => ep.EventTypesProduced)
-            .DistinctBy(et => et.Id)
+        var files = new SortedDictionary<string, string>(StringComparer.Ordinal);
+
+        var endpoints = platform.Endpoints
+            .GroupBy(e => e.Id, StringComparer.Ordinal)
+            .Select(g => g.First())
+            .OrderBy(e => e.Id, StringComparer.Ordinal)
             .ToList();
 
-        var receives = endpoints
-            .SelectMany(ep => ep.EventTypesConsumed)
-            .DistinctBy(et => et.Id)
+        var events = platform.EventTypes
+            .GroupBy(e => e.Id, StringComparer.Ordinal)
+            .Select(g => g.First())
+            .OrderBy(e => e.Id, StringComparer.Ordinal)
             .ToList();
 
-        var sb = new StringBuilder();
-        sb.AppendLine("---");
-        sb.AppendLine($"id: {systemId}");
-        sb.AppendLine($"name: {systemId} Domain");
-        sb.AppendLine("version: 1.0.0");
-        sb.AppendLine("summary: |");
-        sb.AppendLine($"  Domain for the {systemId} system");
+        var dynamicForwards = platform.DynamicForwards
+            .OrderBy(f => f.EventTypeId, StringComparer.Ordinal)
+            .ThenBy(f => f.TargetEndpoint, StringComparer.Ordinal)
+            .ToList();
 
-        // Services
-        sb.AppendLine("services:");
-        foreach (var ep in endpoints)
+        var clrEventIds = new HashSet<string>(events.Select(e => e.Id), StringComparer.Ordinal);
+        var dynamicEventIds = dynamicForwards
+            .Select(f => f.EventTypeId)
+            .Where(id => !clrEventIds.Contains(id))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+
+        // Resolve enrichment once per contract; the message's own version and every service pin
+        // use the same value so pointers never dangle.
+        var resolvedById = events.ToDictionary(
+            e => e.Id,
+            e => AsyncApiEnrichmentResolver.Resolve(e, e.GetEventClassType(), enrichment),
+            StringComparer.Ordinal);
+
+        string VersionOf(string eventId) =>
+            resolvedById.TryGetValue(eventId, out var r) && !string.IsNullOrEmpty(r.Version) ? r.Version! : DefaultVersion;
+
+        WriteDomains(files, endpoints);
+        foreach (var endpoint in endpoints)
         {
-            sb.AppendLine($"  - id: {ep.Id}");
+            WriteService(files, platform, endpoint, dynamicForwards, enrichment, VersionOf);
+            WriteChannel(files, endpoint);
         }
 
-        // Sends
-        if (sends.Any())
+        foreach (var evt in events)
         {
-            sb.AppendLine("sends:");
-            foreach (var et in sends)
-            {
-                sb.AppendLine($"  - id: {et.Id}");
-                sb.AppendLine("    version: 1.0.0");
-            }
+            var collection = evt.GetEventClassType() is { } clr && typeof(Command).IsAssignableFrom(clr)
+                ? "commands"
+                : "events";
+            WriteMessage(files, platform, evt, resolvedById[evt.Id], collection, VersionOf(evt.Id));
         }
 
-        // Receives
-        if (receives.Any())
+        foreach (var dynId in dynamicEventIds)
         {
-            sb.AppendLine("receives:");
-            foreach (var et in receives)
-            {
-                sb.AppendLine($"  - id: {et.Id}");
-                sb.AppendLine("    version: 1.0.0");
-            }
+            WriteDynamicMessage(files, dynId, dynamicForwards);
         }
 
-        sb.AppendLine("---");
-        sb.AppendLine();
-        sb.AppendLine($"# {systemId} Domain");
-        sb.AppendLine();
-
-        foreach (var ep in endpoints)
-        {
-            sb.AppendLine($"- **{ep.Name}**: {ep.Description}");
-        }
-
-        await File.WriteAllTextAsync(Path.Combine(domainDir, "index.mdx"), sb.ToString());
+        return files;
     }
 
-    private static async Task WriteService(string outputPath, IEndpoint endpoint)
+    // ---- Domains ----
+
+    private static void WriteDomains(SortedDictionary<string, string> files, IReadOnlyList<IEndpoint> endpoints)
     {
-        var serviceDir = Path.Combine(outputPath, "services", endpoint.Id);
-        Directory.CreateDirectory(serviceDir);
+        var byDomain = endpoints
+            .GroupBy(e => e.System?.SystemId is { Length: > 0 } id ? id : "platform", StringComparer.Ordinal)
+            .OrderBy(g => g.Key, StringComparer.Ordinal);
 
-        var sb = new StringBuilder();
-        sb.AppendLine("---");
-        sb.AppendLine($"id: {endpoint.Id}");
-        sb.AppendLine($"name: {endpoint.Name}");
-        sb.AppendLine("version: 1.0.0");
-        sb.AppendLine("summary: |");
-        sb.AppendLine($"  {endpoint.Description}");
-
-        // Sends (produced event types)
-        if (endpoint.EventTypesProduced.Any())
+        foreach (var domain in byDomain)
         {
-            sb.AppendLine("sends:");
-            foreach (var et in endpoint.EventTypesProduced)
+            var name = string.Equals(domain.Key, "platform", StringComparison.Ordinal) ? "Platform" : domain.Key;
+            var frontmatter = new Map
             {
-                sb.AppendLine($"  - id: {et.Id}");
-                sb.AppendLine("    version: 1.0.0");
-                sb.AppendLine("    to:");
-                sb.AppendLine($"      - id: {endpoint.Id}.events");
-            }
+                ["id"] = domain.Key,
+                ["name"] = name,
+                ["version"] = DefaultVersion,
+                ["summary"] = $"Domain for the {name} system.",
+                ["services"] = domain
+                    .OrderBy(e => e.Id, StringComparer.Ordinal)
+                    .Select(e => (object)new Map { ["id"] = e.Id })
+                    .ToList(),
+            };
+
+            var body = $"## Overview\n\nEndpoints in the {name} domain.\n\n<NodeGraph />\n";
+            files[$"domains/{domain.Key}/index.mdx"] = Mdx(frontmatter, body);
         }
-
-        // Receives (consumed event types)
-        if (endpoint.EventTypesConsumed.Any())
-        {
-            sb.AppendLine("receives:");
-            foreach (var et in endpoint.EventTypesConsumed)
-            {
-                // Find which endpoint produces this event type to determine the channel
-                sb.AppendLine($"  - id: {et.Id}");
-                sb.AppendLine("    version: 1.0.0");
-            }
-        }
-
-        sb.AppendLine("---");
-        sb.AppendLine();
-        sb.AppendLine($"# {endpoint.Name}");
-        sb.AppendLine();
-        sb.AppendLine(endpoint.Description);
-        sb.AppendLine();
-        sb.AppendLine($"**System:** {endpoint.System.SystemId}");
-
-        if (endpoint.EventTypesProduced.Any())
-        {
-            sb.AppendLine();
-            sb.AppendLine("## Produces");
-            foreach (var et in endpoint.EventTypesProduced)
-                sb.AppendLine($"- `{et.Id}` ({et.Name})");
-        }
-
-        if (endpoint.EventTypesConsumed.Any())
-        {
-            sb.AppendLine();
-            sb.AppendLine("## Consumes");
-            foreach (var et in endpoint.EventTypesConsumed)
-                sb.AppendLine($"- `{et.Id}` ({et.Name})");
-        }
-
-        await File.WriteAllTextAsync(Path.Combine(serviceDir, "index.mdx"), sb.ToString());
     }
 
-    private static async Task WriteEvent(string outputPath, IEventType eventType, List<IEndpoint> producers, List<IEndpoint> consumers)
+    // ---- Services ----
+
+    private static void WriteService(
+        SortedDictionary<string, string> files,
+        IPlatform platform,
+        IEndpoint endpoint,
+        IReadOnlyList<DynamicForward> dynamicForwards,
+        AsyncApiEnrichmentRegistry? enrichment,
+        Func<string, string> versionOf)
     {
-        var eventDir = Path.Combine(outputPath, "events", eventType.Id);
-        Directory.CreateDirectory(eventDir);
+        var channelId = ChannelId(endpoint.Id);
 
-        var sb = new StringBuilder();
-        sb.AppendLine("---");
-        sb.AppendLine($"id: {eventType.Id}");
-        sb.AppendLine($"name: {eventType.Name}");
-        sb.AppendLine("version: 1.0.0");
-        sb.AppendLine("summary: |");
-        sb.AppendLine($"  {eventType.Name} event");
+        var sendIds = endpoint.EventTypesProduced.Select(e => e.Id)
+            .Concat(dynamicForwards.Where(f => string.Equals(f.SourceEndpoint, endpoint.Id, StringComparison.Ordinal)).Select(f => f.EventTypeId))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
 
-        if (producers.Any())
+        var receiveIds = endpoint.EventTypesConsumed.Select(e => e.Id)
+            .Concat(dynamicForwards.Where(f => string.Equals(f.TargetEndpoint, endpoint.Id, StringComparison.Ordinal)).Select(f => f.EventTypeId))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+
+        var frontmatter = new Map
         {
-            sb.AppendLine("producers:");
-            foreach (var ep in producers)
+            ["id"] = endpoint.Id,
+            ["name"] = endpoint.Name,
+            ["version"] = DefaultVersion,
+            ["summary"] = endpoint.Description is { Length: > 0 } d ? d : $"{endpoint.Name} endpoint.",
+        };
+
+        if (sendIds.Count > 0)
+        {
+            // Producers publish onto their own topic.
+            frontmatter["sends"] = sendIds.Select(id => (object)new Map
             {
-                sb.AppendLine($"  - {ep.Id}");
-            }
+                ["id"] = id,
+                ["version"] = versionOf(id),
+                ["to"] = new List<object> { new Map { ["id"] = channelId } },
+            }).ToList();
         }
 
-        if (consumers.Any())
+        if (receiveIds.Count > 0)
         {
-            sb.AppendLine("consumers:");
-            foreach (var ep in consumers)
+            // Delivery happens from the consumer's OWN topic (post auto-forward), so the
+            // routing edge points at this endpoint's channel, not the producer's.
+            frontmatter["receives"] = receiveIds.Select(id => (object)new Map
             {
-                sb.AppendLine($"  - {ep.Id}");
-            }
+                ["id"] = id,
+                ["version"] = versionOf(id),
+                ["from"] = new List<object> { new Map { ["id"] = channelId } },
+            }).ToList();
         }
 
-        sb.AppendLine("---");
-        sb.AppendLine();
-        sb.AppendLine($"# {eventType.Name}");
-        sb.AppendLine();
-
-        if (producers.Any())
+        frontmatter["specifications"] = new List<object>
         {
-            sb.AppendLine($"Published by: {string.Join(", ", producers.Select(p => $"**{p.Name}**"))}");
-            sb.AppendLine();
-        }
+            new Map { ["type"] = "asyncapi", ["path"] = "asyncapi.yaml", ["name"] = $"{endpoint.Name} AsyncAPI" },
+        };
 
-        if (consumers.Any())
-        {
-            sb.AppendLine($"Consumed by: {string.Join(", ", consumers.Select(c => $"**{c.Name}**"))}");
-            sb.AppendLine();
-        }
+        var body = $"## Overview\n\n{(endpoint.Description is { Length: > 0 } desc ? desc : $"The {endpoint.Name} endpoint.")}\n\n<NodeGraph />\n";
+        files[$"services/{endpoint.Id}/index.mdx"] = Mdx(frontmatter, body);
 
-        sb.AppendLine("## Message Flow");
-        sb.AppendLine();
-        sb.AppendLine("```");
-        foreach (var producer in producers)
-        {
-            foreach (var consumer in consumers)
-            {
-                sb.AppendLine($"{producer.Name} --({eventType.Id})--> {consumer.Name}");
-            }
-        }
-        sb.AppendLine("```");
-
-        await File.WriteAllTextAsync(Path.Combine(eventDir, "index.mdx"), sb.ToString());
+        // The endpoint's own AsyncAPI 3.0 view, rendered by EventCatalog's spec tab. Filtered to
+        // this endpoint; cross-endpoint forward-subscription detail stays in `nb asyncapi export`.
+        files[$"services/{endpoint.Id}/asyncapi.yaml"] = ServiceBus.AsyncApi.AsyncApiExporter.Serialize(
+            new SingleEndpointPlatformView(platform, endpoint), CoreAsyncApiFormat.Yaml, enrichment);
     }
 
-    private static async Task WriteChannel(string outputPath, IEndpoint endpoint)
-    {
-        var channelId = $"{endpoint.Id}.events";
-        var channelDir = Path.Combine(outputPath, "channels", channelId);
-        Directory.CreateDirectory(channelDir);
+    // ---- Channels ----
 
-        var sb = new StringBuilder();
-        sb.AppendLine("---");
-        sb.AppendLine($"id: {channelId}");
-        sb.AppendLine($"name: {endpoint.Name} Events");
-        sb.AppendLine("version: 1.0.0");
-        sb.AppendLine("summary: |");
-        sb.AppendLine($"  Azure Service Bus topic for {endpoint.Name} events");
-        sb.AppendLine("---");
-        sb.AppendLine();
-        sb.AppendLine($"# {endpoint.Name} Events Channel");
-        sb.AppendLine();
-        sb.AppendLine($"Azure Service Bus topic `{endpoint.Id}` carrying events produced by {endpoint.Name}.");
-        sb.AppendLine();
-        sb.AppendLine("## Event Types");
-        foreach (var et in endpoint.EventTypesProduced)
+    private static void WriteChannel(SortedDictionary<string, string> files, IEndpoint endpoint)
+    {
+        var frontmatter = new Map
         {
-            sb.AppendLine($"- `{et.Id}`");
+            ["id"] = ChannelId(endpoint.Id),
+            ["name"] = $"{endpoint.Name} topic",
+            ["version"] = DefaultVersion,
+            ["summary"] = $"Azure Service Bus topic for {endpoint.Name}.",
+            ["address"] = endpoint.Id,
+            ["protocols"] = new List<object> { "amqp" },
+            ["deliveryGuarantee"] = "at-least-once",
+        };
+
+        var body =
+            $"## Overview\n\nAzure Service Bus topic `{endpoint.Id}`. Carries events produced by " +
+            $"{endpoint.Name} and events auto-forwarded in for its session-ordered delivery subscription.\n";
+        files[$"channels/{ChannelId(endpoint.Id)}/index.mdx"] = Mdx(frontmatter, body);
+    }
+
+    // ---- Messages (events/ and commands/) ----
+
+    private static void WriteMessage(
+        SortedDictionary<string, string> files,
+        IPlatform platform,
+        IEventType evt,
+        ResolvedAsyncApiEnrichment resolved,
+        string collection,
+        string version)
+    {
+        var clrType = evt.GetEventClassType();
+
+        var frontmatter = new Map
+        {
+            ["id"] = evt.Id,
+            ["name"] = resolved.Title,
+            ["version"] = version,
+            ["summary"] = resolved.Summary,
+        };
+
+        if (clrType != null)
+        {
+            frontmatter["schemaPath"] = "schema.json";
         }
 
-        await File.WriteAllTextAsync(Path.Combine(channelDir, "index.mdx"), sb.ToString());
+        if (resolved.Deprecated)
+        {
+            frontmatter["deprecated"] = true;
+        }
+
+        var badges = BuildBadges(resolved, isDynamic: false);
+        if (badges.Count > 0)
+        {
+            frontmatter["badges"] = badges;
+        }
+
+        var body = BuildMessageBody(platform, evt, resolved, clrType);
+        files[$"{collection}/{evt.Id}/index.mdx"] = Mdx(frontmatter, body);
+
+        if (clrType != null)
+        {
+            files[$"{collection}/{evt.Id}/schema.json"] = JsonSchemaBuilder.BuildStandaloneJson(clrType);
+        }
+    }
+
+    private static void WriteDynamicMessage(
+        SortedDictionary<string, string> files, string eventTypeId, IReadOnlyList<DynamicForward> forwards)
+    {
+        var frontmatter = new Map
+        {
+            ["id"] = eventTypeId,
+            ["name"] = eventTypeId,
+            ["version"] = DefaultVersion,
+            ["summary"] = "Dynamically-typed event (spec 022) with no compiled .NET contract; the payload schema is defined at runtime in the schema registry.",
+            ["badges"] = new List<object>
+            {
+                new Map { ["content"] = "Dynamic event", ["backgroundColor"] = "purple", ["textColor"] = "purple" },
+            },
+        };
+
+        var routes = forwards
+            .Where(f => string.Equals(f.EventTypeId, eventTypeId, StringComparison.Ordinal))
+            .Select(f => $"- `{f.SourceEndpoint}` → `{f.TargetEndpoint}`");
+        var body = $"## Overview\n\nRouted by dynamic forwards:\n\n{string.Join("\n", routes)}\n\n<NodeGraph />\n";
+        files[$"events/{eventTypeId}/index.mdx"] = Mdx(frontmatter, body);
+    }
+
+    private static List<object> BuildBadges(ResolvedAsyncApiEnrichment resolved, bool isDynamic)
+    {
+        var badges = new List<object>();
+        // Owner/Team surface as badges rather than `owners:` — the exporter generates no
+        // users/teams resources, and owner pointers at nonexistent resources would dangle.
+        if (!string.IsNullOrEmpty(resolved.Owner))
+        {
+            badges.Add(new Map { ["content"] = $"Owner: {resolved.Owner}", ["backgroundColor"] = "blue", ["textColor"] = "blue" });
+        }
+
+        if (!string.IsNullOrEmpty(resolved.Team))
+        {
+            badges.Add(new Map { ["content"] = $"Team: {resolved.Team}", ["backgroundColor"] = "green", ["textColor"] = "green" });
+        }
+
+        foreach (var tag in resolved.Tags)
+        {
+            badges.Add(new Map { ["content"] = tag, ["backgroundColor"] = "gray", ["textColor"] = "gray" });
+        }
+
+        if (isDynamic)
+        {
+            badges.Add(new Map { ["content"] = "Dynamic event", ["backgroundColor"] = "purple", ["textColor"] = "purple" });
+        }
+
+        return badges;
+    }
+
+    private static string BuildMessageBody(
+        IPlatform platform, IEventType evt, ResolvedAsyncApiEnrichment resolved, Type? clrType)
+    {
+        var lines = new List<string> { "## Overview", string.Empty };
+        lines.Add(resolved.Description is { Length: > 0 } d ? d : resolved.Summary);
+        lines.Add(string.Empty);
+
+        var sessionKey = clrType?.GetCustomAttribute<SessionKeyAttribute>()?.PropertyName;
+        if (!string.IsNullOrEmpty(sessionKey))
+        {
+            lines.Add($"Processed in session order by session key `{sessionKey}`.");
+            lines.Add(string.Empty);
+        }
+
+        lines.Add("<NodeGraph />");
+        lines.Add(string.Empty);
+
+        if (clrType != null)
+        {
+            lines.Add("## Schema");
+            lines.Add(string.Empty);
+            lines.Add("<SchemaViewer file=\"schema.json\" />");
+            lines.Add(string.Empty);
+        }
+
+        return string.Join("\n", lines);
+    }
+
+    private static string ChannelId(string endpointId) => $"{endpointId}.topic";
+
+    // Frontmatter is serialized through YamlDotNet (same quoting settings as the AsyncAPI
+    // exporter) so descriptions containing `:`/`#`/quotes can never break the document.
+    private static string Mdx(Map frontmatter, string body)
+    {
+        var yaml = new SerializerBuilder().WithQuotingNecessaryStrings().Build().Serialize(frontmatter)
+            .Replace("\r\n", "\n", StringComparison.Ordinal);
+        return $"---\n{yaml}---\n\n{body}";
     }
 }

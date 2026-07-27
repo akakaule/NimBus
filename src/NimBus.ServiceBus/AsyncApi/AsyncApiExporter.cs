@@ -374,7 +374,7 @@ public static class AsyncApiExporter
 
             // Merge attribute + fluent enrichment once so the message and the payload schema
             // (both keyed by evt.Id == clrType.Name) surface the same resolved values.
-            var resolved = ResolveEnrichment(evt, clrType, enrichment);
+            var resolved = AsyncApiEnrichmentResolver.Resolve(evt, clrType, enrichment);
 
             if (clrType != null)
             {
@@ -408,7 +408,7 @@ public static class AsyncApiExporter
         };
     }
 
-    private static Map BuildMessage(IEventType evt, Type? clrType, ResolvedEnrichment resolved)
+    private static Map BuildMessage(IEventType evt, Type? clrType, ResolvedAsyncApiEnrichment resolved)
     {
         var serviceBus = new Map
         {
@@ -477,7 +477,7 @@ public static class AsyncApiExporter
 
     // owner/team/businessCapability/version have no standard AsyncAPI slot -> x-* extension.
     // deprecated is mirrored here for discoverability; the authoritative marker lives on the schema.
-    private static Map BuildGovernance(ResolvedEnrichment resolved)
+    private static Map BuildGovernance(ResolvedAsyncApiEnrichment resolved)
     {
         var governance = new Map();
         if (!string.IsNullOrEmpty(resolved.Owner)) governance["owner"] = resolved.Owner!;
@@ -488,7 +488,7 @@ public static class AsyncApiExporter
         return governance;
     }
 
-    private static List<object> BuildExamples(IEventType evt, ResolvedEnrichment resolved)
+    private static List<object> BuildExamples(IEventType evt, ResolvedAsyncApiEnrichment resolved)
     {
         var examples = new List<object>();
 
@@ -508,68 +508,6 @@ public static class AsyncApiExporter
         }
 
         return examples;
-    }
-
-    // Merge order for scalars: fluent ?? attribute ?? derived default. Tags are unioned
-    // (first-seen, de-duped Ordinal); examples are handled separately; deprecated is OR-ed.
-    private static ResolvedEnrichment ResolveEnrichment(
-        IEventType evt,
-        Type? clrType,
-        AsyncApiEnrichmentRegistry? enrichment)
-    {
-        var attribute = clrType?.GetCustomAttribute<AsyncApiMessageAttribute>();
-        var typeDescription = clrType?.GetCustomAttribute<DescriptionAttribute>()?.Description;
-
-        AsyncApiMessageOptions? fluent = null;
-        if (clrType != null) enrichment?.TryGet(clrType, out fluent);
-
-        var tags = new List<string>();
-        var seenTags = new HashSet<string>(StringComparer.Ordinal);
-        void AddTags(IEnumerable<string>? source)
-        {
-            if (source is null) return;
-            foreach (var tag in source)
-            {
-                if (!string.IsNullOrEmpty(tag) && seenTags.Add(tag)) tags.Add(tag);
-            }
-        }
-
-        AddTags(attribute?.Tags);
-        AddTags(fluent?.Tags);
-
-        return new ResolvedEnrichment
-        {
-            Name = fluent?.Name ?? attribute?.Name,
-            Title = fluent?.Title ?? attribute?.Title ?? evt.Name,
-            Summary = fluent?.Summary ?? attribute?.Summary ?? typeDescription ?? $"{evt.Name} event.",
-            Description = fluent?.Description ?? attribute?.Description,
-            Owner = fluent?.Owner ?? attribute?.Owner,
-            Team = fluent?.Team ?? attribute?.Team,
-            BusinessCapability = fluent?.BusinessCapability ?? attribute?.BusinessCapability,
-            Version = fluent?.Version ?? attribute?.Version,
-            ExternalDocsUrl = fluent?.ExternalDocsUrl ?? attribute?.ExternalDocsUrl,
-            ExternalDocsDescription = fluent?.ExternalDocsDescription ?? attribute?.ExternalDocsDescription,
-            Deprecated = (attribute?.Deprecated ?? false) || (fluent?.Deprecated ?? false),
-            Tags = tags,
-            Examples = fluent?.Examples?.ToList() ?? new List<AsyncApiMessageExample>(),
-        };
-    }
-
-    private sealed class ResolvedEnrichment
-    {
-        public string? Name { get; init; }
-        public string Title { get; init; } = string.Empty;
-        public string Summary { get; init; } = string.Empty;
-        public string? Description { get; init; }
-        public string? Owner { get; init; }
-        public string? Team { get; init; }
-        public string? BusinessCapability { get; init; }
-        public string? Version { get; init; }
-        public string? ExternalDocsUrl { get; init; }
-        public string? ExternalDocsDescription { get; init; }
-        public bool Deprecated { get; init; }
-        public IReadOnlyList<string> Tags { get; init; } = Array.Empty<string>();
-        public IReadOnlyList<AsyncApiMessageExample> Examples { get; init; } = Array.Empty<AsyncApiMessageExample>();
     }
 
     private static Map BuildDynamicMessage(string eventTypeId) => new()
@@ -636,105 +574,10 @@ public static class AsyncApiExporter
         },
     };
 
-    // ---- JSON Schema generation from CLR event contracts ----
+    // JSON Schema generation lives in JsonSchemaBuilder (shared with the EventCatalog exporter).
 
-    private static void EnsureObjectSchema(Type type, Map schemas, HashSet<Type> building)
-    {
-        var name = type.Name;
-        if (schemas.ContainsKey(name) || building.Contains(type)) return;
-
-        building.Add(type);
-        schemas[name] = BuildObjectSchema(type, schemas, building);
-    }
-
-    private static Map BuildObjectSchema(Type type, Map schemas, HashSet<Type> building)
-    {
-        var properties = new Map();
-        var required = new List<object>();
-
-        foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                     .OrderBy(p => p.MetadataToken))
-        {
-            var node = MapType(property.PropertyType, schemas, building);
-
-            var description = property.GetCustomAttribute<DescriptionAttribute>()?.Description;
-            if (description != null) node["description"] = description;
-
-            var range = property.GetCustomAttribute<RangeAttribute>();
-            if (range != null)
-            {
-                node["minimum"] = range.Minimum;
-                node["maximum"] = range.Maximum;
-            }
-
-            var propertyName = ToCamelCase(property.Name);
-            properties[propertyName] = node;
-            if (IsRequired(property)) required.Add(propertyName);
-        }
-
-        var schema = new Map { ["type"] = "object" };
-        var typeDescription = type.GetCustomAttribute<DescriptionAttribute>()?.Description;
-        if (typeDescription != null) schema["description"] = typeDescription;
-        if (required.Count > 0) schema["required"] = required;
-        schema["properties"] = properties;
-        return schema;
-    }
-
-    private static Map MapType(Type type, Map schemas, HashSet<Type> building)
-    {
-        var t = Nullable.GetUnderlyingType(type) ?? type;
-
-        if (t == typeof(string) || t == typeof(char)) return new Map { ["type"] = "string" };
-        if (t == typeof(Guid)) return new Map { ["type"] = "string", ["format"] = "uuid" };
-        if (t == typeof(DateTime) || t == typeof(DateTimeOffset)) return new Map { ["type"] = "string", ["format"] = "date-time" };
-        if (t == typeof(TimeSpan) || t == typeof(Uri)) return new Map { ["type"] = "string" };
-        if (t == typeof(bool)) return new Map { ["type"] = "boolean" };
-        if (t.IsEnum) return new Map { ["type"] = "string", ["enum"] = Enum.GetNames(t).Cast<object>().ToList() };
-        if (IsInteger(t)) return new Map { ["type"] = "integer", ["format"] = (t == typeof(long) || t == typeof(ulong)) ? "int64" : "int32" };
-        if (IsNumber(t)) return new Map { ["type"] = "number" };
-
-        var element = GetEnumerableElementType(t);
-        if (element != null)
-        {
-            return new Map { ["type"] = "array", ["items"] = MapType(element, schemas, building) };
-        }
-
-        if (t.IsClass || (t.IsValueType && !t.IsPrimitive))
-        {
-            EnsureObjectSchema(t, schemas, building);
-            return new Map { ["$ref"] = $"#/components/schemas/{t.Name}" };
-        }
-
-        return new Map { ["type"] = "string" };
-    }
-
-    private static bool IsInteger(Type t) =>
-        t == typeof(byte) || t == typeof(sbyte) || t == typeof(short) || t == typeof(ushort) ||
-        t == typeof(int) || t == typeof(uint) || t == typeof(long) || t == typeof(ulong);
-
-    private static bool IsNumber(Type t) =>
-        t == typeof(decimal) || t == typeof(double) || t == typeof(float);
-
-    private static Type GetEnumerableElementType(Type type)
-    {
-        if (type == typeof(string)) return null;
-        if (type.IsArray) return type.GetElementType();
-
-        var enumerable = type.GetInterfaces()
-            .Concat(type.IsInterface ? new[] { type } : Array.Empty<Type>())
-            .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>));
-        return enumerable?.GetGenericArguments()[0];
-    }
-
-    private static bool IsRequired(PropertyInfo property)
-    {
-        if (property.GetCustomAttribute<RequiredAttribute>() != null) return true;
-
-        // Non-nullable (value types, or NRT-annotated reference types) ⇒ required. Reference types
-        // in nullable-oblivious assemblies report Unknown and are treated as optional.
-        var nullability = new NullabilityInfoContext().Create(property);
-        return nullability.ReadState == NullabilityState.NotNull;
-    }
+    private static void EnsureObjectSchema(Type type, Map schemas, HashSet<Type> building) =>
+        JsonSchemaBuilder.EnsureObjectSchema(type, schemas, building);
 
     private static Map TryBuildExample(IEventType evt)
     {
@@ -858,9 +701,5 @@ public static class AsyncApiExporter
         return new string(chars);
     }
 
-    private static string ToCamelCase(string name)
-    {
-        if (string.IsNullOrEmpty(name)) return name;
-        return char.ToLowerInvariant(name[0]) + name[1..];
-    }
+    private static string ToCamelCase(string name) => JsonSchemaBuilder.ToCamelCase(name);
 }

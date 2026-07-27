@@ -37,6 +37,7 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
         "EndpointSubscriptions",
         "EndpointMetadata",
         "EventSchemas",
+        "AccessControl",
     };
 
     private static readonly string[] RequiredViews =

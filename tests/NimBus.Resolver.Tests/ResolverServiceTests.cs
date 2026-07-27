@@ -747,6 +747,11 @@ public class ResolverServiceTests
         public Task<NimBus.MessageStore.States.EventSchema?> GetSchema(string eventTypeId) => throw new NotSupportedException();
         public Task<System.Collections.Generic.IReadOnlyList<NimBus.MessageStore.States.EventSchema>> GetSchemas() => throw new NotSupportedException();
         public Task<NimBus.MessageStore.States.EventSchema> DefineEventType(NimBus.MessageStore.States.EventSchema schema) => throw new NotSupportedException();
+        public Task<NimBus.MessageStore.States.AccessControlList?> GetSiteAccessControl() => throw new NotSupportedException();
+        public Task SetSiteAccessControl(NimBus.MessageStore.States.AccessControlList accessControl) => throw new NotSupportedException();
+        public Task<NimBus.MessageStore.States.AccessControlList?> GetEndpointAccessControl(string endpointId) => throw new NotSupportedException();
+        public Task<System.Collections.Generic.IReadOnlyList<NimBus.MessageStore.States.AccessControlList>> GetEndpointAccessControls() => throw new NotSupportedException();
+        public Task SetEndpointAccessControl(string endpointId, NimBus.MessageStore.States.AccessControlList accessControl) => throw new NotSupportedException();
     }
 
     internal sealed record UploadCall(string EventId, string SessionId, string EndpointId, UnresolvedEvent Content);

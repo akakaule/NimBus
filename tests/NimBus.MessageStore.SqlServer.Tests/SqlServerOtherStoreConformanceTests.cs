@@ -65,3 +65,18 @@ public sealed class SqlServerEventSchemaStoreConformanceTests : EventSchemaStore
     protected override IEventSchemaStore CreateStore()
         => SqlServerStoreTestHarness.CreateStore(typeof(SqlServerEventSchemaStoreConformanceTests));
 }
+
+[TestClass]
+public sealed class SqlServerAccessControlStoreConformanceTests : AccessControlStoreConformanceTests
+{
+    [ClassInitialize]
+    public static Task ClassInit(TestContext context)
+        => SqlServerStoreTestHarness.InitializeAsync(typeof(SqlServerAccessControlStoreConformanceTests));
+
+    [TestInitialize]
+    public Task ResetSchema()
+        => SqlServerStoreTestHarness.ResetAsync(typeof(SqlServerAccessControlStoreConformanceTests));
+
+    protected override IAccessControlStore CreateStore()
+        => SqlServerStoreTestHarness.CreateStore(typeof(SqlServerAccessControlStoreConformanceTests));
+}

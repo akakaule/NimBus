@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using NimBus.Core.Messages;
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
@@ -32,6 +33,7 @@ public class InMemoryMessageStore : INimBusMessageStore
     private readonly ConcurrentDictionary<(string EndpointId, string EventId), EventReport> _eventReports = new();
     private readonly ConcurrentDictionary<string, EndpointMetadata> _metadata = new();
     private readonly ConcurrentDictionary<string, EventSchema> _schemas = new();
+    private readonly ConcurrentDictionary<string, AccessControlList> _accessControls = new();
 
     private (string, string, string) Key(string endpoint, string eventId, string session) => (endpoint, eventId, session ?? string.Empty);
 
@@ -476,6 +478,41 @@ public class InMemoryMessageStore : INimBusMessageStore
             throw new SchemaConflictException(schema.EventTypeId);
         return Task.FromResult(existing);
     }
+
+    public Task<AccessControlList?> GetSiteAccessControl()
+        => Task.FromResult(_accessControls.TryGetValue(AccessControlList.SiteId, out var acl) ? Clone(acl) : null);
+
+    public Task SetSiteAccessControl(AccessControlList accessControl)
+    {
+        var copy = Clone(accessControl)!;
+        copy.Id = AccessControlList.SiteId;
+        copy.EndpointId = null;
+        _accessControls[copy.Id] = copy;
+        return Task.CompletedTask;
+    }
+
+    public Task<AccessControlList?> GetEndpointAccessControl(string endpointId)
+        => Task.FromResult(_accessControls.TryGetValue(AccessControlList.IdForEndpoint(endpointId), out var acl) ? Clone(acl) : null);
+
+    public Task<IReadOnlyList<AccessControlList>> GetEndpointAccessControls()
+        => Task.FromResult<IReadOnlyList<AccessControlList>>(
+            _accessControls.Values
+                .Where(a => a.Id.StartsWith(AccessControlList.EndpointIdPrefix, StringComparison.Ordinal))
+                .Select(a => Clone(a)!)
+                .ToList());
+
+    public Task SetEndpointAccessControl(string endpointId, AccessControlList accessControl)
+    {
+        var copy = Clone(accessControl)!;
+        copy.Id = AccessControlList.IdForEndpoint(endpointId);
+        copy.EndpointId = endpointId;
+        _accessControls[copy.Id] = copy;
+        return Task.CompletedTask;
+    }
+
+    // Copy on both write and read so callers can never mutate stored state in place.
+    private static AccessControlList? Clone(AccessControlList? acl)
+        => acl == null ? null : JsonConvert.DeserializeObject<AccessControlList>(JsonConvert.SerializeObject(acl));
 
     public Task<EndpointMetadata> GetEndpointMetadata(string endpointId)
         => _metadata.TryGetValue(endpointId, out var m) ? Task.FromResult(m) : throw new EndpointNotFoundException(endpointId);

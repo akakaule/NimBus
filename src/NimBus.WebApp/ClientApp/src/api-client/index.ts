@@ -4229,6 +4229,367 @@ export class Client extends ApiClientBase {
         }
         return Promise.resolve<void>(null as any);
     }
+
+    /**
+     * Get the site-wide access-control lists
+     * @return OK
+     */
+    getAccessControl(): Promise<AccessControlSet> {
+        let url_ = this.baseUrl + "/api/access-control";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAccessControl(_response);
+        });
+    }
+
+    protected processGetAccessControl(response: Response): Promise<AccessControlSet> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AccessControlSet.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AccessControlSet>(null as any);
+    }
+
+    /**
+     * Grant a site-wide role to an email address or Entra object id
+     * @param body (optional) 
+     * @return OK — returns the updated access-control lists
+     */
+    postAccessControlRole(body?: RoleEntry | undefined): Promise<AccessControlSet> {
+        let url_ = this.baseUrl + "/api/access-control/roles";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAccessControlRole(_response);
+        });
+    }
+
+    protected processPostAccessControlRole(response: Response): Promise<AccessControlSet> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AccessControlSet.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Bad Request", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AccessControlSet>(null as any);
+    }
+
+    /**
+     * Revoke a site-wide role entry
+     * @param body (optional) 
+     * @return OK — returns the updated access-control lists
+     */
+    deleteAccessControlRole(body?: RoleEntry | undefined): Promise<AccessControlSet> {
+        let url_ = this.baseUrl + "/api/access-control/roles";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "DELETE",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processDeleteAccessControlRole(_response);
+        });
+    }
+
+    protected processDeleteAccessControlRole(response: Response): Promise<AccessControlSet> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AccessControlSet.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Bad Request", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AccessControlSet>(null as any);
+    }
+
+    /**
+     * Get the current user's resolved access
+     * @return OK
+     */
+    getAccessControlMe(): Promise<CurrentUserAccessInfo> {
+        let url_ = this.baseUrl + "/api/access-control/me";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAccessControlMe(_response);
+        });
+    }
+
+    protected processGetAccessControlMe(response: Response): Promise<CurrentUserAccessInfo> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = CurrentUserAccessInfo.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<CurrentUserAccessInfo>(null as any);
+    }
+
+    /**
+     * Get one endpoint's access-control lists
+     * @return OK
+     */
+    getEndpointAccessControl(endpointId: string): Promise<AccessControlSet> {
+        let url_ = this.baseUrl + "/api/access-control/endpoint/{endpointId}";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetEndpointAccessControl(_response);
+        });
+    }
+
+    protected processGetEndpointAccessControl(response: Response): Promise<AccessControlSet> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AccessControlSet.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AccessControlSet>(null as any);
+    }
+
+    /**
+     * Grant an endpoint-scoped role (piiReader is site-scoped and rejected)
+     * @param body (optional) 
+     * @return OK — returns the updated access-control lists
+     */
+    postEndpointAccessControlRole(endpointId: string, body?: RoleEntry | undefined): Promise<AccessControlSet> {
+        let url_ = this.baseUrl + "/api/access-control/endpoint/{endpointId}/roles";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostEndpointAccessControlRole(_response);
+        });
+    }
+
+    protected processPostEndpointAccessControlRole(response: Response): Promise<AccessControlSet> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AccessControlSet.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Bad Request", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AccessControlSet>(null as any);
+    }
+
+    /**
+     * Revoke an endpoint-scoped role entry
+     * @param body (optional) 
+     * @return OK — returns the updated access-control lists
+     */
+    deleteEndpointAccessControlRole(endpointId: string, body?: RoleEntry | undefined): Promise<AccessControlSet> {
+        let url_ = this.baseUrl + "/api/access-control/endpoint/{endpointId}/roles";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "DELETE",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processDeleteEndpointAccessControlRole(_response);
+        });
+    }
+
+    protected processDeleteEndpointAccessControlRole(response: Response): Promise<AccessControlSet> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AccessControlSet.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Bad Request", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AccessControlSet>(null as any);
+    }
 }
 
 export class OldEvent implements IOldEvent {
@@ -9740,6 +10101,310 @@ export interface IUserInfo {
     [key: string]: any;
 }
 
+/** The four role lists of one access-control scope. Entries are email addresses or Entra object ids. */
+export class AccessControlSet implements IAccessControlSet {
+    readers?: string[];
+    contributors?: string[];
+    owners?: string[];
+    piiReaders?: string[];
+
+    [key: string]: any;
+
+    constructor(data?: IAccessControlSet) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["readers"])) {
+                this.readers = [] as any;
+                for (let item of _data["readers"])
+                    this.readers!.push(item);
+            }
+            if (Array.isArray(_data["contributors"])) {
+                this.contributors = [] as any;
+                for (let item of _data["contributors"])
+                    this.contributors!.push(item);
+            }
+            if (Array.isArray(_data["owners"])) {
+                this.owners = [] as any;
+                for (let item of _data["owners"])
+                    this.owners!.push(item);
+            }
+            if (Array.isArray(_data["piiReaders"])) {
+                this.piiReaders = [] as any;
+                for (let item of _data["piiReaders"])
+                    this.piiReaders!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): AccessControlSet {
+        data = typeof data === 'object' ? data : {};
+        let result = new AccessControlSet();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.readers)) {
+            data["readers"] = [];
+            for (let item of this.readers)
+                data["readers"].push(item);
+        }
+        if (Array.isArray(this.contributors)) {
+            data["contributors"] = [];
+            for (let item of this.contributors)
+                data["contributors"].push(item);
+        }
+        if (Array.isArray(this.owners)) {
+            data["owners"] = [];
+            for (let item of this.owners)
+                data["owners"].push(item);
+        }
+        if (Array.isArray(this.piiReaders)) {
+            data["piiReaders"] = [];
+            for (let item of this.piiReaders)
+                data["piiReaders"].push(item);
+        }
+        return data;
+    }
+
+    clone(): AccessControlSet {
+        const json = this.toJSON();
+        let result = new AccessControlSet();
+        result.init(json);
+        return result;
+    }
+}
+
+/** The four role lists of one access-control scope. Entries are email addresses or Entra object ids. */
+export interface IAccessControlSet {
+    readers?: string[];
+    contributors?: string[];
+    owners?: string[];
+    piiReaders?: string[];
+
+    [key: string]: any;
+}
+
+export class RoleEntry implements IRoleEntry {
+    role!: RoleEntryRole;
+    /** Email address or Entra object id */
+    entry!: string;
+
+    [key: string]: any;
+
+    constructor(data?: IRoleEntry) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.role = _data["role"];
+            this.entry = _data["entry"];
+        }
+    }
+
+    static fromJS(data: any): RoleEntry {
+        data = typeof data === 'object' ? data : {};
+        let result = new RoleEntry();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["role"] = this.role;
+        data["entry"] = this.entry;
+        return data;
+    }
+
+    clone(): RoleEntry {
+        const json = this.toJSON();
+        let result = new RoleEntry();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IRoleEntry {
+    role: RoleEntryRole;
+    /** Email address or Entra object id */
+    entry: string;
+
+    [key: string]: any;
+}
+
+export class EndpointRoleInfo implements IEndpointRoleInfo {
+    endpointId?: string;
+    role?: EndpointRoleInfoRole;
+
+    [key: string]: any;
+
+    constructor(data?: IEndpointRoleInfo) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.endpointId = _data["endpointId"];
+            this.role = _data["role"];
+        }
+    }
+
+    static fromJS(data: any): EndpointRoleInfo {
+        data = typeof data === 'object' ? data : {};
+        let result = new EndpointRoleInfo();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["endpointId"] = this.endpointId;
+        data["role"] = this.role;
+        return data;
+    }
+
+    clone(): EndpointRoleInfo {
+        const json = this.toJSON();
+        let result = new EndpointRoleInfo();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IEndpointRoleInfo {
+    endpointId?: string;
+    role?: EndpointRoleInfoRole;
+
+    [key: string]: any;
+}
+
+export class CurrentUserAccessInfo implements ICurrentUserAccessInfo {
+    name?: string | undefined;
+    email?: string | undefined;
+    siteRole?: CurrentUserAccessInfoSiteRole;
+    isPiiReader?: boolean;
+    canManageAccessControl?: boolean;
+    endpointRoles?: EndpointRoleInfo[];
+
+    [key: string]: any;
+
+    constructor(data?: ICurrentUserAccessInfo) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.name = _data["name"];
+            this.email = _data["email"];
+            this.siteRole = _data["siteRole"];
+            this.isPiiReader = _data["isPiiReader"];
+            this.canManageAccessControl = _data["canManageAccessControl"];
+            if (Array.isArray(_data["endpointRoles"])) {
+                this.endpointRoles = [] as any;
+                for (let item of _data["endpointRoles"])
+                    this.endpointRoles!.push(EndpointRoleInfo.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): CurrentUserAccessInfo {
+        data = typeof data === 'object' ? data : {};
+        let result = new CurrentUserAccessInfo();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["name"] = this.name;
+        data["email"] = this.email;
+        data["siteRole"] = this.siteRole;
+        data["isPiiReader"] = this.isPiiReader;
+        data["canManageAccessControl"] = this.canManageAccessControl;
+        if (Array.isArray(this.endpointRoles)) {
+            data["endpointRoles"] = [];
+            for (let item of this.endpointRoles)
+                data["endpointRoles"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): CurrentUserAccessInfo {
+        const json = this.toJSON();
+        let result = new CurrentUserAccessInfo();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ICurrentUserAccessInfo {
+    name?: string | undefined;
+    email?: string | undefined;
+    siteRole?: CurrentUserAccessInfoSiteRole;
+    isPiiReader?: boolean;
+    canManageAccessControl?: boolean;
+    endpointRoles?: EndpointRoleInfo[];
+
+    [key: string]: any;
+}
+
 export class CountResponse implements ICountResponse {
     count?: number;
 
@@ -10737,6 +11402,27 @@ export enum AuditSearchFilterAuditType {
     PurgeMessages = "purgeMessages",
     Compose = "compose",
     ReportEvent = "reportEvent",
+}
+
+export enum RoleEntryRole {
+    Reader = "reader",
+    Contributor = "contributor",
+    Owner = "owner",
+    PiiReader = "piiReader",
+}
+
+export enum EndpointRoleInfoRole {
+    None = "none",
+    Reader = "reader",
+    Contributor = "contributor",
+    Owner = "owner",
+}
+
+export enum CurrentUserAccessInfoSiteRole {
+    None = "none",
+    Reader = "reader",
+    Contributor = "contributor",
+    Owner = "owner",
 }
 
 export enum AuditEntryAuditType {

@@ -1991,6 +1991,163 @@ namespace NimBus.WebApp.ManagementApi
 
     }
 
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public interface IAccessControlApiController
+    {
+
+        /// <summary>
+        /// Get the site-wide access-control lists
+        /// </summary>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AccessControlSet>> GetAccessControlAsync();
+
+        /// <summary>
+        /// Grant a site-wide role to an email address or Entra object id
+        /// </summary>
+
+
+        /// <returns>OK — returns the updated access-control lists</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AccessControlSet>> PostAccessControlRoleAsync(RoleEntry body);
+
+        /// <summary>
+        /// Revoke a site-wide role entry
+        /// </summary>
+
+
+        /// <returns>OK — returns the updated access-control lists</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AccessControlSet>> DeleteAccessControlRoleAsync(RoleEntry body);
+
+        /// <summary>
+        /// Get the current user's resolved access
+        /// </summary>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<CurrentUserAccessInfo>> GetAccessControlMeAsync();
+
+        /// <summary>
+        /// Get one endpoint's access-control lists
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AccessControlSet>> GetEndpointAccessControlAsync(string endpointId);
+
+        /// <summary>
+        /// Grant an endpoint-scoped role (piiReader is site-scoped and rejected)
+        /// </summary>
+
+
+        /// <returns>OK — returns the updated access-control lists</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AccessControlSet>> PostEndpointAccessControlRoleAsync(RoleEntry body, string endpointId);
+
+        /// <summary>
+        /// Revoke an endpoint-scoped role entry
+        /// </summary>
+
+
+        /// <returns>OK — returns the updated access-control lists</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AccessControlSet>> DeleteEndpointAccessControlRoleAsync(RoleEntry body, string endpointId);
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+
+    public partial class AccessControlApiController : Microsoft.AspNetCore.Mvc.Controller
+    {
+        private IAccessControlApiController _implementation;
+
+        public AccessControlApiController(IAccessControlApiController implementation)
+        {
+            _implementation = implementation;
+        }
+
+        /// <summary>
+        /// Get the site-wide access-control lists
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/access-control")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AccessControlSet>> GetAccessControl()
+        {
+
+            return _implementation.GetAccessControlAsync();
+        }
+
+        /// <summary>
+        /// Grant a site-wide role to an email address or Entra object id
+        /// </summary>
+        /// <returns>OK — returns the updated access-control lists</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/access-control/roles")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AccessControlSet>> PostAccessControlRole([Microsoft.AspNetCore.Mvc.FromBody] RoleEntry body)
+        {
+
+            return _implementation.PostAccessControlRoleAsync(body);
+        }
+
+        /// <summary>
+        /// Revoke a site-wide role entry
+        /// </summary>
+        /// <returns>OK — returns the updated access-control lists</returns>
+        [Microsoft.AspNetCore.Mvc.HttpDelete, Microsoft.AspNetCore.Mvc.Route("api/access-control/roles")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AccessControlSet>> DeleteAccessControlRole([Microsoft.AspNetCore.Mvc.FromBody] RoleEntry body)
+        {
+
+            return _implementation.DeleteAccessControlRoleAsync(body);
+        }
+
+        /// <summary>
+        /// Get the current user's resolved access
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/access-control/me")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<CurrentUserAccessInfo>> GetAccessControlMe()
+        {
+
+            return _implementation.GetAccessControlMeAsync();
+        }
+
+        /// <summary>
+        /// Get one endpoint's access-control lists
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/access-control/endpoint/{endpointId}")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AccessControlSet>> GetEndpointAccessControl(string endpointId)
+        {
+
+            return _implementation.GetEndpointAccessControlAsync(endpointId);
+        }
+
+        /// <summary>
+        /// Grant an endpoint-scoped role (piiReader is site-scoped and rejected)
+        /// </summary>
+        /// <returns>OK — returns the updated access-control lists</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/access-control/endpoint/{endpointId}/roles")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AccessControlSet>> PostEndpointAccessControlRole([Microsoft.AspNetCore.Mvc.FromBody] RoleEntry body, string endpointId)
+        {
+
+            return _implementation.PostEndpointAccessControlRoleAsync(body, endpointId);
+        }
+
+        /// <summary>
+        /// Revoke an endpoint-scoped role entry
+        /// </summary>
+        /// <returns>OK — returns the updated access-control lists</returns>
+        [Microsoft.AspNetCore.Mvc.HttpDelete, Microsoft.AspNetCore.Mvc.Route("api/access-control/endpoint/{endpointId}/roles")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AccessControlSet>> DeleteEndpointAccessControlRole([Microsoft.AspNetCore.Mvc.FromBody] RoleEntry body, string endpointId)
+        {
+
+            return _implementation.DeleteEndpointAccessControlRoleAsync(body, endpointId);
+        }
+
+    }
+
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class OldEvent : System.ComponentModel.INotifyPropertyChanged
     {
@@ -9426,6 +9583,353 @@ namespace NimBus.WebApp.ManagementApi
         }
     }
 
+    /// <summary>
+    /// The four role lists of one access-control scope. Entries are email addresses or Entra object ids.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AccessControlSet : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.Collections.Generic.List<string> _readers;
+        private System.Collections.Generic.List<string> _contributors;
+        private System.Collections.Generic.List<string> _owners;
+        private System.Collections.Generic.List<string> _piiReaders;
+
+        [Newtonsoft.Json.JsonProperty("readers", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Readers    {
+            get { return _readers; }
+            set
+            {
+                if (_readers != value)
+                {
+                    _readers = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("contributors", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Contributors    {
+            get { return _contributors; }
+            set
+            {
+                if (_contributors != value)
+                {
+                    _contributors = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("owners", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Owners    {
+            get { return _owners; }
+            set
+            {
+                if (_owners != value)
+                {
+                    _owners = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("piiReaders", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> PiiReaders    {
+            get { return _piiReaders; }
+            set
+            {
+                if (_piiReaders != value)
+                {
+                    _piiReaders = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AccessControlSet FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AccessControlSet>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class RoleEntry : System.ComponentModel.INotifyPropertyChanged
+    {
+        private RoleEntryRole _role;
+        private string _entry;
+
+        [Newtonsoft.Json.JsonProperty("role", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public RoleEntryRole Role    {
+            get { return _role; }
+            set
+            {
+                if (_role != value)
+                {
+                    _role = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Email address or Entra object id
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("entry", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string Entry    {
+            get { return _entry; }
+            set
+            {
+                if (_entry != value)
+                {
+                    _entry = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static RoleEntry FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<RoleEntry>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class EndpointRoleInfo : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _endpointId;
+        private EndpointRoleInfoRole _role;
+
+        [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EndpointId    {
+            get { return _endpointId; }
+            set
+            {
+                if (_endpointId != value)
+                {
+                    _endpointId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("role", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public EndpointRoleInfoRole Role    {
+            get { return _role; }
+            set
+            {
+                if (_role != value)
+                {
+                    _role = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static EndpointRoleInfo FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<EndpointRoleInfo>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class CurrentUserAccessInfo : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _name;
+        private string _email;
+        private CurrentUserAccessInfoSiteRole _siteRole;
+        private bool _isPiiReader;
+        private bool _canManageAccessControl;
+        private System.Collections.Generic.List<EndpointRoleInfo> _endpointRoles;
+
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("email", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Email    {
+            get { return _email; }
+            set
+            {
+                if (_email != value)
+                {
+                    _email = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("siteRole", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public CurrentUserAccessInfoSiteRole SiteRole    {
+            get { return _siteRole; }
+            set
+            {
+                if (_siteRole != value)
+                {
+                    _siteRole = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("isPiiReader", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool IsPiiReader    {
+            get { return _isPiiReader; }
+            set
+            {
+                if (_isPiiReader != value)
+                {
+                    _isPiiReader = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("canManageAccessControl", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool CanManageAccessControl    {
+            get { return _canManageAccessControl; }
+            set
+            {
+                if (_canManageAccessControl != value)
+                {
+                    _canManageAccessControl = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("endpointRoles", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<EndpointRoleInfo> EndpointRoles    {
+            get { return _endpointRoles; }
+            set
+            {
+                if (_endpointRoles != value)
+                {
+                    _endpointRoles = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static CurrentUserAccessInfo FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<CurrentUserAccessInfo>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class CountResponse : System.ComponentModel.INotifyPropertyChanged
     {
@@ -10828,6 +11332,60 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"reportEvent")]
         ReportEvent = 16,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum RoleEntryRole
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"reader")]
+        Reader = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"contributor")]
+        Contributor = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"owner")]
+        Owner = 2,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"piiReader")]
+        PiiReader = 3,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum EndpointRoleInfoRole
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"none")]
+        None = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"reader")]
+        Reader = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"contributor")]
+        Contributor = 2,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"owner")]
+        Owner = 3,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum CurrentUserAccessInfoSiteRole
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"none")]
+        None = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"reader")]
+        Reader = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"contributor")]
+        Contributor = 2,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"owner")]
+        Owner = 3,
 
     }
 

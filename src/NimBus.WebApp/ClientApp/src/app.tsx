@@ -20,6 +20,7 @@ const EventTypesList = lazy(() => import("pages/event-types-list"));
 const EventTypeDetails = lazy(() => import("pages/event-type-details"));
 const MessagesList = lazy(() => import("pages/messages-list"));
 const Admin = lazy(() => import("pages/admin"));
+const AccessControl = lazy(() => import("pages/access-control"));
 const Metrics = lazy(() => import("pages/metrics"));
 const Topology = lazy(() => import("pages/topology"));
 const Flow = lazy(() => import("pages/flow"));
@@ -111,6 +112,12 @@ const navigation: Navigation = [
     path: "/Admin",
     header: true,
     render: () => <Admin />,
+  },
+  {
+    name: "Access Control",
+    path: "/AccessControl",
+    header: true,
+    render: () => <AccessControl />,
   },
   {
     name: "Front",

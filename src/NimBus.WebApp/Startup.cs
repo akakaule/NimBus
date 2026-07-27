@@ -485,6 +485,7 @@ namespace NimBus.WebApp
             services.AddTransient<IAdminApiController, AdminImplementation>();
             services.AddTransient<IMetricsApiController, MetricsImplementation>();
             services.AddTransient<IAuditApiController, AuditImplementation>();
+            services.AddTransient<IAccessControlApiController, AccessControlImplementation>();
             services.AddTransient<IDevApiController, DevImplementation>();
             services.AddTransient<IAgentApiController, AgentImplementation>();
             services.AddSingleton<IAgentEventPublisher, AgentEventPublisher>();

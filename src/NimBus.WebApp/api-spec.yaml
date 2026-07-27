@@ -1952,6 +1952,153 @@ paths:
       responses:
         '200':
           description: OK
+  /api/access-control:
+    get:
+      summary: Get the site-wide access-control lists
+      operationId: get-access-control
+      tags:
+        - AccessControl
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessControlSet'
+        '403':
+          description: Forbidden
+  /api/access-control/roles:
+    post:
+      summary: Grant a site-wide role to an email address or Entra object id
+      operationId: post-access-control-role
+      tags:
+        - AccessControl
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleEntry'
+      responses:
+        '200':
+          description: OK — returns the updated access-control lists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessControlSet'
+        '400':
+          description: Bad Request
+        '403':
+          description: Forbidden
+    delete:
+      summary: Revoke a site-wide role entry
+      operationId: delete-access-control-role
+      tags:
+        - AccessControl
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleEntry'
+      responses:
+        '200':
+          description: OK — returns the updated access-control lists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessControlSet'
+        '400':
+          description: Bad Request
+        '403':
+          description: Forbidden
+  /api/access-control/me:
+    get:
+      summary: Get the current user's resolved access
+      operationId: get-access-control-me
+      tags:
+        - AccessControl
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUserAccessInfo'
+  '/api/access-control/endpoint/{endpointId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    get:
+      summary: Get one endpoint's access-control lists
+      operationId: get-endpoint-access-control
+      tags:
+        - AccessControl
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessControlSet'
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+  '/api/access-control/endpoint/{endpointId}/roles':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: Grant an endpoint-scoped role (piiReader is site-scoped and rejected)
+      operationId: post-endpoint-access-control-role
+      tags:
+        - AccessControl
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleEntry'
+      responses:
+        '200':
+          description: OK — returns the updated access-control lists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessControlSet'
+        '400':
+          description: Bad Request
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+    delete:
+      summary: Revoke an endpoint-scoped role entry
+      operationId: delete-endpoint-access-control-role
+      tags:
+        - AccessControl
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleEntry'
+      responses:
+        '200':
+          description: OK — returns the updated access-control lists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessControlSet'
+        '400':
+          description: Bad Request
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
 components:
   schemas:
     OldEvent:
@@ -3336,6 +3483,82 @@ components:
         name:
           type: string
           nullable: true
+    AccessControlSet:
+      title: AccessControlSet
+      type: object
+      description: The four role lists of one access-control scope. Entries are email addresses or Entra object ids.
+      properties:
+        readers:
+          type: array
+          items:
+            type: string
+        contributors:
+          type: array
+          items:
+            type: string
+        owners:
+          type: array
+          items:
+            type: string
+        piiReaders:
+          type: array
+          items:
+            type: string
+    RoleEntry:
+      title: RoleEntry
+      type: object
+      required:
+        - role
+        - entry
+      properties:
+        role:
+          type: string
+          enum:
+            - reader
+            - contributor
+            - owner
+            - piiReader
+        entry:
+          type: string
+          description: Email address or Entra object id
+    EndpointRoleInfo:
+      title: EndpointRoleInfo
+      type: object
+      properties:
+        endpointId:
+          type: string
+        role:
+          type: string
+          enum:
+            - none
+            - reader
+            - contributor
+            - owner
+    CurrentUserAccessInfo:
+      title: CurrentUserAccessInfo
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        siteRole:
+          type: string
+          enum:
+            - none
+            - reader
+            - contributor
+            - owner
+        isPiiReader:
+          type: boolean
+        canManageAccessControl:
+          type: boolean
+        endpointRoles:
+          type: array
+          items:
+            $ref: '#/components/schemas/EndpointRoleInfo'
     CountResponse:
       title: CountResponse
       type: object
@@ -3505,6 +3728,7 @@ components:
         errorType:
           type: string
 tags:
+  - name: AccessControl
   - name: Event
   - name: EventType
   - name: Application

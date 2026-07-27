@@ -1,6 +1,8 @@
 import { NavLink } from "react-router-dom";
+import * as api from "api-client";
 import { cn } from "lib/utils";
 import { useEnv } from "hooks/app-status";
+import { useAccess } from "hooks/use-access";
 import SidebarUserFooter from "components/sidebar-user-footer";
 
 interface NavItem {
@@ -159,6 +161,25 @@ const Icon = {
       />
     </svg>
   ),
+  access: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
+      <rect
+        x="3"
+        y="7"
+        width="10"
+        height="6"
+        rx="1.4"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+      <path
+        d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+      <circle cx="8" cy="10" r="1" fill="currentColor" />
+    </svg>
+  ),
 };
 
 const NAV: NavGroup[] = [
@@ -214,9 +235,35 @@ const NAV: NavGroup[] = [
     label: "Manage",
     items: [
       { name: "Admin", path: "/Admin", icon: Icon.admin },
+      { name: "Access Control", path: "/AccessControl", icon: Icon.access },
     ],
   },
 ];
+
+// Render-side gating only — the server enforces every role check. Admin is a
+// site-Owner surface; Access Control also serves endpoint Owners. Items stay
+// hidden until the access lookup resolves so role-less users never see a
+// flash of manage links.
+const useVisibleNav = (): NavGroup[] => {
+  const { access } = useAccess();
+  const canManageSite = access?.canManageAccessControl ?? false;
+  const ownsEndpoint =
+    access?.endpointRoles?.some(
+      (r) => r.role === api.EndpointRoleInfoRole.Owner,
+    ) ?? false;
+
+  return NAV.map((group) => {
+    if (group.label !== "Manage") return group;
+    return {
+      ...group,
+      items: group.items.filter((item) =>
+        item.path === "/Admin"
+          ? canManageSite
+          : canManageSite || ownsEndpoint,
+      ),
+    };
+  }).filter((group) => group.items.length > 0);
+};
 
 // Logo mark — soft cloud silhouette + coral droplet (design system §01).
 const LogoMark = ({ size = 22 }: { size?: number }) => (
@@ -240,6 +287,7 @@ const LogoMark = ({ size = 22 }: { size?: number }) => (
 
 const Sidebar = () => {
   const env = useEnv();
+  const nav = useVisibleNav();
 
   return (
     <aside
@@ -267,7 +315,7 @@ const Sidebar = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {NAV.map((group) => (
+        {nav.map((group) => (
           <div key={group.label}>
             <div className="font-mono text-[9.5px] text-[#6F6A5C] tracking-widest uppercase mt-3.5 mb-1 mx-2.5">
               {group.label}

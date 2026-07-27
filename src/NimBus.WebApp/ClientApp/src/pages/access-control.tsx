@@ -142,6 +142,9 @@ export default function AccessControl() {
       title="Access Control"
       subtitle="Storage-backed roles: Reader < Contributor < Owner, plus the orthogonal PII Reader capability. Entries are email addresses or Entra object ids."
     >
+      {/* Page's content wrapper is a flex ROW — a single column child keeps
+          the endpoint section below the site-wide section. */}
+      <div className="w-full min-w-0">
       {canManageSite && (
         <section className="mb-8">
           <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-3">
@@ -230,6 +233,7 @@ export default function AccessControl() {
           </div>
         )}
       </section>
+      </div>
     </Page>
   );
 }

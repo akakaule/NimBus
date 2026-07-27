@@ -189,6 +189,15 @@ namespace NimBus.WebApp
                         .Build();
                     options.Filters.Add(new AuthorizeFilter(policy));
                 }).AddMicrosoftIdentityUI();
+
+                // Entra tokens carry group object IDs (GUIDs), never names, so the
+                // literal groups == "EIP_Management" admin checks can't match an
+                // Entra principal on their own. Map configured admin group/user
+                // object IDs (Authorization:AdminGroupObjectIds / :AdminUserObjectIds)
+                // onto the internal marker. Registered only on this Entra-only branch:
+                // IClaimsTransformation is single-resolution (last registration wins),
+                // and the Identity branches rely on NimBusClaimsTransformation.
+                services.AddTransient<IClaimsTransformation, EntraAdminClaimsTransformation>();
             }
 
             // The NSwag-generated controllers cannot carry per-action attributes,

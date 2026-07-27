@@ -150,7 +150,8 @@ var identitySecretSettings = identityEnabled ? {
   NimBusIdentity__Bootstrap__Password: identityAdminPassword
 } : {}
 
-// The WebApp's Entra ID sign-in config (AzureAd__*) and the optional portal
+// The WebApp's Entra ID sign-in config (AzureAd__*), the platform-admin grants
+// (Authorization__*) and the optional portal
 // deep-link config (ServiceBusManagement__*) are set out of band — this template
 // creates no app registration, so it cannot produce them. appSettings deployment
 // is a FULL REPLACE, so without carrying the current values forward every re-run
@@ -159,7 +160,7 @@ var identitySecretSettings = identityEnabled ? {
 // history; template-managed settings win on any future key collision.
 var existingAppSettings = webAppExists ? list(resourceId('Microsoft.Web/sites/config', managementWebAppName, 'appsettings'), '2022-03-01').properties : {}
 var preservedExistingSettings = toObject(
-  filter(items(existingAppSettings), s => startsWith(s.key, 'AzureAd__') || startsWith(s.key, 'ServiceBusManagement__')),
+  filter(items(existingAppSettings), s => startsWith(s.key, 'AzureAd__') || startsWith(s.key, 'ServiceBusManagement__') || startsWith(s.key, 'Authorization__')),
   s => s.key,
   s => s.value)
 

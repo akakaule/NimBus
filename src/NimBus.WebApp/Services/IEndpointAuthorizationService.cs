@@ -1,39 +1,34 @@
-using System;
-using NimBus.MessageStore;
+using System.Threading.Tasks;
 
 namespace NimBus.WebApp.Services;
 
 /// <summary>
-/// Service for endpoint authorization and user context operations.
+/// Role-based authorization for the management WebApp (spec 026). Roles are
+/// resolved from the storage-backed access-control lists unioned with
+/// claim-based compat grants (the <c>EIP_Management</c> marker claim maps to
+/// site <see cref="AccessRole.Owner"/>; code-defined endpoint RoleAssignments
+/// map to endpoint Owner), so a fresh, empty store never locks out configured
+/// administrators.
 /// </summary>
 public interface IEndpointAuthorizationService
 {
     /// <summary>
-    /// Checks if the current user has management permissions for the specified endpoint.
+    /// Whether the current principal holds at least <paramref name="required"/> —
+    /// site-wide, or on <paramref name="endpointId"/> when given (effective role
+    /// is the max of the site role and the endpoint-scoped role).
     /// </summary>
-    /// <param name="endpointId">The endpoint ID to check.</param>
-    /// <returns>True if the user can manage the endpoint, false otherwise.</returns>
-    bool IsManagerOfEndpoint(string endpointId);
+    Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null);
 
     /// <summary>
-    /// Checks if the current user is a platform administrator — someone who can
-    /// manage every endpoint (the EIP_Management security group, or any user when
-    /// <c>BypassEndpointAuthorization</c> is enabled). Gates cross-endpoint
-    /// surfaces such as unscoped audit searches.
+    /// Whether the current principal may view raw event payloads. Deliberately
+    /// NOT implied by <see cref="AccessRole.Owner"/> or any compat grant
+    /// (spec 021: PII reveal is a separately-granted capability).
     /// </summary>
-    bool IsPlatformAdministrator();
+    Task<bool> CanReadPiiAsync();
 
-    /// <summary>
-    /// Creates a message audit entity for the current user with the specified audit type.
-    /// </summary>
-    /// <param name="type">The type of audit action.</param>
-    /// <returns>A MessageAuditEntity populated with current user information.</returns>
-    [Obsolete("Use IAuditLogService.LogAuditAsync — see spec 008 (centralized audit log service). This bridge remains for any legacy caller that has not yet migrated; it will be removed in a follow-up release.", error: false)]
-    MessageAuditEntity GetMessageAuditEntity(MessageAuditType type);
+    /// <summary>The current principal's full resolved access (for /api/access-control/me and UI gating).</summary>
+    Task<CurrentUserAccess> GetCurrentUserAccessAsync();
 
-    /// <summary>
-    /// Gets the current user's email/name from claims.
-    /// </summary>
-    /// <returns>The user's name or email.</returns>
+    /// <summary>Gets the current user's display name / email from claims.</summary>
     string? GetCurrentUserName();
 }

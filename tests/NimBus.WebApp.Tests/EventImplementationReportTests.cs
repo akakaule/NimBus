@@ -167,12 +167,15 @@ public sealed class EventImplementationReportTests
 
     private sealed class AllowAllAuthorizationService : IEndpointAuthorizationService
     {
-        public bool IsManagerOfEndpoint(string endpointId) => true;
+        public Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null) => Task.FromResult(true);
 
-        public bool IsPlatformAdministrator() => true;
+        public Task<bool> CanReadPiiAsync() => Task.FromResult(true);
 
-        [Obsolete("Bridge member required by the interface; not used in these tests.")]
-        public MessageAuditEntity GetMessageAuditEntity(MessageAuditType type) => throw new NotSupportedException();
+        public Task<CurrentUserAccess> GetCurrentUserAccessAsync() => Task.FromResult(new CurrentUserAccess
+        {
+            SiteRole = AccessRole.Owner,
+            IsPiiReader = true,
+        });
 
         public string? GetCurrentUserName() => "test-user";
     }

@@ -463,6 +463,10 @@ namespace NimBus.WebApp
             // controllers are transient, so a shorter lifetime would never hit.
             services.AddMemoryCache();
             services.AddSingleton<IStoreResultCache, StoreResultCache>();
+            // Spec 026: the ACL snapshot cache must be a singleton (the consuming
+            // authorization service is scoped, so a shorter lifetime would never
+            // hit); the authorization service memoizes one resolution per request.
+            services.AddSingleton<IAccessControlSnapshotProvider, AccessControlSnapshotProvider>();
             services.AddScoped<IEndpointAuthorizationService, EndpointAuthorizationService>();
             // Spec 008: centralized audit-write contract. Scoped so the captured
             // INimBusMessageStore lifetime matches the request, consistent with

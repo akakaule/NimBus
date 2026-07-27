@@ -281,11 +281,17 @@ public sealed class AdminStatusSafetyTests
                 web.UseTestServer();
                 web.ConfigureServices(services =>
                 {
+                    services.AddLogging();
                     services.AddHttpContextAccessor();
                     services.AddSingleton<IPlatform>(platform);
                     services.AddSingleton<IAdminService>(adminService);
                     services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
                     services.AddSingleton<IAuditLogService, NoOpAuditLogService>();
+                    // Real resolution over the same in-memory store: the injected
+                    // EIP_Management claim authorizes via the compat union.
+                    services.AddSingleton<IAccessControlSnapshotProvider>(
+                        new AccessControlSnapshotProvider(store, NullLogger<AccessControlSnapshotProvider>.Instance));
+                    services.AddScoped<IEndpointAuthorizationService, EndpointAuthorizationService>();
                     services.AddScoped<IAdminApiController, AdminImplementation>();
                     services.AddControllers()
                         .AddApplicationPart(typeof(AdminApiController).Assembly)
@@ -319,12 +325,23 @@ public sealed class AdminStatusSafetyTests
                 authenticationType: "Test")),
         };
 
+        var accessor = new HttpContextAccessor { HttpContext = context };
+        var platform = new FakePlatform(EndpointId);
+        var configuration = new ConfigurationBuilder().Build();
+        var authorizationService = new EndpointAuthorizationService(
+            accessor,
+            platform,
+            NullLogger<EndpointAuthorizationService>.Instance,
+            configuration,
+            new AccessControlSnapshotProvider(new InMemoryMessageStore(), NullLogger<AccessControlSnapshotProvider>.Instance));
+
         return new AdminImplementation(
-            new HttpContextAccessor { HttpContext = context },
+            accessor,
             service,
-            new FakePlatform(EndpointId),
-            new ConfigurationBuilder().Build(),
-            new NoOpAuditLogService());
+            platform,
+            configuration,
+            new NoOpAuditLogService(),
+            authorizationService);
     }
 
     private static AdminService CreateAdminService(InMemoryMessageStore store) =>

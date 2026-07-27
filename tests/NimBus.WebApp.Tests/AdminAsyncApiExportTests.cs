@@ -106,7 +106,32 @@ public sealed class AdminAsyncApiExportTests
             adminService: null!,
             platform,
             configuration: null!,
-            auditLogService: null!);
+            auditLogService: null!,
+            authorizationService: new ClaimGateAuthService(ctx));
+    }
+
+    // Claims-shaped gate double: Owner iff the context carries the marker group
+    // claim. Resolution itself is covered by AccessControlServiceTests.
+    private sealed class ClaimGateAuthService : NimBus.WebApp.Services.IEndpointAuthorizationService
+    {
+        private readonly HttpContext _ctx;
+        public ClaimGateAuthService(HttpContext ctx) => _ctx = ctx;
+
+        private bool IsAdmin => _ctx.User?.Claims != null
+            && System.Linq.Enumerable.Any(_ctx.User.Claims, c => c.Type == "groups" && c.Value == ManagementGroup);
+
+        public Task<bool> HasRoleAsync(NimBus.WebApp.Services.AccessRole required, string? endpointId = null)
+            => Task.FromResult(IsAdmin);
+
+        public Task<bool> CanReadPiiAsync() => Task.FromResult(false);
+
+        public Task<NimBus.WebApp.Services.CurrentUserAccess> GetCurrentUserAccessAsync()
+            => Task.FromResult(new NimBus.WebApp.Services.CurrentUserAccess
+            {
+                SiteRole = IsAdmin ? NimBus.WebApp.Services.AccessRole.Owner : NimBus.WebApp.Services.AccessRole.None,
+            });
+
+        public string? GetCurrentUserName() => "test-user";
     }
 
     private static FileContentResult AssertFile(IActionResult result, string fileName, string contentType)

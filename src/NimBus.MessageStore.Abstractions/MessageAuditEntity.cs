@@ -101,5 +101,11 @@ namespace NimBus.MessageStore
         /// persists numeric values, so existing members must keep their positions.
         /// </summary>
         ReportEvent,
+
+        /// <summary>Operator granted an access-control role (spec 026; scope/role/entry recorded as Data).</summary>
+        GrantRole,
+
+        /// <summary>Operator revoked an access-control role (spec 026; scope/role/entry recorded as Data).</summary>
+        RevokeRole,
     }
 }

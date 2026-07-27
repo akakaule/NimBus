@@ -1,123 +1,198 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
+using System.Threading.Tasks;
 using NimBus.Core;
-using NimBus.MessageStore;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using NimBus.MessageStore.States;
 
 namespace NimBus.WebApp.Services;
 
 /// <summary>
-/// Service for endpoint authorization and user context operations.
+/// Resolves the current principal's roles once per request from the cached ACL
+/// snapshot, unioned with claim-based compat grants. Registered scoped.
 /// </summary>
 public class EndpointAuthorizationService : IEndpointAuthorizationService
 {
+    /// <summary>
+    /// The internal platform-admin marker claim value. Materialized as a
+    /// <c>groups</c> claim by <see cref="LocalDevAuthHandler"/> (local dev),
+    /// <see cref="EntraAdminClaimsTransformation"/> (Entra object-id config), and
+    /// the Identity role mapping — all of which therefore grant site Owner.
+    /// </summary>
+    public const string AdminMarkerClaimValue = "EIP_Management";
+
+    /// <summary>Role name honored from token claims for PII reveal (Entra app-role parity).</summary>
+    public const string PiiReaderRoleName = "PiiReader";
+
+    private const string OidClaimType = "oid";
+    private const string OidLongClaimType = "http://schemas.microsoft.com/identity/claims/objectidentifier";
+
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IPlatform _platform;
     private readonly ILogger<EndpointAuthorizationService> _logger;
     private readonly IConfiguration _configuration;
+    private readonly IAccessControlSnapshotProvider _snapshotProvider;
+
+    // Per-request memo (the service is scoped). Assignment races are benign —
+    // both tasks resolve to the same answer for the same principal.
+    private Task<CurrentUserAccess>? _resolved;
 
     public EndpointAuthorizationService(
         IHttpContextAccessor httpContextAccessor,
         IPlatform platform,
         ILogger<EndpointAuthorizationService> logger,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IAccessControlSnapshotProvider snapshotProvider)
     {
         _httpContextAccessor = httpContextAccessor;
         _platform = platform;
         _logger = logger;
         _configuration = configuration;
+        _snapshotProvider = snapshotProvider;
     }
 
     /// <inheritdoc/>
-    public bool IsManagerOfEndpoint(string endpointId)
+    public async Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null)
     {
-        if (_configuration.GetValue<bool>("BypassEndpointAuthorization", false))
-        {
-            _logger.LogWarning("Endpoint authorization bypassed for '{EndpointId}' - BypassEndpointAuthorization is enabled", endpointId);
+        if (required == AccessRole.None)
             return true;
+
+        var access = await GetCurrentUserAccessAsync();
+        var effective = access.SiteRole;
+        if (endpointId != null
+            && access.EndpointRoles.TryGetValue(endpointId, out var endpointRole)
+            && endpointRole > effective)
+        {
+            effective = endpointRole;
         }
 
-        var context = _httpContextAccessor.HttpContext;
-        if (context?.User == null)
-        {
-            _logger.LogWarning("Authorization check failed: No HTTP context or user principal available");
-            return false;
-        }
-
-        // Get the endpoint to check role assignments
-        var endpoint = _platform.Endpoints.FirstOrDefault(e =>
-            e.Id.Equals(endpointId, StringComparison.OrdinalIgnoreCase));
-
-        if (endpoint == null)
-        {
-            _logger.LogWarning("Authorization check failed: Endpoint '{EndpointId}' does not exist", endpointId);
-            return false;
-        }
-
-        // Check if user has the EIP_Management security group claim (admins can manage all endpoints).
-        // Restrict match to the "groups" claim type so non-group claims (e.g. scp, preferred_username)
-        // whose value happens to contain "EIP_Management" cannot elevate privileges.
-        var userClaims = context.User.Identities.FirstOrDefault()?.Claims;
-        if (userClaims != null && userClaims.Any(c => c.Type == "groups" && c.Value == "EIP_Management"))
-        {
-            _logger.LogInformation("User authorized for endpoint '{EndpointId}' via EIP_Management group", endpointId);
+        if (effective >= required)
             return true;
-        }
 
-        // Get user's object ID from claims
-        var userObjectId = context.User.FindFirst("oid")?.Value
-            ?? context.User.FindFirst("http://schemas.microsoft.com/identity/claims/objectidentifier")?.Value;
-
-        if (string.IsNullOrEmpty(userObjectId))
-        {
-            _logger.LogWarning("Authorization check failed: Could not retrieve user object ID from claims");
-            return false;
-        }
-
-        // Check if user's object ID is in the endpoint's role assignments
-        var hasRoleAssignment = endpoint.RoleAssignments
-            .Any(ra => ra.PrincipalId.Equals(userObjectId, StringComparison.OrdinalIgnoreCase));
-
-        if (hasRoleAssignment)
-        {
-            _logger.LogInformation("User '{UserId}' authorized for endpoint '{EndpointId}' via role assignment",
-                userObjectId, endpointId);
-            return true;
-        }
-
-        _logger.LogWarning("Authorization denied: User '{UserId}' has no management permission for endpoint '{EndpointId}'",
-            userObjectId, endpointId);
+        _logger.LogDebug(
+            "Authorization denied: required {Required} on '{EndpointId}', principal has site {SiteRole}",
+            required, endpointId ?? "(site)", access.SiteRole);
         return false;
     }
 
     /// <inheritdoc/>
-    public bool IsPlatformAdministrator()
+    public async Task<bool> CanReadPiiAsync() => (await GetCurrentUserAccessAsync()).IsPiiReader;
+
+    /// <inheritdoc/>
+    public Task<CurrentUserAccess> GetCurrentUserAccessAsync() => _resolved ??= ResolveAsync();
+
+    private async Task<CurrentUserAccess> ResolveAsync()
+    {
+        var user = _httpContextAccessor.HttpContext?.User;
+        if (user?.Identity == null)
+        {
+            _logger.LogWarning("Authorization check failed: no HTTP context or user principal available");
+            return new CurrentUserAccess();
+        }
+
+        var emails = ResolveEmails(user);
+        var objectId = user.FindFirst(OidClaimType)?.Value ?? user.FindFirst(OidLongClaimType)?.Value;
+        var identifiers = objectId == null ? emails : emails.Append(objectId).ToList();
+
+        // Compat grants come from claims/config alone so a store outage or an
+        // empty store can never lock out configured administrators.
+        var compatSiteRole = ResolveCompatSiteRole(user);
+
+        var snapshot = await _snapshotProvider.GetSnapshotAsync();
+        var storeSiteRole = ResolveRole(snapshot.Site, identifiers);
+        var siteRole = Max(compatSiteRole, storeSiteRole);
+
+        var endpointRoles = new Dictionary<string, AccessRole>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (endpointId, acl) in snapshot.Endpoints)
+        {
+            var role = ResolveRole(acl, identifiers);
+            if (role != AccessRole.None)
+                endpointRoles[endpointId] = role;
+        }
+
+        // Code-defined endpoint RoleAssignments (oid match) keep their historical
+        // management rights as endpoint Owner.
+        if (objectId != null)
+        {
+            foreach (var endpoint in _platform.Endpoints)
+            {
+                if (endpoint.RoleAssignments.Any(ra =>
+                        ra.PrincipalId.Equals(objectId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    endpointRoles[endpoint.Id] = AccessRole.Owner;
+                }
+            }
+        }
+
+        // PII reveal: store grant or an Entra-issued PiiReader app role. Never
+        // implied by Owner/compat (spec 021 — masked by default everywhere).
+        var isPiiReader = MatchesAny(snapshot.Site?.PiiReaders, identifiers)
+            || user.IsInRole(PiiReaderRoleName);
+
+        return new CurrentUserAccess
+        {
+            Email = emails.FirstOrDefault(),
+            ObjectId = objectId,
+            SiteRole = siteRole,
+            IsPiiReader = isPiiReader,
+            EndpointRoles = endpointRoles,
+        };
+    }
+
+    private AccessRole ResolveCompatSiteRole(ClaimsPrincipal user)
     {
         if (_configuration.GetValue<bool>("BypassEndpointAuthorization", false))
         {
-            return true;
+            _logger.LogWarning("Endpoint authorization bypassed - BypassEndpointAuthorization is enabled");
+            return AccessRole.Owner;
         }
 
-        var userClaims = _httpContextAccessor.HttpContext?.User?.Identities.FirstOrDefault()?.Claims;
-        // Restrict to the "groups" claim type — see IsManagerOfEndpoint.
-        return userClaims != null && userClaims.Any(c => c.Type == "groups" && c.Value == "EIP_Management");
+        // Restrict the match to the "groups" claim type so non-group claims
+        // (e.g. scp, preferred_username) whose value happens to contain the
+        // marker cannot elevate privileges.
+        var claims = user.Identities.FirstOrDefault()?.Claims;
+        return claims != null && claims.Any(c => c.Type == "groups" && c.Value == AdminMarkerClaimValue)
+            ? AccessRole.Owner
+            : AccessRole.None;
     }
 
-    /// <inheritdoc/>
-    [Obsolete("Use IAuditLogService.LogAuditAsync — see spec 008 (centralized audit log service). This bridge remains for any legacy caller that has not yet migrated; it will be removed in a follow-up release.", error: false)]
-    public MessageAuditEntity GetMessageAuditEntity(MessageAuditType type)
+    private static List<string> ResolveEmails(ClaimsPrincipal user)
     {
-        var name = GetCurrentUserName();
-        return new MessageAuditEntity
+        // DIS's email → upn → name ladder, generalized to a set: an ACL entry may
+        // have been granted against any of the principal's email-bearing claims.
+        var candidateTypes = new[]
         {
-            AuditorName = name,
-            AuditTimestamp = DateTime.UtcNow,
-            AuditType = type
+            ClaimTypes.Email, "email", ClaimTypes.Upn, "upn", "preferred_username", "name", ClaimTypes.Name,
         };
+
+        return candidateTypes
+            .SelectMany(type => user.FindAll(type))
+            .Select(c => c.Value.Trim())
+            .Where(v => v.Contains('@', StringComparison.Ordinal))
+            .Select(v => v.ToLowerInvariant())
+            .Distinct()
+            .ToList();
     }
+
+    private static AccessRole ResolveRole(AccessControlList? acl, IReadOnlyCollection<string> identifiers)
+    {
+        if (acl == null)
+            return AccessRole.None;
+        if (MatchesAny(acl.Owners, identifiers)) return AccessRole.Owner;
+        if (MatchesAny(acl.Contributors, identifiers)) return AccessRole.Contributor;
+        if (MatchesAny(acl.Readers, identifiers)) return AccessRole.Reader;
+        return AccessRole.None;
+    }
+
+    private static bool MatchesAny(IEnumerable<string>? entries, IReadOnlyCollection<string> identifiers)
+        => entries != null && entries.Any(entry =>
+            identifiers.Contains(entry.Trim(), StringComparer.OrdinalIgnoreCase));
+
+    private static AccessRole Max(AccessRole a, AccessRole b) => a >= b ? a : b;
 
     /// <inheritdoc/>
     public string? GetCurrentUserName()

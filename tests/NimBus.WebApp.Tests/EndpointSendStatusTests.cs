@@ -213,12 +213,15 @@ public sealed class EndpointSendStatusTests
         private readonly bool _canManage;
         public FakeAuthorizationService(bool canManage) => _canManage = canManage;
 
-        public bool IsManagerOfEndpoint(string endpointId) => _canManage;
+        public Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null) => Task.FromResult(_canManage);
 
-        public bool IsPlatformAdministrator() => _canManage;
+        public Task<bool> CanReadPiiAsync() => Task.FromResult(_canManage);
 
-        [Obsolete("Bridge member required by the interface; not used in these tests.")]
-        public MessageAuditEntity GetMessageAuditEntity(MessageAuditType type) => throw new NotSupportedException();
+        public Task<CurrentUserAccess> GetCurrentUserAccessAsync() => Task.FromResult(new CurrentUserAccess
+        {
+            SiteRole = _canManage ? AccessRole.Owner : AccessRole.None,
+            IsPiiReader = _canManage,
+        });
 
         public string GetCurrentUserName() => "test-user";
     }

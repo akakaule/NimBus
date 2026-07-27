@@ -70,21 +70,31 @@ public class EndpointImplementation : IEndpointApiController
         _storeResultCache = storeResultCache;
     }
 
+    // The endpoint lists are filtered per-user: any role on the endpoint (or any
+    // site role) makes it visible. Resolution is memoized per request, so the
+    // sequential loop costs one snapshot lookup per endpoint, not one store hit.
+    private async Task<List<string>> GetVisibleEndpointIdsAsync()
+    {
+        var visible = new List<string>();
+        foreach (var endpoint in platform.Endpoints)
+        {
+            if (ShowEndpoint(endpoint.Id) && await _authorizationService.HasRoleAsync(AccessRole.Reader, endpoint.Id))
+                visible.Add(endpoint.Id);
+        }
+
+        return visible;
+    }
+
     public async Task<ActionResult<IEnumerable<string>>> EndpointIdsAllAsync()
     {
-        var endpointIds = platform.Endpoints
-            .Where(endpoint => _authorizationService.IsManagerOfEndpoint(endpoint.Id) && ShowEndpoint(endpoint.Id))
-            .Select(e => e.Id);
+        var endpointIds = await GetVisibleEndpointIdsAsync();
 
         return new OkObjectResult(endpointIds);
     }
 
     public async Task<ActionResult<IEnumerable<EndpointStatusCount>>> EndpointstatusAllAsync()
     {
-        var endpointIds = platform.Endpoints
-            .Where(endpoint => _authorizationService.IsManagerOfEndpoint(endpoint.Id) && ShowEndpoint(endpoint.Id))
-            .Select(e => e.Id)
-            .ToList();
+        var endpointIds = await GetVisibleEndpointIdsAsync();
 
         // Each count is an independent storage aggregate query (~100-500ms against
         // Cosmos); run them concurrently (bounded) rather than serially so a
@@ -211,9 +221,7 @@ public class EndpointImplementation : IEndpointApiController
 
     public async Task<ActionResult<IEnumerable<EndpointStatusCount>>> GetEndpointStatusCountAllAsync()
     {
-        var endpointIds = platform.Endpoints
-            .Where(endpoint => _authorizationService.IsManagerOfEndpoint(endpoint.Id) && ShowEndpoint(endpoint.Id))
-            .Select(e => e.Id);
+        var endpointIds = await GetVisibleEndpointIdsAsync();
 
         // Each status download is an independent Cosmos round-trip; probe them
         // concurrently (bounded) instead of serially so the all-endpoints view
@@ -231,9 +239,15 @@ public class EndpointImplementation : IEndpointApiController
     public async Task<ActionResult<IEnumerable<EndpointStatusCount>>> PostApiEndpointStatusCountAsync(IEnumerable<string> body)
     {
         var result = new ConcurrentBag<EndpointStatusCount>();
-        var endpointIds = (body as string[] ?? body.ToArray())
-            .Where(id => EndpointVerificationService.EndpointExists(platform, id)
-                      && _authorizationService.IsManagerOfEndpoint(id));
+        var endpointIds = new List<string>();
+        foreach (var id in body as string[] ?? body.ToArray())
+        {
+            if (EndpointVerificationService.EndpointExists(platform, id)
+                && await _authorizationService.HasRoleAsync(AccessRole.Reader, id))
+            {
+                endpointIds.Add(id);
+            }
+        }
 
         var options = new ParallelOptions { MaxDegreeOfParallelism = Math.Min(System.Environment.ProcessorCount, 4) };
 
@@ -249,7 +263,7 @@ public class EndpointImplementation : IEndpointApiController
     {
         try
         {
-            // Cached below the per-user IsManagerOfEndpoint filtering (which
+            // Cached below the per-user role filtering (which
             // happens at the call sites above): the cached value is the
             // endpoint-scoped raw count, identical for every authorized user.
             // Failures propagate uncached, so the stub branches below stay live.
@@ -322,9 +336,7 @@ public class EndpointImplementation : IEndpointApiController
 
     public async Task<ActionResult<IEnumerable<string>>> GetEndpointsAllAsync()
     {
-        var endpointIds = platform.Endpoints
-            .Where(endpoint => _authorizationService.IsManagerOfEndpoint(endpoint.Id) && ShowEndpoint(endpoint.Id))
-            .Select(e => e.Id);
+        var endpointIds = await GetVisibleEndpointIdsAsync();
 
         return new OkObjectResult(endpointIds);
     }
@@ -334,7 +346,7 @@ public class EndpointImplementation : IEndpointApiController
         var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointName);
         if (endpointIdValid)
         {
-            if (!_authorizationService.IsManagerOfEndpoint(endpointName))
+            if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointName))
             {
                 await _auditLogService.LogAuditAsync(MessageAuditType.GetEndpointDetails, _context,
                     accessDenied: true, endpointId: endpointName);
@@ -423,12 +435,20 @@ public class EndpointImplementation : IEndpointApiController
 
     public async Task<IActionResult> PostEndpointPurgeAsync(string endpointName)
     {
-        var isManagementUser = IsUserInSecurityGroup("EIP_Management");
+        // Purge requires endpoint Owner everywhere; in prod/staging only a SITE
+        // Owner may purge (mirrors the old EIP_Management-only rule there).
+        if (!await _authorizationService.HasRoleAsync(AccessRole.Owner, endpointName))
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+                accessDenied: true, endpointId: endpointName);
+            return new ForbidResult();
+        }
 
         // Validate environment
         var env = configuration.GetValue<string>("Environment");
-        if (!isManagementUser && (env.Equals("prod", StringComparison.OrdinalIgnoreCase) ||
-                                  env.Equals("stag", StringComparison.OrdinalIgnoreCase)))
+        var isSiteOwner = await _authorizationService.HasRoleAsync(AccessRole.Owner);
+        if (!isSiteOwner && (env.Equals("prod", StringComparison.OrdinalIgnoreCase) ||
+                             env.Equals("stag", StringComparison.OrdinalIgnoreCase)))
         {
             await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
                 accessDenied: true, endpointId: endpointName,
@@ -458,14 +478,6 @@ public class EndpointImplementation : IEndpointApiController
         return new NotFoundObjectResult($"{endpointName} couldn't be found");
     }
 
-    // Restrict the match to the "groups" claim type so non-group claims cannot
-    // elevate privileges. Mirrors EndpointAuthorizationService.IsUserInGroup.
-    private bool IsUserInSecurityGroup(string securityGrp)
-    {
-        var userClaims = _context.User.Identities.First().Claims;
-        return userClaims.Any(c => c.Type == "groups" && c.Value == securityGrp);
-    }
-
     public async Task<IActionResult> PostEndpointSubscribeAsync(EndpointSubscription body, string endpointId)
     {
         var endpointIdValid = EndpointVerificationService.EndpointExists(platform, endpointId);
@@ -474,7 +486,7 @@ public class EndpointImplementation : IEndpointApiController
             return new NotFoundObjectResult("Endpoint not found");
         }
 
-        if (!_authorizationService.IsManagerOfEndpoint(endpointId))
+        if (!await _authorizationService.HasRoleAsync(AccessRole.Owner, endpointId))
         {
             return new ForbidResult();
         }
@@ -504,7 +516,7 @@ public class EndpointImplementation : IEndpointApiController
             return new NotFoundObjectResult("Endpoint not found");
         }
 
-        if (!_authorizationService.IsManagerOfEndpoint(endpointId))
+        if (!await _authorizationService.HasRoleAsync(AccessRole.Owner, endpointId))
         {
             return new ForbidResult();
         }
@@ -531,7 +543,7 @@ public class EndpointImplementation : IEndpointApiController
         // the claim lookups are null-safe. Both name resolutions are accepted
         // because creation records GetCurrentUsersMail() ?? GetCurrentUserName()
         // and the two can surface different claims for the same principal.
-        if (!_authorizationService.IsPlatformAdministrator())
+        if (!await _authorizationService.HasRoleAsync(AccessRole.Owner))
         {
             var candidates = new[] { _authorizationService.GetCurrentUserName(), GetCurrentUsersMail() };
             var isOwner = candidates.Any(c => !string.IsNullOrEmpty(c)
@@ -560,8 +572,8 @@ public class EndpointImplementation : IEndpointApiController
         }
 
         // Subscriptions expose recipient mail addresses / webhook urls — gate the
-        // listing on managing the endpoint like the other per-endpoint reads.
-        if (!_authorizationService.IsManagerOfEndpoint(endpointId))
+        // listing on owning the endpoint like the other subscription-admin ops.
+        if (!await _authorizationService.HasRoleAsync(AccessRole.Owner, endpointId))
         {
             return new ForbidResult();
         }
@@ -645,7 +657,7 @@ public class EndpointImplementation : IEndpointApiController
             _ => null,
         };
 
-        if (auditType.HasValue && !_authorizationService.IsManagerOfEndpoint(endpointId))
+        if (auditType.HasValue && !await _authorizationService.HasRoleAsync(AccessRole.Owner, endpointId))
         {
             await _auditLogService.LogAuditAsync(auditType.Value, _context,
                 accessDenied: true, endpointId: endpointId);
@@ -722,7 +734,7 @@ public class EndpointImplementation : IEndpointApiController
             _ => null,
         };
 
-        if (auditType.HasValue && !_authorizationService.IsManagerOfEndpoint(endpointId))
+        if (auditType.HasValue && !await _authorizationService.HasRoleAsync(AccessRole.Owner, endpointId))
         {
             await _auditLogService.LogAuditAsync(auditType.Value, _context,
                 accessDenied: true, endpointId: endpointId);
@@ -839,6 +851,13 @@ public class EndpointImplementation : IEndpointApiController
         if (!endpointIdValid)
         {
             return new NotFoundObjectResult("Endpoint not found");
+        }
+
+        // Spec 026: metadata writes were previously ungated — editing ownership
+        // and contact records is an endpoint-Owner operation.
+        if (!await _authorizationService.HasRoleAsync(AccessRole.Owner, endpointId))
+        {
+            return new ForbidResult();
         }
 
         var technicalContacts = body.TechnicalContacts

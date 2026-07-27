@@ -188,7 +188,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             var eventJson = requestMessage.MessageContent?.EventContent?.EventJson!;
 
-            if (!authorizationService.IsManagerOfEndpoint(endpoint))
+            if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpoint))
             {
                 await auditLogService.LogAuditAsync(MessageAuditType.Resubmit, httpContextAccessor.HttpContext,
                     accessDenied: true, eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
@@ -235,7 +235,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 endpoint = errorResponse.From;
             }
 
-            if (!authorizationService.IsManagerOfEndpoint(endpoint))
+            if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpoint))
             {
                 await auditLogService.LogAuditAsync(MessageAuditType.Skip, httpContextAccessor.HttpContext,
                     accessDenied: true, eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
@@ -298,7 +298,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             if (string.IsNullOrEmpty(endpointId) || string.IsNullOrEmpty(eventId))
                 return new BadRequestObjectResult("endpointId and eventId are required.");
 
-            if (!authorizationService.IsManagerOfEndpoint(endpointId))
+            if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpointId))
             {
                 await auditLogService.LogAuditAsync(MessageAuditType.ReportEvent, httpContextAccessor.HttpContext,
                     accessDenied: true, eventId: eventId, endpointId: endpointId);
@@ -361,7 +361,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             if (!EndpointVerificationService.EndpointExists(platform, endpointId))
                 return new NotFoundObjectResult("Endpoint not found");
 
-            if (!authorizationService.IsManagerOfEndpoint(endpointId))
+            if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpointId))
             {
                 await auditLogService.LogAuditAsync(auditType, httpContextAccessor.HttpContext,
                     accessDenied: true, eventId: eventId, endpointId: endpointId);
@@ -379,7 +379,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             if (!EndpointVerificationService.EndpointExists(platform, endpointId))
                 return new NotFoundObjectResult("Endpoint not found");
 
-            if (!authorizationService.IsManagerOfEndpoint(endpointId))
+            if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpointId))
                 throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpointId}'.");
 
             var result = await adminService.ReprocessDeferredAsync(endpointId, sessionId);
@@ -433,7 +433,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new NotFoundObjectResult("Endpoint not found");
             }
 
-            if (!authorizationService.IsManagerOfEndpoint(endpoint))
+            if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpoint))
             {
                 await auditLogService.LogAuditAsync(MessageAuditType.GetEventDetails, httpContextAccessor.HttpContext,
                     accessDenied: true, eventId: id, endpointId: endpoint);
@@ -563,7 +563,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new BadRequestObjectResult("Event content is empty");
             }
 
-            if (!authorizationService.IsManagerOfEndpoint(producingEndpoint.Id))
+            if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, producingEndpoint.Id))
             {
                 await auditLogService.LogAuditAsync(MessageAuditType.Compose, httpContextAccessor.HttpContext,
                     accessDenied: true, data: JsonConvert.SerializeObject(body),
@@ -651,7 +651,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 }
             }
 
-            if (!authorizationService.IsManagerOfEndpoint(endpoint))
+            if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpoint))
             {
                 await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext,
                     accessDenied: true, data: JsonConvert.SerializeObject(body),
@@ -821,7 +821,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             // query parameters, not just the bare action.
             var searchDataJson = JsonConvert.SerializeObject(body);
 
-            if (!authorizationService.IsManagerOfEndpoint(endpointId))
+            if (!await authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
             {
                 await auditLogService.LogAuditAsync(MessageAuditType.SearchEvents, httpContextAccessor.HttpContext,
                     accessDenied: true, data: searchDataJson, endpointId: endpointId);

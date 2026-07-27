@@ -23,24 +23,27 @@ public class AdminImplementation : IAdminApiController
     private readonly IConfiguration _configuration;
     private readonly HttpContext _context;
     private readonly IAuditLogService _auditLogService;
+    private readonly IEndpointAuthorizationService _authorizationService;
 
     public AdminImplementation(
         IHttpContextAccessor contextAccessor,
         IAdminService adminService,
         IPlatform platform,
         IConfiguration configuration,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        IEndpointAuthorizationService authorizationService)
     {
         _adminService = adminService;
         _platform = platform;
         _configuration = configuration;
         _context = contextAccessor.HttpContext;
         _auditLogService = auditLogService;
+        _authorizationService = authorizationService;
     }
 
     public async Task<ActionResult<PlatformConfig>> GetAdminPlatformConfigAsync()
     {
-        if (!IsUserInSecurityGroup("EIP_Management"))
+        if (!await IsSiteOwnerAsync())
             return new ForbidResult();
 
         var result = await _adminService.GetPlatformConfigAsync(_platform);
@@ -50,10 +53,10 @@ public class AdminImplementation : IAdminApiController
     // Full-platform AsyncAPI 3.0 export. Admin-only (EIP_Management), matching platform-config access.
     // Authorization is checked before any serialization work. Missing/empty format defaults to YAML;
     // only 'yaml' and 'json' are accepted — anything else is a 400 (never a silent default).
-    public Task<IActionResult> GetAdminAsyncapiAsync(string format)
+    public async Task<IActionResult> GetAdminAsyncapiAsync(string format)
     {
-        if (!IsUserInSecurityGroup("EIP_Management"))
-            return Task.FromResult<IActionResult>(new ForbidResult());
+        if (!await IsSiteOwnerAsync())
+            return new ForbidResult();
 
         AsyncApiFormat exportFormat;
         string fileName;
@@ -74,19 +77,17 @@ public class AdminImplementation : IAdminApiController
         }
         else
         {
-            return Task.FromResult<IActionResult>(
-                new BadRequestObjectResult($"Unsupported format '{format}'. Use 'yaml' or 'json'."));
+            return new BadRequestObjectResult($"Unsupported format '{format}'. Use 'yaml' or 'json'.");
         }
 
         var content = AsyncApiExporter.Serialize(_platform, exportFormat);
         var bytes = Encoding.UTF8.GetBytes(content);
-        return Task.FromResult<IActionResult>(
-            new FileContentResult(bytes, contentType) { FileDownloadName = fileName });
+        return new FileContentResult(bytes, contentType) { FileDownloadName = fileName };
     }
 
     public async Task<ActionResult<TopologyAuditResult>> GetAdminTopologyAsync(string endpointName)
     {
-        if (!IsUserInSecurityGroup("EIP_Management"))
+        if (!await IsSiteOwnerAsync())
             return new ForbidResult();
 
         if (!EndpointVerificationService.EndpointExists(_platform, endpointName))
@@ -98,7 +99,7 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<TopologyCleanupResult>> PostAdminTopologyRemoveDeprecatedAsync(string endpointName)
     {
-        if (!IsUserInSecurityGroup("EIP_Management"))
+        if (!await IsSiteOwnerAsync())
             return new ForbidResult();
 
         if (!EndpointVerificationService.EndpointExists(_platform, endpointName))
@@ -110,7 +111,7 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<BulkResubmitPreview>> GetAdminFailedPreviewAsync(string endpointId)
     {
-        if (!IsUserInSecurityGroup("EIP_Management"))
+        if (!await IsSiteOwnerAsync())
             return new ForbidResult();
 
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
@@ -122,7 +123,7 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminBulkResubmitAsync(string endpointId)
     {
-        if (!IsUserInSecurityGroup("EIP_Management"))
+        if (!await IsSiteOwnerAsync())
             return new ForbidResult();
 
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
@@ -134,7 +135,7 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<Response2>> GetAdminDeadletteredPreviewAsync(string endpointId)
     {
-        if (!IsUserInSecurityGroup("EIP_Management"))
+        if (!await IsSiteOwnerAsync())
             return new ForbidResult();
 
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
@@ -146,7 +147,7 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteDeadletteredAsync(string endpointId)
     {
-        if (!IsUserInSecurityGroup("EIP_Management"))
+        if (!await IsSiteOwnerAsync())
             return new ForbidResult();
 
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
@@ -158,7 +159,7 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<SessionPurgePreview>> GetAdminSessionPreviewAsync(string endpointId, string sessionId)
     {
-        if (!IsUserInSecurityGroup("EIP_Management"))
+        if (!await IsSiteOwnerAsync())
             return new ForbidResult();
 
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
@@ -170,7 +171,7 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<SessionPurgeResult>> PostAdminSessionPurgeAsync(string endpointId, string sessionId)
     {
-        if (!IsUserInSecurityGroup("EIP_Management"))
+        if (!await IsSiteOwnerAsync())
         {
             await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
                 accessDenied: true, endpointId: endpointId,
@@ -190,7 +191,7 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<IActionResult> DeleteAdminEventAsync(string endpointId, string eventId)
     {
-        if (!IsUserInSecurityGroup("EIP_Management"))
+        if (!await IsSiteOwnerAsync())
             return new ForbidResult();
 
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
@@ -205,7 +206,7 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteAllAsync(string endpointId)
     {
-        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!await IsSiteOwnerAsync()) return new ForbidResult();
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
 
         var result = await _adminService.DeleteAllEventsAsync(endpointId);
@@ -216,7 +217,7 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<PurgePreview>> PostAdminPurgePreviewAsync(string endpointId, PurgeRequest body)
     {
-        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!await IsSiteOwnerAsync()) return new ForbidResult();
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
 
         var subscription = string.IsNullOrEmpty(body.Subscription) ? endpointId : body.Subscription;
@@ -226,7 +227,7 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminPurgeAsync(string endpointId, PurgeRequest body)
     {
-        if (!IsUserInSecurityGroup("EIP_Management"))
+        if (!await IsSiteOwnerAsync())
         {
             await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
                 accessDenied: true, endpointId: endpointId,
@@ -245,21 +246,21 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<CountResponse>> PostAdminDeleteByToPreviewAsync(DeleteByToRequest body)
     {
-        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!await IsSiteOwnerAsync()) return new ForbidResult();
         var count = await _adminService.DeleteMessagesByToPreviewAsync(body.ToField);
         return new OkObjectResult(new CountResponse { Count = count });
     }
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteByToAsync(DeleteByToRequest body)
     {
-        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!await IsSiteOwnerAsync()) return new ForbidResult();
         var result = await _adminService.DeleteMessagesByToAsync(body.ToField);
         return new OkObjectResult(result);
     }
 
     public async Task<ActionResult<CountResponse>> PostAdminDeleteByStatusPreviewAsync(string endpointId, DeleteByStatusRequest body)
     {
-        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!await IsSiteOwnerAsync()) return new ForbidResult();
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
         if (!AdminStatusValidation.TryNormalizeDeleteStatuses(
                 body?.Statuses?.Select(status => status.ToString()),
@@ -273,7 +274,7 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteByStatusAsync(string endpointId, DeleteByStatusRequest body)
     {
-        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!await IsSiteOwnerAsync()) return new ForbidResult();
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
         if (!AdminStatusValidation.TryNormalizeDeleteStatuses(
                 body?.Statuses?.Select(status => status.ToString()),
@@ -287,7 +288,7 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<CountResponse>> PostAdminSkipPreviewAsync(string endpointId, SkipRequest body)
     {
-        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!await IsSiteOwnerAsync()) return new ForbidResult();
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
         var before = body?.Before;
         if (!AdminStatusValidation.TryNormalizeSkipStatuses(
@@ -302,7 +303,7 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminSkipAsync(string endpointId, SkipRequest body)
     {
-        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!await IsSiteOwnerAsync()) return new ForbidResult();
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
         var before = body?.Before;
         if (!AdminStatusValidation.TryNormalizeSkipStatuses(
@@ -317,7 +318,7 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<CopyResult>> PostAdminCopyAsync(string endpointId, CopyRequest body)
     {
-        if (!IsUserInSecurityGroup("EIP_Management")) return new ForbidResult();
+        if (!await IsSiteOwnerAsync()) return new ForbidResult();
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
 
         var result = await _adminService.CopyEndpointDataAsync(
@@ -327,12 +328,8 @@ public class AdminImplementation : IAdminApiController
         return new OkObjectResult(result);
     }
 
-    // Restrict the match to the "groups" claim type so non-group claims (e.g. scp,
-    // preferred_username) whose value happens to contain the group name cannot
-    // elevate privileges. Mirrors EndpointAuthorizationService.IsUserInGroup.
-    private bool IsUserInSecurityGroup(string securityGrp)
-    {
-        var userClaims = _context.User.Identities.FirstOrDefault()?.Claims;
-        return userClaims?.Any(c => c.Type == "groups" && c.Value == securityGrp) ?? false;
-    }
+    // Every /api/admin/* operation is cross-endpoint and destructive-capable, so
+    // the gate is the site Owner role (spec 026; the EIP_Management marker claim
+    // still maps to site Owner via the authorization service's compat union).
+    private Task<bool> IsSiteOwnerAsync() => _authorizationService.HasRoleAsync(AccessRole.Owner);
 }

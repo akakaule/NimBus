@@ -43,14 +43,14 @@ namespace NimBus.WebApp.Controllers.ApiContract
             var scopedEndpointId = filter.EndpointId;
             if (string.IsNullOrEmpty(scopedEndpointId))
             {
-                if (!_authorizationService.IsPlatformAdministrator())
+                if (!await _authorizationService.HasRoleAsync(Services.AccessRole.Owner))
                 {
                     return new ForbidResult();
                 }
             }
             else
             {
-                if (!_authorizationService.IsManagerOfEndpoint(scopedEndpointId))
+                if (!await _authorizationService.HasRoleAsync(Services.AccessRole.Reader, scopedEndpointId))
                 {
                     return new ForbidResult();
                 }

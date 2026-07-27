@@ -145,6 +145,30 @@ export default function AccessControl() {
       {/* Page's content wrapper is a flex ROW — a single column child keeps
           the endpoint section below the site-wide section. */}
       <div className="w-full min-w-0">
+      {access && (
+        <div className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 bg-card border border-border rounded-nb-md px-4 py-3 text-[13px]">
+          <span className="text-muted-foreground">Your access:</span>
+          <span className="font-medium">{access.email ?? access.name ?? "current user"}</span>
+          <span className="text-muted-foreground">—</span>
+          <span className="font-mono text-[12px] font-semibold bg-status-danger-50 text-status-danger-ink dark:bg-red-950/40 dark:text-red-200 px-2 py-0.5 rounded-full">
+            site {String(access.siteRole ?? "none")}
+          </span>
+          <span
+            className={
+              access.isPiiReader
+                ? "font-mono text-[12px] font-semibold bg-status-warning-50 text-status-warning-ink dark:bg-yellow-950/40 dark:text-yellow-200 px-2 py-0.5 rounded-full"
+                : "font-mono text-[12px] text-muted-foreground px-2 py-0.5"
+            }
+          >
+            {access.isPiiReader ? "PII Reader" : "no PII access"}
+          </span>
+          <span className="basis-full text-[12px] text-muted-foreground">
+            Roles granted via configuration (Authorization__AdminUserObjectIds /
+            AdminGroupObjectIds or the EIP_Management claim) apply but do not
+            appear as entries in the lists below — only storage-backed grants do.
+          </span>
+        </div>
+      )}
       {canManageSite && (
         <section className="mb-8">
           <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-3">

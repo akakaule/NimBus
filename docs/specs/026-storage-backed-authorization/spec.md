@@ -98,6 +98,6 @@ SPA: `/AccessControl` page — four site role cards + endpoint-scoped section (t
 
 ## Operational notes
 
-- Fresh deploys: the Cosmos container auto-creates lazily; SQL `0017` auto-applies via DbUp (`VerifyOnly` deployments must apply it before flipping).
+- Fresh deploys: SQL `0017` auto-applies via DbUp (`VerifyOnly` deployments must apply it before flipping). Cosmos: the `accesscontrol` container is declared in `deploy/bicep/templates/cosmosDB.bicep` — lazy SDK creation only works with account keys, because Entra data-plane RBAC (which deployed apps use) permits item reads/writes but NOT container management. Reads fail soft (empty lists, compat keeps admins in) but grants fail until the container exists.
 - Rollout is zero-downtime for existing sites: with an empty store, compat reproduces the pre-026 access exactly; the Reader floor (phase D) is the only tightening — previously any authenticated user could read metrics/search/event types.
 - Bootstrap runbook: ensure `Authorization__AdminUserObjectIds` (or `AdminGroupObjectIds`) covers the first operator → they sign in as site Owner → grant store roles on the Access Control page.

@@ -57,15 +57,10 @@ export default function AsyncApiExport() {
     }
   }
 
+  // Title/description are rendered by the surrounding OperationGroup on the
+  // Admin → Topology tab, so this component is just the action row.
   return (
     <div className="space-y-3 w-full">
-      <div>
-        <h3 className="text-lg font-semibold">AsyncAPI export</h3>
-        <p className="text-sm text-muted-foreground">
-          Download the full platform topology as an AsyncAPI 3.0 document
-          (channels, operations, and Service Bus routing extensions).
-        </p>
-      </div>
       <div className="flex gap-3">
         <Button
           onClick={() => handleDownload("yaml")}

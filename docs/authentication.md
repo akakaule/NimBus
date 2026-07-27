@@ -169,33 +169,36 @@ separator, user-secrets, Azure App Service settings):
 | `NimBusIdentity:Smtp:Password` | (unset) | Optional SMTP auth. |
 | `NimBusIdentity:Smtp:UseSsl` | `true` | |
 
-### Granting platform-admin access to Entra users
+### Authorization: storage-backed roles (spec 026)
 
-Authorization (as opposed to authentication) hinges on the internal
-`EIP_Management` marker: platform admins see and manage every endpoint;
-everyone else only sees endpoints whose code-defined `RoleAssignments`
-contain their object ID. Entra tokens carry group **object IDs**
-(GUIDs) in the `groups` claim — never group names — so out of the box
-no Entra sign-in is a platform admin and the Endpoints page renders
-empty ("No endpoints available").
+Authorization (as opposed to authentication) uses storage-backed
+access-control lists: **Reader < Contributor < Owner** site-wide and
+per-endpoint, plus the orthogonal **PII Reader** capability (raw
+payload reveal — not implied by Owner). Site Owners manage the lists on
+the WebApp's **Access Control** page; entries are email addresses or
+Entra object IDs. Grants are stored in the message store (Cosmos
+container `accesscontrol` / SQL table `AccessControl`) and take effect
+immediately on the mutating instance (≤45s elsewhere). Full model:
+[`docs/specs/026-storage-backed-authorization/spec.md`](specs/026-storage-backed-authorization/spec.md).
 
-Grant admin access via either key (array or comma-separated string;
-values are Entra **object IDs**):
+**Bootstrap / compat.** The internal `EIP_Management` marker claim maps
+to site Owner, so the first Owner never locks themselves out of an
+empty store. The marker is materialized by any of:
 
-| Key | Meaning |
+| Source | How |
 |---|---|
-| `Authorization:AdminGroupObjectIds` | Members of any of these Entra groups are platform admins |
-| `Authorization:AdminUserObjectIds` | These individual users (oid) are platform admins |
+| `Authorization:AdminGroupObjectIds` | Entra group **object IDs** (array or comma-separated) whose members become site Owners — requires the app registration to emit group claims (`groupMembershipClaims: SecurityGroup`) |
+| `Authorization:AdminUserObjectIds` | Individual Entra user object IDs (oid) that become site Owners |
+| `LocalDevAuthHandler` | Local dev sign-ins are site Owners (but NOT PII Readers) |
+| Identity role mapping | An Identity user in a role named `EIP_Management` |
 
 On App Service, set e.g. `Authorization__AdminUserObjectIds` =
-`<user-object-id>`. The mapping is applied by
-`EntraAdminClaimsTransformation`
-(`src/NimBus.WebApp/Services/EntraAdminClaimsTransformation.cs`),
-registered on the Entra-only auth branch. Group matching requires the
-app registration to emit group claims (`groupMembershipClaims:
-SecurityGroup` in the manifest); user matching works without it. The
-deploy bicep preserves `Authorization__*` app settings across infra
-re-applies, same as `AzureAd__*`.
+`<user-object-id>` (applied by `EntraAdminClaimsTransformation` on the
+Entra-only auth branch). The deploy bicep preserves `Authorization__*`
+app settings across infra re-applies, same as `AzureAd__*`.
+Code-defined `endpoint.RoleAssignments` object IDs map to endpoint
+Owner. `Authorization:GrantPiiReaderInDevelopment` grants PII Reader in
+Development only (startup fail-fast elsewhere).
 
 Entra ID configuration (when `AzureAd:ClientId` is set, the WebApp
 takes the Entra branch — and the dual branch when Identity is also

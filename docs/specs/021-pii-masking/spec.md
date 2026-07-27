@@ -4,6 +4,19 @@ Feature Branch: `021-pii-masking`
 Created: 2026-06-02
 Updated: 2026-06-02
 Status: Proposed (back-port candidate from DIS; see `BH.DIS.Core/Messages/PII/`, `BH.DIS.SDK/Logging/`, and `BH.DIS.WebApp/Services/PII/`). Bundles DIS commits `51315a54` (platform-wide masking), `d8c4e598` (adapter ILogger masking), `9ce7528e` (review fixes), `5c754bd4` (WebApp audit masking), `9aad33f5` (role-gated reveal), and `2723c614` (sample showcase).
+
+> **Partially superseded by spec 026 (2026-07-27).** The role plumbing this
+> spec assumed is now shipped: the `PiiReader` role exists as a storage-backed
+> site grant (`docs/specs/026-storage-backed-authorization/spec.md`),
+> `CurrentUserCanReadPii()` is realized as the async
+> `IEndpointAuthorizationService.CanReadPiiAsync()`, `LocalDevAuthHandler`
+> does not grant it, and the Development-only opt-in is
+> `Authorization:GrantPiiReaderInDevelopment` (startup fail-fast elsewhere).
+> Spec 026 also ships an interim **whole-payload** `[REDACTED]` redaction on
+> the reveal surfaces (Phase 4's role-gating). What remains for THIS spec:
+> the `[Sensitive]` attribute + field-level `EventJsonMasker` (Phase 1), the
+> log-masking pipeline (Phase 2), audit-write masking (Phase 3), refining the
+> whole-payload redaction to field-level masking, and the sample showcase.
 Input: User description: "Port the PII masking initiative from DIS. NimBus has zero PII masking today: operator-supplied event payloads (EventContent / EventJson) flow verbatim into structured logs, the Application Insights sink, the durable audit trail, and the WebApp Event Details view. An adapter or operator handling real personal data (CPR numbers, SSNs, emails, addresses) leaks it everywhere. We want a declarative `[Sensitive]` attribute on event properties, a masker that rewrites event JSON before it reaches any log/audit sink, a logging decorator that covers both the WebApp and adapter hosts, and a role-gated reveal so only authorized operators see raw payloads in the WebApp — masked by default in every environment, including local dev."
 
 ## Problem

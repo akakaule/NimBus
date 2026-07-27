@@ -217,6 +217,7 @@ internal static class Program
                 var resourceGroup = appsCommand.Option("--resource-group <NAME>", "Azure resource group containing the target apps.", CommandOptionType.SingleValue).IsRequired();
                 var repoRoot = appsCommand.Option("--repo-root <PATH>", "Repository root. Defaults to the current directory or a parent directory containing deploy/ and src/.", CommandOptionType.SingleValue);
                 var configuration = appsCommand.Option("--configuration <NAME>", "Build configuration passed to dotnet publish.", CommandOptionType.SingleValue);
+                var only = appsCommand.Option("--only <APP>", "Deploy a single application: resolver | webapp. Defaults to both.", CommandOptionType.SingleValue);
 
                 appsCommand.OnExecuteAsync(async cancellationToken =>
                 {
@@ -227,7 +228,8 @@ internal static class Program
                         solutionId.Value(),
                         environment.Value(),
                         resourceGroup.Value(),
-                        configuration.HasValue() ? configuration.Value()! : "Release");
+                        configuration.HasValue() ? configuration.Value()! : "Release",
+                        DeployTargetSelection.ParseOnlyOption(only.Value()));
 
                     await deployer.DeployAsync(options, cancellationToken).ConfigureAwait(false);
                     return 0;

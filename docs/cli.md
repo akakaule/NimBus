@@ -174,8 +174,9 @@ nb deploy apps --solution-id nimbus --environment dev --resource-group rg-nimbus
 | `--resource-group` | Yes | Resource group with target apps |
 | `--repo-root` | No | Repository root (auto-detected) |
 | `--configuration` | No | Build configuration (default: `Release`) |
+| `--only` | No | Deploy a single application: `resolver` \| `webapp`. Defaults to both. |
 
-Publishes the resolver (Azure Function) and web app, packages as ZIP, and deploys via Azure CLI. On a Flex Consumption resolver the zip is deployed directly (the app must stay running — the Azure CLI verifies host health after publishing); on Elastic Premium the app is stopped for the deployment and restarted afterwards.
+Publishes the resolver (Azure Function) and web app, packages as ZIP, and deploys via Azure CLI. `--only webapp` skips the resolver build and deploy entirely (and vice versa) — useful for fast WebApp-only iterations. On a Flex Consumption resolver the zip is deployed directly (the app must stay running — the Azure CLI verifies host health after publishing); on Elastic Premium the app is stopped for the deployment and restarted afterwards.
 
 ---
 

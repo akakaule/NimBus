@@ -21,27 +21,51 @@ internal sealed class AppDeploymentService
     public async Task DeployAsync(AppDeploymentOptions options, CancellationToken cancellationToken)
     {
         var names = NamingConventions.Build(options.SolutionId, options.Environment);
+        var deployResolver = options.Target != AppDeploymentTarget.WebApp;
+        var deployWebApp = options.Target != AppDeploymentTarget.Resolver;
 
         await _az.EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false);
 
-        var isFlexConsumption = await IsFlexConsumptionResolverAsync(options.ResourceGroupName, names.CoreAppServicePlanName, cancellationToken).ConfigureAwait(false);
-        if (isFlexConsumption)
+        var publishRoot = Path.Combine(Path.GetTempPath(), "nb", $"{names.SolutionId}-{names.Environment}", DateTime.UtcNow.ToString("yyyyMMddHHmmss"));
+
+        if (deployResolver)
         {
-            await EnsureAzureCliSupportsFlexConsumptionAsync(cancellationToken).ConfigureAwait(false);
+            var isFlexConsumption = await IsFlexConsumptionResolverAsync(options.ResourceGroupName, names.CoreAppServicePlanName, cancellationToken).ConfigureAwait(false);
+            if (isFlexConsumption)
+            {
+                await EnsureAzureCliSupportsFlexConsumptionAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var resolverPublish = Path.Combine(publishRoot, "resolver");
+            Directory.CreateDirectory(resolverPublish);
+            await PublishAsync(_context.ResolverProjectPath, resolverPublish, options.Configuration, cancellationToken).ConfigureAwait(false);
+            var resolverZip = PackagePublishOutput(resolverPublish, "resolver.zip");
+            await DeployResolverAsync(options, names, resolverZip, isFlexConsumption, cancellationToken).ConfigureAwait(false);
         }
 
-        var publishRoot = Path.Combine(Path.GetTempPath(), "nb", $"{names.SolutionId}-{names.Environment}", DateTime.UtcNow.ToString("yyyyMMddHHmmss"));
-        var resolverPublish = Path.Combine(publishRoot, "resolver");
-        var webAppPublish = Path.Combine(publishRoot, "webapp");
-        Directory.CreateDirectory(resolverPublish);
-        Directory.CreateDirectory(webAppPublish);
+        if (deployWebApp)
+        {
+            var webAppPublish = Path.Combine(publishRoot, "webapp");
+            Directory.CreateDirectory(webAppPublish);
+            await PublishAsync(_context.WebAppProjectPath, webAppPublish, options.Configuration, cancellationToken).ConfigureAwait(false);
+            var webAppZip = PackagePublishOutput(webAppPublish, "webapp.zip");
 
-        await PublishAsync(_context.ResolverProjectPath, resolverPublish, options.Configuration, cancellationToken).ConfigureAwait(false);
-        await PublishAsync(_context.WebAppProjectPath, webAppPublish, options.Configuration, cancellationToken).ConfigureAwait(false);
+            await _az.EnsureSuccessAsync(
+                new[]
+                {
+                    "webapp", "deploy",
+                    "--resource-group", options.ResourceGroupName,
+                    "--name", names.WebAppName,
+                    "--src-path", webAppZip,
+                    "--type", "zip",
+                },
+                cancellationToken,
+                $"Failed to deploy the web app '{names.WebAppName}'.").ConfigureAwait(false);
+        }
+    }
 
-        var resolverZip = PackagePublishOutput(resolverPublish, "resolver.zip");
-        var webAppZip = PackagePublishOutput(webAppPublish, "webapp.zip");
-
+    private async Task DeployResolverAsync(AppDeploymentOptions options, DeploymentNames names, string resolverZip, bool isFlexConsumption, CancellationToken cancellationToken)
+    {
         var deployZipArguments = new[]
         {
             "functionapp", "deployment", "source", "config-zip",
@@ -86,18 +110,6 @@ internal sealed class AppDeploymentService
                     $"Failed to start '{names.ResolverFunctionAppName}'.").ConfigureAwait(false);
             }
         }
-
-        await _az.EnsureSuccessAsync(
-            new[]
-            {
-                "webapp", "deploy",
-                "--resource-group", options.ResourceGroupName,
-                "--name", names.WebAppName,
-                "--src-path", webAppZip,
-                "--type", "zip",
-            },
-            cancellationToken,
-            $"Failed to deploy the web app '{names.WebAppName}'.").ConfigureAwait(false);
     }
 
     private async Task<bool> IsFlexConsumptionResolverAsync(string resourceGroupName, string coreAppServicePlanName, CancellationToken cancellationToken)

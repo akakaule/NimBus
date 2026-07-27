@@ -153,7 +153,32 @@ internal sealed record AppDeploymentOptions(
     string SolutionId,
     string Environment,
     string ResourceGroupName,
-    string Configuration);
+    string Configuration,
+    AppDeploymentTarget Target = AppDeploymentTarget.All);
+
+/// <summary>Which application(s) `nb deploy apps` builds and deploys.</summary>
+internal enum AppDeploymentTarget
+{
+    All,
+    Resolver,
+    WebApp,
+}
+
+internal static class DeployTargetSelection
+{
+    /// <summary>Parses the --only option value. Null/blank means "deploy everything".</summary>
+    public static AppDeploymentTarget ParseOnlyOption(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return AppDeploymentTarget.All;
+        return value.Replace("-", "", StringComparison.Ordinal).ToLowerInvariant() switch
+        {
+            "resolver" => AppDeploymentTarget.Resolver,
+            "webapp" => AppDeploymentTarget.WebApp,
+            "all" => AppDeploymentTarget.All,
+            _ => throw new CommandException($"Unknown --only value '{value}'. Expected 'resolver' or 'webapp'."),
+        };
+    }
+}
 
 internal sealed class CommandException : Exception
 {

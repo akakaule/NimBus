@@ -33,6 +33,10 @@ resource webApplication 'Microsoft.Web/sites@2022-03-01' = {
     siteConfig: {
       alwaysOn: alwaysOn
       ftpsState:'FtpsOnly'
+      // Azure's Windows default is a 32-bit worker (a density default from the
+      // shared-tier era); nothing in NimBus needs it and it caps the process
+      // address space, so run the .NET app 64-bit.
+      use32BitWorkerProcess: false
       appSettings:appsettings
     }
     httpsOnly: true    

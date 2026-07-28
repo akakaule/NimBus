@@ -18,6 +18,15 @@ public class DevImplementation : IDevApiController
         _env = env;
     }
 
+    // The SPA's useDevMode() hook probes this to decide whether to render the
+    // Dev Tools tab. It must be a REAL route: an unknown /api path falls through
+    // to the SPA fallback, which answers 200 with index.html — that's how the
+    // tab leaked into production before this endpoint existed.
+    public Task<IActionResult> GetDevStatusAsync()
+        => Task.FromResult<IActionResult>(_env.IsDevelopment()
+            ? new OkObjectResult(new { enabled = true })
+            : new NotFoundResult());
+
     public async Task<ActionResult<SeedResult>> PostDevSeedAsync()
     {
         if (!_env.IsDevelopment())

@@ -9,7 +9,12 @@ async function fetchDevStatus(): Promise<boolean> {
 
   pendingRequest = fetch("/api/dev/status")
     .then((res) => {
-      const enabled = res.ok;
+      // Require a JSON 200: an unknown /api path falls through to the SPA
+      // fallback, which answers 200 with index.html (text/html) — that must
+      // never read as "dev mode on".
+      const enabled =
+        res.ok &&
+        (res.headers.get("content-type") ?? "").includes("application/json");
       cachedResult = enabled;
       pendingRequest = null;
       return enabled;

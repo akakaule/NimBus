@@ -1708,6 +1708,17 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/AuditSearchRequest'
+  /api/dev/status:
+    get:
+      summary: Whether the developer tools are available (Development environment only)
+      operationId: get-dev-status
+      tags:
+        - Dev
+      responses:
+        '200':
+          description: Developer tools are available
+        '404':
+          description: Not available (non-development environment)
   /api/dev/seed:
     post:
       summary: Seed sample data across all containers

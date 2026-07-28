@@ -1662,6 +1662,14 @@ namespace NimBus.WebApp.ManagementApi
     {
 
         /// <summary>
+        /// Whether the developer tools are available (Development environment only)
+        /// </summary>
+
+        /// <returns>Developer tools are available</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> GetDevStatusAsync();
+
+        /// <summary>
         /// Seed sample data across all containers
         /// </summary>
 
@@ -1706,6 +1714,17 @@ namespace NimBus.WebApp.ManagementApi
         public DevApiController(IDevApiController implementation)
         {
             _implementation = implementation;
+        }
+
+        /// <summary>
+        /// Whether the developer tools are available (Development environment only)
+        /// </summary>
+        /// <returns>Developer tools are available</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/dev/status")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> GetDevStatus()
+        {
+
+            return _implementation.GetDevStatusAsync();
         }
 
         /// <summary>

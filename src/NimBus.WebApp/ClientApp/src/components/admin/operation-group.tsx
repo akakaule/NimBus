@@ -21,28 +21,28 @@ const toneStyles: Record<
   }
 > = {
   success: {
-    rail: "bg-status-success",
+    rail: "border-l-status-success",
     ico: "bg-status-success text-white",
     countChip:
       "bg-status-success-50 text-status-success-ink dark:bg-green-950/40 dark:text-green-200",
     captionColor: "text-status-success",
   },
   warning: {
-    rail: "bg-status-warning",
+    rail: "border-l-status-warning",
     ico: "bg-status-warning text-white",
     countChip:
       "bg-status-warning-50 text-status-warning-ink dark:bg-yellow-950/40 dark:text-yellow-200",
     captionColor: "text-status-warning-ink dark:text-yellow-300",
   },
   info: {
-    rail: "bg-status-info",
+    rail: "border-l-status-info",
     ico: "bg-status-info text-white",
     countChip:
       "bg-status-info-50 text-status-info-ink dark:bg-blue-950/40 dark:text-blue-200",
     captionColor: "text-status-info",
   },
   danger: {
-    rail: "bg-status-danger",
+    rail: "border-l-status-danger",
     ico: "bg-status-danger text-white",
     countChip:
       "bg-status-danger-50 text-status-danger-ink dark:bg-red-950/40 dark:text-red-200",
@@ -84,12 +84,19 @@ export function OperationGroup({
   const styles = toneStyles[tone];
   return (
     <AccordionItem id={id} className="mb-3">
-      <div className="flex bg-card border border-border rounded-nb-md overflow-hidden">
-        <div className={cn("w-1 shrink-0", styles.rail)} aria-hidden="true" />
+      {/* Rail is a border-left (not an inner div behind overflow-hidden) so
+          absolutely-positioned children like the Combobox dropdown can
+          escape the card without being clipped. */}
+      <div
+        className={cn(
+          "flex bg-card border border-border border-l-4 rounded-nb-md",
+          styles.rail,
+        )}
+      >
         <div className="flex-1 min-w-0">
           <AccordionTrigger
             itemId={id}
-            className="border-0 hover:bg-transparent data-[expanded]:bg-transparent py-4 px-5"
+            className="border-0 hover:bg-transparent data-[expanded]:bg-transparent py-4 px-5 rounded-t-nb-md"
           >
             <div className="flex items-center gap-2.5 flex-1 min-w-0">
               <span

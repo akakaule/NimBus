@@ -30,7 +30,11 @@ namespace NimBus.Resolver
             services.AddSingleton(sp =>
             {
                 var config = sp.GetRequiredService<IConfiguration>();
-                var fqns = config.GetValue<string>("AzureWebJobsServiceBus__fullyQualifiedNamespace");
+                // In Azure the `AzureWebJobsServiceBus__fullyQualifiedNamespace` app
+                // setting surfaces in IConfiguration with a colon separator; the raw
+                // `__` key only exists when set literally (e.g. local.settings.json).
+                var fqns = config.GetValue<string>("AzureWebJobsServiceBus:fullyQualifiedNamespace")
+                    ?? config.GetValue<string>("AzureWebJobsServiceBus__fullyQualifiedNamespace");
                 if (!string.IsNullOrEmpty(fqns) && !fqns.Contains("SharedAccessKey="))
                     return new ServiceBusClient(fqns, new DefaultAzureCredential());
 

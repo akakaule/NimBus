@@ -34,12 +34,25 @@ public sealed class SqlServerMessageStore : INimBusMessageStore
     private readonly SqlServerMessageStoreOptions _options;
     private readonly string _schema;
     private readonly int _commandTimeout;
+    private readonly SqlServerMetricsStore _metrics;
+    private readonly SqlServerEventSchemaStore _eventSchemas;
+    private readonly SqlServerAccessControlStore _accessControl;
 
     public SqlServerMessageStore(IOptions<SqlServerMessageStoreOptions> options)
     {
         _options = options.Value;
         _schema = _options.Schema;
         _commandTimeout = _options.CommandTimeoutSeconds;
+
+        var context = new SqlServerStoreContext
+        {
+            Open = OpenAsync,
+            Table = T,
+            CommandTimeout = _commandTimeout,
+        };
+        _metrics = new SqlServerMetricsStore(context);
+        _eventSchemas = new SqlServerEventSchemaStore(context);
+        _accessControl = new SqlServerAccessControlStore(context);
     }
 
     private async Task<SqlConnection> OpenAsync()
@@ -1295,213 +1308,15 @@ VALUES (@EndpointId, @EndpointOwner, @EndpointOwnerTeam, @EndpointOwnerEmail,
         SubscriptionStatus = row.SubscriptionStatus,
     };
 
-    // ───────── Metrics ─────────
+    // ───────── Metrics — implementation in SqlServerMetricsStore ─────────
 
-    public async Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from)
-    {
-        var sql = $@"
-SELECT
-    CASE
-        WHEN MessageType = 'EventRequest' AND NULLIF(FromAddress, '') IS NOT NULL THEN FromAddress
-        ELSE EndpointId
-    END AS EndpointId,
-    EventTypeId,
-    MessageType,
-    COUNT_BIG(*) AS EventCount
-FROM {T("Messages")}
-WHERE EnqueuedTimeUtc >= @From
-GROUP BY
-    CASE
-        WHEN MessageType = 'EventRequest' AND NULLIF(FromAddress, '') IS NOT NULL THEN FromAddress
-        ELSE EndpointId
-    END,
-    EventTypeId,
-    MessageType";
-        await using var conn = await OpenAsync();
-        var rows = await conn.QueryAsync<(string EndpointId, string EventTypeId, string MessageType, long EventCount)>(
-            sql,
-            new { From = from },
-            commandTimeout: _commandTimeout);
-        var result = new EndpointMetricsResult();
-        foreach (var r in rows)
-        {
-            var bucket = r.MessageType switch
-            {
-                "EventRequest" => result.Published,
-                "ResolutionResponse" => result.Handled,
-                "ErrorResponse" => result.Failed,
-                _ => null,
-            };
-            bucket?.Add(new EndpointEventTypeCount { EndpointId = r.EndpointId, EventTypeId = r.EventTypeId, Count = (int)r.EventCount });
-        }
-        return result;
-    }
+    public Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from) => _metrics.GetEndpointMetrics(from);
 
-    public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from)
-    {
-        // Aggregate COUNT/AVG/MIN/MAX server-side and GROUP BY (endpoint, eventType)
-        // so the Resolver hot path never streams every outcome row into memory.
-        // COUNT/AVG/MIN/MAX ignore NULLs, replacing the old client-side null filter.
-        var sql = $@"
-SELECT EndpointId,
-       EventTypeId,
-       COUNT(QueueTimeMs) AS QueueCount,
-       AVG(CAST(QueueTimeMs AS FLOAT)) AS QueueAvg,
-       MIN(QueueTimeMs) AS QueueMin,
-       MAX(QueueTimeMs) AS QueueMax,
-       COUNT(ProcessingTimeMs) AS ProcessingCount,
-       AVG(CAST(ProcessingTimeMs AS FLOAT)) AS ProcessingAvg,
-       MIN(ProcessingTimeMs) AS ProcessingMin,
-       MAX(ProcessingTimeMs) AS ProcessingMax
-FROM {T("Messages")}
-WHERE EnqueuedTimeUtc >= @From
-  AND MessageType IN ('ResolutionResponse', 'ErrorResponse', 'SkipResponse', 'DeferralResponse', 'UnsupportedResponse')
-  AND (QueueTimeMs IS NOT NULL OR ProcessingTimeMs IS NOT NULL)
-GROUP BY EndpointId, EventTypeId";
+    public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from) => _metrics.GetEndpointLatencyMetrics(from);
 
-        return GetEndpointLatencyMetricsCore(sql, from);
-    }
+    public Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from) => _metrics.GetFailedMessageInsights(from);
 
-    private async Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetricsCore(string sql, DateTime from)
-    {
-        await using var conn = await OpenAsync();
-        var rows = await conn.QueryAsync<(string EndpointId, string EventTypeId,
-            int QueueCount, double? QueueAvg, long? QueueMin, long? QueueMax,
-            int ProcessingCount, double? ProcessingAvg, long? ProcessingMin, long? ProcessingMax)>(
-            sql,
-            new { From = from },
-            commandTimeout: _commandTimeout);
-
-        var latencies = rows
-            .Select(r => new EndpointLatencyAggregate
-            {
-                EndpointId = r.EndpointId,
-                EventTypeId = r.EventTypeId,
-                Queue = BuildLatency(r.QueueCount, r.QueueAvg, r.QueueMin, r.QueueMax),
-                Processing = BuildLatency(r.ProcessingCount, r.ProcessingAvg, r.ProcessingMin, r.ProcessingMax),
-            })
-            .ToList();
-
-        return new EndpointLatencyMetricsResult { Latencies = latencies };
-    }
-
-    // A group whose column is entirely NULL yields COUNT = 0 with NULL avg/min/max;
-    // collapse that to the zeroed aggregate the client-side path used to produce.
-    private static LatencyAggregate BuildLatency(int count, double? avg, long? min, long? max)
-        => count == 0
-            ? new LatencyAggregate()
-            : new LatencyAggregate
-            {
-                Count = count,
-                AvgMs = avg ?? 0,
-                MinMs = min ?? 0,
-                MaxMs = max ?? 0,
-            };
-
-    public async Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from)
-    {
-        await using var conn = await OpenAsync();
-        var rows = await conn.QueryAsync<FailedMessageInfo>(
-            $@"SELECT
-                   EndpointId,
-                   EventTypeId,
-                   COALESCE(NULLIF(JSON_VALUE(MessageContentJson, '$.ErrorContent.ErrorText'), ''), DeadLetterErrorDescription, '') AS ErrorText,
-                   EnqueuedTimeUtc,
-                   EventId
-               FROM {T("Messages")}
-               WHERE MessageType = 'ErrorResponse'
-                 AND EnqueuedTimeUtc >= @From",
-            new { From = from }, commandTimeout: _commandTimeout);
-        return rows.ToList();
-    }
-
-    public async Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
-    {
-        // Floor to the bucket boundary server-side and GROUP BY, so we stop
-        // streaming every message row. DATEADD(unit, DATEDIFF(unit, 0, ts), 0)
-        // is version-agnostic (DATETRUNC is SQL Server 2022+). The unit is a
-        // switch-constrained literal, never user input.
-        var bucketUnit = substringLength switch
-        {
-            16 => "minute",
-            13 => "hour",
-            10 => "day",
-            _ => "hour",
-        };
-        var bucketExpr = $"DATEADD({bucketUnit}, DATEDIFF({bucketUnit}, 0, EnqueuedTimeUtc), 0)";
-
-        await using var conn = await OpenAsync();
-        var rows = await conn.QueryAsync<(string MessageType, DateTime Bucket, long Count)>(
-            $@"SELECT MessageType, {bucketExpr} AS Bucket, COUNT_BIG(*) AS [Count]
-               FROM {T("Messages")}
-               WHERE EnqueuedTimeUtc >= @From
-                 AND MessageType IN ('EventRequest', 'ResolutionResponse', 'ErrorResponse')
-               GROUP BY MessageType, {bucketExpr}",
-            new { From = from },
-            commandTimeout: _commandTimeout);
-
-        var buckets = GenerateBucketKeys(from, DateTime.UtcNow, substringLength)
-            .ToDictionary(k => k, k => new TimeSeriesBucket { Timestamp = k });
-
-        foreach (var row in rows)
-        {
-            // The bucket start truncated to substringLength yields the same key
-            // the per-row path produced (flooring == string truncation here).
-            var key = DateTime.SpecifyKind(row.Bucket, DateTimeKind.Utc).ToString("o")[..substringLength];
-            if (!buckets.TryGetValue(key, out var bucket))
-            {
-                bucket = new TimeSeriesBucket { Timestamp = key };
-                buckets[key] = bucket;
-            }
-
-            switch (row.MessageType)
-            {
-                case "EventRequest":
-                    bucket.Published += (int)row.Count;
-                    break;
-                case "ResolutionResponse":
-                    bucket.Handled += (int)row.Count;
-                    break;
-                case "ErrorResponse":
-                    bucket.Failed += (int)row.Count;
-                    break;
-            }
-        }
-
-        return new TimeSeriesResult
-        {
-            BucketSize = bucketLabel,
-            DataPoints = buckets.Values.OrderBy(b => b.Timestamp).ToList(),
-        };
-    }
-
-    private static List<string> GenerateBucketKeys(DateTime from, DateTime to, int substringLength)
-    {
-        var current = substringLength switch
-        {
-            16 => new DateTime(from.Year, from.Month, from.Day, from.Hour, from.Minute, 0, DateTimeKind.Utc),
-            13 => new DateTime(from.Year, from.Month, from.Day, from.Hour, 0, 0, DateTimeKind.Utc),
-            10 => new DateTime(from.Year, from.Month, from.Day, 0, 0, 0, DateTimeKind.Utc),
-            _ => new DateTime(from.Year, from.Month, from.Day, from.Hour, 0, 0, DateTimeKind.Utc)
-        };
-
-        var step = substringLength switch
-        {
-            16 => TimeSpan.FromMinutes(1),
-            13 => TimeSpan.FromHours(1),
-            10 => TimeSpan.FromDays(1),
-            _ => TimeSpan.FromHours(1)
-        };
-
-        var keys = new List<string>();
-        while (current <= to)
-        {
-            keys.Add(current.ToString("o")[..substringLength]);
-            current += step;
-        }
-
-        return keys;
-    }
+    public Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel) => _metrics.GetTimeSeriesMetrics(from, substringLength, bucketLabel);
 
     private static string CompositeEventId((string EventId, string? SessionId, string Status) row)
         => $"{row.EventId}_{row.SessionId ?? string.Empty}";
@@ -1509,129 +1324,23 @@ GROUP BY EndpointId, EventTypeId";
     private static string CompositeEventId(UnresolvedEvent @event)
         => $"{@event.EventId}_{@event.SessionId ?? string.Empty}";
 
-    // ───────── Event schema store ─────────
+    // ───────── Event schema store — implementation in SqlServerEventSchemaStore ─────────
 
-    public async Task<EventSchema?> GetSchema(string eventTypeId)
-    {
-        await using var conn = await OpenAsync();
-        return await conn.QuerySingleOrDefaultAsync<EventSchema>(
-            $"SELECT * FROM {T("EventSchemas")} WHERE [EventTypeId] = @eventTypeId",
-            new { eventTypeId },
-            commandTimeout: _commandTimeout);
-    }
+    public Task<EventSchema?> GetSchema(string eventTypeId) => _eventSchemas.GetSchema(eventTypeId);
 
-    public async Task<IReadOnlyList<EventSchema>> GetSchemas()
-    {
-        await using var conn = await OpenAsync();
-        var rows = await conn.QueryAsync<EventSchema>(
-            $"SELECT * FROM {T("EventSchemas")}",
-            commandTimeout: _commandTimeout);
-        return rows.ToList();
-    }
+    public Task<IReadOnlyList<EventSchema>> GetSchemas() => _eventSchemas.GetSchemas();
 
-    public async Task<EventSchema> DefineEventType(EventSchema schema)
-    {
-        if (string.IsNullOrWhiteSpace(schema?.EventTypeId))
-            throw new ArgumentException("schema.EventTypeId is required.", nameof(schema));
-        if (string.IsNullOrWhiteSpace(schema?.JsonSchema))
-            throw new ArgumentException("schema.JsonSchema is required.", nameof(schema));
+    public Task<EventSchema> DefineEventType(EventSchema schema) => _eventSchemas.DefineEventType(schema);
 
-        var existing = await GetSchema(schema.EventTypeId);
-        if (existing != null)
-        {
-            if (!SchemaJson.Equal(existing.JsonSchema, schema.JsonSchema))
-                throw new SchemaConflictException(schema.EventTypeId);
-            return existing;
-        }
+    // ───────── Access-control store (spec 026) — implementation in SqlServerAccessControlStore ─────────
 
-        await using var conn = await OpenAsync();
-        try
-        {
-            await conn.ExecuteAsync(
-                $@"INSERT INTO {T("EventSchemas")}
-                   ([EventTypeId],[Name],[JsonSchema],[Description],[SessionKeyPath],[Version],[AgentId],[CreatedBy],[CreatedUtc])
-                   VALUES (@EventTypeId,@Name,@JsonSchema,@Description,@SessionKeyPath,@Version,@AgentId,@CreatedBy,@CreatedUtc)",
-                schema,
-                commandTimeout: _commandTimeout);
-            return schema;
-        }
-        catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
-        {
-            // PK / unique violation from a concurrent insert race — re-read and validate
-            var raced = await GetSchema(schema.EventTypeId);
-            if (raced is null)
-                throw new InvalidOperationException(
-                    $"Event type '{schema.EventTypeId}' reported a unique violation but could not be re-read.");
-            if (!SchemaJson.Equal(raced.JsonSchema, schema.JsonSchema))
-                throw new SchemaConflictException(schema.EventTypeId);
-            return raced;
-        }
-    }
+    public Task<AccessControlList?> GetSiteAccessControl() => _accessControl.GetSiteAccessControl();
 
-    // ───────── Access-control store (spec 026) ─────────
+    public Task SetSiteAccessControl(AccessControlList accessControl) => _accessControl.SetSiteAccessControl(accessControl);
 
-    public Task<AccessControlList?> GetSiteAccessControl()
-        => GetAccessControlRow(AccessControlList.SiteId);
+    public Task<AccessControlList?> GetEndpointAccessControl(string endpointId) => _accessControl.GetEndpointAccessControl(endpointId);
 
-    public Task SetSiteAccessControl(AccessControlList accessControl)
-    {
-        accessControl.Id = AccessControlList.SiteId;
-        accessControl.EndpointId = null;
-        return UpsertAccessControlRow(accessControl);
-    }
+    public Task<IReadOnlyList<AccessControlList>> GetEndpointAccessControls() => _accessControl.GetEndpointAccessControls();
 
-    public Task<AccessControlList?> GetEndpointAccessControl(string endpointId)
-        => GetAccessControlRow(AccessControlList.IdForEndpoint(endpointId));
-
-    public async Task<IReadOnlyList<AccessControlList>> GetEndpointAccessControls()
-    {
-        await using var conn = await OpenAsync();
-        var rows = await conn.QueryAsync<string>(
-            $"SELECT [ContentJson] FROM {T("AccessControl")} WHERE [Id] LIKE @prefix + '%'",
-            new { prefix = AccessControlList.EndpointIdPrefix },
-            commandTimeout: _commandTimeout);
-        return rows
-            .Select(json => JsonConvert.DeserializeObject<AccessControlList>(json))
-            .Where(acl => acl != null)
-            .Select(acl => acl!)
-            .ToList();
-    }
-
-    public Task SetEndpointAccessControl(string endpointId, AccessControlList accessControl)
-    {
-        accessControl.Id = AccessControlList.IdForEndpoint(endpointId);
-        accessControl.EndpointId = endpointId;
-        return UpsertAccessControlRow(accessControl);
-    }
-
-    private async Task<AccessControlList?> GetAccessControlRow(string id)
-    {
-        await using var conn = await OpenAsync();
-        var json = await conn.QuerySingleOrDefaultAsync<string>(
-            $"SELECT [ContentJson] FROM {T("AccessControl")} WHERE [Id] = @id",
-            new { id },
-            commandTimeout: _commandTimeout);
-        return json == null ? null : JsonConvert.DeserializeObject<AccessControlList>(json);
-    }
-
-    private async Task UpsertAccessControlRow(AccessControlList accessControl)
-    {
-        await using var conn = await OpenAsync();
-        await conn.ExecuteAsync(
-            $@"MERGE {T("AccessControl")} AS target
-               USING (SELECT @Id AS [Id]) AS source
-               ON target.[Id] = source.[Id]
-               WHEN MATCHED THEN
-                   UPDATE SET [ContentJson] = @ContentJson, [UpdatedAtUtc] = @UpdatedAtUtc
-               WHEN NOT MATCHED THEN
-                   INSERT ([Id], [ContentJson], [UpdatedAtUtc])
-                   VALUES (@Id, @ContentJson, @UpdatedAtUtc);",
-            new
-            {
-                accessControl.Id,
-                ContentJson = JsonConvert.SerializeObject(accessControl),
-                accessControl.UpdatedAtUtc,
-            },
-            commandTimeout: _commandTimeout);
-    }
+    public Task SetEndpointAccessControl(string endpointId, AccessControlList accessControl) => _accessControl.SetEndpointAccessControl(endpointId, accessControl);
 }

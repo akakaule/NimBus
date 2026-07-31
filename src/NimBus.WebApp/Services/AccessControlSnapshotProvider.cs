@@ -43,10 +43,11 @@ public interface IAccessControlSnapshotProvider
 
 /// <summary>
 /// Singleton snapshot cache (the consuming authorization service is scoped, so a
-/// shorter lifetime would never hit). Store faults fail closed for store-granted
-/// roles — the last-known-good snapshot is served when available, otherwise an
-/// empty snapshot is cached briefly; claim-based compat grants (EIP_Management)
-/// are unaffected, so configured admins are never locked out by an outage.
+/// shorter lifetime would never hit). Store faults reuse last-known-good only for
+/// an ordinary TTL refresh; an explicitly invalidated generation falls back to an
+/// empty snapshot so possible revocations fail closed. Claim-based compat grants
+/// (EIP_Management) are unaffected, so configured admins are never locked out by
+/// an outage.
 /// </summary>
 public sealed class AccessControlSnapshotProvider : IAccessControlSnapshotProvider, IDisposable
 {
@@ -59,8 +60,8 @@ public sealed class AccessControlSnapshotProvider : IAccessControlSnapshotProvid
     private readonly ILogger<AccessControlSnapshotProvider> _logger;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
 
-    private AccessControlSnapshot? _current;
-    private DateTime _expiresAtUtc = DateTime.MinValue;
+    private CacheEntry? _current;
+    private long _generation;
 
     public AccessControlSnapshotProvider(IAccessControlStore store, ILogger<AccessControlSnapshotProvider> logger)
     {
@@ -70,43 +71,62 @@ public sealed class AccessControlSnapshotProvider : IAccessControlSnapshotProvid
 
     public async Task<AccessControlSnapshot> GetSnapshotAsync()
     {
-        var snapshot = Volatile.Read(ref _current);
-        if (snapshot != null && DateTime.UtcNow < _expiresAtUtc)
-            return snapshot;
+        var current = Volatile.Read(ref _current);
+        var generation = Volatile.Read(ref _generation);
+        if (IsFresh(current, generation))
+            return current.Snapshot;
 
         // Single-flight: one loader refreshes, concurrent requests reuse its result.
         await _refreshLock.WaitAsync();
         try
         {
-            snapshot = Volatile.Read(ref _current);
-            if (snapshot != null && DateTime.UtcNow < _expiresAtUtc)
-                return snapshot;
-
-            try
+            while (true)
             {
-                var site = await _store.GetSiteAccessControl();
-                var endpointDocs = await _store.GetEndpointAccessControls();
-                var endpoints = new Dictionary<string, AccessControlList>(StringComparer.OrdinalIgnoreCase);
-                foreach (var doc in endpointDocs)
+                current = Volatile.Read(ref _current);
+                generation = Volatile.Read(ref _generation);
+                if (IsFresh(current, generation))
+                    return current.Snapshot;
+
+                try
                 {
-                    if (!string.IsNullOrEmpty(doc.EndpointId))
-                        endpoints[doc.EndpointId] = doc;
-                }
+                    var site = await _store.GetSiteAccessControl();
+                    var endpointDocs = await _store.GetEndpointAccessControls();
+                    var endpoints = new Dictionary<string, AccessControlList>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var doc in endpointDocs)
+                    {
+                        if (!string.IsNullOrEmpty(doc.EndpointId))
+                            endpoints[doc.EndpointId] = doc;
+                    }
 
-                snapshot = new AccessControlSnapshot(site, endpoints);
-                Volatile.Write(ref _current, snapshot);
-                _expiresAtUtc = DateTime.UtcNow + SuccessTtl;
-                return snapshot;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "Access-control snapshot refresh failed; store-granted roles are unavailable until the store recovers");
-                // Serve stale-if-available, otherwise an empty (deny) snapshot; retry soon.
-                snapshot = Volatile.Read(ref _current) ?? AccessControlSnapshot.Empty;
-                Volatile.Write(ref _current, snapshot);
-                _expiresAtUtc = DateTime.UtcNow + FailureTtl;
-                return snapshot;
+                    var snapshot = new AccessControlSnapshot(site, endpoints);
+                    if (generation != Volatile.Read(ref _generation))
+                        continue;
+
+                    Volatile.Write(
+                        ref _current,
+                        new CacheEntry(snapshot, DateTime.UtcNow + SuccessTtl, generation));
+                    if (generation == Volatile.Read(ref _generation))
+                        return snapshot;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Access-control snapshot refresh failed; store-granted roles are unavailable until the store recovers");
+                    // An explicit invalidation may represent a revoke, so only
+                    // reuse last-known-good within the same generation.
+                    var stale = Volatile.Read(ref _current);
+                    var snapshot = stale != null && stale.Generation == generation
+                        ? stale.Snapshot
+                        : AccessControlSnapshot.Empty;
+                    if (generation != Volatile.Read(ref _generation))
+                        continue;
+
+                    Volatile.Write(
+                        ref _current,
+                        new CacheEntry(snapshot, DateTime.UtcNow + FailureTtl, generation));
+                    if (generation == Volatile.Read(ref _generation))
+                        return snapshot;
+                }
             }
         }
         finally
@@ -115,7 +135,12 @@ public sealed class AccessControlSnapshotProvider : IAccessControlSnapshotProvid
         }
     }
 
-    public void Invalidate() => _expiresAtUtc = DateTime.MinValue;
+    public void Invalidate() => Interlocked.Increment(ref _generation);
 
     public void Dispose() => _refreshLock.Dispose();
+
+    private static bool IsFresh(CacheEntry? entry, long generation)
+        => entry != null && entry.Generation == generation && DateTime.UtcNow < entry.ExpiresAtUtc;
+
+    private sealed record CacheEntry(AccessControlSnapshot Snapshot, DateTime ExpiresAtUtc, long Generation);
 }

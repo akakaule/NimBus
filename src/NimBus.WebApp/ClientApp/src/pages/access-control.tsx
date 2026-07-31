@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "api-client";
 import Page from "components/page";
 import { RoleCard } from "components/access-control/role-card";
@@ -76,6 +76,7 @@ export default function AccessControl() {
   const [selectedEndpoint, setSelectedEndpoint] = useState("");
   const [endpointSet, setEndpointSet] = useState<api.AccessControlSet | null>(null);
   const [busy, setBusy] = useState(false);
+  const endpointRequestTicket = useRef(0);
 
   // Site lists (site Owners only).
   useEffect(() => {
@@ -94,14 +95,19 @@ export default function AccessControl() {
   }, [canManageSite, ownedEndpoints, client]);
 
   useEffect(() => {
+    const ticket = ++endpointRequestTicket.current;
+    setEndpointSet(null);
     if (!selectedEndpoint) {
-      setEndpointSet(null);
       return;
     }
     client
       .getEndpointAccessControl(selectedEndpoint)
-      .then(setEndpointSet)
-      .catch(() => setEndpointSet(null));
+      .then((set) => {
+        if (ticket === endpointRequestTicket.current) setEndpointSet(set);
+      })
+      .catch(() => {
+        if (ticket === endpointRequestTicket.current) setEndpointSet(null);
+      });
   }, [selectedEndpoint, client]);
 
   const mutate = useCallback(
@@ -122,6 +128,29 @@ export default function AccessControl() {
     },
     [addToast],
   );
+
+  const mutateEndpoint = useCallback(
+    (
+      endpointId: string,
+      fn: (capturedEndpointId: string) => Promise<api.AccessControlSet>,
+    ) => {
+      const ticket = ++endpointRequestTicket.current;
+      return mutate(
+        () => fn(endpointId),
+        (set) => {
+          if (ticket === endpointRequestTicket.current) setEndpointSet(set);
+        },
+      );
+    },
+    [mutate],
+  );
+
+  const selectEndpoint = useCallback((endpointId: string) => {
+    // Invalidate pending loads and mutations before React commits the selection.
+    ++endpointRequestTicket.current;
+    setEndpointSet(null);
+    setSelectedEndpoint(endpointId);
+  }, []);
 
   const siteEntry = (role: SiteRole, entry: string) =>
     new api.RoleEntry({ role: toRoleEnum(role), entry });
@@ -206,7 +235,7 @@ export default function AccessControl() {
           <select
             id="ac-endpoint"
             value={selectedEndpoint}
-            onChange={(e) => setSelectedEndpoint(e.target.value)}
+            onChange={(e) => selectEndpoint(e.target.value)}
             className="text-[13px] border border-border rounded-nb-sm px-2 py-1.5 bg-background"
           >
             <option value="">Select an endpoint…</option>
@@ -233,23 +262,23 @@ export default function AccessControl() {
                 entries={endpointSet ? card.pick(endpointSet) : []}
                 busy={busy || !endpointSet}
                 onAdd={(entry) =>
-                  mutate(
-                    () =>
+                  mutateEndpoint(
+                    selectedEndpoint,
+                    (endpointId) =>
                       client.postEndpointAccessControlRole(
-                        selectedEndpoint,
+                        endpointId,
                         siteEntry(card.role, entry),
                       ),
-                    setEndpointSet,
                   )
                 }
                 onRemove={(entry) =>
-                  mutate(
-                    () =>
+                  mutateEndpoint(
+                    selectedEndpoint,
+                    (endpointId) =>
                       client.deleteEndpointAccessControlRole(
-                        selectedEndpoint,
+                        endpointId,
                         siteEntry(card.role, entry),
                       ),
-                    setEndpointSet,
                   )
                 }
               />

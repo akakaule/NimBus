@@ -31,6 +31,10 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     // when a container is deleted (PurgeMessages) so the next access recreates it.
     private readonly ConcurrentDictionary<string, Task<ICosmosContainerAdapter>> _containerCache = new();
 
+    private readonly CosmosDbMetricsStore _metrics;
+    private readonly CosmosDbAccessControlStore _accessControl;
+    private readonly CosmosDbEventSchemaStore _eventSchemas;
+
     private const string DatabaseId = "MessageDatabase";
 
     // Hot-path writes only ever inspect StatusCode on the response; skipping the
@@ -58,12 +62,18 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     {
         _logger = logger;
         _cosmosClient = new CosmosClientAdapter(cosmosClient, _logger);
+        _metrics = new CosmosDbMetricsStore(GetMessagesContainer);
+        _accessControl = new CosmosDbAccessControlStore(GetAccessControlContainer);
+        _eventSchemas = new CosmosDbEventSchemaStore(GetEventSchemasContainer);
     }
 
     public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient> logger = null)
     {
         _logger = logger;
         _cosmosClient = new TransientTranslatingCosmosClientAdapter(cosmosClient, _logger);
+        _metrics = new CosmosDbMetricsStore(GetMessagesContainer);
+        _accessControl = new CosmosDbAccessControlStore(GetAccessControlContainer);
+        _eventSchemas = new CosmosDbEventSchemaStore(GetEventSchemasContainer);
     }
 
     public async Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId)
@@ -1263,123 +1273,25 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     private Task<ICosmosContainerAdapter> GetAccessControlContainer() =>
         GetCachedContainerAsync(AccessControlContainer, "/id");
 
-    // ── IAccessControlStore (spec 026) ─────────────────────────────────────────
+    // ── IAccessControlStore (spec 026) — implementation in CosmosDbAccessControlStore ──
 
-    public Task<AccessControlList?> GetSiteAccessControl()
-        => ReadAccessControlItem(AccessControlList.SiteId);
+    public Task<AccessControlList?> GetSiteAccessControl() => _accessControl.GetSiteAccessControl();
 
-    public Task SetSiteAccessControl(AccessControlList accessControl)
-    {
-        accessControl.Id = AccessControlList.SiteId;
-        accessControl.EndpointId = null;
-        return UpsertAccessControlItem(accessControl);
-    }
+    public Task SetSiteAccessControl(AccessControlList accessControl) => _accessControl.SetSiteAccessControl(accessControl);
 
-    public Task<AccessControlList?> GetEndpointAccessControl(string endpointId)
-        => ReadAccessControlItem(AccessControlList.IdForEndpoint(endpointId));
+    public Task<AccessControlList?> GetEndpointAccessControl(string endpointId) => _accessControl.GetEndpointAccessControl(endpointId);
 
-    public async Task<IReadOnlyList<AccessControlList>> GetEndpointAccessControls()
-    {
-        var container = await GetAccessControlContainer();
-        var results = new List<AccessControlList>();
-        var query = new QueryDefinition(
-            "SELECT * FROM c WHERE STARTSWITH(c.id, @prefix)")
-            .WithParameter("@prefix", AccessControlList.EndpointIdPrefix);
-        using var iterator = container.GetItemQueryIterator<AccessControlList>(query);
-        while (iterator.HasMoreResults)
-            results.AddRange(await iterator.ReadNextAsync());
-        return results;
-    }
+    public Task<IReadOnlyList<AccessControlList>> GetEndpointAccessControls() => _accessControl.GetEndpointAccessControls();
 
-    public Task SetEndpointAccessControl(string endpointId, AccessControlList accessControl)
-    {
-        accessControl.Id = AccessControlList.IdForEndpoint(endpointId);
-        accessControl.EndpointId = endpointId;
-        return UpsertAccessControlItem(accessControl);
-    }
+    public Task SetEndpointAccessControl(string endpointId, AccessControlList accessControl) => _accessControl.SetEndpointAccessControl(endpointId, accessControl);
 
-    private async Task<AccessControlList?> ReadAccessControlItem(string id)
-    {
-        var container = await GetAccessControlContainer();
-        try
-        {
-            var resp = await container.ReadItemAsync<AccessControlList>(id, new PartitionKey(id));
-            return resp.Resource;
-        }
-        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-        {
-            return null;
-        }
-    }
+    // ── IEventSchemaStore — implementation in CosmosDbEventSchemaStore ──
 
-    private async Task UpsertAccessControlItem(AccessControlList accessControl)
-    {
-        var container = await GetAccessControlContainer();
-        await container.UpsertItemAsync(accessControl, new PartitionKey(accessControl.Id), SuppressContentOnWrite);
-    }
+    public Task<EventSchema?> GetSchema(string eventTypeId) => _eventSchemas.GetSchema(eventTypeId);
 
-    // ── IEventSchemaStore ──────────────────────────────────────────────────────
+    public Task<IReadOnlyList<EventSchema>> GetSchemas() => _eventSchemas.GetSchemas();
 
-    public async Task<EventSchema?> GetSchema(string eventTypeId)
-    {
-        var container = await GetEventSchemasContainer();
-        try
-        {
-            var resp = await container.ReadItemAsync<EventSchema>(eventTypeId, new PartitionKey(eventTypeId));
-            return resp.Resource;
-        }
-        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-        {
-            return null;
-        }
-    }
-
-    public async Task<IReadOnlyList<EventSchema>> GetSchemas()
-    {
-        var container = await GetEventSchemasContainer();
-        var results = new List<EventSchema>();
-        using var iterator = container.GetItemQueryIterator<EventSchema>("SELECT * FROM c");
-        while (iterator.HasMoreResults)
-            results.AddRange(await iterator.ReadNextAsync());
-        return results;
-    }
-
-    public async Task<EventSchema> DefineEventType(EventSchema schema)
-    {
-        if (string.IsNullOrWhiteSpace(schema?.EventTypeId))
-            throw new ArgumentException("schema.EventTypeId is required.", nameof(schema));
-        if (string.IsNullOrWhiteSpace(schema?.JsonSchema))
-            throw new ArgumentException("schema.JsonSchema is required.", nameof(schema));
-
-        var existing = await GetSchema(schema.EventTypeId);
-        if (existing != null)
-        {
-            if (!SchemaJson.Equal(existing.JsonSchema, schema.JsonSchema))
-                throw new SchemaConflictException(schema.EventTypeId);
-            return existing;
-        }
-
-        var container = await GetEventSchemasContainer();
-        try
-        {
-            // Atomic create-or-409: never an upsert, so a concurrent create of a
-            // DIFFERENT schema for the same new id can't silently overwrite.
-            var resp = await container.CreateItemAsync(schema, new PartitionKey(schema.EventTypeId));
-            return resp.Resource;
-        }
-        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.Conflict)
-        {
-            // Lost the create race. Re-read the winner; surface a conflict only if it
-            // differs (schemas are immutable), otherwise the create was idempotent.
-            var raced = await GetSchema(schema.EventTypeId);
-            if (raced is null)
-                throw new InvalidOperationException(
-                    $"Event type '{schema.EventTypeId}' reported a create conflict but could not be re-read.");
-            if (!SchemaJson.Equal(raced.JsonSchema, schema.JsonSchema))
-                throw new SchemaConflictException(schema.EventTypeId);
-            return raced;
-        }
-    }
+    public Task<EventSchema> DefineEventType(EventSchema schema) => _eventSchemas.DefineEventType(schema);
 
     /// <summary>
     /// Projection for <see cref="SearchMessages"/>: every <see cref="MessageEntity"/>
@@ -2095,344 +2007,15 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         }
     }
 
-    public async Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from)
-    {
-        var container = await GetMessagesContainer();
-        var fromIso = from.ToString("o");
+    // ── IMetricsStore — implementation in CosmosDbMetricsStore ──
 
-        // The three aggregates are independent — run them concurrently so the
-        // endpoint overview costs one round-trip's latency instead of three.
-        var publishedTask = RunEventTypeCountQuery(container,
-            "SELECT COUNT(1) AS count, c.message[\"From\"] AS endpointId, c.message.EventTypeId FROM c " +
-            "WHERE c.message.MessageType = 'EventRequest' " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
-            "GROUP BY c.message[\"From\"], c.message.EventTypeId",
-            fromIso);
+    public Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from) => _metrics.GetEndpointMetrics(from);
 
-        var failedTask = RunEventTypeCountQuery(container,
-            "SELECT COUNT(1) AS count, c.endpointId, c.message.EventTypeId FROM c " +
-            "WHERE c.message.MessageType = 'ErrorResponse' " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
-            "GROUP BY c.endpointId, c.message.EventTypeId",
-            fromIso);
+    public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from) => _metrics.GetEndpointLatencyMetrics(from);
 
-        var handledTask = RunEventTypeCountQuery(container,
-            "SELECT COUNT(1) AS count, c.endpointId, c.message.EventTypeId FROM c " +
-            "WHERE c.message.MessageType = 'ResolutionResponse' " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
-            "GROUP BY c.endpointId, c.message.EventTypeId",
-            fromIso);
+    public Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from) => _metrics.GetFailedMessageInsights(from);
 
-        await Task.WhenAll(publishedTask, failedTask, handledTask);
-
-        return new EndpointMetricsResult
-        {
-            Published = await publishedTask,
-            Handled = await handledTask,
-            Failed = await failedTask
-        };
-    }
-
-    public async Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from)
-    {
-        // Server-side aggregation over all ResolutionResponse / ErrorResponse
-        // documents in the period. Two queries (one per timing series) so we
-        // can WHERE-out null values cleanly — the GROUP BY keys must align
-        // across the two so we can stitch them back together.
-        // Picking only outcome documents avoids double-counting (the original
-        // EventRequest doesn't carry timings; only the response does).
-        var container = await GetMessagesContainer();
-        var fromIso = from.ToString("o");
-        var outcomeFilter =
-            "(c.message.MessageType = 'ResolutionResponse' OR " +
-            " c.message.MessageType = 'ErrorResponse' OR " +
-            " c.message.MessageType = 'SkipResponse' OR " +
-            " c.message.MessageType = 'DeferralResponse' OR " +
-            " c.message.MessageType = 'UnsupportedResponse')";
-
-        // Queue-time and processing-time aggregates are independent — run them
-        // concurrently and stitch the results below.
-        var queueRowsTask = RunLatencyAggregateQuery(container,
-            "SELECT c.endpointId, c.message.EventTypeId, " +
-            "       COUNT(1) AS count, " +
-            "       AVG(c.message.QueueTimeMs) AS avg, " +
-            "       MIN(c.message.QueueTimeMs) AS min, " +
-            "       MAX(c.message.QueueTimeMs) AS max " +
-            "FROM c " +
-            $"WHERE {outcomeFilter} " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
-            "AND IS_DEFINED(c.message.QueueTimeMs) " +
-            "AND c.message.QueueTimeMs != null " +
-            "GROUP BY c.endpointId, c.message.EventTypeId",
-            fromIso);
-
-        var processingRowsTask = RunLatencyAggregateQuery(container,
-            "SELECT c.endpointId, c.message.EventTypeId, " +
-            "       COUNT(1) AS count, " +
-            "       AVG(c.message.ProcessingTimeMs) AS avg, " +
-            "       MIN(c.message.ProcessingTimeMs) AS min, " +
-            "       MAX(c.message.ProcessingTimeMs) AS max " +
-            "FROM c " +
-            $"WHERE {outcomeFilter} " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
-            "AND IS_DEFINED(c.message.ProcessingTimeMs) " +
-            "AND c.message.ProcessingTimeMs != null " +
-            "GROUP BY c.endpointId, c.message.EventTypeId",
-            fromIso);
-
-        await Task.WhenAll(queueRowsTask, processingRowsTask);
-        var queueRows = await queueRowsTask;
-        var processingRows = await processingRowsTask;
-
-        // Merge by (endpointId, eventTypeId). One side may be missing rows
-        // (e.g. processing time not captured pre-fix); leaves that side at
-        // its default zeroed aggregate.
-        var grouped = new Dictionary<(string Endpoint, string EventType), EndpointLatencyAggregate>();
-        foreach (var row in queueRows)
-        {
-            var key = (row.EndpointId ?? string.Empty, row.EventTypeId ?? string.Empty);
-            if (!grouped.TryGetValue(key, out var agg))
-            {
-                agg = new EndpointLatencyAggregate { EndpointId = key.Item1, EventTypeId = key.Item2 };
-                grouped[key] = agg;
-            }
-            agg.Queue = new LatencyAggregate { Count = row.Count, AvgMs = row.Avg, MinMs = row.Min, MaxMs = row.Max };
-        }
-        foreach (var row in processingRows)
-        {
-            var key = (row.EndpointId ?? string.Empty, row.EventTypeId ?? string.Empty);
-            if (!grouped.TryGetValue(key, out var agg))
-            {
-                agg = new EndpointLatencyAggregate { EndpointId = key.Item1, EventTypeId = key.Item2 };
-                grouped[key] = agg;
-            }
-            agg.Processing = new LatencyAggregate { Count = row.Count, AvgMs = row.Avg, MinMs = row.Min, MaxMs = row.Max };
-        }
-
-        return new EndpointLatencyMetricsResult { Latencies = grouped.Values.ToList() };
-    }
-
-    private async Task<List<LatencyAggregateRow>> RunLatencyAggregateQuery(ICosmosContainerAdapter container, string sql, string fromIso)
-    {
-        var query = new QueryDefinition(sql).WithParameter("@from", fromIso);
-        var iterator = container.GetItemQueryIterator<LatencyAggregateRow>(query);
-        var results = new List<LatencyAggregateRow>();
-        while (iterator.HasMoreResults)
-        {
-            var page = await iterator.ReadNextAsync();
-            foreach (var row in page) results.Add(row);
-        }
-        return results;
-    }
-
-    private sealed class LatencyAggregateRow
-    {
-        [JsonProperty("endpointId")] public string EndpointId { get; set; }
-        [JsonProperty("EventTypeId")] public string EventTypeId { get; set; }
-        [JsonProperty("count")] public int Count { get; set; }
-        [JsonProperty("avg")] public double Avg { get; set; }
-        [JsonProperty("min")] public double Min { get; set; }
-        [JsonProperty("max")] public double Max { get; set; }
-    }
-
-    public async Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from)
-    {
-        var container = await GetMessagesContainer();
-        var fromIso = from.ToString("o");
-
-        var sql = "SELECT c.endpointId, c.message.EventTypeId, " +
-                  "c.message.MessageContent.ErrorContent.ErrorText, " +
-                  "c.message.EnqueuedTimeUtc, c.message.EventId " +
-                  "FROM c " +
-                  "WHERE c.message.MessageType = 'ErrorResponse' " +
-                  "AND c.message.EnqueuedTimeUtc >= @from";
-
-        var query = new QueryDefinition(sql).WithParameter("@from", fromIso);
-        // Bound page size so a high-failure window streams in pages instead of
-        // materialising one huge response (each row already projects just the
-        // fields below, never the full document). The loop still drains every match.
-        var iterator = container.GetItemQueryIterator<FailedMessageQueryResult>(query, null,
-            new QueryRequestOptions { MaxItemCount = 1000 });
-        var results = new List<FailedMessageInfo>();
-
-        while (iterator.HasMoreResults)
-        {
-            var response = await iterator.ReadNextAsync();
-            foreach (var item in response)
-            {
-                results.Add(new FailedMessageInfo
-                {
-                    EndpointId = item.EndpointId,
-                    EventTypeId = item.EventTypeId,
-                    ErrorText = item.ErrorText,
-                    EnqueuedTimeUtc = item.EnqueuedTimeUtc,
-                    EventId = item.EventId
-                });
-            }
-        }
-
-        return results;
-    }
-
-    public async Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
-    {
-        var container = await GetMessagesContainer();
-        var fromIso = from.ToString("o");
-
-        // The three bucket aggregates are independent — run them concurrently.
-        var publishedBucketsTask = RunBucketCountQuery(container,
-            $"SELECT COUNT(1) AS count, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
-            "FROM c WHERE c.message.MessageType = 'EventRequest' " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
-            $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
-            fromIso);
-
-        var handledBucketsTask = RunBucketCountQuery(container,
-            $"SELECT COUNT(1) AS count, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
-            "FROM c WHERE c.message.MessageType = 'ResolutionResponse' " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
-            $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
-            fromIso);
-
-        var failedBucketsTask = RunBucketCountQuery(container,
-            $"SELECT COUNT(1) AS count, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
-            "FROM c WHERE c.message.MessageType = 'ErrorResponse' " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
-            $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
-            fromIso);
-
-        await Task.WhenAll(publishedBucketsTask, handledBucketsTask, failedBucketsTask);
-        var publishedBuckets = await publishedBucketsTask;
-        var handledBuckets = await handledBucketsTask;
-        var failedBuckets = await failedBucketsTask;
-
-        var allBucketKeys = GenerateBucketKeys(from, DateTime.UtcNow, substringLength)
-            .Concat(publishedBuckets.Keys)
-            .Concat(handledBuckets.Keys)
-            .Concat(failedBuckets.Keys)
-            .Distinct()
-            .OrderBy(k => k);
-
-        var dataPoints = allBucketKeys.Select(key => new TimeSeriesBucket
-        {
-            Timestamp = key,
-            Published = publishedBuckets.GetValueOrDefault(key),
-            Handled = handledBuckets.GetValueOrDefault(key),
-            Failed = failedBuckets.GetValueOrDefault(key)
-        }).ToList();
-
-        return new TimeSeriesResult { BucketSize = bucketLabel, DataPoints = dataPoints };
-    }
-
-    private async Task<Dictionary<string, int>> RunBucketCountQuery(ICosmosContainerAdapter container, string sql, string fromIso)
-    {
-        var query = new QueryDefinition(sql).WithParameter("@from", fromIso);
-        var iterator = container.GetItemQueryIterator<BucketCountResult>(query);
-        var results = new Dictionary<string, int>();
-
-        while (iterator.HasMoreResults)
-        {
-            var response = await iterator.ReadNextAsync();
-            foreach (var item in response)
-            {
-                if (item.Bucket != null)
-                    results[item.Bucket] = item.Count;
-            }
-        }
-
-        return results;
-    }
-
-    private static List<string> GenerateBucketKeys(DateTime from, DateTime to, int substringLength)
-    {
-        var keys = new List<string>();
-        var current = substringLength switch
-        {
-            16 => new DateTime(from.Year, from.Month, from.Day, from.Hour, from.Minute, 0, DateTimeKind.Utc),
-            13 => new DateTime(from.Year, from.Month, from.Day, from.Hour, 0, 0, DateTimeKind.Utc),
-            10 => new DateTime(from.Year, from.Month, from.Day, 0, 0, 0, DateTimeKind.Utc),
-            _ => new DateTime(from.Year, from.Month, from.Day, from.Hour, 0, 0, DateTimeKind.Utc)
-        };
-
-        var step = substringLength switch
-        {
-            16 => TimeSpan.FromMinutes(1),
-            13 => TimeSpan.FromHours(1),
-            10 => TimeSpan.FromDays(1),
-            _ => TimeSpan.FromHours(1)
-        };
-
-        while (current <= to)
-        {
-            var key = current.ToString("o")[..substringLength];
-            keys.Add(key);
-            current += step;
-        }
-
-        return keys;
-    }
-
-    private async Task<List<EndpointEventTypeCount>> RunEventTypeCountQuery(ICosmosContainerAdapter container, string sql, string fromIso)
-    {
-        var query = new QueryDefinition(sql).WithParameter("@from", fromIso);
-        var iterator = container.GetItemQueryIterator<MetricsEventTypeCountResult>(query);
-        var results = new List<EndpointEventTypeCount>();
-
-        while (iterator.HasMoreResults)
-        {
-            var response = await iterator.ReadNextAsync();
-            foreach (var item in response)
-            {
-                results.Add(new EndpointEventTypeCount
-                {
-                    EndpointId = item.EndpointId,
-                    EventTypeId = item.EventTypeId,
-                    Count = item.Count
-                });
-            }
-        }
-
-        return results;
-    }
-
-    class FailedMessageQueryResult
-    {
-        [JsonProperty("endpointId")]
-        public string EndpointId { get; set; }
-
-        [JsonProperty("EventTypeId")]
-        public string EventTypeId { get; set; }
-
-        [JsonProperty("ErrorText")]
-        public string ErrorText { get; set; }
-
-        [JsonProperty("EnqueuedTimeUtc")]
-        public DateTime EnqueuedTimeUtc { get; set; }
-
-        [JsonProperty("EventId")]
-        public string EventId { get; set; }
-    }
-
-    class BucketCountResult
-    {
-        [JsonProperty("count")]
-        public int Count { get; set; }
-
-        [JsonProperty("bucket")]
-        public string Bucket { get; set; }
-    }
-
-    class MetricsEventTypeCountResult
-    {
-        [JsonProperty("count")]
-        public int Count { get; set; }
-
-        [JsonProperty("endpointId")]
-        public string EndpointId { get; set; }
-
-        [JsonProperty("EventTypeId")]
-        public string EventTypeId { get; set; }
-    }
+    public Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel) => _metrics.GetTimeSeriesMetrics(from, substringLength, bucketLabel);
 
     class StatusQueryResult
     {

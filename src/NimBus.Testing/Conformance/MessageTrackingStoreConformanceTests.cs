@@ -589,6 +589,48 @@ public abstract class MessageTrackingStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task GetBlockedEventsOnSession_nonpositive_take_is_capped_at_default_page_size()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-blocked-cap");
+
+        // One more event than the default page size, so an uncapped implementation
+        // (the historical take<=0 => int.MaxValue behavior) returns 101 and fails.
+        var seeded = PaginationLimits.DefaultPageSize + 1;
+        for (var i = 0; i < seeded; i++)
+        {
+            var id = Id($"cap-{i}");
+            await store.UploadPendingMessage(id, "session-cap", endpointId, SampleEvent(endpointId, id, "session-cap"));
+        }
+
+        var zeroTake = await store.GetBlockedEventsOnSession(endpointId, "session-cap", 0, 0);
+        Assert.AreEqual(seeded, zeroTake.Total);
+        Assert.AreEqual(PaginationLimits.DefaultPageSize, zeroTake.Items.Count);
+
+        var negativeTake = await store.GetBlockedEventsOnSession(endpointId, "session-cap", 0, -1);
+        Assert.AreEqual(PaginationLimits.DefaultPageSize, negativeTake.Items.Count);
+    }
+
+    [TestMethod]
+    public async Task GetBlockedEventsOnSession_take_above_max_is_capped()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-blocked-max");
+
+        for (var i = 0; i < 3; i++)
+        {
+            var id = Id($"max-{i}");
+            await store.UploadPendingMessage(id, "session-max", endpointId, SampleEvent(endpointId, id, "session-max"));
+        }
+
+        // Proves the request routes through PaginationLimits.Resolve without
+        // throwing or overflowing; the exact clamp arithmetic is unit-tested.
+        var page = await store.GetBlockedEventsOnSession(endpointId, "session-max", 0, PaginationLimits.MaxPageSize + 5);
+        Assert.AreEqual(3, page.Total);
+        Assert.AreEqual(3, page.Items.Count);
+    }
+
+    [TestMethod]
     public async Task GetInvalidEventsOnSession_returns_publisher_events()
     {
         var store = CreateStore();

@@ -127,7 +127,7 @@ public class InMemoryMessageStore : INimBusMessageStore
         // results must be clones — nulling EventJson in place would corrupt the
         // stored event.
         var results = q.OrderByDescending(e => e.UpdatedAt)
-            .Take(maxSearchItemsCount > 0 ? maxSearchItemsCount : 100)
+            .Take(PaginationLimits.Resolve(maxSearchItemsCount))
             .Select(CloneWithoutEventJson)
             .ToList();
         return Task.FromResult(new SearchResponse { Events = results });
@@ -191,7 +191,7 @@ public class InMemoryMessageStore : INimBusMessageStore
 
     public Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken)
     {
-        var take = pageSize > 0 ? pageSize : 100;
+        var take = PaginationLimits.Resolve(pageSize);
         var events = _events.Values
             .Where(e => e.EndpointId == endpointId)
             .Where(e => e.ResolutionStatus is ResolutionStatus.Pending or ResolutionStatus.Deferred or ResolutionStatus.Failed or ResolutionStatus.DeadLettered or ResolutionStatus.Unsupported)
@@ -216,7 +216,7 @@ public class InMemoryMessageStore : INimBusMessageStore
     public Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take)
     {
         var safeSkip = skip < 0 ? 0 : skip;
-        var safeTake = take <= 0 ? int.MaxValue : take;
+        var safeTake = PaginationLimits.Resolve(take);
 
         var matches = _events.Values
             .Where(e => e.EndpointId == endpointId && (e.SessionId ?? string.Empty) == (sessionId ?? string.Empty))
@@ -314,7 +314,7 @@ public class InMemoryMessageStore : INimBusMessageStore
         if (!string.IsNullOrEmpty(filter.To)) q = q.Where(m => m.To == filter.To);
         // Clone + strip EventJson — see GetEventsByFilter.
         var results = q.OrderByDescending(m => m.EnqueuedTimeUtc)
-            .Take(maxItemCount > 0 ? maxItemCount : 100)
+            .Take(PaginationLimits.Resolve(maxItemCount))
             .Select(CloneWithoutEventJson)
             .ToList();
         return Task.FromResult(new MessageSearchResult { Messages = results });
@@ -354,7 +354,7 @@ public class InMemoryMessageStore : INimBusMessageStore
         }
         if (!string.IsNullOrEmpty(filter.AuditorName)) allAudits = allAudits.Where(a => HasPrefix(a.Audit.AuditorName, filter.AuditorName));
         if (filter.AuditType.HasValue) allAudits = allAudits.Where(a => a.Audit.AuditType == filter.AuditType.Value);
-        var results = allAudits.OrderByDescending(a => a.CreatedAt).Take(maxItemCount > 0 ? maxItemCount : 100).ToList();
+        var results = allAudits.OrderByDescending(a => a.CreatedAt).Take(PaginationLimits.Resolve(maxItemCount)).ToList();
         return Task.FromResult(new AuditSearchResult { Audits = results });
     }
 

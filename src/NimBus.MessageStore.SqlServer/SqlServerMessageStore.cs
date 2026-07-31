@@ -889,7 +889,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
     private async Task<BlockedMessageEventPage> GetBlockedEventsOnSessionCore(string endpointId, string sessionId, int skip, int take)
     {
         var safeSkip = skip < 0 ? 0 : skip;
-        var safeTake = take <= 0 ? int.MaxValue : take;
+        var safeTake = PaginationLimits.Resolve(take);
 
         await using var conn = await OpenAsync();
         using var multi = await conn.QueryMultipleAsync(

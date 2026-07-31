@@ -855,7 +855,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         string sessionId, int skip, int take)
     {
         var safeSkip = skip < 0 ? 0 : skip;
-        var safeTake = take <= 0 ? int.MaxValue : take;
+        var safeTake = PaginationLimits.Resolve(take);
 
         var container = await GetEndpointContainer(endpointId);
 

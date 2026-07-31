@@ -36,7 +36,7 @@ public static class CosmosDbMessageStoreBuilderExtensions
             return CreateCosmosClient(config);
         });
 
-        services.AddSingleton<ICosmosDbClient>(sp =>
+        services.AddSingleton<INimBusMessageStore>(sp =>
         {
             var cosmosClient = sp.GetRequiredService<CosmosClient>();
             return new CosmosDbClient(cosmosClient, sp.GetService<ILogger<CosmosDbClient>>());
@@ -54,7 +54,7 @@ public static class CosmosDbMessageStoreBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(cosmosClient);
         builder.Services.AddSingleton(cosmosClient);
-        builder.Services.AddSingleton<ICosmosDbClient>(sp =>
+        builder.Services.AddSingleton<INimBusMessageStore>(sp =>
             new CosmosDbClient(cosmosClient, sp.GetService<ILogger<CosmosDbClient>>()));
         RegisterContracts(builder.Services);
         return builder;
@@ -62,7 +62,6 @@ public static class CosmosDbMessageStoreBuilderExtensions
 
     private static void RegisterContracts(IServiceCollection services)
     {
-        services.AddSingleton<INimBusMessageStore>(sp => (CosmosDbClient)sp.GetRequiredService<ICosmosDbClient>());
         services.AddSingleton<IMessageTrackingStore>(sp =>
             NimBusOpenTelemetryDecorators.InstrumentMessageTrackingStore(
                 sp.GetRequiredService<INimBusMessageStore>(),

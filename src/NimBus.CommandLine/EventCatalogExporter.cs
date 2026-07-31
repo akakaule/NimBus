@@ -26,14 +26,6 @@ public static class EventCatalogExporter
 {
     private const string DefaultVersion = "1.0.0";
 
-    /// <summary>Exports the built-in platform. Kept as a bridge for pre-rewrite callers.</summary>
-    [Obsolete("Use EventCatalogCli.RunExport (nb catalog export) instead; this bridge exports the built-in platform only.")]
-    public static Task ExportAsync(string outputPath)
-    {
-        EventCatalogCli.RunExport(outputPath, Console.Out);
-        return Task.CompletedTask;
-    }
-
     /// <summary>
     /// Builds the full catalog as relative path (forward slashes) → file content. Pure and
     /// deterministic: no I/O, ordinal ordering throughout, so output is diffable in CI.

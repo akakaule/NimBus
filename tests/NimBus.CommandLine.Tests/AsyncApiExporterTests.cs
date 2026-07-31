@@ -133,27 +133,6 @@ public sealed class AsyncApiExporterTests
         Assert.Contains("totalAmount", required);
     }
 
-    [Fact]
-    public async Task LegacyExportAsync_WritesParseableYamlFile()
-    {
-        var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"nimbus-asyncapi-{System.Guid.NewGuid():N}.yaml");
-        try
-        {
-#pragma warning disable CS0618
-            await NimBus.CommandLine.AsyncApiExporter.ExportAsync(path);
-#pragma warning restore CS0618
-            var yaml = System.IO.File.ReadAllText(path);
-            // Round-trips through a real YAML parser (proves valid YAML, not just a string blob).
-            var parsed = new YamlDotNet.Serialization.DeserializerBuilder().Build()
-                .Deserialize<object>(yaml);
-            Assert.NotNull(parsed);
-        }
-        finally
-        {
-            if (System.IO.File.Exists(path)) System.IO.File.Delete(path);
-        }
-    }
-
     // ---- Multi-producer: same EventTypeId produced by two endpoints (G2, collision hazard) ----
 
     [Fact]

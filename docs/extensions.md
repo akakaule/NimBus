@@ -34,7 +34,7 @@ using NimBus.Extensions.Notifications;
 services.AddNimBus(builder =>
 {
     // Optional platform services
-    builder.AddMessageStore();
+    builder.AddCosmosDbMessageStore();
     builder.AddResolver();
     builder.AddManager();
 

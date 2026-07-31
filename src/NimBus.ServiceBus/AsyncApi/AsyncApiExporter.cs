@@ -18,21 +18,6 @@ using Map = System.Collections.Generic.Dictionary<string, object>;
 
 namespace NimBus.ServiceBus.AsyncApi;
 
-/// <summary>Output format for <see cref="AsyncApiExporter"/>.</summary>
-/// <remarks>
-/// Use <see cref="NimBus.Core.Events.AsyncApiFormat"/> for new code. This bridge remains so callers
-/// that adopted the initial ServiceBus exporter API can migrate without losing source compatibility.
-/// </remarks>
-[Obsolete("Use NimBus.Core.Events.AsyncApiFormat instead. This bridge type is kept for backward compatibility.")]
-public enum AsyncApiFormat
-{
-    /// <summary>AsyncAPI 3.0 as YAML (default).</summary>
-    Yaml,
-
-    /// <summary>AsyncAPI 3.0 as JSON.</summary>
-    Json,
-}
-
 /// <summary>
 /// Generates an AsyncAPI 3.0 document from an <see cref="IPlatform"/>.
 /// <para>
@@ -46,9 +31,6 @@ public enum AsyncApiFormat
 /// </summary>
 public static class AsyncApiExporter
 {
-    private static CoreAsyncApiFormat Map(AsyncApiFormat format) =>
-        format == AsyncApiFormat.Json ? CoreAsyncApiFormat.Json : CoreAsyncApiFormat.Yaml;
-
     // Kept in lock-step with ServiceBusTopologyProvisioner so the documented rules match what
     // provisioning actually creates. If those SQL expressions change, change them here too.
     private static string ForwardFilter(string eventTypeId) =>
@@ -77,11 +59,6 @@ public static class AsyncApiExporter
         Console.WriteLine($"  {endpointCount} endpoints, {eventCount} event types ({format.ToString().ToUpperInvariant()})");
     }
 
-    /// <summary>Exports an arbitrary platform (WebApp export endpoint, external integration repos, samples, tests).</summary>
-    [Obsolete("Use the overload that accepts NimBus.Core.Events.AsyncApiFormat instead.")]
-    public static Task ExportAsync(IPlatform platform, string outputPath, AsyncApiFormat format) =>
-        ExportAsync(platform, outputPath, Map(format));
-
     /// <summary>Builds the AsyncAPI document for <paramref name="platform"/> and serializes it.</summary>
     /// <param name="platform">The platform whose topology and event contracts are exported.</param>
     /// <param name="format">YAML or JSON.</param>
@@ -102,11 +79,6 @@ public static class AsyncApiExporter
             // as strings instead of being reinterpreted by a YAML parser.
             : new SerializerBuilder().WithQuotingNecessaryStrings().Build().Serialize(document);
     }
-
-    /// <summary>Builds the AsyncAPI document for <paramref name="platform"/> and serializes it.</summary>
-    [Obsolete("Use the overload that accepts NimBus.Core.Events.AsyncApiFormat instead.")]
-    public static string Serialize(IPlatform platform, AsyncApiFormat format) =>
-        Serialize(platform, Map(format));
 
     private static Map BuildDocument(IPlatform platform, AsyncApiEnrichmentRegistry? enrichment = null)
     {

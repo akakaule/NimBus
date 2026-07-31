@@ -599,7 +599,7 @@ public class ResolverServiceTests
             Task.FromException(_exception);
     }
 
-    internal sealed class FakeCosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.INimBusMessageStore
+    internal sealed class FakeCosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore
     {
         public Exception? StoreMessageException { get; set; }
         public Exception? UploadException { get; set; }

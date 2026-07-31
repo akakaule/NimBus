@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using NimBus.Core.Messages;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
@@ -16,99 +16,7 @@ using System.Threading.Tasks;
 
 namespace NimBus.MessageStore;
 
-public interface ICosmosDbClient
-{
-    Task<bool> UploadPendingMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content);
-    Task<bool> UploadDeferredMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content);
-    Task<bool> UploadFailedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content);
-
-    Task<bool> UploadDeadletteredMessage(string eventId, string sessionId, string endpointId,
-        UnresolvedEvent content);
-
-    Task<bool> UploadUnsupportedMessage(string eventId, string sessionId, string endpointId,
-        UnresolvedEvent content);
-
-    public Task<bool> UploadSkippedMessage(string eventId, string sessionId, string endpointId,
-        UnresolvedEvent content);
-
-    Task<bool> UploadCompletedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content);
-
-    Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount);
-    Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId);
-    Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default);
-    Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds);
-    Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId);
-    Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId);
-    Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId);
-    Task<UnresolvedEvent> GetUnsupportedEvent(string endpointId, string eventId, string sessionId);
-    Task<IEnumerable<UnresolvedEvent>> GetCompletedEventsOnEndpoint(string endpointId);
-    Task<UnresolvedEvent> GetEvent(string endpointId, string eventId);
-    Task<UnresolvedEvent> GetEventById(string endpointId, string eventId);
-    Task<List<UnresolvedEvent>> GetEventsByIds(string endpointId, IEnumerable<string> eventIds);
-
-    Task<bool> RemoveMessage(string eventId, string sessionId, string endpointId);
-
-    Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId);
-    Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds);
-    Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId);
-    Task<EndpointState> DownloadEndpointStatePaging(string endpointId, int pageSize, string continuationToken);
-
-    Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId, string sessionId, int skip, int take);
-    Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId);
-    Task<IEnumerable<BlockedMessageEvent>> GetInvalidEventsOnSession(string endpointId);
-
-    Task<EndpointSubscription> SubscribeToEndpointNotification(string endpointId, string mail, string type,
-        string author, string url, List<string> eventTypes, string payload, int frequency);
-
-    Task<IEnumerable<EndpointSubscription>> GetSubscriptionsOnEndpoint(string endpointId);
-
-    Task<IEnumerable<EndpointSubscription>> GetSubscriptionsOnEndpointWithEventtype(string endpoint,
-        string eventtypes, string payload, string errorText);
-
-    Task<string> GetEndpointErrorList(string endpointId);
-    Task<bool> UpdateSubscription(EndpointSubscription subscription);
-    Task<bool> UnsubscribeById(string endpointId, string mail);
-    Task<bool> DeleteSubscription(string subscriptionId);
-    Task<bool> UnsubscribeByMail(string endpointId, string mail);
-
-    Task<bool> PurgeMessages(string endpointId, string sessionId);
-    Task<bool> PurgeMessages(string endpointId);
-
-    Task<EndpointMetadata> GetEndpointMetadata(string endpointId);
-    Task<List<EndpointMetadata>> GetMetadatas();
-    Task<List<EndpointMetadata>?> GetMetadatas(IEnumerable<string> endpointIds);
-    Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata);
-
-    // Message search (cross-partition query on messages container)
-    Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount);
-
-    // Message history (replaces IMessageStoreClient blob operations)
-    Task StoreMessage(MessageEntity message);
-    Task<MessageEntity> GetMessage(string eventId, string messageId);
-    Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId);
-    Task<MessageEntity> GetLatestEventRequestMessage(string eventId);
-    Task<MessageEntity> GetFailedMessage(string eventId, string endpointId);
-    Task<MessageEntity> GetDeadletteredMessage(string eventId, string endpointId);
-
-    Task RemoveStoredMessage(string eventId, string messageId);
-
-    // Audit trail
-    Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity, string? endpointId = null, string? eventTypeId = null);
-    Task<IEnumerable<MessageAuditEntity>> GetMessageAudits(string eventId);
-    Task<AuditSearchResult> SearchAudits(AuditFilter filter, string? continuationToken, int maxItemCount);
-
-    // Failed event archive
-    Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId);
-
-    // Metrics aggregation
-    Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from);
-
-    Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from);
-    Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from);
-    Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel);
-}
-
-public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.INimBusMessageStore
+public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore
 {
     private readonly ICosmosClientAdapter _cosmosClient;
     private readonly ILogger _logger;
@@ -157,49 +65,6 @@ public class CosmosDbClient : ICosmosDbClient, NimBus.MessageStore.Abstractions.
         _logger = logger;
         _cosmosClient = new TransientTranslatingCosmosClientAdapter(cosmosClient, _logger);
     }
-
-    [Obsolete("Use the Microsoft.Extensions.Logging constructor — NimBus standardizes on Microsoft.Extensions.Logging (ADR-006). This bridge remains for callers that still pass a Serilog logger.")]
-    public CosmosDbClient(CosmosClient cosmosClient, Serilog.ILogger logger)
-    {
-        _logger = logger is null ? null : new SerilogBridgeLogger(logger);
-        _cosmosClient = new CosmosClientAdapter(cosmosClient, _logger);
-    }
-
-    [Obsolete("Use the Microsoft.Extensions.Logging constructor — NimBus standardizes on Microsoft.Extensions.Logging (ADR-006). This bridge remains for callers that still pass a Serilog logger.")]
-    public CosmosDbClient(ICosmosClientAdapter cosmosClient, Serilog.ILogger logger)
-    {
-        _logger = logger is null ? null : new SerilogBridgeLogger(logger);
-        _cosmosClient = new TransientTranslatingCosmosClientAdapter(cosmosClient, _logger);
-    }
-
-    /// <summary>
-    /// Forwards Microsoft.Extensions.Logging calls to a caller-supplied Serilog logger.
-    /// Only used by the obsolete bridge constructors.
-    /// </summary>
-    private sealed class SerilogBridgeLogger : ILogger
-    {
-        private readonly Serilog.ILogger _serilog;
-
-        public SerilogBridgeLogger(Serilog.ILogger serilog) => _serilog = serilog;
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => _serilog.IsEnabled(ToSerilogLevel(logLevel));
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-            => _serilog.Write(ToSerilogLevel(logLevel), exception, "{Message}", formatter(state, exception));
-
-        private static Serilog.Events.LogEventLevel ToSerilogLevel(LogLevel level) => level switch
-        {
-            LogLevel.Trace => Serilog.Events.LogEventLevel.Verbose,
-            LogLevel.Debug => Serilog.Events.LogEventLevel.Debug,
-            LogLevel.Information => Serilog.Events.LogEventLevel.Information,
-            LogLevel.Warning => Serilog.Events.LogEventLevel.Warning,
-            LogLevel.Error => Serilog.Events.LogEventLevel.Error,
-            _ => Serilog.Events.LogEventLevel.Fatal,
-        };
-    }
-
 
     public async Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId)
     {

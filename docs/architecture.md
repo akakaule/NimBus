@@ -138,7 +138,7 @@ Extensions are composed through the `AddNimBus()` builder:
 ```csharp
 services.AddNimBus(builder =>
 {
-    builder.AddMessageStore();       // optional platform service
+    builder.AddCosmosDbMessageStore(); // optional platform service
     builder.AddNotifications();      // extension package
     builder.AddPipelineBehavior<CustomBehavior>();
 });

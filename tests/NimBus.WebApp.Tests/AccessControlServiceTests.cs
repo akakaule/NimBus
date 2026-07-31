@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -284,7 +285,38 @@ public class AccessControlServiceTests
     }
 
     [TestMethod]
-    public async Task Store_fault_serves_last_known_good_and_keeps_compat()
+    public async Task Invalidate_during_in_flight_refresh_does_not_cache_stale_snapshot()
+    {
+        var store = new PausableAccessControlStore(new AccessControlList
+        {
+            Readers = new List<string> { UserEmail },
+        });
+        using var provider = new AccessControlSnapshotProvider(
+            store,
+            NullLogger<AccessControlSnapshotProvider>.Instance);
+
+        var refresh = provider.GetSnapshotAsync();
+        await store.FirstRefreshPaused;
+
+        store.RevokeSiteReaders();
+        provider.Invalidate();
+        store.ResumeFirstRefresh();
+
+        var refreshedSnapshot = await refresh;
+        var snapshot = await provider.GetSnapshotAsync();
+
+        Assert.AreEqual(
+            2,
+            store.SiteReadCount,
+            "The snapshot invalidated during refresh must be reloaded instead of receiving the success TTL.");
+        Assert.IsFalse(
+            refreshedSnapshot.Site?.Readers.Contains(UserEmail) ?? false,
+            "The in-flight caller must not receive the revoked grant.");
+        Assert.IsFalse(snapshot.Site?.Readers.Contains(UserEmail) ?? false);
+    }
+
+    [TestMethod]
+    public async Task Store_fault_after_invalidate_fails_closed_and_keeps_compat()
     {
         await SeedSite(readers: new[] { UserEmail });
         var faultingStore = new FaultableStore(_store);
@@ -296,9 +328,10 @@ public class AccessControlServiceTests
         faultingStore.Fail = true;
         provider.Invalidate();
 
-        // Last-known-good keeps the store grant alive through the outage.
-        var stale = CreateService(EmailPrincipal(), snapshotProvider: provider);
-        Assert.IsTrue(await stale.HasRoleAsync(AccessRole.Reader));
+        // Explicit invalidation means a mutation may have revoked this grant;
+        // a failed reload must not promote the old snapshot to the new generation.
+        var invalidated = CreateService(EmailPrincipal(), snapshotProvider: provider);
+        Assert.IsFalse(await invalidated.HasRoleAsync(AccessRole.Reader));
 
         // A fresh provider with a faulting store has no last-known-good: store
         // roles fail closed, but the compat marker claim still grants Owner.
@@ -323,6 +356,56 @@ public class AccessControlServiceTests
     }
 
     // ───────── Test doubles ─────────
+
+    private sealed class PausableAccessControlStore : IAccessControlStore
+    {
+        private readonly TaskCompletionSource<bool> _firstRefreshPaused =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> _resumeFirstRefresh =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private AccessControlList _site;
+        private int _endpointReadCount;
+        private int _siteReadCount;
+
+        public PausableAccessControlStore(AccessControlList site) => _site = site;
+
+        public Task FirstRefreshPaused => _firstRefreshPaused.Task;
+
+        public int SiteReadCount => Volatile.Read(ref _siteReadCount);
+
+        public Task<AccessControlList?> GetSiteAccessControl()
+        {
+            Interlocked.Increment(ref _siteReadCount);
+            return Task.FromResult<AccessControlList?>(Volatile.Read(ref _site));
+        }
+
+        public Task SetSiteAccessControl(AccessControlList accessControl)
+        {
+            Volatile.Write(ref _site, accessControl);
+            return Task.CompletedTask;
+        }
+
+        public Task<AccessControlList?> GetEndpointAccessControl(string endpointId)
+            => Task.FromResult<AccessControlList?>(null);
+
+        public async Task<IReadOnlyList<AccessControlList>> GetEndpointAccessControls()
+        {
+            if (Interlocked.Increment(ref _endpointReadCount) == 1)
+            {
+                _firstRefreshPaused.TrySetResult(true);
+                await _resumeFirstRefresh.Task;
+            }
+
+            return System.Array.Empty<AccessControlList>();
+        }
+
+        public Task SetEndpointAccessControl(string endpointId, AccessControlList accessControl)
+            => Task.CompletedTask;
+
+        public void RevokeSiteReaders() => Volatile.Write(ref _site, new AccessControlList());
+
+        public void ResumeFirstRefresh() => _resumeFirstRefresh.TrySetResult(true);
+    }
 
     private sealed class FaultableStore : IAccessControlStore
     {

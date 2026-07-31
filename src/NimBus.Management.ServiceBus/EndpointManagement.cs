@@ -1,4 +1,5 @@
-﻿using Serilog;
+﻿using NimBus.Core.Messages;
+using Serilog;
 using System.Threading.Tasks;
 
 namespace NimBus.Management.ServiceBus;
@@ -24,7 +25,21 @@ public class EndpointManagement
 
         await _serviceBusManagement.DeleteRule(topicName, subscriptionName, "$Default");
 
-        await _serviceBusManagement.CreateRule(topicName, subscriptionName, $"to-{subscriptionName}");
+        // Recreate the same rule set ServiceBusTopologyProvisioner.EnsureEndpointTopologyAsync
+        // puts on the endpoint's own subscription. Filter/action strings must stay
+        // byte-identical to the provisioner's: its RuleMatches compares ordinally, so any
+        // drift (even whitespace) makes the next `topology apply` delete and recreate rules.
+        await _serviceBusManagement.CreateCustomRule(
+            topicName, subscriptionName, $"to-{subscriptionName}",
+            $"user.To = '{subscriptionName}'", action: null);
+        await _serviceBusManagement.CreateCustomRule(
+            topicName, subscriptionName, "continuation",
+            $"user.To = '{Constants.ContinuationId}'",
+            $"SET user.To = '{subscriptionName}'; SET user.From = '{Constants.ContinuationId}'");
+        await _serviceBusManagement.CreateCustomRule(
+            topicName, subscriptionName, "retry",
+            $"user.To = '{Constants.RetryId}'",
+            $"SET user.To = '{subscriptionName}'; SET user.From = '{Constants.RetryId}'");
 
         _logger?.Information("Cleared endpoint succesfully");
     }

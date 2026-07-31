@@ -130,8 +130,9 @@ public sealed class ServiceBusTopologyProvisioner
         // Request/reply: replies land on the requesting endpoint's own topic in a
         // session subscription named '{endpoint}-reply'. Replies carry a 5-minute
         // message TTL (set by ReplyDispatcher), so orphaned replies self-clean.
-        // The filter string must stay byte-identical to ServiceBusManagement's
-        // CreateReplySubscription — both provisioning paths emit this rule.
+        // The filter string must stay byte-identical to the other emitters of this
+        // rule (e.g. CrmErpDemo's EmulatorTopologyConfigBuilder) — RuleMatches
+        // compares ordinally, so any drift churns the rule on the next apply.
         var replySubscription = $"{endpoint.Id}-reply";
         await EnsureSessionSubscriptionAsync(client, endpoint.Id, replySubscription, forwardTo: null, keepDefaultRule: false, log, cancellationToken).ConfigureAwait(false);
         await EnsureRuleAsync(client, endpoint.Id, replySubscription, "ReplyFilter", $"user.To = '{replySubscription}'", action: null, log, cancellationToken).ConfigureAwait(false);

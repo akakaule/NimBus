@@ -18,14 +18,17 @@ public enum TopicSendState
     SendDisabled,
     NotFound,
 }
+/// <summary>
+/// Runtime management operations against an existing Service Bus topology
+/// (status toggles, forward-to updates, and the subscription/rule rebuild used
+/// by ClearEndpoint). Topology <em>provisioning</em> lives exclusively in
+/// <c>NimBus.ServiceBus.Provisioning.ServiceBusTopologyProvisioner</c> — do not
+/// add entity-creation methods here that duplicate it.
+/// </summary>
 public interface IServiceBusManagement
 {
-    Task CreateRule(string topicName, string subscriptionName, string ruleName);
-    Task CreateEventTypeRule(string topicName, string subscriptionName, string ruleName, string eventtype);
     Task CreateCustomRule(string topicName, string subscriptionName, string ruleName, string filter, string action);
     Task CreateSubscription(string topicName, string subscriptionName);
-    Task CreateForwardSubscription(string topicName, string subscriptionName, string forwardTo);
-    Task CreateTopic(string topicName);
     Task DeleteRule(string topicName, string subscriptionName, string ruleName);
     Task DeleteSubscription(string topicName, string subscriptionName);
     Task DisableSubscription(string topicName, string subscriptionName);
@@ -36,8 +39,6 @@ public interface IServiceBusManagement
     Task EnableTopicSend(string topicName);
     Task<TopicSendState> GetTopicSendState(string topicName);
     Task UpdateForwardTo(string topicName, string subscriptionName, string forwardTo);
-    Task CreateDeferredSubscription(string topicName);
-    Task CreateDeferredProcessorSubscription(string topicName);
 }
 
 public class ServiceBusManagement : IServiceBusManagement
@@ -77,44 +78,6 @@ public class ServiceBusManagement : IServiceBusManagement
         }
     }
 
-    public async Task CreateForwardSubscription(string topicName, string subscriptionName, string forwardTo)
-    {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
-        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
-        ServiceBusFilterValidator.ValidateName(forwardTo, nameof(forwardTo));
-        try
-        {
-            var subscriptionProperties = new CreateSubscriptionOptions(topicName, subscriptionName)
-            {
-                MaxDeliveryCount = 10,
-                LockDuration = TimeSpan.FromSeconds(30),
-                ForwardTo = forwardTo,
-                EnableBatchedOperations = true,
-                EnableDeadLetteringOnFilterEvaluationExceptions = true
-            };
-
-            try
-            {
-                var existingSub = await client.GetSubscriptionAsync(topicName, subscriptionName);
-                if (existingSub.Value.RequiresSession == true) await DeleteSubscription(topicName, subscriptionName);
-            }
-            catch (Azure.RequestFailedException e) when (e.Status == 404)
-            {
-                // Subscription doesn't exist, this is expected - continue with creation
-                _logger?.Verbose($"Subscription '{subscriptionName}' does not exist on topic '{topicName}', will create new");
-            }
-
-            _logger?.Verbose("Creating subscription...");
-            await client.CreateSubscriptionAsync(subscriptionProperties);
-            _logger?.Verbose("Created subscription successfully.");
-        }
-        catch (Exception e)
-        {
-            _logger?.Error(e, $"Could not create subscription {e.Message}");
-            throw;
-        }
-    }
-
     public async Task DeleteSubscription(string topicName, string subscriptionName)
     {
         ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
@@ -128,56 +91,6 @@ public class ServiceBusManagement : IServiceBusManagement
         catch (Exception e)
         {
             _logger?.Error(e, $"Could not delete subscription {e.Message}");
-            throw;
-        }
-    }
-
-    public async Task CreateRule(string topicName, string subscriptionName, string ruleName)
-    {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
-        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
-        ServiceBusFilterValidator.ValidateName(ruleName, nameof(ruleName));
-        try
-        {
-            var ruleOptions = new CreateRuleOptions
-            {
-                Name = ruleName,
-                Filter = new SqlRuleFilter($"user.To='{subscriptionName}'")
-            };
-
-            _logger?.Verbose("Creating rule...");
-            var result = await client.CreateRuleAsync(topicName, subscriptionName, ruleOptions);
-            _logger?.Verbose("Created rule successfully.");
-        }
-        catch (Exception e)
-        {
-            _logger?.Error(e, $"Could not create rule {e.Message}");
-            throw;
-        }
-    }
-
-    public async Task CreateEventTypeRule(string topicName, string subscriptionName, string ruleName, string eventtype)
-    {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
-        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
-        ServiceBusFilterValidator.ValidateName(ruleName, nameof(ruleName));
-        ServiceBusFilterValidator.ValidateName(eventtype, nameof(eventtype));
-        try
-        {
-            var ruleOptions = new CreateRuleOptions
-            {
-                Name = ruleName,
-                Filter = new SqlRuleFilter($"user.EventTypeId='{eventtype}'"),
-                Action = new SqlRuleAction($"SET user.From ='{topicName}'; SET user.EventId = newid(); SET user.To = '{subscriptionName}';")
-            };
-
-            _logger?.Verbose("Creating rule...");
-            var result = await client.CreateRuleAsync(topicName, subscriptionName, ruleOptions);
-            _logger?.Verbose("Created rule successfully.");
-        }
-        catch (Exception e)
-        {
-            _logger?.Error(e, $"Could not create rule {e.Message}");
             throw;
         }
     }
@@ -210,30 +123,6 @@ public class ServiceBusManagement : IServiceBusManagement
         catch (Exception e)
         {
             _logger?.Error(e, $"Could not create rule {e.Message}");
-            throw;
-        }
-    }
-
-    public async Task CreateTopic(string topicName)
-    {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
-        try
-        {
-            var topicParams = new CreateTopicOptions(topicName)
-            {
-                SupportOrdering = true,
-                DuplicateDetectionHistoryTimeWindow = new TimeSpan(0, 10, 0),
-                EnableBatchedOperations = true,
-                MaxSizeInMegabytes = 5120,
-            };
-
-            _logger?.Verbose("Creating topic...");
-            await client.CreateTopicAsync(topicParams);
-            _logger?.Verbose("Created topic successfully.");
-        }
-        catch (Exception e)
-        {
-            _logger?.Error(e, $"Could not create topic {e.Message}");
             throw;
         }
     }
@@ -428,108 +317,4 @@ public class ServiceBusManagement : IServiceBusManagement
         }
     }
 
-    /// <summary>
-    /// Creates the non-session Deferred subscription for storing deferred messages.
-    /// This subscription receives messages with To='Deferred' and does NOT require sessions.
-    /// </summary>
-    public async Task CreateDeferredSubscription(string topicName)
-    {
-        const string subscriptionName = "Deferred";
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
-
-        try
-        {
-            var subscriptionProperties = new CreateSubscriptionOptions(topicName, subscriptionName)
-            {
-                MaxDeliveryCount = 10,
-                LockDuration = TimeSpan.FromSeconds(30),
-                EnableBatchedOperations = true,
-                EnableDeadLetteringOnFilterEvaluationExceptions = true,
-                RequiresSession = false, // Non-session subscription
-                DefaultMessageTimeToLive = TimeSpan.FromDays(14)
-            };
-
-            _logger?.Verbose("Creating Deferred subscription...");
-            await client.CreateSubscriptionAsync(subscriptionProperties);
-            _logger?.Verbose("Created Deferred subscription successfully.");
-
-            // Create SQL filter rule for routing
-            var ruleOptions = new CreateRuleOptions
-            {
-                Name = "DeferredFilter",
-                Filter = new SqlRuleFilter("user.To = 'Deferred' AND user.OriginalSessionId IS NOT NULL")
-            };
-
-            // Delete default rule first
-            try
-            {
-                await client.DeleteRuleAsync(topicName, subscriptionName, "$Default");
-            }
-            catch (Azure.RequestFailedException e) when (e.Status == 404)
-            {
-                // Default rule doesn't exist, this is expected
-                _logger?.Verbose("Default rule does not exist, continuing");
-            }
-
-            await client.CreateRuleAsync(topicName, subscriptionName, ruleOptions);
-            _logger?.Verbose("Created Deferred subscription rule successfully.");
-        }
-        catch (Exception e)
-        {
-            _logger?.Error(e, $"Could not create Deferred subscription: {e.Message}");
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// Creates the DeferredProcessor subscription for triggering deferred message processing.
-    /// This subscription receives ProcessDeferredRequest messages and does NOT require sessions.
-    /// </summary>
-    public async Task CreateDeferredProcessorSubscription(string topicName)
-    {
-        const string subscriptionName = "DeferredProcessor";
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
-
-        try
-        {
-            var subscriptionProperties = new CreateSubscriptionOptions(topicName, subscriptionName)
-            {
-                MaxDeliveryCount = 10,
-                LockDuration = TimeSpan.FromSeconds(30),
-                EnableBatchedOperations = true,
-                EnableDeadLetteringOnFilterEvaluationExceptions = true,
-                RequiresSession = false // Non-session subscription
-            };
-
-            _logger?.Verbose("Creating DeferredProcessor subscription...");
-            await client.CreateSubscriptionAsync(subscriptionProperties);
-            _logger?.Verbose("Created DeferredProcessor subscription successfully.");
-
-            // Create SQL filter rule for routing
-            var ruleOptions = new CreateRuleOptions
-            {
-                Name = "DeferredProcessorFilter",
-                Filter = new SqlRuleFilter("user.To = 'DeferredProcessor'")
-            };
-
-            // Delete default rule first
-            try
-            {
-                await client.DeleteRuleAsync(topicName, subscriptionName, "$Default");
-            }
-            catch (Azure.RequestFailedException e) when (e.Status == 404)
-            {
-                // Default rule doesn't exist, this is expected
-                _logger?.Verbose("Default rule does not exist, continuing");
-            }
-
-            await client.CreateRuleAsync(topicName, subscriptionName, ruleOptions);
-            _logger?.Verbose("Created DeferredProcessor subscription rule successfully.");
-        }
-        catch (Exception e)
-        {
-            _logger?.Error(e, $"Could not create DeferredProcessor subscription: {e.Message}");
-            throw;
-        }
-    }
 }

@@ -175,12 +175,8 @@ public sealed class EndpointSendStatusTests
         public Task<TopicSendState> GetTopicSendState(string topicName) => Task.FromResult(TopicState(topicName));
 
         // Unused by the send kill switch.
-        public Task CreateRule(string t, string s, string r) => throw new NotSupportedException();
-        public Task CreateEventTypeRule(string t, string s, string r, string e) => throw new NotSupportedException();
         public Task CreateCustomRule(string t, string s, string r, string f, string a) => throw new NotSupportedException();
         public Task CreateSubscription(string t, string s) => throw new NotSupportedException();
-        public Task CreateForwardSubscription(string t, string s, string f) => throw new NotSupportedException();
-        public Task CreateTopic(string t) => throw new NotSupportedException();
         public Task DeleteRule(string t, string s, string r) => throw new NotSupportedException();
         public Task DeleteSubscription(string t, string s) => throw new NotSupportedException();
         public Task DisableSubscription(string t, string s) => throw new NotSupportedException();
@@ -188,8 +184,6 @@ public sealed class EndpointSendStatusTests
         public Task<bool> IsSubscriptionActive(string t, string s) => throw new NotSupportedException();
         public Task<SubscriptionState> GetSubscriptionState(string t, string s) => throw new NotSupportedException();
         public Task UpdateForwardTo(string t, string s, string f) => throw new NotSupportedException();
-        public Task CreateDeferredSubscription(string t) => throw new NotSupportedException();
-        public Task CreateDeferredProcessorSubscription(string t) => throw new NotSupportedException();
     }
 
     private sealed record AuditEntry(MessageAuditType Type, bool AccessDenied, string? EndpointId);

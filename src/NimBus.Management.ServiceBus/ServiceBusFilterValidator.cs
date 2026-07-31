@@ -14,8 +14,11 @@ namespace NimBus.Management.ServiceBus;
 /// <remarks>
 /// <para>
 /// The injection vector this closes: the WebApp's endpoint-management API
-/// takes an operator-supplied endpoint id and flows it straight into
-/// <c>$"user.To='{subscriptionName}'"</c> in <see cref="ServiceBusManagement.CreateRule"/>.
+/// takes an operator-supplied endpoint id and flows it into filter expressions
+/// like <c>$"user.To = '{subscriptionName}'"</c> (built by
+/// <see cref="EndpointManagement.ClearEndpoint"/> and executed via
+/// <see cref="ServiceBusManagement.CreateCustomRule"/>, whose name parameters
+/// validate the same value that was interpolated).
 /// Without validation, a value like <c>x' OR 1=1 OR '</c> would terminate the
 /// quoted string and widen the rule to match every message on the namespace,
 /// letting a caller steal traffic intended for another endpoint.

@@ -1167,8 +1167,8 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         // cut RU and payload by 10-50x. Accumulate then join once (no O(n^2) concat).
         var queryDefinition = new QueryDefinition(
             "SELECT c.id FROM c WHERE c.status IN (@failedStatus, @deferredStatus) AND (NOT IS_DEFINED(c.deleted) or c.deleted != true)")
-            .WithParameter("@failedStatus", FailedStatus)
-            .WithParameter("@deferredStatus", DeferredStatus);
+            .WithParameter("@failedStatus", EndpointErrorListFormat.FailedStatus)
+            .WithParameter("@deferredStatus", EndpointErrorListFormat.DeferredStatus);
 
         var result = container.GetItemQueryIterator<IdProjection>(queryDefinition);
         var ids = new List<string>();
@@ -1181,8 +1181,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
             }
         }
 
-        // Preserve the historical "id1;id2;...;" shape (trailing separator included).
-        return ids.Count == 0 ? "" : string.Join(";", ids) + ";";
+        return EndpointErrorListFormat.Format(ids);
     }
 
     private sealed class IdProjection
@@ -1204,9 +1203,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     private static BlockedMessageEvent ToBlockedMessageEvent(BlockedEventProjection projection) => new()
     {
         EventId = projection.EventId,
-        OriginatingId = projection.OriginatingMessageId.Equals("self", StringComparison.OrdinalIgnoreCase)
-            ? projection.LastMessageId
-            : projection.OriginatingMessageId,
+        OriginatingId = BlockedEventRules.ResolveOriginatingId(projection.OriginatingMessageId, projection.LastMessageId),
         Status = projection.Status,
     };
 

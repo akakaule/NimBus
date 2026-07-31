@@ -941,14 +941,10 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
     private static BlockedMessageEvent MapBlockedMessageEvent(dynamic row)
     {
-        var originatingMessageId = (string?)row.OriginatingMessageId ?? string.Empty;
-        var lastMessageId = (string?)row.LastMessageId ?? string.Empty;
         return new BlockedMessageEvent
         {
             EventId = row.EventId,
-            OriginatingId = string.Equals(originatingMessageId, "self", StringComparison.OrdinalIgnoreCase)
-                ? lastMessageId
-                : originatingMessageId,
+            OriginatingId = BlockedEventRules.ResolveOriginatingId((string?)row.OriginatingMessageId, (string?)row.LastMessageId),
             Status = row.Status,
         };
     }
@@ -1110,14 +1106,18 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
             $@"SELECT CONCAT(EventId, '_', ISNULL(SessionId, ''))
                FROM {T("UnresolvedEvents")}
                WHERE EndpointId = @EndpointId
-                 AND Status IN ('Failed','Deferred')
+                 AND Status IN (@FailedStatus, @DeferredStatus)
                  AND Deleted = 0
                ORDER BY UpdatedAtUtc DESC, Id DESC",
-            new { EndpointId = endpointId },
+            new
+            {
+                EndpointId = endpointId,
+                EndpointErrorListFormat.FailedStatus,
+                EndpointErrorListFormat.DeferredStatus,
+            },
             commandTimeout: _commandTimeout);
 
-        var list = ids.ToList();
-        return list.Count == 0 ? string.Empty : string.Join(";", list) + ";";
+        return EndpointErrorListFormat.Format(ids.ToList());
     }
 
     // ───────── Subscription store ─────────

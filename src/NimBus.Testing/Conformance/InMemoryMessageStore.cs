@@ -423,7 +423,7 @@ public class InMemoryMessageStore : INimBusMessageStore
             .Select(CompositeEventId)
             .ToList();
 
-        return Task.FromResult(ids.Count == 0 ? string.Empty : string.Join(";", ids) + ";");
+        return Task.FromResult(EndpointErrorListFormat.Format(ids));
     }
 
     public Task<EndpointSubscription> SubscribeToEndpointNotification(string endpointId, string mail, string type, string author, string url, List<string> eventTypes, string payload, int frequency)
@@ -639,13 +639,10 @@ public class InMemoryMessageStore : INimBusMessageStore
 
     private static BlockedMessageEvent ToBlockedMessageEvent(UnresolvedEvent @event)
     {
-        var originatingMessageId = @event.OriginatingMessageId ?? string.Empty;
         return new BlockedMessageEvent
         {
             EventId = @event.EventId,
-            OriginatingId = string.Equals(originatingMessageId, "self", StringComparison.OrdinalIgnoreCase)
-                ? @event.LastMessageId
-                : originatingMessageId,
+            OriginatingId = BlockedEventRules.ResolveOriginatingId(@event.OriginatingMessageId, @event.LastMessageId),
             Status = @event.ResolutionStatus.ToString(),
         };
     }

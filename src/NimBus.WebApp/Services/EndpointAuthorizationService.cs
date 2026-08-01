@@ -88,9 +88,9 @@ public class EndpointAuthorizationService : IEndpointAuthorizationService
     private async Task<CurrentUserAccess> ResolveAsync()
     {
         var user = _httpContextAccessor.HttpContext?.User;
-        if (user?.Identity == null)
+        if (user?.Identity?.IsAuthenticated != true)
         {
-            _logger.LogWarning("Authorization check failed: no HTTP context or user principal available");
+            _logger.LogWarning("Authorization check failed: no authenticated user principal available");
             return new CurrentUserAccess();
         }
 

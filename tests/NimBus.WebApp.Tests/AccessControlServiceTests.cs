@@ -355,6 +355,29 @@ public class AccessControlServiceTests
         Assert.IsFalse(await sut.CanReadPiiAsync());
     }
 
+    [TestMethod]
+    public async Task Unauthenticated_principal_with_admin_marker_has_no_access()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            new[] { new Claim("groups", EndpointAuthorizationService.AdminMarkerClaimValue) }));
+        var sut = CreateService(principal);
+
+        Assert.IsFalse(await sut.HasRoleAsync(AccessRole.Reader));
+        Assert.IsFalse(await sut.CanReadPiiAsync());
+    }
+
+    [TestMethod]
+    public async Task Unauthenticated_principal_with_matching_acl_email_has_no_access()
+    {
+        await SeedSite(owners: new[] { UserEmail }, piiReaders: new[] { UserEmail });
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            new[] { new Claim(ClaimTypes.Email, UserEmail) }));
+        var sut = CreateService(principal);
+
+        Assert.IsFalse(await sut.HasRoleAsync(AccessRole.Reader));
+        Assert.IsFalse(await sut.CanReadPiiAsync());
+    }
+
     // ───────── Test doubles ─────────
 
     private sealed class PausableAccessControlStore : IAccessControlStore

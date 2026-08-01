@@ -308,6 +308,13 @@ namespace NimBus.WebApp.Controllers.ApiContract
             var coords = body?.Coordinates;
             if (coords == null || string.IsNullOrWhiteSpace(coords.EventId))
                 return new BadRequestObjectResult("coordinates.eventId is required.");
+            if (string.IsNullOrWhiteSpace(coords.MessageId))
+                return new BadRequestObjectResult("coordinates.messageId is required.");
+            if (body.Outcome is not AgentSettleRequestOutcome.Complete
+                and not AgentSettleRequestOutcome.Fail)
+            {
+                return new BadRequestObjectResult("outcome must be 'complete' or 'fail'.");
+            }
 
             var zoneId = AgentZone.ResolveEndpointId(_config);
             // Auditor for the settlement is the agent, not a request principal — the X-Agent-Id

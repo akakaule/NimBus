@@ -719,10 +719,21 @@ namespace NimBus.ServiceBus
                 // Copy standard Service Bus properties
                 ContentType = receivedMessage.ContentType,
                 Subject = receivedMessage.Subject,
+                To = receivedMessage.To,
                 ReplyTo = receivedMessage.ReplyTo,
                 ReplyToSessionId = receivedMessage.ReplyToSessionId,
-                PartitionKey = receivedMessage.PartitionKey
             };
+
+            // Setting SessionId establishes the outgoing partition key. Reassigning a
+            // missing inbound PartitionKey would violate the SDK's session invariant.
+            if (!string.IsNullOrEmpty(receivedMessage.PartitionKey))
+                newMessage.PartitionKey = receivedMessage.PartitionKey;
+
+            if (!string.IsNullOrEmpty(receivedMessage.TransactionPartitionKey))
+                newMessage.TransactionPartitionKey = receivedMessage.TransactionPartitionKey;
+
+            if (receivedMessage.TimeToLive > TimeSpan.Zero)
+                newMessage.TimeToLive = receivedMessage.TimeToLive;
 
             // Copy all application properties from original message
             foreach (var prop in receivedMessage.ApplicationProperties)
@@ -738,8 +749,6 @@ namespace NimBus.ServiceBus
             try
             {
                 await _sbSession.SendScheduledMessageAsync(newMessage, scheduledTime, cancellationToken);
-                // Complete original message only after successful scheduling
-                await Complete(cancellationToken);
             }
             catch (InvalidOperationException)
             {
@@ -750,6 +759,11 @@ namespace NimBus.ServiceBus
                 throw new Core.Messages.Exceptions.TransientException(
                     "Scheduled redelivery not available in current configuration. Message will retry after lock expiration.");
             }
+
+            // Complete original message only after successful scheduling. Completion
+            // failures must retain their own semantics rather than masquerading as a
+            // scheduling-configuration failure.
+            await Complete(cancellationToken);
         }
     }
 }

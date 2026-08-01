@@ -9,6 +9,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Messages;
 using NimBus.SDK;
 using NimBus.SDK.Extensions;
+using NimBus.ServiceBus;
 
 namespace NimBus.SDK.Tests;
 
@@ -126,6 +127,16 @@ public class HandoffClientRegistrationTests
         Assert.AreEqual("msg-1", sent.OriginatingMessageId,
             "Wire OriginatingMessageId must fall back to the settlement MessageId (ParentMessageId).");
         Assert.IsNull(sent.CorrelationId);
+
+        // Drive the SDK-produced core message through the real transport converter.
+        // Legacy rows with missing lineage must remain sendable, and the two identity
+        // fields required by the Resolver must retain their factory fallbacks.
+        var wire = MessageHelper.ToServiceBusMessage(sent);
+        Assert.AreEqual("sess-1", wire.SessionId);
+        Assert.IsNull(wire.CorrelationId);
+        Assert.AreEqual("evt-1", wire.ApplicationProperties[nameof(UserPropertyName.EventId)]);
+        Assert.AreEqual("msg-1", wire.ApplicationProperties[nameof(UserPropertyName.ParentMessageId)]);
+        Assert.AreEqual("msg-1", wire.ApplicationProperties[nameof(UserPropertyName.OriginatingMessageId)]);
     }
 
     [TestMethod]

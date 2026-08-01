@@ -774,6 +774,153 @@ public class MessageContextTests
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
+    // ── ScheduleRedelivery ─────────────────────────────────────────
+
+    [TestMethod]
+    public async Task ScheduleRedelivery_CopiesBodyAndStandardProperties_WithNewMessageId()
+    {
+        var body = new BinaryData("scheduled payload");
+        var timeToLive = TimeSpan.FromMinutes(15);
+        var received = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: body,
+            messageId: "original-message-id",
+            partitionKey: "session-1",
+            viaPartitionKey: "transaction-partition",
+            sessionId: "session-1",
+            replyToSessionId: "reply-session",
+            timeToLive: timeToLive,
+            correlationId: "correlation-1",
+            subject: "order.created",
+            to: "orders",
+            contentType: "application/json",
+            replyTo: "replies");
+        var session = new FakeServiceBusSession();
+        var context = new MessageContext(new NimBus.ServiceBus.ServiceBusMessage(received), session);
+
+        await context.ScheduleRedelivery(TimeSpan.FromMinutes(2), throttleRetryCount: 3);
+
+        var scheduled = session.ScheduledMessages.Single();
+        CollectionAssert.AreEqual(body.ToArray(), scheduled.Body.ToArray());
+        Assert.AreEqual(received.SessionId, scheduled.SessionId);
+        Assert.AreEqual(received.CorrelationId, scheduled.CorrelationId);
+        Assert.AreEqual(received.ContentType, scheduled.ContentType);
+        Assert.AreEqual(received.Subject, scheduled.Subject);
+        Assert.AreEqual(received.To, scheduled.To);
+        Assert.AreEqual(received.ReplyTo, scheduled.ReplyTo);
+        Assert.AreEqual(received.ReplyToSessionId, scheduled.ReplyToSessionId);
+        Assert.AreEqual(received.PartitionKey, scheduled.PartitionKey);
+        Assert.AreEqual(received.TransactionPartitionKey, scheduled.TransactionPartitionKey);
+        Assert.AreEqual(received.TimeToLive, scheduled.TimeToLive);
+        Assert.AreNotEqual(received.MessageId, scheduled.MessageId);
+        Assert.IsTrue(Guid.TryParse(scheduled.MessageId, out _));
+    }
+
+    [TestMethod]
+    public async Task ScheduleRedelivery_CopiesApplicationProperties_AndReplacesThrottleRetryCount()
+    {
+        var properties = new Dictionary<string, object>
+        {
+            { "CustomText", "preserved" },
+            { "CustomNumber", 42L },
+            { "ThrottleRetryCount", "1" },
+        };
+        var received = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: new BinaryData("payload"),
+            messageId: "original-message-id",
+            sessionId: "session-1",
+            properties: properties);
+        var session = new FakeServiceBusSession();
+        var context = new MessageContext(new NimBus.ServiceBus.ServiceBusMessage(received), session);
+
+        await context.ScheduleRedelivery(TimeSpan.FromMinutes(1), throttleRetryCount: 7);
+
+        var scheduled = session.ScheduledMessages.Single();
+        Assert.AreEqual("preserved", scheduled.ApplicationProperties["CustomText"]);
+        Assert.AreEqual(42L, scheduled.ApplicationProperties["CustomNumber"]);
+        Assert.AreEqual("7", scheduled.ApplicationProperties["ThrottleRetryCount"]);
+        Assert.AreEqual("1", received.ApplicationProperties["ThrottleRetryCount"], "The inbound message must not be mutated.");
+    }
+
+    [TestMethod]
+    public async Task ScheduleRedelivery_SchedulesBeforeCompletingOriginal()
+    {
+        var session = new FakeServiceBusSession();
+        var context = CreateScheduledRedeliveryContext(session);
+
+        await context.ScheduleRedelivery(TimeSpan.FromSeconds(30), throttleRetryCount: 2);
+
+        CollectionAssert.AreEqual(new List<string> { "schedule", "complete" }, session.Operations);
+        Assert.AreEqual(1, session.CompleteCalls);
+    }
+
+    [TestMethod]
+    public async Task ScheduleRedelivery_WhenSchedulingIsUnavailable_LeavesOriginalUnsettled()
+    {
+        var session = new FakeServiceBusSession
+        {
+            ScheduleException = new InvalidOperationException("sender unavailable"),
+        };
+        var context = CreateScheduledRedeliveryContext(session);
+
+        await Assert.ThrowsExactlyAsync<TransientException>(
+            () => context.ScheduleRedelivery(TimeSpan.FromSeconds(30), throttleRetryCount: 2));
+
+        Assert.AreEqual(1, session.ScheduleAttempts);
+        Assert.AreEqual(0, session.ScheduledMessages.Count);
+        Assert.AreEqual(0, session.CompleteCalls);
+        CollectionAssert.AreEqual(new List<string> { "schedule" }, session.Operations);
+    }
+
+    [TestMethod]
+    public async Task ScheduleRedelivery_WhenCompletionFails_PropagatesCompletionFailureAfterScheduling()
+    {
+        var completionFailure = new InvalidOperationException("completion failed");
+        var session = new FakeServiceBusSession
+        {
+            CompleteException = completionFailure,
+        };
+        var context = CreateScheduledRedeliveryContext(session);
+
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => context.ScheduleRedelivery(TimeSpan.FromSeconds(30), throttleRetryCount: 2));
+
+        Assert.AreSame(completionFailure, exception);
+        Assert.AreEqual(1, session.ScheduledMessages.Count);
+        Assert.AreEqual(0, session.CompleteCalls);
+        CollectionAssert.AreEqual(new List<string> { "schedule", "complete" }, session.Operations);
+    }
+
+    [TestMethod]
+    public async Task ScheduleRedelivery_WhenCancelled_DoesNotScheduleOrCompleteOriginal()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        await cancellationSource.CancelAsync();
+        var session = new FakeServiceBusSession();
+        var context = CreateScheduledRedeliveryContext(session);
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(
+            () => context.ScheduleRedelivery(
+                TimeSpan.FromSeconds(30),
+                throttleRetryCount: 2,
+                cancellationSource.Token));
+
+        Assert.AreEqual(cancellationSource.Token, session.LastScheduleCancellationToken);
+        Assert.AreEqual(1, session.ScheduleAttempts);
+        Assert.AreEqual(0, session.ScheduledMessages.Count);
+        Assert.AreEqual(0, session.CompleteCalls);
+        CollectionAssert.AreEqual(new List<string> { "schedule" }, session.Operations);
+    }
+
+    private static MessageContext CreateScheduledRedeliveryContext(FakeServiceBusSession session)
+    {
+        var received = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: new BinaryData("payload"),
+            messageId: "original-message-id",
+            sessionId: "session-1",
+            correlationId: "correlation-1");
+        return new MessageContext(new NimBus.ServiceBus.ServiceBusMessage(received), session);
+    }
+
     private static TestableMessageContext CreateMessageContext(
         FakeServiceBusSession session = null,
         string from = "StorefrontEndpoint",
@@ -901,19 +1048,26 @@ public class MessageContextTests
     {
         public SessionState State { get; set; } = new();
         public Dictionary<long, IServiceBusMessage> DeferredMessages { get; } = new();
+        public List<Azure.Messaging.ServiceBus.ServiceBusMessage> ScheduledMessages { get; } = new();
+        public List<string> Operations { get; } = new();
 
         public int CompleteCalls { get; private set; }
         public int DeadLetterCalls { get; private set; }
         public int DeferCalls { get; private set; }
+        public int ScheduleAttempts { get; private set; }
         public string LastDeadLetterReason { get; private set; }
         public string LastDeadLetterDescription { get; private set; }
+        public CancellationToken LastScheduleCancellationToken { get; private set; }
 
         public Exception CompleteException { get; set; }
         public Exception DeadLetterException { get; set; }
         public Exception DeferException { get; set; }
+        public Exception? ScheduleException { get; set; }
 
         public Task CompleteAsync(IServiceBusMessage message, CancellationToken ct = default)
         {
+            Operations.Add("complete");
+            ct.ThrowIfCancellationRequested();
             if (CompleteException != null) throw CompleteException;
             CompleteCalls++;
             return Task.CompletedTask;
@@ -954,6 +1108,12 @@ public class MessageContextTests
 
         public Task SendScheduledMessageAsync(Azure.Messaging.ServiceBus.ServiceBusMessage message, DateTimeOffset scheduledTime, CancellationToken ct = default)
         {
+            Operations.Add("schedule");
+            ScheduleAttempts++;
+            LastScheduleCancellationToken = ct;
+            ct.ThrowIfCancellationRequested();
+            if (ScheduleException != null) throw ScheduleException;
+            ScheduledMessages.Add(message);
             return Task.CompletedTask;
         }
     }

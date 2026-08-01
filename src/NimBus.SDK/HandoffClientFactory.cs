@@ -6,6 +6,7 @@ using NimBus.OpenTelemetry;
 using NimBus.ServiceBus;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 
 namespace NimBus.SDK;
@@ -58,7 +59,7 @@ public sealed class HandoffClientFactory : IHandoffClientFactory
         if (string.IsNullOrEmpty(endpointId))
             throw new ArgumentException("Endpoint must be specified.", nameof(endpointId));
 
-        return _clients.GetOrAdd(endpointId, endpoint => new Lazy<IHandoffClient>(
+        var lazyClient = _clients.GetOrAdd(endpointId, endpoint => new Lazy<IHandoffClient>(
             () =>
             {
                 ISender sender = NimBusOpenTelemetryDecorators.InstrumentSender(
@@ -68,6 +69,19 @@ public sealed class HandoffClientFactory : IHandoffClientFactory
                     new HandoffClientOptions { Endpoint = endpoint },
                     _loggerFactory?.CreateLogger<HandoffClient>());
             },
-            LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+            LazyThreadSafetyMode.ExecutionAndPublication));
+
+        try
+        {
+            return lazyClient.Value;
+        }
+        catch
+        {
+            // Lazy caches creation exceptions. Remove only this failed instance
+            // so a transient Service Bus failure can be retried by the next call
+            // without deleting a concurrently installed replacement.
+            _clients.TryRemove(new KeyValuePair<string, Lazy<IHandoffClient>>(endpointId, lazyClient));
+            throw;
+        }
     }
 }

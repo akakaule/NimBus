@@ -94,11 +94,21 @@ docs/
 Global analyzers applied to all projects (via `Directory.Packages.props`):
 - AsyncFixer, Meziantou.Analyzer, SecurityCodeScan, SonarAnalyzer, StyleCop
 
-Build settings:
-- `EnforceCodeStyleInBuild: true`
-- `AnalysisLevel: latest-recommended`
-- Release builds: `TreatWarningsAsErrors: true` (with nullable warning allowlist)
-- Some projects (`NimBus.Core`, `NimBus.ServiceBus`) have relaxed analyzer settings for legacy compatibility
+What the gates ACTUALLY enforce (verified 2026-08; don't assume stricter):
+- `Directory.Build.props` sets `EnforceCodeStyleInBuild: true` repo-wide, but 11 src
+  projects opt out with `EnforceCodeStyleInBuild: false` (Abstractions, Testing,
+  ServiceBus, Core, Extensions.Notifications, SDK, MessageStore.SqlServer,
+  MessageStore.CosmosDb, MessageStore.Abstractions, Outbox.SqlServer, Resolver);
+  several also set `EnableNETAnalyzers: false`.
+- Release builds: `TreatWarningsAsErrors: true` promotes **compiler (CS) warnings
+  only** — `CodeAnalysisTreatWarningsAsErrors: false` keeps analyzer CA/S/SA
+  warnings non-fatal. A `WarningsNotAsErrors` allowlist further exempts CS0618 and
+  most CS86xx nullable warnings. Gotcha: **CS8767** (parameter nullability mismatch
+  on interface implementations) is NOT allowlisted and fails Release/CI while Debug
+  stays green — Release-build changed projects locally before pushing.
+- `AnalysisLevel: latest-recommended`.
+- Tightening the opted-out projects is an explicit backlog item, not an accident to
+  "fix" in passing.
 
 ## Architecture Patterns
 

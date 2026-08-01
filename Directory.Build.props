@@ -22,6 +22,12 @@
     <DebugType>full</DebugType>
     <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
+  <!--
+    NOTE: this is the repo-wide DEFAULT, not the enforced reality — many src
+    projects override EnforceCodeStyleInBuild (and some EnableNETAnalyzers) to
+    false for legacy compatibility. See CLAUDE.md "Analyzers & Quality" for the
+    actual gate behavior; tightening the opted-out projects is a backlog item.
+  -->
   <PropertyGroup Label="Analyzer settings">
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <AnalysisLevelStyle>latest-recommended</AnalysisLevelStyle>

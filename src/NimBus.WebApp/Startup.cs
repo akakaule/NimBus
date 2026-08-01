@@ -62,7 +62,28 @@ namespace NimBus.WebApp
         public IConfiguration Configuration { get; }
 
         // This method gets called by the runtime. Use this method to add services to the container.
+        // Registration ORDER is load-bearing in places (Identity opt-in must precede the
+        // auth-branch ladder's reflection probe; IClaimsTransformation is last-wins;
+        // ServiceBus clients must precede the management services that resolve them;
+        // the storage provider selected in AddStorage also drives the health checks) —
+        // the steps below run in exactly the order the registrations previously appeared.
         public void ConfigureServices(IServiceCollection services)
+        {
+            EnforceProductionSafeConfiguration();
+            AddAuthenticationStack(services);
+            AddWebPipeline(services);
+            AddPlatformCatalog(services);
+            AddServiceBusClients(services);
+            var storageProvider = AddStorage(services);
+            AddManagementServices(services);
+            AddObservability(services, storageProvider);
+            AddAuthorizationAndAuditServices(services);
+            AddApiControllers(services);
+        }
+
+        // Security: fail fast if dangerous development-only settings are active
+        // in non-Development environments.
+        private void EnforceProductionSafeConfiguration()
         {
             // Security: Fail fast if dangerous development-only settings are active in non-Development environments
             if (!Env.IsDevelopment())
@@ -76,7 +97,12 @@ namespace NimBus.WebApp
                 if (Configuration.GetValue<bool>("Authorization:GrantPiiReaderInDevelopment", false))
                     throw new InvalidOperationException("SECURITY: Authorization:GrantPiiReaderInDevelopment must not be enabled outside Development environment. Remove this setting from production configuration.");
             }
+        }
 
+        // Identity opt-in, the four-way authentication branch ladder, MVC
+        // authorization conventions and the OIDC 401-for-API tweak.
+        private void AddAuthenticationStack(IServiceCollection services)
+        {
             // Opt into ASP.NET Core Identity-backed username/password sign-in when the
             // deployment supplies NimBusIdentity:ConnectionString. The reflection check below
             // then routes the auth-branch ladder to the Identity-only path; downstream config
@@ -241,7 +267,11 @@ namespace NimBus.WebApp
                     };
                 });
             }
+        }
 
+        // Controllers/JSON, Razor, NSwag, response compression, SPA static files, SignalR.
+        private void AddWebPipeline(IServiceCollection services)
+        {
             services.AddControllers(options =>
             {
                 options.ModelBinderProviders.Insert(0, new EnumMemberModelBinderProvider());
@@ -301,7 +331,10 @@ namespace NimBus.WebApp
             });
 
             services.AddSignalR();
+        }
 
+        private void AddPlatformCatalog(IServiceCollection services)
+        {
             // IPlatform catalog selection.
             // By default the WebApp shows the bundled PlatformConfiguration (Storefront/Billing/Warehouse).
             // Samples that define their own platform (e.g. CrmErpDemo) inject the catalog via config:
@@ -334,7 +367,10 @@ namespace NimBus.WebApp
 
                 return (IPlatform)Activator.CreateInstance(type)!;
             });
+        }
 
+        private void AddServiceBusClients(IServiceCollection services)
+        {
             // Env-var providers replace `__` with `:`, so the canonical config key
             // for `AzureWebJobsServiceBus__fullyQualifiedNamespace` is read with a colon.
             // We also accept the literal-double-underscore form (for any appsettings.json
@@ -365,6 +401,12 @@ namespace NimBus.WebApp
                 services.AddSingleton(new ServiceBusAdministrationClient(serviceBusConnection));
                 services.AddSingleton(new ServiceBusClient(serviceBusConnection));
             }
+        }
+
+        // Selects the storage provider and registers the NimBus message store.
+        // The returned provider name also drives the health-check registrations.
+        private string AddStorage(IServiceCollection services)
+        {
             // Provider selection is configuration-driven (NimBus__StorageProvider /
             // StorageProvider env-var or appsetting, default 'cosmos'). SQL Server
             // is selected when explicitly configured OR when no Cosmos config is
@@ -393,7 +435,11 @@ namespace NimBus.WebApp
                     nimbus.AddCosmosDbMessageStore();
                 }
             });
+            return storageProvider;
+        }
 
+        private void AddManagementServices(IServiceCollection services)
+        {
             // Explicit factory so constructor selection never becomes ambiguous
             // between ManagerClient's MEL constructor and its obsolete Serilog bridge.
             services.AddSingleton<IManagerClient>(sp => new ManagerClient(
@@ -414,7 +460,10 @@ namespace NimBus.WebApp
             services.AddSingleton<IServiceBusManagement>(sp => new ServiceBusManagement(
                 sp.GetRequiredService<ServiceBusAdministrationClient>(),
                 sp.GetService<ILogger<ServiceBusManagement>>()));
+        }
 
+        private void AddObservability(IServiceCollection services, string storageProvider)
+        {
             // Typed HttpClient via IHttpClientFactory — pools the underlying
             // SocketsHttpHandler across calls, hooks into AddHttpClientInstrumentation
             // for OpenTelemetry, and leaves room for a future Polly retry policy.
@@ -472,6 +521,10 @@ namespace NimBus.WebApp
             {
                 healthChecks.AddCosmosDbHealthCheck();
             }
+        }
+
+        private void AddAuthorizationAndAuditServices(IServiceCollection services)
+        {
             // Short-TTL cache for hot read-only store results (status counts,
             // metrics aggregates). Singleton is required: the consuming
             // controllers are transient, so a shorter lifetime would never hit.
@@ -489,6 +542,10 @@ namespace NimBus.WebApp
             // Shared hand-off settlement core used by both the operator (EventImplementation)
             // and agent (AgentImplementation) settle endpoints so neither can skip the audit row.
             services.AddScoped<IHandoffSettlementService, HandoffSettlementService>();
+        }
+
+        private void AddApiControllers(IServiceCollection services)
+        {
             services.AddTransient<IEndpointApiController, EndpointImplementation>();
             services.AddTransient<IStorageHookApiController, StorageHookImplementation>();
             services.AddTransient<IEventApiController, EventImplementation>();
@@ -506,6 +563,7 @@ namespace NimBus.WebApp
             services.AddSingleton<IAgentSubscriptionRegistry, AgentSubscriptionRegistry>();
             services.AddScoped<SeedDataService>();
         }
+
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)

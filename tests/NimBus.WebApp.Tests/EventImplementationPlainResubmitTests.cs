@@ -160,6 +160,7 @@ public sealed class EventImplementationPlainResubmitTests
             applicationInsightsService: null!,
             platform: null!,
             managerClient,
+            handoffClientFactory: null!,  // resubmit/skip paths never touch handoff settlement
             NullLogger<EventImplementation>.Instance,
             store,
             new AllowAllAuthorizationService(),

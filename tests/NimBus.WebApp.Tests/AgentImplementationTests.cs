@@ -12,7 +12,7 @@ using System.Threading;
 using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
-using NimBus.Manager;
+using NimBus.SDK;
 using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.ManagementApi;
@@ -74,44 +74,52 @@ namespace NimBus.WebApp.Tests
             }
         }
 
-        // ── Fake IManagerClient (captures handoff settlements) ──────────────
+        // ── Fake IHandoffClientFactory (captures handoff settlements) ───────
 
-        private sealed class CapturingManagerClient : IManagerClient
+        private sealed class CapturingHandoffClientFactory : IHandoffClientFactory
         {
-            public MessageEntity? CompletedEntry { get; private set; }
+            public HandoffSettlement? CompletedCoords { get; private set; }
             public string? CompletedEndpoint { get; private set; }
             public string? CompletedDetails { get; private set; }
             public int CompleteCount { get; private set; }
 
-            public MessageEntity? FailedEntry { get; private set; }
+            public HandoffSettlement? FailedCoords { get; private set; }
             public string? FailedEndpoint { get; private set; }
             public string? FailedErrorText { get; private set; }
             public string? FailedErrorType { get; private set; }
             public int FailCount { get; private set; }
 
-            public Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson)
-                => throw new NotImplementedException();
+            public IHandoffClient ForEndpoint(string endpointId) => new Client(this, endpointId);
 
-            public Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId)
-                => throw new NotImplementedException();
-
-            public Task CompleteHandoff(MessageEntity pendingEntry, string endpoint, string? detailsJson = null)
+            private sealed class Client : IHandoffClient
             {
-                CompletedEntry = pendingEntry;
-                CompletedEndpoint = endpoint;
-                CompletedDetails = detailsJson;
-                CompleteCount++;
-                return Task.CompletedTask;
-            }
+                private readonly CapturingHandoffClientFactory _owner;
+                private readonly string _endpoint;
 
-            public Task FailHandoff(MessageEntity pendingEntry, string endpoint, string errorText, string? errorType = null)
-            {
-                FailedEntry = pendingEntry;
-                FailedEndpoint = endpoint;
-                FailedErrorText = errorText;
-                FailedErrorType = errorType;
-                FailCount++;
-                return Task.CompletedTask;
+                public Client(CapturingHandoffClientFactory owner, string endpoint)
+                {
+                    _owner = owner;
+                    _endpoint = endpoint;
+                }
+
+                public Task CompleteAsync(HandoffSettlement coords, object? result = null, CancellationToken cancellationToken = default)
+                {
+                    _owner.CompletedCoords = coords;
+                    _owner.CompletedEndpoint = _endpoint;
+                    _owner.CompletedDetails = result as string;
+                    _owner.CompleteCount++;
+                    return Task.CompletedTask;
+                }
+
+                public Task FailAsync(HandoffSettlement coords, string errorText, string? errorType = null, CancellationToken cancellationToken = default)
+                {
+                    _owner.FailedCoords = coords;
+                    _owner.FailedEndpoint = _endpoint;
+                    _owner.FailedErrorText = errorText;
+                    _owner.FailedErrorType = errorType;
+                    _owner.FailCount++;
+                    return Task.CompletedTask;
+                }
             }
         }
 
@@ -145,18 +153,18 @@ namespace NimBus.WebApp.Tests
             return (impl, store, publisher);
         }
 
-        private static (AgentImplementation Impl, InMemoryMessageStore Store, CapturingPublisher Publisher, CapturingManagerClient Manager, AgentSubscriptionRegistry Registry) BuildAgent(
+        private static (AgentImplementation Impl, InMemoryMessageStore Store, CapturingPublisher Publisher, CapturingHandoffClientFactory Handoffs, AgentSubscriptionRegistry Registry) BuildAgent(
             params string[] endpointIds)
             => BuildAgent(httpContextAccessor: null, endpointIds);
 
-        private static (AgentImplementation Impl, InMemoryMessageStore Store, CapturingPublisher Publisher, CapturingManagerClient Manager, AgentSubscriptionRegistry Registry) BuildAgent(
+        private static (AgentImplementation Impl, InMemoryMessageStore Store, CapturingPublisher Publisher, CapturingHandoffClientFactory Handoffs, AgentSubscriptionRegistry Registry) BuildAgent(
             IHttpContextAccessor? httpContextAccessor,
             params string[] endpointIds)
         {
             var store = new InMemoryMessageStore();
             var platform = new FakePlatform(endpointIds);
             var publisher = new CapturingPublisher();
-            var manager = new CapturingManagerClient();
+            var handoffs = new CapturingHandoffClientFactory();
             var registry = new AgentSubscriptionRegistry();
             // Real audit + settlement services over the same in-memory store, so settle
             // tests can assert the audit row the shared HandoffSettlementService writes.
@@ -167,13 +175,13 @@ namespace NimBus.WebApp.Tests
                 platform,
                 publisher,
                 store,
-                manager,
+                handoffs,
                 settlement,
                 registry,
                 config: null,                 // -> AgentZone default zone id
                 httpContextAccessor,          // null -> CurrentAgentId() falls back to "demo-agent"
                 NullLogger<AgentImplementation>.Instance);
-            return (impl, store, publisher, manager, registry);
+            return (impl, store, publisher, handoffs, registry);
         }
 
         // An accessor whose request carries the X-Agent-Id header, so CurrentAgentId()
@@ -510,7 +518,7 @@ namespace NimBus.WebApp.Tests
                 new FakePlatform(),
                 new CapturingPublisher(),
                 store,
-                new CapturingManagerClient(),
+                new CapturingHandoffClientFactory(),
                 new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance),
                 new AgentSubscriptionRegistry(),
                 config: null,
@@ -580,68 +588,68 @@ namespace NimBus.WebApp.Tests
         [TestMethod]
         public async Task PostAgentSettle_complete_returns_200_and_calls_CompleteHandoff()
         {
-            var (impl, store, _, manager, _) = BuildAgent();
+            var (impl, store, _, handoffs, _) = BuildAgent();
             await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}", messageId: "msg-99");
 
             var result = await impl.PostAgentSettleAsync(
                 SettleRequest("evt-1", AgentSettleRequestOutcome.Complete, result: "{\"importedId\":42}"));
 
             Assert.IsInstanceOfType(result, typeof(OkResult), "Complete settle must yield 200");
-            Assert.AreEqual(1, manager.CompleteCount, "CompleteHandoff must be called once");
-            Assert.AreEqual(0, manager.FailCount, "FailHandoff must NOT be called");
-            Assert.AreEqual("evt-1", manager.CompletedEntry?.EventId);
-            Assert.AreEqual("msg-99", manager.CompletedEntry?.MessageId, "MessageId comes from the request coordinates");
-            Assert.AreEqual(ZoneId, manager.CompletedEndpoint, "Endpoint must be the zone id");
-            Assert.AreEqual("{\"importedId\":42}", manager.CompletedDetails, "Result flows through as details");
+            Assert.AreEqual(1, handoffs.CompleteCount, "CompleteHandoff must be called once");
+            Assert.AreEqual(0, handoffs.FailCount, "FailHandoff must NOT be called");
+            Assert.AreEqual("evt-1", handoffs.CompletedCoords?.EventId);
+            Assert.AreEqual("msg-99", handoffs.CompletedCoords?.MessageId, "MessageId comes from the request coordinates");
+            Assert.AreEqual(ZoneId, handoffs.CompletedEndpoint, "Endpoint must be the zone id");
+            Assert.AreEqual("{\"importedId\":42}", handoffs.CompletedDetails, "Result flows through as details");
         }
 
         [TestMethod]
         public async Task PostAgentSettle_fail_returns_200_and_calls_FailHandoff()
         {
-            var (impl, store, _, manager, _) = BuildAgent();
+            var (impl, store, _, handoffs, _) = BuildAgent();
             await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
 
             var result = await impl.PostAgentSettleAsync(
                 SettleRequest("evt-1", AgentSettleRequestOutcome.Fail, errorText: "boom", errorType: "RuntimeError"));
 
             Assert.IsInstanceOfType(result, typeof(OkResult), "Fail settle must yield 200");
-            Assert.AreEqual(1, manager.FailCount, "FailHandoff must be called once");
-            Assert.AreEqual(0, manager.CompleteCount, "CompleteHandoff must NOT be called");
-            Assert.AreEqual("evt-1", manager.FailedEntry?.EventId);
-            Assert.AreEqual(ZoneId, manager.FailedEndpoint);
-            Assert.AreEqual("boom", manager.FailedErrorText);
-            Assert.AreEqual("RuntimeError", manager.FailedErrorType);
+            Assert.AreEqual(1, handoffs.FailCount, "FailHandoff must be called once");
+            Assert.AreEqual(0, handoffs.CompleteCount, "CompleteHandoff must NOT be called");
+            Assert.AreEqual("evt-1", handoffs.FailedCoords?.EventId);
+            Assert.AreEqual(ZoneId, handoffs.FailedEndpoint);
+            Assert.AreEqual("boom", handoffs.FailedErrorText);
+            Assert.AreEqual("RuntimeError", handoffs.FailedErrorType);
         }
 
         [TestMethod]
         public async Task PostAgentSettle_fail_without_errorText_returns_400()
         {
-            var (impl, store, _, manager, _) = BuildAgent();
+            var (impl, store, _, handoffs, _) = BuildAgent();
             await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
 
             var result = await impl.PostAgentSettleAsync(
                 SettleRequest("evt-1", AgentSettleRequestOutcome.Fail, errorText: null));
 
             Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult), "Missing errorText must yield 400");
-            Assert.AreEqual(0, manager.FailCount, "FailHandoff must NOT be called without errorText");
+            Assert.AreEqual(0, handoffs.FailCount, "FailHandoff must NOT be called without errorText");
         }
 
         [TestMethod]
         public async Task PostAgentSettle_event_not_found_returns_404()
         {
-            var (impl, _, _, manager, _) = BuildAgent();
+            var (impl, _, _, handoffs, _) = BuildAgent();
 
             var result = await impl.PostAgentSettleAsync(
                 SettleRequest("missing-evt", AgentSettleRequestOutcome.Complete));
 
             Assert.IsInstanceOfType(result, typeof(NotFoundObjectResult), "Unknown event must yield 404");
-            Assert.AreEqual(0, manager.CompleteCount);
+            Assert.AreEqual(0, handoffs.CompleteCount);
         }
 
         [TestMethod]
         public async Task PostAgentSettle_event_not_pending_handoff_returns_400()
         {
-            var (impl, store, _, manager, _) = BuildAgent();
+            var (impl, store, _, handoffs, _) = BuildAgent();
             // Completed (not a pending handoff) event under the zone.
             await store.UploadCompletedMessage("evt-1", "sess-1", ZoneId, new UnresolvedEvent
             {
@@ -653,7 +661,7 @@ namespace NimBus.WebApp.Tests
                 SettleRequest("evt-1", AgentSettleRequestOutcome.Complete));
 
             Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult), "Non-pending-handoff event must yield 400");
-            Assert.AreEqual(0, manager.CompleteCount);
+            Assert.AreEqual(0, handoffs.CompleteCount);
         }
 
         // ── PostAgentSettleAsync — audit trail (finding 6) ───────────────────
@@ -670,14 +678,14 @@ namespace NimBus.WebApp.Tests
         [TestMethod]
         public async Task PostAgentSettle_complete_writes_audit_row_attributed_to_agent()
         {
-            var (impl, store, _, manager, _) = BuildAgent(AgentContext("agent-alice"));
+            var (impl, store, _, handoffs, _) = BuildAgent(AgentContext("agent-alice"));
             await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}", messageId: "msg-99");
 
             var result = await impl.PostAgentSettleAsync(
                 SettleRequest("evt-1", AgentSettleRequestOutcome.Complete, result: "{\"importedId\":42}"));
 
             Assert.IsInstanceOfType(result, typeof(OkResult), "Complete settle must yield 200");
-            Assert.AreEqual(1, manager.CompleteCount, "CompleteHandoff must be called once");
+            Assert.AreEqual(1, handoffs.CompleteCount, "CompleteHandoff must be called once");
 
             var rows = (await store.GetMessageAudits("evt-1")).ToList();
             Assert.AreEqual(1, rows.Count, "An agent-settled complete must write exactly one audit row (ADR-002)");
@@ -689,14 +697,14 @@ namespace NimBus.WebApp.Tests
         [TestMethod]
         public async Task PostAgentSettle_fail_writes_audit_row_attributed_to_agent()
         {
-            var (impl, store, _, manager, _) = BuildAgent(AgentContext("agent-bob"));
+            var (impl, store, _, handoffs, _) = BuildAgent(AgentContext("agent-bob"));
             await SeedPendingHandoff(store, "evt-1", "sess-1", "crm.lead.v1", "{}");
 
             var result = await impl.PostAgentSettleAsync(
                 SettleRequest("evt-1", AgentSettleRequestOutcome.Fail, errorText: "boom", errorType: "RuntimeError"));
 
             Assert.IsInstanceOfType(result, typeof(OkResult), "Fail settle must yield 200");
-            Assert.AreEqual(1, manager.FailCount, "FailHandoff must be called once");
+            Assert.AreEqual(1, handoffs.FailCount, "FailHandoff must be called once");
 
             var rows = (await store.GetMessageAudits("evt-1")).ToList();
             Assert.AreEqual(1, rows.Count, "An agent-settled fail must write exactly one audit row (ADR-002)");
@@ -708,13 +716,13 @@ namespace NimBus.WebApp.Tests
         [TestMethod]
         public async Task PostAgentSettle_event_not_found_writes_no_audit_row()
         {
-            var (impl, store, _, manager, _) = BuildAgent();
+            var (impl, store, _, handoffs, _) = BuildAgent();
 
             var result = await impl.PostAgentSettleAsync(
                 SettleRequest("missing-evt", AgentSettleRequestOutcome.Complete));
 
             Assert.IsInstanceOfType(result, typeof(NotFoundObjectResult), "Unknown event must yield 404");
-            Assert.AreEqual(0, manager.CompleteCount, "Nothing must settle for an unknown event");
+            Assert.AreEqual(0, handoffs.CompleteCount, "Nothing must settle for an unknown event");
             var audits = await store.GetMessageAudits("missing-evt");
             Assert.IsTrue(audits == null || !audits.Any(), "A 404 settle must not write an audit row");
         }
@@ -724,9 +732,9 @@ namespace NimBus.WebApp.Tests
         {
             var store = new ThrowingGetEventStore();
             var audit = new AuditLogService(NullLogger<AuditLogService>.Instance, store);
-            var manager = new CapturingManagerClient();
+            var handoffs = new CapturingHandoffClientFactory();
             var impl = new AgentImplementation(
-                store, new FakePlatform(), new CapturingPublisher(), store, manager,
+                store, new FakePlatform(), new CapturingPublisher(), store, handoffs,
                 new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance),
                 new AgentSubscriptionRegistry(), config: null, httpContextAccessor: null,
                 NullLogger<AgentImplementation>.Instance);
@@ -734,7 +742,7 @@ namespace NimBus.WebApp.Tests
             await Assert.ThrowsExactlyAsync<InvalidOperationException>(
                 () => impl.PostAgentSettleAsync(SettleRequest("evt-1", AgentSettleRequestOutcome.Complete)),
                 "A transient store fault must surface (500), not be swallowed into a 404");
-            Assert.AreEqual(0, manager.CompleteCount, "Nothing must settle on a transient fault");
+            Assert.AreEqual(0, handoffs.CompleteCount, "Nothing must settle on a transient fault");
         }
 
         [TestMethod]

@@ -42,6 +42,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
         private readonly ILogger<EventImplementation> logger;
         private readonly INimBusMessageStore cosmosClient;
         private readonly IManagerClient managerClient;
+        private readonly IHandoffClientFactory handoffClients;
         private readonly IApplicationInsightsService applicationInsightsService;
         private readonly IEndpointAuthorizationService authorizationService;
         private readonly IAdminService adminService;
@@ -54,6 +55,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             IApplicationInsightsService applicationInsightsService,
             IPlatform platform,
             IManagerClient managerClient,
+            IHandoffClientFactory handoffClientFactory,
             ILogger<EventImplementation> logger,
             INimBusMessageStore cosmosClient,
             IEndpointAuthorizationService authorizationService,
@@ -67,6 +69,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             this.logger = logger;
             this.cosmosClient = cosmosClient;
             this.managerClient = managerClient;
+            this.handoffClients = handoffClientFactory;
             this.applicationInsightsService = applicationInsightsService;
             this.authorizationService = authorizationService;
             this.adminService = adminService;
@@ -282,12 +285,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                     var detailsJson = string.IsNullOrWhiteSpace(body?.Note)
                         ? null
                         : JsonConvert.SerializeObject(new { note = body.Note, completedBy = operatorName });
-#pragma warning disable CS0618 // Manager-side settlement: the WebApp *is* the Manager. The
-                    // [Obsolete] hint steers adapters toward IHandoffClient (endpoint-bound,
-                    // registered per endpoint); the manager path takes the endpoint as a
-                    // parameter and reuses the ServiceBusClient this controller already holds.
-                    return managerClient.CompleteHandoff(pendingEntry, endpointId, detailsJson);
-#pragma warning restore CS0618
+                    return handoffClients.ForEndpoint(endpointId).CompleteAsync(pendingEntry.ToSettlement(), detailsJson);
                 });
 
         public Task<IActionResult> PostHandoffFailAsync(FailHandoffRequest body, string endpointId, string eventId, string messageId)
@@ -300,11 +298,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 MessageAuditType.FailHandoff,
                 body.Reason,
                 (pendingEntry, _) =>
-                {
-#pragma warning disable CS0618 // See PostHandoffCompleteAsync — manager-side settlement.
-                    return managerClient.FailHandoff(pendingEntry, endpointId, body.Reason, body.ErrorType);
-#pragma warning restore CS0618
-                });
+                    handoffClients.ForEndpoint(endpointId).FailAsync(pendingEntry.ToSettlement(), body.Reason, body.ErrorType));
         }
 
         public async Task<IActionResult> PostReportEventAsync(ReportEventRequest body, string endpointId, string eventId)

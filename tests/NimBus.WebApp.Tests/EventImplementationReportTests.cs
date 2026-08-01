@@ -106,6 +106,7 @@ public sealed class EventImplementationReportTests
             applicationInsightsService: null!,
             new FakePlatform(new[] { CanonicalEndpointId }),
             managerClient: null!,
+            handoffClientFactory: null!,
             NullLogger<EventImplementation>.Instance,
             store,
             new AllowAllAuthorizationService(),

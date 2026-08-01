@@ -7,7 +7,6 @@ using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
-using NimBus.Manager;
 using NimBus.MessageStore;
 using NimBus.WebApp.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -21,12 +20,10 @@ namespace NimBus.WebApp.Controllers
     public class EndpointsController : Controller
     {
         private readonly IPlatform platform;
-        private readonly IManagerClient managerClient;
         private readonly IConfiguration configuration;
-        public EndpointsController(IPlatform platform, IManagerClient managerClient, IConfiguration configuration)
+        public EndpointsController(IPlatform platform, IConfiguration configuration)
         {
             this.platform = platform;
-            this.managerClient = managerClient;
             this.configuration = configuration;
         }
 

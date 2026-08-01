@@ -24,6 +24,7 @@ using NimBus.Core.Messages;
 using NimBus.OpenTelemetry;
 using NimBus.Manager;
 using NimBus.MessageStore;
+using NimBus.SDK.Extensions;
 using NimBus.ServiceBus;
 using NimBus.WebApp.Services;
 using NimBus.WebApp.ManagementApi;
@@ -394,6 +395,10 @@ namespace NimBus.WebApp
             });
 
             services.AddSingleton<IManagerClient, ManagerClient>();
+
+            // Handoff settlement clients for endpoints resolved at runtime (route
+            // params / agent zones) — see EventImplementation / AgentImplementation.
+            services.AddNimBusHandoffClientFactory();
 
             services.AddSingleton<ICodeRepoService>(sp => new CodeRepoService(Configuration["RepositoryUrl"]));
 

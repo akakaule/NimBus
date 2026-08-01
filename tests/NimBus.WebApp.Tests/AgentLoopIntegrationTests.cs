@@ -11,7 +11,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
-using NimBus.Manager;
+using NimBus.SDK;
 using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.ManagementApi;
@@ -84,33 +84,44 @@ namespace NimBus.WebApp.Tests
             }
         }
 
-        private sealed class CapturingManagerClient : IManagerClient
+        private sealed class CapturingHandoffClientFactory : IHandoffClientFactory
         {
-            public MessageEntity? CompletedEntry { get; private set; }
+            public HandoffSettlement? CompletedCoords { get; private set; }
             public string? CompletedEndpoint { get; private set; }
             public int CompleteCount { get; private set; }
 
-            public MessageEntity? FailedEntry { get; private set; }
+            public HandoffSettlement? FailedCoords { get; private set; }
             public string? FailedEndpoint { get; private set; }
             public int FailCount { get; private set; }
 
-            public Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson)
-                => throw new NotImplementedException();
-            public Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId)
-                => throw new NotImplementedException();
-            public Task CompleteHandoff(MessageEntity pendingEntry, string endpoint, string? detailsJson = null)
+            public IHandoffClient ForEndpoint(string endpointId) => new Client(this, endpointId);
+
+            private sealed class Client : IHandoffClient
             {
-                CompletedEntry = pendingEntry;
-                CompletedEndpoint = endpoint;
-                CompleteCount++;
-                return Task.CompletedTask;
-            }
-            public Task FailHandoff(MessageEntity pendingEntry, string endpoint, string errorText, string? errorType = null)
-            {
-                FailedEntry = pendingEntry;
-                FailedEndpoint = endpoint;
-                FailCount++;
-                return Task.CompletedTask;
+                private readonly CapturingHandoffClientFactory _owner;
+                private readonly string _endpoint;
+
+                public Client(CapturingHandoffClientFactory owner, string endpoint)
+                {
+                    _owner = owner;
+                    _endpoint = endpoint;
+                }
+
+                public Task CompleteAsync(HandoffSettlement coords, object? result = null, CancellationToken cancellationToken = default)
+                {
+                    _owner.CompletedCoords = coords;
+                    _owner.CompletedEndpoint = _endpoint;
+                    _owner.CompleteCount++;
+                    return Task.CompletedTask;
+                }
+
+                public Task FailAsync(HandoffSettlement coords, string errorText, string? errorType = null, CancellationToken cancellationToken = default)
+                {
+                    _owner.FailedCoords = coords;
+                    _owner.FailedEndpoint = _endpoint;
+                    _owner.FailCount++;
+                    return Task.CompletedTask;
+                }
             }
         }
 
@@ -123,14 +134,14 @@ namespace NimBus.WebApp.Tests
             AgentImplementation Impl,
             InMemoryMessageStore Store,
             CapturingPublisher Publisher,
-            CapturingManagerClient Manager,
+            CapturingHandoffClientFactory Handoffs,
             AgentSubscriptionRegistry Registry)
             BuildAgent(params string[] endpointIds)
         {
             var store = new InMemoryMessageStore();
             var platform = new FakePlatform(endpointIds);
             var publisher = new CapturingPublisher();
-            var manager = new CapturingManagerClient();
+            var handoffs = new CapturingHandoffClientFactory();
             var registry = new AgentSubscriptionRegistry();
             var audit = new AuditLogService(NullLogger<AuditLogService>.Instance, store);
             var settlement = new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance);
@@ -139,13 +150,13 @@ namespace NimBus.WebApp.Tests
                 platform,
                 publisher,
                 store,
-                manager,
+                handoffs,
                 settlement,
                 registry,
                 config: null,              // -> AgentZone.DefaultAgentZoneEndpointId
                 httpContextAccessor: null, // -> CurrentAgentId() falls back to "demo-agent"
                 NullLogger<AgentImplementation>.Instance);
-            return (impl, store, publisher, manager, registry);
+            return (impl, store, publisher, handoffs, registry);
         }
 
         // ── SeedPendingHandoff ───────────────────────────────────────────────────
@@ -187,7 +198,7 @@ namespace NimBus.WebApp.Tests
         [TestMethod]
         public async Task AgentLoop_Define_Publish_Receive_Settle_ComposesOnSharedState()
         {
-            var (impl, store, publisher, manager, _) = BuildAgent(ZoneId);
+            var (impl, store, publisher, handoffs, _) = BuildAgent(ZoneId);
 
             // ── Step 1: Define ────────────────────────────────────────────────────
             // Proves PostAgentEventTypes writes a schema into the shared store so that
@@ -297,13 +308,13 @@ namespace NimBus.WebApp.Tests
             });
             Assert.IsInstanceOfType(settleResult, typeof(OkResult),
                 "Step 4 (Settle): must return 200");
-            Assert.AreEqual(1, manager.CompleteCount,
+            Assert.AreEqual(1, handoffs.CompleteCount,
                 "Step 4: CompleteHandoff must be called exactly once");
-            Assert.AreEqual(0, manager.FailCount,
+            Assert.AreEqual(0, handoffs.FailCount,
                 "Step 4: FailHandoff must NOT be called on a complete settle");
-            Assert.AreEqual(eventId, manager.CompletedEntry?.EventId,
+            Assert.AreEqual(eventId, handoffs.CompletedCoords?.EventId,
                 "Step 4: CompletedEntry.EventId must be the seeded event id");
-            Assert.AreEqual(ZoneId, manager.CompletedEndpoint,
+            Assert.AreEqual(ZoneId, handoffs.CompletedEndpoint,
                 "Step 4: settled endpoint must be the Agent Zone endpoint id");
         }
 

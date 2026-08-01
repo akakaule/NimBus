@@ -9,10 +9,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 using NimBus.Core;
-using NimBus.Manager;
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
+using NimBus.SDK;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
 // Aliased to disambiguate from the NSwag-generated NimBus.WebApp.ManagementApi.* types.
@@ -36,7 +36,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
         private readonly IPlatform _platform;
         private readonly IAgentEventPublisher _publisher;
         private readonly INimBusMessageStore _store;
-        private readonly IManagerClient _managerClient;
+        private readonly IHandoffClientFactory _handoffClients;
         private readonly IHandoffSettlementService _settlement;
         private readonly IAgentSubscriptionRegistry _subscriptions;
         private readonly IConfiguration _config;
@@ -48,7 +48,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             IPlatform platform,
             IAgentEventPublisher publisher,
             INimBusMessageStore store,
-            IManagerClient managerClient,
+            IHandoffClientFactory handoffClients,
             IHandoffSettlementService settlement,
             IAgentSubscriptionRegistry subscriptions,
             IConfiguration config,
@@ -59,7 +59,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             _platform = platform;
             _publisher = publisher;
             _store = store;
-            _managerClient = managerClient;
+            _handoffClients = handoffClients;
             _settlement = settlement;
             _subscriptions = subscriptions;
             _config = config;
@@ -324,14 +324,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                     zoneId, coords.EventId, coords.MessageId,
                     MessageAuditType.CompleteHandoff, body.Result, auditor, httpContext,
                     (pendingEntry, _) =>
-                    {
-#pragma warning disable CS0618 // Manager-side settlement: the WebApp *is* the Manager. The
-                        // [Obsolete] hint steers adapters toward IHandoffClient; the manager path
-                        // takes the endpoint as a parameter and reuses the ServiceBusClient registered
-                        // in DI (mirrors EventImplementation.PostHandoffCompleteAsync).
-                        return _managerClient.CompleteHandoff(pendingEntry, zoneId, body.Result);
-#pragma warning restore CS0618
-                    });
+                        _handoffClients.ForEndpoint(zoneId).CompleteAsync(pendingEntry.ToSettlement(), body.Result));
             }
 
             // Fail outcome. Validate the reason up front (400) — mirrors the operator path's
@@ -343,11 +336,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 zoneId, coords.EventId, coords.MessageId,
                 MessageAuditType.FailHandoff, body.ErrorText, auditor, httpContext,
                 (pendingEntry, _) =>
-                {
-#pragma warning disable CS0618 // See above — manager-side settlement.
-                    return _managerClient.FailHandoff(pendingEntry, zoneId, body.ErrorText, body.ErrorType);
-#pragma warning restore CS0618
-                });
+                    _handoffClients.ForEndpoint(zoneId).FailAsync(pendingEntry.ToSettlement(), body.ErrorText, body.ErrorType));
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────

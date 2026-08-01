@@ -13,8 +13,11 @@ namespace NimBus.SDK;
 /// <para>Replaces the <c>MessageEntity</c> bag-of-fields the original
 /// <c>IManagerClient.CompleteHandoff(MessageEntity, …)</c> API required —
 /// same six values, named for what they are rather than carried inside a
-/// row-shaped DTO. None are optional; every one is necessary to address the
-/// settlement message back to the right audit row.</para>
+/// row-shaped DTO. <c>EventId</c>, <c>SessionId</c> and <c>MessageId</c> are
+/// required (they address the pending row and route the control message into
+/// its session); the lineage fields (<c>CorrelationId</c>,
+/// <c>OriginatingMessageId</c>, <c>EventTypeId</c>) may be null on legacy
+/// rows — the wire falls back <c>OriginatingMessageId ?? MessageId</c>.</para>
 /// </summary>
 public sealed record HandoffSettlement(
     string EventId,

@@ -102,33 +102,46 @@ public class HandoffClientRegistrationTests
     }
 
     [TestMethod]
-    public async Task CompleteAsync_with_missing_correlation_id_throws()
+    public async Task CompleteAsync_with_missing_lineage_fields_sends_with_wire_fallbacks()
     {
-        var client = new HandoffClient(new RecordingSender(), new HandoffClientOptions { Endpoint = "Endpoint" });
+        // Lineage fields (CorrelationId, OriginatingMessageId, EventTypeId) may
+        // legitimately be null on legacy store rows — the Manager path always
+        // passed them through, and HandoffControlMessageFactory falls back
+        // OriginatingMessageId ?? ParentMessageId on the wire. The SDK boundary
+        // must accept them so settlement of old rows keeps working.
+        var recorder = new RecordingSender();
+        var client = new HandoffClient(recorder, new HandoffClientOptions { Endpoint = "Endpoint" });
         var coords = new HandoffSettlement(
             EventId: "evt-1",
             SessionId: "sess-1",
             MessageId: "msg-1",
-            EventTypeId: "OrderPlaced",
-            CorrelationId: null!,   // intentionally weakened lineage
-            OriginatingMessageId: "origin-1");
+            EventTypeId: null!,
+            CorrelationId: null!,
+            OriginatingMessageId: null!);
 
-        await Assert.ThrowsExactlyAsync<ArgumentException>(() => client.CompleteAsync(coords));
+        await client.CompleteAsync(coords);
+
+        Assert.AreEqual(1, recorder.Sent.Count);
+        var sent = (Message)recorder.Sent[0];
+        Assert.AreEqual("msg-1", sent.OriginatingMessageId,
+            "Wire OriginatingMessageId must fall back to the settlement MessageId (ParentMessageId).");
+        Assert.IsNull(sent.CorrelationId);
     }
 
     [TestMethod]
-    public async Task CompleteAsync_with_missing_originating_message_id_throws()
+    public async Task CompleteAsync_with_missing_required_coords_throws()
     {
+        // EventId/SessionId/MessageId are what the wire genuinely needs
+        // (session routing + pending-row identity) — these stay strict.
         var client = new HandoffClient(new RecordingSender(), new HandoffClientOptions { Endpoint = "Endpoint" });
-        var coords = new HandoffSettlement(
-            EventId: "evt-1",
-            SessionId: "sess-1",
-            MessageId: "msg-1",
-            EventTypeId: "OrderPlaced",
-            CorrelationId: "corr-1",
-            OriginatingMessageId: null!);
 
-        await Assert.ThrowsExactlyAsync<ArgumentException>(() => client.CompleteAsync(coords));
+        HandoffSettlement Coords(string eventId = "evt-1", string sessionId = "sess-1", string messageId = "msg-1") =>
+            new(EventId: eventId, SessionId: sessionId, MessageId: messageId,
+                EventTypeId: "OrderPlaced", CorrelationId: "corr-1", OriginatingMessageId: "origin-1");
+
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => client.CompleteAsync(Coords(eventId: null!)));
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => client.CompleteAsync(Coords(sessionId: null!)));
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => client.CompleteAsync(Coords(messageId: null!)));
     }
 
     /// <summary>

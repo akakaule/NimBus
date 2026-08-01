@@ -84,21 +84,19 @@ public sealed class HandoffClient : IHandoffClient
 
     private static void ValidateCoords(HandoffSettlement coords)
     {
-        // Every field on HandoffSettlement is part of the audit-row lineage —
-        // the resulting Failed / Completed row carries each one verbatim, so
-        // accepting null/empty silently would weaken the trace (e.g. an empty
-        // CorrelationId severs the chain operators use to reconstruct a flow).
-        // The sample's HandoffJob → coords mapping already supplies fallbacks
-        // (CorrelationId ?? MessageId, OriginatingMessageId ?? MessageId), so
-        // strict validation at the SDK boundary is safe and forces missing
-        // lineage to be made explicit at the call site.
+        // Only the fields the wire genuinely requires are strict: EventId and
+        // MessageId identify the pending row being settled, and SessionId is
+        // required for Service Bus to route the control message into the same
+        // session so the subscriber's FIFO replay holds. The lineage fields
+        // (CorrelationId, OriginatingMessageId, EventTypeId) may be null on
+        // legacy store rows — the Manager settlement path always passed them
+        // through, and HandoffControlMessageFactory falls back
+        // OriginatingMessageId ?? ParentMessageId on the wire — so rejecting
+        // them here would make old pending rows permanently unsettleable.
         if (coords is null) throw new ArgumentNullException(nameof(coords));
         if (string.IsNullOrEmpty(coords.EventId)) throw new ArgumentException("EventId must be supplied.", nameof(coords));
         if (string.IsNullOrEmpty(coords.SessionId)) throw new ArgumentException("SessionId must be supplied.", nameof(coords));
         if (string.IsNullOrEmpty(coords.MessageId)) throw new ArgumentException("MessageId must be supplied.", nameof(coords));
-        if (string.IsNullOrEmpty(coords.EventTypeId)) throw new ArgumentException("EventTypeId must be supplied.", nameof(coords));
-        if (string.IsNullOrEmpty(coords.CorrelationId)) throw new ArgumentException("CorrelationId must be supplied.", nameof(coords));
-        if (string.IsNullOrEmpty(coords.OriginatingMessageId)) throw new ArgumentException("OriginatingMessageId must be supplied.", nameof(coords));
     }
 
     // Strings pass through verbatim so adapters that already hand-roll JSON

@@ -1,4 +1,4 @@
-﻿using Serilog;
+using Microsoft.Extensions.Logging;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
@@ -44,16 +44,31 @@ namespace NimBus.Broker.Services
             [MessageType.UnsupportedResponse] = ResolutionStatus.Unsupported,
         };
 
-        public ResolverService(IMessageTrackingStore store, IMessageStateChangeNotifier notifier = null, ILogger logger = null)
+        public ResolverService(IMessageTrackingStore store, IMessageStateChangeNotifier notifier = null, ILogger<ResolverService> logger = null)
         {
             _store = store;
             _notifier = notifier ?? new NoopMessageStateChangeNotifier();
             _logger = logger;
         }
 
+        /// <summary>
+        /// Serilog bridge constructor. NimBus standardizes on
+        /// Microsoft.Extensions.Logging (ADR-006); this overload remains for
+        /// callers that still pass a Serilog logger. All parameters are
+        /// deliberately required so shorter argument lists resolve
+        /// unambiguously to the MEL constructor.
+        /// </summary>
+        [Obsolete("Use the Microsoft.Extensions.Logging constructor — NimBus standardizes on Microsoft.Extensions.Logging (ADR-006). This bridge remains for callers that still pass a Serilog logger.")]
+        public ResolverService(IMessageTrackingStore store, IMessageStateChangeNotifier notifier, Serilog.ILogger logger)
+        {
+            _store = store;
+            _notifier = notifier ?? new NoopMessageStateChangeNotifier();
+            _logger = logger is null ? null : new SerilogBridgeLogger(logger);
+        }
+
         public async Task Handle(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
-            _logger?.Verbose("Resolver: Handle {EventTypeId} EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
+            _logger?.LogTrace("Resolver: Handle {EventTypeId} EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
                 messageContext.MessageContent.EventContent?.EventTypeId, messageContext.EventId, messageContext.MessageId, messageContext.SessionId);
 
             // The consumer span is owned by the transport boundary
@@ -72,7 +87,7 @@ namespace NimBus.Broker.Services
 
                 var status = await UpdateState(messageEntity);
 
-                _logger?.Information("Resolver: Updated Endpoint EndpointId:{EndpointId}, Status:{Status}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
+                _logger?.LogInformation("Resolver: Updated Endpoint EndpointId:{EndpointId}, Status:{Status}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
                     messageEntity.EndpointId, status, messageEntity.EventId, messageContext.MessageId, messageEntity.SessionId);
 
                 // Fire state-change notification (provider-neutral). Webhook is no longer
@@ -80,7 +95,7 @@ namespace NimBus.Broker.Services
                 // storage provider including SQL Server which has no Change Feed.
                 try { await _notifier.NotifyEndpointStateChangedAsync(messageEntity.EndpointId, cancellationToken); }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-                catch (Exception notifyEx) { _logger?.Warning(notifyEx, "Resolver: state-change notification failed (non-fatal)"); }
+                catch (Exception notifyEx) { _logger?.LogWarning(notifyEx, "Resolver: state-change notification failed (non-fatal)"); }
 
                 await messageContext.Complete(cancellationToken);
             }
@@ -96,12 +111,12 @@ namespace NimBus.Broker.Services
             }
             catch (TransientException transientException)
             {
-                _logger?.Error(transientException, "Resolver: Transient exception EventId:{EventId}", messageContext.EventId);
+                _logger?.LogError(transientException, "Resolver: Transient exception EventId:{EventId}", messageContext.EventId);
                 await messageContext.Abandon(transientException);
             }
             catch (Exception unexpectedException)
             {
-                _logger?.Error(unexpectedException, "Resolver: Failed to handle message, add to DeadLetter. EventId:{EventId}", messageContext.EventId);
+                _logger?.LogError(unexpectedException, "Resolver: Failed to handle message, add to DeadLetter. EventId:{EventId}", messageContext.EventId);
                 await messageContext.DeadLetter("Failed to handle message.", unexpectedException, cancellationToken);
             }
         }
@@ -112,7 +127,7 @@ namespace NimBus.Broker.Services
 
             if (retryCount >= MaxThrottleRetries)
             {
-                _logger?.Error("Resolver: Max throttle retries ({MaxRetries}) exceeded. DeadLettering. EventId:{EventId}, SessionId:{SessionId}",
+                _logger?.LogError("Resolver: Max throttle retries ({MaxRetries}) exceeded. DeadLettering. EventId:{EventId}, SessionId:{SessionId}",
                     MaxThrottleRetries, messageContext.EventId, messageContext.SessionId);
                 await messageContext.DeadLetter("Max throttle retries exceeded", null, cancellationToken);
                 return;
@@ -128,14 +143,14 @@ namespace NimBus.Broker.Services
             var useProviderRetryAfter = retryAfter.HasValue && providerRetryAfter > calculatedDelay;
             var delay = useProviderRetryAfter ? providerRetryAfter : calculatedDelay;
 
-            _logger?.Verbose(
+            _logger?.LogTrace(
                 "Resolver: Transient storage delay decision - using {DelaySource}. ProviderRetryAfter:{ProviderRetryAfter}s, CalculatedBackoff:{CalculatedBackoff}s, EventId:{EventId}",
                 useProviderRetryAfter ? "ProviderRetryAfter" : "CalculatedBackoff",
                 retryAfter?.TotalSeconds,
                 calculatedDelay.TotalSeconds,
                 messageContext.EventId);
 
-            _logger?.Information(
+            _logger?.LogInformation(
                 "Resolver: Storage provider temporarily unavailable. Scheduling redelivery in {DelaySeconds}s. EventId:{EventId}, SessionId:{SessionId}, RetryCount:{RetryCount}/{MaxRetries}",
                 delay.TotalSeconds, messageContext.EventId, messageContext.SessionId, retryCount + 1, MaxThrottleRetries);
 
@@ -145,7 +160,7 @@ namespace NimBus.Broker.Services
             }
             catch (TransientException ex)
             {
-                _logger?.Information(ex, "Resolver: Failed to schedule redelivery. Abandoning for retry. EventId:{EventId}, SessionId:{SessionId}",
+                _logger?.LogInformation(ex, "Resolver: Failed to schedule redelivery. Abandoning for retry. EventId:{EventId}, SessionId:{SessionId}",
                     messageContext.EventId, messageContext.SessionId);
                 await messageContext.Abandon(ex);
             }
@@ -462,6 +477,34 @@ namespace NimBus.Broker.Services
             }
 
             throw new ArgumentException($"Unexpected {nameof(MessageType)}", nameof(message.MessageType));
+        }
+
+        /// <summary>
+        /// Forwards Microsoft.Extensions.Logging calls to a caller-supplied Serilog
+        /// logger. Only used by the obsolete bridge constructor.
+        /// </summary>
+        private sealed class SerilogBridgeLogger : ILogger
+        {
+            private readonly Serilog.ILogger _serilog;
+
+            public SerilogBridgeLogger(Serilog.ILogger serilog) => _serilog = serilog;
+
+            public IDisposable BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => _serilog.IsEnabled(ToSerilogLevel(logLevel));
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+                => _serilog.Write(ToSerilogLevel(logLevel), exception, "{Message}", formatter(state, exception));
+
+            private static Serilog.Events.LogEventLevel ToSerilogLevel(LogLevel level) => level switch
+            {
+                LogLevel.Trace => Serilog.Events.LogEventLevel.Verbose,
+                LogLevel.Debug => Serilog.Events.LogEventLevel.Debug,
+                LogLevel.Information => Serilog.Events.LogEventLevel.Information,
+                LogLevel.Warning => Serilog.Events.LogEventLevel.Warning,
+                LogLevel.Error => Serilog.Events.LogEventLevel.Error,
+                _ => Serilog.Events.LogEventLevel.Fatal,
+            };
         }
     }
 }

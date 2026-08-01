@@ -9,7 +9,6 @@ using NimBus.ServiceBus;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Serilog;
 
 namespace NimBus.Resolver
 {
@@ -22,9 +21,14 @@ namespace NimBus.Resolver
         /// </summary>
         public static IServiceCollection AddResolver(this IServiceCollection services)
         {
-            services.AddSingleton<Serilog.ILogger>(Log.Logger);
-
-            services.AddSingleton<IMessageHandler, ResolverService>();
+            // Explicit factory so constructor selection never becomes ambiguous
+            // between ResolverService's MEL constructor and its obsolete Serilog
+            // bridge. Serilog itself stays a host concern (Program.cs AddSerilog
+            // registers it as an MEL provider, per ADR-006).
+            services.AddSingleton<IMessageHandler>(sp => new ResolverService(
+                sp.GetRequiredService<IMessageTrackingStore>(),
+                sp.GetRequiredService<IMessageStateChangeNotifier>(),
+                sp.GetService<ILogger<ResolverService>>()));
             services.AddFlowStateChangeNotifier();
 
             services.AddSingleton(sp =>

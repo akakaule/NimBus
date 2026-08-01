@@ -488,6 +488,22 @@ namespace NimBus.SDK.Extensions
             return services;
         }
 
+        /// <summary>
+        /// Registers <see cref="IHandoffClientFactory"/> for processes that settle
+        /// handoffs on endpoints resolved at runtime (route parameters, agent
+        /// zones) rather than known at registration time. Requires a
+        /// <see cref="ServiceBusClient"/> in the container. Idempotent.
+        /// </summary>
+        /// <param name="services">The service collection.</param>
+        /// <returns>The service collection for chaining.</returns>
+        public static IServiceCollection AddNimBusHandoffClientFactory(this IServiceCollection services)
+        {
+            services.TryAddSingleton<IHandoffClientFactory>(sp => new HandoffClientFactory(
+                sp.GetRequiredService<ServiceBusClient>(),
+                sp.GetService<ILoggerFactory>()));
+            return services;
+        }
+
         // Shared registration helper called by both AddNimBusHandoffClient (the
         // explicit settle-only entry point) and AddNimBusSubscriber (the implicit
         // "subscriber process can settle its own handoffs" path).

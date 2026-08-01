@@ -130,6 +130,29 @@ public sealed class EventImplementationPlainResubmitTests
         Assert.AreEqual("{\"v\":1}", manager.EventJson);
     }
 
+    [TestMethod]
+    public async Task Resubmit_self_originating_terminal_targets_To_case_insensitively()
+    {
+        // The wire default is Constants.Self = "self", but the platform compares
+        // case-insensitively everywhere (ResponseService, PublisherClient). The
+        // WebApp historically used a case-SENSITIVE check here — "Self" must
+        // route to the terminal's To endpoint, not fall through to From.
+        var store = new InMemoryMessageStore();
+        await store.StoreMessage(Entity(
+            TerminalMessageId, MessageType.ErrorResponse, "2026-06-01T10:00:05Z",
+            eventJson: "{\"orig\":1}", eventTypeId: "Demo.Type",
+            from: "PublisherEp", to: "SubscriberEp", originatingMessageId: "Self"));
+
+        var manager = new CapturingManagerClient();
+        var sut = CreateSut(store, manager);
+
+        var result = await sut.PostResubmitEventIdsAsync(EventId, TerminalMessageId);
+
+        Assert.IsInstanceOfType(result, typeof(OkResult));
+        Assert.AreEqual("SubscriberEp", manager.Endpoint,
+            "A self-originating terminal must target its To endpoint regardless of casing");
+    }
+
     private static MessageEntity Entity(
         string messageId,
         MessageType type,

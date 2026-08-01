@@ -38,4 +38,22 @@ public class BlockedEventRulesTests
         // The Cosmos provider historically NRE'd here; the shared rule must be null-safe.
         Assert.AreEqual(string.Empty, BlockedEventRules.ResolveOriginatingId(null, "msg-42"));
     }
+
+    [TestMethod]
+    [DataRow("self")]
+    [DataRow("Self")]
+    [DataRow("SELF")]
+    public void IsSelfOriginating_SelfAnyCase_True(string value)
+    {
+        Assert.IsTrue(BlockedEventRules.IsSelfOriginating(value));
+    }
+
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow("")]
+    [DataRow("origin-1")]
+    public void IsSelfOriginating_NullEmptyOrOther_False(string? value)
+    {
+        Assert.IsFalse(BlockedEventRules.IsSelfOriginating(value));
+    }
 }

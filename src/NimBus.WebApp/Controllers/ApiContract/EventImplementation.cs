@@ -1,4 +1,4 @@
-﻿using Azure.Messaging.ServiceBus;
+using Azure.Messaging.ServiceBus;
 using NimBus.Core;
 using NimBus.Manager;
 using NimBus.MessageStore;
@@ -200,7 +200,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                     : typeSource.MessageContent?.EventContent?.EventTypeId!;
             }
 
-            if (errorResponse.OriginatingMessageId.Equals("self", StringComparison.Ordinal))
+            if (BlockedEventRules.IsSelfOriginating(errorResponse.OriginatingMessageId))
             {
                 endpoint = errorResponse.To;
             }
@@ -249,7 +249,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 eventTypeId = origMessage.EventTypeId;
             }
 
-            if (errorResponse.OriginatingMessageId.Equals("self", StringComparison.Ordinal))
+            if (BlockedEventRules.IsSelfOriginating(errorResponse.OriginatingMessageId))
             {
                 endpoint = errorResponse.To;
             }
@@ -660,7 +660,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             }
 
             // If error response message is a result of forwarding a deadlettered message.
-            if (errorResponse.OriginatingMessageId.Equals("self", StringComparison.Ordinal))
+            if (BlockedEventRules.IsSelfOriginating(errorResponse.OriginatingMessageId))
             {
                 endpoint = errorResponse.To;
             }

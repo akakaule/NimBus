@@ -6,6 +6,7 @@ using NimBus.OpenTelemetry;
 using NimBus.ServiceBus;
 using System;
 using System.Collections.Concurrent;
+using System.Threading;
 
 namespace NimBus.SDK;
 
@@ -38,7 +39,13 @@ public sealed class HandoffClientFactory : IHandoffClientFactory
 {
     private readonly ServiceBusClient _client;
     private readonly ILoggerFactory _loggerFactory;
-    private readonly ConcurrentDictionary<string, IHandoffClient> _clients = new(StringComparer.Ordinal);
+
+    // Lazy values so concurrent first use of an endpoint creates exactly one
+    // long-lived ServiceBusSender: GetOrAdd's value factory can run more than
+    // once under a race (only one result wins the cache, but every invocation
+    // would have created a sender). ExecutionAndPublication makes creation
+    // single-flight.
+    private readonly ConcurrentDictionary<string, Lazy<IHandoffClient>> _clients = new(StringComparer.Ordinal);
 
     public HandoffClientFactory(ServiceBusClient client, ILoggerFactory loggerFactory = null)
     {
@@ -51,14 +58,16 @@ public sealed class HandoffClientFactory : IHandoffClientFactory
         if (string.IsNullOrEmpty(endpointId))
             throw new ArgumentException("Endpoint must be specified.", nameof(endpointId));
 
-        return _clients.GetOrAdd(endpointId, endpoint =>
-        {
-            ISender sender = NimBusOpenTelemetryDecorators.InstrumentSender(
-                new Sender(_client.CreateSender(endpoint)), MessagingSystem.ServiceBus);
-            return new HandoffClient(
-                sender,
-                new HandoffClientOptions { Endpoint = endpoint },
-                _loggerFactory?.CreateLogger<HandoffClient>());
-        });
+        return _clients.GetOrAdd(endpointId, endpoint => new Lazy<IHandoffClient>(
+            () =>
+            {
+                ISender sender = NimBusOpenTelemetryDecorators.InstrumentSender(
+                    new Sender(_client.CreateSender(endpoint)), MessagingSystem.ServiceBus);
+                return new HandoffClient(
+                    sender,
+                    new HandoffClientOptions { Endpoint = endpoint },
+                    _loggerFactory?.CreateLogger<HandoffClient>());
+            },
+            LazyThreadSafetyMode.ExecutionAndPublication)).Value;
     }
 }

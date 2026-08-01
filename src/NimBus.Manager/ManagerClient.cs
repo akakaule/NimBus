@@ -1,10 +1,10 @@
 using Azure.Messaging.ServiceBus;
+using Microsoft.Extensions.Logging;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using NimBus.MessageStore;
 using NimBus.ServiceBus;
 using Newtonsoft.Json;
-using Serilog;
 using System;
 using System.Threading.Tasks;
 
@@ -57,15 +57,29 @@ public class ManagerClient : IManagerClient
     private readonly ServiceBusClient _serviceBusClient;
     private readonly ILogger _logger;
 
-    public ManagerClient(ServiceBusClient serviceBusClient, ILogger logger = null)
+    public ManagerClient(ServiceBusClient serviceBusClient, ILogger<ManagerClient> logger = null)
     {
         _serviceBusClient = serviceBusClient;
         _logger = logger;
     }
 
+    /// <summary>
+    /// Serilog bridge constructor. NimBus standardizes on
+    /// Microsoft.Extensions.Logging (ADR-006); this overload remains for
+    /// callers that still pass a Serilog logger. The logger parameter is
+    /// deliberately required so single-argument construction resolves
+    /// unambiguously to the MEL constructor.
+    /// </summary>
+    [Obsolete("Use the Microsoft.Extensions.Logging constructor — NimBus standardizes on Microsoft.Extensions.Logging (ADR-006). This bridge remains for callers that still pass a Serilog logger.")]
+    public ManagerClient(ServiceBusClient serviceBusClient, Serilog.ILogger logger)
+    {
+        _serviceBusClient = serviceBusClient;
+        _logger = logger is null ? null : new SerilogBridgeLogger(logger);
+    }
+
     public async Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson)
     {
-        _logger?.Verbose($"MANAGER RESUBMIT EVENT: EventId: {errorResponse.EventId} EventtypeId: {eventTypeId} EventJson: {eventJson} errorResponse: {errorResponse} ");
+        _logger?.LogTrace("MANAGER RESUBMIT EVENT: EventId: {EventId} EventTypeId: {EventTypeId}", errorResponse.EventId, eventTypeId);
         var message = new Message
         {
             CorrelationId = errorResponse.CorrelationId,
@@ -93,7 +107,7 @@ public class ManagerClient : IManagerClient
 
     public async Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId)
     {
-        _logger?.Verbose($"MANAGER SKIP EVENT: SessionId: {errorResponse.SessionId} EventId: {errorResponse.EventId} From: {errorResponse.To} ");
+        _logger?.LogTrace("MANAGER SKIP EVENT: SessionId: {SessionId} EventId: {EventId} From: {From}", errorResponse.SessionId, errorResponse.EventId, errorResponse.To);
         var message = new Message()
         {
             CorrelationId = errorResponse.MessageId,
@@ -118,7 +132,7 @@ public class ManagerClient : IManagerClient
         if (pendingEntry.PendingSubStatus != "Handoff")
             throw new InvalidOperationException($"CompleteHandoff requires PendingSubStatus='Handoff'; got '{pendingEntry.PendingSubStatus ?? "<null>"}' for EventId={pendingEntry.EventId}.");
 
-        _logger?.Verbose($"MANAGER COMPLETE HANDOFF: SessionId: {pendingEntry.SessionId} EventId: {pendingEntry.EventId} Endpoint: {endpoint} ");
+        _logger?.LogTrace("MANAGER COMPLETE HANDOFF: SessionId: {SessionId} EventId: {EventId} Endpoint: {Endpoint}", pendingEntry.SessionId, pendingEntry.EventId, endpoint);
 
         var message = HandoffControlMessageFactory.CreateCompleted(CoordsFor(pendingEntry, endpoint), detailsJson);
         await using var sender = _serviceBusClient.CreateSender(endpoint);
@@ -131,7 +145,7 @@ public class ManagerClient : IManagerClient
         if (pendingEntry.PendingSubStatus != "Handoff")
             throw new InvalidOperationException($"FailHandoff requires PendingSubStatus='Handoff'; got '{pendingEntry.PendingSubStatus ?? "<null>"}' for EventId={pendingEntry.EventId}.");
 
-        _logger?.Verbose($"MANAGER FAIL HANDOFF: SessionId: {pendingEntry.SessionId} EventId: {pendingEntry.EventId} Endpoint: {endpoint} ErrorType: {errorType} ");
+        _logger?.LogTrace("MANAGER FAIL HANDOFF: SessionId: {SessionId} EventId: {EventId} Endpoint: {Endpoint} ErrorType: {ErrorType}", pendingEntry.SessionId, pendingEntry.EventId, endpoint, errorType);
 
         var message = HandoffControlMessageFactory.CreateFailed(CoordsFor(pendingEntry, endpoint), errorText, errorType);
         await using var sender = _serviceBusClient.CreateSender(endpoint);
@@ -146,4 +160,32 @@ public class ManagerClient : IManagerClient
         ParentMessageId: entry.MessageId,
         OriginatingMessageId: entry.OriginatingMessageId,
         EventTypeId: entry.EventTypeId);
+
+    /// <summary>
+    /// Forwards Microsoft.Extensions.Logging calls to a caller-supplied Serilog
+    /// logger. Only used by the obsolete bridge constructor.
+    /// </summary>
+    private sealed class SerilogBridgeLogger : ILogger
+    {
+        private readonly Serilog.ILogger _serilog;
+
+        public SerilogBridgeLogger(Serilog.ILogger serilog) => _serilog = serilog;
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => _serilog.IsEnabled(ToSerilogLevel(logLevel));
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+            => _serilog.Write(ToSerilogLevel(logLevel), exception, "{Message}", formatter(state, exception));
+
+        private static Serilog.Events.LogEventLevel ToSerilogLevel(LogLevel level) => level switch
+        {
+            LogLevel.Trace => Serilog.Events.LogEventLevel.Verbose,
+            LogLevel.Debug => Serilog.Events.LogEventLevel.Debug,
+            LogLevel.Information => Serilog.Events.LogEventLevel.Information,
+            LogLevel.Warning => Serilog.Events.LogEventLevel.Warning,
+            LogLevel.Error => Serilog.Events.LogEventLevel.Error,
+            _ => Serilog.Events.LogEventLevel.Fatal,
+        };
+    }
 }

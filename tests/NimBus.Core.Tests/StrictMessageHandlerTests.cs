@@ -602,9 +602,12 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
-    public async Task HandleEventRequest_HandlerThrowsWithRetryDefinition_SendsRetryResponse()
+    public async Task HandleEventRequest_HandlerThrows_NoProvider_NoRetryResponse()
     {
-        // "AliceSaidHelloWithRetry" has RetryCount=1, RetryDelay=1
+        // With no IRetryPolicyProvider registered there is NO retry — the legacy
+        // RetryDefinitions fallback (hardcoded demo rules like
+        // "AliceSaidHelloWithRetry") is gone. Using that exact event type id
+        // proves the demo rule no longer fires.
         var ctx = CreateContext(messageType: MessageType.EventRequest, eventTypeId: "AliceSaidHelloWithRetry");
         ctx.RetryCount = 0;
         var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
@@ -613,8 +616,8 @@ public class StrictMessageHandlerTests
 
         await sut.Handle(ctx);
 
-        Assert.AreEqual(1, response.RetryCalls);
-        Assert.AreEqual(1, response.LastRetryDelayMinutes);
+        Assert.AreEqual(0, response.RetryCalls, "No provider means no retry — the demo-rule fallback must not fire");
+        Assert.AreEqual(1, response.ErrorCalls, "The failure must surface as an error response instead");
     }
 
     [TestMethod]
@@ -663,20 +666,6 @@ public class StrictMessageHandlerTests
 
         Assert.AreEqual(1, response.RetryCalls);
         Assert.AreEqual(2, response.LastRetryDelayMinutes);
-    }
-
-    [TestMethod]
-    public async Task HandleEventRequest_HandlerThrowsRetryCountExceeded_NoRetryResponse()
-    {
-        var ctx = CreateContext(messageType: MessageType.EventRequest, eventTypeId: "AliceSaidHelloWithRetry");
-        ctx.RetryCount = 1; // equals RetryCount limit
-        var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
-        var response = new FakeResponseService();
-        var sut = CreateHandler(handler, response);
-
-        await sut.Handle(ctx);
-
-        Assert.AreEqual(0, response.RetryCalls, "Should not retry when retry count is at the limit");
     }
 
     [TestMethod]

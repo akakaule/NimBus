@@ -706,28 +706,25 @@ namespace NimBus.Core.Messages
 
         private async Task CheckForRetry(IMessageContext messageContext, EventContextHandlerException exception, CancellationToken cancellationToken = default)
         {
+            // No registered IRetryPolicyProvider means no retry — the failure
+            // surfaces as an error response. (The legacy RetryDefinitions
+            // fallback with hardcoded demo rules was removed; configure retries
+            // via ConfigureRetryPolicies / a registered IRetryPolicyProvider.)
+            if (_retryPolicyProvider == null)
+            {
+                return;
+            }
+
             var eventTypeId = messageContext.EventTypeId;
             var exceptionText = $"{exception?.InnerException} {exception}";
             var retryCount = messageContext.RetryCount ?? 0;
 
-            if (_retryPolicyProvider != null)
+            var policy = _retryPolicyProvider.GetRetryPolicy(eventTypeId, exceptionText, messageContext.To);
+            if (policy != null && retryCount < policy.MaxRetries)
             {
-                var policy = _retryPolicyProvider.GetRetryPolicy(eventTypeId, exceptionText, messageContext.To);
-                if (policy != null && retryCount < policy.MaxRetries)
-                {
-                    var delay = policy.GetDelay(retryCount);
-                    await SendRetryResponse(messageContext, delay, cancellationToken);
-                }
-                return;
+                var delay = policy.GetDelay(retryCount);
+                await SendRetryResponse(messageContext, delay, cancellationToken);
             }
-
-#pragma warning disable CS0618
-            var retryDefinition = RetryDefinitions.GetRetryDefinition(eventTypeId, exceptionText, messageContext.To);
-            if (retryDefinition != null && messageContext.RetryCount != null && messageContext.RetryCount < retryDefinition.RetryCount)
-            {
-                await SendRetryResponse(messageContext, retryDefinition.RetryDelay, cancellationToken);
-            }
-#pragma warning restore CS0618
         }
 
         // HandoffFailedRequest carries errorText/errorType in

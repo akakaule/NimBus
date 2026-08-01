@@ -1,5 +1,6 @@
-﻿using NimBus.Core.Messages;
-using Serilog;
+using Microsoft.Extensions.Logging;
+using NimBus.Core.Messages;
+using System;
 using System.Threading.Tasks;
 
 namespace NimBus.Management.ServiceBus;
@@ -8,10 +9,24 @@ public class EndpointManagement
     private readonly IServiceBusManagement _serviceBusManagement;
     private readonly ILogger _logger;
 
-    public EndpointManagement(IServiceBusManagement serviceBusManagement, ILogger logger = null)
+    public EndpointManagement(IServiceBusManagement serviceBusManagement, ILogger<EndpointManagement> logger = null)
     {
         _serviceBusManagement = serviceBusManagement;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Serilog bridge constructor. NimBus standardizes on
+    /// Microsoft.Extensions.Logging (ADR-006); this overload remains for
+    /// callers that still pass a Serilog logger. The logger parameter is
+    /// deliberately required so single-argument construction resolves
+    /// unambiguously to the MEL constructor.
+    /// </summary>
+    [Obsolete("Use the Microsoft.Extensions.Logging constructor — NimBus standardizes on Microsoft.Extensions.Logging (ADR-006). This bridge remains for callers that still pass a Serilog logger.")]
+    public EndpointManagement(IServiceBusManagement serviceBusManagement, Serilog.ILogger logger)
+    {
+        _serviceBusManagement = serviceBusManagement;
+        _logger = logger is null ? null : new SerilogBridgeLogger(logger);
     }
 
     public async Task ClearEndpoint(string endpointName)
@@ -41,7 +56,7 @@ public class EndpointManagement
             $"user.To = '{Constants.RetryId}'",
             $"SET user.To = '{subscriptionName}'; SET user.From = '{Constants.RetryId}'");
 
-        _logger?.Information("Cleared endpoint succesfully");
+        _logger?.LogInformation("Cleared endpoint successfully");
     }
 
     public async Task DisableEndpoint(string endpointName)
@@ -51,7 +66,7 @@ public class EndpointManagement
 
         await _serviceBusManagement.DisableSubscription(topicName, subscriptionName);
 
-        _logger?.Information("Disabled endpoint succesfully");
+        _logger?.LogInformation("Disabled endpoint successfully");
     }
 
     public async Task EnableEndpoint(string endpointName)
@@ -61,7 +76,7 @@ public class EndpointManagement
 
         await _serviceBusManagement.EnableSubscription(topicName, subscriptionName);
 
-        _logger?.Information("Enabled endpoint succesfully");
+        _logger?.LogInformation("Enabled endpoint successfully");
     }
 
     public async Task<bool> IsEndpointActive(string endpointName)
@@ -78,7 +93,7 @@ public class EndpointManagement
 
         await _serviceBusManagement.DisableTopicSend(topicName);
 
-        _logger?.Information("Disabled endpoint send succesfully");
+        _logger?.LogInformation("Disabled endpoint send successfully");
     }
 
     public async Task EnableEndpointSend(string endpointName)
@@ -87,7 +102,7 @@ public class EndpointManagement
 
         await _serviceBusManagement.EnableTopicSend(topicName);
 
-        _logger?.Information("Enabled endpoint send succesfully");
+        _logger?.LogInformation("Enabled endpoint send successfully");
     }
 
     public async Task<TopicSendState> GetEndpointSendState(string endpointName)

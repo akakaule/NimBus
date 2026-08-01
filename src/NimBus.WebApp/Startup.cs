@@ -411,7 +411,9 @@ namespace NimBus.WebApp
             // instance), so the JIT can keep the heuristic lookup hot.
             services.AddSingleton<FakeEventPayloadGenerator>();
 
-            services.AddSingleton<IServiceBusManagement>(sp => new ServiceBusManagement(sp.GetRequiredService<ServiceBusAdministrationClient>()));
+            services.AddSingleton<IServiceBusManagement>(sp => new ServiceBusManagement(
+                sp.GetRequiredService<ServiceBusAdministrationClient>(),
+                sp.GetService<ILogger<ServiceBusManagement>>()));
 
             // Typed HttpClient via IHttpClientFactory — pools the underlying
             // SocketsHttpHandler across calls, hooks into AddHttpClientInstrumentation

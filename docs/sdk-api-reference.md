@@ -221,9 +221,11 @@ The user handler is **not** re-invoked when the external system reports
 back. Settlement is driven by `IHandoffClient.CompleteAsync` (success) or
 `IHandoffClient.FailAsync` (failure) — registered automatically by
 `AddNimBusSubscriber` and standalone via `services.AddNimBusHandoffClient(endpoint)`
-in settlement-only processes. `IManagerClient.CompleteHandoff` /
-`FailHandoff` are kept for backwards compatibility (`[Obsolete]`) and used
-only by the WebApp's operator tools (`Resubmit`, `Skip`).
+in settlement-only processes; processes that settle for endpoints resolved
+at runtime use `IHandoffClientFactory` (`AddNimBusHandoffClientFactory`).
+The legacy `IManagerClient.CompleteHandoff` / `FailHandoff` bridge was
+removed in 3.0; `IManagerClient` retains only the operator recovery
+primitives (`Resubmit`, `Skip`).
 See [ADR-012](adr/012-pending-handoff.md), the practitioner-level walkthrough
 in [pending-handoff.md](pending-handoff.md), and the
 [PendingHandoff message flow](message-flows.md#13-pendinghandoff-async-completion).
@@ -246,7 +248,7 @@ public class CreateOrderHandler : IEventHandler<OrderPlaced>
         var jobId = await _dmf.QueueImportAsync(order, ct);
 
         // Record (eventId, jobId) so the adapter's status checker can
-        // call ManagerClient.CompleteHandoff / FailHandoff later.
+        // settle via IHandoffClient.CompleteAsync / FailAsync later.
         await _correlations.SaveAsync(ctx.EventId, jobId, ct);
 
         // Tell NimBus this is a healthy in-flight handoff. The handler

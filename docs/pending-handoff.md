@@ -62,7 +62,7 @@ sequenceDiagram
 
     Note over DMF: External job runs (seconds to hours)
     DMF->>DMF: Apply ERP upsert succeeds
-    DMF->>Mgr: CompleteHandoff(entity, endpoint, detailsJson)
+    DMF->>Mgr: IHandoffClient.CompleteAsync(coords, result)
     Mgr->>Sub: HandoffCompletedRequest (To=ErpEndpoint)
     Sub->>Sub: UnblockSession - replay deferred siblings
     Sub->>Res: ResolutionResponse
@@ -70,7 +70,7 @@ sequenceDiagram
 ```
 
 The failure path is identical up to the settlement message: the external
-job calls `IManagerClient.FailHandoff` instead, the subscriber translates
+job calls `IHandoffClient.FailAsync` instead, the subscriber translates
 that into a synthesized `EventContextHandlerException`, and the audit
 row flips Pending → Failed. The session stays blocked until an operator
 clicks Resubmit or Skip from the WebApp.
@@ -83,7 +83,7 @@ sequenceDiagram
     participant Res as Resolver
     participant DB as Message store
 
-    DMF->>Mgr: FailHandoff(entity, endpoint, errorText, errorType)
+    DMF->>Mgr: IHandoffClient.FailAsync(coords, errorText, errorType)
     Mgr->>Sub: HandoffFailedRequest
     Sub->>Sub: Synthesize EventContextHandlerException(errorText)
     Sub->>Res: ErrorResponse
@@ -170,10 +170,9 @@ work ended by calling **`IHandoffClient.CompleteAsync`** or
 coordinates the adapter already persisted at registration time.
 
 > **Migration note.** The previous shape — `IManagerClient.CompleteHandoff(MessageEntity, …)` —
-> remains available behind `[Obsolete]` and is byte-identical on the wire.
-> New code should use `IHandoffClient`; the old API takes a `MessageEntity`
-> with `PendingSubStatus = "Handoff"` and is preserved only so existing
-> adapters keep compiling.
+> was byte-identical on the wire and was removed in 3.0. Use `IHandoffClient`
+> (per-endpoint registration) or `IHandoffClientFactory` (endpoints resolved
+> at runtime).
 
 Reference: [`samples/CrmErpDemo/Erp.Api/HandoffMode/HandoffJobBackgroundService.cs`](../samples/CrmErpDemo/Erp.Api/HandoffMode/HandoffJobBackgroundService.cs)
 
@@ -268,13 +267,13 @@ The management UI treats handoff entries as first-class:
 - The message detail pane shows `HandoffReason`, `ExternalJobId`, and
   `ExpectedBy` when `PendingSubStatus = "Handoff"`.
 - Resubmit / Skip remain available on a failed handoff (after
-  `FailHandoff`) — the same controls used for any other Failed entry.
+  `FailAsync`) — the same controls used for any other Failed entry.
 
 There is no operator action *during* the Pending stage. Settlement is
-driven by the external system through `IManagerClient`, not by the
-WebApp. If an external system is permanently stuck, the operator can
-manually `FailHandoff` via the CLI or a one-off script to release the
-session.
+driven by the external system through `IHandoffClient`, or by an operator
+via the WebApp's handoff complete/fail endpoints. If an external system is
+permanently stuck, the operator can fail the handoff from the WebApp (or a
+one-off script) to release the session.
 
 ## See also
 

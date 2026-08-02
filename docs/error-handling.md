@@ -85,7 +85,7 @@ exceptions to `DeadLetter`; every other ordinary exception maps to `Retry`.
 > `PendingSubStatus = "Handoff"` — it shows up in the Pending column, not
 > Failed. Settlement is driven by two new control messages
 > (`HandoffCompletedRequest` / `HandoffFailedRequest`) issued by
-> `IManagerClient.CompleteHandoff` / `FailHandoff`, which DO NOT re-invoke
+> `IHandoffClient.CompleteAsync` / `FailAsync`, which DO NOT re-invoke
 > the user handler. See [ADR-012](adr/012-pending-handoff.md) and the
 > [PendingHandoff flow](message-flows.md#13-pendinghandoff-async-completion)
 > in the message-flows reference.

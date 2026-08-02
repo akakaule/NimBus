@@ -342,7 +342,7 @@ Important types:
 - `Messages/IMessageContext.cs`
 - `Messages/StrictMessageHandler.cs`
 - `Messages/ResponseService.cs`
-- `Messages/DefaultRetryPolicyProvider.cs` (retries are opt-in via `IRetryPolicyProvider`; the legacy `RetryDefinitions` type is obsolete and no longer consulted)
+- `Messages/DefaultRetryPolicyProvider.cs` (retries are opt-in via `IRetryPolicyProvider`; the legacy `RetryDefinitions` type was removed in 3.0)
 
 Core architectural role:
 

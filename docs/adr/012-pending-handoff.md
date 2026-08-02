@@ -1,7 +1,8 @@
 # ADR-012: PendingHandoff Outcome for Async Message Completion
 
 ## Status
-Accepted (introduced 2026-05; implements [spec 002](../specs/002-async-message-completion/spec.md), issue #15)
+Accepted (introduced 2026-05; implements [spec 002](../specs/002-async-message-completion/spec.md), issue #15).
+Amended 2026-08: the `IManagerClient.CompleteHandoff` / `FailHandoff` settlement members described below were superseded by `NimBus.SDK.IHandoffClient` / `IHandoffClientFactory` and removed in 3.0; the wire contract (`HandoffCompletedRequest` / `HandoffFailedRequest`) is unchanged.
 
 ## Context
 

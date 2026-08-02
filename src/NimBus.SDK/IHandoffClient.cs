@@ -11,7 +11,7 @@ namespace NimBus.SDK;
 /// NimBus without re-deriving anything.
 ///
 /// <para>Replaces the <c>MessageEntity</c> bag-of-fields the original
-/// <c>IManagerClient.CompleteHandoff(MessageEntity, …)</c> API required —
+/// <c>IManagerClient.CompleteHandoff(MessageEntity, …)</c> API required (removed in 3.0) —
 /// same six values, named for what they are rather than carried inside a
 /// row-shaped DTO. <c>EventId</c>, <c>SessionId</c> and <c>MessageId</c> are
 /// required (they address the pending row and route the control message into

@@ -208,12 +208,6 @@ public sealed class EventImplementationPlainResubmitTests
         }
 
         public Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId) => throw new NotSupportedException();
-
-        [Obsolete("Bridge member required by the interface; not used in these tests.")]
-        public Task CompleteHandoff(MessageEntity pendingEntry, string endpoint, string? detailsJson = null) => throw new NotSupportedException();
-
-        [Obsolete("Bridge member required by the interface; not used in these tests.")]
-        public Task FailHandoff(MessageEntity pendingEntry, string endpoint, string errorText, string? errorType = null) => throw new NotSupportedException();
     }
 
     private sealed class NoOpAuditLogService : IAuditLogService

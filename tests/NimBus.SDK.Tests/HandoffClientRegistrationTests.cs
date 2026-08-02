@@ -6,6 +6,9 @@ using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Newtonsoft.Json;
+using System.Linq;
+using System.Text;
 using NimBus.Core.Messages;
 using NimBus.SDK;
 using NimBus.SDK.Extensions;
@@ -137,6 +140,75 @@ public class HandoffClientRegistrationTests
         Assert.AreEqual("evt-1", wire.ApplicationProperties[nameof(UserPropertyName.EventId)]);
         Assert.AreEqual("msg-1", wire.ApplicationProperties[nameof(UserPropertyName.ParentMessageId)]);
         Assert.AreEqual("msg-1", wire.ApplicationProperties[nameof(UserPropertyName.OriginatingMessageId)]);
+    }
+
+    [TestMethod]
+    public async Task CompleteAsync_HappyPath_PinsAbsoluteWireShape()
+    {
+        // Absolute wire-shape pin (ported from the retired ManagerClient parity
+        // tests in SdkAndManagerTests): HandoffClient is now the only settlement
+        // emitter, so this is the contract the Resolver and subscribers rely on.
+        var recorder = new RecordingSender();
+        var client = new HandoffClient(recorder, new HandoffClientOptions { Endpoint = "billing" });
+        var coords = new HandoffSettlement(
+            EventId: "event-1",
+            SessionId: "session-1",
+            MessageId: "message-1",
+            EventTypeId: "OrderPlaced",
+            CorrelationId: "correlation-1",
+            OriginatingMessageId: "originating-1");
+
+        await client.CompleteAsync(coords, "{\"jobId\":\"abc\"}");
+
+        var wire = MessageHelper.ToServiceBusMessage((Message)recorder.Sent.Single());
+        Assert.AreEqual("billing", wire.ApplicationProperties["To"]);
+        Assert.AreEqual(Constants.ManagerId, wire.ApplicationProperties["From"]);
+        Assert.AreEqual("OrderPlaced", wire.ApplicationProperties["EventTypeId"]);
+        Assert.AreEqual(MessageType.HandoffCompletedRequest.ToString(), wire.ApplicationProperties["MessageType"]);
+        Assert.AreEqual("event-1", wire.ApplicationProperties["EventId"]);
+        Assert.AreEqual("originating-1", wire.ApplicationProperties["OriginatingMessageId"]);
+        Assert.AreEqual("message-1", wire.ApplicationProperties["ParentMessageId"]);
+        Assert.AreEqual("session-1", wire.SessionId);
+        Assert.AreEqual("correlation-1", wire.CorrelationId);
+
+        var content = JsonConvert.DeserializeObject<MessageContent>(Encoding.UTF8.GetString(wire.Body.ToArray()));
+        Assert.IsNotNull(content);
+        Assert.IsNotNull(content.EventContent);
+        Assert.AreEqual("OrderPlaced", content.EventContent.EventTypeId);
+        Assert.AreEqual("{\"jobId\":\"abc\"}", content.EventContent.EventJson);
+        Assert.IsNull(content.ErrorContent);
+    }
+
+    [TestMethod]
+    public async Task FailAsync_HappyPath_PinsErrorContentWireShape()
+    {
+        var recorder = new RecordingSender();
+        var client = new HandoffClient(recorder, new HandoffClientOptions { Endpoint = "billing" });
+        var coords = new HandoffSettlement(
+            EventId: "event-1",
+            SessionId: "session-1",
+            MessageId: "message-1",
+            EventTypeId: "OrderPlaced",
+            CorrelationId: "correlation-1",
+            OriginatingMessageId: "originating-1");
+
+        await client.FailAsync(coords, "downstream rejected", "DownstreamRejected");
+
+        var wire = MessageHelper.ToServiceBusMessage((Message)recorder.Sent.Single());
+        Assert.AreEqual("billing", wire.ApplicationProperties["To"]);
+        Assert.AreEqual(Constants.ManagerId, wire.ApplicationProperties["From"]);
+        Assert.AreEqual(MessageType.HandoffFailedRequest.ToString(), wire.ApplicationProperties["MessageType"]);
+        Assert.AreEqual("originating-1", wire.ApplicationProperties["OriginatingMessageId"]);
+        Assert.AreEqual("message-1", wire.ApplicationProperties["ParentMessageId"]);
+        Assert.AreEqual("session-1", wire.SessionId);
+        Assert.AreEqual("correlation-1", wire.CorrelationId);
+
+        var content = JsonConvert.DeserializeObject<MessageContent>(Encoding.UTF8.GetString(wire.Body.ToArray()));
+        Assert.IsNotNull(content);
+        Assert.IsNotNull(content.ErrorContent);
+        Assert.AreEqual("downstream rejected", content.ErrorContent.ErrorText);
+        Assert.AreEqual("DownstreamRejected", content.ErrorContent.ErrorType);
+        Assert.IsNull(content.EventContent);
     }
 
     [TestMethod]

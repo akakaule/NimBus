@@ -59,7 +59,7 @@ namespace NimBus.SDK.EventHandlers
         /// Signals that the handler has handed work off to a long-running
         /// external system. The subscriber will send a PendingHandoffResponse
         /// to the Resolver and block the session until the Manager settles
-        /// the message via CompleteHandoff or FailHandoff. Idempotent — if
+        /// the message via IHandoffClient.CompleteAsync or FailAsync. Idempotent — if
         /// called multiple times, the last call wins.
         /// </summary>
         /// <param name="reason">Free-text reason describing why the handler is handing off (required).</param>

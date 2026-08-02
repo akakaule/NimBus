@@ -177,7 +177,7 @@ namespace NimBus.Core.Messages
 
                 // PendingHandoff branch — handler handed off to an external system.
                 // Send PendingHandoffResponse, block the session so siblings defer
-                // until the Manager settles via CompleteHandoff / FailHandoff, and
+                // until the Manager settles via IHandoffClient CompleteAsync / FailAsync, and
                 // skip the usual ResolutionResponse. If HandleEventContent threw,
                 // execution never reaches here — the catch branches below own it.
                 if (messageContext.HandlerOutcome == HandlerOutcome.PendingHandoff)

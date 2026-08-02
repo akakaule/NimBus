@@ -90,7 +90,7 @@ public class AsyncCompletionTests
             .ToList();
 
         // Act 2 — Manager settles the handoff via CompleteHandoff. Construct
-        // the message directly (mirrors ManagerClient.CompleteHandoff).
+        // the message directly (mirrors the retired ManagerClient settlement path).
         var handoffCompleted = CreateHandoffCompletedRequest(
             sessionId,
             pendingEventId,
@@ -146,7 +146,7 @@ public class AsyncCompletionTests
         // Validates the IHandoffClient surface end-to-end: the new typed
         // settlement API must produce a HandoffCompletedRequest that flows
         // through the subscriber pipeline exactly the same way the legacy
-        // IManagerClient.CompleteHandoff path does.
+        // retired IManagerClient settlement path did.
         const string sessionId = "session-handoff-client-complete";
         var fixture = new EndToEndFixture();
         var handler = new HandoffOnFirstHandler
@@ -269,7 +269,7 @@ public class AsyncCompletionTests
             r.MessageContent?.EventContent?.EventJson?.Contains("ORD-UPDATE-A", StringComparison.Ordinal) == true);
 
         // Act 1 — Manager fails the handoff with operator-supplied error text
-        // (mirrors ManagerClient.FailHandoff).
+        // (mirrors the retired ManagerClient settlement path).
         var handoffFailed = CreateHandoffFailedRequest(
             sessionId,
             pendingEventId,

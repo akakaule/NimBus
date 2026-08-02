@@ -26,30 +26,6 @@ public interface IManagerClient
     /// <param name="errorResponse">ErrorResponse received from endpoint, representing the error that needs to be resolved.</param>
     Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId);
 
-    /// <summary>
-    /// Drive a Pending → Completed transition for a message currently parked in the
-    /// PendingHandoff state. The subscriber acknowledges the request without re-invoking
-    /// the user handler.
-    /// </summary>
-    /// <param name="pendingEntry">The pending audit entry that was projected from a PendingHandoffResponse.</param>
-    /// <param name="endpoint">The subscriber endpoint that owns the pending message.</param>
-    /// <param name="detailsJson">Optional JSON payload describing the completion result; carried in MessageContent.EventContent.EventJson.</param>
-    /// <exception cref="InvalidOperationException">Thrown when <paramref name="pendingEntry"/> is not in the PendingHandoff sub-status.</exception>
-    [Obsolete("Use NimBus.SDK.IHandoffClient.CompleteAsync(HandoffSettlement, result) — pass the six audit-row coordinates as a typed record (EventId, SessionId, MessageId, EventTypeId, CorrelationId, OriginatingMessageId) instead of constructing a MessageEntity by hand. This overload remains for backwards compatibility.")]
-    Task CompleteHandoff(MessageEntity pendingEntry, string endpoint, string detailsJson = null);
-
-    /// <summary>
-    /// Drive a Pending → Failed transition for a message currently parked in the
-    /// PendingHandoff state. The supplied error text is surfaced to the subscriber's
-    /// HandleHandoffFailedRequest via MessageContent.ErrorContent.
-    /// </summary>
-    /// <param name="pendingEntry">The pending audit entry that was projected from a PendingHandoffResponse.</param>
-    /// <param name="endpoint">The subscriber endpoint that owns the pending message.</param>
-    /// <param name="errorText">Human-readable error text describing the failure.</param>
-    /// <param name="errorType">Optional logical error type / classifier.</param>
-    /// <exception cref="InvalidOperationException">Thrown when <paramref name="pendingEntry"/> is not in the PendingHandoff sub-status.</exception>
-    [Obsolete("Use NimBus.SDK.IHandoffClient.FailAsync(HandoffSettlement, errorText, errorType) — pass the six audit-row coordinates as a typed record (EventId, SessionId, MessageId, EventTypeId, CorrelationId, OriginatingMessageId) instead of constructing a MessageEntity by hand. This overload remains for backwards compatibility.")]
-    Task FailHandoff(MessageEntity pendingEntry, string endpoint, string errorText, string errorType = null);
 }
 
 public class ManagerClient : IManagerClient
@@ -125,41 +101,6 @@ public class ManagerClient : IManagerClient
         await using var sender = _serviceBusClient.CreateSender(endpoint);
         await sender.SendMessageAsync(MessageHelper.ToServiceBusMessage(message));
     }
-
-    [Obsolete("Use NimBus.SDK.IHandoffClient.CompleteAsync(HandoffSettlement, result).")]
-    public async Task CompleteHandoff(MessageEntity pendingEntry, string endpoint, string detailsJson = null)
-    {
-        if (pendingEntry.PendingSubStatus != "Handoff")
-            throw new InvalidOperationException($"CompleteHandoff requires PendingSubStatus='Handoff'; got '{pendingEntry.PendingSubStatus ?? "<null>"}' for EventId={pendingEntry.EventId}.");
-
-        _logger?.LogTrace("MANAGER COMPLETE HANDOFF: SessionId: {SessionId} EventId: {EventId} Endpoint: {Endpoint}", pendingEntry.SessionId, pendingEntry.EventId, endpoint);
-
-        var message = HandoffControlMessageFactory.CreateCompleted(CoordsFor(pendingEntry, endpoint), detailsJson);
-        await using var sender = _serviceBusClient.CreateSender(endpoint);
-        await sender.SendMessageAsync(MessageHelper.ToServiceBusMessage(message));
-    }
-
-    [Obsolete("Use NimBus.SDK.IHandoffClient.FailAsync(HandoffSettlement, errorText, errorType).")]
-    public async Task FailHandoff(MessageEntity pendingEntry, string endpoint, string errorText, string errorType = null)
-    {
-        if (pendingEntry.PendingSubStatus != "Handoff")
-            throw new InvalidOperationException($"FailHandoff requires PendingSubStatus='Handoff'; got '{pendingEntry.PendingSubStatus ?? "<null>"}' for EventId={pendingEntry.EventId}.");
-
-        _logger?.LogTrace("MANAGER FAIL HANDOFF: SessionId: {SessionId} EventId: {EventId} Endpoint: {Endpoint} ErrorType: {ErrorType}", pendingEntry.SessionId, pendingEntry.EventId, endpoint, errorType);
-
-        var message = HandoffControlMessageFactory.CreateFailed(CoordsFor(pendingEntry, endpoint), errorText, errorType);
-        await using var sender = _serviceBusClient.CreateSender(endpoint);
-        await sender.SendMessageAsync(MessageHelper.ToServiceBusMessage(message));
-    }
-
-    private static HandoffSettlementCoordinates CoordsFor(MessageEntity entry, string endpoint) => new(
-        To: endpoint,
-        EventId: entry.EventId,
-        SessionId: entry.SessionId,
-        CorrelationId: entry.CorrelationId,
-        ParentMessageId: entry.MessageId,
-        OriginatingMessageId: entry.OriginatingMessageId,
-        EventTypeId: entry.EventTypeId);
 
     /// <summary>
     /// Forwards Microsoft.Extensions.Logging calls to a caller-supplied Serilog

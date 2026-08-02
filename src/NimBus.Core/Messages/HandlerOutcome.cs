@@ -7,7 +7,7 @@ namespace NimBus.Core.Messages
     /// <c>IEventHandlerContext.MarkPendingHandoff</c> when work has been
     /// handed off to a long-running external system; the subscriber sends a
     /// PendingHandoffResponse and blocks the session until the Manager
-    /// settles it via CompleteHandoff or FailHandoff.
+    /// settles it via IHandoffClient.CompleteAsync or FailAsync.
     /// </summary>
     public enum HandlerOutcome
     {

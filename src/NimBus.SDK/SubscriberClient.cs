@@ -66,34 +66,6 @@ namespace NimBus.SDK
             return Task.FromResult(new SubscriberClient(serviceBusAdapter, eventHandlerProvider));
         }
 
-        /// <summary>
-        /// Creates a new SubscriberClient.
-        /// </summary>
-        /// <param name="client">The ServiceBusClient to use for sending responses.</param>
-        /// <param name="endpoint">The endpoint to send responses to.</param>
-        /// <param name="entityPath">Optional entity path (queue name or topic/subscription) for receiving deferred messages.
-        /// Required if using ReceiveDeferredMessageAsync in isolated worker model.</param>
-        [Obsolete("Use CreateAsync instead for async initialization.")]
-        public SubscriberClient(ServiceBusClient client, string endpoint, string entityPath = null)
-        {
-            if (client == null) throw new ArgumentNullException(nameof(client));
-            if (string.IsNullOrEmpty(endpoint)) throw new ArgumentException("Endpoint cannot be null or empty.", nameof(endpoint));
-
-            // Same instrumentation wrapping as CreateAsync above — the obsolete
-            // ctor stays a backward-compat bridge but MUST emit the same telemetry.
-            var serviceBusSender = client.CreateSender(endpoint);
-
-            ISender sender = NimBusOpenTelemetryDecorators.InstrumentSender(
-                new Sender(serviceBusSender), MessagingSystem.ServiceBus);
-            IResponseService responseService = new ResponseService(sender);
-
-            _eventHandlerProvider = new EventHandlerProvider();
-
-            IMessageHandler strictMessageHandler = new StrictMessageHandler(_eventHandlerProvider, responseService, NullLogger.Instance);
-
-            _serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, entityPath);
-        }
-
         public Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default) =>
             _serviceBusAdapter.Handle(message, sessionActions, cancellationToken);
 

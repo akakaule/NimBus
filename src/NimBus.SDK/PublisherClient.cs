@@ -1,4 +1,4 @@
-﻿using Azure.Messaging.ServiceBus;
+using Azure.Messaging.ServiceBus;
 using NimBus.Core.CloudEvents;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Events;
@@ -89,24 +89,6 @@ public class PublisherClient : IPublisherClient
             new Sender(serviceBusSender), MessagingSystem.ServiceBus);
 
         return Task.FromResult(new PublisherClient(sender, endpoint) { _serviceBusClient = client });
-    }
-
-    /// <summary>
-    /// Creates a new PublisherClient.
-    /// </summary>
-    [Obsolete("Use CreateAsync instead for async initialization.")]
-    public PublisherClient(ServiceBusClient client, string endpoint)
-    {
-        if (client == null) throw new ArgumentNullException(nameof(client));
-        if (string.IsNullOrEmpty(endpoint)) throw new ArgumentException("Endpoint cannot be null or empty.", nameof(endpoint));
-
-        // Same instrumentation wrapping as CreateAsync above — the obsolete
-        // ctor stays a backward-compat bridge but MUST emit the same telemetry.
-        var serviceBusSender = client.CreateSender(endpoint);
-        _sender = NimBusOpenTelemetryDecorators.InstrumentSender(
-            new Sender(serviceBusSender), MessagingSystem.ServiceBus);
-        _publisherEndpoint = endpoint;
-        _serviceBusClient = client;
     }
 
     public async Task Publish(IEvent @event)
@@ -257,7 +239,7 @@ public class PublisherClient : IPublisherClient
     /// Uses Azure Service Bus sessions for reply correlation: the reply arrives on this
     /// publisher's own <c>{endpoint}-reply</c> subscription (provisioned by
     /// <c>nb topology apply</c>). Requires a PublisherClient created via
-    /// <c>AddNimBusPublisher</c>, <see cref="CreateAsync"/>, or the ServiceBusClient constructor.
+    /// <c>AddNimBusPublisher</c> or <see cref="CreateAsync"/>.
     /// </summary>
     /// <exception cref="TimeoutException">No reply arrived within <paramref name="timeout"/>.</exception>
     /// <exception cref="Core.Messages.Exceptions.RequestReplyException">The responder's handler threw; the error reply carries its type and message.</exception>
@@ -267,7 +249,7 @@ public class PublisherClient : IPublisherClient
     {
         if (_serviceBusClient == null)
             throw new InvalidOperationException(
-                "Request/response requires a ServiceBusClient. Use AddNimBusPublisher, PublisherClient.CreateAsync(client, endpoint), or the ServiceBusClient constructor.");
+                "Request/response requires a ServiceBusClient. Use AddNimBusPublisher or PublisherClient.CreateAsync(client, endpoint).");
         if (string.IsNullOrEmpty(_publisherEndpoint))
             throw new InvalidOperationException(
                 "Request/response requires the publisher's endpoint identity: the reply is received on the '{endpoint}-reply' subscription. Construct the client with an endpoint (AddNimBusPublisher / CreateAsync).");

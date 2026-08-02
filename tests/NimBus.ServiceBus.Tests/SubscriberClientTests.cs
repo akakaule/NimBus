@@ -109,41 +109,6 @@ public class SubscriberClientTests
 
     // ── Obsolete constructor ────────────────────────────────────────────
 
-    [TestMethod]
-    public void ObsoleteConstructor_WithoutProcessor_CreatesClient()
-    {
-        var client = new RecordingServiceBusClient();
-
-        var sut = new SubscriberClient(client, "orders");
-
-        Assert.IsNotNull(sut);
-        Assert.AreEqual("orders", client.LastSenderEntityPath);
-    }
-
-    [TestMethod]
-    public void ObsoleteConstructor_CreatesClient()
-    {
-        var client = new RecordingServiceBusClient();
-
-        var sut = new SubscriberClient(client, "orders");
-
-        Assert.IsNotNull(sut);
-    }
-
-    [TestMethod]
-    public void ObsoleteConstructor_NullClient_ThrowsArgumentNullException()
-    {
-        Assert.ThrowsExactly<ArgumentNullException>(() =>
-            new SubscriberClient(null!, "orders"));
-    }
-
-    [TestMethod]
-    public void ObsoleteConstructor_EmptyEndpoint_ThrowsArgumentException()
-    {
-        Assert.ThrowsExactly<ArgumentException>(() =>
-            new SubscriberClient(new RecordingServiceBusClient(), ""));
-    }
-
     // ── Fakes ────────────────────────────────────────────────────────────
 
     private sealed class FakeDeferredMessageProcessor : NimBus.Core.Messages.IDeferredMessageProcessor

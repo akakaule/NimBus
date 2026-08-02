@@ -440,11 +440,7 @@ namespace NimBus.WebApp
 
         private void AddManagementServices(IServiceCollection services)
         {
-            // Explicit factory so constructor selection never becomes ambiguous
-            // between ManagerClient's MEL constructor and its obsolete Serilog bridge.
-            services.AddSingleton<IManagerClient>(sp => new ManagerClient(
-                sp.GetRequiredService<ServiceBusClient>(),
-                sp.GetService<ILogger<ManagerClient>>()));
+            services.AddSingleton<IManagerClient, ManagerClient>();
 
             // Handoff settlement clients for endpoints resolved at runtime (route
             // params / agent zones) — see EventImplementation / AgentImplementation.

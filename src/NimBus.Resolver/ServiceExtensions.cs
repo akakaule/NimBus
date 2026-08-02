@@ -21,10 +21,8 @@ namespace NimBus.Resolver
         /// </summary>
         public static IServiceCollection AddResolver(this IServiceCollection services)
         {
-            // Explicit factory so constructor selection never becomes ambiguous
-            // between ResolverService's MEL constructor and its obsolete Serilog
-            // bridge. Serilog itself stays a host concern (Program.cs AddSerilog
-            // registers it as an MEL provider, per ADR-006).
+            // Serilog stays a host concern (Program.cs AddSerilog registers it
+            // as an MEL provider, per ADR-006); ResolverService itself takes MEL.
             services.AddSingleton<IMessageHandler>(sp => new ResolverService(
                 sp.GetRequiredService<IMessageTrackingStore>(),
                 sp.GetRequiredService<IMessageStateChangeNotifier>(),

@@ -15,20 +15,6 @@ public class EndpointManagement
         _logger = logger;
     }
 
-    /// <summary>
-    /// Serilog bridge constructor. NimBus standardizes on
-    /// Microsoft.Extensions.Logging (ADR-006); this overload remains for
-    /// callers that still pass a Serilog logger. The logger parameter is
-    /// deliberately required so single-argument construction resolves
-    /// unambiguously to the MEL constructor.
-    /// </summary>
-    [Obsolete("Use the Microsoft.Extensions.Logging constructor — NimBus standardizes on Microsoft.Extensions.Logging (ADR-006). This bridge remains for callers that still pass a Serilog logger.")]
-    public EndpointManagement(IServiceBusManagement serviceBusManagement, Serilog.ILogger logger)
-    {
-        _serviceBusManagement = serviceBusManagement;
-        _logger = logger is null ? null : new SerilogBridgeLogger(logger);
-    }
-
     public async Task ClearEndpoint(string endpointName)
     {
         string topicName = endpointName;

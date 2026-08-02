@@ -52,20 +52,6 @@ public class ServiceBusManagement : IServiceBusManagement
         _logger = logger;
     }
 
-    /// <summary>
-    /// Serilog bridge constructor. NimBus standardizes on
-    /// Microsoft.Extensions.Logging (ADR-006); this overload remains for
-    /// callers that still pass a Serilog logger. The logger parameter is
-    /// deliberately required so single-argument construction resolves
-    /// unambiguously to the MEL constructor.
-    /// </summary>
-    [Obsolete("Use the Microsoft.Extensions.Logging constructor — NimBus standardizes on Microsoft.Extensions.Logging (ADR-006). This bridge remains for callers that still pass a Serilog logger.")]
-    public ServiceBusManagement(ServiceBusAdministrationClient client, Serilog.ILogger logger)
-    {
-        this.client = client;
-        _logger = logger is null ? null : new SerilogBridgeLogger(logger);
-    }
-
     public async Task CreateSubscription(string topicName, string subscriptionName)
     {
         ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));

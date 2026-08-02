@@ -39,20 +39,6 @@ public class ManagerClient : IManagerClient
         _logger = logger;
     }
 
-    /// <summary>
-    /// Serilog bridge constructor. NimBus standardizes on
-    /// Microsoft.Extensions.Logging (ADR-006); this overload remains for
-    /// callers that still pass a Serilog logger. The logger parameter is
-    /// deliberately required so single-argument construction resolves
-    /// unambiguously to the MEL constructor.
-    /// </summary>
-    [Obsolete("Use the Microsoft.Extensions.Logging constructor — NimBus standardizes on Microsoft.Extensions.Logging (ADR-006). This bridge remains for callers that still pass a Serilog logger.")]
-    public ManagerClient(ServiceBusClient serviceBusClient, Serilog.ILogger logger)
-    {
-        _serviceBusClient = serviceBusClient;
-        _logger = logger is null ? null : new SerilogBridgeLogger(logger);
-    }
-
     public async Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson)
     {
         _logger?.LogTrace("MANAGER RESUBMIT EVENT: EventId: {EventId} EventTypeId: {EventTypeId}", errorResponse.EventId, eventTypeId);
@@ -102,31 +88,4 @@ public class ManagerClient : IManagerClient
         await sender.SendMessageAsync(MessageHelper.ToServiceBusMessage(message));
     }
 
-    /// <summary>
-    /// Forwards Microsoft.Extensions.Logging calls to a caller-supplied Serilog
-    /// logger. Only used by the obsolete bridge constructor.
-    /// </summary>
-    private sealed class SerilogBridgeLogger : ILogger
-    {
-        private readonly Serilog.ILogger _serilog;
-
-        public SerilogBridgeLogger(Serilog.ILogger serilog) => _serilog = serilog;
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => _serilog.IsEnabled(ToSerilogLevel(logLevel));
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-            => _serilog.Write(ToSerilogLevel(logLevel), exception, "{Message}", formatter(state, exception));
-
-        private static Serilog.Events.LogEventLevel ToSerilogLevel(LogLevel level) => level switch
-        {
-            LogLevel.Trace => Serilog.Events.LogEventLevel.Verbose,
-            LogLevel.Debug => Serilog.Events.LogEventLevel.Debug,
-            LogLevel.Information => Serilog.Events.LogEventLevel.Information,
-            LogLevel.Warning => Serilog.Events.LogEventLevel.Warning,
-            LogLevel.Error => Serilog.Events.LogEventLevel.Error,
-            _ => Serilog.Events.LogEventLevel.Fatal,
-        };
-    }
 }

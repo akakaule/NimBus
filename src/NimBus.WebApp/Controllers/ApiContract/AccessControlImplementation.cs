@@ -161,17 +161,12 @@ public class AccessControlImplementation : IAccessControlApiController
 
     private static void Apply(List<string> list, string entry, bool grant)
     {
-        // Case-insensitive dedupe on grant / removal on revoke; stored entries
-        // keep the casing they were first granted with.
+        // Re-normalize on grant: drop every case/whitespace-equivalent entry
+        // (padded entries are legal stored shapes and live grants) so the list
+        // ends with exactly one canonical trimmed grant.
+        list.RemoveAll(e => string.Equals(e.Trim(), entry, StringComparison.OrdinalIgnoreCase));
         if (grant)
-        {
-            if (!list.Contains(entry, StringComparer.OrdinalIgnoreCase))
-                list.Add(entry);
-        }
-        else
-        {
-            list.RemoveAll(e => string.Equals(e.Trim(), entry, StringComparison.OrdinalIgnoreCase));
-        }
+            list.Add(entry);
     }
 
     private static List<string> SelectList(AccessControlList acl, RoleEntryRole role) => role switch

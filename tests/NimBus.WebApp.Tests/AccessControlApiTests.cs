@@ -13,6 +13,7 @@ using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using NimBus.MessageStore;
+using NimBus.MessageStore.States;
 using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.ManagementApi;
@@ -116,7 +117,35 @@ public class AccessControlApiTests
         var second = Ok(await sut.PostAccessControlRoleAsync(Entry(RoleEntryRole.Owner, "  user@example.COM ")));
 
         Assert.AreEqual(1, second.Owners.Count);
-        Assert.AreEqual("User@Example.com", second.Owners.Single());
+        Assert.AreEqual("user@example.COM", second.Owners.Single());
+    }
+
+    [TestMethod]
+    public async Task Grant_replaces_padded_and_case_variant_duplicates()
+    {
+        await _store.SetSiteAccessControl(new AccessControlList
+        {
+            Readers = { " User@Example.COM ", "user@example.com" },
+        });
+        await _store.SetEndpointAccessControl("Storefront", new AccessControlList
+        {
+            EndpointId = "Storefront",
+            Contributors = { " User@Example.COM " },
+        });
+        var sut = CreateSut(Admin());
+
+        var site = Ok(await sut.PostAccessControlRoleAsync(Entry(RoleEntryRole.Reader, "user@example.com")));
+        var endpoint = Ok(await sut.PostEndpointAccessControlRoleAsync(
+            Entry(RoleEntryRole.Contributor, "user@example.com"), "Storefront"));
+
+        Assert.AreEqual(1, site.Readers.Count);
+        Assert.AreEqual("user@example.com", site.Readers.Single());
+        Assert.AreEqual(1, endpoint.Contributors.Count);
+        Assert.AreEqual("user@example.com", endpoint.Contributors.Single());
+
+        var authz = CreateAuthz(User("user@example.com"));
+        Assert.IsTrue(await authz.HasRoleAsync(AccessRole.Reader));
+        Assert.IsTrue(await authz.HasRoleAsync(AccessRole.Contributor, "Storefront"));
     }
 
     [TestMethod]

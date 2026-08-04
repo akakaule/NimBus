@@ -215,7 +215,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 await auditLogService.LogAuditAsync(MessageAuditType.Resubmit, httpContextAccessor.HttpContext,
                     accessDenied: true, eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
-                throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpoint}'.");
+                return new ForbidResult();
             }
 
             // Deliberately sequential — do not parallelize. ArchiveFailedEvent
@@ -262,7 +262,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 await auditLogService.LogAuditAsync(MessageAuditType.Skip, httpContextAccessor.HttpContext,
                     accessDenied: true, eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
-                throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpoint}'.");
+                return new ForbidResult();
             }
 
             await managerClient.Skip(errorResponse, endpoint, eventTypeId);
@@ -379,7 +379,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 await auditLogService.LogAuditAsync(auditType, httpContextAccessor.HttpContext,
                     accessDenied: true, eventId: eventId, endpointId: endpointId);
-                throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpointId}'.");
+                return new ForbidResult();
             }
 
             var auditorName = AuditLogService.ResolveAuditorName(httpContextAccessor.HttpContext);
@@ -394,7 +394,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new NotFoundObjectResult("Endpoint not found");
 
             if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpointId))
-                throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpointId}'.");
+                return new ForbidResult();
 
             var result = await adminService.ReprocessDeferredAsync(endpointId, sessionId);
             return new OkObjectResult(result);

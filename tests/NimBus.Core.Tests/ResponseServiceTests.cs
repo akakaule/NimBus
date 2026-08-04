@@ -503,6 +503,134 @@ public class ResponseServiceTests
             "Counter must not increment when the parking send threw");
     }
 
+    // ── Scheduled-message marker preservation (spec 025) ─────────────────
+
+    [TestMethod]
+    public async Task SendRetryResponse_MarkedContext_PreservesMarkerAndWorkflowCorrelationId()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var due = new DateTimeOffset(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
+        var ctx = CreateContext(messageId: "attempt-1", correlationId: "workflow-conversation");
+        ctx.ScheduledMessageId = "timeout-1";
+        ctx.ScheduledEnqueueTimeUtc = due;
+
+        await sut.SendRetryResponse(ctx, messageDelayMinutes: 1);
+
+        var msg = sender.SentMessages.Single();
+        Assert.AreEqual("timeout-1", msg.ScheduledMessageId);
+        Assert.AreEqual(due, msg.ScheduledEnqueueTimeUtc);
+        Assert.AreEqual("workflow-conversation", msg.CorrelationId,
+            "A retry clone of a marked timeout must preserve the workflow conversation ID");
+        Assert.AreEqual("attempt-1", msg.ParentMessageId);
+        Assert.AreNotEqual(ctx.MessageId, msg.MessageId,
+            "The clone must not reuse the inbound transport MessageId (duplicate detection would drop it)");
+    }
+
+    [TestMethod]
+    public async Task SendRetryResponse_MarkedContext_SecondRetry_StillPreservesWorkflowCorrelationId()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        // Simulates the context of the FIRST retry delivery: CorrelationId already
+        // preserved once; a second retry must keep it by induction.
+        var ctx = CreateContext(messageId: "attempt-2", correlationId: "workflow-conversation", retryCount: 1);
+        ctx.ScheduledMessageId = "timeout-1";
+
+        await sut.SendRetryResponse(ctx, messageDelayMinutes: 1);
+
+        var msg = sender.SentMessages.Single();
+        Assert.AreEqual("workflow-conversation", msg.CorrelationId);
+        Assert.AreEqual("timeout-1", msg.ScheduledMessageId);
+        Assert.AreEqual(2, msg.RetryCount);
+    }
+
+    [TestMethod]
+    public async Task SendRetryResponse_UnmarkedContext_KeepsLegacyCorrelationId()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var ctx = CreateContext(messageId: "message-1", correlationId: "conversation-1");
+
+        await sut.SendRetryResponse(ctx, messageDelayMinutes: 1);
+
+        var msg = sender.SentMessages.Single();
+        Assert.AreEqual("message-1", msg.CorrelationId,
+            "Unmarked messages keep today's CorrelationId = parent MessageId convention byte-identically");
+        Assert.IsNull(msg.ScheduledMessageId);
+        Assert.IsNull(msg.ScheduledEnqueueTimeUtc);
+        Assert.IsNull(msg.WorkflowCorrelationId);
+    }
+
+    [TestMethod]
+    public async Task SendToDeferredSubscription_MarkedContext_PreservesMarker()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var due = new DateTimeOffset(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
+        var ctx = CreateContext(correlationId: "workflow-conversation");
+        ctx.ScheduledMessageId = "timeout-1";
+        ctx.ScheduledEnqueueTimeUtc = due;
+
+        await sut.SendToDeferredSubscription(ctx, deferralSequence: 1);
+
+        var msg = sender.SentMessages.Single();
+        Assert.AreEqual("timeout-1", msg.ScheduledMessageId);
+        Assert.AreEqual(due, msg.ScheduledEnqueueTimeUtc);
+        Assert.AreEqual("workflow-conversation", msg.CorrelationId);
+    }
+
+    [TestMethod]
+    public async Task SendResolutionResponse_MarkedContext_CopiesMarkerAndStampsWorkflowCorrelationId()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var due = new DateTimeOffset(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
+        var ctx = CreateContext(messageId: "attempt-1", correlationId: "workflow-conversation");
+        ctx.ScheduledMessageId = "timeout-1";
+        ctx.ScheduledEnqueueTimeUtc = due;
+
+        await sut.SendResolutionResponse(ctx);
+
+        var msg = sender.SentMessages.Single();
+        Assert.AreEqual("timeout-1", msg.ScheduledMessageId);
+        Assert.AreEqual(due, msg.ScheduledEnqueueTimeUtc);
+        Assert.AreEqual("workflow-conversation", msg.WorkflowCorrelationId,
+            "Resolver-bound responses carry the workflow conversation ID in the response-only property");
+        Assert.AreEqual("attempt-1", msg.CorrelationId,
+            "The response's own CorrelationId keeps the = MessageId audit-linkage convention");
+    }
+
+    [TestMethod]
+    public async Task SendErrorResponse_MarkedContext_CopiesMarkerAndStampsWorkflowCorrelationId()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var ctx = CreateContext(messageId: "attempt-1", correlationId: "workflow-conversation");
+        ctx.ScheduledMessageId = "timeout-1";
+
+        await sut.SendErrorResponse(ctx, new InvalidOperationException("handler failed"));
+
+        var msg = sender.SentMessages.Single();
+        Assert.AreEqual("timeout-1", msg.ScheduledMessageId);
+        Assert.AreEqual("workflow-conversation", msg.WorkflowCorrelationId);
+        Assert.AreEqual("attempt-1", msg.CorrelationId);
+    }
+
+    [TestMethod]
+    public async Task SendResolutionResponse_UnmarkedContext_LeavesMarkerFieldsNull()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+
+        await sut.SendResolutionResponse(CreateContext());
+
+        var msg = sender.SentMessages.Single();
+        Assert.IsNull(msg.ScheduledMessageId);
+        Assert.IsNull(msg.ScheduledEnqueueTimeUtc);
+        Assert.IsNull(msg.WorkflowCorrelationId);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private static FakeMessageContext CreateContext(
@@ -605,6 +733,8 @@ public class ResponseServiceTests
         public DateTime? HandlerStartedAtUtc { get; set; }
         public HandlerOutcome HandlerOutcome { get; set; }
         public HandoffMetadata HandoffMetadata { get; set; }
+        public string ScheduledMessageId { get; set; }
+        public DateTimeOffset? ScheduledEnqueueTimeUtc { get; set; }
 
         public NimBus.Core.CloudEvents.CloudEvent CloudEventToReturn { get; set; }
         public NimBus.Core.CloudEvents.CloudEvent GetCloudEvent() => CloudEventToReturn;

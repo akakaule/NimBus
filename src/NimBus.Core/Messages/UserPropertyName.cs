@@ -30,5 +30,13 @@
         CloudEventSource,
         CloudEventType,
         CloudEventSubject,
+
+        // Scheduled-message (workflow timeout) identity, spec 025. ScheduledMessageId
+        // is the logical TimeoutId, stable across retries/redeliveries while each
+        // attempt mints its own transport MessageId. Absent (null) on ordinary
+        // messages, so an unmarked message is byte-identical on the wire.
+        ScheduledMessageId,
+        ScheduledEnqueueTimeUtc,
+        WorkflowCorrelationId,
     }
 }

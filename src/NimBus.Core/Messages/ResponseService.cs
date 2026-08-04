@@ -176,6 +176,16 @@ namespace NimBus.Core.Messages
                 CloudEventSource = cloudEvent?.Source,
                 CloudEventType = cloudEvent?.Type,
                 CloudEventSubject = cloudEvent?.Subject,
+                // Scheduled-message (timeout) identity survives into the Resolver audit
+                // chain so operator resubmission can restore it (spec 025, invariant 1).
+                // The response's own CorrelationId keeps the = MessageId audit-linkage
+                // convention; the workflow conversation ID rides in the response-only
+                // WorkflowCorrelationId property for marked messages.
+                ScheduledMessageId = messageContext.ScheduledMessageId,
+                ScheduledEnqueueTimeUtc = messageContext.ScheduledEnqueueTimeUtc,
+                WorkflowCorrelationId = messageContext.ScheduledMessageId != null
+                    ? messageContext.CorrelationId
+                    : null,
             };
         }
 
@@ -198,7 +208,13 @@ namespace NimBus.Core.Messages
             new Message()
             {
                 To = Constants.RetryId,
-                CorrelationId = messageContext.MessageId,
+                // A retry clone of a marked (scheduled) message preserves the workflow
+                // conversation ID, exactly like the deferred-park path; unmarked
+                // messages keep today's CorrelationId = parent MessageId convention
+                // byte-identically (spec 025, revision-4 finding 2).
+                CorrelationId = messageContext.ScheduledMessageId != null
+                    ? messageContext.CorrelationId
+                    : messageContext.MessageId,
                 SessionId = messageContext.SessionId,
                 EventId = messageContext.EventId,
                 OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
@@ -208,6 +224,11 @@ namespace NimBus.Core.Messages
                 EventTypeId = messageContext.EventTypeId,
                 MessageType = MessageType.RetryRequest,
                 MessageContent = responseContent,
+                // The logical timeout identity rides on every clone; the clone mints
+                // its own transport MessageId (reusing the original would trip broker
+                // duplicate detection and drop the retry).
+                ScheduledMessageId = messageContext.ScheduledMessageId,
+                ScheduledEnqueueTimeUtc = messageContext.ScheduledEnqueueTimeUtc,
             };
 
 
@@ -256,6 +277,11 @@ namespace NimBus.Core.Messages
                 MessageContent = messageContext.MessageContent,
                 OriginalSessionId = messageContext.SessionId,   // Kept for backward compatibility
                 DeferralSequence = deferralSequence,
+                // Parked timeouts keep their logical identity through the deferred
+                // subscription (spec 025, invariant 1); CorrelationId is already
+                // preserved above.
+                ScheduledMessageId = messageContext.ScheduledMessageId,
+                ScheduledEnqueueTimeUtc = messageContext.ScheduledEnqueueTimeUtc,
             };
 
             var endpoint = messageContext.To;

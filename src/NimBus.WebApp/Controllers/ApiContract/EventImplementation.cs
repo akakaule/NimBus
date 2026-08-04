@@ -1095,6 +1095,11 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 DeadLetterErrorDescription = e.DeadLetterErrorDescription,
                 QueueTimeMs = e.QueueTimeMs,
                 ProcessingTimeMs = e.ProcessingTimeMs,
+                // Scheduled-message (timeout) identity, spec 025: a fallback-sourced
+                // entity must keep the marker so resubmission restores it.
+                ScheduledMessageId = e.ScheduledMessageId,
+                ScheduledEnqueueTimeUtc = e.ScheduledEnqueueTimeUtc,
+                WorkflowCorrelationId = e.WorkflowCorrelationId,
             };
         }
     }

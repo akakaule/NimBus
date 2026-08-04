@@ -60,4 +60,14 @@ public class MessageEntity : IReceivedMessage
     public string CloudEventSource { get; set; }
     public string CloudEventType { get; set; }
     public string CloudEventSubject { get; set; }
+
+    // Scheduled-message (workflow timeout) identity, spec 025. Null for ordinary
+    // messages and for documents written before the fields existed. Operator
+    // resubmission restores them onto the ResubmissionRequest so the workflow
+    // guard can decide Fired vs IgnoredLate; WorkflowCorrelationId carries the
+    // workflow conversation ID (the entity's CorrelationId keeps the response
+    // audit-linkage convention).
+    public string ScheduledMessageId { get; set; }
+    public DateTimeOffset? ScheduledEnqueueTimeUtc { get; set; }
+    public string WorkflowCorrelationId { get; set; }
 }

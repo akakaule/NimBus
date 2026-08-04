@@ -42,9 +42,18 @@ public class ManagerClient : IManagerClient
     public async Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson)
     {
         _logger?.LogTrace("MANAGER RESUBMIT EVENT: EventId: {EventId} EventTypeId: {EventTypeId}", errorResponse.EventId, eventTypeId);
+        // Marked (scheduled/timeout) entities restore the logical timeout identity
+        // and the workflow conversation ID onto the resubmission clone (spec 025):
+        // the handler's ScheduledMessageId-keyed guard then decides Fired vs
+        // IgnoredLate. WorkflowCorrelationId falls back to the entity CorrelationId
+        // for pre-upgrade audit rows; unmarked entities keep today's construction
+        // byte-identical.
+        var isMarked = !string.IsNullOrEmpty(errorResponse.ScheduledMessageId);
         var message = new Message
         {
-            CorrelationId = errorResponse.CorrelationId,
+            CorrelationId = isMarked
+                ? errorResponse.WorkflowCorrelationId ?? errorResponse.CorrelationId
+                : errorResponse.CorrelationId,
             EventId = errorResponse.EventId,
             SessionId = errorResponse.SessionId,
             To = endpoint,
@@ -61,6 +70,8 @@ public class ManagerClient : IManagerClient
                     EventJson = eventJson
                 }
             },
+            ScheduledMessageId = errorResponse.ScheduledMessageId,
+            ScheduledEnqueueTimeUtc = errorResponse.ScheduledEnqueueTimeUtc,
         };
 
         await using var sender = _serviceBusClient.CreateSender(endpoint);

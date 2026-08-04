@@ -201,6 +201,12 @@ namespace NimBus.Broker.Services
                 CloudEventSource = message.CloudEventSource,
                 CloudEventType = message.CloudEventType,
                 CloudEventSubject = message.CloudEventSubject,
+                // Scheduled-message (timeout) identity (spec 025): preserved through
+                // the audit chain so operator resubmission can restore it. Null for
+                // ordinary messages.
+                ScheduledMessageId = message.ScheduledMessageId,
+                ScheduledEnqueueTimeUtc = message.ScheduledEnqueueTimeUtc,
+                WorkflowCorrelationId = message.WorkflowCorrelationId,
             };
         }
 
@@ -289,6 +295,10 @@ namespace NimBus.Broker.Services
                 CloudEventSource = message.CloudEventSource,
                 CloudEventType = message.CloudEventType,
                 CloudEventSubject = message.CloudEventSubject,
+                // Scheduled-message (timeout) identity (spec 025).
+                ScheduledMessageId = message.ScheduledMessageId,
+                ScheduledEnqueueTimeUtc = message.ScheduledEnqueueTimeUtc,
+                WorkflowCorrelationId = message.WorkflowCorrelationId,
             };
         }
 

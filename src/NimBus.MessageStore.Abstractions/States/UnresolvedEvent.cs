@@ -65,5 +65,13 @@ namespace NimBus.MessageStore
         public string CloudEventSource { get; set; }
         public string CloudEventType { get; set; }
         public string CloudEventSubject { get; set; }
+
+        // Scheduled-message (workflow timeout) identity, spec 025. Null for
+        // ordinary messages and pre-upgrade documents. Resubmission (shared
+        // history, WebApp per-endpoint fallback, and the CLI alike) restores the
+        // identity from these fields.
+        public string ScheduledMessageId { get; set; }
+        public DateTimeOffset? ScheduledEnqueueTimeUtc { get; set; }
+        public string WorkflowCorrelationId { get; set; }
     }
 }

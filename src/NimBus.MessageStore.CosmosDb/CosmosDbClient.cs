@@ -253,6 +253,9 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
                         CloudEventSource = x.Event.CloudEventSource,
                         CloudEventType = x.Event.CloudEventType,
                         CloudEventSubject = x.Event.CloudEventSubject,
+                        ScheduledMessageId = x.Event.ScheduledMessageId,
+                        ScheduledEnqueueTimeUtc = x.Event.ScheduledEnqueueTimeUtc,
+                        WorkflowCorrelationId = x.Event.WorkflowCorrelationId,
                     },
                 })
                 .ToFeedIterator();
@@ -805,6 +808,9 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
                     CloudEventSource = x.Event.CloudEventSource,
                     CloudEventType = x.Event.CloudEventType,
                     CloudEventSubject = x.Event.CloudEventSubject,
+                    ScheduledMessageId = x.Event.ScheduledMessageId,
+                    ScheduledEnqueueTimeUtc = x.Event.ScheduledEnqueueTimeUtc,
+                    WorkflowCorrelationId = x.Event.WorkflowCorrelationId,
                 },
             })
             .ToFeedIterator();
@@ -1339,7 +1345,10 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         "\"CloudEventId\": c.message.CloudEventId, " +
         "\"CloudEventSource\": c.message.CloudEventSource, " +
         "\"CloudEventType\": c.message.CloudEventType, " +
-        "\"CloudEventSubject\": c.message.CloudEventSubject" +
+        "\"CloudEventSubject\": c.message.CloudEventSubject, " +
+        "\"ScheduledMessageId\": c.message.ScheduledMessageId, " +
+        "\"ScheduledEnqueueTimeUtc\": c.message.ScheduledEnqueueTimeUtc, " +
+        "\"WorkflowCorrelationId\": c.message.WorkflowCorrelationId" +
         "} AS message FROM c";
 
     public async Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount)

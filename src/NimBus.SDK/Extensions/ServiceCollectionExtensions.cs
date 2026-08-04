@@ -400,7 +400,12 @@ namespace NimBus.SDK.Extensions
 
                 var dispatcherLogger = sp.GetService<ILogger<OutboxDispatcher>>();
                 var hostedLogger = sp.GetService<ILogger<OutboxDispatcherHostedService>>();
-                var dispatcher = new OutboxDispatcher(outbox, sender, dispatcherLogger);
+                // Optional due-time dispatch coordinator (spec 025). Registration is
+                // unconditional on providers that support it; the dispatcher runs the
+                // claim protocol only when the coordinator reports the SqlOwnedDueTime
+                // mode active, so composition is independent of configuration timing.
+                var coordinator = sp.GetService<IOutboxDispatchCoordinator>();
+                var dispatcher = new OutboxDispatcher(outbox, sender, coordinator, dispatcherLogger);
                 return new OutboxDispatcherHostedService(dispatcher, pollingInterval ?? TimeSpan.FromSeconds(1), batchSize, hostedLogger);
             });
 

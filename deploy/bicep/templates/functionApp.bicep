@@ -47,7 +47,9 @@ resource azureFunction 'Microsoft.Web/sites@2022-03-01' = {
       ftpsState:'FtpsOnly'
       appSettings:appsettings
       netFrameworkVersion: 'v10.0'
+      minTlsVersion: '1.2'
     }
+    httpsOnly: true
   }
 }
 

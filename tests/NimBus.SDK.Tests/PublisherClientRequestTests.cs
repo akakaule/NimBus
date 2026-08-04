@@ -3,12 +3,16 @@
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using NimBus.SDK.Extensions;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -150,6 +154,117 @@ public class PublisherClientRequestTests
 
         Assert.ThrowsExactly<InvalidOperationException>(
             () => builder.AddRequestHandler<PingRequest, PongResponse, PingHandler>());
+    }
+
+    [TestMethod]
+    public async Task Request_WellFormedReply_DeserializesResponse()
+    {
+        var publisher = new PublisherClient(new CapturingSender(), "CrmEndpoint")
+        {
+            ReplyServiceBusClient = new ReplyingServiceBusClient { ReplyBody = "{\"Echo\":\"hi\"}" },
+        };
+
+        var response = await publisher.Request<PingRequest, PongResponse>(new PingRequest { Text = "hi" }, TimeSpan.FromSeconds(5));
+
+        Assert.AreEqual("hi", response.Echo);
+    }
+
+    [TestMethod]
+    [DoNotParallelize]
+    public async Task Request_HostileDefaultSettingsMaxDepth_ReplyDeeperThan32_Throws()
+    {
+        var previousSettings = JsonConvert.DefaultSettings;
+        JsonConvert.DefaultSettings = () => new JsonSerializerSettings { MaxDepth = null };
+        try
+        {
+            var body = string.Concat(Enumerable.Repeat("{\"Value\":", 33)) + "{}" + new string('}', 33);
+            var publisher = new PublisherClient(new CapturingSender(), "CrmEndpoint")
+            {
+                ReplyServiceBusClient = new ReplyingServiceBusClient { ReplyBody = body },
+            };
+
+            await Assert.ThrowsExactlyAsync<JsonReaderException>(() =>
+                publisher.Request<PingRequest, DeepResponse>(new PingRequest(), TimeSpan.FromSeconds(5)));
+        }
+        finally
+        {
+            JsonConvert.DefaultSettings = previousSettings;
+        }
+    }
+
+    [TestMethod]
+    [DoNotParallelize]
+    public async Task Request_HostileDefaultSettingsTypeNameHandling_DoesNotHonorTypeMetadata()
+    {
+        var previousSettings = JsonConvert.DefaultSettings;
+        HostilePayload.ConstructionCount = 0;
+        JsonConvert.DefaultSettings = () => new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.Auto };
+        try
+        {
+            var typeName = $"{typeof(HostilePayload).FullName}, {typeof(HostilePayload).Assembly.GetName().Name}";
+            var body = $"{{\"Value\":{{\"$type\":{JsonConvert.SerializeObject(typeName)}}}}}";
+            var publisher = new PublisherClient(new CapturingSender(), "CrmEndpoint")
+            {
+                ReplyServiceBusClient = new ReplyingServiceBusClient { ReplyBody = body },
+            };
+
+            var response = await publisher.Request<PingRequest, DeepResponse>(new PingRequest(), TimeSpan.FromSeconds(5));
+
+            Assert.AreEqual(0, HostilePayload.ConstructionCount);
+            Assert.IsInstanceOfType<JObject>(response.Value);
+        }
+        finally
+        {
+            JsonConvert.DefaultSettings = previousSettings;
+        }
+    }
+
+    // Returns a canned reply so the full Request path (send -> accept session ->
+    // receive -> complete -> deserialize) runs against an in-memory receiver.
+    private sealed class ReplyingServiceBusClient : ServiceBusClient
+    {
+        public string ReplyBody { get; set; } = "{}";
+
+        public override Task<ServiceBusSessionReceiver> AcceptSessionAsync(
+            string topicName, string subscriptionName, string sessionId,
+            ServiceBusSessionReceiverOptions options = default, CancellationToken cancellationToken = default)
+            => Task.FromResult<ServiceBusSessionReceiver>(new ReplyingSessionReceiver(ReplyBody));
+    }
+
+    [SuppressMessage("Usage", "CA2215:Dispose methods should call base class dispose", Justification = "Test double avoids disposing uninitialized SDK internals.")]
+    private sealed class ReplyingSessionReceiver : ServiceBusSessionReceiver
+    {
+        private readonly string _body;
+
+        public ReplyingSessionReceiver(string body)
+        {
+            _body = body;
+        }
+
+        public override Task<ServiceBusReceivedMessage> ReceiveMessageAsync(TimeSpan? maxWaitTime = default, CancellationToken cancellationToken = default)
+            => Task.FromResult(ServiceBusModelFactory.ServiceBusReceivedMessage(body: new BinaryData(_body)));
+
+        public override Task CompleteMessageAsync(ServiceBusReceivedMessage message, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public override Task CloseAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class DeepResponse
+    {
+        public object? Value { get; set; }
+    }
+
+    public sealed class HostilePayload
+    {
+        public HostilePayload()
+        {
+            ConstructionCount++;
+        }
+
+        public static int ConstructionCount { get; set; }
     }
 
     private sealed class PingEventHandler : NimBus.SDK.EventHandlers.IEventHandler<PingRequest>

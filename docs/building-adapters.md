@@ -425,6 +425,48 @@ Two important notes:
 The complete sample is
 [`samples/CrmErpDemo/Crm.Adapter/Program.cs`](../samples/CrmErpDemo/Crm.Adapter/Program.cs).
 
+### Scheduled delivery and workflow timeouts (spec 025)
+
+`SqlServerOutboxOptions` controls how scheduled rows are delivered:
+
+```csharp
+builder.Services.AddNimBusSqlServerOutbox(options =>
+{
+    options.ConnectionString = crmConnectionString;
+    options.ScheduledDelivery = ScheduledDeliveryMode.SqlOwnedDueTime; // after full cutover only
+    options.SendLeaseDuration = TimeSpan.FromSeconds(30);   // per-attempt send window
+    options.SendLeaseSafetyMargin = TimeSpan.FromSeconds(5); // duration - margin >= 5s floor
+});
+```
+
+- **Ambient transactions.** In `SqlOwnedDueTime` mode, `IPublisherClient
+  .Schedule(...)` stores the scheduled row inside the ambient SQL transaction
+  (`SqlServerOutboxAmbientTransaction`) and returns a provider-local handle in
+  the same transaction; `CancelScheduled(handle)` also honors the ambient
+  transaction. A rollback leaves neither the state mutation nor a cancellable
+  row.
+- **Dispatcher leases and bounded sends.** The dispatcher claims due rows under
+  a lease, fences dispatch-start immediately before broker I/O, and bounds each
+  send to a clock-skew-immune monotonic budget derived from
+  `SendLeaseDuration - SendLeaseSafetyMargin`. Options validation fails startup
+  fast (`ArgumentOutOfRangeException`) when the usable window is below the
+  5-second floor. The bound is best effort — a send that outlives its lease can
+  be retried by another worker; the duplicate carries the same MessageId and
+  must be absorbed by handler idempotency.
+- **Concurrent-safe startup migration.** `EnsureTableExistsAsync` runs its
+  additive DDL under a session-scoped `sp_getapplock`, so rolling deployments
+  can initialize concurrently. Adding the `OutboxSequenceNumber` IDENTITY
+  column may rewrite the table — schedule the first post-upgrade startup inside
+  a maintenance window on very large outboxes.
+- **Cutover runbook.** Default mode is bit-for-bit today's behavior. Flip
+  `ScheduledDelivery = SqlOwnedDueTime` on every publisher and dispatcher host
+  only after **no pre-upgrade dispatcher binary** runs against the table; the
+  `CancelledBeforeDispatch` guarantee holds only from that point. See the
+  phased runbook in [orchestration.md](orchestration.md#sql-owned-due-time-and-the-delivery-mode-cutover).
+- **Retention.** `PurgeDispatchedAsync` now removes both dispatched rows (by
+  `DispatchedAtUtc`) and cancelled rows (by `CancelledAtUtc`) older than the
+  cutoff; cancelled rows are excluded from the due backlog and pending gauges.
+
 ## Middleware and observers
 
 NimBus dispatches received messages through `IMessagePipelineBehavior`

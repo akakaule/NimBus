@@ -431,103 +431,191 @@ public sealed class PaymentDeadlineExpired : OrderWorkflowEvent
 }
 ```
 
-With NimBus's default registrations, inject the `ISender` registered by
-`AddNimBusPublisher`. It is the direct Service Bus sender when no outbox is
-present and the outbox decorator when `IOutbox` is registered. Build a complete
-`IMessage` so the scheduled message uses the persisted native identity and
-lineage rather than generated defaults:
+Use the workflow-facing scheduling API on `IPublisherClient` (spec 025). It
+carries the inbound context's session, correlation, and lineage exactly like
+`PublishFromContext`, stamps the deterministic **TimeoutId** as both the first
+delivery's `MessageId` and the `ScheduledMessageId` marker on every delivery,
+and returns an opaque handle for cancellation:
 
 ```csharp
-public sealed class WorkflowTimeoutScheduler(
-    ISender sender,
-    IWorkflowMessageFactory messages)
+public async Task Handle(OrderPlaced evt, IEventHandlerContext context, CancellationToken ct)
 {
-    public async Task<long?> ScheduleAsync(
-        PaymentDeadlineExpired timeout,
-        OrderWorkflowState state,
-        string parentMessageId,
-        CancellationToken cancellationToken)
+    // ... persist workflow state with the timeout recorded as Pending ...
+
+    var handle = await publisher.Schedule(
+        new PaymentDeadlineExpired { TimeoutId = timeoutId, DueAtUtc = dueAtUtc },
+        dueAtUtc,
+        context,
+        timeoutId,                      // deterministic: workflow id + transition + generation
+        ct);
+
+    // Persist the handle: NimBus never reconstructs one from TimeoutId alone.
+    state.SetTimeout(timeoutId, dueAtUtc, handle);
+}
+```
+
+Derive `timeoutId` from durable workflow identity, the transition name, and the
+timeout generation (for example `order-42:payment-deadline:1`), at most 128
+characters. Rescheduling arms a NEW generation with a new TimeoutId; a late
+delivery of the old generation then fails the state guard and no-ops.
+
+### Logical vs transport identity
+
+`ScheduledMessageId` (the TimeoutId) is the timeout's *logical* identity. It is
+stable across retries, deferred park/republish, throttle redelivery, and
+operator resubmission, while every one of those clones mints its own transport
+`MessageId` (reusing the original would trip broker duplicate detection and
+silently drop the retry). The two are equal only on the first delivery.
+
+Retry clones of a marked timeout also preserve the workflow conversation ID:
+`CorrelationId` on a redelivered timeout is still the persisted workflow
+conversation ID, not the previous attempt's MessageId (ordinary, unmarked
+messages keep the legacy `CorrelationId = parent MessageId` retry convention
+unchanged).
+
+Typed handlers read the logical identity straight from the context:
+
+```csharp
+public async Task Handle(PaymentDeadlineExpired timeout, IEventHandlerContext context, CancellationToken ct)
+{
+    var state = await repository.Load(context.SessionId, ct);
+
+    // Re-read durable state; key the guard on ScheduledMessageId, NEVER on
+    // context.MessageId (that is the per-attempt transport identity).
+    if (state.Status != OrderWorkflowStatus.AwaitingPayment ||
+        state.Timeout?.Id != context.ScheduledMessageId)
     {
-        var scheduledMessage = messages.Create(
-            timeout,
-            messageId: timeout.TimeoutId,
-            sessionId: state.Id,
-            correlationId: state.CorrelationId,
-            parentMessageId: parentMessageId,
-            originatingMessageId: state.OriginatingMessageId,
-            originatingFrom: "OrderOrchestrator");
-
-        var sequenceNumber = await sender.ScheduleMessage(
-            scheduledMessage,
-            new DateTimeOffset(timeout.DueAtUtc, TimeSpan.Zero),
-            cancellationToken);
-
-        // Outbox scheduling returns 0 because no broker sequence exists yet.
-        return sequenceNumber == 0 ? null : sequenceNumber;
+        context.ReportScheduledMessageOutcome(ScheduledMessageHandlingOutcome.IgnoredLate);
+        return; // Completed, cancelled, superseded, or duplicate — observable no-op.
     }
+
+    state.BeginCompensation(context.ScheduledMessageId);
+    await repository.Save(state, ct); // optimistic concurrency decides the race
+    context.ReportScheduledMessageOutcome(ScheduledMessageHandlingOutcome.Fired);
 }
 ```
 
-Call `ScheduleAsync` inside the same application transition and persist its
-result with `state.SetTimeout(timeout.TimeoutId, timeout.DueAtUtc,
-sequenceNumber)`. With the outbox-decorated sender, both the state mutation and
-scheduled outbox row commit through the ambient SQL transaction.
+`ReportScheduledMessageOutcome` is purely diagnostic (the bounded
+`nimbus.message.timeout.operations` metric); it never changes Resolver status
+or handler outcome, and NimBus records only the receive when it is not called.
 
-`IWorkflowMessageFactory` is application code. It must validate and serialize
-the `IEvent` into a NimBus `Message` with `MessageType.EventRequest`,
-`MessageContent.EventContent`, the event type as `To` and `EventTypeId`, and
-every identity/lineage argument shown above. Keep this construction in one
-tested factory so timeout scheduling does not bypass validation or silently
-drop publisher identity. Do not derive `EventId` from the timeout ID; endpoint
-topology assigns the operational `EventId`, while the payload `TimeoutId` and
-broker `MessageId` remain stable.
+### Cancellation is an optimization
 
-`AddNimBusPublisher` uses `TryAddSingleton<ISender>`, so an earlier custom
-`ISender` registration can shadow this public resolution even though
-`IPublisherClient` builds its own sender. If the host has any custom sender
-registration, bind the workflow scheduler explicitly to the intended direct or
-outbox sender and prove the state-plus-schedule rollback in an integration test.
-Do not assume an arbitrary resolved `ISender` shares the publisher's outbox.
+`CancelScheduled(handle)` suppresses work only when its transport-specific race
+is won; durable workflow-state checks remain the correctness boundary in every
+mode.
 
-This low-level factory emits the native NimBus format. A CloudEvents-enabled
-orchestrator must also construct the required `CloudEventPublishContext` or use
-an application scheduler that preserves the CloudEvents envelope; raw
-`IMessage` construction does not apply `PublisherClient`'s private CloudEvents
-projection.
+- **Direct (broker) mode** — `ScheduledMessageHandleKind.BrokerSequenceNumber`.
+  Success returns `CancellationRequested` only: broker activation and
+  cancellation are independent, so the timeout may still be delivered. The
+  broker API is sequence-only, so NimBus validates the handle's *shape* but
+  cannot verify the TimeoutId↔sequence pairing — a mismatched pair cancels
+  whatever sequence was supplied. Direct scheduling is also two-phase (persist
+  Pending, schedule after commit, persist the returned handle), so production
+  code needs a reconciliation path for the schedule-then-save crash gap:
+  reschedule with the same TimeoutId; the duplicate delivery is stale-safe.
+- **SQL outbox, `SqlOwnedDueTime` mode** — `SqlOutboxSequenceNumber`. The
+  scheduled row stays in SQL until due, so cancellation is linearized against
+  dispatch: one conditional UPDATE decides the cancel-vs-dispatch-start race,
+  and the CAS matches sequence AND TimeoutId AND scheduled-ness, so a forged
+  handle affects zero rows. Outcomes are precise: `CancelledBeforeDispatch`
+  (guaranteed never sent by an upgraded fleet), `AlreadyCancelled` (idempotent,
+  no second mutation), `TooLate` (dispatch already started — the broker outcome
+  may be ambiguous, so no false "cancelled" claim), `NotFound`.
+- **Legacy long-only bridge** — `PublisherClient.Schedule(IEvent,
+  DateTimeOffset)`/`CancelScheduled(long)` are `[Obsolete]` bridges. Direct
+  behavior is unchanged; in outbox mode legacy `Schedule` returns the provider
+  sequence only under `SqlOwnedDueTime` (0 otherwise) and `CancelScheduled(long)`
+  stays `NotSupportedException` in all modes — the long alone cannot carry the
+  timeout identity. Migrate to the handle API.
 
-The convenience `Schedule(IEvent, ...)` and `CancelScheduled(...)` methods exist
-only on concrete `PublisherClient`, which `AddNimBusPublisher` does not register
-by its concrete type. They also have no overload for an explicit correlation
-ID, message ID, or lineage, so they do not satisfy this guide's strict workflow
-metadata convention. Use them only for non-workflow reminders where generated
-native metadata is acceptable.
+### SQL-owned due time and the delivery-mode cutover
 
-The timeout handler must compare durable state before acting:
+`SqlServerOutboxOptions.ScheduledDelivery` gates the outbox protocol:
 
-```csharp
-if (state.Status != OrderWorkflowStatus.AwaitingPayment ||
-    state.Timeout?.Id != message.TimeoutId)
-{
-    return; // Completed, superseded, or already handled.
-}
+- `BrokerScheduleAtDispatch` (default) — today's behavior bit for bit,
+  including `CreatedAtUtc` selection/ordering. The handle API throws
+  `InvalidOperationException` naming the required mode so it cannot produce
+  rows an old dispatcher fleet might mishandle.
+- `SqlOwnedDueTime` — SQL owns the due time until it expires: rows become
+  dispatch-eligible at `COALESCE(ScheduledEnqueueTimeUtc, StoredAtUtc)` (SQL
+  time; a past due time means immediately eligible), the dispatcher claims due
+  rows under leases, fences dispatch-start immediately before broker I/O, and
+  sends with zero delay — no eager broker schedule and no broker sequence to
+  cancel. The timing contract becomes "not before due; delivery can be late
+  while the dispatcher is unavailable" — plan dispatcher availability
+  accordingly.
 
-state.BeginCompensation(message.TimeoutId);
-```
+Cutover runbook (an old dispatcher binary would eagerly broker-schedule
+new-style rows and could send a row after `CancelledBeforeDispatch`):
 
-For direct Service Bus scheduling, persist the returned sequence number and
-call `ISender.CancelScheduledMessage` through the same direct sender when the
-workflow advances. Cancellation is an optimization, not the correctness
-mechanism: the handler must still tolerate a cancellation race and stale
-delivery. Direct broker scheduling cannot commit atomically with workflow state,
-so production code also needs a reconciliation path for the schedule-then-save
-crash gap.
+1. **Phase 1** — upgrade binaries everywhere with the default mode. Zero
+   behavior change; the schema migration is additive, applock-serialized, and
+   ignored by old readers (adding the IDENTITY column may rewrite the table —
+   schedule the first startup inside a maintenance window on large outboxes).
+2. **Phase 2** — once no pre-upgrade dispatcher process remains, set
+   `ScheduledDelivery = SqlOwnedDueTime` on every publisher and dispatcher
+   host. The flip is the operator's assertion of full cutover; the
+   `CancelledBeforeDispatch` guarantee holds only from this point. Config skew
+   inside phase 2 degrades to at-least-once with possible eager broker
+   scheduling — application-guard correctness is unaffected, only cancellation
+   precision; converge quickly. Flipping back after cancellations or future-due
+   rows exist is a misconfiguration (the default-mode query still refuses to
+   dispatch a cancelled row).
+3. **Phase 3** — adopt the handle-based `Schedule`/`CancelScheduled` API.
 
-When scheduling through the transactional outbox, the outbox stores the due time
-but returns `0`, because Service Bus assigns the real sequence number only after
-dispatch. `CancelScheduledMessage` therefore throws `NotSupportedException` in
-outbox mode. Do not store `0` and later attempt cancellation. Let the timeout
-arrive and no-op after checking state, or use a separately configured direct
-scheduler and accept that scheduling is outside the state transaction.
+### Ordering, session heads, and the lease bound
+
+In `SqlOwnedDueTime` mode a session has at most one in-flight row. A live
+reservation or a dispatch-started row is the session **head** and blocks every
+other row of that session in both key directions — a backdated (earlier-due)
+insert therefore waits for the head to terminalize, then dispatches before
+later-keyed successors. An expired *started* head bypasses the ordering
+predicate on reclaim (it is the session's in-flight slot and must terminalize
+first), so a backdated arrival can never wedge the session. The claim query
+takes serializable key-range locks (`HOLDLOCK`) through a dedicated
+session-ordering index and uses the `UPDLOCK, READPAST, READCOMMITTEDLOCK`
+candidate hint set, which is valid under both lock-based READ COMMITTED and
+READ_COMMITTED_SNAPSHOT (Azure SQL's default).
+
+The per-attempt send window (`SendLeaseDuration` minus `SendLeaseSafetyMargin`,
+validated to at least the 5-second `MinimumUsableSendWindow` floor) bounds each
+send with a monotonic, clock-skew-immune budget anchored before the start
+fence; the fence is owner-idempotent, so a consumed window triggers one lease
+renewal instead of an instant-timeout retry loop. The bound is **best effort**:
+a sender that ignores cancellation can outlive the lease, another worker may
+reclaim and retry the row, and the overlapping duplicate (same transport
+MessageId) is absorbed by the application idempotency guard — exactly one
+attempt checkpoints the row. After an ambiguous send, a duplicate of an
+earlier row may arrive after a later row; that reorder is confined to
+duplicates and is absorbed by the same guard.
+
+### Operator resubmission of failed timeouts
+
+A terminally failed timeout keeps its identity through the Resolver audit
+chain: Resolver-bound responses carry `ScheduledMessageId`/
+`ScheduledEnqueueTimeUtc` plus the response-only `WorkflowCorrelationId`, the
+stores persist them, and Resubmit (WebApp, per-endpoint fallback, and CLI
+alike) restores them onto the `ResubmissionRequest` — including
+`CorrelationId = WorkflowCorrelationId` for marked entities. After an operator
+fixes a handler bug and resubmits, the workflow guard decides Fired vs
+IgnoredLate like any other delivery. Resolver status remains operational
+message history: Completed means the timeout message was handled, not that the
+business timeout won.
+
+### Observability
+
+`nimbus.message.schedule.operations` (publisher; operation/mode/outcome) and
+`nimbus.message.timeout.operations` (consumer; received, fired, ignored_late,
+failed — keyed on the marker so retries still count as timeout traffic) carry
+bounded dimensions only; TimeoutId, MessageId, SessionId, and CorrelationId
+appear on spans and structured logs, never as metric tags. Outbox pending/lag
+gauges are mode-scoped: in `SqlOwnedDueTime` a future timeout contributes
+nothing until due and its lag counts from the due time.
+
+The complete state diagrams, invariants, and race-by-race test matrix live in
+the approved design:
+[docs/specs/025-orchestration-safe-timeout-scheduling/spec.md](specs/025-orchestration-safe-timeout-scheduling/spec.md).
 
 `PendingHandoff.ExpectedBy` is operational metadata for a pending external job;
 it is not a substitute for an application-owned timeout message.

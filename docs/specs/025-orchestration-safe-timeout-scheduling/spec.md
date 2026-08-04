@@ -3,7 +3,7 @@
 Feature Branch: `feature/AF-117-adr-009-2-8-design-orchestration-safe-ti`
 Created: 2026-07-22
 Updated: 2026-07-22
-Status: Approved design (ADR-009 series, 2/8) - implementation and verification land with AF-120
+Status: Implemented (ADR-009 series, 2/8 design; implementation landed with AF-120)
 Input: AF-117 - "Design orchestration-safe timeout semantics for direct and outbox publishing"
 
 ## Problem

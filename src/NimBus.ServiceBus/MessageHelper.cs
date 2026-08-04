@@ -89,6 +89,8 @@ namespace NimBus.ServiceBus
             if (!string.IsNullOrEmpty(message.CloudEventSubject))
                 result.ApplicationProperties[UserPropertyName.CloudEventSubject.ToString()] = message.CloudEventSubject;
 
+            StampScheduledMessageMarker(result, message);
+
             // W3C trace propagation: traceparent (and optional tracestate) is the
             // canonical format on every transport (FR-030). Legacy Diagnostic-Id is
             // not written or read by NimBus.
@@ -161,6 +163,10 @@ namespace NimBus.ServiceBus
             result.ApplicationProperties[UserPropertyName.OriginalSessionId.ToString()] = originalSessionId;
             result.ApplicationProperties[UserPropertyName.DeferralSequence.ToString()] = deferralSequence;
 
+            // Parked timeouts keep their logical identity through the deferred
+            // subscription (spec 025, invariant 1).
+            StampScheduledMessageMarker(result, message);
+
             var (traceParent, traceState) = W3CMessagePropagator.CaptureCurrent();
             if (!string.IsNullOrEmpty(traceParent))
                 result.ApplicationProperties[W3CMessagePropagator.TraceParentHeader] = traceParent;
@@ -175,6 +181,21 @@ namespace NimBus.ServiceBus
             result.CorrelationId = message.CorrelationId;
             result.SessionId = originalSessionId;  // Session-enabled deferred subscription
             return result;
+        }
+
+        // Scheduled-message (workflow timeout) identity, spec 025. Only stamped when
+        // present so ordinary messages stay byte-identical on the wire.
+        private static void StampScheduledMessageMarker(Azure.Messaging.ServiceBus.ServiceBusMessage result, IMessage message)
+        {
+            if (!string.IsNullOrEmpty(message.ScheduledMessageId))
+                result.ApplicationProperties[UserPropertyName.ScheduledMessageId.ToString()] = message.ScheduledMessageId;
+            if (message.ScheduledEnqueueTimeUtc.HasValue)
+            {
+                result.ApplicationProperties[UserPropertyName.ScheduledEnqueueTimeUtc.ToString()] =
+                    message.ScheduledEnqueueTimeUtc.Value.ToUniversalTime().ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+            }
+            if (!string.IsNullOrEmpty(message.WorkflowCorrelationId))
+                result.ApplicationProperties[UserPropertyName.WorkflowCorrelationId.ToString()] = message.WorkflowCorrelationId;
         }
     }
 }

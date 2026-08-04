@@ -223,6 +223,35 @@ namespace NimBus.ServiceBus
 
         public HandoffMetadata HandoffMetadata { get; set; }
 
+        /// <summary>
+        /// Logical scheduled-message identity (TimeoutId) read from the wire marker.
+        /// Null for ordinary messages, so legacy traffic is unaffected (spec 025).
+        /// </summary>
+        public string ScheduledMessageId => _sbMessage.GetUserProperty(UserPropertyName.ScheduledMessageId);
+
+        /// <summary>
+        /// Original scheduled due time read from the wire marker. Null for ordinary
+        /// messages or an unparsable value.
+        /// </summary>
+        public DateTimeOffset? ScheduledEnqueueTimeUtc
+        {
+            get
+            {
+                var value = _sbMessage.GetUserProperty(UserPropertyName.ScheduledEnqueueTimeUtc);
+                if (string.IsNullOrEmpty(value)) return null;
+                return DateTimeOffset.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var parsed)
+                    ? parsed
+                    : (DateTimeOffset?)null;
+            }
+        }
+
+        /// <summary>
+        /// Workflow conversation ID carried on Resolver-bound responses of marked
+        /// messages (the response's own CorrelationId keeps the = MessageId
+        /// audit-linkage convention). Null on ordinary messages.
+        /// </summary>
+        public string WorkflowCorrelationId => _sbMessage.GetUserProperty(UserPropertyName.WorkflowCorrelationId);
+
         public System.Diagnostics.ActivityContext ParentTraceContext { get; set; }
 
         private long? TryReadLong(UserPropertyName name)

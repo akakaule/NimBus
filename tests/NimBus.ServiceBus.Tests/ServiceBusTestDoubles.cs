@@ -108,10 +108,31 @@ internal sealed class RecordingServiceBusSender : ServiceBusSender
         return Task.CompletedTask;
     }
 
-    public override Task<long> ScheduleMessageAsync(Azure.Messaging.ServiceBus.ServiceBusMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
+    public List<long> CancelledSequenceNumbers { get; } = new();
+
+    /// <summary>
+    /// Sequence number returned by <see cref="ScheduleMessageAsync"/>; incremented per call.
+    /// </summary>
+    public long NextSequenceNumber { get; set; } = 1L;
+
+    /// <summary>
+    /// Optional gate awaited before a schedule call records/returns. Lets race
+    /// tests hold a schedule in flight while another operation proceeds.
+    /// </summary>
+    public Func<Task>? ScheduleGate { get; set; }
+
+    public override async Task<long> ScheduleMessageAsync(Azure.Messaging.ServiceBus.ServiceBusMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
     {
+        if (ScheduleGate != null)
+            await ScheduleGate();
         ScheduledMessages.Add((message, scheduledEnqueueTime));
-        return Task.FromResult(1L);
+        return NextSequenceNumber++;
+    }
+
+    public override Task CancelScheduledMessageAsync(long sequenceNumber, CancellationToken cancellationToken = default)
+    {
+        CancelledSequenceNumbers.Add(sequenceNumber);
+        return Task.CompletedTask;
     }
 
     public override Task CloseAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

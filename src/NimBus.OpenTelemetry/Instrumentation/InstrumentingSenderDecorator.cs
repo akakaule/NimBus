@@ -42,6 +42,41 @@ internal sealed class InstrumentingSenderDecorator : ISender
     public Task CancelScheduledMessage(long sequenceNumber, CancellationToken cancellationToken = default)
         => _inner.CancelScheduledMessage(sequenceNumber, cancellationToken);
 
+    // The richer handle overloads MUST forward explicitly: without these the
+    // decorator would satisfy the interface through the default bridge and hide
+    // the inner sender's implementation (e.g. OutboxSender's provider-local
+    // handle path), silently downgrading outbox scheduling to broker semantics.
+    public Task<ScheduledMessageHandle> ScheduleMessageWithHandle(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        return ScheduleWithHandleInstrumentedAsync(message, () => _inner.ScheduleMessageWithHandle(message, scheduledEnqueueTime, cancellationToken));
+    }
+
+    public Task<ScheduledMessageCancellationOutcome> CancelScheduledMessage(ScheduledMessageHandle handle, CancellationToken cancellationToken = default)
+        => _inner.CancelScheduledMessage(handle, cancellationToken);
+
+    private async Task<ScheduledMessageHandle> ScheduleWithHandleInstrumentedAsync(
+        IMessage message,
+        Func<Task<ScheduledMessageHandle>> action)
+    {
+        var (activity, started, tags) = StartActivity([message]);
+        try
+        {
+            var result = await action().ConfigureAwait(false);
+            RecordSuccess(activity, [message], started, tags);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            RecordFailure(activity, started, tags, ex);
+            throw;
+        }
+        finally
+        {
+            activity?.Dispose();
+        }
+    }
+
     private async Task SendInstrumented(IReadOnlyCollection<IMessage> messages, Func<Task> action)
     {
         var (activity, started, tags) = StartActivity(messages);

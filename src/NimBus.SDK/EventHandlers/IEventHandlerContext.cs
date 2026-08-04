@@ -76,6 +76,35 @@ namespace NimBus.SDK.EventHandlers
         /// existing context implementers are forward-compatible.
         /// </summary>
         CloudEvent GetCloudEvent() => null;
+
+        /// <summary>
+        /// Logical scheduled-message identity (TimeoutId); stable across retries,
+        /// deferred replay, and redelivery, while <see cref="MessageId"/> is the
+        /// per-attempt transport identity. A timeout handler's workflow-state
+        /// compare-and-set must key on this value, never on <see cref="MessageId"/>.
+        /// Null for ordinary messages. The default implementation returns
+        /// <c>null</c> so existing context implementers are forward-compatible.
+        /// </summary>
+        string ScheduledMessageId => null;
+
+        /// <summary>
+        /// Original scheduled due time. Null for ordinary messages. The default
+        /// implementation returns <c>null</c> so existing context implementers are
+        /// forward-compatible.
+        /// </summary>
+        DateTimeOffset? ScheduledEnqueueTimeUtc => null;
+
+        /// <summary>
+        /// Reports whether the durable workflow guard fired the timeout or ignored
+        /// it as late. Call only after the compare-and-set/no-op decision. Purely
+        /// diagnostic: it does not change HandlerOutcome, Resolver status, or any
+        /// operator audit type. The default implementation is a no-op so existing
+        /// context implementers are forward-compatible.
+        /// </summary>
+        /// <param name="outcome">The guard's decision.</param>
+        void ReportScheduledMessageOutcome(ScheduledMessageHandlingOutcome outcome)
+        {
+        }
     }
 
     public class EventHandlerContext : IEventHandlerContext
@@ -89,6 +118,11 @@ namespace NimBus.SDK.EventHandlers
         public EventHandlerContext(IMessageContext messageContext)
         {
             _messageContext = messageContext;
+            if (messageContext != null)
+            {
+                ScheduledMessageId = messageContext.ScheduledMessageId;
+                ScheduledEnqueueTimeUtc = messageContext.ScheduledEnqueueTimeUtc;
+            }
         }
 
         /// <summary>
@@ -129,5 +163,15 @@ namespace NimBus.SDK.EventHandlers
 
         /// <inheritdoc/>
         public CloudEvent GetCloudEvent() => _messageContext?.GetCloudEvent();
+
+        /// <inheritdoc/>
+        public string ScheduledMessageId { get; set; }
+
+        /// <inheritdoc/>
+        public DateTimeOffset? ScheduledEnqueueTimeUtc { get; set; }
+
+        /// <inheritdoc/>
+        public void ReportScheduledMessageOutcome(ScheduledMessageHandlingOutcome outcome) =>
+            _messageContext?.ReportScheduledMessageOutcome(outcome);
     }
 }

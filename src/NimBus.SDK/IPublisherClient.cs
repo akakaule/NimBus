@@ -52,6 +52,59 @@ namespace NimBus.SDK
         }
 
         /// <summary>
+        /// Schedules a workflow timeout event for delivery at
+        /// <paramref name="scheduledEnqueueTime"/>, carrying the inbound context's
+        /// session, correlation, and lineage metadata like
+        /// <see cref="PublishFromContext"/>. <paramref name="timeoutId"/> is the
+        /// logical timeout identity: it is stamped as both the first delivery's
+        /// MessageId and the <c>ScheduledMessageId</c> marker on every delivery, so
+        /// it must be deterministic (derive it from durable workflow identity,
+        /// transition name, and generation) and at most 128 characters. A past due
+        /// time is allowed and means immediately eligible.
+        /// Persist the returned handle: it is required to cancel the schedule and
+        /// is only valid with the same endpoint-bound publisher configuration that
+        /// created it. The default implementation throws
+        /// <see cref="NotSupportedException"/> so existing custom implementations
+        /// stay source- and binary-compatible.
+        /// </summary>
+        /// <param name="event">The timeout event to schedule.</param>
+        /// <param name="scheduledEnqueueTime">The due time; normalized to UTC.</param>
+        /// <param name="context">The inbound handler context supplying workflow identity and lineage.</param>
+        /// <param name="timeoutId">The deterministic logical timeout identity.</param>
+        /// <param name="cancellationToken">Cancellation token propagated to the configured sender.</param>
+        /// <returns>The handle identifying the schedule for later cancellation.</returns>
+        Task<ScheduledMessageHandle> Schedule(
+            IEvent @event,
+            DateTimeOffset scheduledEnqueueTime,
+            IEventHandlerContext context,
+            string timeoutId,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException(
+                "Scheduled workflow timeouts require a compatible publisher implementation. Use PublisherClient or update the custom IPublisherClient implementation.");
+        }
+
+        /// <summary>
+        /// Cancels a scheduled timeout by handle. Cancellation is an optimization,
+        /// not the correctness boundary: a timeout may still be delivered after a
+        /// successful cancellation request (direct mode) or when dispatch already
+        /// started (outbox mode) — the handler's durable workflow-state guard
+        /// remains the final authority. The default implementation throws
+        /// <see cref="NotSupportedException"/> so existing custom implementations
+        /// stay source- and binary-compatible.
+        /// </summary>
+        /// <param name="handle">The handle returned by <see cref="Schedule(IEvent, DateTimeOffset, IEventHandlerContext, string, CancellationToken)"/>.</param>
+        /// <param name="cancellationToken">Cancellation token propagated to the configured sender.</param>
+        /// <returns>The transport-specific cancellation outcome.</returns>
+        Task<ScheduledMessageCancellationOutcome> CancelScheduled(
+            ScheduledMessageHandle handle,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException(
+                "Scheduled workflow timeouts require a compatible publisher implementation. Use PublisherClient or update the custom IPublisherClient implementation.");
+        }
+
+        /// <summary>
         /// Pre-release - use with care!
         /// Publish multiple messages at once. Make sure batch size enforced by Azure Service Bus is taken into account.
         /// </summary>

@@ -171,5 +171,27 @@ namespace NimBus.Core.Messages
         /// forward-compatible.
         /// </summary>
         CloudEvent GetCloudEvent() => null;
+
+        /// <summary>
+        /// Records the timeout handler's durable compare-and-set decision as the
+        /// bounded <c>nimbus.message.timeout.operations</c> diagnostic (spec 025).
+        /// A no-op for unmarked (ordinary) messages. If the handler never calls
+        /// it, NimBus records the receive only and does not invent a Fired result.
+        /// The default implementation lets existing custom contexts and test
+        /// doubles compile unchanged.
+        /// </summary>
+        /// <param name="outcome">Whether the workflow guard fired the timeout or ignored it as late.</param>
+        void ReportScheduledMessageOutcome(ScheduledMessageHandlingOutcome outcome)
+        {
+            if (ScheduledMessageId is null)
+                return;
+            var tags = new System.Collections.Generic.KeyValuePair<string, object?>[]
+            {
+                new(Diagnostics.MessagingAttributes.NimBusOutcome,
+                    outcome == ScheduledMessageHandlingOutcome.Fired ? "fired" : "ignored_late"),
+                new(Diagnostics.MessagingAttributes.NimBusEventType, EventTypeId),
+            };
+            Diagnostics.NimBusMeters.TimeoutOperations.Add(1, tags);
+        }
     }
 }

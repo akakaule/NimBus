@@ -39,6 +39,12 @@ public static class MessagingAttributes
     public const string NimBusDeferredBatchSize = "nimbus.deferred.batch_size";
     public const string NimBusOutboxBatchSize = "nimbus.outbox.batch_size";
 
+    // Scheduled-message (workflow timeout) telemetry, spec 025. Bounded values
+    // only: operation is schedule|cancel, mode is broker|sql_outbox. TimeoutId,
+    // MessageId, SessionId and CorrelationId are span/log fields, never metric tags.
+    public const string NimBusScheduleOperation = "nimbus.schedule.operation";
+    public const string NimBusScheduleMode = "nimbus.schedule.mode";
+
     // OTel error attribution
     public const string ErrorType = "error.type";
 }

@@ -269,7 +269,7 @@ namespace NimBus.WebApp
             }
         }
 
-        // Controllers/JSON, Razor, NSwag, response compression, SPA static files, SignalR.
+        // Controllers/JSON, Razor, NSwag, response compression, SignalR.
         private void AddWebPipeline(IServiceCollection services)
         {
             services.AddControllers(options =>
@@ -288,7 +288,7 @@ namespace NimBus.WebApp
                 opts.JsonSerializerOptions.Converters.Add(new Services.NullableUtcDateTimeJsonConverter());
             });
 
-            services.AddMvc().AddRazorRuntimeCompilation();
+            services.AddMvc();
 
             services.AddSwaggerDocument(s =>
             {
@@ -324,11 +324,6 @@ namespace NimBus.WebApp
             });
             services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Optimal);
             services.Configure<GzipCompressionProviderOptions>(o => o.Level = CompressionLevel.Optimal);
-
-            services.AddSpaStaticFiles(configuration =>
-            {
-                configuration.RootPath = "ClientApp/build/public";
-            });
 
             services.AddSignalR();
         }
@@ -577,8 +572,8 @@ namespace NimBus.WebApp
 
             app.UseHttpsRedirection();
 
-            // Response compression MUST run before UseSpaStaticFiles, UseStaticFiles, and
-            // UseRouting. The static-file middleware short-circuits the request and writes
+            // Response compression MUST run before UseStaticFiles and UseRouting.
+            // The static-file middleware short-circuits the request and writes
             // the response body inline; if compression sits *after* it, the SPA bundle
             // ships uncompressed because the encoding is selected too late to apply to the
             // already-written stream. Routing/endpoint middleware has the same hazard for
@@ -601,38 +596,43 @@ namespace NimBus.WebApp
             {
                 app.UseMiddleware<PrecompressedStaticFileMiddleware>(
                     (Microsoft.Extensions.FileProviders.IFileProvider)new Microsoft.Extensions.FileProviders.PhysicalFileProvider(spaAssetRoot));
-            }
 
-            app.UseSpaStaticFiles(new StaticFileOptions
-            {
-                // Resolve the rewritten `.js.br` / `.css.gz` paths back to the
-                // underlying asset's Content-Type so precompressed responses
-                // keep their real type instead of application/octet-stream.
-                ContentTypeProvider = new PrecompressedContentTypeProvider(),
-                OnPrepareResponse = ctx =>
+                // Serve the built SPA bundle. Must stay inside the Directory.Exists guard:
+                // PhysicalFileProvider throws on a missing root, and unit-test hosts run
+                // without a built SPA (see the matching guard on the fallback below).
+                app.UseStaticFiles(new StaticFileOptions
                 {
-                    var path = ctx.Context.Request.Path.Value ?? string.Empty;
-                    var headers = ctx.Context.Response.GetTypedHeaders();
-                    if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase))
+                    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(spaAssetRoot),
+
+                    // Resolve the rewritten `.js.br` / `.css.gz` paths back to the
+                    // underlying asset's Content-Type so precompressed responses
+                    // keep their real type instead of application/octet-stream.
+                    ContentTypeProvider = new PrecompressedContentTypeProvider(),
+                    OnPrepareResponse = ctx =>
                     {
-                        // Vite emits content-hashed filenames under /assets/ — the bytes
-                        // for a given URL never change, so cache them aggressively and skip
-                        // revalidation entirely. A new deploy ships new hashes, new URLs.
-                        headers.CacheControl = new CacheControlHeaderValue
+                        var path = ctx.Context.Request.Path.Value ?? string.Empty;
+                        var headers = ctx.Context.Response.GetTypedHeaders();
+                        if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase))
                         {
-                            Public = true,
-                            MaxAge = TimeSpan.FromDays(365),
-                            Extensions = { new NameValueHeaderValue("immutable") },
-                        };
-                    }
-                    else
-                    {
-                        // Unhashed root assets (favicon, etc.) must revalidate so a deploy
-                        // is picked up without serving stale bytes.
-                        headers.CacheControl = new CacheControlHeaderValue { NoCache = true };
-                    }
-                },
-            });
+                            // Vite emits content-hashed filenames under /assets/ — the bytes
+                            // for a given URL never change, so cache them aggressively and skip
+                            // revalidation entirely. A new deploy ships new hashes, new URLs.
+                            headers.CacheControl = new CacheControlHeaderValue
+                            {
+                                Public = true,
+                                MaxAge = TimeSpan.FromDays(365),
+                                Extensions = { new NameValueHeaderValue("immutable") },
+                            };
+                        }
+                        else
+                        {
+                            // Unhashed root assets (favicon, etc.) must revalidate so a deploy
+                            // is picked up without serving stale bytes.
+                            headers.CacheControl = new CacheControlHeaderValue { NoCache = true };
+                        }
+                    },
+                });
+            }
 
             // OpenAPI / Swagger UI publishes the management API surface, so keep
             // it gated to Development. Production hosts should not expose the

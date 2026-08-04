@@ -113,6 +113,10 @@ public interface IPublisherClient
     Task Publish(IEvent @event, string sessionId, string correlationId, string messageId);
     Task PublishFromContext(IEvent @event, IEventHandlerContext context,
         string messageId, CancellationToken cancellationToken = default);
+    Task<ScheduledMessageHandle> Schedule(IEvent @event, DateTimeOffset scheduledEnqueueTime,
+        IEventHandlerContext context, string timeoutId, CancellationToken cancellationToken = default);
+    Task<ScheduledMessageCancellationOutcome> CancelScheduled(ScheduledMessageHandle handle,
+        CancellationToken cancellationToken = default);
     Task PublishBatch(IEnumerable<IEvent> events);
     Task PublishBatches(IEnumerable<IEvent> events, string correlationId = null);
 }
@@ -124,6 +128,8 @@ public interface IPublisherClient
 | `Publish(event, sessionId, correlationId)` | Publish with explicit session and correlation IDs. Overrides `GetSessionId()`. |
 | `Publish(event, sessionId, correlationId, messageId)` | Publish with all IDs explicit (for deterministic deduplication). |
 | `PublishFromContext(event, context, messageId, cancellationToken)` | Publish a workflow follow-up with an explicit deterministic ID while preserving the inbound session, correlation, and origin lineage and setting the inbound message as parent. |
+| `Schedule(event, dueTime, context, timeoutId, cancellationToken)` | Schedule a workflow timeout with the inbound context's session/correlation/lineage. `timeoutId` (deterministic, ≤128 chars) becomes the first delivery's MessageId AND the `ScheduledMessageId` marker on every delivery. A past due time means immediately eligible. Persist the returned handle. |
+| `CancelScheduled(handle, cancellationToken)` | Cancel by handle. Best-effort optimization — the handler's durable state guard remains authoritative. Direct mode returns `CancellationRequested` only (shape-validated, no TimeoutId↔sequence pair verification); the SQL outbox in `SqlOwnedDueTime` mode CAS-matches sequence+TimeoutId+scheduled-ness and returns precise outcomes. |
 | `PublishBatch(events)` | Publish multiple events as a Service Bus batch. Respect batch size limits. |
 | `PublishBatches(events, correlationId)` | **Preferred for bulk publish.** Publishes any number of events, automatically paged to the Service Bus batch size; each event is built and serialized exactly once. |
 
@@ -195,6 +201,12 @@ public interface IEventHandlerContext
     // Signal that the handler has handed work off to a long-running external system.
     // Idempotent — last call wins. See "Async completion via PendingHandoff" below.
     void MarkPendingHandoff(string reason, string externalJobId = null, TimeSpan? expectedBy = null);
+
+    // Scheduled-message (workflow timeout) surface, spec 025. Backward-compatible
+    // default members: custom contexts compile unchanged and return null/no-op.
+    string ScheduledMessageId { get; }              // logical TimeoutId; null for ordinary messages
+    DateTimeOffset? ScheduledEnqueueTimeUtc { get; } // original due time; null for ordinary messages
+    void ReportScheduledMessageOutcome(ScheduledMessageHandlingOutcome outcome); // Fired | IgnoredLate, diagnostic only
 }
 ```
 
@@ -483,29 +495,65 @@ Control methods: `Complete()`, `Abandon()`, `DeadLetter()`, `Defer()`, `BlockSes
 
 Schedule messages for future delivery and cancel them if no longer needed.
 
-### ISender
+### Handle-based workflow scheduling (preferred, spec 025)
 
 ```csharp
-Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken ct = default);
-Task CancelScheduledMessage(long sequenceNumber, CancellationToken ct = default);
+// Inside a workflow handler: schedule a timeout with the inbound context's
+// session, correlation, and lineage. timeoutId is the logical identity —
+// deterministic, at most 128 characters.
+var handle = await publisher.Schedule(
+    new PaymentDeadlineExpired { TimeoutId = timeoutId, DueAtUtc = due },
+    due, context, timeoutId, cancellationToken);
+
+// Persist the handle; cancel later when the workflow advances.
+var outcome = await publisher.CancelScheduled(handle, cancellationToken);
 ```
 
-### PublisherClient
+`ScheduledMessageHandle` carries `TimeoutId`, an opaque `SequenceNumber`, and
+its `Kind` (`BrokerSequenceNumber` for direct sends, `SqlOutboxSequenceNumber`
+for the SQL outbox in `SqlOwnedDueTime` mode). Handles are only valid with the
+same endpoint-bound publisher configuration that created them; a handle of the
+wrong kind is rejected, never reinterpreted. Validation scope differs by mode:
+the SQL provider CAS-verifies the TimeoutId↔sequence **pair** (a forged handle
+affects zero rows → `NotFound`), while direct mode can only validate the
+handle's shape — the broker API is sequence-only.
+
+`ScheduledMessageCancellationOutcome`: `CancellationRequested` (direct,
+best-effort), `CancelledBeforeDispatch`, `AlreadyCancelled`, `TooLate`,
+`NotFound`, `Unsupported`. Cancellation is an optimization in every mode; the
+timeout handler's durable state guard decides whether effects apply.
+
+### Legacy sequence-number APIs
 
 ```csharp
-// Schedule an event for 30 minutes from now
-var seq = await publisher.Schedule(orderReminder, DateTimeOffset.UtcNow.AddMinutes(30));
+// ISender primitives (still used by internal retry/redelivery; not obsolete)
+Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken ct = default);
+Task CancelScheduledMessage(long sequenceNumber, CancellationToken ct = default);
 
-// Cancel if no longer needed (e.g., payment received before timeout)
+// PublisherClient concrete bridges — [Obsolete]; migrate to the handle API
+var seq = await publisher.Schedule(orderReminder, DateTimeOffset.UtcNow.AddMinutes(30));
 await publisher.CancelScheduled(seq);
 ```
 
 ### Outbox integration
 
-When using the transactional outbox, scheduled messages are persisted with `ScheduledEnqueueTimeUtc` and dispatched via `ScheduleMessage` by the `OutboxDispatcher`. Note: `CancelScheduledMessage` throws `NotSupportedException` in outbox mode because the Service Bus sequence number is only assigned after dispatch.
+Behavior depends on `SqlServerOutboxOptions.ScheduledDelivery`:
 
-For process-manager identity, state/outbox atomicity, and stale-safe timeout
-handling, see [Application-Level Orchestration](orchestration.md).
+- `BrokerScheduleAtDispatch` (default): unchanged from previous releases —
+  scheduled rows are eagerly broker-scheduled at dispatch, legacy `Schedule`
+  returns `0`, and the handle API throws `InvalidOperationException` naming the
+  required mode.
+- `SqlOwnedDueTime`: SQL owns the due time; `Schedule` returns a non-zero
+  provider-local handle inside the ambient transaction and `CancelScheduled`
+  can deterministically cancel any row whose dispatch has not started.
+
+Legacy `CancelScheduled(long)` throws `NotSupportedException` in outbox mode in
+**all** modes — the sequence alone cannot carry the timeout identity that the
+SQL cancellation CAS requires.
+
+For process-manager identity, state/outbox atomicity, stale-safe timeout
+handling, and the delivery-mode cutover runbook, see
+[Application-Level Orchestration](orchestration.md).
 
 ---
 

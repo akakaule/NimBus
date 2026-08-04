@@ -42,8 +42,11 @@ namespace NimBus.SDK.Hosting
                 {
                     var dispatched = await _dispatcher.DispatchPendingAsync(_batchSize, stoppingToken);
 
-                    // If we dispatched a full batch, immediately poll again (more may be waiting)
-                    if (dispatched >= _batchSize)
+                    // Poll again immediately after ANY successful dispatch (spec 025):
+                    // in claim mode a busy session yields at most one row per round, so
+                    // waiting the full interval would throttle that session to one
+                    // message per polling interval.
+                    if (dispatched > 0)
                         continue;
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

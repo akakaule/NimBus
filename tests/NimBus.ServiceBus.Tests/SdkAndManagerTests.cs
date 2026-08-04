@@ -47,6 +47,80 @@ public class SdkAndManagerTests
     }
 
     [TestMethod]
+    public async Task ManagerClient_Resubmit_MarkedEntity_RestoresTimeoutIdentityAndWorkflowCorrelation()
+    {
+        var client = new RecordingServiceBusClient();
+        var sut = new ManagerClient(client);
+        var due = new DateTimeOffset(2026, 9, 1, 12, 0, 0, TimeSpan.Zero);
+        var errorResponse = new MessageEntity
+        {
+            CorrelationId = "attempt-1",              // audit-linkage convention (= failed delivery MessageId)
+            WorkflowCorrelationId = "workflow-conversation",
+            ScheduledMessageId = "order-42:payment-timeout:1",
+            ScheduledEnqueueTimeUtc = due,
+            EventId = "event-1",
+            SessionId = "order-42",
+            MessageId = "attempt-1",
+            OriginatingMessageId = "originating-1",
+        };
+
+        await sut.Resubmit(errorResponse, "billing", "PaymentTimedOut", "{}");
+
+        var sentMessage = client.Sender.SentMessages.Single();
+        Assert.AreEqual("order-42:payment-timeout:1",
+            sentMessage.ApplicationProperties[UserPropertyName.ScheduledMessageId.ToString()]);
+        Assert.AreEqual(
+            due.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+            sentMessage.ApplicationProperties[UserPropertyName.ScheduledEnqueueTimeUtc.ToString()]);
+        Assert.AreEqual("workflow-conversation", sentMessage.CorrelationId,
+            "The resubmission clone's CorrelationId is restored from WorkflowCorrelationId for marked entities");
+    }
+
+    [TestMethod]
+    public async Task ManagerClient_Resubmit_MarkedPreUpgradeEntity_FallsBackToEntityCorrelationId()
+    {
+        var client = new RecordingServiceBusClient();
+        var sut = new ManagerClient(client);
+        var errorResponse = new MessageEntity
+        {
+            CorrelationId = "correlation-1",
+            ScheduledMessageId = "order-42:payment-timeout:1",
+            WorkflowCorrelationId = null, // pre-upgrade audit row
+            EventId = "event-1",
+            SessionId = "order-42",
+            MessageId = "attempt-1",
+            OriginatingMessageId = "originating-1",
+        };
+
+        await sut.Resubmit(errorResponse, "billing", "PaymentTimedOut", "{}");
+
+        Assert.AreEqual("correlation-1", client.Sender.SentMessages.Single().CorrelationId);
+    }
+
+    [TestMethod]
+    public async Task ManagerClient_Resubmit_UnmarkedEntity_ConstructionIsByteIdenticalToToday()
+    {
+        var client = new RecordingServiceBusClient();
+        var sut = new ManagerClient(client);
+        var errorResponse = new MessageEntity
+        {
+            CorrelationId = "correlation-1",
+            EventId = "event-1",
+            SessionId = "session-1",
+            MessageId = "message-1",
+            OriginatingMessageId = "originating-1",
+        };
+
+        await sut.Resubmit(errorResponse, "billing", "OrderPlaced", "{\"id\":1}");
+
+        var sentMessage = client.Sender.SentMessages.Single();
+        Assert.AreEqual("correlation-1", sentMessage.CorrelationId);
+        Assert.IsFalse(sentMessage.ApplicationProperties.ContainsKey(UserPropertyName.ScheduledMessageId.ToString()));
+        Assert.IsFalse(sentMessage.ApplicationProperties.ContainsKey(UserPropertyName.ScheduledEnqueueTimeUtc.ToString()));
+        Assert.IsFalse(sentMessage.ApplicationProperties.ContainsKey(UserPropertyName.WorkflowCorrelationId.ToString()));
+    }
+
+    [TestMethod]
     public async Task ManagerClient_Skip_SendsManagerMarkedMessageToEndpointSender()
     {
         var client = new RecordingServiceBusClient();

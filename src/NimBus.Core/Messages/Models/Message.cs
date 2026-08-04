@@ -147,6 +147,30 @@ namespace NimBus.Core.Messages
 
         /// <summary>CloudEvents <c>subject</c>, carried to the Resolver. Null for a native message.</summary>
         string CloudEventSubject => null;
+
+        /// <summary>
+        /// Logical scheduled-message identity (TimeoutId). Stable across retries,
+        /// deferred replay, redelivery, and operator resubmission — distinct from
+        /// the per-attempt transport <see cref="MessageId"/>, equal to it only on
+        /// the first delivery. Null (the default) for ordinary messages.
+        /// </summary>
+        string ScheduledMessageId => null;
+
+        /// <summary>
+        /// Original scheduled due time of a scheduled message, preserved on every
+        /// representation of the timeout. Null for ordinary messages.
+        /// </summary>
+        DateTimeOffset? ScheduledEnqueueTimeUtc => null;
+
+        /// <summary>
+        /// Response-only carrier of the workflow conversation ID for marked
+        /// (scheduled) messages. Resolver-bound responses keep their own
+        /// <see cref="CorrelationId"/> equal to the handled message's MessageId
+        /// (the audit-linkage convention), so the workflow conversation ID rides
+        /// here instead and operator resubmission restores it onto the clone's
+        /// CorrelationId. Null on ordinary messages and on non-response messages.
+        /// </summary>
+        string WorkflowCorrelationId => null;
     }
 
     public class Message : IMessage
@@ -213,5 +237,14 @@ namespace NimBus.Core.Messages
 
         /// <summary>See <see cref="IMessage.CloudEventSubject"/>.</summary>
         public string CloudEventSubject { get; set; }
+
+        /// <summary>See <see cref="IMessage.ScheduledMessageId"/>.</summary>
+        public string ScheduledMessageId { get; set; }
+
+        /// <summary>See <see cref="IMessage.ScheduledEnqueueTimeUtc"/>.</summary>
+        public DateTimeOffset? ScheduledEnqueueTimeUtc { get; set; }
+
+        /// <summary>See <see cref="IMessage.WorkflowCorrelationId"/>.</summary>
+        public string WorkflowCorrelationId { get; set; }
     }
 }

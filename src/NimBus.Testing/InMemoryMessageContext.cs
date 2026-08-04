@@ -45,6 +45,12 @@ public class InMemoryMessageContext : IMessageContext
     public string ExternalJobId => _message.ExternalJobId;
     public DateTime? ExpectedBy => _message.ExpectedBy;
 
+    // Scheduled-message (timeout) identity, spec 025: forwarded from the wrapped
+    // message so in-memory tests observe the same marker semantics as the wire.
+    public string ScheduledMessageId => _message.ScheduledMessageId;
+    public DateTimeOffset? ScheduledEnqueueTimeUtc => _message.ScheduledEnqueueTimeUtc;
+    public string WorkflowCorrelationId => _message.WorkflowCorrelationId;
+
     // Observable state for test assertions
     public bool IsCompleted { get; private set; }
     public bool IsAbandoned { get; private set; }

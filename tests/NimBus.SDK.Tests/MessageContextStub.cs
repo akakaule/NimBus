@@ -41,6 +41,27 @@ public static class MessageContextStub
     public static IMessageContext WithInvalidContent(string eventTypeId, InvalidMessageException exception)
         => new StubMessageContext(eventTypeId, exception);
 
+    public static IMessageContext ForScheduledMessage(
+        string eventTypeId,
+        string eventJson,
+        string messageId,
+        string sessionId,
+        string correlationId,
+        string scheduledMessageId,
+        DateTimeOffset? scheduledEnqueueTimeUtc)
+        => new StubMessageContext(
+            eventTypeId,
+            eventJson,
+            messageId,
+            sessionId,
+            correlationId,
+            parentMessageId: Constants.Self,
+            originatingMessageId: Constants.Self)
+        {
+            ScheduledMessageId = scheduledMessageId,
+            ScheduledEnqueueTimeUtc = scheduledEnqueueTimeUtc,
+        };
+
     private sealed class StubMessageContext : IMessageContext
     {
         private readonly MessageContent? _messageContent;
@@ -120,6 +141,8 @@ public static class MessageContextStub
         public HandlerOutcome HandlerOutcome { get; set; }
         public HandoffMetadata HandoffMetadata { get; set; }
         public ActivityContext ParentTraceContext { get; set; }
+        public string ScheduledMessageId { get; init; }
+        public DateTimeOffset? ScheduledEnqueueTimeUtc { get; init; }
 
         public Task Complete(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task Abandon(TransientException exception) => Task.CompletedTask;

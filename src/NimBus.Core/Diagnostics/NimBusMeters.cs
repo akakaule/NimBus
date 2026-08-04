@@ -22,6 +22,10 @@ public static class NimBusMeters
     public static readonly Counter<long> PublishFailed = Publisher.CreateCounter<long>(
         "nimbus.message.publish.failed", "{messages}", "Publish attempts that threw.");
 
+    public static readonly Counter<long> ScheduleOperations = Publisher.CreateCounter<long>(
+        "nimbus.message.schedule.operations", "{operations}",
+        "Scheduled-message operations (schedule/cancel) with their bounded outcome.");
+
     public static readonly Meter Consumer = new(NimBusInstrumentation.ConsumerMeterName);
 
     public static readonly Counter<long> MessagesReceived = Consumer.CreateCounter<long>(
@@ -44,6 +48,10 @@ public static class NimBusMeters
 
     public static readonly Counter<long> InboxOperationFailed = Consumer.CreateCounter<long>(
         "nimbus.inbox.operation.failed", "{operations}", "Inbox store operations that failed.");
+
+    public static readonly Counter<long> TimeoutOperations = Consumer.CreateCounter<long>(
+        "nimbus.message.timeout.operations", "{operations}",
+        "Timeout (scheduled-message) consumer events: received, fired, ignored_late, failed. Keyed on the ScheduledMessageId marker so retried timeouts still count as timeout traffic.");
 
     public static readonly Meter Outbox = new(NimBusInstrumentation.OutboxMeterName);
 

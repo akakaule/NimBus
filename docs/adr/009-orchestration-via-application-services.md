@@ -87,13 +87,20 @@ The orchestrator owns its state — a simple document per workflow instance:
 
 ### Timeout Integration
 
-Model a timeout as a deterministic, idempotent message. With a direct
-`ISender`, persist the broker sequence returned by `ScheduleMessage` and treat
-`CancelScheduledMessage` as a best-effort optimization. With the transactional
-outbox, schedule the timeout row in the same SQL transaction as workflow state;
-the call returns `0` because no broker sequence exists yet, and cancellation is
-not supported. In both modes, the timeout handler must reload state and no-op
-when the workflow completed or the timeout identity was superseded. See the
+Model a timeout as a deterministic, idempotent message with a stable logical
+identity (spec 025). `IPublisherClient.Schedule(event, dueTime, context,
+timeoutId)` stamps the TimeoutId as the first delivery's MessageId and as the
+`ScheduledMessageId` marker on every delivery, and returns a
+`ScheduledMessageHandle` for cancellation. Cancellation is an **optimization
+only**, in every mode: direct broker cancellation is sequence-only best effort,
+and the SQL outbox (in `SqlOwnedDueTime` mode) can guarantee
+`CancelledBeforeDispatch` only for rows whose dispatch has not started. The
+timeout handler must always reload durable state and no-op (IgnoredLate) when
+the workflow completed or the timeout identity was superseded — the
+application's workflow-state guard, not broker cancellation, remains the
+correctness boundary. This preserves the ADR's no-saga boundary: NimBus adds
+messaging primitives (schedule, cancel, identity propagation), never a workflow
+state store or saga runtime. See the
 [timeout pattern](../orchestration.md#timeouts-are-messages) for the exact
 identity and wiring conventions.
 

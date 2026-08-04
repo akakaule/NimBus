@@ -134,6 +134,9 @@ WHEN MATCHED THEN UPDATE SET
     HandoffReason = @HandoffReason,
     ExternalJobId = @ExternalJobId,
     ExpectedBy = @ExpectedBy,
+    ScheduledMessageId = @ScheduledMessageId,
+    ScheduledEnqueueTimeUtc = @ScheduledEnqueueTimeUtc,
+    WorkflowCorrelationId = @WorkflowCorrelationId,
     MessageContentJson = @MessageContentJson,
     Deleted = 0
 WHEN NOT MATCHED THEN INSERT (
@@ -143,6 +146,7 @@ WHEN NOT MATCHED THEN INSERT (
     ToAddress, FromAddress, QueueTimeMs, ProcessingTimeMs,
     CloudEventId, CloudEventSource, CloudEventType, CloudEventSubject,
     PendingSubStatus, HandoffReason, ExternalJobId, ExpectedBy,
+    ScheduledMessageId, ScheduledEnqueueTimeUtc, WorkflowCorrelationId,
     MessageContentJson)
 VALUES (
     @EventId, @SessionId, @EndpointId, @Status, @UpdatedAt, @EnqueuedTimeUtc, @CorrelationId, @EndpointRole,
@@ -151,6 +155,7 @@ VALUES (
     @ToAddress, @FromAddress, @QueueTimeMs, @ProcessingTimeMs,
     @CloudEventId, @CloudEventSource, @CloudEventType, @CloudEventSubject,
     @PendingSubStatus, @HandoffReason, @ExternalJobId, @ExpectedBy,
+    @ScheduledMessageId, @ScheduledEnqueueTimeUtc, @WorkflowCorrelationId,
     @MessageContentJson);";
 
         await using var conn = await OpenAsync();
@@ -187,6 +192,9 @@ VALUES (
             HandoffReason = content.HandoffReason,
             ExternalJobId = content.ExternalJobId,
             ExpectedBy = content.ExpectedBy,
+            content.ScheduledMessageId,
+            content.ScheduledEnqueueTimeUtc,
+            content.WorkflowCorrelationId,
             MessageContentJson = JsonConvert.SerializeObject(content.MessageContent),
         }, commandTimeout: _commandTimeout);
 
@@ -204,13 +212,15 @@ INSERT INTO {T("Messages")} (
     OriginatingMessageId, ParentMessageId, FromAddress, ToAddress, OriginatingFrom, OriginalSessionId,
     MessageType, EndpointRole, EnqueuedTimeUtc, RetryCount, RetryLimit, DeferralSequence,
     QueueTimeMs, ProcessingTimeMs, CloudEventId, CloudEventSource, CloudEventType, CloudEventSubject,
-    DeadLetterReason, DeadLetterErrorDescription, MessageContentJson)
+    DeadLetterReason, DeadLetterErrorDescription, MessageContentJson,
+    ScheduledMessageId, ScheduledEnqueueTimeUtc, WorkflowCorrelationId)
 VALUES (
     @EventId, @MessageId, @EndpointId, @SessionId, @CorrelationId, @EventTypeId,
     @OriginatingMessageId, @ParentMessageId, @FromAddress, @ToAddress, @OriginatingFrom, @OriginalSessionId,
     @MessageType, @EndpointRole, @EnqueuedTimeUtc, @RetryCount, @RetryLimit, @DeferralSequence,
     @QueueTimeMs, @ProcessingTimeMs, @CloudEventId, @CloudEventSource, @CloudEventType, @CloudEventSubject,
-    @DeadLetterReason, @DeadLetterErrorDescription, @MessageContentJson);";
+    @DeadLetterReason, @DeadLetterErrorDescription, @MessageContentJson,
+    @ScheduledMessageId, @ScheduledEnqueueTimeUtc, @WorkflowCorrelationId);";
 
         await using var conn = await OpenAsync();
         await conn.ExecuteAsync(sql, new
@@ -242,6 +252,9 @@ VALUES (
             message.DeadLetterReason,
             message.DeadLetterErrorDescription,
             MessageContentJson = JsonConvert.SerializeObject(message.MessageContent),
+            message.ScheduledMessageId,
+            message.ScheduledEnqueueTimeUtc,
+            message.WorkflowCorrelationId,
         }, commandTimeout: _commandTimeout);
     }
 
@@ -345,7 +358,16 @@ VALUES (
             DeadLetterReason = row.DeadLetterReason ?? string.Empty,
             DeadLetterErrorDescription = row.DeadLetterErrorDescription ?? string.Empty,
             MessageContent = JsonConvert.DeserializeObject<MessageContent>((string)row.MessageContentJson) ?? new MessageContent(),
+            ScheduledMessageId = TryReadString(row, "ScheduledMessageId"),
+            ScheduledEnqueueTimeUtc = TryReadDateTimeOffset(row, "ScheduledEnqueueTimeUtc"),
+            WorkflowCorrelationId = TryReadString(row, "WorkflowCorrelationId"),
         };
+    }
+
+    private static DateTimeOffset? TryReadDateTimeOffset(dynamic row, string column)
+    {
+        var dictionary = (IDictionary<string, object?>)row;
+        return dictionary.TryGetValue(column, out var value) && value is DateTimeOffset dto ? dto : null;
     }
 
     // ───────── Audit trail ─────────
@@ -998,6 +1020,9 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
             HandoffReason = TryReadString(row, "HandoffReason"),
             ExternalJobId = TryReadString(row, "ExternalJobId"),
             ExpectedBy = TryReadDateTime(row, "ExpectedBy"),
+            ScheduledMessageId = TryReadString(row, "ScheduledMessageId"),
+            ScheduledEnqueueTimeUtc = TryReadDateTimeOffset(row, "ScheduledEnqueueTimeUtc"),
+            WorkflowCorrelationId = TryReadString(row, "WorkflowCorrelationId"),
             MessageContent = string.IsNullOrEmpty((string?)row.MessageContentJson)
                 ? new MessageContent()
                 : JsonConvert.DeserializeObject<MessageContent>((string)row.MessageContentJson) ?? new MessageContent(),
@@ -1093,6 +1118,7 @@ SELECT
     MessageType, EndpointRole, EnqueuedTimeUtc, RetryCount, RetryLimit, DeferralSequence,
     QueueTimeMs, ProcessingTimeMs, CloudEventId, CloudEventSource, CloudEventType, CloudEventSubject,
     DeadLetterReason, DeadLetterErrorDescription,
+    ScheduledMessageId, ScheduledEnqueueTimeUtc, WorkflowCorrelationId,
     JSON_MODIFY(MessageContentJson, '$.EventContent.EventJson', NULL) AS MessageContentJson
 FROM {T("Messages")}
 WHERE {string.Join(" AND ", where)}

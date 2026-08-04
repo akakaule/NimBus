@@ -21,6 +21,19 @@ Architecture:
 
 The outbox participates in the same SQL transaction as the application's business logic, ensuring atomicity.
 
+### Scheduled delivery (spec 025 addendum)
+
+The outbox additionally implements the optional `IScheduledOutbox` and
+`IOutboxDispatchCoordinator` companions. Behind the
+`ScheduledDeliveryMode.SqlOwnedDueTime` cutover gate, SQL owns a scheduled
+row's due time: rows are stored with a provider-local sequence (the
+cancellation handle), claimed by the dispatcher under leases with per-session
+head ordering, fenced immediately before broker I/O, and sent with zero delay
+once due. Cancellation is linearized in SQL against dispatch-start for pending
+rows; it remains an optimization, never a correctness guarantee — application
+workflow-state guards stay authoritative. The default
+`BrokerScheduleAtDispatch` mode keeps the original behavior bit for bit.
+
 ## Consequences
 
 ### Positive

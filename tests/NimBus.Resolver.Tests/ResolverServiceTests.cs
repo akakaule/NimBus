@@ -452,6 +452,47 @@ public class ResolverServiceTests
         Assert.AreEqual(0, message.ScheduleRedeliveryCalls);
     }
 
+    // ── Scheduled-message (timeout) identity projection (spec 025) ───────
+
+    [TestMethod]
+    public async Task Handle_MarkedFailedResponse_ProjectsTimeoutIdentityIntoMessageAndUnresolvedEvent()
+    {
+        var cosmos = new FakeCosmosDbClient();
+        var due = new DateTimeOffset(2026, 9, 1, 12, 0, 0, TimeSpan.Zero);
+        var message = CreateMessageContext(messageType: MessageType.ErrorResponse, to: "Resolver", from: "BillingEndpoint");
+        message.ScheduledMessageId = "order-42:payment-timeout:1";
+        message.ScheduledEnqueueTimeUtc = due;
+        message.WorkflowCorrelationId = "workflow-conversation";
+        var service = CreateService(cosmos);
+
+        await service.Handle(message);
+
+        var stored = cosmos.StoredMessages[0];
+        Assert.AreEqual("order-42:payment-timeout:1", stored.ScheduledMessageId);
+        Assert.AreEqual(due, stored.ScheduledEnqueueTimeUtc);
+        Assert.AreEqual("workflow-conversation", stored.WorkflowCorrelationId);
+
+        var failed = cosmos.FailedUploads[0].Content;
+        Assert.AreEqual("order-42:payment-timeout:1", failed.ScheduledMessageId);
+        Assert.AreEqual(due, failed.ScheduledEnqueueTimeUtc);
+        Assert.AreEqual("workflow-conversation", failed.WorkflowCorrelationId);
+    }
+
+    [TestMethod]
+    public async Task Handle_UnmarkedResponse_LeavesTimeoutIdentityNull()
+    {
+        var cosmos = new FakeCosmosDbClient();
+        var message = CreateMessageContext(messageType: MessageType.ErrorResponse, to: "Resolver", from: "BillingEndpoint");
+        var service = CreateService(cosmos);
+
+        await service.Handle(message);
+
+        Assert.IsNull(cosmos.StoredMessages[0].ScheduledMessageId);
+        Assert.IsNull(cosmos.StoredMessages[0].ScheduledEnqueueTimeUtc);
+        Assert.IsNull(cosmos.StoredMessages[0].WorkflowCorrelationId);
+        Assert.IsNull(cosmos.FailedUploads[0].Content.ScheduledMessageId);
+    }
+
     private static ResolverService CreateService(
         FakeCosmosDbClient? cosmos = null,
         IMessageStateChangeNotifier? notifier = null)
@@ -527,6 +568,9 @@ public class ResolverServiceTests
         public string CloudEventSource { get; set; }
         public string CloudEventType { get; set; }
         public string CloudEventSubject { get; set; }
+        public string ScheduledMessageId { get; set; }
+        public DateTimeOffset? ScheduledEnqueueTimeUtc { get; set; }
+        public string WorkflowCorrelationId { get; set; }
 
         public int CompletedCalls { get; private set; }
         public int AbandonCalls { get; private set; }

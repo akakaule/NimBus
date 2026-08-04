@@ -156,6 +156,66 @@ public class EventJsonHandlerTests
         }
     }
 
+    // ── Scheduled-message identity exposure (spec 025) ───────────────────
+
+    [TestMethod]
+    public async Task Handle_MarkedContext_ExposesScheduledIdentityOnHandlerContext()
+    {
+        var handler = new RecordingHandler();
+        var sut = new EventJsonHandler<TestEvent>(handler);
+        var due = new DateTimeOffset(2026, 9, 1, 12, 0, 0, TimeSpan.Zero);
+        var messageContext = MessageContextStub.ForScheduledMessage(
+            nameof(TestEvent),
+            "{}",
+            messageId: "attempt-2",
+            sessionId: "order-42",
+            correlationId: "conversation-7",
+            scheduledMessageId: "order-42:payment-timeout:1",
+            scheduledEnqueueTimeUtc: due);
+
+        await sut.Handle(messageContext);
+
+        Assert.AreEqual("order-42:payment-timeout:1", handler.LastContext?.ScheduledMessageId,
+            "Typed handlers must see the logical timeout identity, not the per-attempt MessageId");
+        Assert.AreEqual(due, handler.LastContext?.ScheduledEnqueueTimeUtc);
+        Assert.AreEqual("attempt-2", handler.LastContext?.MessageId);
+    }
+
+    [TestMethod]
+    public async Task Handle_UnmarkedContext_ScheduledIdentityIsNull()
+    {
+        var handler = new RecordingHandler();
+        var sut = new EventJsonHandler<TestEvent>(handler);
+
+        await sut.Handle(MessageContextStub.ForEventType(nameof(TestEvent), "{}"));
+
+        Assert.IsNull(handler.LastContext?.ScheduledMessageId);
+        Assert.IsNull(handler.LastContext?.ScheduledEnqueueTimeUtc);
+    }
+
+    [TestMethod]
+    public void CustomHandlerContextWithoutNewMembers_ReturnsDefaultsAndNoOpReport()
+    {
+        IEventHandlerContext legacy = new LegacyHandlerContext();
+
+        Assert.IsNull(legacy.ScheduledMessageId);
+        Assert.IsNull(legacy.ScheduledEnqueueTimeUtc);
+        legacy.ReportScheduledMessageOutcome(ScheduledMessageHandlingOutcome.IgnoredLate); // must not throw
+    }
+
+    private sealed class LegacyHandlerContext : IEventHandlerContext
+    {
+        public string MessageId => "legacy-message";
+        public string EventId => "legacy-event";
+        public string EventType => "LegacyEvent";
+        public string CorrelationId => "legacy-correlation";
+        public HandlerOutcome Outcome => HandlerOutcome.Default;
+        public HandoffMetadata HandoffMetadata => null!;
+        public void MarkPendingHandoff(string reason, string externalJobId = null!, TimeSpan? expectedBy = null)
+        {
+        }
+    }
+
     public sealed class TestEvent : Event
     {
         public object? Value { get; set; }

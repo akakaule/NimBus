@@ -103,6 +103,98 @@ public class SenderTests
         Assert.AreEqual(1, sbSender.SentMessages.Count);
     }
 
+    // ── Scheduled-message handle overloads (spec 025) ───────────────────
+
+    [TestMethod]
+    public async Task ScheduleMessageWithHandle_ReturnsBrokerSequenceHandle()
+    {
+        var sbSender = new RecordingServiceBusSender { NextSequenceNumber = 42L };
+        var sut = new Sender(sbSender);
+        var message = (Message)CreateMessage("Billing");
+        message.ScheduledMessageId = "timeout-1";
+        var due = DateTimeOffset.UtcNow.AddMinutes(30);
+
+        var handle = await ((ISender)sut).ScheduleMessageWithHandle(message, due);
+
+        Assert.AreEqual("timeout-1", handle.TimeoutId);
+        Assert.AreEqual(42L, handle.SequenceNumber);
+        Assert.AreEqual(ScheduledMessageHandleKind.BrokerSequenceNumber, handle.Kind);
+        Assert.AreEqual(due, sbSender.ScheduledMessages.Single().ScheduledEnqueueTime);
+    }
+
+    [TestMethod]
+    public async Task ScheduleMessageWithHandle_NoMarker_FallsBackToMessageId()
+    {
+        var sbSender = new RecordingServiceBusSender();
+        var sut = new Sender(sbSender);
+        var message = (Message)CreateMessage("Billing");
+        message.MessageId = "deterministic-1";
+
+        var handle = await ((ISender)sut).ScheduleMessageWithHandle(message, DateTimeOffset.UtcNow.AddMinutes(5));
+
+        Assert.AreEqual("deterministic-1", handle.TimeoutId);
+    }
+
+    [TestMethod]
+    public async Task CancelScheduledMessage_Handle_DelegatesSequenceOnlyAndReturnsCancellationRequested()
+    {
+        var sbSender = new RecordingServiceBusSender();
+        var sut = new Sender(sbSender);
+        var handle = new ScheduledMessageHandle("timeout-1", 42L, ScheduledMessageHandleKind.BrokerSequenceNumber);
+
+        var outcome = await ((ISender)sut).CancelScheduledMessage(handle);
+
+        Assert.AreEqual(ScheduledMessageCancellationOutcome.CancellationRequested, outcome);
+        Assert.AreEqual(42L, sbSender.CancelledSequenceNumbers.Single());
+    }
+
+    [TestMethod]
+    public async Task CancelScheduledMessage_Handle_MismatchedTimeoutId_StillCancelsSuppliedSequence()
+    {
+        // Documented best effort: the broker API is sequence-only; direct mode
+        // validates shape but CANNOT verify the TimeoutId↔sequence pairing.
+        var sbSender = new RecordingServiceBusSender();
+        var sut = new Sender(sbSender);
+        var handle = new ScheduledMessageHandle("some-other-timeout", 7L, ScheduledMessageHandleKind.BrokerSequenceNumber);
+
+        var outcome = await ((ISender)sut).CancelScheduledMessage(handle);
+
+        Assert.AreEqual(ScheduledMessageCancellationOutcome.CancellationRequested, outcome);
+        Assert.AreEqual(7L, sbSender.CancelledSequenceNumbers.Single());
+    }
+
+    [TestMethod]
+    public async Task CancelScheduledMessage_OutboxKindHandle_IsRejectedNotReinterpreted()
+    {
+        var sbSender = new RecordingServiceBusSender();
+        var sut = new Sender(sbSender);
+        var handle = new ScheduledMessageHandle("timeout-1", 42L, ScheduledMessageHandleKind.SqlOutboxSequenceNumber);
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => ((ISender)sut).CancelScheduledMessage(handle));
+        Assert.AreEqual(0, sbSender.CancelledSequenceNumbers.Count);
+    }
+
+    [TestMethod]
+    public async Task CancelScheduledMessage_NonPositiveSequence_IsRejected()
+    {
+        var sut = new Sender(new RecordingServiceBusSender());
+        var handle = new ScheduledMessageHandle("timeout-1", 0L, ScheduledMessageHandleKind.BrokerSequenceNumber);
+
+        await Assert.ThrowsExactlyAsync<ArgumentOutOfRangeException>(
+            () => ((ISender)sut).CancelScheduledMessage(handle));
+    }
+
+    [TestMethod]
+    public async Task CancelScheduledMessage_BlankTimeoutId_IsRejected()
+    {
+        var sut = new Sender(new RecordingServiceBusSender());
+        var handle = new ScheduledMessageHandle(" ", 42L, ScheduledMessageHandleKind.BrokerSequenceNumber);
+
+        await Assert.ThrowsExactlyAsync<ArgumentException>(
+            () => ((ISender)sut).CancelScheduledMessage(handle));
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private static IMessage CreateMessage(string to)

@@ -185,9 +185,16 @@ static class Container
     static Task Resubmit(Sender sender, UnresolvedEvent errorResponse, string endpoint, string eventTypeId, string eventJson)
     {
         AnsiConsole.MarkupLine($"[dim]MANAGER RESUBMIT EVENT: EventId: {errorResponse.EventId.EscapeMarkup()} EventtypeId: {eventTypeId.EscapeMarkup()}[/]");
+        // Marked (scheduled/timeout) entities restore the logical timeout identity
+        // and workflow conversation ID (spec 025); unmarked entities keep today's
+        // construction byte-identical. WorkflowCorrelationId falls back to the
+        // entity CorrelationId for pre-upgrade rows.
+        var isMarked = !string.IsNullOrEmpty(errorResponse.ScheduledMessageId);
         return sender.Send(new Message
         {
-            CorrelationId = errorResponse.CorrelationId,
+            CorrelationId = isMarked
+                ? errorResponse.WorkflowCorrelationId ?? errorResponse.CorrelationId
+                : errorResponse.CorrelationId,
             EventId = errorResponse.EventId,
             SessionId = errorResponse.SessionId,
             To = endpoint,
@@ -203,6 +210,8 @@ static class Container
                     EventJson = eventJson
                 }
             },
+            ScheduledMessageId = errorResponse.ScheduledMessageId,
+            ScheduledEnqueueTimeUtc = errorResponse.ScheduledEnqueueTimeUtc,
         });
     }
 

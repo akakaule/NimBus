@@ -80,5 +80,39 @@ namespace NimBus.Core.Outbox
         /// originating activity carried no tracestate.
         /// </summary>
         public string TraceState { get; set; }
+
+        /// <summary>
+        /// Provider-local sequence number (SQL IDENTITY). Assigned by the store on
+        /// insert; the sequence inside a <see cref="Messages.ScheduledMessageHandle"/>
+        /// of kind SqlOutboxSequenceNumber. Zero for providers/rows that predate the
+        /// column. Immediate rows also receive values but are not cancellable.
+        /// </summary>
+        public long OutboxSequenceNumber { get; set; }
+
+        /// <summary>
+        /// SQL-assigned insert timestamp — the ordering authority for unscheduled
+        /// rows in SqlOwnedDueTime mode (application-stamped
+        /// <see cref="CreatedAtUtc"/> never gates or orders dispatch there). Null
+        /// on providers/rows that predate the column; default mode ignores it.
+        /// </summary>
+        public DateTime? StoredAtUtc { get; set; }
+
+        /// <summary>
+        /// When the row's cancellation CAS won. Terminal: a cancelled row is never
+        /// dispatched by an upgraded dispatcher in SqlOwnedDueTime mode.
+        /// </summary>
+        public DateTime? CancelledAtUtc { get; set; }
+
+        /// <summary>
+        /// When the first dispatch-start fence won. Once set, cancellation reports
+        /// TooLate; the row is its session's in-flight slot until it terminalizes.
+        /// </summary>
+        public DateTime? DispatchStartedAtUtc { get; set; }
+
+        /// <summary>Owner of the row's live dispatch claim; null when unclaimed.</summary>
+        public Guid? DispatchClaimId { get; set; }
+
+        /// <summary>SQL-computed lease deadline of the live claim; the server-side reclaim boundary.</summary>
+        public DateTime? DispatchClaimedUntilUtc { get; set; }
     }
 }

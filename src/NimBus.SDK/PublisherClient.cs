@@ -220,6 +220,7 @@ public class PublisherClient : IPublisherClient
     /// Schedules an event for delivery at the specified time.
     /// Returns a sequence number that can be used to cancel the scheduled message.
     /// </summary>
+    [Obsolete("Use Schedule(IEvent, DateTimeOffset, IEventHandlerContext, string, CancellationToken): the returned handle carries the logical timeout identity and works on both the direct and outbox paths. This overload returns 0 in outbox default mode and its sequence cannot be cancelled there.")]
     public async Task<long> Schedule(IEvent @event, DateTimeOffset scheduledEnqueueTime)
     {
         var message = GetMessage(@event);
@@ -227,11 +228,65 @@ public class PublisherClient : IPublisherClient
     }
 
     /// <summary>
-    /// Cancels a previously scheduled message using the sequence number returned by <see cref="Schedule"/>.
+    /// Cancels a previously scheduled message using the sequence number returned by <see cref="Schedule(IEvent, DateTimeOffset)"/>.
     /// </summary>
+    [Obsolete("Use CancelScheduled(ScheduledMessageHandle, CancellationToken): the sequence number alone cannot carry the timeout identity and remains NotSupported in outbox mode.")]
     public async Task CancelScheduled(long sequenceNumber)
     {
         await _sender.CancelScheduledMessage(sequenceNumber);
+    }
+
+    /// <inheritdoc/>
+    public async Task<ScheduledMessageHandle> Schedule(
+        IEvent @event,
+        DateTimeOffset scheduledEnqueueTime,
+        IEventHandlerContext context,
+        string timeoutId,
+        CancellationToken cancellationToken = default)
+    {
+        if (@event == null) throw new ArgumentNullException(nameof(@event));
+        if (context == null) throw new ArgumentNullException(nameof(context));
+        ScheduledMessageHandle.ValidateTimeoutId(timeoutId, nameof(timeoutId));
+        if (string.IsNullOrWhiteSpace(context.MessageId))
+            throw new ArgumentException("The inbound context must have a message ID.", nameof(context));
+        if (string.IsNullOrWhiteSpace(context.SessionId))
+            throw new ArgumentException("The inbound context must have a session ID.", nameof(context));
+        if (string.IsNullOrWhiteSpace(context.CorrelationId))
+            throw new ArgumentException("The inbound context must have a correlation ID.", nameof(context));
+
+        var dueTimeUtc = scheduledEnqueueTime.ToUniversalTime();
+
+        // Reuse the context-aware message factory (AF-118): TimeoutId becomes the
+        // deterministic MessageId of the first delivery (and the CloudEvent id when
+        // CloudEvents publishing is enabled), while SessionId/CorrelationId/lineage
+        // come from the inbound workflow context.
+        var message = (Message)GetMessage(
+            @event,
+            context.CorrelationId,
+            timeoutId,
+            context.SessionId);
+        message.ParentMessageId = context.MessageId;
+        message.OriginatingMessageId = string.IsNullOrWhiteSpace(context.OriginatingMessageId)
+            || string.Equals(context.OriginatingMessageId, Constants.Self, StringComparison.OrdinalIgnoreCase)
+                ? context.MessageId
+                : context.OriginatingMessageId;
+
+        // The logical identity marker rides on every representation of the timeout;
+        // retry/deferred clones mint their own transport MessageIds but keep it.
+        message.ScheduledMessageId = timeoutId;
+        message.ScheduledEnqueueTimeUtc = dueTimeUtc;
+
+        return await _sender.ScheduleMessageWithHandle(message, dueTimeUtc, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<ScheduledMessageCancellationOutcome> CancelScheduled(
+        ScheduledMessageHandle handle,
+        CancellationToken cancellationToken = default)
+    {
+        if (handle == null) throw new ArgumentNullException(nameof(handle));
+        handle.Validate(nameof(handle));
+        return await _sender.CancelScheduledMessage(handle, cancellationToken);
     }
 
     /// <summary>

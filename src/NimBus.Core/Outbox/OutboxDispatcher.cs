@@ -20,11 +20,12 @@ namespace NimBus.Core.Outbox
         private static readonly TimeSpan DefaultCompensatingCheckpointTimeout = TimeSpan.FromSeconds(5);
         private readonly IOutbox _outbox;
         private readonly ISender _sender;
+        private readonly IOutboxDispatchCoordinator? _coordinator;
         private readonly ILogger<OutboxDispatcher> _logger;
         private readonly TimeSpan _compensatingCheckpointTimeout;
 
         public OutboxDispatcher(IOutbox outbox, ISender sender, ILogger<OutboxDispatcher>? logger = null)
-            : this(outbox, sender, DefaultCompensatingCheckpointTimeout, logger)
+            : this(outbox, sender, coordinator: null, DefaultCompensatingCheckpointTimeout, logger)
         {
         }
 
@@ -41,12 +42,53 @@ namespace NimBus.Core.Outbox
             ISender sender,
             TimeSpan compensatingCheckpointTimeout,
             ILogger<OutboxDispatcher>? logger = null)
+            : this(outbox, sender, coordinator: null, compensatingCheckpointTimeout, logger)
+        {
+        }
+
+        /// <summary>
+        /// Initializes an outbox dispatcher with an optional due-time dispatch
+        /// coordinator (spec 025). The claim/fence/checkpoint protocol runs iff
+        /// <paramref name="coordinator"/> is non-null and reports
+        /// <see cref="IOutboxDispatchCoordinator.DueTimeDispatchActive"/>; in every
+        /// other case the legacy GetPendingAsync/MarkAsDispatchedAsync flow runs
+        /// unchanged.
+        /// </summary>
+        /// <param name="outbox">The transactional outbox store.</param>
+        /// <param name="sender">The sender used to dispatch stored messages.</param>
+        /// <param name="coordinator">Optional due-time dispatch coordinator.</param>
+        /// <param name="logger">Optional dispatcher logger.</param>
+        public OutboxDispatcher(
+            IOutbox outbox,
+            ISender sender,
+            IOutboxDispatchCoordinator? coordinator,
+            ILogger<OutboxDispatcher>? logger = null)
+            : this(outbox, sender, coordinator, DefaultCompensatingCheckpointTimeout, logger)
+        {
+        }
+
+        /// <summary>
+        /// Initializes an outbox dispatcher with an optional due-time dispatch
+        /// coordinator and a bounded compensating-checkpoint timeout.
+        /// </summary>
+        /// <param name="outbox">The transactional outbox store.</param>
+        /// <param name="sender">The sender used to dispatch stored messages.</param>
+        /// <param name="coordinator">Optional due-time dispatch coordinator.</param>
+        /// <param name="compensatingCheckpointTimeout">Maximum time to wait for the cancellation checkpoint.</param>
+        /// <param name="logger">Optional dispatcher logger.</param>
+        public OutboxDispatcher(
+            IOutbox outbox,
+            ISender sender,
+            IOutboxDispatchCoordinator? coordinator,
+            TimeSpan compensatingCheckpointTimeout,
+            ILogger<OutboxDispatcher>? logger = null)
         {
             _outbox = outbox ?? throw new ArgumentNullException(nameof(outbox));
             _sender = sender ?? throw new ArgumentNullException(nameof(sender));
             if (compensatingCheckpointTimeout <= TimeSpan.Zero)
                 throw new ArgumentOutOfRangeException(nameof(compensatingCheckpointTimeout));
 
+            _coordinator = coordinator;
             _compensatingCheckpointTimeout = compensatingCheckpointTimeout;
             _logger = logger ?? NullLogger<OutboxDispatcher>.Instance;
         }
@@ -59,6 +101,13 @@ namespace NimBus.Core.Outbox
         /// <returns>The number of messages dispatched.</returns>
         public async Task<int> DispatchPendingAsync(int batchSize = 100, CancellationToken cancellationToken = default)
         {
+            // Protocol selection is pinned by the capability signal, never by
+            // registration presence (spec 025): only an ACTIVE coordinator runs the
+            // claim/fence/checkpoint protocol; default mode and custom providers
+            // keep today's flow byte-identical.
+            if (_coordinator is { DueTimeDispatchActive: true })
+                return await DispatchViaCoordinatorAsync(_coordinator, batchSize, cancellationToken);
+
             var pending = await _outbox.GetPendingAsync(batchSize, cancellationToken);
             if (pending.Count == 0)
                 return 0;
@@ -140,6 +189,201 @@ namespace NimBus.Core.Outbox
             return dispatched.Count;
         }
 
+        // ── SqlOwnedDueTime claim/fence/checkpoint protocol (spec 025) ──────
+
+        private async Task<int> DispatchViaCoordinatorAsync(
+            IOutboxDispatchCoordinator coordinator,
+            int batchSize,
+            CancellationToken cancellationToken)
+        {
+            var claimId = Guid.NewGuid();
+            var claimed = await coordinator.ClaimDueAsync(claimId, batchSize, cancellationToken);
+            if (claimed.Count == 0)
+                return 0;
+
+            _logger.LogDebug(
+                "Outbox due-time claim round {ClaimId} claimed {ClaimedCount} row(s)",
+                claimId, claimed.Count);
+
+            var dispatched = 0;
+            for (var i = 0; i < claimed.Count; i++)
+            {
+                try
+                {
+                    if (await DispatchClaimedOneAsync(coordinator, claimed[i], claimId, cancellationToken))
+                        dispatched++;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    // Shutdown mid-batch: release the remaining not-yet-started claims
+                    // (best effort, no token) so another worker can pick them up
+                    // immediately instead of waiting out the lease.
+                    for (var j = i + 1; j < claimed.Count; j++)
+                    {
+                        try
+                        {
+                            await coordinator.ReleaseClaimAsync(claimed[j].Id, claimId, CancellationToken.None)
+                                .WaitAsync(_compensatingCheckpointTimeout);
+                        }
+                        catch (Exception releaseEx)
+                        {
+                            _logger.LogWarning(
+                                releaseEx,
+                                "Could not release outbox claim for row {OutboxId} during shutdown; the lease will expire on its own",
+                                claimed[j].Id);
+                        }
+                    }
+
+                    throw;
+                }
+            }
+
+            return dispatched;
+        }
+
+        private async Task<bool> DispatchClaimedOneAsync(
+            IOutboxDispatchCoordinator coordinator,
+            OutboxMessage outboxMessage,
+            Guid claimId,
+            CancellationToken cancellationToken)
+        {
+            // Clock-independent send budgeting (spec 025 rev 6): anchor a monotonic
+            // timer BEFORE the fence call, so elapsed-since-call-start strictly
+            // over-counts consumed lease time. The SQL-returned deadline is the
+            // authoritative server-side reclaim boundary for other workers; it is
+            // logged, never compared against the client clock.
+            var window = coordinator.UsableSendWindow;
+            var anchor = Stopwatch.GetTimestamp();
+            var deadline = await coordinator.TryStartDispatchAsync(outboxMessage.Id, claimId, cancellationToken);
+            if (deadline is null)
+            {
+                _logger.LogDebug(
+                    "Outbox dispatch-start fence lost for row {OutboxId} (cancelled or ownership lost); skipping send",
+                    outboxMessage.Id);
+                return false;
+            }
+
+            var residual = window - Stopwatch.GetElapsedTime(anchor);
+            if (residual < IOutboxDispatchCoordinator.MinimumUsableSendWindow)
+            {
+                // The fence round trip consumed the usable window. Re-fence ONCE for a
+                // full fresh lease (owner-idempotent renewal) instead of starting a
+                // send that instantly times out; a null re-fence means ownership was
+                // lost to an expired-head reclaim.
+                anchor = Stopwatch.GetTimestamp();
+                deadline = await coordinator.TryStartDispatchAsync(outboxMessage.Id, claimId, cancellationToken);
+                if (deadline is null)
+                {
+                    _logger.LogDebug(
+                        "Outbox lease renewal lost for row {OutboxId} (ownership reclaimed); abandoning attempt without send",
+                        outboxMessage.Id);
+                    return false;
+                }
+
+                residual = window - Stopwatch.GetElapsedTime(anchor);
+                if (residual <= TimeSpan.Zero)
+                {
+                    // A single fence round trip persistently exceeds the configured
+                    // (>= floor) window: the database is unhealthy. Degrade to a retry
+                    // next round — never to a false outcome.
+                    _logger.LogWarning(
+                        "Outbox fence round trip for row {OutboxId} exceeded the usable send window {Window}; retrying next round (SQL lease deadline {Deadline:O})",
+                        outboxMessage.Id, window, deadline);
+                    return false;
+                }
+            }
+
+            _logger.LogDebug(
+                "Outbox dispatch started for row {OutboxId} under claim {ClaimId}; send budget {Budget}, SQL lease deadline {Deadline:O}",
+                outboxMessage.Id, claimId, residual, deadline);
+
+            using var sendBudget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            sendBudget.CancelAfter(residual);
+            bool sent;
+            try
+            {
+                // A due scheduled row is sent immediately (Send, not ScheduleMessage):
+                // SQL owned the due time until now, so there is no broker schedule and
+                // no broker sequence to checkpoint or cancel.
+                sent = await DispatchOneAsync(
+                    outboxMessage, sendBudget.Token, forceImmediateSend: true);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                // Bounded-send budget expired. The broker outcome is ambiguous, so the
+                // row keeps DispatchStartedAtUtc (cancellation can no longer claim
+                // prevention) and is retried after the lease expires; a duplicate
+                // attempt carries the same MessageId and is absorbed by the
+                // application idempotency guard.
+                _logger.LogWarning(
+                    "Outbox bounded send timed out for row {OutboxId} (budget {Budget}); the row remains its session's head and will be retried",
+                    outboxMessage.Id, residual);
+                return false;
+            }
+
+            if (!sent)
+                return false;
+
+            return await CheckpointClaimedAsync(coordinator, outboxMessage, claimId, cancellationToken);
+        }
+
+        private async Task<bool> CheckpointClaimedAsync(
+            IOutboxDispatchCoordinator coordinator,
+            OutboxMessage outboxMessage,
+            Guid claimId,
+            CancellationToken cancellationToken)
+        {
+            bool owned;
+            try
+            {
+                owned = await coordinator.TryCompleteAsync(outboxMessage.Id, claimId, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Sending and checkpointing are separate operations: complete the
+                // owned checkpoint without the canceled polling token, bounded, so a
+                // sent row is not needlessly replayed after shutdown.
+                Task<bool>? checkpointTask = null;
+                try
+                {
+                    checkpointTask = coordinator.TryCompleteAsync(outboxMessage.Id, claimId, CancellationToken.None);
+                    await checkpointTask.WaitAsync(_compensatingCheckpointTimeout);
+                }
+                catch (Exception ex)
+                {
+                    if (ex is TimeoutException && checkpointTask is not null)
+                    {
+                        _ = ObserveCompensatingCheckpointAsync(checkpointTask, 1);
+                    }
+
+                    _logger.LogWarning(
+                        ex,
+                        "Could not checkpoint outbox row {OutboxId} sent before cancellation",
+                        outboxMessage.Id);
+                }
+
+                throw;
+            }
+
+            if (!owned)
+            {
+                // Stale owner: another worker reclaimed the row after our lease
+                // expired mid-send. Exactly one attempt terminalizes the row; this
+                // one's checkpoint affected zero rows and the duplicate delivery is
+                // absorbed by the application guard (invariant 9).
+                _logger.LogWarning(
+                    "Outbox checkpoint for row {OutboxId} affected zero rows (stale owner after lease expiry); the duplicate delivery is absorbed by the application idempotency guard",
+                    outboxMessage.Id);
+                return false;
+            }
+
+            return true;
+        }
+
         private async Task ObserveCompensatingCheckpointAsync(Task checkpointTask, int dispatchedCount)
         {
             try
@@ -155,7 +399,10 @@ namespace NimBus.Core.Outbox
             }
         }
 
-        private async Task<bool> DispatchOneAsync(OutboxMessage outboxMessage, CancellationToken cancellationToken)
+        private async Task<bool> DispatchOneAsync(
+            OutboxMessage outboxMessage,
+            CancellationToken cancellationToken,
+            bool forceImmediateSend = false)
         {
             // Detach from the polling-loop activity so the dispatch span is a root that
             // links (rather than nests under) the original publish context.
@@ -207,13 +454,19 @@ namespace NimBus.Core.Outbox
                     outboxMessage.Payload,
                     Constants.CreateSafeJsonSettings());
 
-                if (outboxMessage.ScheduledEnqueueTimeUtc.HasValue)
+                if (outboxMessage.ScheduledEnqueueTimeUtc.HasValue && !forceImmediateSend)
                 {
                     await _sender.ScheduleMessage(message, new DateTimeOffset(outboxMessage.ScheduledEnqueueTimeUtc.Value, TimeSpan.Zero), cancellationToken);
                 }
                 else
                 {
-                    await _sender.Send(message, outboxMessage.EnqueueDelayMinutes, cancellationToken);
+                    // forceImmediateSend (SqlOwnedDueTime): a due scheduled row is sent
+                    // with zero delay rather than eagerly broker-scheduled. Unscheduled
+                    // rows keep their legacy broker-side enqueue delay in both modes.
+                    var delayMinutes = forceImmediateSend && outboxMessage.ScheduledEnqueueTimeUtc.HasValue
+                        ? 0
+                        : outboxMessage.EnqueueDelayMinutes;
+                    await _sender.Send(message, delayMinutes, cancellationToken);
                 }
 
                 var elapsed = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;

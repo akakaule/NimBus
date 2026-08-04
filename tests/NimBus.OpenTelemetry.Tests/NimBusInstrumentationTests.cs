@@ -176,6 +176,76 @@ public class InstrumentingSenderDecoratorTests
         Assert.AreEqual(outer!.TraceId, publish.TraceId, "publisher span shares trace id with outer activity");
     }
 
+    // ── Scheduled-message operations (spec 025) ──────────────────────────
+
+    [TestMethod]
+    public async Task ScheduleWithHandle_emits_bounded_schedule_operations_counter()
+    {
+        var metrics = new List<Metric>();
+        using var meterProvider = Sdk.CreateMeterProviderBuilder()
+            .AddNimBusInstrumentation()
+            .AddInMemoryExporter(metrics)
+            .Build()!;
+
+        var inner = new RecordingSender();
+        var sut = NimBusOpenTelemetryDecorators.InstrumentSender(inner, MessagingSystem.InMemory);
+        var message = new Message
+        {
+            EventId = "e",
+            MessageId = "order-42:payment-timeout:1",
+            ScheduledMessageId = "order-42:payment-timeout:1",
+            SessionId = "order-42",
+            CorrelationId = "conversation-7",
+            To = "t",
+            EventTypeId = "PaymentTimedOut",
+        };
+
+        await sut.ScheduleMessageWithHandle(message, DateTimeOffset.UtcNow.AddHours(1));
+        meterProvider.ForceFlush();
+
+        var counter = metrics.FirstOrDefault(m => m.Name == "nimbus.message.schedule.operations");
+        Assert.IsNotNull(counter, "The schedule-operations counter must be emitted");
+        var points = new List<MetricPoint>();
+        foreach (var point in counter.GetMetricPoints()) points.Add(point);
+        var tags = new Dictionary<string, string?>();
+        foreach (var tag in points.Single().Tags) tags[tag.Key] = tag.Value?.ToString();
+        Assert.AreEqual("schedule", tags[MessagingAttributes.NimBusScheduleOperation]);
+        Assert.AreEqual("broker", tags[MessagingAttributes.NimBusScheduleMode]);
+        Assert.AreEqual("scheduled", tags[MessagingAttributes.NimBusOutcome]);
+        // High-cardinality guard: TimeoutId/MessageId/SessionId/CorrelationId are
+        // span/log fields only, never metric dimensions.
+        Assert.IsFalse(tags.ContainsKey(MessagingAttributes.MessageId));
+        Assert.IsFalse(tags.ContainsKey(MessagingAttributes.NimBusSessionKey));
+        Assert.IsFalse(tags.ContainsKey(MessagingAttributes.MessageConversationId));
+    }
+
+    [TestMethod]
+    public async Task CancelScheduled_emits_cancel_operation_with_outcome()
+    {
+        var metrics = new List<Metric>();
+        using var meterProvider = Sdk.CreateMeterProviderBuilder()
+            .AddNimBusInstrumentation()
+            .AddInMemoryExporter(metrics)
+            .Build()!;
+
+        var inner = new RecordingSender();
+        var sut = NimBusOpenTelemetryDecorators.InstrumentSender(inner, MessagingSystem.InMemory);
+        var handle = new ScheduledMessageHandle("timeout-1", 1L, ScheduledMessageHandleKind.BrokerSequenceNumber);
+
+        var outcome = await sut.CancelScheduledMessage(handle);
+        meterProvider.ForceFlush();
+
+        Assert.AreEqual(ScheduledMessageCancellationOutcome.CancellationRequested, outcome);
+        var counter = metrics.FirstOrDefault(m => m.Name == "nimbus.message.schedule.operations");
+        Assert.IsNotNull(counter);
+        var points = new List<MetricPoint>();
+        foreach (var point in counter.GetMetricPoints()) points.Add(point);
+        var tags = new Dictionary<string, string?>();
+        foreach (var tag in points.Single().Tags) tags[tag.Key] = tag.Value?.ToString();
+        Assert.AreEqual("cancel", tags[MessagingAttributes.NimBusScheduleOperation]);
+        Assert.AreEqual("cancellation_requested", tags[MessagingAttributes.NimBusOutcome]);
+    }
+
     private sealed class RecordingSender : ISender
     {
         public int SendCount;

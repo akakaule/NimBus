@@ -72,6 +72,20 @@ public static class NimBusConsumerInstrumentation
             receivedTags.Add(MessagingAttributes.System, messagingSystem);
         NimBusMeters.MessagesReceived.Add(1, receivedTags);
 
+        // Timeout telemetry keys on the ScheduledMessageId marker (spec 025), so
+        // retried timeouts still count as timeout traffic. NimBus records the
+        // receive; only the handler's explicit ReportScheduledMessageOutcome call
+        // records fired/ignored_late — an uncalled handler never invents a result.
+        var isScheduledMessage = SafeRead(() => context.ScheduledMessageId) != null;
+        if (isScheduledMessage)
+        {
+            NimBusMeters.TimeoutOperations.Add(1, new TagList
+            {
+                { MessagingAttributes.NimBusOutcome, "received" },
+                { MessagingAttributes.NimBusEventType, eventType },
+            });
+        }
+
         var sw = Stopwatch.StartNew();
         try
         {
@@ -86,6 +100,15 @@ public static class NimBusConsumerInstrumentation
             sw.Stop();
             RecordOutcome(activity, receivedTags, sw.Elapsed.TotalMilliseconds, "failed", ex);
             context.ProcessingTimeMs = sw.ElapsedMilliseconds;
+            if (isScheduledMessage)
+            {
+                NimBusMeters.TimeoutOperations.Add(1, new TagList
+                {
+                    { MessagingAttributes.NimBusOutcome, "failed" },
+                    { MessagingAttributes.NimBusEventType, eventType },
+                });
+            }
+
             throw;
         }
     }

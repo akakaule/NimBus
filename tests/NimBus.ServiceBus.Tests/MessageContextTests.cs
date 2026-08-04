@@ -816,6 +816,35 @@ public class MessageContextTests
     }
 
     [TestMethod]
+    public async Task ScheduleRedelivery_PreservesScheduledMessageMarker_WithFreshMessageId()
+    {
+        // Spec 025: throttle redelivery copies application properties wholesale, so
+        // the logical timeout identity survives while the clone mints a fresh
+        // transport MessageId. Pinned as a regression test.
+        var properties = new Dictionary<string, object>
+        {
+            { UserPropertyName.ScheduledMessageId.ToString(), "order-42:payment-timeout:1" },
+            { UserPropertyName.ScheduledEnqueueTimeUtc.ToString(), "2026-09-01T12:00:00.0000000+00:00" },
+        };
+        var received = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: new BinaryData("payload"),
+            messageId: "attempt-1",
+            sessionId: "order-42",
+            properties: properties);
+        var session = new FakeServiceBusSession();
+        var context = new MessageContext(new NimBus.ServiceBus.ServiceBusMessage(received), session);
+
+        await context.ScheduleRedelivery(TimeSpan.FromMinutes(1), throttleRetryCount: 1);
+
+        var scheduled = session.ScheduledMessages.Single();
+        Assert.AreEqual("order-42:payment-timeout:1",
+            scheduled.ApplicationProperties[UserPropertyName.ScheduledMessageId.ToString()]);
+        Assert.AreEqual("2026-09-01T12:00:00.0000000+00:00",
+            scheduled.ApplicationProperties[UserPropertyName.ScheduledEnqueueTimeUtc.ToString()]);
+        Assert.AreNotEqual("attempt-1", scheduled.MessageId, "The redelivery clone mints a fresh transport MessageId");
+    }
+
+    [TestMethod]
     public async Task ScheduleRedelivery_CopiesApplicationProperties_AndReplacesThrottleRetryCount()
     {
         var properties = new Dictionary<string, object>

@@ -52,23 +52,41 @@ internal sealed class InstrumentingSenderDecorator : ISender
         return ScheduleWithHandleInstrumentedAsync(message, () => _inner.ScheduleMessageWithHandle(message, scheduledEnqueueTime, cancellationToken));
     }
 
-    public Task<ScheduledMessageCancellationOutcome> CancelScheduledMessage(ScheduledMessageHandle handle, CancellationToken cancellationToken = default)
-        => _inner.CancelScheduledMessage(handle, cancellationToken);
+    public async Task<ScheduledMessageCancellationOutcome> CancelScheduledMessage(ScheduledMessageHandle handle, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(handle);
+        try
+        {
+            var outcome = await _inner.CancelScheduledMessage(handle, cancellationToken).ConfigureAwait(false);
+            RecordScheduleOperation("cancel", ScheduleMode(handle.Kind), CancelOutcomeTag(outcome));
+            return outcome;
+        }
+        catch (Exception)
+        {
+            RecordScheduleOperation("cancel", ScheduleMode(handle.Kind), "failed");
+            throw;
+        }
+    }
 
     private async Task<ScheduledMessageHandle> ScheduleWithHandleInstrumentedAsync(
         IMessage message,
         Func<Task<ScheduledMessageHandle>> action)
     {
+        // The publisher span + publish counters come from StartActivity/Record*
+        // like ordinary sends; the bounded schedule-operations counter is
+        // recorded IN ADDITION, never double-counting publish metrics.
         var (activity, started, tags) = StartActivity([message]);
         try
         {
             var result = await action().ConfigureAwait(false);
             RecordSuccess(activity, [message], started, tags);
+            RecordScheduleOperation("schedule", ScheduleMode(result.Kind), "scheduled");
             return result;
         }
         catch (Exception ex)
         {
             RecordFailure(activity, started, tags, ex);
+            RecordScheduleOperation("schedule", mode: null, "failed");
             throw;
         }
         finally
@@ -76,6 +94,32 @@ internal sealed class InstrumentingSenderDecorator : ISender
             activity?.Dispose();
         }
     }
+
+    private static void RecordScheduleOperation(string operation, string? mode, string outcome)
+    {
+        var tags = new TagList
+        {
+            { MessagingAttributes.NimBusScheduleOperation, operation },
+            { MessagingAttributes.NimBusOutcome, outcome },
+        };
+        if (mode is not null)
+            tags.Add(MessagingAttributes.NimBusScheduleMode, mode);
+        NimBusMeters.ScheduleOperations.Add(1, tags);
+    }
+
+    private static string ScheduleMode(ScheduledMessageHandleKind kind) =>
+        kind == ScheduledMessageHandleKind.SqlOutboxSequenceNumber ? "sql_outbox" : "broker";
+
+    private static string CancelOutcomeTag(ScheduledMessageCancellationOutcome outcome) => outcome switch
+    {
+        ScheduledMessageCancellationOutcome.CancellationRequested => "cancellation_requested",
+        ScheduledMessageCancellationOutcome.CancelledBeforeDispatch => "cancelled_before_dispatch",
+        ScheduledMessageCancellationOutcome.AlreadyCancelled => "already_cancelled",
+        ScheduledMessageCancellationOutcome.TooLate => "too_late",
+        ScheduledMessageCancellationOutcome.NotFound => "not_found",
+        ScheduledMessageCancellationOutcome.Unsupported => "unsupported",
+        _ => "failed",
+    };
 
     private async Task SendInstrumented(IReadOnlyCollection<IMessage> messages, Func<Task> action)
     {

@@ -169,6 +169,31 @@ public class DeferredMessageProcessorTests
     }
 
     [TestMethod]
+    public async Task ProcessDeferredMessagesAsync_RepublishedMessage_PreservesScheduledMessageMarker()
+    {
+        // Spec 025 invariant 1: a parked timeout keeps its logical identity (and
+        // the preserved workflow CorrelationId) through park + republish, while
+        // the republish mints its own transport MessageId (broker-assigned).
+        var client = new RecordingServiceBusClient();
+        var msg = CreateReceivedMessage("workflow-conversation", deferralSequence: 1, extraProps: new Dictionary<string, object>
+        {
+            { UserPropertyName.ScheduledMessageId.ToString(), "order-42:payment-timeout:1" },
+            { UserPropertyName.ScheduledEnqueueTimeUtc.ToString(), "2026-09-01T12:00:00.0000000+00:00" },
+        });
+        client.SessionReceiver.ReceiveBatches.Add(new List<ServiceBusReceivedMessage> { msg });
+
+        var sut = new DeferredMessageProcessor(client);
+        await sut.ProcessDeferredMessagesAsync("session-1", "my-topic");
+
+        var republished = client.Sender.SentMessages.Single();
+        Assert.AreEqual("order-42:payment-timeout:1",
+            republished.ApplicationProperties[UserPropertyName.ScheduledMessageId.ToString()]);
+        Assert.AreEqual("2026-09-01T12:00:00.0000000+00:00",
+            republished.ApplicationProperties[UserPropertyName.ScheduledEnqueueTimeUtc.ToString()]);
+        Assert.AreEqual("workflow-conversation", republished.CorrelationId);
+    }
+
+    [TestMethod]
     public async Task ProcessDeferredMessagesAsync_RepublishedMessage_SetsSessionIdAndCorrelationId()
     {
         var client = new RecordingServiceBusClient();

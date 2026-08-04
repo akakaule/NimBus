@@ -29,11 +29,22 @@ namespace NimBus.Outbox.SqlServer
             if (string.IsNullOrEmpty(options.ConnectionString))
                 throw new ArgumentException("ConnectionString must be specified.", nameof(configure));
 
+            // Fail fast on degenerate lease windows (spec 025, revisions 5-6) —
+            // matching the eager ConnectionString check above. The SqlServerOutbox
+            // constructor validates again for direct construction.
+            options.ValidateLeaseOptions();
+
             var outbox = new SqlServerOutbox(options);
 
             services.TryAddSingleton<IOutbox>(outbox);
             services.TryAddSingleton<IOutboxCleanup>(outbox);
             services.TryAddSingleton<IOutboxMetricsQuery>(outbox);
+
+            // Spec 025 companions: registration is UNCONDITIONAL (the same singleton)
+            // so DI composition is independent of configuration timing; the capability
+            // signal travels on IOutboxDispatchCoordinator.DueTimeDispatchActive.
+            services.TryAddSingleton<IScheduledOutbox>(outbox);
+            services.TryAddSingleton<IOutboxDispatchCoordinator>(outbox);
 
             return services;
         }

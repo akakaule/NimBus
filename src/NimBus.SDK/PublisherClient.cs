@@ -298,7 +298,7 @@ public class PublisherClient : IPublisherClient
             }
 
             var body = reply.Body.ToString();
-            return Newtonsoft.Json.JsonConvert.DeserializeObject<TResponse>(body);
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<TResponse>(body, Constants.CreateSafeJsonSettings());
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {

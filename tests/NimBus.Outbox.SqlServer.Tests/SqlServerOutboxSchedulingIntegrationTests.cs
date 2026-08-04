@@ -693,7 +693,11 @@ public sealed class SqlServerOutboxSchedulingIntegrationTests
         Assert.AreEqual(2L, await outbox.GetPendingCountAsync(),
             "Default mode counts every undispatched row, future-scheduled included (it is immediately actionable there)");
         var oldest = await outbox.GetOldestPendingEnqueuedAtUtcAsync();
-        Assert.AreEqual(created, oldest!.Value.UtcDateTime);
+        Assert.IsNotNull(oldest);
+        // Today's write path infers the legacy DATETIME parameter type (~3.33 ms
+        // rounding), so the round-tripped value cannot be compared tick-exact.
+        Assert.IsTrue((created - oldest.Value.UtcDateTime).Duration() < TimeSpan.FromSeconds(1),
+            $"Baseline is the oldest row's CreatedAtUtc (expected ≈{created:O}, got {oldest:O})");
     }
 
     [TestMethod]

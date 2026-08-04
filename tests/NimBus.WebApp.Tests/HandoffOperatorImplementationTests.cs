@@ -98,9 +98,9 @@ public sealed class HandoffOperatorImplementationTests
     {
         var harness = await CreateHarness(allowed: false);
 
-        await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(() =>
-            Invoke(harness.Controller, complete));
+        var result = await Invoke(harness.Controller, complete);
 
+        Assert.IsInstanceOfType<ForbidResult>(result);
         Assert.AreEqual(0, harness.Handoffs.CompleteCount + harness.Handoffs.FailCount);
         Assert.AreEqual(AccessRole.Contributor, harness.Authorization.LastRequiredRole);
         Assert.AreEqual(EndpointId, harness.Authorization.LastEndpointId);

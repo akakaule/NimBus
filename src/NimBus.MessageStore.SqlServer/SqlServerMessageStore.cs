@@ -826,7 +826,7 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         if (filter.MessageType.HasValue) { where.Add("MessageType = @MessageType"); p.Add("MessageType", filter.MessageType.Value.ToString()); }
         if (filter.EventTypeId is { Count: > 0 }) { where.Add("EventTypeId IN @EventTypeIds"); p.Add("EventTypeIds", filter.EventTypeId); }
         if (filter.ResolutionStatus is { Count: > 0 }) { where.Add("Status IN @Statuses"); p.Add("Statuses", filter.ResolutionStatus); }
-        if (!string.IsNullOrEmpty(filter.Payload)) { where.Add("MessageContentJson LIKE @Payload"); p.Add("Payload", $"%{filter.Payload}%"); }
+        if (!string.IsNullOrEmpty(filter.Payload)) { where.Add(@"MessageContentJson LIKE @Payload ESCAPE '\'"); p.Add("Payload", "%" + LikePrefix(filter.Payload)); }
 
         p.Add("Offset", offset);
         p.Add("PageSize", pageSize);
@@ -862,7 +862,8 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
     /// <summary>
     /// Escapes LIKE wildcards (<c>\ % _ [</c>) in a user-supplied value and
     /// appends <c>%</c>, producing a safe prefix pattern for
-    /// <c>LIKE @p ESCAPE '\'</c> filters.
+    /// <c>LIKE @p ESCAPE '\'</c> filters. Prepend <c>%</c> to the result for a
+    /// contains pattern.
     /// </summary>
     private static string LikePrefix(string value)
     {

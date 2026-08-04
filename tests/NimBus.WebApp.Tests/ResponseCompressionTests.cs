@@ -27,7 +27,7 @@ namespace NimBus.WebApp.Tests
     ///     and a body smaller than uncompressed.
     ///   - JSON API endpoint advertising br returns `Content-Encoding: br`.
     ///   - Request with `Accept-Encoding: identity` returns no `Content-Encoding`.
-    ///   - `UseResponseCompression` runs before `UseSpaStaticFiles`.
+    ///   - `UseResponseCompression` runs before `UseStaticFiles`.
     ///
     /// These tests spin up a minimal in-process host that mirrors the exact response-
     /// compression registration / pipeline placement used in
@@ -35,7 +35,7 @@ namespace NimBus.WebApp.Tests
     /// Cosmos DB / SQL configuration at boot, which is impractical for a unit-test host —
     /// but the compression behaviour is fully captured by the AddResponseCompression /
     /// UseResponseCompression pair, which we reproduce verbatim here. A separate reflective
-    /// test (UseResponseCompression_RunsBeforeUseSpaStaticFiles_InStartup) asserts that the
+    /// test (UseResponseCompression_RunsBeforeUseStaticFiles_InStartup) asserts that the
     /// real Startup.cs invokes the middleware in the required order so this fixture cannot
     /// drift away from production wiring without being caught.
     /// </summary>
@@ -196,13 +196,13 @@ namespace NimBus.WebApp.Tests
         }
 
         /// <summary>
-        /// FR-053: `UseResponseCompression` MUST run before `UseSpaStaticFiles` in the real
+        /// FR-053: `UseResponseCompression` MUST run before `UseStaticFiles` in the real
         /// `NimBus.WebApp/Startup.cs`. We assert this by source-level introspection of the
         /// embedded Startup.Configure body so that future refactors that move middleware
         /// around cannot silently regress the ordering invariant.
         /// </summary>
         [TestMethod]
-        public void UseResponseCompression_RunsBeforeUseSpaStaticFiles_InStartup()
+        public void UseResponseCompression_RunsBeforeUseStaticFiles_InStartup()
         {
             // Load the WebApp assembly and locate Startup.Configure via reflection. The
             // method body is not directly inspectable without IL reading, so we read the
@@ -212,16 +212,16 @@ namespace NimBus.WebApp.Tests
             string source = File.ReadAllText(startupPath);
 
             int idxCompression = source.IndexOf("app.UseResponseCompression()", StringComparison.Ordinal);
-            int idxSpaStatic = source.IndexOf("app.UseSpaStaticFiles", StringComparison.Ordinal);
+            int idxStatic = source.IndexOf("app.UseStaticFiles", StringComparison.Ordinal);
             int idxRouting = source.IndexOf("app.UseRouting", StringComparison.Ordinal);
 
             Assert.IsTrue(idxCompression > 0, "Startup.cs is missing `app.UseResponseCompression()` — spec FR-010 violated.");
-            Assert.IsTrue(idxSpaStatic > 0, "Startup.cs is missing `app.UseSpaStaticFiles(...)` (expected to remain).");
+            Assert.IsTrue(idxStatic > 0, "Startup.cs is missing `app.UseStaticFiles(...)` (expected to remain).");
             Assert.IsTrue(idxRouting > 0, "Startup.cs is missing `app.UseRouting()` (expected to remain).");
 
             Assert.IsTrue(
-                idxCompression < idxSpaStatic,
-                "FR-010: `app.UseResponseCompression()` MUST be called BEFORE `app.UseSpaStaticFiles(...)`. The static-file middleware short-circuits the request; compression must run earlier or the SPA bundle ships uncompressed.");
+                idxCompression < idxStatic,
+                "FR-010: `app.UseResponseCompression()` MUST be called BEFORE `app.UseStaticFiles(...)`. The static-file middleware short-circuits the request; compression must run earlier or the SPA bundle ships uncompressed.");
             Assert.IsTrue(
                 idxCompression < idxRouting,
                 "FR-010: `app.UseResponseCompression()` MUST be called BEFORE `app.UseRouting()` so JSON API responses also negotiate compression.");

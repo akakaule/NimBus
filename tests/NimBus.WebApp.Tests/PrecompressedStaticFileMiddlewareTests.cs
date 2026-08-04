@@ -202,28 +202,28 @@ namespace NimBus.WebApp.Tests
 
         /// <summary>
         /// Guards the production wiring: the precompressed middleware MUST be registered in
-        /// `Startup.Configure` before `UseSpaStaticFiles`, and the SPA static files options
+        /// `Startup.Configure` before `UseStaticFiles`, and the SPA static files options
         /// MUST use <see cref="PrecompressedContentTypeProvider"/>. Mirrors the source-level
         /// ordering assertion in <see cref="ResponseCompressionTests"/>.
         /// </summary>
         [TestMethod]
-        public void PrecompressedMiddleware_RunsBeforeUseSpaStaticFiles_InStartup()
+        public void PrecompressedMiddleware_RunsBeforeUseStaticFiles_InStartup()
         {
             string startupPath = LocateStartupSource();
             string source = File.ReadAllText(startupPath);
 
             int idxMiddleware = source.IndexOf("UseMiddleware<PrecompressedStaticFileMiddleware>", StringComparison.Ordinal);
-            int idxSpaStatic = source.IndexOf("app.UseSpaStaticFiles", StringComparison.Ordinal);
+            int idxStatic = source.IndexOf("app.UseStaticFiles", StringComparison.Ordinal);
             int idxContentTypeProvider = source.IndexOf("new PrecompressedContentTypeProvider()", StringComparison.Ordinal);
 
             Assert.IsTrue(idxMiddleware > 0, "Startup.cs is missing `UseMiddleware<PrecompressedStaticFileMiddleware>`.");
-            Assert.IsTrue(idxSpaStatic > 0, "Startup.cs is missing `app.UseSpaStaticFiles(...)` (expected to remain).");
+            Assert.IsTrue(idxStatic > 0, "Startup.cs is missing `app.UseStaticFiles(...)` (expected to remain).");
             Assert.IsTrue(
-                idxMiddleware < idxSpaStatic,
-                "`UseMiddleware<PrecompressedStaticFileMiddleware>` MUST be called BEFORE `app.UseSpaStaticFiles(...)` — the rewrite must happen before the static-file middleware resolves the path.");
+                idxMiddleware < idxStatic,
+                "`UseMiddleware<PrecompressedStaticFileMiddleware>` MUST be called BEFORE `app.UseStaticFiles(...)` — the rewrite must happen before the static-file middleware resolves the path.");
             Assert.IsTrue(
                 idxContentTypeProvider > 0,
-                "Startup.cs must hand UseSpaStaticFiles a PrecompressedContentTypeProvider so rewritten `.br`/`.gz` paths keep the underlying Content-Type.");
+                "Startup.cs must hand UseStaticFiles a PrecompressedContentTypeProvider so rewritten `.br`/`.gz` paths keep the underlying Content-Type.");
         }
 
         private static string LocateStartupSource()

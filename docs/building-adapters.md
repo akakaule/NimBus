@@ -292,9 +292,15 @@ builder.Services.AddNimBusReceiver(opts =>
 | `SubscriptionName` | Required | Subscription within the topic |
 | `MaxConcurrentSessions` | `8` | Number of sessions processed concurrently. Increase this for busy endpoints. |
 | `MaxAutoLockRenewalDuration` | `5 min` | Maximum lock renewal duration for long-running handlers |
+| `SessionIdleTimeout` | `30 s` | How long an idle session is held before the receiver rotates to another |
+| `PrefetchCount` | `0` | Messages fetched ahead of processing. Opt-in: a large win for small, fast-handler workloads, but prefetched messages hold their locks, so leave it at `0` for handlers slower than ~1 s |
 
 Per-session ordering is preserved. `MaxConcurrentSessions` only increases
-parallelism across different sessions.
+parallelism across different sessions — effective parallelism is
+`min(MaxConcurrentSessions, distinct active session IDs)`, so a low-cardinality
+session key caps throughput no matter how high this is set. See
+[Throughput Tuning](throughput-tuning.md) for recommended values per workload
+profile and the other dials (lock duration, prefetch, tier).
 
 ## Azure Functions receiver
 
@@ -534,8 +540,9 @@ session settings, retry counts, and routing rules.
 ## Production checklist
 
 - Set `MaxConcurrentSessions` deliberately. The Worker default is `8`; raise it
-  for high-throughput endpoints or lower it to `1` if you need to serialize the
-  endpoint.
+  for high-throughput endpoints (16–32 is the usual first move) or lower it to
+  `1` if you need to serialize the endpoint. See
+  [Throughput Tuning](throughput-tuning.md).
 - Keep handlers idempotent. NimBus gives ordered, at-least-once processing, not
   exactly-once side effects.
 - Use a stable `MessageId` when the source event has a natural unique key.

@@ -69,6 +69,7 @@ docs/
   pipeline-middleware.md   # Middleware pattern documentation
   message-flows.md         # 12 message flow diagrams
   error-handling.md        # Adapter error-handling reference (exception types, retry vs DLQ)
+  throughput-tuning.md     # Throughput parameters (concurrency, prefetch, topology, tier) + per-workload recommended values
   deferred-messages.md     # Deferred message processing guide
   cli.md                   # CLI command reference
   deployment.md            # Deployment guide (one-command, GitHub Actions OIDC, Azure DevOps, raw Bicep, RBAC)

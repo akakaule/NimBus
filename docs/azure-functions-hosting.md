@@ -78,6 +78,11 @@ Key settings:
 - **`maxConcurrentSessions: 200`** — Controls how many sessions can be processed concurrently
 - **`sessionIdleTimeout: 30s`** — How long to wait for new messages in a session before releasing it
 - **`maxAutoLockRenewalDuration: 5min`** — Maximum time to renew the message lock during processing
+- **`prefetchCount: 0`** — No prefetch. Raise it (200–500) for high-volume, fast handlers; keep it at `0` when handlers are slow, since prefetched messages hold locks while queued locally
+
+`maxConcurrentSessions: 200` suits a high-volume endpoint with high session
+cardinality. For slower handlers or a rate-limited upstream it is far too high —
+see [Throughput Tuning](throughput-tuning.md) for values per workload profile.
 
 ### 3. Configure Program.cs
 

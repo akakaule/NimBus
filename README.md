@@ -380,6 +380,7 @@ The **[Deployment Guide](docs/deployment.md)** covers the full setup for every p
 | [Azure Functions Hosting](docs/azure-functions-hosting.md) | Production hosting with Service Bus session triggers and DeferredProcessor |
 | [Message Flows](docs/message-flows.md) | All 12 message flow patterns with mermaid diagrams |
 | [Error Handling](docs/error-handling.md) | Adapter error-handling reference (transient, retry, dead-letter, classification) |
+| [Throughput Tuning](docs/throughput-tuning.md) | Which Service Bus/NimBus parameters control throughput, what NimBus sets today, and recommended values per workload profile |
 | [Deferred Messages](docs/deferred-messages.md) | Session blocking and deferral mechanics with Mermaid diagrams |
 | [Pipeline Middleware](docs/pipeline-middleware.md) | Built-in middleware, custom behaviors, and lifecycle observers |
 | [Consumer Inbox](docs/inbox-pattern.md) | Opt-in redelivery deduplication, providers, retention, and remaining idempotency windows |

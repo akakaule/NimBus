@@ -410,6 +410,82 @@ namespace NimBus.SDK.Tests
             }
         }
 
+        [TestMethod]
+        public async Task PrefetchCount_FlowsToSessionProcessorOptions()
+        {
+            var client = new RecordingServiceBusClient();
+            var service = new TestableNimBusReceiverHostedService(
+                client,
+                new NoopServiceBusAdapter(),
+                new NimBusReceiverOptions
+                {
+                    TopicName = "orders",
+                    SubscriptionName = "orders",
+                    PrefetchCount = 50,
+                },
+                NullLogger<NimBusReceiverHostedService>.Instance);
+
+            using var runCancellation = new CancellationTokenSource();
+            var runTask = service.RunProcessorLoopAsync(runCancellation.Token);
+
+            try
+            {
+                await WaitUntilAsync(() => client.Processors.Count == 1, () => $"ProcessorCount={client.Processors.Count}");
+
+                Assert.AreEqual(50, client.Options.PrefetchCount, "PrefetchCount must reach the session processor or it has no effect");
+            }
+            finally
+            {
+                await StopServiceAsync(runCancellation, runTask);
+            }
+        }
+
+        [TestMethod]
+        public async Task PrefetchCount_DefaultsToZero()
+        {
+            var client = new RecordingServiceBusClient();
+            var service = new TestableNimBusReceiverHostedService(
+                client,
+                new NoopServiceBusAdapter(),
+                new NimBusReceiverOptions
+                {
+                    TopicName = "orders",
+                    SubscriptionName = "orders",
+                },
+                NullLogger<NimBusReceiverHostedService>.Instance);
+
+            using var runCancellation = new CancellationTokenSource();
+            var runTask = service.RunProcessorLoopAsync(runCancellation.Token);
+
+            try
+            {
+                await WaitUntilAsync(() => client.Processors.Count == 1, () => $"ProcessorCount={client.Processors.Count}");
+
+                Assert.AreEqual(0, client.Options.PrefetchCount, "Prefetch must stay opt-in: it holds locks and can cause redelivery with slow handlers");
+            }
+            finally
+            {
+                await StopServiceAsync(runCancellation, runTask);
+            }
+        }
+
+        [TestMethod]
+        public void NegativePrefetchCount_IsRejected()
+        {
+            var client = new RecordingServiceBusClient();
+
+            Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new TestableNimBusReceiverHostedService(
+                client,
+                new NoopServiceBusAdapter(),
+                new NimBusReceiverOptions
+                {
+                    TopicName = "orders",
+                    SubscriptionName = "orders",
+                    PrefetchCount = -1,
+                },
+                NullLogger<NimBusReceiverHostedService>.Instance));
+        }
+
         private static async Task StopServiceAsync(CancellationTokenSource cts, Task runTask)
         {
             cts.Cancel();

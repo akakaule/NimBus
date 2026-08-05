@@ -67,8 +67,8 @@ namespace NimBus.SDK.Hosting
                 try
                 {
                     _logger.LogInformation(
-                        "Starting NimBus receiver for {Topic}/{Subscription} (MaxConcurrentSessions={MaxSessions})",
-                        _options.TopicName, _options.SubscriptionName, _options.MaxConcurrentSessions);
+                        "Starting NimBus receiver for {Topic}/{Subscription} (MaxConcurrentSessions={MaxSessions}, PrefetchCount={PrefetchCount})",
+                        _options.TopicName, _options.SubscriptionName, _options.MaxConcurrentSessions, _options.PrefetchCount);
 
                     await _processor.StartProcessingAsync(stoppingToken).ConfigureAwait(false);
                     _startupCompletion.TrySetResult(true);
@@ -132,6 +132,7 @@ namespace NimBus.SDK.Hosting
                 MaxConcurrentSessions = _options.MaxConcurrentSessions,
                 MaxAutoLockRenewalDuration = _options.MaxAutoLockRenewalDuration,
                 SessionIdleTimeout = _options.SessionIdleTimeout,
+                PrefetchCount = _options.PrefetchCount,
                 AutoCompleteMessages = false,
             };
 
@@ -439,6 +440,11 @@ namespace NimBus.SDK.Hosting
             if (options.SessionIdleTimeout <= TimeSpan.Zero)
             {
                 throw new ArgumentOutOfRangeException(nameof(options.SessionIdleTimeout), "SessionIdleTimeout must be greater than zero.");
+            }
+
+            if (options.PrefetchCount < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(options.PrefetchCount), "PrefetchCount cannot be negative.");
             }
 
             if (options.RecoverableErrorRestartThreshold <= 0)

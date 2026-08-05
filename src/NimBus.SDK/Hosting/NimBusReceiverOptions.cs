@@ -33,6 +33,20 @@ namespace NimBus.SDK.Hosting
         public TimeSpan SessionIdleTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
         /// <summary>
+        /// Number of messages fetched into memory ahead of processing. Default: 0 (disabled).
+        /// </summary>
+        /// <remarks>
+        /// Prefetch removes a broker round-trip per message and is the largest remaining
+        /// throughput win for small, fast-handler workloads. It is opt-in because prefetched
+        /// messages hold their locks while queued locally: with slow handlers the locks expire
+        /// before the message is processed and it is redelivered, which makes throughput worse.
+        /// Leave at 0 for handlers slower than roughly one second or for large payloads.
+        /// A common starting point is 10-20x <see cref="MaxConcurrentSessions"/>.
+        /// See <c>docs/throughput-tuning.md</c> for per-workload guidance.
+        /// </remarks>
+        public int PrefetchCount { get; set; }
+
+        /// <summary>
         /// Number of consecutive recoverable processor errors before the session processor is recreated. Default: 5.
         /// </summary>
         public int RecoverableErrorRestartThreshold { get; set; } = 5;

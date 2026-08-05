@@ -54,7 +54,7 @@ The NimBus management WebApp must be running and reachable at `NIMBUS_API_BASEUR
 
 ## A note on the demo runner
 
-The Phase 3 `EnrichmentAgent` demo drives this exact loop, but calls the REST API **directly** (not through this MCP server) for determinism and reproducibility — the MCP server is the *interactive* hero (an LLM in an MCP client), while the scripted demo keeps the same capabilities behind an `IBusGateway` seam so the MCP path is a swap. See `docs/specs/022-ai-agent-bus-participation/plan-phase3-demo.md`.
+The Phase 3 `EnrichmentAgent` demo drives this exact loop, but calls the REST API **directly** (not through this MCP server) for determinism and reproducibility — the MCP server is the *interactive* hero (an LLM in an MCP client), while the scripted demo keeps the same capabilities behind an `IBusGateway` seam so the MCP path is a swap.
 
 ## Testing
 

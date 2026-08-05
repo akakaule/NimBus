@@ -9,7 +9,7 @@ WebApp/CLI service code, the Bicep templates, the `nb infra apply` CLI, and even
 some user-visible API names (`StoragehookReceiveCosmosAsync`). Customers whose
 approved infrastructure does not include Cosmos DB could not adopt NimBus.
 
-The spec at `docs/specs/001-pluggable-message-storage/spec.md` calls for:
+Pluggable storage therefore calls for:
 
 1. A true SQL-only deployment (CLI + Bicep), not just runtime persistence swap.
 2. SQL Server as the first alternate provider, full replacement of the entire
@@ -121,4 +121,3 @@ suite against a `mcr.microsoft.com/mssql/server:2022-latest` service container.
 - ADR-008: Per-endpoint Cosmos containers — SQL provider does not replicate this
   model; uses single-table-with-discriminator instead. See
   `docs/storage-providers.md` for the SQL schema layout.
-- Spec: `docs/specs/001-pluggable-message-storage/spec.md`

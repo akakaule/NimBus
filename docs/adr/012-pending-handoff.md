@@ -1,7 +1,7 @@
 # ADR-012: PendingHandoff Outcome for Async Message Completion
 
 ## Status
-Accepted (introduced 2026-05; implements [spec 002](../specs/002-async-message-completion/spec.md), issue #15).
+Accepted (introduced 2026-05; issue #15).
 Amended 2026-08: the `IManagerClient.CompleteHandoff` / `FailHandoff` settlement members described below were superseded by `NimBus.SDK.IHandoffClient` / `IHandoffClientFactory` and removed in 3.0; the wire contract (`HandoffCompletedRequest` / `HandoffFailedRequest`) is unchanged.
 
 ## Context
@@ -103,7 +103,6 @@ DI: `AddNimBusSubscriber` auto-registers `IHandoffClient` for the subscriber's e
 
 ## See Also
 
-- Spec: [`docs/specs/002-async-message-completion/spec.md`](../specs/002-async-message-completion/spec.md)
 - ADR-002: Centralized Resolver — establishes the audit-trail contract that PendingHandoff plugs into.
 - ADR-001: Session-based ordering — establishes the FIFO contract that sibling-deferral preserves.
 - `docs/error-handling.md` — exception-classification reference; PendingHandoff is explicitly NOT an exception path.

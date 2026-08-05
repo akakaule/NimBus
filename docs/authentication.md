@@ -178,8 +178,7 @@ payload reveal — not implied by Owner). Site Owners manage the lists on
 the WebApp's **Access Control** page; entries are email addresses or
 Entra object IDs. Grants are stored in the message store (Cosmos
 container `accesscontrol` / SQL table `AccessControl`) and take effect
-immediately on the mutating instance (≤45s elsewhere). Full model:
-[`docs/specs/026-storage-backed-authorization/spec.md`](specs/026-storage-backed-authorization/spec.md).
+immediately on the mutating instance (≤45s elsewhere).
 
 **Bootstrap / compat.** The internal `EIP_Management` marker claim maps
 to site Owner, so the first Owner never locks themselves out of an

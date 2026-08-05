@@ -520,7 +520,7 @@ services.AddNimBusNotifications(n => {
 **Labels:** `backlog`, `P3`, `phase-3`, `documentation`, `sample`
 
 **Use case:**
-[ADR-009](docs/adr/009-orchestration-via-application-services.md) established that NimBus deliberately does not implement framework-level sagas — instead, multi-step workflows are implemented as application-level orchestration services using NimBus's messaging primitives. That decision is documented; the pattern is not. New teams hitting their first orchestration use case (refund → cancel shipment → notify customer) have no canonical example. They either reinvent it or ask "doesn't NimBus have sagas?" The guide closes that gap with documentation, a concrete sample, and patterns for the two common cases (timeouts via scheduling, compensation via published events).
+[ADR-009](adr/009-orchestration-via-application-services.md) established that NimBus deliberately does not implement framework-level sagas — instead, multi-step workflows are implemented as application-level orchestration services using NimBus's messaging primitives. That decision is documented; the pattern is not. New teams hitting their first orchestration use case (refund → cancel shipment → notify customer) have no canonical example. They either reinvent it or ask "doesn't NimBus have sagas?" The guide closes that gap with documentation, a concrete sample, and patterns for the two common cases (timeouts via scheduling, compensation via published events).
 
 **Proposed API:**
 No API change. This is documentation + sample.

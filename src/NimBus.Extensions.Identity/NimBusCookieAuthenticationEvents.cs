@@ -12,9 +12,6 @@ namespace NimBus.Extensions.Identity;
 /// surfaces as a confusing "negotiate failed: unexpected response" or an
 /// opaque CORS / redirect error. Returning the literal auth status lets the
 /// client surface the standard "session expired" affordance.
-///
-/// See <see href="https://github.com/nimbus/docs/specs/010-authorize-gridevents-hub/spec.md">spec 010</see>
-/// (FR-011 / FR-012).
 /// </summary>
 public static class NimBusCookieAuthenticationEvents
 {

@@ -24,11 +24,8 @@ public sealed class NimBusOpenTelemetryOptions
     /// body). Off by default.
     /// </summary>
     /// <remarks>
-    /// Reserved for Phase 4.3 — currently has no effect. Toggling this option
-    /// will not include headers until the FR-070 IncludeMessageHeaders
-    /// implementation lands. Tracked in
-    /// <c>docs/specs/004-opentelemetry-instrumentation/phase-4.2-plan.md</c>
-    /// under "Out of scope for Phase 4.2".
+    /// Reserved — currently has no effect. Toggling this option will not
+    /// include headers until the IncludeMessageHeaders implementation lands.
     /// </remarks>
     public bool IncludeMessageHeaders { get; set; }
 
@@ -44,11 +41,8 @@ public sealed class NimBusOpenTelemetryOptions
     /// this threshold. <c>null</c> disables the warning.
     /// </summary>
     /// <remarks>
-    /// Reserved for Phase 4.3 — currently has no effect. Setting a threshold
-    /// will not emit warning events until the gauge service is wired to check
-    /// it. Tracked in
-    /// <c>docs/specs/004-opentelemetry-instrumentation/phase-4.2-plan.md</c>
-    /// under "Out of scope for Phase 4.2".
+    /// Reserved — currently has no effect. Setting a threshold will not emit
+    /// warning events until the gauge service is wired to check it.
     /// </remarks>
     public TimeSpan? OutboxLagWarnThreshold { get; set; }
 }

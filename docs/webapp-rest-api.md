@@ -424,7 +424,6 @@ traces
   the WebApp sits.
 - [`docs/authentication.md`](authentication.md) — credential plumbing,
   Identity / Entra setup, bootstrap admin.
-- [`docs/specs/008-centralized-audit-log-service/spec.md`](specs/008-centralized-audit-log-service/spec.md) — full spec for the audit contract.
 - [`src/NimBus.WebApp/api-spec.yaml`](../src/NimBus.WebApp/api-spec.yaml) —
   the machine-readable contract this page describes.
 - [`src/NimBus.WebApp/Startup.cs`](../src/NimBus.WebApp/Startup.cs) — auth,

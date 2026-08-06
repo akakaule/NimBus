@@ -6,61 +6,6 @@
 
 NimBus is an Azure Service Bus based integration platform with a shared SDK, management web app, and message tracking and storage.
 
-## Repository Layout
-
-- `src/NimBus.sln` builds the full platform, including the web app, resolver, app host, and shared libraries.
-
-Key projects:
-
-- `src/NimBus.Abstractions`: core interfaces (`IMessage`, `ISender`, `IEventHandler`, message context).
-- `src/NimBus.Core`: shared endpoint, event, message, and pipeline abstractions.
-- `src/NimBus`: platform configuration and built-in endpoint definitions.
-- `src/NimBus.CommandLine`: `nb` CLI for Azure infrastructure, topology provisioning, and deployment.
-- `src/NimBus.SDK`: publisher/subscriber SDK surface.
-- `src/NimBus.ServiceBus`: Service Bus integration layer.
-- `src/NimBus.MessageStore.Abstractions`: provider-neutral storage contracts (`IMessageTrackingStore`, `ISubscriptionStore`, `IEndpointMetadataStore`, `IMetricsStore`).
-- `src/NimBus.MessageStore.CosmosDb`: Cosmos DB storage provider.
-- `src/NimBus.MessageStore.SqlServer`: SQL Server storage provider (DbUp-managed schema).
-- `src/NimBus.Manager` / `src/NimBus.Management.ServiceBus`: management client abstractions and Service Bus management operations used by the web app.
-- `src/NimBus.WebApp`: ASP.NET Core management UI plus the React/Vite client app.
-- `src/NimBus.Resolver`: tracks message outcomes and updates resolver state.
-- `src/NimBus.AppHost` / `src/NimBus.ServiceDefaults`: Aspire host and shared defaults for local orchestration.
-- `src/NimBus.Testing`: in-memory transport plus the storage conformance suite that all message-store providers run against.
-- `src/NimBus.Outbox.SqlServer`: SQL Server transactional outbox implementation.
-- `src/NimBus.Inbox.SqlServer`: SQL Server consumer inbox implementation.
-
-Samples live under `samples/`:
-
-- `samples/AspirePubSub/`: minimal publisher, subscriber (with middleware + DeferredProcessor), provisioner, and resolver worker.
-- `samples/CrmErpDemo/`: two-system CRM ↔ ERP integration demo — see the [CRM/ERP sample](#crmerp-integration-sample) section below.
-
-## Message Store
-
-The audit trail, resolver state, blocked sessions, and metrics live behind the contracts in `NimBus.MessageStore.Abstractions` and are pluggable across providers. Pick the one that fits your environment; both pass the same `NimBus.Testing` conformance suite.
-
-| Provider | Project | Registration | Notes |
-|----------|---------|--------------|-------|
-| SQL Server | `NimBus.MessageStore.SqlServer` | `services.AddSqlServerMessageStore(...)` | Schema is owned and migrated by DbUp on first run. Ships the `nimbus.Messages`, `UnresolvedEvents`, `MessageAudits`, `EndpointSubscriptions`, `EndpointMetadata`, `Heartbeats`, `BlockedMessages`, `InvalidMessages` tables plus metrics views. |
-| Cosmos DB | `NimBus.MessageStore.CosmosDb` | `services.AddCosmosDbMessageStore(...)` | Per-endpoint containers (see ADR-008). |
-
-The Aspire AppHost and the CRM/ERP demo both default to SQL Server and accept `--StorageProvider cosmos` to switch. The transactional outbox (`NimBus.Outbox.SqlServer`) is independent of the message-store choice.
-
-## Transport
-
-Azure Service Bus is NimBus's transport. The platform leans on Service Bus's native primitives (sessions, deferred messages, scheduled enqueue, forwarding subscriptions, dead-letter queues) rather than abstracting them away.
-
-| Provider | Project | Registration | Notes |
-|----------|---------|--------------|-------|
-| Azure Service Bus | `NimBus.ServiceBus` | `services.AddNimBus(b => b.AddServiceBusTransport(...))` | Native sessions, deferred messages, scheduled enqueue, forwarding subscriptions, dead-letter queue. |
-
-## Extensions
-
-NimBus uses an extension framework to separate core messaging from optional features. Extensions are registered through the `AddNimBus()` builder and can hook into the message pipeline and lifecycle events.
-
-- `src/NimBus.Extensions.Notifications`: sends notifications on message failures and dead-letters.
-
-See [docs/extensions.md](docs/extensions.md) for the full guide on using and creating extensions.
-
 ## Building an Adapter
 
 A NimBus **adapter** is a worker process that sits between an external system and the event bus — it subscribes to events from other systems, publishes events when its own backing system changes, or both. Most consumers of NimBus are writing adapters.
@@ -101,6 +46,14 @@ Next steps:
 - [Building Adapters](docs/building-adapters.md) — full guide: publisher, subscriber, middleware (built-in + custom), retry policies, outbox, hosting choice
 - [Getting Started](docs/getting-started.md) — end-to-end tutorial including Aspire local dev
 - [SDK API Reference](docs/sdk-api-reference.md) — `IPublisherClient`, `IEventHandler<T>`, `RetryPolicy`, `IOutbox`, request/response
+
+## Extensions
+
+NimBus uses an extension framework to separate core messaging from optional features. Extensions are registered through the `AddNimBus()` builder and can hook into the message pipeline and lifecycle events.
+
+- `src/NimBus.Extensions.Notifications`: sends notifications on message failures and dead-letters.
+
+See [docs/extensions.md](docs/extensions.md) for the full guide on using and creating extensions.
 
 ## NuGet Packages
 
@@ -153,151 +106,34 @@ Notes:
 - `src/NimBus.WebApp` runs `npm install` and `npm run build` as part of the .NET build.
 - `NSwag.MSBuild` is used directly from NuGet; no local `dotnet-tools.json` manifest is required.
 
-## CLI
+## CLI: deploy to Azure
 
-The repository includes a `dotnet` tool named `nb` in `src/NimBus.CommandLine`.
-It handles Azure infrastructure provisioning, Service Bus topology setup, and application deployment.
+`nb` is the deployment tool. One command provisions the infrastructure, applies the Service Bus topology, and deploys the Resolver and management WebApp.
 
-### Prerequisites
+You need the Azure CLI (`az`) ≥ 2.60.0 on `PATH`, `az login` completed against the target subscription, and permission to create both resources *and* role assignments in the target resource group (plain Contributor is not enough — see the [Deployment Guide](docs/deployment.md)).
 
-- Azure CLI (`az`) ≥ 2.60.0 installed and on `PATH` (required for Flex Consumption deploys; see [docs/deployment.md](docs/deployment.md#prerequisites-all-paths))
-- `az login` completed for the target subscription
-- Permissions to create and deploy resources in the target resource group
-
-### Running the tool
-
-Run via `dotnet run` from the repository root:
+Nothing to clone or build first; `dnx` ships with the .NET 10 SDK:
 
 ```powershell
-dotnet run --project .\src\NimBus.CommandLine -- <command> [options]
-```
-
-Alternatively, install it as a local dotnet tool:
-
-```powershell
-dotnet pack .\src\NimBus.CommandLine
-dotnet tool install --global --add-source .\src\NimBus.CommandLine\nupkg Akaule.NimBus.CommandLine
-nb <command> [options]
-```
-
-Use `--help` on any command to see all available options:
-
-```powershell
-dotnet run --project .\src\NimBus.CommandLine -- --help
-dotnet run --project .\src\NimBus.CommandLine -- infra apply --help
-```
-
-### Quick start: full deployment
-
-To provision infrastructure, set up the Service Bus topology, and deploy the applications in one step:
-
-```powershell
-dotnet run --project .\src\NimBus.CommandLine -- setup `
+dnx Akaule.NimBus.CommandLine -- setup `
   --solution-id nimbus `
   --environment dev `
   --resource-group rg-nimbus-dev
 ```
 
-This runs `infra apply`, `topology apply`, and `deploy apps` in sequence.
+That runs `infra apply` → `topology apply` → `deploy apps` in sequence. When the WebApp comes up, you have a working platform: audit trail, resubmit/skip, and the topology your endpoints publish to.
 
-Or npx-style from a fresh clone, without building anything first (`dnx` ships with the .NET 10 SDK):
+Resource names are derived from `--solution-id` and `--environment` — `sb-nimbus-dev`, `func-nimbus-dev-resolver`, `webapp-nimbus-dev-management`, and so on. The full inventory, SKUs, and required RBAC are in [Azure Infrastructure Requirements](docs/azure-requirements.md).
 
-```powershell
-git clone https://github.com/akakaule/NimBus; cd NimBus
-dnx Akaule.NimBus.CommandLine -- setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
-```
+New deployments default to the cheapest sensible hosting: the Resolver on Flex Consumption (FC1, scales to zero) and the WebApp plan on `B1` for `dev`/`development`, `S1` elsewhere. Re-runs keep whatever plans already exist; override with `--resolver-plan` and `--management-plan-sku`.
 
-New deployments default to the cheapest sensible hosting: the resolver runs on a Flex Consumption
-plan (FC1, scales to zero) and the management WebApp plan is `B1` for `dev`/`development`
-(`S1` for other environments). Existing deployments keep their current plans on re-runs; see
-`--resolver-plan` and `--management-plan-sku` in [docs/cli.md](docs/cli.md).
-
-### Commands
-
-#### `infra apply`
-
-Deploys Azure infrastructure (Service Bus namespace, Cosmos DB, Application Insights, Function App, Web App) using the bicep templates in `deploy/bicep/`.
+Working inside this repo instead of installing the tool:
 
 ```powershell
-dotnet run --project .\src\NimBus.CommandLine -- infra apply `
-  --solution-id nimbus `
-  --environment dev `
-  --resource-group rg-nimbus-dev
+dotnet run --project .\src\NimBus.CommandLine -- setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
-| Option | Required | Description |
-|--------|----------|-------------|
-| `--solution-id <ID>` | Yes | Identifier used in Azure resource names |
-| `--environment <NAME>` | Yes | Environment name (e.g. `dev`, `test`, `prod`) |
-| `--resource-group <NAME>` | Yes | Azure resource group to deploy into |
-| `--repo-root <PATH>` | No | Repository root; auto-detected if omitted |
-| `--location <AZURE-REGION>` | No | Azure region override for the bicep templates |
-| `--webapp-version <VALUE>` | No | Version string stored in the web app settings |
-
-#### `topology export`
-
-Exports the current `PlatformConfiguration` (endpoints, event types, routing) to a JSON file for inspection.
-
-```powershell
-dotnet run --project .\src\NimBus.CommandLine -- topology export
-dotnet run --project .\src\NimBus.CommandLine -- topology export -o .\my-config.json
-```
-
-| Option | Required | Description |
-|--------|----------|-------------|
-| `-o`, `--output <PATH>` | No | Output path; defaults to `platform-config.json` in the current directory |
-
-#### `topology apply`
-
-Provisions Service Bus topics, subscriptions, and routing rules based on `PlatformConfiguration`. This creates the messaging topology that the platform endpoints use to communicate.
-
-```powershell
-dotnet run --project .\src\NimBus.CommandLine -- topology apply `
-  --solution-id nimbus `
-  --environment dev `
-  --resource-group rg-nimbus-dev
-```
-
-| Option | Required | Description |
-|--------|----------|-------------|
-| `--solution-id <ID>` | Yes | Solution identifier |
-| `--environment <NAME>` | Yes | Environment name |
-| `--resource-group <NAME>` | Yes | Resource group containing the Service Bus namespace |
-
-#### `deploy apps`
-
-Builds, packages, and deploys the Resolver (Azure Function App) and Web App to Azure.
-
-```powershell
-dotnet run --project .\src\NimBus.CommandLine -- deploy apps `
-  --solution-id nimbus `
-  --environment dev `
-  --resource-group rg-nimbus-dev
-```
-
-| Option | Required | Description |
-|--------|----------|-------------|
-| `--solution-id <ID>` | Yes | Solution identifier |
-| `--environment <NAME>` | Yes | Environment name |
-| `--resource-group <NAME>` | Yes | Resource group containing the target apps |
-| `--repo-root <PATH>` | No | Repository root; auto-detected if omitted |
-| `--configuration <NAME>` | No | Build configuration passed to `dotnet publish`; defaults to `Release` |
-
-#### `setup`
-
-Runs the full provisioning and deployment pipeline in sequence: `infra apply` → `topology apply` → `deploy apps`. Accepts all options from those individual commands.
-
-### Resource naming
-
-The `--solution-id` and `--environment` values are normalized (lowercased, non-alphanumeric characters removed) and combined to produce Azure resource names:
-
-| Resource | Naming pattern | Example |
-|----------|---------------|---------|
-| Service Bus namespace | `sb-{solutionId}-{environment}` | `sb-nimbus-dev` |
-| Application Insights | `ai-{solutionId}-{environment}-global-tracelog` | `ai-nimbus-dev-global-tracelog` |
-| Cosmos DB account | `cosmos-{solutionId}-{environment}` | `cosmos-nimbus-dev` |
-| Resolver Function App | `func-{solutionId}-{environment}-resolver` | `func-nimbus-dev-resolver` |
-| Management Web App | `webapp-{solutionId}-{environment}-management` | `webapp-nimbus-dev-management` |
+Everything else `nb` does — running the deployment steps individually, topology export, endpoint and container maintenance, EventCatalog and AsyncAPI export — is in the [CLI Reference](docs/cli.md).
 
 ## Local Development (Aspire)
 

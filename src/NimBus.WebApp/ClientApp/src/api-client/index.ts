@@ -5649,12 +5649,15 @@ export interface IEventTypeGrouping {
     [key: string]: any;
 }
 
+/** Deployment status of the management WebApp. Every field is optional and is populated only for an authenticated caller; an anonymous caller receives an empty status object with all fields null or absent, so the anonymous liveness response discloses no deployment detail (GH#93). */
 export class ApplicationStatus implements IApplicationStatus {
-    env?: string;
-    platformVersion?: string;
-    /** Human-readable name of the active NimBus message-store provider (e.g. "Cosmos DB", "SQL Server", "InMemory"). */
-    storageProvider?: string;
-    /** URL template for deep-linking reported events to the external ticket system, with "{ticket}" as the ticket-id placeholder (e.g. "https://support.example.com/browse/{ticket}"). Null or empty when no ticket system is configured — the UI then renders a plain "Reported" badge without a link. */
+    /** Configured environment name (e.g. "Production"). Populated only for authenticated callers; null or absent for anonymous callers. */
+    env?: string | undefined;
+    /** NimBus platform product version. Populated only for authenticated callers; null or absent for anonymous callers. */
+    platformVersion?: string | undefined;
+    /** Human-readable name of the active NimBus message-store provider (e.g. "Cosmos DB", "SQL Server", "InMemory"). Populated only for authenticated callers; null or absent for anonymous callers. */
+    storageProvider?: string | undefined;
+    /** URL template for deep-linking reported events to the external ticket system, with "{ticket}" as the ticket-id placeholder (e.g. "https://support.example.com/browse/{ticket}"). Null or empty when no ticket system is configured — the UI then renders a plain "Reported" badge without a link. Populated only for authenticated callers; null or absent for anonymous callers. */
     ticketLinkTemplate?: string | undefined;
 
     [key: string]: any;
@@ -5709,12 +5712,15 @@ export class ApplicationStatus implements IApplicationStatus {
     }
 }
 
+/** Deployment status of the management WebApp. Every field is optional and is populated only for an authenticated caller; an anonymous caller receives an empty status object with all fields null or absent, so the anonymous liveness response discloses no deployment detail (GH#93). */
 export interface IApplicationStatus {
-    env?: string;
-    platformVersion?: string;
-    /** Human-readable name of the active NimBus message-store provider (e.g. "Cosmos DB", "SQL Server", "InMemory"). */
-    storageProvider?: string;
-    /** URL template for deep-linking reported events to the external ticket system, with "{ticket}" as the ticket-id placeholder (e.g. "https://support.example.com/browse/{ticket}"). Null or empty when no ticket system is configured — the UI then renders a plain "Reported" badge without a link. */
+    /** Configured environment name (e.g. "Production"). Populated only for authenticated callers; null or absent for anonymous callers. */
+    env?: string | undefined;
+    /** NimBus platform product version. Populated only for authenticated callers; null or absent for anonymous callers. */
+    platformVersion?: string | undefined;
+    /** Human-readable name of the active NimBus message-store provider (e.g. "Cosmos DB", "SQL Server", "InMemory"). Populated only for authenticated callers; null or absent for anonymous callers. */
+    storageProvider?: string | undefined;
+    /** URL template for deep-linking reported events to the external ticket system, with "{ticket}" as the ticket-id placeholder (e.g. "https://support.example.com/browse/{ticket}"). Null or empty when no ticket system is configured — the UI then renders a plain "Reported" badge without a link. Populated only for authenticated callers; null or absent for anonymous callers. */
     ticketLinkTemplate?: string | undefined;
 
     [key: string]: any;

@@ -152,10 +152,10 @@ other, with zero setup.
 
 ## YouTube title and description
 
-Published: **https://youtu.be/jZ99gbYZLqU**. Embedded from the repo root README and
-the sample README as a thumbnail linking to YouTube — GitHub strips `<iframe>`, so
-`img.youtube.com/vi/jZ99gbYZLqU/maxresdefault.jpg` wrapped in an `<a>` is the embed.
-If the video is ever re-uploaded, the id appears in three places: both READMEs and here.
+Published: **https://youtu.be/jZ99gbYZLqU**. The film is embedded on the GitHub Pages
+site only — `site/index.html`, the `#demo-video` section under the hero — deliberately
+not in any README. If the video is ever re-uploaded, the id appears in exactly two
+places: that section (iframe src plus six chapter deep-links) and this document.
 
 Title (≤60 chars so it isn't truncated in search). This one is the film's own
 opening line, so the title and the cold open say the same thing:

@@ -129,8 +129,26 @@ internal sealed class RecordingServiceBusSender : ServiceBusSender
         return NextSequenceNumber++;
     }
 
+    /// <summary>
+    /// Optional broker failure for the next and every later cancel call. Azure
+    /// Service Bus throws (MessageNotFound) when the scheduled message has already
+    /// been activated — the documented cancel-after-dispatch behavior in direct mode.
+    /// </summary>
+    public Exception CancelException { get; set; }
+
+    /// <summary>
+    /// Sequences that were scheduled and not (successfully) cancelled — the fake's
+    /// model of what the broker would still activate.
+    /// </summary>
+    public IEnumerable<long> LiveScheduledSequenceNumbers =>
+        Enumerable.Range(1, ScheduledMessages.Count)
+            .Select(i => (long)i)
+            .Where(seq => !CancelledSequenceNumbers.Contains(seq));
+
     public override Task CancelScheduledMessageAsync(long sequenceNumber, CancellationToken cancellationToken = default)
     {
+        if (CancelException != null)
+            throw CancelException;
         CancelledSequenceNumbers.Add(sequenceNumber);
         return Task.CompletedTask;
     }

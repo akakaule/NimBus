@@ -147,6 +147,129 @@ public class ScheduledTimeoutTests
         Assert.IsNull(handler.Invocations.Single().ScheduledEnqueueTimeUtc);
     }
 
+    // ── Durable workflow state decides Fired vs IgnoredLate (spec 025 AC3) ──
+    //
+    // NimBus guarantees at-least-once delivery and cannot cancel a timeout that
+    // already activated, so the handler's re-read of durable workflow state is
+    // the ONLY authority. These tests deliver the awkward cases end to end.
+
+    [TestMethod]
+    public async Task DuplicateTimeoutDelivery_FiresOnceThenIgnoresTheDuplicateAsLate()
+    {
+        var fixture = new EndToEndFixture();
+        var workflow = new WorkflowState { CurrentGeneration = 1 };
+        fixture.RegisterHandler<PaymentTimedOut>(() => new GuardedTimeoutHandler(workflow));
+
+        var timeout = TimeoutMessage(Generation(1));
+        await fixture.PublishBus.Send(timeout);
+        await fixture.DeliverAll();
+        // The broker redelivers the very same timeout (at-least-once); a real
+        // redelivery keeps the marker and mints a new transport MessageId.
+        await fixture.PublishBus.Send(TimeoutMessage(Generation(1), messageId: "redelivery-1"));
+        await fixture.DeliverAll();
+
+        CollectionAssert.AreEqual(
+            new[] { ScheduledMessageHandlingOutcome.Fired, ScheduledMessageHandlingOutcome.IgnoredLate },
+            workflow.Outcomes.ToArray(),
+            "The workflow-state CAS fires the first delivery and absorbs the duplicate");
+        Assert.AreEqual(1, workflow.FiredGenerations.Count);
+    }
+
+    [TestMethod]
+    public async Task SupersededTimeoutGeneration_IsIgnoredAsLate_AndTheCurrentOneStillFires()
+    {
+        // The workflow rescheduled (extension, retry, human intervention), so
+        // generation 1 is stale by the time it arrives — exactly the case a
+        // broker cancel is allowed to lose.
+        var fixture = new EndToEndFixture();
+        var workflow = new WorkflowState { CurrentGeneration = 2 };
+        fixture.RegisterHandler<PaymentTimedOut>(() => new GuardedTimeoutHandler(workflow));
+
+        await fixture.PublishBus.Send(TimeoutMessage(Generation(1)));
+        await fixture.PublishBus.Send(TimeoutMessage(Generation(2)));
+        await fixture.DeliverAll();
+
+        CollectionAssert.AreEqual(
+            new[] { ScheduledMessageHandlingOutcome.IgnoredLate, ScheduledMessageHandlingOutcome.Fired },
+            workflow.Outcomes.ToArray());
+        CollectionAssert.AreEqual(new[] { Generation(2) }, workflow.FiredGenerations.ToArray());
+    }
+
+    [TestMethod]
+    public async Task TimeoutArrivingAfterTheWorkflowCompleted_IsIgnoredAsLate()
+    {
+        var fixture = new EndToEndFixture();
+        var workflow = new WorkflowState { CurrentGeneration = 1, Completed = true };
+        fixture.RegisterHandler<PaymentTimedOut>(() => new GuardedTimeoutHandler(workflow));
+
+        await fixture.PublishBus.Send(TimeoutMessage(Generation(1)));
+        await fixture.DeliverAll();
+
+        CollectionAssert.AreEqual(
+            new[] { ScheduledMessageHandlingOutcome.IgnoredLate },
+            workflow.Outcomes.ToArray(),
+            "A completed workflow never re-applies a timeout, however it was delivered");
+        Assert.AreEqual(0, workflow.FiredGenerations.Count);
+    }
+
+    private static string Generation(int generation) =>
+        $"order-42:payment-timeout:{generation.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+    private static Message TimeoutMessage(string timeoutId, string messageId = null) => new()
+    {
+        MessageId = messageId ?? timeoutId,
+        CorrelationId = "workflow-conversation",
+        EventId = Guid.NewGuid().ToString(),
+        SessionId = "order-42",
+        To = "PaymentTimedOut",
+        MessageType = MessageType.EventRequest,
+        EventTypeId = "PaymentTimedOut",
+        ScheduledMessageId = timeoutId,
+        ScheduledEnqueueTimeUtc = Due,
+        MessageContent = new MessageContent
+        {
+            EventContent = new EventContent
+            {
+                EventTypeId = "PaymentTimedOut",
+                EventJson = "{\"OrderId\":\"order-42\"}",
+            },
+        },
+    };
+
+    /// <summary>Stands in for the process manager's durable workflow row.</summary>
+    private sealed class WorkflowState
+    {
+        public int CurrentGeneration { get; set; }
+        public bool Completed { get; set; }
+        public List<ScheduledMessageHandlingOutcome> Outcomes { get; } = new();
+        public List<string> FiredGenerations { get; } = new();
+    }
+
+    /// <summary>
+    /// The handler shape the docs prescribe: key on ScheduledMessageId (never the
+    /// per-attempt MessageId), re-read durable state, and compare-and-set.
+    /// </summary>
+    private sealed class GuardedTimeoutHandler(WorkflowState workflow) : IEventHandler<PaymentTimedOut>
+    {
+        public Task Handle(PaymentTimedOut message, IEventHandlerContext context, CancellationToken cancellationToken = default)
+        {
+            var expected = $"order-42:payment-timeout:{workflow.CurrentGeneration.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+            var fires = !workflow.Completed
+                && string.Equals(context.ScheduledMessageId, expected, StringComparison.Ordinal);
+
+            if (fires)
+            {
+                workflow.Completed = true; // the CAS: this generation is consumed
+                workflow.FiredGenerations.Add(context.ScheduledMessageId);
+            }
+
+            var outcome = fires ? ScheduledMessageHandlingOutcome.Fired : ScheduledMessageHandlingOutcome.IgnoredLate;
+            workflow.Outcomes.Add(outcome);
+            context.ReportScheduledMessageOutcome(outcome);
+            return Task.CompletedTask;
+        }
+    }
+
     /// <summary>
     /// Pulls the RetryRequest clone off the response bus, simulates the broker
     /// assigning it a fresh transport MessageId, and re-enqueues it for delivery.

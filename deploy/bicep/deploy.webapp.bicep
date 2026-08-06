@@ -106,6 +106,16 @@ var coreWebAppSettings = [
     name: 'WebAppVersion'
     value: webAppVersion
   }
+  {
+    // App Service always terminates at its front end, so RemoteIpAddress there
+    // is the proxy. Without this the per-client-IP login limiter degenerates to
+    // one bucket for the whole site. Template-owned on purpose: it describes
+    // deployment topology, not a tuning preference — so unlike the numeric
+    // RateLimiting__* limits it does NOT survive a portal edit. Local and
+    // Aspire runs keep the safe 'false' default. See docs/rate-limiting.md.
+    name: 'RateLimiting__TrustForwardedForHeader'
+    value: 'true'
+  }
 ]
 
 var cosmosSetting = hasCosmos ? [
@@ -179,6 +189,28 @@ var developmentDiagnosticSettings = isDevelopmentEnvironment ? [
 
 var webappsettings = concat(baseWebAppSettings, developmentDiagnosticSettings)
 
+// Every app-setting key this template owns. Derived from the FINAL template-owned
+// array so the exclusion below cannot miss a key, and written generically rather
+// than as a literal comparison so it also hardens the documented "template wins
+// on any key collision" rule above.
+var templateManagedKeys = map(webappsettings, managed => managed.name)
+
+// Operator-tuned rate limits (RateLimiting__*) are set out of band from the
+// portal / az CLI, like the auth settings above, and appSettings deployment is a
+// FULL REPLACE — without this a re-run silently restores the shipped defaults.
+// Unlike the auth settings these are not secrets, so they travel in the plain
+// settings array and stay visible in deployment history. Excluding the
+// template-managed keys keeps the final array free of duplicate names, which
+// Azure does not define behaviour for.
+var preservedRateLimitAppSettings = [for preserved in filter(
+    items(existingAppSettings),
+    setting => startsWith(setting.key, 'RateLimiting__') && !contains(templateManagedKeys, setting.key)): {
+  name: preserved.key
+  value: preserved.value
+}]
+
+var webappsettingsFinal = concat(webappsettings, preservedRateLimitAppSettings)
+
 module webAppModule 'templates/webApp.bicep' = {
   name: 'webAppDeploy'
   params: {
@@ -186,7 +218,7 @@ module webAppModule 'templates/webApp.bicep' = {
     appServicePlanId:'/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Web/serverfarms/${appServicePlanName}'
     location:effectiveWebAppLocation
     alwaysOn: alwaysOnEnabled
-    settings:webappsettings
+    settings:webappsettingsFinal
     secretSettings: webAppSecretSettings
   }
 }

@@ -32,6 +32,7 @@ using NimBus.WebApp.Controllers;
 using System.Linq;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.Middleware;
+using NimBus.WebApp.RateLimiting;
 using System.Text.Json.Serialization;
 using NimBus.Core.Extensions;
 using NimBus.Extensions.Identity;
@@ -326,6 +327,14 @@ namespace NimBus.WebApp
             services.Configure<GzipCompressionProviderOptions>(o => o.Level = CompressionLevel.Optimal);
 
             services.AddSignalR();
+
+            // Request-rate policies for the four highest-cost surfaces (agent
+            // receive, admin bulk operations, search, login). Attached by an
+            // application-model convention rather than attributes, for the same
+            // reason AllowAnonymousActionsConvention exists: the controllers
+            // carrying those routes are NSwag-generated and regenerated on every
+            // build. See docs/rate-limiting.md.
+            services.AddNimBusRateLimiting(Configuration);
         }
 
         private void AddPlatformCatalog(IServiceCollection services)
@@ -645,6 +654,16 @@ namespace NimBus.WebApp
 
             app.UseAuthentication();
             app.UseAuthorization();
+
+            // After UseAuthorization, not right after UseRouting: the admin and
+            // search partitions key on HttpContext.User, which UseAuthentication
+            // populates. Placed earlier, every authenticated caller collapses
+            // into one anonymous partition and two operators throttle each other.
+            // Still satisfies the ordering contract — after UseRouting(), before
+            // UseEndpoints(...) — which is what endpoint policy resolution needs.
+            // Side benefit: unauthorized requests are rejected before they can
+            // consume a permit.
+            app.UseRateLimiter();
 
             app.UseEndpoints(endpoints =>
             {

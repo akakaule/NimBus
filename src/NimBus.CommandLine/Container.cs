@@ -4,6 +4,7 @@ using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json.Linq;
 using NimBus.Core.Messages;
 using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using NimBus.ServiceBus;
 using Spectre.Console;
@@ -142,10 +143,39 @@ static class Container
         while (continuationToken != null);
     }
 
-    static async Task UpdateMessagesAndResubmit(ServiceBusClient serviceBusClient, CosmosDbClient dbClient, string endpoint, ResolutionStatus resolutionStatus)
+    /// <summary>
+    /// The three store operations the resubmit loop needs. A narrow port keeps the
+    /// loop testable without a full <see cref="IMessageTrackingStore"/> double;
+    /// <see cref="ResubmitEventStore"/> adapts the real store.
+    /// </summary>
+    internal interface IResubmitEventStore
     {
-        var sender = new Sender(serviceBusClient.CreateSender(Constants.ManagerId));
+        Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount);
+        Task<UnresolvedEvent> GetEvent(string endpointId, string eventId);
+        Task<bool> UploadFailedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content);
+    }
 
+    private sealed class ResubmitEventStore(IMessageTrackingStore inner) : IResubmitEventStore
+    {
+        public Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount) =>
+            inner.GetEventsByFilter(filter, continuationToken, maxSearchItemsCount);
+
+        public Task<UnresolvedEvent> GetEvent(string endpointId, string eventId) =>
+            inner.GetEvent(endpointId, eventId);
+
+        public Task<bool> UploadFailedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) =>
+            inner.UploadFailedMessage(eventId, sessionId, endpointId, content);
+    }
+
+    static Task UpdateMessagesAndResubmit(ServiceBusClient serviceBusClient, CosmosDbClient dbClient, string endpoint, ResolutionStatus resolutionStatus) =>
+        UpdateMessagesAndResubmit(
+            new Sender(serviceBusClient.CreateSender(Constants.ManagerId)),
+            new ResubmitEventStore(dbClient),
+            endpoint,
+            resolutionStatus);
+
+    internal static async Task UpdateMessagesAndResubmit(ISender sender, IResubmitEventStore dbClient, string endpoint, ResolutionStatus resolutionStatus)
+    {
         AnsiConsole.MarkupLine("[blue]Updating status for messages in CosmosDB...[/]");
 
         string continuationToken = string.Empty;
@@ -159,10 +189,24 @@ static class Container
             continuationToken = searchResponse.ContinuationToken;
             AnsiConsole.MarkupLine($"[blue]Retrieved {searchResponse.Events.Count()} messages[/]");
 
-            foreach (var @event in searchResponse.Events)
+            foreach (var searchResult in searchResponse.Events)
             {
-                if (@event.UpdatedAt < DateTime.UtcNow.AddMinutes(-10))
+                if (searchResult.UpdatedAt < DateTime.UtcNow.AddMinutes(-10))
                 {
+                    // Search projections deliberately omit EventJson (cross-provider
+                    // contract), so the loop must re-read the FULL event before it
+                    // writes anything back: uploading the projection would erase the
+                    // stored payload, and resubmitting it would hand the handler a
+                    // null EventJson that fails deserialization long before the
+                    // durable workflow-state guard a timeout depends on.
+                    var @event = await dbClient.GetEvent(endpoint, searchResult.EventId) ?? searchResult;
+                    var eventJson = @event.MessageContent?.EventContent?.EventJson;
+                    if (string.IsNullOrEmpty(eventJson))
+                    {
+                        AnsiConsole.MarkupLine($"[yellow]Message {searchResult.EventId.EscapeMarkup()} has no stored event payload; skipping[/]");
+                        continue;
+                    }
+
                     @event.ResolutionStatus = resolutionStatus;
                     @event.MessageType = MessageType.EventRequest;
                     AnsiConsole.MarkupLine($"[dim]Updating message with EventId {@event.EventId.EscapeMarkup()} from DB[/]");
@@ -170,19 +214,19 @@ static class Container
                     if (messageUpdated)
                     {
                         AnsiConsole.MarkupLine($"[green]Updated message as Failed[/]");
-                        await Resubmit(sender, @event, @event.EndpointId, @event.EventTypeId, @event.MessageContent.EventContent.EventJson);
+                        await Resubmit(sender, @event, @event.EndpointId, @event.EventTypeId, eventJson);
                     }
                 }
                 else
                 {
-                    AnsiConsole.MarkupLine($"[yellow]Message {@event.EventId.EscapeMarkup()} is not old enough[/]");
+                    AnsiConsole.MarkupLine($"[yellow]Message {searchResult.EventId.EscapeMarkup()} is not old enough[/]");
                 }
             }
         }
         while (continuationToken != null);
     }
 
-    static Task Resubmit(Sender sender, UnresolvedEvent errorResponse, string endpoint, string eventTypeId, string eventJson)
+    static Task Resubmit(ISender sender, UnresolvedEvent errorResponse, string endpoint, string eventTypeId, string eventJson)
     {
         AnsiConsole.MarkupLine($"[dim]MANAGER RESUBMIT EVENT: EventId: {errorResponse.EventId.EscapeMarkup()} EventtypeId: {eventTypeId.EscapeMarkup()}[/]");
         // Marked (scheduled/timeout) entities restore the logical timeout identity

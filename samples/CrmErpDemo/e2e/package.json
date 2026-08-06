@@ -10,7 +10,18 @@
     "test:happy": "playwright test 01-happy-path",
     "test:error": "playwright test 02-error-mode-recovery",
     "test:blocked": "playwright test 03-blocked-messages-recovery",
-    "report": "playwright show-report"
+    "report": "playwright show-report",
+    "demo": "playwright test --config playwright.demo.config.ts",
+    "demo:act0": "playwright test --config playwright.demo.config.ts act0",
+    "demo:act1": "playwright test --config playwright.demo.config.ts act1",
+    "demo:act2": "playwright test --config playwright.demo.config.ts act2",
+    "demo:act3": "playwright test --config playwright.demo.config.ts act3",
+    "demo:act4": "playwright test --config playwright.demo.config.ts act4",
+    "demo:act5": "playwright test --config playwright.demo.config.ts act5",
+    "demo:voices": "node scripts/list-voices.ts",
+    "demo:voice": "node scripts/synthesize-narration.ts",
+    "demo:mux": "node scripts/mux-narration.ts",
+    "demo:film": "node scripts/join-film.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",

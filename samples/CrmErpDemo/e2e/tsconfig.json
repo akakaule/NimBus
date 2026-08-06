@@ -7,6 +7,9 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
+    // scripts/ runs under plain node (which strips types and needs real .ts
+    // specifiers); demo/ and tests/ run under Playwright's loader and use .js.
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "types": ["node"]

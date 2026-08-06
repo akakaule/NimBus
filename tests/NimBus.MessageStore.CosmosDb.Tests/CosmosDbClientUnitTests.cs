@@ -243,6 +243,13 @@ public sealed class CosmosDbClientUnitTests
 
             return Task.FromResult<ICosmosContainerAdapter>(_container);
         }
+
+        // Endpoint containers are created through the ContainerProperties overload, which
+        // fails closed unless an adapter implements it.
+        public Task<ICosmosContainerAdapter> CreateContainerIfNotExistsAsync(
+            ContainerProperties containerProperties,
+            CancellationToken cancellationToken = default)
+            => CreateContainerIfNotExistsAsync(containerProperties.Id, containerProperties.PartitionKeyPath);
     }
 
     private sealed class FakeContainerResponse : ContainerResponse

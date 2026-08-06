@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json.Linq;
+using NimBus.MessageStore;
 using NimBus.WebApp.ManagementApi;
 
 namespace NimBus.WebApp.Services;
@@ -16,13 +17,20 @@ public partial class AdminService
     public async Task<CopyResult> CopyEndpointDataAsync(string endpointId, string targetConnectionString, DateTime? from, DateTime? to, List<string> statuses, int? batchSize)
     {
         EnsureCosmosOnlyOperation(nameof(CopyEndpointDataAsync));
+        // Reject a reserved id before the source read: it would resolve to one of the
+        // store's own containers in both accounts.
+        CosmosContainerDefaults.EnsureNotReservedEndpointId(endpointId);
         using var targetClient = new CosmosClient(targetConnectionString);
         var sourceDb = _rawCosmosClient!.GetDatabase(DatabaseId);
         var targetDb = targetClient.GetDatabase(DatabaseId);
 
         // Copy events
         var sourceEndpointContainer = sourceDb.GetContainer(endpointId);
-        var targetEndpointContainer = (await targetDb.CreateContainerIfNotExistsAsync(endpointId, "/id")).Container;
+        // Endpoint containers must be created with TTL enabled or the item-level ttl values
+        // written by CosmosDbClient.UploadMessage are inert in the target — and
+        // CreateContainerIfNotExistsAsync never reconciles a container it did not create.
+        var targetEndpointContainer =
+            (await targetDb.CreateContainerIfNotExistsAsync(CosmosContainerDefaults.EndpointContainer(endpointId))).Container;
 
         var copiedEventIds = new HashSet<string>(StringComparer.Ordinal);
         int eventCount = await CopyDocuments(sourceEndpointContainer, targetEndpointContainer,

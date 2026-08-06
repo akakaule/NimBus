@@ -3,6 +3,8 @@ using Azure.Identity;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NimBus.Core.Diagnostics;
@@ -27,8 +29,22 @@ public static class CosmosDbMessageStoreBuilderExtensions
     /// order. AAD is used when the endpoint does not contain <c>AccountKey=</c>.
     /// </summary>
     public static INimBusBuilder AddCosmosDbMessageStore(this INimBusBuilder builder)
+        => builder.AddCosmosDbMessageStore(_ => { });
+
+    /// <summary>
+    /// Registers the Cosmos DB message store with explicit options configuration.
+    /// Configuration in <c>NimBus:Cosmos</c> binds first; <paramref name="configure"/>
+    /// runs after it, so code wins over configuration.
+    /// </summary>
+    public static INimBusBuilder AddCosmosDbMessageStore(
+        this INimBusBuilder builder,
+        Action<CosmosDbMessageStoreOptions> configure)
     {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(configure);
+
         var services = builder.Services;
+        AddStoreOptions(services, configure);
 
         services.AddSingleton(sp =>
         {
@@ -39,7 +55,10 @@ public static class CosmosDbMessageStoreBuilderExtensions
         services.AddSingleton<INimBusMessageStore>(sp =>
         {
             var cosmosClient = sp.GetRequiredService<CosmosClient>();
-            return new CosmosDbClient(cosmosClient, sp.GetService<ILogger<CosmosDbClient>>());
+            return new CosmosDbClient(
+                cosmosClient,
+                sp.GetService<ILogger<CosmosDbClient>>(),
+                sp.GetRequiredService<IOptions<CosmosDbMessageStoreOptions>>().Value);
         });
 
         RegisterContracts(services);
@@ -51,13 +70,56 @@ public static class CosmosDbMessageStoreBuilderExtensions
     /// (useful for tests and advanced scenarios).
     /// </summary>
     public static INimBusBuilder AddCosmosDbMessageStore(this INimBusBuilder builder, CosmosClient cosmosClient)
+        => builder.AddCosmosDbMessageStore(cosmosClient, _ => { });
+
+    /// <summary>
+    /// Registers the Cosmos DB message store using a pre-constructed CosmosClient, with
+    /// explicit options configuration. Configuration in <c>NimBus:Cosmos</c> binds first
+    /// when an <see cref="IConfiguration"/> is registered; <paramref name="configure"/>
+    /// runs after it, so code wins over configuration.
+    /// </summary>
+    public static INimBusBuilder AddCosmosDbMessageStore(
+        this INimBusBuilder builder,
+        CosmosClient cosmosClient,
+        Action<CosmosDbMessageStoreOptions> configure)
     {
+        ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(cosmosClient);
-        builder.Services.AddSingleton(cosmosClient);
-        builder.Services.AddSingleton<INimBusMessageStore>(sp =>
-            new CosmosDbClient(cosmosClient, sp.GetService<ILogger<CosmosDbClient>>()));
-        RegisterContracts(builder.Services);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        var services = builder.Services;
+        AddStoreOptions(services, configure);
+
+        services.AddSingleton(cosmosClient);
+        services.AddSingleton<INimBusMessageStore>(sp =>
+            new CosmosDbClient(
+                cosmosClient,
+                sp.GetService<ILogger<CosmosDbClient>>(),
+                sp.GetRequiredService<IOptions<CosmosDbMessageStoreOptions>>().Value));
+
+        RegisterContracts(services);
         return builder;
+    }
+
+    private static void AddStoreOptions(IServiceCollection services, Action<CosmosDbMessageStoreOptions> configure)
+    {
+        services.AddOptions<CosmosDbMessageStoreOptions>();
+
+        // Bind through an optional IConfiguration: the explicit-CosmosClient overload is
+        // documented as usable from a bare ServiceCollection, and Configure<IConfiguration>
+        // would turn IConfiguration into a hard requirement — an additive option must not.
+        services.AddSingleton<IConfigureOptions<CosmosDbMessageStoreOptions>>(sp =>
+            new ConfigureOptions<CosmosDbMessageStoreOptions>(options =>
+                sp.GetService<IConfiguration>()
+                    ?.GetSection(CosmosDbMessageStoreOptions.SectionName)
+                    .Bind(options)));
+
+        // Registered after the bind, so code wins over configuration.
+        services.AddOptions<CosmosDbMessageStoreOptions>().Configure(configure);
+
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            IValidateOptions<CosmosDbMessageStoreOptions>, CosmosDbMessageStoreOptionsValidator>());
+        services.AddSingleton<IHostedService, CosmosDbMessageStoreOptionsStartupValidator>();
     }
 
     private static void RegisterContracts(IServiceCollection services)

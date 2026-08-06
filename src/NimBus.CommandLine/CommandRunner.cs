@@ -1,3 +1,4 @@
+using System.Globalization;
 using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
@@ -11,6 +12,10 @@ static class CommandRunner
 {
     public const string SbConnectionStringEnvName = "AzureServiceBus_ConnectionString";
     public const string DbConnectionStringEnvName = "CosmosDb_ConnectionString";
+
+    /// <summary>Environment form of the host configuration key <c>NimBus:Cosmos:UnresolvedRetentionDays</c>,
+    /// so one value configures the hosts and the CLI alike.</summary>
+    public const string UnresolvedRetentionEnvName = "NimBus__Cosmos__UnresolvedRetentionDays";
 
     /// <summary>
     /// Builds a ServiceBusClient from either a connection string or a fully
@@ -73,37 +78,64 @@ static class CommandRunner
     private static string? Resolve(CommandOption option, string envName) =>
         option.HasValue() ? option.Value() : Environment.GetEnvironmentVariable(envName);
 
-    public static async Task Run(CommandOption sbConnectionString, CommandOption dbConnectionString, Func<ServiceBusClient, CosmosDbClient, ServiceBusAdministrationClient, Task> func)
+    /// <summary>
+    /// Resubmission rewrites the whole tracking document, so the CLI must stamp the same
+    /// retention the hosts are configured with; otherwise `nb container resubmit` silently
+    /// disables expiry on the rows it touches.
+    /// </summary>
+    internal static CosmosDbMessageStoreOptions ResolveStoreOptions(CommandOption? unresolvedRetentionDays)
+    {
+        var raw = unresolvedRetentionDays?.HasValue() == true
+            ? unresolvedRetentionDays.Value()
+            : Environment.GetEnvironmentVariable(UnresolvedRetentionEnvName);
+
+        var options = new CosmosDbMessageStoreOptions();
+        if (!string.IsNullOrWhiteSpace(raw))
+        {
+            if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var days))
+            {
+                throw new InvalidOperationException(
+                    $"--unresolved-retention-days (or {UnresolvedRetentionEnvName}) must be a whole number; was '{raw}'.");
+            }
+
+            options.UnresolvedRetentionDays = days;
+        }
+
+        options.Validate();
+        return options;
+    }
+
+    private static CosmosDbClient CreateCosmosDbClient(string? dbConnStr, CommandOption? unresolvedRetentionDays) =>
+        new(CreateCosmosClient(dbConnStr), logger: null, ResolveStoreOptions(unresolvedRetentionDays));
+
+    public static async Task Run(CommandOption sbConnectionString, CommandOption dbConnectionString, Func<ServiceBusClient, CosmosDbClient, ServiceBusAdministrationClient, Task> func, CommandOption? unresolvedRetentionDays = null)
     {
         var sbConnStr = Resolve(sbConnectionString, SbConnectionStringEnvName);
         var dbConnStr = Resolve(dbConnectionString, DbConnectionStringEnvName);
 
         var serviceBusClient = CreateServiceBusClient(sbConnStr);
         var serviceBusAdmin = CreateServiceBusAdministrationClient(sbConnStr);
-        var cosmosClient = CreateCosmosClient(dbConnStr);
-        var cosmosDbClient = new CosmosDbClient(cosmosClient);
+        var cosmosDbClient = CreateCosmosDbClient(dbConnStr, unresolvedRetentionDays);
 
         await func(serviceBusClient, cosmosDbClient, serviceBusAdmin);
     }
 
-    public static async Task Run(CommandOption sbConnectionString, CommandOption dbConnectionString, Func<ServiceBusClient, CosmosDbClient, Task> func)
+    public static async Task Run(CommandOption sbConnectionString, CommandOption dbConnectionString, Func<ServiceBusClient, CosmosDbClient, Task> func, CommandOption? unresolvedRetentionDays = null)
     {
         var sbConnStr = Resolve(sbConnectionString, SbConnectionStringEnvName);
         var dbConnStr = Resolve(dbConnectionString, DbConnectionStringEnvName);
 
         var serviceBusClient = CreateServiceBusClient(sbConnStr);
-        var cosmosClient = CreateCosmosClient(dbConnStr);
-        var cosmosDbClient = new CosmosDbClient(cosmosClient);
+        var cosmosDbClient = CreateCosmosDbClient(dbConnStr, unresolvedRetentionDays);
 
         await func(serviceBusClient, cosmosDbClient);
     }
 
-    public static async Task Run(CommandOption dbConnectionString, Func<CosmosDbClient, Task> func)
+    public static async Task Run(CommandOption dbConnectionString, Func<CosmosDbClient, Task> func, CommandOption? unresolvedRetentionDays = null)
     {
         var dbConnStr = Resolve(dbConnectionString, DbConnectionStringEnvName);
 
-        var cosmosClient = CreateCosmosClient(dbConnStr);
-        var cosmosDbClient = new CosmosDbClient(cosmosClient);
+        var cosmosDbClient = CreateCosmosDbClient(dbConnStr, unresolvedRetentionDays);
 
         await func(cosmosDbClient);
     }

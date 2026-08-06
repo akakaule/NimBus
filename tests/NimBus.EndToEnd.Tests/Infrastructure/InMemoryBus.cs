@@ -15,7 +15,10 @@ internal sealed class InMemoryBus : ISender
     private readonly List<IMessage> _allSentMessages = new();
     private readonly List<(IMessage Message, int EnqueueDelay)> _sentMessagesWithDelay = new();
     private readonly ConcurrentDictionary<string, FakeServiceBusSession> _sessionsBySessionId = new();
+    private readonly List<long> _scheduledSequenceNumbers = new();
+    private readonly List<long> _cancelledSequenceNumbers = new();
     private readonly object _lock = new();
+    private long _nextScheduledSequenceNumber;
 
     public IReadOnlyList<IMessage> SentMessages
     {
@@ -133,20 +136,44 @@ internal sealed class InMemoryBus : ISender
         return results;
     }
 
+    /// <summary>Broker-assigned scheduled sequence numbers handed out so far, newest last.</summary>
+    public IReadOnlyList<long> ScheduledSequenceNumbers
+    {
+        get { lock (_lock) { return _scheduledSequenceNumbers.ToList(); } }
+    }
+
+    /// <summary>Sequence numbers passed to <see cref="CancelScheduledMessage(long, CancellationToken)"/>, in order.</summary>
+    public IReadOnlyList<long> CancelledSequenceNumbers
+    {
+        get { lock (_lock) { return _cancelledSequenceNumbers.ToList(); } }
+    }
+
     public Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
     {
         var enqueueDelay = (int)Math.Ceiling((scheduledEnqueueTime - DateTimeOffset.UtcNow).TotalMinutes);
+        long sequenceNumber;
         lock (_lock)
         {
+            // Service Bus assigns a POSITIVE sequence number to every scheduled
+            // message; the handle bridge rejects anything else, so the fake must
+            // model the real broker rather than returning a placeholder 0.
+            sequenceNumber = ++_nextScheduledSequenceNumber;
+            _scheduledSequenceNumbers.Add(sequenceNumber);
             _allSentMessages.Add(message);
             _sentMessagesWithDelay.Add((message, enqueueDelay));
         }
         _messages.Enqueue(message);
-        return Task.FromResult(0L);
+        return Task.FromResult(sequenceNumber);
     }
 
-    public Task CancelScheduledMessage(long sequenceNumber, CancellationToken cancellationToken = default) =>
-        Task.CompletedTask;
+    public Task CancelScheduledMessage(long sequenceNumber, CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+        {
+            _cancelledSequenceNumbers.Add(sequenceNumber);
+        }
+        return Task.CompletedTask;
+    }
 
     private FakeServiceBusSession GetOrCreateSession(string? sessionId)
     {

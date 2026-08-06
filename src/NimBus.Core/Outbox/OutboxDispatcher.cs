@@ -215,10 +215,15 @@ namespace NimBus.Core.Outbox
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
-                    // Shutdown mid-batch: release the remaining not-yet-started claims
-                    // (best effort, no token) so another worker can pick them up
-                    // immediately instead of waiting out the lease.
-                    for (var j = i + 1; j < claimed.Count; j++)
+                    // Shutdown mid-batch: release the not-yet-started claims (best
+                    // effort, no token) so another worker can pick them up immediately
+                    // instead of waiting out the lease. Cleanup starts at the CURRENT
+                    // item, not the next one: cancellation may have interrupted it
+                    // before its dispatch-start fence won, leaving it reserved and its
+                    // whole session blocked for SendLeaseDuration. ReleaseClaimAsync
+                    // no-ops safely for a started, terminal, or stale claim, so
+                    // including the current item can never un-reserve a live send.
+                    for (var j = i; j < claimed.Count; j++)
                     {
                         try
                         {

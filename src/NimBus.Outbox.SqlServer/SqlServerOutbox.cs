@@ -84,15 +84,38 @@ namespace NimBus.Outbox.SqlServer
                 IF COL_LENGTH('{_options.FullTableName}', 'OutboxSequenceNumber') IS NULL
                     ALTER TABLE {_options.FullTableName} ADD [OutboxSequenceNumber] BIGINT IDENTITY(1,1) NOT NULL;
 
+                -- StoredAtUtc migrates in three INDEPENDENTLY guarded phases. The DDL
+                -- batch has no encompassing transaction, so a crash or cancellation
+                -- between phases must leave a state the next startup can finish:
+                -- guarding backfill/NOT NULL/default under a column-is-missing test
+                -- would strand a half-migrated column forever (nullable, unbackfilled,
+                -- no default) because every later run would skip the repair.
                 IF COL_LENGTH('{_options.FullTableName}', 'StoredAtUtc') IS NULL
-                BEGIN
                     ALTER TABLE {_options.FullTableName} ADD [StoredAtUtc] DATETIME2 NULL;
-                    -- Backfill from CreatedAtUtc (best available approximation); the
-                    -- OutboxSequenceNumber tiebreak keeps ordering deterministic.
+
+                -- Phase 2: while the column is still nullable — a fresh ADD above or
+                -- an interrupted earlier run — backfill from CreatedAtUtc (best
+                -- available approximation; the OutboxSequenceNumber tiebreak keeps
+                -- ordering deterministic) and then seal it. Once NOT NULL succeeds no
+                -- null can reappear, so this is skipped on every subsequent startup.
+                IF EXISTS (
+                    SELECT 1 FROM sys.columns
+                    WHERE object_id = OBJECT_ID('{_options.FullTableName}')
+                      AND name = 'StoredAtUtc' AND is_nullable = 1)
+                BEGIN
                     EXEC('UPDATE {_options.FullTableName} SET [StoredAtUtc] = [CreatedAtUtc] WHERE [StoredAtUtc] IS NULL');
                     EXEC('ALTER TABLE {_options.FullTableName} ALTER COLUMN [StoredAtUtc] DATETIME2 NOT NULL');
-                    EXEC('ALTER TABLE {_options.FullTableName} ADD CONSTRAINT [DF_{_options.Schema}_{_options.TableName}_StoredAtUtc] DEFAULT SYSUTCDATETIME() FOR [StoredAtUtc]');
                 END;
+
+                -- Phase 3: the default is repaired on its own terms. The existence test
+                -- matches ANY default bound to the column (the CREATE TABLE path binds
+                -- an auto-named one), so this never tries to add a second default.
+                IF COL_LENGTH('{_options.FullTableName}', 'StoredAtUtc') IS NOT NULL
+                   AND NOT EXISTS (
+                        SELECT 1 FROM sys.default_constraints dc
+                        JOIN sys.columns c ON c.object_id = dc.parent_object_id AND c.column_id = dc.parent_column_id
+                        WHERE dc.parent_object_id = OBJECT_ID('{_options.FullTableName}') AND c.name = 'StoredAtUtc')
+                    EXEC('ALTER TABLE {_options.FullTableName} ADD CONSTRAINT [DF_{_options.Schema}_{_options.TableName}_StoredAtUtc] DEFAULT SYSUTCDATETIME() FOR [StoredAtUtc]');
 
                 IF COL_LENGTH('{_options.FullTableName}', 'CancelledAtUtc') IS NULL
                     ALTER TABLE {_options.FullTableName} ADD [CancelledAtUtc] DATETIME2 NULL;
@@ -530,7 +553,13 @@ namespace NimBus.Outbox.SqlServer
                     FROM {_options.FullTableName} c WITH (UPDLOCK, READPAST, READCOMMITTEDLOCK)
                     WHERE c.[DispatchedAtUtc] IS NULL
                       AND c.[CancelledAtUtc] IS NULL
-                      AND c.[EffectiveDueAtUtc] <= SYSUTCDATETIME()
+                      -- Eligibility is the SCHEDULED due time only: an unscheduled row
+                      -- is immediately dispatchable by definition. EffectiveDueAtUtc
+                      -- (COALESCE(scheduled, stored)) governs ORDERING alone — using it
+                      -- for eligibility would park a legacy row whose backfilled
+                      -- StoredAtUtc came from a producer clock running ahead of the
+                      -- server, which cannot happen today (revision-6 rule, AC5).
+                      AND (c.[ScheduledEnqueueTimeUtc] IS NULL OR c.[ScheduledEnqueueTimeUtc] <= SYSUTCDATETIME())
                       AND (c.[DispatchClaimId] IS NULL OR c.[DispatchClaimedUntilUtc] <= SYSUTCDATETIME())
                       AND (c.[SessionId] IS NULL OR (
                             -- (a) ordering, first claims only: a not-yet-started candidate
@@ -756,7 +785,14 @@ namespace NimBus.Outbox.SqlServer
             command.Parameters.AddWithValue($"@CorrelationId{suffix}", (object)message.CorrelationId ?? DBNull.Value);
             command.Parameters.AddWithValue($"@Payload{suffix}", message.Payload);
             command.Parameters.AddWithValue($"@EnqueueDelayMinutes{suffix}", message.EnqueueDelayMinutes);
-            command.Parameters.AddWithValue($"@ScheduledEnqueueTimeUtc{suffix}", (object?)message.ScheduledEnqueueTimeUtc ?? DBNull.Value);
+            // DATETIME2 is bound EXPLICITLY: AddWithValue infers the legacy
+            // SqlDbType.DateTime for a DateTime, whose ~3.33 ms rounding can round a
+            // due time DOWN (dispatching before the categorical boundary) and whose
+            // 1753 floor rejects far-past due times outright. The column is DATETIME2
+            // in both delivery modes, so this only removes a lossy conversion.
+            var scheduledEnqueueTime = command.Parameters.Add(
+                $"@ScheduledEnqueueTimeUtc{suffix}", System.Data.SqlDbType.DateTime2);
+            scheduledEnqueueTime.Value = (object?)message.ScheduledEnqueueTimeUtc ?? DBNull.Value;
             command.Parameters.AddWithValue($"@CreatedAtUtc{suffix}", message.CreatedAtUtc);
             command.Parameters.AddWithValue($"@TraceParent{suffix}", (object)message.TraceParent ?? DBNull.Value);
             command.Parameters.AddWithValue($"@TraceState{suffix}", (object)message.TraceState ?? DBNull.Value);

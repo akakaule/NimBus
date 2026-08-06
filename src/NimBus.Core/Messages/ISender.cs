@@ -40,7 +40,23 @@ namespace NimBus.Core.Messages
             var timeoutId = message.ScheduledMessageId ?? message.MessageId;
             ScheduledMessageHandle.ValidateTimeoutId(timeoutId, nameof(message));
             var sequenceNumber = await ScheduleMessage(message, scheduledEnqueueTime, cancellationToken).ConfigureAwait(false);
-            return new ScheduledMessageHandle(timeoutId, sequenceNumber, ScheduledMessageHandleKind.BrokerSequenceNumber);
+            var handle = new ScheduledMessageHandle(timeoutId, sequenceNumber, ScheduledMessageHandleKind.BrokerSequenceNumber);
+            if (sequenceNumber <= 0)
+            {
+                // The public invariant is a POSITIVE sequence (ScheduledMessageHandle.Validate).
+                // A sender whose legacy ScheduleMessage returns 0 — an outbox in default
+                // mode, or a custom/test sender that never implemented broker scheduling —
+                // would otherwise hand back a handle that every cancel path immediately
+                // rejects. Fail at schedule time, where the caller can still react, rather
+                // than at cancel time, when the workflow is already committed to a timeout.
+                throw new InvalidOperationException(
+                    $"ScheduleMessage returned a non-positive sequence number ({sequenceNumber}) for timeout '{timeoutId}'. " +
+                    "A broker-backed sender must return the transport-assigned scheduled sequence number; " +
+                    "providers that cannot must override ScheduleMessageWithHandle with their own handle kind.");
+            }
+
+            handle.Validate(nameof(message));
+            return handle;
         }
 
         /// <summary>

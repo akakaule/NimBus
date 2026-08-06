@@ -137,6 +137,134 @@ public sealed class SqlServerOutboxSchedulingIntegrationTests
     }
 
     [TestMethod]
+    public async Task Migration_LegacyImmediateRow_WithFutureProducerClock_StaysImmediatelyClaimable()
+    {
+        // A legacy unscheduled row written by a producer whose clock ran ahead
+        // backfills StoredAtUtc (and therefore EffectiveDueAtUtc) into the future.
+        // ScheduledEnqueueTimeUtc IS NULL means "dispatch now" — eligibility must
+        // not be gated on the ordering key, or the row silently parks until the
+        // server clock catches up.
+        var options = NewOptions(ScheduledDeliveryMode.BrokerScheduleAtDispatch);
+        await Execute(options, $@"
+            EXEC('CREATE SCHEMA [{options.Schema}]');
+            CREATE TABLE {options.FullTableName} (
+                [Id] NVARCHAR(128) NOT NULL PRIMARY KEY,
+                [MessageId] NVARCHAR(512) NOT NULL,
+                [To] NVARCHAR(256) NULL,
+                [EventTypeId] NVARCHAR(256) NULL,
+                [SessionId] NVARCHAR(256) NULL,
+                [CorrelationId] NVARCHAR(256) NULL,
+                [Payload] NVARCHAR(MAX) NOT NULL,
+                [EnqueueDelayMinutes] INT NOT NULL DEFAULT 0,
+                [ScheduledEnqueueTimeUtc] DATETIME2 NULL,
+                [CreatedAtUtc] DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+                [DispatchedAtUtc] DATETIME2 NULL,
+                [TraceParent] NVARCHAR(55) NULL,
+                [TraceState] NVARCHAR(256) NULL
+            );
+            INSERT INTO {options.FullTableName} ([Id],[MessageId],[Payload],[CreatedAtUtc])
+                VALUES ('skewed-1','m1','{{}}', DATEADD(HOUR, 6, SYSUTCDATETIME()));");
+        _createdSchemas.Add(options);
+
+        await new SqlServerOutbox(options).EnsureTableExistsAsync();
+
+        Assert.IsTrue(
+            (DateTime)(await Scalar(options, $"SELECT [EffectiveDueAtUtc] FROM {options.FullTableName} WHERE [Id]='skewed-1'"))!
+                > DateTime.UtcNow,
+            "Precondition: the backfilled ordering key really is in the future");
+
+        var cutover = new SqlServerOutbox(NewOptionsLike(options, ScheduledDeliveryMode.SqlOwnedDueTime));
+        var claimed = await cutover.ClaimDueAsync(Guid.NewGuid(), 10);
+
+        CollectionAssert.AreEqual(
+            new[] { "skewed-1" },
+            claimed.Select(m => m.Id).ToArray(),
+            "An unscheduled row is eligible immediately regardless of clock skew in its stored timestamp");
+    }
+
+    [TestMethod]
+    public async Task Migration_InterruptedAfterColumnAdd_IsRepairedByTheNextStartup()
+    {
+        // Simulates a crash between ALTER TABLE ADD and the backfill: the column
+        // exists, is nullable, holds nulls and has no default. Every later startup
+        // must finish the job instead of skipping it because the column "exists".
+        var options = NewOptions(ScheduledDeliveryMode.SqlOwnedDueTime);
+        await Execute(options, $@"
+            EXEC('CREATE SCHEMA [{options.Schema}]');
+            CREATE TABLE {options.FullTableName} (
+                [Id] NVARCHAR(128) NOT NULL PRIMARY KEY,
+                [MessageId] NVARCHAR(512) NOT NULL,
+                [To] NVARCHAR(256) NULL,
+                [EventTypeId] NVARCHAR(256) NULL,
+                [SessionId] NVARCHAR(256) NULL,
+                [CorrelationId] NVARCHAR(256) NULL,
+                [Payload] NVARCHAR(MAX) NOT NULL,
+                [EnqueueDelayMinutes] INT NOT NULL DEFAULT 0,
+                [ScheduledEnqueueTimeUtc] DATETIME2 NULL,
+                [CreatedAtUtc] DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+                [DispatchedAtUtc] DATETIME2 NULL,
+                [TraceParent] NVARCHAR(55) NULL,
+                [TraceState] NVARCHAR(256) NULL,
+                [StoredAtUtc] DATETIME2 NULL
+            );
+            INSERT INTO {options.FullTableName} ([Id],[MessageId],[Payload],[CreatedAtUtc])
+                VALUES ('half-migrated-1','m1','{{}}','2026-01-01T10:00:00');");
+        _createdSchemas.Add(options);
+
+        var outbox = new SqlServerOutbox(options);
+        await outbox.EnsureTableExistsAsync();
+
+        Assert.AreEqual(
+            new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Unspecified),
+            (DateTime)(await Scalar(options, $"SELECT [StoredAtUtc] FROM {options.FullTableName} WHERE [Id]='half-migrated-1'"))!,
+            "The interrupted backfill is completed on the next startup");
+        Assert.AreEqual(0, Convert.ToInt32(await Scalar(options,
+            $"SELECT is_nullable FROM sys.columns WHERE object_id = OBJECT_ID('{options.FullTableName}') AND name = 'StoredAtUtc'"),
+            System.Globalization.CultureInfo.InvariantCulture),
+            "The column is sealed NOT NULL after the repair");
+        Assert.AreEqual(1, Convert.ToInt32(await Scalar(options, $@"
+            SELECT COUNT(*) FROM sys.default_constraints dc
+            JOIN sys.columns c ON c.object_id = dc.parent_object_id AND c.column_id = dc.parent_column_id
+            WHERE dc.parent_object_id = OBJECT_ID('{options.FullTableName}') AND c.name = 'StoredAtUtc'"),
+            System.Globalization.CultureInfo.InvariantCulture),
+            "Exactly one default is bound — the repair neither skips nor duplicates it");
+
+        // Idempotent: a second startup adds nothing and the row still dispatches.
+        await outbox.EnsureTableExistsAsync();
+        Assert.AreEqual(1, (await outbox.ClaimDueAsync(Guid.NewGuid(), 10)).Count);
+    }
+
+    [TestMethod]
+    public async Task StoreScheduled_SubMillisecondDueTime_RoundTripsWithoutLegacyDatetimeRounding()
+    {
+        // AddWithValue would infer SqlDbType.DateTime (~3.33 ms granularity) and
+        // round this due time DOWN, making the row claimable before its boundary.
+        var outbox = await CreateOutboxAsync(ScheduledDeliveryMode.SqlOwnedDueTime);
+        var options = _createdSchemas[^1];
+        var due = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc).AddTicks(19_999);
+
+        await outbox.StoreScheduledAsync(ScheduledRow("t-precise", due));
+
+        Assert.AreEqual(
+            due.Ticks,
+            ((DateTime)(await Scalar(options, $"SELECT [ScheduledEnqueueTimeUtc] FROM {options.FullTableName} WHERE [MessageId]='t-precise'"))!).Ticks,
+            "The due time is bound as DATETIME2 and survives the round trip tick-exact");
+    }
+
+    [TestMethod]
+    public async Task StoreScheduled_PreSqlDatetimeEraDueTime_IsAccepted()
+    {
+        // The legacy DATETIME parameter type cannot represent dates before 1753 and
+        // would fail the insert outright; DATETIME2 starts at year 1.
+        var outbox = await CreateOutboxAsync(ScheduledDeliveryMode.SqlOwnedDueTime);
+
+        await outbox.StoreScheduledAsync(ScheduledRow("t-ancient", new DateTime(1600, 1, 1, 0, 0, 0, DateTimeKind.Utc)));
+
+        Assert.AreEqual(1, (await outbox.ClaimDueAsync(Guid.NewGuid(), 10)).Count,
+            "A far-past due time stores and is immediately due");
+    }
+
+    [TestMethod]
     public async Task EnsureTableExists_TwiceSequentiallyAndConcurrently_IsIdempotent()
     {
         var options = NewOptions(ScheduledDeliveryMode.SqlOwnedDueTime);

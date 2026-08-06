@@ -291,7 +291,9 @@ public class WorkflowPublishingTests
             IMessage message,
             DateTimeOffset scheduledEnqueueTime,
             CancellationToken cancellationToken = default) =>
-            Task.FromResult(0L);
+            // A broker always assigns a positive scheduled sequence number; the
+            // handle bridge rejects anything else.
+            Task.FromResult(1L);
 
         public Task CancelScheduledMessage(long sequenceNumber, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;

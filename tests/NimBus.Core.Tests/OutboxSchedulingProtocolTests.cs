@@ -286,6 +286,56 @@ public class OutboxSchedulingProtocolTests
             "A started row retains DispatchStartedAtUtc; the claim expires on its own");
     }
 
+    [TestMethod]
+    public async Task Dispatcher_ShutdownBeforeCurrentRowStarts_ReleasesTheCurrentClaimToo()
+    {
+        // The interrupted row is claimed but NOT dispatch-started, so leaving it
+        // reserved would block its whole session until SendLeaseDuration expires
+        // (configurable up to 24h). Cleanup must include the current item.
+        using var cts = new CancellationTokenSource();
+        var sender = new CountingSender();
+        var coordinator = new FakeCoordinator { DueTimeDispatchActive = true };
+        coordinator.ClaimableRows.Add(PendingRow("row-1"));
+        coordinator.ClaimableRows.Add(PendingRow("row-2"));
+        coordinator.BeforeStart = () => cts.Cancel();
+        var dispatcher = new OutboxDispatcher(new CountingOutbox(), sender, coordinator);
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(
+            () => dispatcher.DispatchPendingAsync(batchSize: 10, cts.Token));
+
+        Assert.AreEqual(0, sender.SentCount, "Shutdown landed before any send");
+        CollectionAssert.AreEquivalent(
+            new[] { "row-1", "row-2" },
+            coordinator.ReleasedIds,
+            "Both the interrupted row and the untouched remainder are released for immediate reclaim");
+    }
+
+    // ── ISender default bridge: handle validity (spec 025 invariant) ─────
+
+    [TestMethod]
+    public async Task ScheduleMessageWithHandle_DefaultBridge_PositiveSequence_ReturnsValidatedHandle()
+    {
+        ISender sender = new CountingSender { NextSequence = 12L };
+
+        var handle = await sender.ScheduleMessageWithHandle(MarkedMessage("timeout-1"), DateTimeOffset.UtcNow.AddMinutes(5));
+
+        Assert.AreEqual("timeout-1", handle.TimeoutId);
+        Assert.AreEqual(12L, handle.SequenceNumber);
+        handle.Validate(nameof(handle)); // the returned handle is cancellable as-is
+    }
+
+    [TestMethod]
+    public async Task ScheduleMessageWithHandle_DefaultBridge_NonPositiveSequence_IsRejectedAtScheduleTime()
+    {
+        // A sender that cannot produce a broker sequence (legacy/custom/test double)
+        // must not yield a handle that CancelScheduled would immediately reject.
+        ISender sender = new CountingSender { NextSequence = 0L };
+
+        var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => sender.ScheduleMessageWithHandle(MarkedMessage("timeout-1"), DateTimeOffset.UtcNow.AddMinutes(5)));
+        StringAssert.Contains(ex.Message, "non-positive sequence number");
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────
 
     private static Message MarkedMessage(string timeoutId) => new()
@@ -441,10 +491,13 @@ public class OutboxSchedulingProtocolTests
             return Task.CompletedTask;
         }
 
+        /// <summary>Sequence returned by the legacy ScheduleMessage bridge.</summary>
+        public long NextSequence { get; set; } = 1L;
+
         public Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
         {
             ScheduledCount++;
-            return Task.FromResult(1L);
+            return Task.FromResult(NextSequence);
         }
 
         public Task CancelScheduledMessage(long sequenceNumber, CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -476,8 +529,17 @@ public class OutboxSchedulingProtocolTests
             return Task.FromResult<IReadOnlyList<OutboxMessage>>(batch);
         }
 
+        /// <summary>
+        /// Invoked at the top of the fence call, before it can win. Lets a test
+        /// land a shutdown exactly in the window where the current row is claimed
+        /// but not yet dispatch-started.
+        /// </summary>
+        public Action BeforeStart { get; set; }
+
         public Task<DateTime?> TryStartDispatchAsync(string outboxMessageId, Guid claimId, CancellationToken cancellationToken = default)
         {
+            BeforeStart?.Invoke();
+            cancellationToken.ThrowIfCancellationRequested();
             StartCalls++;
             if (FenceResultsThenNull.HasValue)
             {

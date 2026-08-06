@@ -230,6 +230,13 @@ namespace NimBus.ServiceBus
         public string ScheduledMessageId => _sbMessage.GetUserProperty(UserPropertyName.ScheduledMessageId);
 
         /// <summary>
+        /// The handler's durable-guard verdict for this timeout, recorded by
+        /// <c>IMessageContext.ReportScheduledMessageOutcome</c> so the consumer
+        /// instrumentation can log fired vs ignored-late after the handler returns.
+        /// </summary>
+        public ScheduledMessageHandlingOutcome? ScheduledMessageOutcome { get; set; }
+
+        /// <summary>
         /// Original scheduled due time read from the wire marker. Null for ordinary
         /// messages or an unparsable value.
         /// </summary>

@@ -613,6 +613,20 @@ appear on spans and structured logs, never as metric tags. Outbox pending/lag
 gauges are mode-scoped: in `SqlOwnedDueTime` a future timeout contributes
 nothing until due and its lag counts from the due time.
 
+The same five outcomes are distinguishable in traces and logs, not only in
+counters:
+
+| Operation | Span | Log |
+| --- | --- | --- |
+| Schedule | `schedule {endpoint}` (producer) with `nimbus.schedule.operation=schedule`, `nimbus.schedule.mode`, `nimbus.outcome=scheduled\|failed`, `nimbus.scheduled_message_id` | `Scheduled message {ScheduledMessageId} …` (Information); failures log a warning with the mode |
+| Cancel | `cancel_scheduled` (client, `messaging.operation.type=settle`) with the same schedule attributes and the precise cancel outcome | `Cancelled scheduled message … with outcome {CancelOutcome}` |
+| Dispatch (outbox) | the outbox publish span gains `nimbus.schedule.operation=dispatch` plus the mode that owned the due time | `Outbox dispatched scheduled message {OutboxId} due {DueAtUtc} (mode …)` (Information) |
+| Received | the consumer span gains `nimbus.schedule.operation=timeout` and `nimbus.scheduled_message_id` | `Scheduled message … received …` (Debug) |
+| Fired / ignored-late | `nimbus.timeout.outcome` tag plus a `nimbus.timeout.fired` / `nimbus.timeout.ignored_late` span event, recorded by `ReportScheduledMessageOutcome` | `Scheduled message … handled with outcome fired\|ignored_late` (Information) |
+
+A handler that never calls `ReportScheduledMessageOutcome` is logged as
+completing *without a reported outcome* — NimBus never invents a Fired result.
+
 The complete state diagrams, invariants, and race-by-race test matrix live in
 the approved design:
 [docs/specs/025-orchestration-safe-timeout-scheduling/spec.md](specs/025-orchestration-safe-timeout-scheduling/spec.md).

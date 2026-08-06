@@ -23,6 +23,14 @@ public static class NimBusOpenTelemetryDecorators
         => new InstrumentingSenderDecorator(inner, messagingSystem);
 
     /// <summary>
+    /// As <see cref="InstrumentSender(ISender, string)"/>, with a logger for the
+    /// scheduled-message (workflow timeout) lifecycle: scheduled, cancelled with
+    /// its outcome, and failures on either (spec 025). Ordinary sends log nothing.
+    /// </summary>
+    public static ISender InstrumentSender(ISender inner, string messagingSystem, Microsoft.Extensions.Logging.ILogger logger)
+        => new InstrumentingSenderDecorator(inner, messagingSystem, logger);
+
+    /// <summary>
     /// Wraps an inner <see cref="IMessageTrackingStore"/> with the store
     /// instrumentation decorator. The <paramref name="storeProvider"/> argument
     /// is the <c>nimbus.store.provider</c> attribute value (e.g. <c>cosmos</c>,

@@ -246,6 +246,130 @@ public class InstrumentingSenderDecoratorTests
         Assert.AreEqual("cancellation_requested", tags[MessagingAttributes.NimBusOutcome]);
     }
 
+    // ── Spec 025: schedule / cancel are distinguishable in TRACES, not only
+    //    in the bounded counters (AC6) ───────────────────────────────────
+
+    [TestMethod]
+    public async Task ScheduleWithHandle_emits_a_schedule_span_with_bounded_mode_and_outcome()
+    {
+        var spans = new List<Activity>();
+        using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+            .AddNimBusInstrumentation()
+            .AddInMemoryExporter(spans)
+            .Build()!;
+
+        var sut = NimBusOpenTelemetryDecorators.InstrumentSender(new RecordingSender(), MessagingSystem.InMemory);
+        await sut.ScheduleMessageWithHandle(TimeoutMessage(), DateTimeOffset.UtcNow.AddHours(1));
+        tracerProvider.ForceFlush();
+
+        var span = spans.Single(s => s.OperationName.StartsWith("schedule ", StringComparison.Ordinal));
+        Assert.AreEqual("schedule t", span.OperationName, "The span name distinguishes a schedule from a publish");
+        Assert.AreEqual(ActivityKind.Producer, span.Kind);
+        Assert.AreEqual("schedule", span.GetTagItem(MessagingAttributes.NimBusScheduleOperation));
+        Assert.AreEqual("broker", span.GetTagItem(MessagingAttributes.NimBusScheduleMode));
+        Assert.AreEqual("scheduled", span.GetTagItem(MessagingAttributes.NimBusOutcome));
+        Assert.AreEqual("order-42:payment-timeout:1", span.GetTagItem(MessagingAttributes.NimBusScheduledMessageId));
+    }
+
+    [TestMethod]
+    public async Task FailedSchedule_still_carries_the_mode_dimension()
+    {
+        var metrics = new List<Metric>();
+        using var meterProvider = Sdk.CreateMeterProviderBuilder()
+            .AddNimBusInstrumentation()
+            .AddInMemoryExporter(metrics)
+            .Build()!;
+
+        var sut = NimBusOpenTelemetryDecorators.InstrumentSender(
+            new RecordingSender { Throw = new InvalidOperationException("broker down") }, MessagingSystem.InMemory);
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => sut.ScheduleMessageWithHandle(TimeoutMessage(), DateTimeOffset.UtcNow.AddHours(1)));
+        meterProvider.ForceFlush();
+
+        var tags = SingleScheduleOperationTags(metrics);
+        Assert.AreEqual("schedule", tags[MessagingAttributes.NimBusScheduleOperation]);
+        Assert.AreEqual("failed", tags[MessagingAttributes.NimBusOutcome]);
+        Assert.AreEqual("broker", tags[MessagingAttributes.NimBusScheduleMode],
+            "A failed schedule must stay comparable to a successful one");
+    }
+
+    [TestMethod]
+    public async Task CancelScheduled_emits_its_own_settle_span()
+    {
+        var spans = new List<Activity>();
+        using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+            .AddNimBusInstrumentation()
+            .AddInMemoryExporter(spans)
+            .Build()!;
+
+        var sut = NimBusOpenTelemetryDecorators.InstrumentSender(new RecordingSender(), MessagingSystem.InMemory);
+        await sut.CancelScheduledMessage(
+            new ScheduledMessageHandle("order-42:payment-timeout:1", 3L, ScheduledMessageHandleKind.BrokerSequenceNumber));
+        tracerProvider.ForceFlush();
+
+        var span = spans.Single(s => s.OperationName == "cancel_scheduled");
+        Assert.AreEqual("settle", span.GetTagItem(MessagingAttributes.OperationType));
+        Assert.AreEqual("cancel", span.GetTagItem(MessagingAttributes.NimBusScheduleOperation));
+        Assert.AreEqual("broker", span.GetTagItem(MessagingAttributes.NimBusScheduleMode));
+        Assert.AreEqual("cancellation_requested", span.GetTagItem(MessagingAttributes.NimBusOutcome));
+        Assert.AreEqual("order-42:payment-timeout:1", span.GetTagItem(MessagingAttributes.NimBusScheduledMessageId));
+    }
+
+    [TestMethod]
+    public async Task ScheduleAndCancel_log_their_outcomes()
+    {
+        var logger = new RecordingLogger();
+        var sut = NimBusOpenTelemetryDecorators.InstrumentSender(new RecordingSender(), MessagingSystem.InMemory, logger);
+
+        var handle = await sut.ScheduleMessageWithHandle(TimeoutMessage(), DateTimeOffset.UtcNow.AddHours(1));
+        await sut.CancelScheduledMessage(handle);
+
+        Assert.IsTrue(logger.Entries.Exists(e => e.Contains("Scheduled message order-42:payment-timeout:1", StringComparison.Ordinal)),
+            $"Expected a schedule log line; got: {string.Join(" | ", logger.Entries)}");
+        Assert.IsTrue(logger.Entries.Exists(e => e.Contains("Cancelled scheduled message", StringComparison.Ordinal)
+                                                 && e.Contains("cancellation_requested", StringComparison.Ordinal)),
+            $"Expected a cancel log line with its outcome; got: {string.Join(" | ", logger.Entries)}");
+    }
+
+    private static Message TimeoutMessage() => new()
+    {
+        EventId = "e",
+        MessageId = "order-42:payment-timeout:1",
+        ScheduledMessageId = "order-42:payment-timeout:1",
+        SessionId = "order-42",
+        CorrelationId = "conversation-7",
+        To = "t",
+        EventTypeId = "PaymentTimedOut",
+    };
+
+    private static Dictionary<string, string?> SingleScheduleOperationTags(List<Metric> metrics)
+    {
+        var counter = metrics.FirstOrDefault(m => m.Name == "nimbus.message.schedule.operations");
+        Assert.IsNotNull(counter);
+        var points = new List<MetricPoint>();
+        foreach (var point in counter.GetMetricPoints()) points.Add(point);
+        var tags = new Dictionary<string, string?>();
+        foreach (var tag in points.Single().Tags) tags[tag.Key] = tag.Value?.ToString();
+        return tags;
+    }
+
+    private sealed class RecordingLogger : Microsoft.Extensions.Logging.ILogger
+    {
+        public List<string> Entries { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel,
+            Microsoft.Extensions.Logging.EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) => Entries.Add(formatter(state, exception));
+    }
+
     private sealed class RecordingSender : ISender
     {
         public int SendCount;

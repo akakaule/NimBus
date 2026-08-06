@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
+using NimBus.Core.Outbox;
 
 namespace NimBus.OpenTelemetry.Instrumentation;
 
@@ -13,12 +15,22 @@ internal sealed class InstrumentingSenderDecorator : ISender
 {
     private readonly ISender _inner;
     private readonly string _messagingSystem;
+    private readonly ILogger _logger;
 
-    public InstrumentingSenderDecorator(ISender inner, string messagingSystem)
+    public InstrumentingSenderDecorator(ISender inner, string messagingSystem, ILogger logger = null)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _messagingSystem = messagingSystem ?? throw new ArgumentNullException(nameof(messagingSystem));
+        _logger = logger;
     }
+
+    /// <summary>
+    /// The schedule mode to report when no handle exists yet (a failed schedule).
+    /// The outbox sender always mints SQL-outbox handles; everything else is
+    /// broker-backed. Decorator order is instrumenting → outbox → transport, so
+    /// the inner sender is the authority.
+    /// </summary>
+    private string InnerScheduleMode => _inner is OutboxSender ? "sql_outbox" : "broker";
 
     public Task Send(IMessage message, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default)
     {
@@ -55,15 +67,47 @@ internal sealed class InstrumentingSenderDecorator : ISender
     public async Task<ScheduledMessageCancellationOutcome> CancelScheduledMessage(ScheduledMessageHandle handle, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(handle);
+        var mode = ScheduleMode(handle.Kind);
+
+        // Cancellation is a settle-shaped operation with no message and no
+        // destination, so it gets its OWN span rather than riding a publish span:
+        // without one, a cancel is invisible in a trace.
+        using var activity = NimBusActivitySources.Publisher.StartActivity("cancel_scheduled", ActivityKind.Client);
+        if (activity is { IsAllDataRequested: true })
+        {
+            activity.SetTag(MessagingAttributes.System, _messagingSystem);
+            activity.SetTag(MessagingAttributes.OperationType, "settle");
+            activity.SetTag(MessagingAttributes.NimBusScheduleOperation, "cancel");
+            activity.SetTag(MessagingAttributes.NimBusScheduleMode, mode);
+            activity.SetTag(MessagingAttributes.NimBusScheduledMessageId, handle.TimeoutId);
+        }
+
         try
         {
             var outcome = await _inner.CancelScheduledMessage(handle, cancellationToken).ConfigureAwait(false);
-            RecordScheduleOperation("cancel", ScheduleMode(handle.Kind), CancelOutcomeTag(outcome));
+            var outcomeTag = CancelOutcomeTag(outcome);
+            RecordScheduleOperation("cancel", mode, outcomeTag);
+            activity?.SetTag(MessagingAttributes.NimBusOutcome, outcomeTag);
+            activity?.SetStatus(ActivityStatusCode.Ok);
+            _logger?.LogInformation(
+                "Cancelled scheduled message {ScheduledMessageId} (mode {ScheduleMode}) with outcome {CancelOutcome}",
+                handle.TimeoutId, mode, outcomeTag);
             return outcome;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            RecordScheduleOperation("cancel", ScheduleMode(handle.Kind), "failed");
+            RecordScheduleOperation("cancel", mode, "failed");
+            if (activity is { IsAllDataRequested: true })
+            {
+                activity.SetTag(MessagingAttributes.NimBusOutcome, "failed");
+                activity.SetTag(MessagingAttributes.ErrorType, ex.GetType().FullName);
+                activity.SetStatus(ActivityStatusCode.Error, ex.Message);
+            }
+
+            _logger?.LogWarning(
+                ex,
+                "Cancelling scheduled message {ScheduledMessageId} (mode {ScheduleMode}) failed; durable workflow state remains the final authority",
+                handle.TimeoutId, mode);
             throw;
         }
     }
@@ -72,21 +116,51 @@ internal sealed class InstrumentingSenderDecorator : ISender
         IMessage message,
         Func<Task<ScheduledMessageHandle>> action)
     {
-        // The publisher span + publish counters come from StartActivity/Record*
-        // like ordinary sends; the bounded schedule-operations counter is
-        // recorded IN ADDITION, never double-counting publish metrics.
-        var (activity, started, tags) = StartActivity([message]);
+        // A schedule gets its own span NAME ("schedule {destination}") and bounded
+        // schedule attributes, so it is distinguishable from an ordinary publish in
+        // a trace; messaging.operation.type stays "publish" because a schedule IS a
+        // publish under the semantic conventions' enumerated values, and the publish
+        // counters keep their existing dimensions (the schedule-operations counter is
+        // recorded IN ADDITION, never double-counting).
+        var timeoutId = message.ScheduledMessageId ?? message.MessageId;
+        var (activity, started, tags) = StartActivity([message], spanOperation: "schedule");
+        if (activity is { IsAllDataRequested: true })
+        {
+            activity.SetTag(MessagingAttributes.NimBusScheduleOperation, "schedule");
+            activity.SetTag(MessagingAttributes.NimBusScheduleMode, InnerScheduleMode);
+            if (!string.IsNullOrEmpty(timeoutId))
+                activity.SetTag(MessagingAttributes.NimBusScheduledMessageId, timeoutId);
+        }
+
         try
         {
             var result = await action().ConfigureAwait(false);
+            var mode = ScheduleMode(result.Kind);
             RecordSuccess(activity, [message], started, tags);
-            RecordScheduleOperation("schedule", ScheduleMode(result.Kind), "scheduled");
+            RecordScheduleOperation("schedule", mode, "scheduled");
+            if (activity is { IsAllDataRequested: true })
+            {
+                // The handle is the authority once it exists.
+                activity.SetTag(MessagingAttributes.NimBusScheduleMode, mode);
+                activity.SetTag(MessagingAttributes.NimBusOutcome, "scheduled");
+            }
+
+            _logger?.LogInformation(
+                "Scheduled message {ScheduledMessageId} for {Destination} (mode {ScheduleMode}, sequence {SequenceNumber})",
+                result.TimeoutId, message.To, mode, result.SequenceNumber);
             return result;
         }
         catch (Exception ex)
         {
             RecordFailure(activity, started, tags, ex);
-            RecordScheduleOperation("schedule", mode: null, "failed");
+            // The mode comes from the inner sender: a failure has no handle, and
+            // dropping the dimension would leave failures uncomparable to successes.
+            RecordScheduleOperation("schedule", InnerScheduleMode, "failed");
+            activity?.SetTag(MessagingAttributes.NimBusOutcome, "failed");
+            _logger?.LogWarning(
+                ex,
+                "Scheduling message {ScheduledMessageId} for {Destination} (mode {ScheduleMode}) failed",
+                timeoutId, message.To, InnerScheduleMode);
             throw;
         }
         finally
@@ -160,13 +234,15 @@ internal sealed class InstrumentingSenderDecorator : ISender
         }
     }
 
-    private (Activity? activity, long startedAt, TagList tags) StartActivity(IReadOnlyCollection<IMessage> messages)
+    private (Activity? activity, long startedAt, TagList tags) StartActivity(
+        IReadOnlyCollection<IMessage> messages,
+        string spanOperation = "publish")
     {
         var first = messages.FirstOrDefault();
         var destination = first?.To ?? "unknown";
         var eventType = first?.EventTypeId ?? "unknown";
 
-        var spanName = "publish " + destination;
+        var spanName = spanOperation + " " + destination;
         var activity = NimBusActivitySources.Publisher.StartActivity(spanName, ActivityKind.Producer);
 
         if (activity is { IsAllDataRequested: true })

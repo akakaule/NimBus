@@ -3,6 +3,7 @@ using NimBus.Core.CloudEvents;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -24,6 +25,7 @@ namespace NimBus.ServiceBus
         private readonly ServiceBusClient _serviceBusClient;
         private readonly string _entityPath;
         private readonly CloudEventReadOptions _cloudEventReadOptions;
+        private readonly ILogger _logger;
 
         /// <summary>
         /// Creates a new ServiceBusAdapter.
@@ -34,12 +36,15 @@ namespace NimBus.ServiceBus
         /// <param name="entityPath">Optional entity path (queue name or topic/subscription path) for receiving deferred messages.</param>
         /// <param name="cloudEventReadOptions">Optional CloudEvents consume options. When set, inbound
         /// CloudEvents are detected and normalized; when null (default) the adapter is pure native NimBus.</param>
-        public ServiceBusAdapter(IMessageHandler messageHandler, ServiceBusClient serviceBusClient = null, string entityPath = null, CloudEventReadOptions cloudEventReadOptions = null)
+        /// <param name="logger">Optional logger used for the scheduled-message (workflow timeout)
+        /// lifecycle log line — received, and the handler's fired / ignored-late / failed verdict.</param>
+        public ServiceBusAdapter(IMessageHandler messageHandler, ServiceBusClient serviceBusClient = null, string entityPath = null, CloudEventReadOptions cloudEventReadOptions = null, ILogger logger = null)
         {
             _messageHandler = messageHandler ?? throw new ArgumentNullException(nameof(messageHandler));
             _serviceBusClient = serviceBusClient;
             _entityPath = entityPath;
             _cloudEventReadOptions = cloudEventReadOptions;
+            _logger = logger;
         }
 
         public async Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default)
@@ -124,6 +129,7 @@ namespace NimBus.ServiceBus
                     messageContext,
                     MessagingSystem.ServiceBus,
                     ct => _messageHandler.Handle(messageContext, ct),
+                    _logger,
                     cancellationToken).ConfigureAwait(false);
             }
             finally

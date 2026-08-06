@@ -185,13 +185,36 @@ namespace NimBus.Core.Messages
         {
             if (ScheduledMessageId is null)
                 return;
+            var outcomeTag = outcome == ScheduledMessageHandlingOutcome.Fired ? "fired" : "ignored_late";
             var tags = new System.Collections.Generic.KeyValuePair<string, object?>[]
             {
-                new(Diagnostics.MessagingAttributes.NimBusOutcome,
-                    outcome == ScheduledMessageHandlingOutcome.Fired ? "fired" : "ignored_late"),
+                new(Diagnostics.MessagingAttributes.NimBusOutcome, outcomeTag),
                 new(Diagnostics.MessagingAttributes.NimBusEventType, EventTypeId),
             };
             Diagnostics.NimBusMeters.TimeoutOperations.Add(1, tags);
+
+            // Trace side of the same verdict: the consumer span carries the bounded
+            // outcome plus the (unbounded, span-only) timeout identity, so a late
+            // timeout is distinguishable from a fired one in a trace, not just in a
+            // counter. Recorded on the context too, so the consumer instrumentation
+            // can log the verdict once the handler returns.
+            ScheduledMessageOutcome = outcome;
+            var activity = Activity.Current;
+            if (activity is not null)
+            {
+                activity.SetTag(Diagnostics.MessagingAttributes.NimBusTimeoutOutcome, outcomeTag);
+                activity.AddEvent(new ActivityEvent("nimbus.timeout." + outcomeTag));
+            }
         }
+
+        /// <summary>
+        /// The handler's durable compare-and-set verdict for a marked (scheduled)
+        /// message, set by <see cref="ReportScheduledMessageOutcome"/>; null when the
+        /// message is unmarked or the handler never reported one. The default
+        /// implementation discards the value so existing custom contexts and test
+        /// doubles compile unchanged — implementers that want the verdict logged
+        /// back an auto-property.
+        /// </summary>
+        ScheduledMessageHandlingOutcome? ScheduledMessageOutcome { get => null; set { } }
     }
 }

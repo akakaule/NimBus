@@ -453,6 +453,15 @@ namespace NimBus.Core.Outbox
                         activity.SetTag(MessagingAttributes.MessageId, outboxMessage.MessageId);
                     if (!string.IsNullOrEmpty(outboxMessage.CorrelationId))
                         activity.SetTag(MessagingAttributes.MessageConversationId, outboxMessage.CorrelationId);
+                    if (outboxMessage.ScheduledEnqueueTimeUtc.HasValue)
+                    {
+                        // A due scheduled row is not an ordinary publish: say so on the
+                        // span, with the bounded mode that decided when it fired.
+                        activity.SetTag(MessagingAttributes.NimBusScheduleOperation, "dispatch");
+                        activity.SetTag(
+                            MessagingAttributes.NimBusScheduleMode,
+                            forceImmediateSend ? "sql_outbox" : "broker");
+                    }
                 }
 
                 message = JsonConvert.DeserializeObject<Message>(
@@ -479,10 +488,28 @@ namespace NimBus.Core.Outbox
                 NimBusMeters.OutboxDispatchDuration.Record(elapsed, tags);
                 NimBusMeters.OutboxDispatched.Add(1, tags);
                 activity?.SetStatus(ActivityStatusCode.Ok);
+                activity?.SetTag(MessagingAttributes.NimBusOutcome, "dispatched");
 
-                _logger.LogDebug(
-                    "Outbox dispatched message {OutboxId} (event {EventTypeId}, session {SessionId}, messageId {MessageId})",
-                    outboxMessage.Id, outboxMessage.EventTypeId, outboxMessage.SessionId, outboxMessage.MessageId);
+                if (outboxMessage.ScheduledEnqueueTimeUtc.HasValue)
+                {
+                    // Distinguishable in logs, not just on the span: a scheduled row
+                    // reaching the broker is the "dispatched" milestone of a timeout.
+                    _logger.LogInformation(
+                        "Outbox dispatched scheduled message {OutboxId} due {DueAtUtc:O} (mode {ScheduleMode}, event {EventTypeId}, session {SessionId}, messageId {MessageId})",
+                        outboxMessage.Id,
+                        outboxMessage.ScheduledEnqueueTimeUtc.Value,
+                        forceImmediateSend ? "sql_outbox" : "broker",
+                        outboxMessage.EventTypeId,
+                        outboxMessage.SessionId,
+                        outboxMessage.MessageId);
+                }
+                else
+                {
+                    _logger.LogDebug(
+                        "Outbox dispatched message {OutboxId} (event {EventTypeId}, session {SessionId}, messageId {MessageId})",
+                        outboxMessage.Id, outboxMessage.EventTypeId, outboxMessage.SessionId, outboxMessage.MessageId);
+                }
+
                 return true;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

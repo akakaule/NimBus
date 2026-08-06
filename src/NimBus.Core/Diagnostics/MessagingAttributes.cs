@@ -45,6 +45,11 @@ public static class MessagingAttributes
     public const string NimBusScheduleOperation = "nimbus.schedule.operation";
     public const string NimBusScheduleMode = "nimbus.schedule.mode";
 
+    // Span/log-only fields for the same story (never metric dimensions): the
+    // logical timeout identity and the handler's durable-guard verdict.
+    public const string NimBusScheduledMessageId = "nimbus.scheduled_message_id";
+    public const string NimBusTimeoutOutcome = "nimbus.timeout.outcome";
+
     // OTel error attribution
     public const string ErrorType = "error.type";
 }

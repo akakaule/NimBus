@@ -532,6 +532,103 @@ public sealed class PublishConsumeTraceIntegrationTests
         AssertNoHighCardinalityMetricTags(metrics);
     }
 
+    // ── Spec 025 AC6: a timeout's receive and the handler's durable-guard
+    //    verdict are distinguishable in traces and logs, not only in counters ──
+
+    [TestMethod]
+    public async Task ScheduledMessage_IgnoredLate_IsVisibleOnTheSpanAndInTheLog()
+    {
+        var activities = new List<Activity>();
+        var metrics = new List<Metric>();
+        using var tracer = Sdk.CreateTracerProviderBuilder()
+            .AddNimBusInstrumentation()
+            .AddInMemoryExporter(activities)
+            .Build()!;
+        using var meterProvider = Sdk.CreateMeterProviderBuilder()
+            .AddNimBusInstrumentation()
+            .AddInMemoryExporter(metrics)
+            .Build()!;
+
+        var logger = new CollectingLogger();
+        var context = new TestMessageContext
+        {
+            ScheduledMessageId = "order-42:payment-timeout:1",
+            EventTypeId = "PaymentTimedOut",
+        };
+
+        await NimBusConsumerInstrumentation.RunAsync(
+            context,
+            MessagingSystem.ServiceBus,
+            _ =>
+            {
+                // What a correct handler does: re-read durable state, find the
+                // timeout superseded, and report the verdict.
+                ((IMessageContext)context).ReportScheduledMessageOutcome(ScheduledMessageHandlingOutcome.IgnoredLate);
+                return Task.CompletedTask;
+            },
+            logger);
+        meterProvider.ForceFlush();
+        tracer.ForceFlush();
+
+        var span = activities.Single(a => a.Source.Name == NimBusInstrumentation.ConsumerActivitySourceName);
+        var spanTags = span.TagObjects.ToDictionary(t => t.Key, t => t.Value);
+        Assert.AreEqual("timeout", spanTags[MessagingAttributes.NimBusScheduleOperation]);
+        Assert.AreEqual("order-42:payment-timeout:1", spanTags[MessagingAttributes.NimBusScheduledMessageId]);
+        Assert.AreEqual("ignored_late", spanTags[MessagingAttributes.NimBusTimeoutOutcome]);
+        Assert.IsTrue(span.Events.Any(e => e.Name == "nimbus.timeout.ignored_late"));
+
+        Assert.IsTrue(
+            logger.Entries.Exists(e => e.Contains("order-42:payment-timeout:1", StringComparison.Ordinal)
+                                       && e.Contains("ignored_late", StringComparison.Ordinal)),
+            $"Expected an ignored-late log line; got: {string.Join(" | ", logger.Entries)}");
+        // The marker stays a span/log field, never a metric dimension.
+        AssertNoHighCardinalityMetricTags(metrics);
+        AssertNoMetricTag(metrics, MessagingAttributes.NimBusScheduledMessageId);
+    }
+
+    [TestMethod]
+    public async Task OrdinaryMessage_LogsNoTimeoutLifecycle()
+    {
+        var logger = new CollectingLogger();
+
+        await NimBusConsumerInstrumentation.RunAsync(
+            new TestMessageContext(), MessagingSystem.ServiceBus, _ => Task.CompletedTask, logger);
+
+        Assert.IsFalse(
+            logger.Entries.Exists(e => e.Contains("Scheduled message", StringComparison.Ordinal)),
+            "Unmarked traffic keeps today's log surface unchanged");
+    }
+
+    private static void AssertNoMetricTag(IEnumerable<Metric> metrics, string key)
+    {
+        foreach (var metric in metrics)
+        {
+            foreach (ref readonly var metricPoint in metric.GetMetricPoints())
+            {
+                foreach (var tag in metricPoint.Tags)
+                {
+                    Assert.AreNotEqual(key, tag.Key, $"{key} must never be a metric dimension");
+                }
+            }
+        }
+    }
+
+    private sealed class CollectingLogger : Microsoft.Extensions.Logging.ILogger
+    {
+        public List<string> Entries { get; } = new();
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => null!;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel,
+            Microsoft.Extensions.Logging.EventId eventId,
+            TState state,
+            Exception exception,
+            Func<TState, Exception, string> formatter) => Entries.Add(formatter(state, exception));
+    }
+
     private static void AssertNoHighCardinalityMetricTags(IEnumerable<Metric> metrics)
     {
         var denied = new[]
@@ -591,6 +688,8 @@ internal sealed class TestMessageContext : IMessageContext
     public HandlerOutcome HandlerOutcome { get; set; }
     public HandoffMetadata HandoffMetadata { get; set; } = null!;
     public ActivityContext ParentTraceContext { get; set; }
+    public string ScheduledMessageId { get; set; }
+    public ScheduledMessageHandlingOutcome? ScheduledMessageOutcome { get; set; }
 
     public Task Complete(CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task Abandon(TransientException exception) => Task.CompletedTask;

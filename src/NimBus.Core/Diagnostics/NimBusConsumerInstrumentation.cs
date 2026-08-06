@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using NimBus.Core.Messages;
 using System;
 using System.Diagnostics;
@@ -8,7 +9,7 @@ namespace NimBus.Core.Diagnostics;
 
 /// <summary>
 /// Owns the consumer-side <c>NimBus.Process</c> span and counters / histograms.
-/// Transport adapters (e.g. <c>ServiceBusAdapter</c>) call <see cref="RunAsync"/>
+/// Transport adapters (e.g. <c>ServiceBusAdapter</c>) call <c>RunAsync</c>
 /// once per inbound message; the helper opens the span parented to the message's
 /// <see cref="IMessageContext.ParentTraceContext"/>, increments
 /// <see cref="NimBusMeters.MessagesReceived"/>, runs the inner handler, then records
@@ -25,10 +26,24 @@ public static class NimBusConsumerInstrumentation
     /// <c>"nimbus.inmemory"</c>). Message and correlation identifiers are read from
     /// <paramref name="context"/>.
     /// </summary>
+    public static Task RunAsync(
+        IMessageContext context,
+        string messagingSystem,
+        Func<CancellationToken, Task> handler,
+        CancellationToken cancellationToken = default)
+        => RunAsync(context, messagingSystem, handler, logger: null, cancellationToken);
+
+    /// <summary>
+    /// As <see cref="RunAsync(IMessageContext, string, Func{CancellationToken, Task}, CancellationToken)"/>,
+    /// with an optional <paramref name="logger"/> used to log the scheduled-message
+    /// (workflow timeout) lifecycle — received, and the handler's fired /
+    /// ignored-late / failed verdict (spec 025). Ordinary messages log nothing extra.
+    /// </summary>
     public static async Task RunAsync(
         IMessageContext context,
         string messagingSystem,
         Func<CancellationToken, Task> handler,
+        ILogger logger,
         CancellationToken cancellationToken = default)
     {
         if (context is null) throw new ArgumentNullException(nameof(context));
@@ -76,7 +91,8 @@ public static class NimBusConsumerInstrumentation
         // retried timeouts still count as timeout traffic. NimBus records the
         // receive; only the handler's explicit ReportScheduledMessageOutcome call
         // records fired/ignored_late — an uncalled handler never invents a result.
-        var isScheduledMessage = SafeRead(() => context.ScheduledMessageId) != null;
+        var scheduledMessageId = SafeRead(() => context.ScheduledMessageId);
+        var isScheduledMessage = scheduledMessageId != null;
         if (isScheduledMessage)
         {
             NimBusMeters.TimeoutOperations.Add(1, new TagList
@@ -84,6 +100,19 @@ public static class NimBusConsumerInstrumentation
                 { MessagingAttributes.NimBusOutcome, "received" },
                 { MessagingAttributes.NimBusEventType, eventType },
             });
+
+            // Trace + log side of "received": the span says this delivery IS a
+            // timeout and which one, so a late arrival is greppable and traceable,
+            // not only countable.
+            if (activity is { IsAllDataRequested: true })
+            {
+                activity.SetTag(MessagingAttributes.NimBusScheduleOperation, "timeout");
+                activity.SetTag(MessagingAttributes.NimBusScheduledMessageId, scheduledMessageId);
+            }
+
+            logger?.LogDebug(
+                "Scheduled message {ScheduledMessageId} received on {Destination} (event {EventTypeId}); the handler must re-read durable workflow state before acting",
+                scheduledMessageId, destination, eventType);
         }
 
         var sw = Stopwatch.StartNew();
@@ -94,6 +123,8 @@ public static class NimBusConsumerInstrumentation
             RecordOutcome(activity, receivedTags, sw.Elapsed.TotalMilliseconds, "completed", exception: null);
             context.ProcessingTimeMs = sw.ElapsedMilliseconds;
             activity?.SetStatus(ActivityStatusCode.Ok);
+            if (isScheduledMessage)
+                LogTimeoutVerdict(logger, context, scheduledMessageId, eventType);
         }
         catch (Exception ex)
         {
@@ -107,10 +138,43 @@ public static class NimBusConsumerInstrumentation
                     { MessagingAttributes.NimBusOutcome, "failed" },
                     { MessagingAttributes.NimBusEventType, eventType },
                 });
+                logger?.LogWarning(
+                    ex,
+                    "Scheduled message {ScheduledMessageId} (event {EventTypeId}) failed in the handler; the timeout will be retried and its durable guard re-evaluated",
+                    scheduledMessageId, eventType);
             }
 
             throw;
         }
+    }
+
+    private static void LogTimeoutVerdict(ILogger logger, IMessageContext context, string scheduledMessageId, string eventType)
+    {
+        if (logger is null)
+            return;
+
+        // Absent verdict = the handler never called ReportScheduledMessageOutcome.
+        // NimBus does not invent a Fired result; say exactly that instead.
+        var outcome = SafeReadOutcome(context);
+        if (outcome is null)
+        {
+            logger.LogDebug(
+                "Scheduled message {ScheduledMessageId} (event {EventTypeId}) completed without a reported durable-guard outcome",
+                scheduledMessageId, eventType);
+            return;
+        }
+
+        logger.LogInformation(
+            "Scheduled message {ScheduledMessageId} (event {EventTypeId}) handled with outcome {TimeoutOutcome}",
+            scheduledMessageId,
+            eventType,
+            outcome == ScheduledMessageHandlingOutcome.Fired ? "fired" : "ignored_late");
+    }
+
+    private static ScheduledMessageHandlingOutcome? SafeReadOutcome(IMessageContext context)
+    {
+        try { return context.ScheduledMessageOutcome; }
+        catch { return null; }
     }
 
     private static void RecordOutcome(Activity? activity, TagList baseTags, double elapsedMs, string outcome, Exception? exception)

@@ -106,7 +106,10 @@ namespace NimBus.SDK.Extensions
                     : new Sender(serviceBusSender);       // direct publish
 
                 // Decorator order outermost → inner: instrumenting → outbox → transport.
-                return NimBusOpenTelemetryDecorators.InstrumentSender(inner, MessagingSystem.ServiceBus);
+                return NimBusOpenTelemetryDecorators.InstrumentSender(
+                    inner,
+                    MessagingSystem.ServiceBus,
+                    sp.GetService<ILoggerFactory>()?.CreateLogger("NimBus.Publish"));
             }
 
             services.TryAddSingleton<ISender>(BuildPublisherSender);
@@ -317,7 +320,7 @@ namespace NimBus.SDK.Extensions
                     InboxRegistration.CreateDuplicateDetector(sp, builder.InboxConfiguration, options.Endpoint));
 #pragma warning restore CS0618
 
-                var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, options.EntityPath, cloudEventReadOptions);
+                var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, options.EntityPath, cloudEventReadOptions, logger);
                 var subscriberClient = new SubscriberClient(serviceBusAdapter, eventHandlerProvider);
                 if (builder.InboxConfiguration != null)
                 {

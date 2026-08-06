@@ -6,6 +6,16 @@
 
 NimBus is an Azure Service Bus based integration platform with a shared SDK, management web app, and message tracking and storage.
 
+## Watch the demo
+
+<p align="center">
+  <a href="https://youtu.be/jZ99gbYZLqU">
+    <img src="https://img.youtube.com/vi/jZ99gbYZLqU/maxresdefault.jpg" width="640" alt="NimBus demo video — the life of one customer account across a CRM and an ERP" />
+  </a>
+</p>
+
+**[The life of one customer account](https://youtu.be/jZ99gbYZLqU)** (8 min) — a single account followed through a CRM → ERP round-trip, a downstream outage with deferred siblings and a one-click resubmit, a slow external import held as a pending handoff, request/reply plus a command, and a CloudEvents partner that uses no NimBus packages at all. Recorded against a live [`samples/CrmErpDemo`](samples/CrmErpDemo) stack and a real Service Bus namespace.
+
 ## Repository Layout
 
 - `src/NimBus.sln` builds the full platform, including the web app, resolver, app host, and shared libraries.
@@ -329,7 +339,7 @@ The Aspire dashboard opens automatically. You'll see:
 
 ## CRM/ERP integration sample
 
-`samples/CrmErpDemo/` is a larger, two-system reference scenario: a CRM and an ERP, each with its own SPA, REST API, SQL database, and adapter, exchanging domain events over Azure Service Bus.
+`samples/CrmErpDemo/` is a larger, two-system reference scenario: a CRM and an ERP, each with its own SPA, REST API, SQL database, and adapter, exchanging domain events over Azure Service Bus. It is the sample recorded in the [demo video](https://youtu.be/jZ99gbYZLqU).
 
 What it demonstrates:
 

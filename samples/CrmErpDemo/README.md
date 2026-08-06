@@ -626,6 +626,39 @@ credit check returning **On hold**, which is also how the two showcases prove ea
 
 `tests/NimBus.Core.Tests/PlatformValidationTests.cs` + `tests/CrmErpDemo.AppHost.Tests/CommandCatalogTests.cs` (core/catalog) and `e2e/tests/10-credit-hold-command.spec.ts` (demo).
 
+## Demo video
+
+<p align="center">
+  <a href="https://youtu.be/jZ99gbYZLqU">
+    <img src="https://img.youtube.com/vi/jZ99gbYZLqU/maxresdefault.jpg" width="640" alt="NimBus demo video — the life of one customer account" />
+  </a>
+</p>
+
+**[The life of one customer account](https://youtu.be/jZ99gbYZLqU)** (8 min) is the
+film built on this sample: one account followed through the happy path, a failure and
+operator resubmit, a slow external handoff, request/reply plus a command, and the
+CloudEvents partner.
+
+[`docs/demo-video-script.md`](docs/demo-video-script.md) is the shot-by-shot script
+behind it, including the published title, description and chapter markers.
+
+[`e2e/demo/`](e2e/demo/) records it: a Playwright harness that drives the live
+AppHost and writes one `.webm` per act to `e2e/demo-footage/`, plus an ElevenLabs
+voice-over that is synthesized up front, paced into the shots as they record, and
+mixed onto the footage with ffmpeg afterwards.
+
+```bash
+cd e2e
+npm run demo:voice   # synthesize the narration (ELEVENLABS_API_KEY in .env.local)
+npm run demo         # record the five acts against a live AppHost
+npm run demo:mux     # mix voice onto footage, write subtitles
+npm run demo:film    # join the acts into one mp4
+```
+
+Unlike the regression specs it produces footage rather than a pass/fail signal,
+but every caption is gated on an assertion that the claimed state is really on
+screen — see [`e2e/demo/README.md`](e2e/demo/README.md).
+
 ## Out of scope (v1)
 
 No authn/authz, no multi-tenant, no production deployment scripts, no non-Azure transports, no realistic tax/currency/shipping math, no automated browser tests, no UI i18n, no Sales Orders/Products/Inventory.

@@ -112,6 +112,61 @@
 
         .section-dark .section-subtitle { color: var(--text-muted); }
 
+        /* ── Demo video ── */
+        .video-frame {
+            position: relative;
+            max-width: 900px;
+            margin: 0 auto;
+            aspect-ratio: 16 / 9;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #000;
+            border: 1px solid var(--border-dark);
+            box-shadow: 0 8px 40px rgba(0,0,0,0.35);
+        }
+
+        .video-frame iframe {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            border: 0;
+        }
+
+        .chapters {
+            max-width: 900px;
+            margin: 28px auto 0;
+            padding: 0;
+            list-style: none;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 4px 24px;
+        }
+
+        .chapters a {
+            display: flex;
+            gap: 12px;
+            align-items: baseline;
+            padding: 7px 10px;
+            border-radius: 6px;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.92rem;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .chapters a:hover, .chapters a:focus-visible {
+            background: rgba(255,255,255,0.05);
+            color: var(--text-light);
+        }
+
+        .chapters time {
+            flex: none;
+            color: var(--blue-light);
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
         /* ── Problem ── */
         .problem-grid {
             display: grid;
@@ -499,9 +554,37 @@
             <a href="getting-started.html" class="btn btn-primary">Get Started</a>
             <a href="platform.html" class="btn btn-outline">How It Works</a>
             <a href="features.html" class="btn btn-outline">Features</a>
-            <a href="demo/" class="btn btn-outline">▶ Live Demo</a>
+            <a href="#demo-video" class="btn btn-outline">▶ Watch the Demo</a>
+            <a href="demo/" class="btn btn-outline">Live Data Flow</a>
             <a href="https://github.com/akakaule/NimBus" class="btn btn-outline">View on GitHub</a>
         </div>
+    </div>
+</section>
+
+<!-- ── Demo video ── -->
+<section class="section section-dark" id="demo-video" style="background: var(--bg-darker); padding-top: 56px;">
+    <div class="container">
+        <h2 class="section-title" style="color: var(--text-light);">Watch it work</h2>
+        <p class="section-subtitle">
+            <em>The life of one customer account</em> &mdash; eight minutes, one live system, no slides.
+            A CRM and an ERP round-trip an account, the ERP falls over, an operator repairs it from a
+            browser, and a sixty-second external import keeps its session in order while it waits.
+        </p>
+        <div class="video-frame">
+            <iframe src="https://www.youtube-nocookie.com/embed/jZ99gbYZLqU"
+                    title="NimBus demo — the life of one customer account"
+                    loading="lazy"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowfullscreen></iframe>
+        </div>
+        <ul class="chapters">
+            <li><a href="https://www.youtube.com/watch?v=jZ99gbYZLqU&amp;t=0s" target="_blank" rel="noopener"><time>0:00</time><span>What NimBus is, and what follows</span></a></li>
+            <li><a href="https://www.youtube.com/watch?v=jZ99gbYZLqU&amp;t=68s" target="_blank" rel="noopener"><time>1:08</time><span>Two systems, one bus &mdash; the happy path</span></a></li>
+            <li><a href="https://www.youtube.com/watch?v=jZ99gbYZLqU&amp;t=153s" target="_blank" rel="noopener"><time>2:33</time><span>Failed head, deferred siblings, one-click resubmit</span></a></li>
+            <li><a href="https://www.youtube.com/watch?v=jZ99gbYZLqU&amp;t=260s" target="_blank" rel="noopener"><time>4:20</time><span>A slow external system: pending handoff</span></a></li>
+            <li><a href="https://www.youtube.com/watch?v=jZ99gbYZLqU&amp;t=370s" target="_blank" rel="noopener"><time>6:10</time><span>Beyond fire-and-forget: request/reply and commands</span></a></li>
+            <li><a href="https://www.youtube.com/watch?v=jZ99gbYZLqU&amp;t=436s" target="_blank" rel="noopener"><time>7:16</time><span>A partner with zero NimBus code</span></a></li>
+        </ul>
     </div>
 </section>
 
@@ -1047,6 +1130,7 @@ services.<span class="fn">AddNimBusSubscriber</span>(<span class="str">"BillingE
             </div>
             <div>
                 <h4>Documentation</h4>
+                <a href="#demo-video">Demo Video</a>
                 <a href="platform.html">How It Works</a>
                 <a href="features.html">Features</a>
                 <a href="https://github.com/akakaule/NimBus/blob/master/docs/getting-started.md">Getting Started</a>

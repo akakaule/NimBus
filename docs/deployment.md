@@ -187,7 +187,18 @@ trap - EXIT
 
 The Service Bus namespace follows the convention `sb-{solutionId}-{environment}.servicebus.windows.net`.
 
-**Re-running against an existing WebApp?** Pass `webAppExists=true`. The app-settings deployment is a full replace, and the WebApp's Entra ID sign-in settings (`AzureAd__*`) plus the optional portal deep-link settings (`ServiceBusManagement__*`) are configured out of band — `webAppExists=true` makes the template read the site's current settings and carry those keys forward instead of wiping them (which takes authentication down). The `nb` CLI passes this automatically from its resource discovery; only raw-Bicep deployments need it by hand. Leave it `false` on first deployment — the template cannot read settings from a site that does not exist yet.
+**Re-running against an existing WebApp?** Pass `webAppExists=true`. The app-settings deployment is a full replace, and several settings are configured out of band — `webAppExists=true` makes the template read the site's current settings and carry those keys forward instead of wiping them (which, for the auth settings, takes authentication down). Four prefixes are preserved:
+
+| Prefix | Why it is set out of band |
+|---|---|
+| `AzureAd__` | Entra ID sign-in; this template creates no app registration |
+| `ServiceBusManagement__` | Optional portal deep-link config |
+| `Authorization__` | Platform-admin grants |
+| `RateLimiting__` | Operator-tuned request-rate limits ([Rate Limiting](rate-limiting.md)) |
+
+The one exception is `RateLimiting__TrustForwardedForHeader`, which the template owns and sets itself — it describes deployment topology rather than a tuning preference, so a portal edit to it does **not** survive a re-run. The numeric limits and `RateLimiting__Enabled` do survive.
+
+The `nb` CLI passes `webAppExists` automatically from its resource discovery; only raw-Bicep deployments need it by hand. Leave it `false` on first deployment — the template cannot read settings from a site that does not exist yet.
 
 ### 4.3 Topology and apps (still required)
 

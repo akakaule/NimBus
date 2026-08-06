@@ -625,8 +625,8 @@ public sealed class PublishConsumeTraceIntegrationTests
             Microsoft.Extensions.Logging.LogLevel logLevel,
             Microsoft.Extensions.Logging.EventId eventId,
             TState state,
-            Exception exception,
-            Func<TState, Exception, string> formatter) => Entries.Add(formatter(state, exception));
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) => Entries.Add(formatter(state, exception));
     }
 
     private static void AssertNoHighCardinalityMetricTags(IEnumerable<Metric> metrics)

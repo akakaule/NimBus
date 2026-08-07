@@ -75,18 +75,28 @@ jobs:
       run: |
         timeout 300 bash -c 'until curl -sf http://localhost:8080/ready >/dev/null \
           || curl -sfk https://localhost:8080/ready >/dev/null; do sleep 5; done'
-    - name: Cosmos DB conformance (must not skip)
-      # The evidence gate for the Cosmos provider: a suite that skips itself reports green
-      # without having conformed to anything. Run on its own — a solution-wide skip count
-      # is useless here because other suites (Service Bus, Identity) legitimately skip.
+    - name: Test
       run: |
-        dotnet test tests/NimBus.MessageStore.CosmosDb.Tests --no-build --configuration Release \
-          --logger "trx;LogFileName=cosmos.trx" --results-directory TestResults
-        skipped=$(grep -o 'outcome="\(NotExecuted\|Inconclusive\)"' TestResults/cosmos.trx | wc -l)
+        dotnet test src/NimBus.sln --no-build --configuration Release --verbosity normal \
+          --logger trx --results-directory TestResults
+    - name: Cosmos DB conformance must not skip
+      # The evidence gate for the Cosmos provider: a suite that skips itself reports green
+      # without having conformed to anything. It reads the trx the run above already
+      # produced rather than re-running the suite — a second run against the same emulator
+      # sees the first run's rows and fails the count-based metrics conformance tests.
+      # A solution-wide skip count would not do, because other suites (Service Bus,
+      # Identity) legitimately skip; so pick out the Cosmos assembly's own trx.
+      if: always()
+      run: |
+        trx=$(grep -ril --include='*.trx' 'nimbus.messagestore.cosmosdb.tests.dll' TestResults | head -1)
+        if [ -z "$trx" ]; then
+          echo "::error::No trx found for NimBus.MessageStore.CosmosDb.Tests; the suite did not run at all."
+          exit 1
+        fi
+        skipped=$(grep -o 'outcome="\(NotExecuted\|Inconclusive\|Skipped\)"' "$trx" | wc -l)
+        echo "Cosmos results file: $trx"
         echo "Cosmos tests not executed: $skipped"
         if [ "$skipped" != "0" ]; then
           echo "::error::$skipped Cosmos test(s) did not execute; the live conformance suite must run in CI."
           exit 1
         fi
-    - name: Test
-      run: dotnet test src/NimBus.sln --no-build --configuration Release --verbosity normal

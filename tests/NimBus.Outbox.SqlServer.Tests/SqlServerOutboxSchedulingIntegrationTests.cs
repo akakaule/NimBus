@@ -183,6 +183,52 @@ public sealed class SqlServerOutboxSchedulingIntegrationTests
     }
 
     [TestMethod]
+    public async Task Migration_SkewedImmediateRow_BehindAFutureSameSessionTimeout_StaysImmediatelyClaimable()
+    {
+        // The mixed case the two single-concern rules miss when combined: a legacy
+        // unscheduled row whose backfilled StoredAtUtc landed in the future shares a
+        // session with a not-yet-due timeout that sorts EARLIER on the ordering key.
+        // The unscheduled row is eligible by definition, but a predecessor rule that
+        // ignores due-ness parks it behind a timeout that cannot be dispatched for
+        // hours — the whole session wedges (AC5). "Earlier" must mean earlier AND due.
+        var options = NewOptions(ScheduledDeliveryMode.BrokerScheduleAtDispatch);
+        await Execute(options, $@"
+            EXEC('CREATE SCHEMA [{options.Schema}]');
+            CREATE TABLE {options.FullTableName} (
+                [Id] NVARCHAR(128) NOT NULL PRIMARY KEY,
+                [MessageId] NVARCHAR(512) NOT NULL,
+                [To] NVARCHAR(256) NULL,
+                [EventTypeId] NVARCHAR(256) NULL,
+                [SessionId] NVARCHAR(256) NULL,
+                [CorrelationId] NVARCHAR(256) NULL,
+                [Payload] NVARCHAR(MAX) NOT NULL,
+                [EnqueueDelayMinutes] INT NOT NULL DEFAULT 0,
+                [ScheduledEnqueueTimeUtc] DATETIME2 NULL,
+                [CreatedAtUtc] DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+                [DispatchedAtUtc] DATETIME2 NULL,
+                [TraceParent] NVARCHAR(55) NULL,
+                [TraceState] NVARCHAR(256) NULL
+            );
+            -- The timeout is due in 2h; the skewed immediate row's clock ran 6h ahead,
+            -- so the timeout sorts FIRST on EffectiveDueAtUtc despite not being due.
+            INSERT INTO {options.FullTableName} ([Id],[MessageId],[SessionId],[Payload],[CreatedAtUtc],[ScheduledEnqueueTimeUtc])
+                VALUES ('timeout-1','m1','wf-1','{{}}', SYSUTCDATETIME(), DATEADD(HOUR, 2, SYSUTCDATETIME()));
+            INSERT INTO {options.FullTableName} ([Id],[MessageId],[SessionId],[Payload],[CreatedAtUtc])
+                VALUES ('skewed-1','m2','wf-1','{{}}', DATEADD(HOUR, 6, SYSUTCDATETIME()));");
+        _createdSchemas.Add(options);
+
+        await new SqlServerOutbox(options).EnsureTableExistsAsync();
+
+        var cutover = new SqlServerOutbox(NewOptionsLike(options, ScheduledDeliveryMode.SqlOwnedDueTime));
+        var claimed = await cutover.ClaimDueAsync(Guid.NewGuid(), 10);
+
+        CollectionAssert.AreEqual(
+            new[] { "skewed-1" },
+            claimed.Select(m => m.Id).ToArray(),
+            "A not-yet-due timeout is not a dispatchable predecessor; it must not park an eligible same-session row");
+    }
+
+    [TestMethod]
     public async Task Migration_InterruptedAfterColumnAdd_IsRepairedByTheNextStartup()
     {
         // Simulates a crash between ALTER TABLE ADD and the backfill: the column

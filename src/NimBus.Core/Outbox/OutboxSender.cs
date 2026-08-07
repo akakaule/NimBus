@@ -108,7 +108,21 @@ namespace NimBus.Core.Outbox
             // StoreScheduledAsync validates the delivery mode before storing anything.
             var sequenceNumber = await scheduledOutbox.StoreScheduledAsync(outboxMessage, cancellationToken);
             NimBusMeters.OutboxEnqueued.Add(1, BuildEnqueueTags(outboxMessage.To, outboxMessage.EventTypeId));
-            return new ScheduledMessageHandle(timeoutId, sequenceNumber, ScheduledMessageHandleKind.SqlOutboxSequenceNumber);
+            var handle = new ScheduledMessageHandle(timeoutId, sequenceNumber, ScheduledMessageHandleKind.SqlOutboxSequenceNumber);
+            if (sequenceNumber <= 0)
+            {
+                // Same invariant the ISender default bridge enforces: the public
+                // contract is a POSITIVE sequence (ScheduledMessageHandle.Validate).
+                // A custom IScheduledOutbox that returns 0 would otherwise hand back
+                // a handle every cancel path rejects, leaving the workflow with a
+                // timeout it can never cancel. Fail here, where the caller can react.
+                throw new InvalidOperationException(
+                    $"The outbox provider returned a non-positive sequence number ({sequenceNumber}) for timeout '{timeoutId}'. " +
+                    "StoreScheduledAsync must return the provider-assigned scheduled row sequence.");
+            }
+
+            handle.Validate(nameof(message));
+            return handle;
         }
 
         /// <summary>

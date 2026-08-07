@@ -1,10 +1,13 @@
 #pragma warning disable CA1707, CA2007
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using NimBus.Core.Outbox;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -61,6 +64,21 @@ public class OutboxSchedulingProtocolTests
             () => ((ISender)sender).ScheduleMessageWithHandle(MarkedMessage("timeout-1"), DateTimeOffset.UtcNow.AddHours(1)));
         Assert.AreEqual(0, outbox.ScheduledRows.Count);
         Assert.AreEqual(0, outbox.PlainStores);
+    }
+
+    [TestMethod]
+    public async Task ScheduleMessageWithHandle_ProviderReturnsNonPositiveSequence_IsRejectedAtScheduleTime()
+    {
+        // Same invariant the direct bridge enforces: a custom IScheduledOutbox that
+        // hands back 0 (or a negative) would otherwise make Schedule succeed with a
+        // handle every cancellation path rejects, stranding the workflow with no way
+        // to cancel its timeout.
+        var outbox = new FakeScheduledOutbox { DueTimeDispatchActive = true, NextSequence = 0L };
+        var sender = new OutboxSender(outbox);
+
+        var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => ((ISender)sender).ScheduleMessageWithHandle(MarkedMessage("timeout-1"), DateTimeOffset.UtcNow.AddHours(1)));
+        StringAssert.Contains(ex.Message, "non-positive sequence number");
     }
 
     [TestMethod]
@@ -287,6 +305,57 @@ public class OutboxSchedulingProtocolTests
     }
 
     [TestMethod]
+    public async Task Dispatcher_SendBudgetExpires_RecordsAFailedScheduledDispatchSpanAndMetric()
+    {
+        // The bounded send runs under a token LINKED to the polling token, so a
+        // budget expiry looks like cancellation from inside DispatchOneAsync. It is
+        // not host shutdown — it is a failed dispatch attempt and must be visible as
+        // one (AC6), on the span while it is still live and on the metric.
+        var sender = new CountingSender { BlockUntilCancelled = true };
+        var coordinator = new FakeCoordinator
+        {
+            DueTimeDispatchActive = true,
+            UsableSendWindow = TimeSpan.FromMilliseconds(250),
+        };
+        var row = PendingRow("row-1");
+        row.ScheduledEnqueueTimeUtc = DateTime.UtcNow.AddMinutes(-1); // due scheduled row
+        coordinator.ClaimableRows.Add(row);
+        var dispatcher = new OutboxDispatcher(new CountingOutbox(), sender, coordinator);
+
+        using var telemetry = new OutboxTelemetryRecorder();
+        var dispatched = await dispatcher.DispatchPendingAsync();
+
+        Assert.AreEqual(0, dispatched);
+        var failure = telemetry.DispatchMeasurements.SingleOrDefault(m => m.Outcome == "failed");
+        Assert.IsNotNull(failure, "A budget-expired dispatch must record the failed outcome, not vanish as shutdown");
+        Assert.IsNotNull(failure.ErrorType, "The failed measurement carries the bounded error type");
+
+        var span = telemetry.FinishedActivities.Single(a => a.OperationName.StartsWith("publish", StringComparison.Ordinal));
+        Assert.AreEqual(ActivityStatusCode.Error, span.Status, "The dispatch span ends in Error, not unset");
+        Assert.AreEqual("dispatch", span.GetTagItem(MessagingAttributes.NimBusScheduleOperation),
+            "The failed span still identifies itself as a scheduled dispatch");
+    }
+
+    [TestMethod]
+    public async Task Dispatcher_HostShutdownDuringSend_RecordsNoFailureTelemetry()
+    {
+        // The other side of the same distinction: a stopped polling loop is not a
+        // failed dispatch, so it must keep producing no failure metric or span.
+        using var cts = new CancellationTokenSource();
+        var sender = new CountingSender { BlockUntilCancelled = true, OnSend = () => cts.CancelAfter(TimeSpan.FromMilliseconds(50)) };
+        var coordinator = new FakeCoordinator { DueTimeDispatchActive = true };
+        coordinator.ClaimableRows.Add(PendingRow("row-1"));
+        var dispatcher = new OutboxDispatcher(new CountingOutbox(), sender, coordinator);
+
+        using var telemetry = new OutboxTelemetryRecorder();
+        await Assert.ThrowsExactlyAsync<TaskCanceledException>(
+            () => dispatcher.DispatchPendingAsync(batchSize: 10, cts.Token));
+
+        Assert.AreEqual(0, telemetry.DispatchMeasurements.Count(m => m.Outcome == "failed"),
+            "Shutdown mid-send is not a failed dispatch");
+    }
+
+    [TestMethod]
     public async Task Dispatcher_ShutdownBeforeCurrentRowStarts_ReleasesTheCurrentClaimToo()
     {
         // The interrupted row is claimed but NOT dispatch-started, so leaving it
@@ -476,12 +545,20 @@ public class OutboxSchedulingProtocolTests
         public int LastDelay { get; private set; }
         public Exception ThrowOnSend { get; set; }
 
-        public Task Send(IMessage message, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default)
+        /// <summary>Blocks until the send token is cancelled — models a send that outlives its budget.</summary>
+        public bool BlockUntilCancelled { get; set; }
+
+        /// <summary>Runs at the top of Send, before it blocks.</summary>
+        public Action OnSend { get; set; }
+
+        public async Task Send(IMessage message, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default)
         {
             if (ThrowOnSend != null) throw ThrowOnSend;
+            OnSend?.Invoke();
+            if (BlockUntilCancelled)
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             SentCount++;
             LastDelay = messageEnqueueDelay;
-            return Task.CompletedTask;
         }
 
         public Task Send(IEnumerable<IMessage> messages, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default)
@@ -562,6 +639,72 @@ public class OutboxSchedulingProtocolTests
         {
             ReleasedIds.Add(outboxMessageId);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed record DispatchMeasurement(string Outcome, string ErrorType);
+
+    /// <summary>
+    /// Captures the outbox dispatch counter and the outbox dispatch spans so a test
+    /// can assert the OUTCOME telemetry, not just the return value.
+    /// </summary>
+    private sealed class OutboxTelemetryRecorder : IDisposable
+    {
+        private readonly MeterListener _meterListener;
+        private readonly ActivityListener _activityListener;
+        private readonly List<DispatchMeasurement> _measurements = new();
+        private readonly List<Activity> _activities = new();
+        private readonly object _gate = new();
+
+        public OutboxTelemetryRecorder()
+        {
+            _meterListener = new MeterListener
+            {
+                InstrumentPublished = (instrument, listener) =>
+                {
+                    if (instrument.Meter.Name == NimBusInstrumentation.OutboxMeterName
+                        && instrument.Name == NimBusMeters.OutboxDispatched.Name)
+                    {
+                        listener.EnableMeasurementEvents(instrument);
+                    }
+                },
+            };
+            _meterListener.SetMeasurementEventCallback<long>((_, _, tags, _) =>
+            {
+                string outcome = null, errorType = null;
+                foreach (var tag in tags)
+                {
+                    if (tag.Key == MessagingAttributes.NimBusOutcome) outcome = tag.Value as string;
+                    else if (tag.Key == MessagingAttributes.ErrorType) errorType = tag.Value as string;
+                }
+
+                lock (_gate) _measurements.Add(new DispatchMeasurement(outcome, errorType));
+            });
+            _meterListener.Start();
+
+            _activityListener = new ActivityListener
+            {
+                ShouldListenTo = source => source.Name == NimBusInstrumentation.OutboxActivitySourceName,
+                Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+                ActivityStopped = activity => { lock (_gate) _activities.Add(activity); },
+            };
+            ActivitySource.AddActivityListener(_activityListener);
+        }
+
+        public IReadOnlyList<DispatchMeasurement> DispatchMeasurements
+        {
+            get { lock (_gate) return _measurements.ToList(); }
+        }
+
+        public IReadOnlyList<Activity> FinishedActivities
+        {
+            get { lock (_gate) return _activities.ToList(); }
+        }
+
+        public void Dispose()
+        {
+            _meterListener.Dispose();
+            _activityListener.Dispose();
         }
     }
 }

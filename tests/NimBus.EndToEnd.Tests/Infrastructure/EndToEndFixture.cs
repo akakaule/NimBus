@@ -198,6 +198,23 @@ internal sealed class EndToEndFixture
     {
         return _publishBus.DeliverAllWithResults(_messageHandler, cancellationToken);
     }
+
+    /// <summary>
+    /// Delivers a broker message produced outside this fixture — e.g. the one the
+    /// real ManagerClient sends for a resubmission — through the subscriber
+    /// pipeline, so the test exercises the actual wire round trip rather than a
+    /// hand-built <see cref="Message"/>.
+    /// </summary>
+    public Task DeliverWireMessage(
+        Azure.Messaging.ServiceBus.ServiceBusMessage outgoing,
+        CancellationToken cancellationToken = default)
+    {
+        var received = InMemoryBus.ToReceivedMessage(outgoing);
+        var context = new NimBus.ServiceBus.MessageContext(
+            new NimBus.ServiceBus.ServiceBusMessage(received),
+            new FakeServiceBusSession());
+        return _messageHandler.Handle(context, cancellationToken);
+    }
 }
 
 /// <summary>

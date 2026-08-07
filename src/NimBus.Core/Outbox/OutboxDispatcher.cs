@@ -135,7 +135,9 @@ namespace NimBus.Core.Outbox
                         continue;
                     }
 
-                    if (!await DispatchOneAsync(outboxMessage, cancellationToken))
+                    // Legacy flow: the send runs directly under the polling token, so
+                    // the send token and the shutdown token are the same token.
+                    if (!await DispatchOneAsync(outboxMessage, cancellationToken, cancellationToken))
                     {
                         // Block only this session; session-less rows fail independently.
                         // The failed message will be retried on the next poll.
@@ -311,7 +313,7 @@ namespace NimBus.Core.Outbox
                 // SQL owned the due time until now, so there is no broker schedule and
                 // no broker sequence to checkpoint or cancel.
                 sent = await DispatchOneAsync(
-                    outboxMessage, sendBudget.Token, forceImmediateSend: true);
+                    outboxMessage, sendBudget.Token, cancellationToken, forceImmediateSend: true);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -404,9 +406,18 @@ namespace NimBus.Core.Outbox
             }
         }
 
+        /// <param name="cancellationToken">
+        /// The token the send runs under. In due-time mode this is the bounded
+        /// send-budget token, which is LINKED to <paramref name="shutdownToken"/>.
+        /// </param>
+        /// <param name="shutdownToken">
+        /// The polling loop's own token. Cancellation observed while this token is
+        /// unset is a budget expiry — a failed dispatch attempt — not host shutdown.
+        /// </param>
         private async Task<bool> DispatchOneAsync(
             OutboxMessage outboxMessage,
             CancellationToken cancellationToken,
+            CancellationToken shutdownToken,
             bool forceImmediateSend = false)
         {
             // Detach from the polling-loop activity so the dispatch span is a root that
@@ -512,32 +523,30 @@ namespace NimBus.Core.Outbox
 
                 return true;
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
             {
                 // A stopped polling loop is not a failed outbox dispatch. Propagate
                 // cancellation without failure metrics/logging so the row remains
                 // pending for the next active dispatcher.
                 throw;
             }
+            catch (OperationCanceledException ex)
+            {
+                // Not shutdown: the bounded send budget expired (the linked token
+                // fired on its own). That IS a failed dispatch attempt and must be
+                // recorded as one (AC6) — here, while the dispatch activity is still
+                // live. Rethrow so the caller applies its lease-specific compensation.
+                RecordDispatchFailure(activity, endpoint, startTimestamp, ex);
+                activity?.AddEvent(new ActivityEvent("nimbus.outbox.send_budget_expired"));
+                _logger.LogWarning(
+                    ex,
+                    "Outbox dispatch exceeded its send budget for message {OutboxId} (event {EventTypeId}, session {SessionId}, messageId {MessageId})",
+                    outboxMessage.Id, outboxMessage.EventTypeId, outboxMessage.SessionId, outboxMessage.MessageId);
+                throw;
+            }
             catch (Exception ex)
             {
-                var elapsed = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
-                var errorType = ex.GetType().FullName;
-                var tags = BuildDispatchTags(endpoint, "failed", errorType);
-                NimBusMeters.OutboxDispatchDuration.Record(elapsed, tags);
-                NimBusMeters.OutboxDispatched.Add(1, tags);
-                if (activity is not null)
-                {
-                    activity.SetStatus(ActivityStatusCode.Error, ex.Message);
-                    activity.SetTag(MessagingAttributes.ErrorType, errorType);
-                    activity.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
-                    {
-                        { "exception.type", errorType },
-                        { "exception.message", ex.Message },
-                        { "exception.stacktrace", ex.ToString() },
-                    }));
-                }
-
+                RecordDispatchFailure(activity, endpoint, startTimestamp, ex);
                 _logger.LogError(
                     ex,
                     "Outbox dispatch failed for message {OutboxId} (event {EventTypeId}, session {SessionId}, messageId {MessageId}). Halting this poll; will retry next interval.",
@@ -549,6 +558,32 @@ namespace NimBus.Core.Outbox
                 activity?.Dispose();
                 Activity.Current = savedCurrent;
             }
+        }
+
+        /// <summary>
+        /// Stamps the "failed" dispatch metric and marks the (still live) dispatch
+        /// span as errored. Shared by the budget-expiry and ordinary-failure paths so
+        /// both are visible identically to an operator.
+        /// </summary>
+        private static void RecordDispatchFailure(Activity activity, string endpoint, long startTimestamp, Exception ex)
+        {
+            var elapsed = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+            var errorType = ex.GetType().FullName;
+            var tags = BuildDispatchTags(endpoint, "failed", errorType);
+            NimBusMeters.OutboxDispatchDuration.Record(elapsed, tags);
+            NimBusMeters.OutboxDispatched.Add(1, tags);
+            if (activity is null)
+                return;
+
+            activity.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity.SetTag(MessagingAttributes.NimBusOutcome, "failed");
+            activity.SetTag(MessagingAttributes.ErrorType, errorType);
+            activity.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
+            {
+                { "exception.type", errorType },
+                { "exception.message", ex.Message },
+                { "exception.stacktrace", ex.ToString() },
+            }));
         }
 
         private static ActivityLink? TryBuildLink(string traceParent, string traceState)

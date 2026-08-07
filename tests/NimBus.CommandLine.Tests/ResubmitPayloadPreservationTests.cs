@@ -61,6 +61,40 @@ public sealed class ResubmitPayloadPreservationTests
     }
 
     [Fact]
+    public async Task UpdateMessagesAndResubmit_SameEventIdOnTwoSessions_ResubmitsEachSessionsOwnPayload()
+    {
+        // An EventId is unique per SESSION, not per endpoint: the Cosmos document ID
+        // is eventId_sessionId. Re-reading by (endpoint, eventId) alone returns an
+        // arbitrary one of the siblings, so the loop can update and resubmit session
+        // A's payload and timeout identity while processing session B — and leave B
+        // untouched. The re-read must be scoped to the row the search actually found.
+        var sessionA = AgedTimeoutEvent();
+        var sessionB = AgedTimeoutEvent();
+        sessionB.SessionId = "order-99";
+        sessionB.ScheduledMessageId = "order-99:payment-timeout:1";
+        sessionB.WorkflowCorrelationId = "workflow-conversation-99";
+        sessionB.MessageContent.EventContent.EventJson = "{\"OrderId\":\"order-99\"}";
+
+        var store = new PayloadStrippingSearchStore(sessionA, sessionB);
+        var sender = new CapturingSender();
+
+        await Container.UpdateMessagesAndResubmit(sender, store, Endpoint, ResolutionStatus.Failed);
+
+        Assert.Equal(2, sender.Sent.Count);
+        var bySession = sender.Sent.Cast<Message>().ToDictionary(m => m.SessionId);
+        Assert.Equal(EventJson, bySession[SessionId].MessageContent.EventContent.EventJson);
+        Assert.Equal(TimeoutId, bySession[SessionId].ScheduledMessageId);
+        Assert.Equal("{\"OrderId\":\"order-99\"}", bySession["order-99"].MessageContent.EventContent.EventJson);
+        Assert.Equal("order-99:payment-timeout:1", bySession["order-99"].ScheduledMessageId);
+        Assert.Equal("workflow-conversation-99", bySession["order-99"].CorrelationId);
+
+        // Both siblings are updated — neither is silently skipped in favour of the other.
+        Assert.Equal(
+            new[] { "order-42", "order-99" },
+            store.Uploaded.Select(e => e.SessionId).OrderBy(s => s, StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
     public async Task UpdateMessagesAndResubmit_TooRecentMessage_IsLeftAlone()
     {
         var recent = AgedTimeoutEvent();
@@ -99,15 +133,17 @@ public sealed class ResubmitPayloadPreservationTests
 
     /// <summary>
     /// Models the real providers: the search projection is a clone with EventJson
-    /// stripped, while GetEvent returns the full document.
+    /// stripped, while the session-scoped read returns the full document. Documents
+    /// are keyed the way the providers key them — by EventId AND SessionId — so a
+    /// re-read that drops the session resolves ambiguously, exactly as in production.
     /// </summary>
-    private sealed class PayloadStrippingSearchStore(UnresolvedEvent stored) : Container.IResubmitEventStore
+    private sealed class PayloadStrippingSearchStore(params UnresolvedEvent[] stored) : Container.IResubmitEventStore
     {
         public List<UnresolvedEvent> Uploaded { get; } = new();
 
         public Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount)
         {
-            var matches = new[] { stored }
+            var matches = stored
                 .Where(e => e.EndpointId == filter.EndPointId
                             && (filter.ResolutionStatus == null
                                 || filter.ResolutionStatus.Contains(e.ResolutionStatus.ToString())))
@@ -117,8 +153,15 @@ public sealed class ResubmitPayloadPreservationTests
             return Task.FromResult(new SearchResponse { Events = matches });
         }
 
-        public Task<UnresolvedEvent> GetEvent(string endpointId, string eventId) =>
-            Task.FromResult(endpointId == stored.EndpointId && eventId == stored.EventId ? Clone(stored) : null);
+        public Task<UnresolvedEvent> GetEvent(string endpointId, string eventId, string sessionId, ResolutionStatus status)
+        {
+            var match = stored.FirstOrDefault(e =>
+                e.EndpointId == endpointId
+                && e.EventId == eventId
+                && e.SessionId == sessionId
+                && e.ResolutionStatus == status);
+            return Task.FromResult(match is null ? null : Clone(match));
+        }
 
         public Task<bool> UploadFailedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content)
         {

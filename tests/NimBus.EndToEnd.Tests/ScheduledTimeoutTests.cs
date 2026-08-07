@@ -1,10 +1,13 @@
 #pragma warning disable CA1707, CA2007
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Broker.Services;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using NimBus.EndToEnd.Tests.Infrastructure;
+using NimBus.Manager;
 using NimBus.SDK;
 using NimBus.SDK.EventHandlers;
+using NimBus.Testing.Conformance;
 using System.ComponentModel.DataAnnotations;
 
 namespace NimBus.EndToEnd.Tests;
@@ -88,49 +91,93 @@ public class ScheduledTimeoutTests
     }
 
     [TestMethod]
-    public async Task ResubmittedTimeout_HandlerSeesOriginalIdentityAndWorkflowConversation()
+    public async Task TerminalFailureThroughTheRealAuditChain_ResubmitsWithTheOriginalTimeoutIdentity()
     {
-        // The final leg of the terminal-failure -> operator-resubmit story: a
-        // ResubmissionRequest constructed the way ManagerClient does (marker
-        // stamped, CorrelationId restored from WorkflowCorrelationId) reaches the
-        // typed handler with the original logical identity intact, so the durable
-        // workflow guard can decide Fired vs IgnoredLate.
+        // The whole terminal-failure -> operator-resubmit story, end to end, with
+        // nothing about the resubmission hand-built: the scheduled timeout fails in
+        // the handler, ResponseService emits the ErrorResponse, the real
+        // ResolverService persists the audit chain, the real ManagerClient rebuilds
+        // the ResubmissionRequest FROM WHAT WAS PERSISTED, and that broker message is
+        // delivered back through the wire round trip. Every link that could drop the
+        // timeout identity is exercised, not assumed.
         var fixture = new EndToEndFixture();
-        var handler = new RecordingTimeoutHandler();
+        var handler = new RecordingTimeoutHandler { FailuresBeforeSuccess = 1 };
         fixture.RegisterHandler<PaymentTimedOut>(() => handler);
 
-        var resubmission = new Message
-        {
-            MessageId = "resubmit-1",
-            CorrelationId = "workflow-conversation",
-            EventId = "event-1",
-            SessionId = "order-42",
-            To = "PaymentTimedOut",
-            From = Constants.ManagerId,
-            OriginatingMessageId = TimeoutId,
-            ParentMessageId = "attempt-1",
-            MessageType = MessageType.ResubmissionRequest,
-            EventTypeId = "PaymentTimedOut",
-            MessageContent = new MessageContent
-            {
-                EventContent = new EventContent
-                {
-                    EventTypeId = "PaymentTimedOut",
-                    EventJson = "{\"OrderId\":\"order-42\"}",
-                },
-            },
-            ScheduledMessageId = TimeoutId,
-            ScheduledEnqueueTimeUtc = Due,
-        };
+        await fixture.Publisher.Schedule(
+            new PaymentTimedOut { OrderId = "order-42" }, Due, WorkflowContext(), TimeoutId);
+        var timeoutRequest = fixture.PublishBus.SentMessages.Single();
+        await fixture.DeliverAllWithResults();
 
-        await fixture.PublishBus.Send(resubmission);
-        await fixture.DeliverAll();
+        var errorResponse = fixture.ResponseBus.SentMessages.Single(m => m.MessageType == MessageType.ErrorResponse);
+        Assert.AreEqual(TimeoutId, errorResponse.ScheduledMessageId,
+            "Link 1 — ResponseService carries the marker onto the failure response");
+        Assert.AreEqual("workflow-conversation", errorResponse.WorkflowCorrelationId,
+            "Link 1 — and the workflow conversation ID, which the response's own CorrelationId cannot hold");
 
-        var invocation = handler.Invocations.Single();
-        Assert.AreEqual(TimeoutId, invocation.ScheduledMessageId,
-            "Resubmission restores the logical timeout identity from the audit chain");
-        Assert.AreEqual(Due, invocation.ScheduledEnqueueTimeUtc);
-        Assert.AreEqual("workflow-conversation", invocation.CorrelationId);
+        // Link 2 + 3 — the real Resolver, over real MessageContexts, into a store.
+        // The resolver sees BOTH legs of the conversation, exactly as in production:
+        // the EventRequest (whose audit row carries the payload an operator
+        // resubmits) and then the ErrorResponse that terminalizes it. A response
+        // clone never reuses the inbound transport MessageId — the broker assigns one
+        // on the wire — and both legs share the EventId the subscription rule stamped.
+        const string EventId = "event-1";
+        ((Message)timeoutRequest).EventId = EventId;
+        ((Message)errorResponse).EventId = EventId;
+        ((Message)errorResponse).MessageId = "error-response-1";
+
+        var store = new InMemoryMessageStore();
+        var resolverBus = new InMemoryBus();
+        await resolverBus.Send(timeoutRequest);
+        await resolverBus.Send(errorResponse);
+        var delivered = await resolverBus.DeliverAllWithResults(new ResolverService(store));
+
+        Assert.IsFalse(delivered.Exists(d => d.Session.WasDeadLettered),
+            $"The resolver must accept both legs: {delivered.Find(d => d.Session.WasDeadLettered)?.Session.LastDeadLetterDescription}");
+
+        // The resolver keys a response row on the endpoint it came FROM — read it
+        // back the same way, from the context it actually saw.
+        var resolved = delivered[^1].Context;
+        var auditRow = await store.GetFailedMessage(EventId, resolved.From);
+        Assert.IsNotNull(auditRow, "The resolver persisted the failed message on the subscriber's endpoint");
+        Assert.AreEqual(TimeoutId, auditRow.ScheduledMessageId, "Link 3 — persistence keeps the timeout identity");
+        Assert.AreEqual(Due, auditRow.ScheduledEnqueueTimeUtc);
+        Assert.AreEqual("workflow-conversation", auditRow.WorkflowCorrelationId);
+
+        var storedEvent = await store.GetFailedEvent(resolved.From, EventId, "order-42");
+        Assert.AreEqual(TimeoutId, storedEvent.ScheduledMessageId,
+            "Link 3 — the UnresolvedEvent an operator resubmits from keeps it too");
+
+        // Link 4 — the real ManagerClient, fed only what the store returned: the
+        // failed audit row for identity, the persisted request row for the payload
+        // (the WebApp resubmit path's exact two sources).
+        var payloadRow = await store.GetLatestEventRequestMessage(EventId);
+        Assert.IsNotNull(payloadRow?.MessageContent?.EventContent?.EventJson,
+            "Link 3 — the request leg's audit row is where the resubmit payload comes from");
+
+        var brokerClient = new RecordingManagerServiceBusClient();
+        await new ManagerClient(brokerClient).Resubmit(
+            auditRow,
+            "PaymentTimedOut",
+            auditRow.EventTypeId,
+            payloadRow.MessageContent.EventContent.EventJson);
+
+        // Link 5 — its actual broker message goes back through the wire. The manager
+        // deliberately mints no transport MessageId (reusing one would trip duplicate
+        // detection); the broker assigns it, as with every response clone here.
+        var wire = brokerClient.Sender.SentMessages.Single();
+        Assert.IsNull(wire.MessageId, "The manager leaves the transport MessageId to the broker");
+        wire.MessageId = "resubmit-attempt-1";
+        await fixture.DeliverWireMessage(wire);
+
+        Assert.AreEqual(2, handler.Invocations.Count, "The resubmission reached the handler");
+        var resubmitted = handler.Invocations[^1];
+        Assert.AreEqual(TimeoutId, resubmitted.ScheduledMessageId,
+            "The typed handler's workflow guard sees the ORIGINAL logical identity after a full audit-chain round trip");
+        Assert.AreEqual(Due, resubmitted.ScheduledEnqueueTimeUtc);
+        Assert.AreEqual("workflow-conversation", resubmitted.CorrelationId,
+            "The resubmission is restored to the workflow conversation, not the failed attempt's");
+        Assert.AreEqual("order-42", resubmitted.SessionId);
     }
 
     [TestMethod]

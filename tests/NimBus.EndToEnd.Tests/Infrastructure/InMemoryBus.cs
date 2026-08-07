@@ -187,9 +187,17 @@ internal sealed class InMemoryBus : ISender
     /// Converts an IMessage to a ServiceBusReceivedMessage using MessageHelper and ServiceBusModelFactory.
     /// Simulates Azure Service Bus SQL Rule Actions that inject EventId, From, and To.
     /// </summary>
-    private static ServiceBusReceivedMessage ToReceivedMessage(IMessage message)
+    private static ServiceBusReceivedMessage ToReceivedMessage(IMessage message) =>
+        ToReceivedMessage(MessageHelper.ToServiceBusMessage(message));
+
+    /// <summary>
+    /// Same conversion for a broker message produced OUTSIDE this bus — e.g. the one
+    /// the real ManagerClient sends — so a test can deliver it through the identical
+    /// wire round trip.
+    /// </summary>
+    internal static ServiceBusReceivedMessage ToReceivedMessage(Azure.Messaging.ServiceBus.ServiceBusMessage sbOutgoing)
     {
-        var sbOutgoing = MessageHelper.ToServiceBusMessage(message);
+        ArgumentNullException.ThrowIfNull(sbOutgoing);
 
         var properties = sbOutgoing.ApplicationProperties.ToDictionary(
             kvp => kvp.Key,

@@ -563,14 +563,21 @@ namespace NimBus.Outbox.SqlServer
                       AND (c.[DispatchClaimId] IS NULL OR c.[DispatchClaimedUntilUtc] <= SYSUTCDATETIME())
                       AND (c.[SessionId] IS NULL OR (
                             -- (a) ordering, first claims only: a not-yet-started candidate
-                            -- is blocked while an earlier-keyed non-terminal session row
-                            -- exists in ANY claim state; a dispatch-started candidate (the
-                            -- expired head being reclaimed) bypasses ordering entirely.
+                            -- is blocked while an earlier-keyed non-terminal DUE session
+                            -- row exists in ANY claim state; a dispatch-started candidate
+                            -- (the expired head being reclaimed) bypasses ordering entirely.
+                            -- The predecessor carries the SAME due-eligibility predicate as
+                            -- the candidate (revision-6 rule, AC5): a not-yet-due timeout is
+                            -- not dispatchable, so it cannot be a predecessor. Without this,
+                            -- a migrated unscheduled row whose backfilled StoredAtUtc came
+                            -- from a producer clock running ahead sorts AFTER a future
+                            -- timeout and parks its whole session until that timeout fires.
                             (c.[DispatchStartedAtUtc] IS NOT NULL OR NOT EXISTS (
                                 SELECT 1 FROM {_options.FullTableName} p WITH (HOLDLOCK)
                                 WHERE p.[SessionId] = c.[SessionId]
                                   AND p.[DispatchedAtUtc] IS NULL
                                   AND p.[CancelledAtUtc] IS NULL
+                                  AND (p.[ScheduledEnqueueTimeUtc] IS NULL OR p.[ScheduledEnqueueTimeUtc] <= SYSUTCDATETIME())
                                   AND (p.[EffectiveDueAtUtc] < c.[EffectiveDueAtUtc]
                                        OR (p.[EffectiveDueAtUtc] = c.[EffectiveDueAtUtc]
                                            AND p.[OutboxSequenceNumber] < c.[OutboxSequenceNumber]))))

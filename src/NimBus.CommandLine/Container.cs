@@ -151,7 +151,15 @@ static class Container
     internal interface IResubmitEventStore
     {
         Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount);
-        Task<UnresolvedEvent> GetEvent(string endpointId, string eventId);
+
+        /// <summary>
+        /// Re-reads the FULL event identified by the search hit. An EventId is unique
+        /// per session, not per endpoint (the Cosmos document ID is
+        /// <c>eventId_sessionId</c>), so the session is part of the key — reading by
+        /// endpoint + EventId alone returns an arbitrary sibling.
+        /// </summary>
+        Task<UnresolvedEvent> GetEvent(string endpointId, string eventId, string sessionId, ResolutionStatus status);
+
         Task<bool> UploadFailedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content);
     }
 
@@ -160,8 +168,17 @@ static class Container
         public Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount) =>
             inner.GetEventsByFilter(filter, continuationToken, maxSearchItemsCount);
 
-        public Task<UnresolvedEvent> GetEvent(string endpointId, string eventId) =>
-            inner.GetEvent(endpointId, eventId);
+        public Task<UnresolvedEvent> GetEvent(string endpointId, string eventId, string sessionId, ResolutionStatus status) =>
+            status switch
+            {
+                ResolutionStatus.Failed => inner.GetFailedEvent(endpointId, eventId, sessionId),
+                ResolutionStatus.DeadLettered => inner.GetDeadletteredEvent(endpointId, eventId, sessionId),
+                ResolutionStatus.Deferred => inner.GetDeferredEvent(endpointId, eventId, sessionId),
+                ResolutionStatus.Unsupported => inner.GetUnsupportedEvent(endpointId, eventId, sessionId),
+                ResolutionStatus.Pending => inner.GetPendingEvent(endpointId, eventId, sessionId),
+                _ => throw new NotSupportedException(
+                    $"Resubmission does not support the {status} resolution status; no session-scoped lookup exists for it."),
+            };
 
         public Task<bool> UploadFailedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) =>
             inner.UploadFailedMessage(eventId, sessionId, endpointId, content);
@@ -198,8 +215,12 @@ static class Container
                     // writes anything back: uploading the projection would erase the
                     // stored payload, and resubmitting it would hand the handler a
                     // null EventJson that fails deserialization long before the
-                    // durable workflow-state guard a timeout depends on.
-                    var @event = await dbClient.GetEvent(endpoint, searchResult.EventId) ?? searchResult;
+                    // durable workflow-state guard a timeout depends on. The re-read
+                    // is keyed on the search hit's SESSION as well as its EventId —
+                    // sibling sessions share an EventId, and grabbing the wrong one
+                    // would resubmit another session's payload and timeout identity.
+                    var @event = await dbClient.GetEvent(
+                        endpoint, searchResult.EventId, searchResult.SessionId, resolutionStatus) ?? searchResult;
                     var eventJson = @event.MessageContent?.EventContent?.EventJson;
                     if (string.IsNullOrEmpty(eventJson))
                     {

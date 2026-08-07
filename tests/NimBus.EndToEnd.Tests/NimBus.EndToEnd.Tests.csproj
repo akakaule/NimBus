@@ -8,7 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <!-- 10.0.3 matches the floor NimBus.Resolver's Serilog.Extensions.Logging pulls
+         in transitively; pinning 10.0.0 here is a NU1605 downgrade error. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.3" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageReference Include="MSTest.TestAdapter" Version="3.11.1" />
     <PackageReference Include="MSTest.TestFramework" Version="3.11.1" />
@@ -19,6 +21,10 @@
     <ProjectReference Include="..\..\src\NimBus.SDK\NimBus.SDK.csproj" />
     <ProjectReference Include="..\..\src\NimBus.ServiceBus\NimBus.ServiceBus.csproj" />
     <ProjectReference Include="..\..\src\NimBus.Testing\NimBus.Testing.csproj" />
+    <!-- The audit-chain end-to-end test drives the real Resolver and ManagerClient
+         rather than hand-constructing the resubmission they produce (spec 025). -->
+    <ProjectReference Include="..\..\src\NimBus.Resolver\NimBus.Resolver.csproj" />
+    <ProjectReference Include="..\..\src\NimBus.Manager\NimBus.Manager.csproj" />
     <ProjectReference Include="..\..\samples\CrmErpDemo\CrmErpDemo.Contracts\CrmErpDemo.Contracts.csproj" />
   </ItemGroup>
 

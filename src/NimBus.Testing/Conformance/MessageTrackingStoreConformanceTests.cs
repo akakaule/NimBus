@@ -1146,6 +1146,72 @@ public abstract class MessageTrackingStoreConformanceTests
         }
     }
 
+    /// <summary>
+    /// The three timeout-identity fields (spec 025) must survive every projection an
+    /// operator can reach an event through, not just the filter search: the endpoint
+    /// paging projection feeds the WebApp's endpoint view, from which a failed
+    /// timeout is resubmitted. All three are asserted NON-NULL so a provider that
+    /// drops them fails here instead of comparing null to null.
+    /// </summary>
+    [TestMethod]
+    public async Task DownloadEndpointStatePaging_roundtrips_the_timeout_identity()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-timeout-paging");
+        var eventId = Id("timeout-paging-1");
+        const string sessionId = "session-timeout-paging";
+
+        var stored = FullySetEvent(endpointId, eventId, sessionId);
+        await store.UploadFailedMessage(eventId, sessionId, endpointId, stored);
+
+        var state = await store.DownloadEndpointStatePaging(endpointId, pageSize: 20, continuationToken: string.Empty);
+        var paged = state.EnrichedUnresolvedEvents.Single(e => e.EventId == eventId);
+
+        Assert.AreEqual(stored.ScheduledMessageId, paged.ScheduledMessageId,
+            "ScheduledMessageId must survive the endpoint paging projection.");
+        Assert.AreEqual(stored.ScheduledEnqueueTimeUtc, paged.ScheduledEnqueueTimeUtc,
+            "ScheduledEnqueueTimeUtc must survive the endpoint paging projection.");
+        Assert.AreEqual(stored.WorkflowCorrelationId, paged.WorkflowCorrelationId,
+            "WorkflowCorrelationId must survive the endpoint paging projection.");
+    }
+
+    /// <summary>
+    /// Filtering BY the timeout identity is how an operator finds a stuck workflow's
+    /// timeout; a projection that round-trips the field is useless if the filter
+    /// cannot match it.
+    /// </summary>
+    [TestMethod]
+    public async Task GetEventsByFilter_finds_a_marked_timeout_by_session_and_returns_its_identity()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-timeout-filter");
+        var markedId = Id("timeout-filter-marked");
+        var unmarkedId = Id("timeout-filter-unmarked");
+        const string sessionId = "session-timeout-filter";
+
+        var marked = FullySetEvent(endpointId, markedId, sessionId);
+        await store.UploadFailedMessage(markedId, sessionId, endpointId, marked);
+
+        var unmarked = FullySetEvent(endpointId, unmarkedId, "other-session-timeout-filter");
+        unmarked.ScheduledMessageId = null;
+        unmarked.ScheduledEnqueueTimeUtc = null;
+        unmarked.WorkflowCorrelationId = null;
+        await store.UploadFailedMessage(unmarkedId, "other-session-timeout-filter", endpointId, unmarked);
+
+        var resp = await store.GetEventsByFilter(
+            new EventFilter { EndPointId = endpointId, SessionId = sessionId }, null!, 50);
+        var fetched = resp.Events.Single();
+
+        Assert.AreEqual(markedId, fetched.EventId);
+        Assert.AreEqual(marked.ScheduledMessageId, fetched.ScheduledMessageId);
+        Assert.AreEqual(marked.ScheduledEnqueueTimeUtc, fetched.ScheduledEnqueueTimeUtc);
+        Assert.AreEqual(marked.WorkflowCorrelationId, fetched.WorkflowCorrelationId);
+
+        var all = await store.GetEventsByFilter(new EventFilter { EndPointId = endpointId }, null!, 50);
+        Assert.IsNull(all.Events.Single(e => e.EventId == unmarkedId).ScheduledMessageId,
+            "An unmarked event keeps a null marker — the projection must not fabricate one.");
+    }
+
     [TestMethod]
     public async Task Search_results_omit_EventJson_without_corrupting_the_stored_event()
     {
@@ -1208,6 +1274,11 @@ public abstract class MessageTrackingStoreConformanceTests
             CloudEventSource = "urn:nimbus:message-search",
             CloudEventType = "com.nimbus.message-search.v1",
             CloudEventSubject = "messages/42",
+            // Non-null for the same reason as FullySetEvent: the audit row is where
+            // operator resubmission reads the timeout identity back from.
+            ScheduledMessageId = "session-msgdrift:payment-timeout:1",
+            ScheduledEnqueueTimeUtc = new DateTimeOffset(2026, 9, 1, 12, 0, 0, TimeSpan.Zero),
+            WorkflowCorrelationId = "workflow-conversation-msgdrift",
             MessageContent = new MessageContent
             {
                 EventContent = new EventContent { EventTypeId = "OrderPlaced", EventJson = "{\"secret\":\"payload\"}" },
@@ -1293,5 +1364,11 @@ public abstract class MessageTrackingStoreConformanceTests
         CloudEventSource = "urn:nimbus:event-search",
         CloudEventType = "com.nimbus.event-search.v1",
         CloudEventSubject = "events/42",
+        // Scheduled-message (timeout) identity — NON-NULL on purpose: a null value
+        // would make a projection that drops these fields compare null to null and
+        // pass, which is exactly the gap the drift guard exists to close (spec 025).
+        ScheduledMessageId = "session-drift:payment-timeout:1",
+        ScheduledEnqueueTimeUtc = new DateTimeOffset(2026, 9, 1, 12, 0, 0, TimeSpan.Zero),
+        WorkflowCorrelationId = "workflow-conversation-drift",
     };
 }

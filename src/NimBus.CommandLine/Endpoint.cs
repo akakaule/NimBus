@@ -6,6 +6,7 @@ using NimBus.Core;
 using NimBus.Core.Messages;
 using NimBus.MessageStore;
 using NimBus.MessageStore.States;
+using NimBus.ServiceBus.Provisioning;
 using Spectre.Console;
 
 namespace NimBus.CommandLine;
@@ -299,123 +300,39 @@ static class Endpoint
 
     internal static TopicDto GetExpectedTopic(string endpointName, IPlatform platform)
     {
-        var expectedEndpoint = platform.Endpoints.First(x => x.Name.ToLower() == endpointName);
-        var expectedTopic = new TopicDto
-        {
-            Name = endpointName.ToLower(),
-            Subscriptions = new List<SubscriptionDto>
-            {
-                // Endpoint subscription — also hosts the continuation and retry rules
-                // (the provisioner attaches them here, not as separate subs).
-                new SubscriptionDto
-                {
-                    Name = endpointName, TopicName = endpointName,
-                    Rules = new List<RuleDto>
-                    {
-                        new RuleDto { Name = $"to-{endpointName}", SubscriptionName = endpointName },
-                        new RuleDto { Name = "continuation", SubscriptionName = endpointName },
-                        new RuleDto { Name = "retry", SubscriptionName = endpointName }
-                    }
-                },
-                new SubscriptionDto
-                {
-                    Name = "resolver", TopicName = endpointName,
-                    Rules = new List<RuleDto>
-                    {
-                        new RuleDto { Name = $"to-{endpointName}", SubscriptionName = "resolver" },
-                        new RuleDto { Name = $"from-{endpointName}", SubscriptionName = "resolver" }
-                    }
-                },
-                new SubscriptionDto
-                {
-                    Name = "deferred", TopicName = endpointName,
-                    Rules = new List<RuleDto> { new RuleDto { Name = "deferredfilter", SubscriptionName = "deferred" } }
-                },
-                new SubscriptionDto
-                {
-                    Name = "deferredprocessor", TopicName = endpointName,
-                    Rules = new List<RuleDto> { new RuleDto { Name = "deferredprocessorfilter", SubscriptionName = "deferredprocessor" } }
-                }
-            }
-        };
+        // The expected shape comes from TopologyDescriptor — the same declaration the
+        // provisioner lays down and the WebApp rebuilds from. Deriving it a second time
+        // here is how the "{endpoint}-reply" subscription came to be reported deprecated:
+        // the provisioner creates it for request/reply, this list never mentioned it, and
+        // `topology remove-deprecated` deleted it.
+        //
+        // GetActualTopic lowercases everything it reads back from the broker, so the
+        // descriptor's names are lowercased to match.
+        var endpoint = platform.Endpoints.First(x => x.Name.ToLower() == endpointName);
+        var topicName = endpointName.ToLowerInvariant();
 
-        var createdSubscriptions = new List<SubscriptionDto>();
-        foreach (var eventType in expectedEndpoint.EventTypesProduced)
+        return new TopicDto
         {
-            var consumingEndpoints = platform.Endpoints
-                .Where(x => x.EventTypesConsumed.Contains(eventType))
-                .ToList();
-
-            foreach (var consumingEndpoint in consumingEndpoints)
-            {
-                var subscription = createdSubscriptions.FirstOrDefault(x => x.Name == consumingEndpoint.Name.ToLower());
-                if (subscription != null)
+            Name = topicName,
+            Subscriptions = TopologyDescriptor.ForEndpointTopic(endpoint, platform)
+                .Select(subscription =>
                 {
-                    subscription.Rules.Add(new RuleDto
+                    var subscriptionName = subscription.Name.ToLowerInvariant();
+                    return new SubscriptionDto
                     {
-                        Name = eventType.Id.ToLower(),
-                        SubscriptionName = subscription.Name.ToLower()
-                    });
-                }
-                else
-                {
-                    createdSubscriptions.Add(new SubscriptionDto
-                    {
-                        TopicName = endpointName.ToLower(),
-                        Name = consumingEndpoint.Name.ToLower(),
-                        Rules = new List<RuleDto>
-                        {
-                            new RuleDto
+                        Name = subscriptionName,
+                        TopicName = topicName,
+                        Rules = subscription.Rules
+                            .Select(rule => new RuleDto
                             {
-                                Name = eventType.Id.ToLower(),
-                                SubscriptionName = consumingEndpoint.Name.ToLower()
-                            }
-                        }
-                    });
-                }
-            }
-        }
-        expectedTopic.Subscriptions.AddRange(createdSubscriptions);
-
-        // Dynamic-forward subscriptions (spec 022 D5). For each declared
-        // DynamicForward whose source is this topic, the provisioner creates an
-        // "AgentDyn-{target}" forward subscription carrying a "dyn-{eventTypeId}"
-        // rule (see ServiceBusTopologyProvisioner). These cannot be derived from
-        // the compiled event loop above, so without consulting DynamicForwards the
-        // audit would flag them deprecated and RemoveDeprecated would delete them —
-        // silently dropping every dynamically-typed event on that path. Names are
-        // lowercased to match GetActualTopic, which lowercases everything it reads.
-        var dynamicSubscriptions = new List<SubscriptionDto>();
-        foreach (var forward in platform.DynamicForwards
-            .Where(f => string.Equals(f.SourceEndpoint, endpointName, StringComparison.OrdinalIgnoreCase)))
-        {
-            var subName = $"agentdyn-{forward.TargetEndpoint.ToLowerInvariant()}";
-            var ruleName = $"dyn-{forward.EventTypeId.ToLowerInvariant()}";
-
-            var subscription = dynamicSubscriptions.FirstOrDefault(x => x.Name == subName);
-            if (subscription != null)
-            {
-                if (!subscription.Rules.Any(r => r.Name == ruleName))
-                {
-                    subscription.Rules.Add(new RuleDto { Name = ruleName, SubscriptionName = subName });
-                }
-            }
-            else
-            {
-                dynamicSubscriptions.Add(new SubscriptionDto
-                {
-                    TopicName = endpointName.ToLowerInvariant(),
-                    Name = subName,
-                    Rules = new List<RuleDto>
-                    {
-                        new RuleDto { Name = ruleName, SubscriptionName = subName }
-                    }
-                });
-            }
-        }
-        expectedTopic.Subscriptions.AddRange(dynamicSubscriptions);
-
-        return expectedTopic;
+                                Name = rule.Name.ToLowerInvariant(),
+                                SubscriptionName = subscriptionName,
+                            })
+                            .ToList(),
+                    };
+                })
+                .ToList(),
+        };
     }
 
     static async Task<TopicDto> GetActualTopic(ServiceBusAdministrationClient sbAdmin, string endpointName)

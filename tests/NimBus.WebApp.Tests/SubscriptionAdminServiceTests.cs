@@ -88,7 +88,7 @@ public sealed class SubscriptionAdminServiceTests
         management.SeedSubscription(Topic, ResolverSubscription, forwardTo: ResolverSubscription);
         var service = CreateService(management);
 
-        var exception = await Assert.ThrowsExceptionAsync<SubscriptionPurgeNotSupportedException>(
+        var exception = await Assert.ThrowsExactlyAsync<SubscriptionPurgeNotSupportedException>(
             () => service.PurgeSubscriptionAsync(Topic, ResolverSubscription));
 
         StringAssert.Contains(exception.Message, "Delete & recreate", StringComparison.Ordinal);
@@ -180,7 +180,7 @@ public sealed class SubscriptionAdminServiceTests
         management.SeedSubscription(Topic, "hand-made");
         var service = CreateService(management);
 
-        await Assert.ThrowsExceptionAsync<SubscriptionNotDescribableException>(
+        await Assert.ThrowsExactlyAsync<SubscriptionNotDescribableException>(
             () => service.RecreateSubscriptionAsync(Topic, "hand-made"));
 
         Assert.AreEqual(0, management.DeletedSubscriptions.Count);

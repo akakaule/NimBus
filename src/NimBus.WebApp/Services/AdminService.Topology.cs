@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using NimBus.ServiceBus.Provisioning;
 using NimBus.WebApp.ManagementApi;
 
 namespace NimBus.WebApp.Services;
@@ -115,9 +116,21 @@ public partial class AdminService
     }
 
     /// <summary>
-    /// Builds the expected Service Bus topology for an endpoint based on platform configuration.
-    /// Mirrors the logic from NimBus.CommandLine/Endpoint.cs GetExpectedTopic.
+    /// The expected Service Bus topology for an endpoint, taken from
+    /// <see cref="TopologyDescriptor"/> — the same declaration
+    /// <c>ServiceBusTopologyProvisioner</c> lays down and the subscription admin rebuilds
+    /// from.
     /// </summary>
+    /// <remarks>
+    /// This used to derive the topology a second time from the compiled event catalog,
+    /// which is how the <c>{endpoint}-reply</c> subscription came to be reported
+    /// deprecated: the provisioner creates it for request/reply, the list here never
+    /// mentioned it, and <see cref="RemoveDeprecatedTopologyAsync"/> deleted it — breaking
+    /// request/reply for that endpoint until the next topology apply.
+    ///
+    /// <see cref="GetActualTopology"/> lowercases everything it reads back from the broker,
+    /// so the descriptor's names are lowercased to match.
+    /// </remarks>
     private TopologySnapshot BuildExpectedTopology(string endpointName)
     {
         var endpoint = _platform.Endpoints
@@ -126,135 +139,27 @@ public partial class AdminService
         if (endpoint == null)
             return new TopologySnapshot { Name = endpointName, Subscriptions = new List<SubscriptionSnapshot>() };
 
-        var snapshot = new TopologySnapshot
+        return new TopologySnapshot
         {
             Name = endpointName,
-            Subscriptions = new List<SubscriptionSnapshot>
-            {
-                // Endpoint subscription — carries the consumer's "to-<endpoint>" rule
-                // plus the continuation and retry rules (the provisioner attaches
-                // continuation/retry as rules on the endpoint sub, not as separate subs).
-                new SubscriptionSnapshot
+            Subscriptions = TopologyDescriptor.ForEndpointTopic(endpoint, _platform)
+                .Select(subscription =>
                 {
-                    Name = endpointName,
-                    Rules = new List<RuleSnapshot>
+                    var subscriptionName = subscription.Name.ToLowerInvariant();
+                    return new SubscriptionSnapshot
                     {
-                        new RuleSnapshot { Name = $"to-{endpointName}", SubscriptionName = endpointName },
-                        new RuleSnapshot { Name = "continuation", SubscriptionName = endpointName },
-                        new RuleSnapshot { Name = "retry", SubscriptionName = endpointName }
-                    }
-                },
-                // Resolver subscription — fans out every published event for audit.
-                new SubscriptionSnapshot
-                {
-                    Name = "resolver",
-                    Rules = new List<RuleSnapshot>
-                    {
-                        new RuleSnapshot { Name = $"to-{endpointName}", SubscriptionName = "resolver" },
-                        new RuleSnapshot { Name = $"from-{endpointName}", SubscriptionName = "resolver" }
-                    }
-                },
-                // Deferred subscription — captures sessions parked behind a failure.
-                new SubscriptionSnapshot
-                {
-                    Name = "deferred",
-                    Rules = new List<RuleSnapshot>
-                    {
-                        new RuleSnapshot { Name = "deferredfilter", SubscriptionName = "deferred" }
-                    }
-                },
-                // DeferredProcessor subscription — drains parked sessions after resubmit.
-                new SubscriptionSnapshot
-                {
-                    Name = "deferredprocessor",
-                    Rules = new List<RuleSnapshot>
-                    {
-                        new RuleSnapshot { Name = "deferredprocessorfilter", SubscriptionName = "deferredprocessor" }
-                    }
-                }
-            }
-        };
-
-        // Forward-from-eventtype-to-endpoint subscriptions
-        var createdSubscriptions = new List<SubscriptionSnapshot>();
-        foreach (var eventType in endpoint.EventTypesProduced)
-        {
-            var consumers = _platform.Endpoints
-                .Where(x => x.EventTypesConsumed.Contains(eventType))
-                .ToList();
-
-            foreach (var consumer in consumers)
-            {
-                var existing = createdSubscriptions
-                    .FirstOrDefault(x => x.Name.Equals(consumer.Name, StringComparison.OrdinalIgnoreCase));
-
-                if (existing != null)
-                {
-                    existing.Rules.Add(new RuleSnapshot
-                    {
-                        Name = eventType.Id.ToLowerInvariant(),
-                        SubscriptionName = existing.Name.ToLowerInvariant()
-                    });
-                }
-                else
-                {
-                    createdSubscriptions.Add(new SubscriptionSnapshot
-                    {
-                        Name = consumer.Name.ToLowerInvariant(),
-                        Rules = new List<RuleSnapshot>
-                        {
-                            new RuleSnapshot
+                        Name = subscriptionName,
+                        Rules = subscription.Rules
+                            .Select(rule => new RuleSnapshot
                             {
-                                Name = eventType.Id.ToLowerInvariant(),
-                                SubscriptionName = consumer.Name.ToLowerInvariant()
-                            }
-                        }
-                    });
-                }
-            }
-        }
-
-        snapshot.Subscriptions.AddRange(createdSubscriptions);
-
-        // Dynamic-forward subscriptions (spec 022 D5). For each declared
-        // DynamicForward whose source is this topic, the provisioner creates an
-        // "AgentDyn-{target}" forward subscription carrying a "dyn-{eventTypeId}"
-        // rule (see ServiceBusTopologyProvisioner). These cannot be derived from
-        // the compiled event loop above, so without consulting DynamicForwards the
-        // audit would flag them deprecated and RemoveDeprecatedTopologyAsync would
-        // delete them — silently dropping every dynamically-typed event on the path.
-        var dynamicSubscriptions = new List<SubscriptionSnapshot>();
-        foreach (var forward in _platform.DynamicForwards
-            .Where(f => f.SourceEndpoint.Equals(endpointName, StringComparison.OrdinalIgnoreCase)))
-        {
-            var subName = $"agentdyn-{forward.TargetEndpoint.ToLowerInvariant()}";
-            var ruleName = $"dyn-{forward.EventTypeId.ToLowerInvariant()}";
-
-            var existing = dynamicSubscriptions
-                .FirstOrDefault(x => x.Name.Equals(subName, StringComparison.OrdinalIgnoreCase));
-
-            if (existing != null)
-            {
-                if (!existing.Rules.Any(r => r.Name.Equals(ruleName, StringComparison.OrdinalIgnoreCase)))
-                {
-                    existing.Rules.Add(new RuleSnapshot { Name = ruleName, SubscriptionName = subName });
-                }
-            }
-            else
-            {
-                dynamicSubscriptions.Add(new SubscriptionSnapshot
-                {
-                    Name = subName,
-                    Rules = new List<RuleSnapshot>
-                    {
-                        new RuleSnapshot { Name = ruleName, SubscriptionName = subName }
-                    }
-                });
-            }
-        }
-
-        snapshot.Subscriptions.AddRange(dynamicSubscriptions);
-        return snapshot;
+                                Name = rule.Name.ToLowerInvariant(),
+                                SubscriptionName = subscriptionName,
+                            })
+                            .ToList(),
+                    };
+                })
+                .ToList(),
+        };
     }
 
     /// <summary>

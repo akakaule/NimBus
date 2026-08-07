@@ -14,7 +14,13 @@ public sealed class CosmosDbMessageStoreOptions
     /// <summary>Sentinel meaning "never expire" — the default, and the behaviour before this option existed.</summary>
     public const int UnlimitedRetentionDays = -1;
 
-    /// <summary>Largest supported retention, in whole days (one year).</summary>
+    /// <summary>
+    /// Largest supported retention, in whole days (one year). This is a deliberate product
+    /// bound, not a technical ceiling: Cosmos stores <c>ttl</c> as integer seconds and would
+    /// accept up to 24 855 days. One year was chosen so that the longest retention an operator
+    /// can configure for a payload-bearing unresolved row does not exceed the retention of the
+    /// audit documents that describe it. Raising it is a product decision, not a bug fix.
+    /// </summary>
     public const int MaxRetentionDays = 365;
 
     private const int SecondsPerDay = 86_400;

@@ -53,6 +53,12 @@ an explicit operator decision.
 | Valid values | `-1` (unlimited — the default) or `1`–`365` whole days |
 | Recommended when a bound is required | `180` or `365` |
 
+The one-year maximum is a deliberate product bound, not a Cosmos limit — Cosmos
+stores `ttl` as integer seconds and would accept far longer windows. It keeps the
+longest configurable retention of a payload-bearing unresolved row at or below the
+one-year retention of the audit documents that describe it. Operators who need a
+longer window keep the default, `-1` (unlimited).
+
 ```csharp
 nimbus.AddCosmosDbMessageStore(options => options.UnresolvedRetentionDays = 365);
 ```

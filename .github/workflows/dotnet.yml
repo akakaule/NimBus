@@ -32,8 +32,27 @@ jobs:
           --health-retries 10
           --health-start-period 30s
 
+      # Cosmos DB emulator (vNext) for the Cosmos message store conformance suite.
+      # Unlike SQL, this one is NOT optional: NIMBUS_COSMOS_TEST_REQUIRED below turns a
+      # missing/unreachable emulator into a failing run instead of a silently skipped
+      # suite, so a green build actually means the Cosmos provider conforms.
+      cosmos:
+        image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-latest
+        env:
+          PROTOCOL: https
+        ports:
+          - 8081:8081
+          - 8080:8080
+
     env:
       NIMBUS_SQL_TEST_CONNECTION: "Server=localhost,1433;User ID=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;Database=master"
+      # The emulator's well-known public key; DisableServerCertificateValidation replaces
+      # importing its self-signed certificate into the runner's trust store.
+      NIMBUS_COSMOS_TEST_CONNECTION: "AccountEndpoint=https://localhost:8081/;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==;DisableServerCertificateValidation=True;"
+      # The emulator container exposes only the gateway; Direct mode would try to reach
+      # partition addresses that are not published.
+      NIMBUS_COSMOS_TEST_GATEWAY: "1"
+      NIMBUS_COSMOS_TEST_REQUIRED: "1"
 
     steps:
     - uses: actions/checkout@v4
@@ -49,5 +68,25 @@ jobs:
       run: dotnet restore src/NimBus.sln
     - name: Build
       run: dotnet build src/NimBus.sln --no-restore --configuration Release
+    - name: Wait for Cosmos DB emulator
+      # The gateway on 8081 answers almost immediately, so it is not a readiness signal;
+      # the documented health probe on 8080 is. Probe both schemes so readiness does not
+      # itself become a bet on which one the probe endpoint serves.
+      run: |
+        timeout 300 bash -c 'until curl -sf http://localhost:8080/ready >/dev/null \
+          || curl -sfk https://localhost:8080/ready >/dev/null; do sleep 5; done'
+    - name: Cosmos DB conformance (must not skip)
+      # The evidence gate for the Cosmos provider: a suite that skips itself reports green
+      # without having conformed to anything. Run on its own — a solution-wide skip count
+      # is useless here because other suites (Service Bus, Identity) legitimately skip.
+      run: |
+        dotnet test tests/NimBus.MessageStore.CosmosDb.Tests --no-build --configuration Release \
+          --logger "trx;LogFileName=cosmos.trx" --results-directory TestResults
+        skipped=$(grep -o 'outcome="\(NotExecuted\|Inconclusive\)"' TestResults/cosmos.trx | wc -l)
+        echo "Cosmos tests not executed: $skipped"
+        if [ "$skipped" != "0" ]; then
+          echo "::error::$skipped Cosmos test(s) did not execute; the live conformance suite must run in CI."
+          exit 1
+        fi
     - name: Test
       run: dotnet test src/NimBus.sln --no-build --configuration Release --verbosity normal

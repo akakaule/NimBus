@@ -3,6 +3,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.Azure.Cosmos;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Newtonsoft.Json.Linq;
 using NimBus.MessageStore.States;
 
 namespace NimBus.MessageStore.CosmosDb.Tests;
@@ -40,9 +41,14 @@ public sealed class CosmosDbEndpointContainerTtlTests
             Assert.AreEqual(-1, properties.DefaultTimeToLive,
                 "Cosmos honours a document ttl only when the container's DefaultTimeToLive is set.");
 
-            var document = await container.ReadItemAsync<System.Text.Json.JsonElement>(
+            // JObject, not System.Text.Json.JsonElement: the Cosmos SDK's default serializer is
+            // Newtonsoft-based, and it cannot materialise a JsonElement — it would hand back an
+            // Undefined element whose GetProperty("ttl") throws before any assertion ran.
+            var document = await container.ReadItemAsync<JObject>(
                 "event-1_session-1", new PartitionKey("event-1_session-1"));
-            Assert.AreEqual(86_400, document.Resource.GetProperty("ttl").GetInt32(),
+            var ttl = document.Resource["ttl"];
+            Assert.IsNotNull(ttl, "The stored document carries no ttl property.");
+            Assert.AreEqual(86_400, ttl.Value<int>(),
                 "One day of retention is 86 400 seconds.");
         }
         finally

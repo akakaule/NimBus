@@ -104,6 +104,7 @@ public sealed class AdminAsyncApiExportTests
         return new AdminImplementation(
             accessor,
             adminService: null!,
+            subscriptionAdminService: null!,
             platform,
             configuration: null!,
             auditLogService: null!,

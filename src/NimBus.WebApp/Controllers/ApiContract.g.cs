@@ -1180,6 +1180,79 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<TopologyCleanupResult>> PostAdminTopologyRemoveDeprecatedAsync(string endpointName);
 
         /// <summary>
+        /// Message counts per Service Bus topic across the namespace
+        /// </summary>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<ServiceBusTopicOverview>>> GetAdminServicebusTopicsAsync();
+
+        /// <summary>
+        /// Message counts and settings per subscription on a topic
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<ServiceBusSubscriptionInfo>>> GetAdminServicebusSubscriptionsAsync(string topicName);
+
+        /// <summary>
+        /// Pause or resume delivery on a single subscription
+        /// </summary>
+
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionStatusAsync(SubscriptionStatusRequest body, string topicName, string subscriptionName);
+
+        /// <summary>
+        /// Drain all messages from a subscription with a receiver
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminServicebusSubscriptionPurgeAsync(string topicName, string subscriptionName);
+
+        /// <summary>
+        /// Delete and re-provision a subscription, discarding its backlog
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionRecreateAsync(string topicName, string subscriptionName);
+
+        /// <summary>
+        /// Delete a subscription without recreating it
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SubscriptionActionResult>> DeleteAdminServicebusSubscriptionAsync(string topicName, string subscriptionName);
+
+        /// <summary>
+        /// Detach a rule so no new messages enter the subscription
+        /// </summary>
+
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SubscriptionActionResult>> DeleteAdminServicebusSubscriptionRuleAsync(string topicName, string subscriptionName, string ruleName);
+
+        /// <summary>
+        /// Re-attach any expected rules missing from a subscription
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionRestoreRulesAsync(string topicName, string subscriptionName);
+
+        /// <summary>
         /// Preview failed messages eligible for bulk resubmit
         /// </summary>
 
@@ -1388,6 +1461,94 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.PostAdminTopologyRemoveDeprecatedAsync(endpointName);
+        }
+
+        /// <summary>
+        /// Message counts per Service Bus topic across the namespace
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/admin/servicebus/topics")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<ServiceBusTopicOverview>>> GetAdminServicebusTopics()
+        {
+
+            return _implementation.GetAdminServicebusTopicsAsync();
+        }
+
+        /// <summary>
+        /// Message counts and settings per subscription on a topic
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/admin/servicebus/topics/{topicName}/subscriptions")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<ServiceBusSubscriptionInfo>>> GetAdminServicebusSubscriptions(string topicName)
+        {
+
+            return _implementation.GetAdminServicebusSubscriptionsAsync(topicName);
+        }
+
+        /// <summary>
+        /// Pause or resume delivery on a single subscription
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/status")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionStatus([Microsoft.AspNetCore.Mvc.FromBody] SubscriptionStatusRequest body, string topicName, string subscriptionName)
+        {
+
+            return _implementation.PostAdminServicebusSubscriptionStatusAsync(body, topicName, subscriptionName);
+        }
+
+        /// <summary>
+        /// Drain all messages from a subscription with a receiver
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/purge")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminServicebusSubscriptionPurge(string topicName, string subscriptionName)
+        {
+
+            return _implementation.PostAdminServicebusSubscriptionPurgeAsync(topicName, subscriptionName);
+        }
+
+        /// <summary>
+        /// Delete and re-provision a subscription, discarding its backlog
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/recreate")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionRecreate(string topicName, string subscriptionName)
+        {
+
+            return _implementation.PostAdminServicebusSubscriptionRecreateAsync(topicName, subscriptionName);
+        }
+
+        /// <summary>
+        /// Delete a subscription without recreating it
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpDelete, Microsoft.AspNetCore.Mvc.Route("api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SubscriptionActionResult>> DeleteAdminServicebusSubscription(string topicName, string subscriptionName)
+        {
+
+            return _implementation.DeleteAdminServicebusSubscriptionAsync(topicName, subscriptionName);
+        }
+
+        /// <summary>
+        /// Detach a rule so no new messages enter the subscription
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpDelete, Microsoft.AspNetCore.Mvc.Route("api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/rules/{ruleName}")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SubscriptionActionResult>> DeleteAdminServicebusSubscriptionRule(string topicName, string subscriptionName, string ruleName)
+        {
+
+            return _implementation.DeleteAdminServicebusSubscriptionRuleAsync(topicName, subscriptionName, ruleName);
+        }
+
+        /// <summary>
+        /// Re-attach any expected rules missing from a subscription
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/restore-rules")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionRestoreRules(string topicName, string subscriptionName)
+        {
+
+            return _implementation.PostAdminServicebusSubscriptionRestoreRulesAsync(topicName, subscriptionName);
         }
 
         /// <summary>
@@ -7348,6 +7509,670 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class ServiceBusTopicOverview : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _name;
+        private bool _isSystemTopic;
+        private bool _isKnownToPlatform;
+        private string _status;
+        private int _subscriptionCount;
+        private long _activeMessageCount;
+        private long _deadLetterMessageCount;
+        private long _transferMessageCount;
+        private long _transferDeadLetterMessageCount;
+        private long _scheduledMessageCount;
+        private long _sizeInBytes;
+
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The platform's own Resolver topic rather than an endpoint topic
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("isSystemTopic", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool IsSystemTopic    {
+            get { return _isSystemTopic; }
+            set
+            {
+                if (_isSystemTopic != value)
+                {
+                    _isSystemTopic = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// False for a topic with no matching platform endpoint
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("isKnownToPlatform", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool IsKnownToPlatform    {
+            get { return _isKnownToPlatform; }
+            set
+            {
+                if (_isKnownToPlatform != value)
+                {
+                    _isKnownToPlatform = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Service Bus EntityStatus: Active | SendDisabled | ReceiveDisabled | Disabled
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("status", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Status    {
+            get { return _status; }
+            set
+            {
+                if (_status != value)
+                {
+                    _status = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("subscriptionCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int SubscriptionCount    {
+            get { return _subscriptionCount; }
+            set
+            {
+                if (_subscriptionCount != value)
+                {
+                    _subscriptionCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("activeMessageCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long ActiveMessageCount    {
+            get { return _activeMessageCount; }
+            set
+            {
+                if (_activeMessageCount != value)
+                {
+                    _activeMessageCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("deadLetterMessageCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long DeadLetterMessageCount    {
+            get { return _deadLetterMessageCount; }
+            set
+            {
+                if (_deadLetterMessageCount != value)
+                {
+                    _deadLetterMessageCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Messages awaiting auto-forward out of this topic's subscriptions
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("transferMessageCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long TransferMessageCount    {
+            get { return _transferMessageCount; }
+            set
+            {
+                if (_transferMessageCount != value)
+                {
+                    _transferMessageCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Messages Service Bus could not auto-forward. Azure strands these in a separate transfer dead-letter queue, so a page reporting only the regular one reads as "zero dead letters" in exactly the failed-forwarding incident this view diagnoses.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("transferDeadLetterMessageCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long TransferDeadLetterMessageCount    {
+            get { return _transferDeadLetterMessageCount; }
+            set
+            {
+                if (_transferDeadLetterMessageCount != value)
+                {
+                    _transferDeadLetterMessageCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("scheduledMessageCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long ScheduledMessageCount    {
+            get { return _scheduledMessageCount; }
+            set
+            {
+                if (_scheduledMessageCount != value)
+                {
+                    _scheduledMessageCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("sizeInBytes", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long SizeInBytes    {
+            get { return _sizeInBytes; }
+            set
+            {
+                if (_sizeInBytes != value)
+                {
+                    _sizeInBytes = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static ServiceBusTopicOverview FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<ServiceBusTopicOverview>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class ServiceBusSubscriptionInfo : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _name;
+        private string _topicName;
+        private string _status;
+        private bool _requiresSession;
+        private string _forwardTo;
+        private string _expectedForwardTo;
+        private System.Collections.Generic.List<string> _ruleNames;
+        private System.Collections.Generic.List<string> _missingRuleNames;
+        private System.Collections.Generic.List<string> _detachableRuleNames;
+        private bool _canRecreate;
+        private long _activeMessageCount;
+        private long _deadLetterMessageCount;
+        private long _transferMessageCount;
+        private long _transferDeadLetterMessageCount;
+        private long _totalMessageCount;
+        private System.DateTime _accessedAt;
+
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("topicName", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string TopicName    {
+            get { return _topicName; }
+            set
+            {
+                if (_topicName != value)
+                {
+                    _topicName = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Service Bus EntityStatus: Active | ReceiveDisabled | Disabled
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("status", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Status    {
+            get { return _status; }
+            set
+            {
+                if (_status != value)
+                {
+                    _status = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("requiresSession", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool RequiresSession    {
+            get { return _requiresSession; }
+            set
+            {
+                if (_requiresSession != value)
+                {
+                    _requiresSession = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Auto-forward destination; null for a terminal subscription
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("forwardTo", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ForwardTo    {
+            get { return _forwardTo; }
+            set
+            {
+                if (_forwardTo != value)
+                {
+                    _forwardTo = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Where the platform topology says this subscription should forward. When set and forwardTo is null, forwarding is detached — a paused subscription, or a pause that was never resumed.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("expectedForwardTo", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ExpectedForwardTo    {
+            get { return _expectedForwardTo; }
+            set
+            {
+                if (_expectedForwardTo != value)
+                {
+                    _expectedForwardTo = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("ruleNames", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> RuleNames    {
+            get { return _ruleNames; }
+            set
+            {
+                if (_ruleNames != value)
+                {
+                    _ruleNames = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Expected rules absent from the subscription (detached, or never created)
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("missingRuleNames", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> MissingRuleNames    {
+            get { return _missingRuleNames; }
+            set
+            {
+                if (_missingRuleNames != value)
+                {
+                    _missingRuleNames = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Rules the platform topology can put back, and therefore the only ones safe to offer as a reversible detach.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("detachableRuleNames", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> DetachableRuleNames    {
+            get { return _detachableRuleNames; }
+            set
+            {
+                if (_detachableRuleNames != value)
+                {
+                    _detachableRuleNames = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether the platform has a recipe to rebuild this subscription after deletion
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("canRecreate", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool CanRecreate    {
+            get { return _canRecreate; }
+            set
+            {
+                if (_canRecreate != value)
+                {
+                    _canRecreate = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("activeMessageCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long ActiveMessageCount    {
+            get { return _activeMessageCount; }
+            set
+            {
+                if (_activeMessageCount != value)
+                {
+                    _activeMessageCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("deadLetterMessageCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long DeadLetterMessageCount    {
+            get { return _deadLetterMessageCount; }
+            set
+            {
+                if (_deadLetterMessageCount != value)
+                {
+                    _deadLetterMessageCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("transferMessageCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long TransferMessageCount    {
+            get { return _transferMessageCount; }
+            set
+            {
+                if (_transferMessageCount != value)
+                {
+                    _transferMessageCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("transferDeadLetterMessageCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long TransferDeadLetterMessageCount    {
+            get { return _transferDeadLetterMessageCount; }
+            set
+            {
+                if (_transferDeadLetterMessageCount != value)
+                {
+                    _transferDeadLetterMessageCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("totalMessageCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long TotalMessageCount    {
+            get { return _totalMessageCount; }
+            set
+            {
+                if (_totalMessageCount != value)
+                {
+                    _totalMessageCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("accessedAt", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime AccessedAt    {
+            get { return _accessedAt; }
+            set
+            {
+                if (_accessedAt != value)
+                {
+                    _accessedAt = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static ServiceBusSubscriptionInfo FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<ServiceBusSubscriptionInfo>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class SubscriptionStatusRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private SubscriptionStatusRequestAction _action;
+
+        [Newtonsoft.Json.JsonProperty("action", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public SubscriptionStatusRequestAction Action    {
+            get { return _action; }
+            set
+            {
+                if (_action != value)
+                {
+                    _action = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static SubscriptionStatusRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<SubscriptionStatusRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class SubscriptionActionResult : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _topicName;
+        private string _subscriptionName;
+        private string _action;
+        private bool _succeeded;
+        private string _message;
+        private System.Collections.Generic.List<string> _rulesRestored;
+        private System.Collections.Generic.List<string> _errors;
+
+        [Newtonsoft.Json.JsonProperty("topicName", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string TopicName    {
+            get { return _topicName; }
+            set
+            {
+                if (_topicName != value)
+                {
+                    _topicName = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("subscriptionName", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SubscriptionName    {
+            get { return _subscriptionName; }
+            set
+            {
+                if (_subscriptionName != value)
+                {
+                    _subscriptionName = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("action", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Action    {
+            get { return _action; }
+            set
+            {
+                if (_action != value)
+                {
+                    _action = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("succeeded", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Succeeded    {
+            get { return _succeeded; }
+            set
+            {
+                if (_succeeded != value)
+                {
+                    _succeeded = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("message", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Message    {
+            get { return _message; }
+            set
+            {
+                if (_message != value)
+                {
+                    _message = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("rulesRestored", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> RulesRestored    {
+            get { return _rulesRestored; }
+            set
+            {
+                if (_rulesRestored != value)
+                {
+                    _rulesRestored = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("errors", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Errors    {
+            get { return _errors; }
+            set
+            {
+                if (_errors != value)
+                {
+                    _errors = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static SubscriptionActionResult FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<SubscriptionActionResult>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class BulkResubmitPreview : System.ComponentModel.INotifyPropertyChanged
     {
         private int _eligibleCount;
@@ -11133,6 +11958,15 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"reportEvent")]
         ReportEvent = 16,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"grantRole")]
+        GrantRole = 17,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"revokeRole")]
+        RevokeRole = 18,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"manageSubscription")]
+        ManageSubscription = 19,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -11298,6 +12132,18 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum SubscriptionStatusRequestAction
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"enable")]
+        Enable = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"disable")]
+        Disable = 1,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
     public enum AuditSearchFilterAuditType
     {
 
@@ -11351,6 +12197,15 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"reportEvent")]
         ReportEvent = 16,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"grantRole")]
+        GrantRole = 17,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"revokeRole")]
+        RevokeRole = 18,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"manageSubscription")]
+        ManageSubscription = 19,
 
     }
 
@@ -11462,6 +12317,15 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"reportEvent")]
         ReportEvent = 16,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"grantRole")]
+        GrantRole = 17,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"revokeRole")]
+        RevokeRole = 18,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"manageSubscription")]
+        ManageSubscription = 19,
 
     }
 

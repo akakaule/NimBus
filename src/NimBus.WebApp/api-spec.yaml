@@ -1270,6 +1270,234 @@ paths:
           description: Forbidden
         '404':
           description: Endpoint not found
+  /api/admin/servicebus/topics:
+    get:
+      summary: Message counts per Service Bus topic across the namespace
+      operationId: get-admin-servicebus-topics
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServiceBusTopicOverview'
+        '403':
+          description: Forbidden
+  '/api/admin/servicebus/topics/{topicName}/subscriptions':
+    parameters:
+      - schema:
+          type: string
+        name: topicName
+        in: path
+        required: true
+    get:
+      summary: Message counts and settings per subscription on a topic
+      operationId: get-admin-servicebus-subscriptions
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServiceBusSubscriptionInfo'
+        '403':
+          description: Forbidden
+        '404':
+          description: Topic not found
+  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/status':
+    parameters:
+      - schema:
+          type: string
+        name: topicName
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: subscriptionName
+        in: path
+        required: true
+    post:
+      summary: Pause or resume delivery on a single subscription
+      operationId: post-admin-servicebus-subscription-status
+      tags:
+        - Admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionStatusRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionActionResult'
+        '400':
+          description: Action must be 'enable' or 'disable'
+        '403':
+          description: Forbidden
+        '404':
+          description: Topic or subscription not found
+  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/purge':
+    parameters:
+      - schema:
+          type: string
+        name: topicName
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: subscriptionName
+        in: path
+        required: true
+    post:
+      summary: Drain all messages from a subscription with a receiver
+      operationId: post-admin-servicebus-subscription-purge
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkOperationResult'
+        '400':
+          description: Subscription auto-forwards and cannot be drained; recreate it instead
+        '403':
+          description: Forbidden
+        '404':
+          description: Topic or subscription not found
+  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/recreate':
+    parameters:
+      - schema:
+          type: string
+        name: topicName
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: subscriptionName
+        in: path
+        required: true
+    post:
+      summary: Delete and re-provision a subscription, discarding its backlog
+      operationId: post-admin-servicebus-subscription-recreate
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionActionResult'
+        '400':
+          description: Platform has no recipe for this subscription; it cannot be recreated
+        '403':
+          description: Forbidden
+        '404':
+          description: Topic or subscription not found
+  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}':
+    parameters:
+      - schema:
+          type: string
+        name: topicName
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: subscriptionName
+        in: path
+        required: true
+    delete:
+      summary: Delete a subscription without recreating it
+      operationId: delete-admin-servicebus-subscription
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionActionResult'
+        '403':
+          description: Forbidden
+        '404':
+          description: Topic or subscription not found
+  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/rules/{ruleName}':
+    parameters:
+      - schema:
+          type: string
+        name: topicName
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: subscriptionName
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: ruleName
+        in: path
+        required: true
+    delete:
+      summary: Detach a rule so no new messages enter the subscription
+      operationId: delete-admin-servicebus-subscription-rule
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionActionResult'
+        '403':
+          description: Forbidden
+        '404':
+          description: Topic, subscription or rule not found
+  '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/restore-rules':
+    parameters:
+      - schema:
+          type: string
+        name: topicName
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: subscriptionName
+        in: path
+        required: true
+    post:
+      summary: Re-attach any expected rules missing from a subscription
+      operationId: post-admin-servicebus-subscription-restore-rules
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionActionResult'
+        '400':
+          description: Platform has no recipe for this subscription
+        '403':
+          description: Forbidden
+        '404':
+          description: Topic or subscription not found
   '/api/admin/endpoint/{endpointId}/failed-preview':
     parameters:
       - schema:
@@ -2494,6 +2722,9 @@ components:
             - purgeMessages
             - compose
             - reportEvent
+            - grantRole
+            - revokeRole
+            - manageSubscription
         comment:
           type: string
           nullable: true
@@ -3082,6 +3313,139 @@ components:
           type: array
           items:
             type: string
+    ServiceBusTopicOverview:
+      title: ServiceBusTopicOverview
+      type: object
+      properties:
+        name:
+          type: string
+        isSystemTopic:
+          type: boolean
+          description: The platform's own Resolver topic rather than an endpoint topic
+        isKnownToPlatform:
+          type: boolean
+          description: False for a topic with no matching platform endpoint
+        status:
+          type: string
+          description: 'Service Bus EntityStatus: Active | SendDisabled | ReceiveDisabled | Disabled'
+        subscriptionCount:
+          type: integer
+        activeMessageCount:
+          type: integer
+          format: int64
+        deadLetterMessageCount:
+          type: integer
+          format: int64
+        transferMessageCount:
+          type: integer
+          format: int64
+          description: Messages awaiting auto-forward out of this topic's subscriptions
+        transferDeadLetterMessageCount:
+          type: integer
+          format: int64
+          description: >-
+            Messages Service Bus could not auto-forward. Azure strands these in a
+            separate transfer dead-letter queue, so a page reporting only the regular
+            one reads as "zero dead letters" in exactly the failed-forwarding incident
+            this view diagnoses.
+        scheduledMessageCount:
+          type: integer
+          format: int64
+        sizeInBytes:
+          type: integer
+          format: int64
+    ServiceBusSubscriptionInfo:
+      title: ServiceBusSubscriptionInfo
+      type: object
+      properties:
+        name:
+          type: string
+        topicName:
+          type: string
+        status:
+          type: string
+          description: 'Service Bus EntityStatus: Active | ReceiveDisabled | Disabled'
+        requiresSession:
+          type: boolean
+        forwardTo:
+          type: string
+          nullable: true
+          description: Auto-forward destination; null for a terminal subscription
+        expectedForwardTo:
+          type: string
+          nullable: true
+          description: >-
+            Where the platform topology says this subscription should forward. When
+            set and forwardTo is null, forwarding is detached — a paused subscription,
+            or a pause that was never resumed.
+        ruleNames:
+          type: array
+          items:
+            type: string
+        missingRuleNames:
+          type: array
+          items:
+            type: string
+          description: Expected rules absent from the subscription (detached, or never created)
+        detachableRuleNames:
+          type: array
+          items:
+            type: string
+          description: >-
+            Rules the platform topology can put back, and therefore the only ones
+            safe to offer as a reversible detach.
+        canRecreate:
+          type: boolean
+          description: Whether the platform has a recipe to rebuild this subscription after deletion
+        activeMessageCount:
+          type: integer
+          format: int64
+        deadLetterMessageCount:
+          type: integer
+          format: int64
+        transferMessageCount:
+          type: integer
+          format: int64
+        transferDeadLetterMessageCount:
+          type: integer
+          format: int64
+        totalMessageCount:
+          type: integer
+          format: int64
+        accessedAt:
+          type: string
+          format: date-time
+    SubscriptionStatusRequest:
+      title: SubscriptionStatusRequest
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+            - enable
+            - disable
+    SubscriptionActionResult:
+      title: SubscriptionActionResult
+      type: object
+      properties:
+        topicName:
+          type: string
+        subscriptionName:
+          type: string
+        action:
+          type: string
+        succeeded:
+          type: boolean
+        message:
+          type: string
+        rulesRestored:
+          type: array
+          items:
+            type: string
+        errors:
+          type: array
+          items:
+            type: string
     BulkResubmitPreview:
       title: BulkResubmitPreview
       type: object
@@ -3341,6 +3705,9 @@ components:
             - purgeMessages
             - compose
             - reportEvent
+            - grantRole
+            - revokeRole
+            - manageSubscription
         createdAtFrom:
           type: string
           format: date-time
@@ -3613,6 +3980,9 @@ components:
             - purgeMessages
             - compose
             - reportEvent
+            - grantRole
+            - revokeRole
+            - manageSubscription
         comment:
           type: string
           nullable: true

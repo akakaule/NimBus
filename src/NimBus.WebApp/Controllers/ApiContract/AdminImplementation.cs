@@ -10,6 +10,7 @@ using Newtonsoft.Json;
 using NimBus.Core;
 using NimBus.MessageStore;
 using NimBus.ServiceBus.AsyncApi;
+using NimBus.ServiceBus.Provisioning;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
 using AsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
@@ -19,6 +20,7 @@ namespace NimBus.WebApp.Controllers.ApiContract;
 public class AdminImplementation : IAdminApiController
 {
     private readonly IAdminService _adminService;
+    private readonly ISubscriptionAdminService _subscriptionAdminService;
     private readonly IPlatform _platform;
     private readonly IConfiguration _configuration;
     private readonly HttpContext _context;
@@ -28,12 +30,14 @@ public class AdminImplementation : IAdminApiController
     public AdminImplementation(
         IHttpContextAccessor contextAccessor,
         IAdminService adminService,
+        ISubscriptionAdminService subscriptionAdminService,
         IPlatform platform,
         IConfiguration configuration,
         IAuditLogService auditLogService,
         IEndpointAuthorizationService authorizationService)
     {
         _adminService = adminService;
+        _subscriptionAdminService = subscriptionAdminService;
         _platform = platform;
         _configuration = configuration;
         _context = contextAccessor.HttpContext;
@@ -212,6 +216,133 @@ public class AdminImplementation : IAdminApiController
         var result = await _adminService.DeleteAllEventsAsync(endpointId);
         return new OkObjectResult(result);
     }
+
+    // ───────────── Service Bus subscriptions ─────────────
+    //
+    // Listing is allowed for any topic in the namespace, including ones outside the
+    // platform topology — the overview lists them deliberately, so a stray topic sitting
+    // on a backlog is visible. Every mutation is gated on the topic being one NimBus owns:
+    // acting on someone else's entity from here would be a surprise with no way back.
+
+    public async Task<ActionResult<IEnumerable<ServiceBusTopicOverview>>> GetAdminServicebusTopicsAsync()
+    {
+        if (!await IsSiteOwnerAsync())
+            return new ForbidResult();
+
+        var result = await _subscriptionAdminService.GetTopicOverviewAsync();
+        return new OkObjectResult(result);
+    }
+
+    public async Task<ActionResult<IEnumerable<ServiceBusSubscriptionInfo>>> GetAdminServicebusSubscriptionsAsync(string topicName)
+    {
+        if (!await IsSiteOwnerAsync())
+            return new ForbidResult();
+
+        var result = await _subscriptionAdminService.GetSubscriptionsAsync(topicName);
+        return new OkObjectResult(result);
+    }
+
+    public Task<ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionStatusAsync(
+        SubscriptionStatusRequest body, string topicName, string subscriptionName) =>
+        MutateSubscriptionAsync(topicName, subscriptionName,
+            body?.Action == SubscriptionStatusRequestAction.Enable ? "resume" : "pause",
+            () => _subscriptionAdminService.SetSubscriptionStatusAsync(
+                topicName, subscriptionName, body?.Action == SubscriptionStatusRequestAction.Enable));
+
+    public async Task<ActionResult<BulkOperationResult>> PostAdminServicebusSubscriptionPurgeAsync(
+        string topicName, string subscriptionName)
+    {
+        var denied = await GuardSubscriptionMutationAsync(topicName, subscriptionName, "purge");
+        if (denied is not null) return denied;
+
+        try
+        {
+            var result = await _subscriptionAdminService.PurgeSubscriptionAsync(topicName, subscriptionName);
+            await LogSubscriptionAuditAsync(topicName, subscriptionName, "purge");
+            return new OkObjectResult(result);
+        }
+        catch (SubscriptionNotFoundException exception)
+        {
+            return new NotFoundObjectResult(exception.Message);
+        }
+        catch (SubscriptionPurgeNotSupportedException exception)
+        {
+            return new BadRequestObjectResult(exception.Message);
+        }
+    }
+
+    public Task<ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionRecreateAsync(
+        string topicName, string subscriptionName) =>
+        MutateSubscriptionAsync(topicName, subscriptionName, "recreate",
+            () => _subscriptionAdminService.RecreateSubscriptionAsync(topicName, subscriptionName));
+
+    public Task<ActionResult<SubscriptionActionResult>> DeleteAdminServicebusSubscriptionAsync(
+        string topicName, string subscriptionName) =>
+        MutateSubscriptionAsync(topicName, subscriptionName, "delete",
+            () => _subscriptionAdminService.DeleteSubscriptionAsync(topicName, subscriptionName));
+
+    public Task<ActionResult<SubscriptionActionResult>> DeleteAdminServicebusSubscriptionRuleAsync(
+        string topicName, string subscriptionName, string ruleName) =>
+        MutateSubscriptionAsync(topicName, subscriptionName, $"detach-rule:{ruleName}",
+            () => _subscriptionAdminService.DeleteRuleAsync(topicName, subscriptionName, ruleName));
+
+    public Task<ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionRestoreRulesAsync(
+        string topicName, string subscriptionName) =>
+        MutateSubscriptionAsync(topicName, subscriptionName, "restore-rules",
+            () => _subscriptionAdminService.RestoreRulesAsync(topicName, subscriptionName));
+
+    /// <summary>
+    /// Authorization, ownership and audit around one mutating subscription action, with the
+    /// service's typed failures mapped to status codes rather than surfacing as a 500.
+    /// </summary>
+    private async Task<ActionResult<SubscriptionActionResult>> MutateSubscriptionAsync(
+        string topicName,
+        string subscriptionName,
+        string action,
+        Func<Task<SubscriptionActionResult>> mutate)
+    {
+        var denied = await GuardSubscriptionMutationAsync(topicName, subscriptionName, action);
+        if (denied is not null) return denied;
+
+        try
+        {
+            var result = await mutate();
+            await LogSubscriptionAuditAsync(topicName, subscriptionName, action);
+            return new OkObjectResult(result);
+        }
+        catch (SubscriptionNotFoundException exception)
+        {
+            return new NotFoundObjectResult(exception.Message);
+        }
+        catch (SubscriptionNotDescribableException exception)
+        {
+            return new BadRequestObjectResult(exception.Message);
+        }
+    }
+
+    private async Task<ActionResult> GuardSubscriptionMutationAsync(string topicName, string subscriptionName, string action)
+    {
+        if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.ManageSubscription, _context,
+                accessDenied: true,
+                data: JsonConvert.SerializeObject(new { topicName, subscriptionName, action }));
+            return new ForbidResult();
+        }
+
+        if (!IsPlatformTopic(topicName))
+            return new NotFoundObjectResult($"Topic '{topicName}' is not part of the platform topology.");
+
+        return null;
+    }
+
+    private Task LogSubscriptionAuditAsync(string topicName, string subscriptionName, string action) =>
+        _auditLogService.LogAuditAsync(MessageAuditType.ManageSubscription, _context,
+            data: JsonConvert.SerializeObject(new { topicName, subscriptionName, action }));
+
+    private bool IsPlatformTopic(string topicName) =>
+        TopologyDescriptor.IsSystemTopic(topicName)
+        || EndpointVerificationService.EndpointExists(_platform, topicName);
 
     // ───────────── Advanced Operations ─────────────
 

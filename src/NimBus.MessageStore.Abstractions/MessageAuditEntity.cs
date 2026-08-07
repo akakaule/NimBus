@@ -107,5 +107,12 @@ namespace NimBus.MessageStore
 
         /// <summary>Operator revoked an access-control role (spec 026; scope/role/entry recorded as Data).</summary>
         RevokeRole,
+
+        /// <summary>
+        /// Operator changed a Service Bus subscription from Admin → Subscriptions
+        /// (pause, resume, purge, delete, recreate, rule detach/restore). The topic,
+        /// subscription and action are recorded as Data.
+        /// </summary>
+        ManageSubscription,
     }
 }

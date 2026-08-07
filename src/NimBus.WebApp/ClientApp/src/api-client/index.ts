@@ -2687,6 +2687,463 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Message counts per Service Bus topic across the namespace
+     * @return OK
+     */
+    getAdminServicebusTopics(): Promise<ServiceBusTopicOverview[]> {
+        let url_ = this.baseUrl + "/api/admin/servicebus/topics";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminServicebusTopics(_response);
+        });
+    }
+
+    protected processGetAdminServicebusTopics(response: Response): Promise<ServiceBusTopicOverview[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(ServiceBusTopicOverview.fromJS(item));
+            }
+            else {
+                result200 = null as any;
+            }
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<ServiceBusTopicOverview[]>(null as any);
+    }
+
+    /**
+     * Message counts and settings per subscription on a topic
+     * @return OK
+     */
+    getAdminServicebusSubscriptions(topicName: string): Promise<ServiceBusSubscriptionInfo[]> {
+        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions";
+        if (topicName === undefined || topicName === null)
+            throw new globalThis.Error("The parameter 'topicName' must be defined.");
+        url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminServicebusSubscriptions(_response);
+        });
+    }
+
+    protected processGetAdminServicebusSubscriptions(response: Response): Promise<ServiceBusSubscriptionInfo[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(ServiceBusSubscriptionInfo.fromJS(item));
+            }
+            else {
+                result200 = null as any;
+            }
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Topic not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<ServiceBusSubscriptionInfo[]>(null as any);
+    }
+
+    /**
+     * Pause or resume delivery on a single subscription
+     * @param body (optional) 
+     * @return OK
+     */
+    postAdminServicebusSubscriptionStatus(topicName: string, subscriptionName: string, body?: SubscriptionStatusRequest | undefined): Promise<SubscriptionActionResult> {
+        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/status";
+        if (topicName === undefined || topicName === null)
+            throw new globalThis.Error("The parameter 'topicName' must be defined.");
+        url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
+        if (subscriptionName === undefined || subscriptionName === null)
+            throw new globalThis.Error("The parameter 'subscriptionName' must be defined.");
+        url_ = url_.replace("{subscriptionName}", encodeURIComponent("" + subscriptionName));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminServicebusSubscriptionStatus(_response);
+        });
+    }
+
+    protected processPostAdminServicebusSubscriptionStatus(response: Response): Promise<SubscriptionActionResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SubscriptionActionResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Action must be \'enable\' or \'disable\'", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SubscriptionActionResult>(null as any);
+    }
+
+    /**
+     * Drain all messages from a subscription with a receiver
+     * @return OK
+     */
+    postAdminServicebusSubscriptionPurge(topicName: string, subscriptionName: string): Promise<BulkOperationResult> {
+        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/purge";
+        if (topicName === undefined || topicName === null)
+            throw new globalThis.Error("The parameter 'topicName' must be defined.");
+        url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
+        if (subscriptionName === undefined || subscriptionName === null)
+            throw new globalThis.Error("The parameter 'subscriptionName' must be defined.");
+        url_ = url_.replace("{subscriptionName}", encodeURIComponent("" + subscriptionName));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminServicebusSubscriptionPurge(_response);
+        });
+    }
+
+    protected processPostAdminServicebusSubscriptionPurge(response: Response): Promise<BulkOperationResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = BulkOperationResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Subscription auto-forwards and cannot be drained; recreate it instead", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<BulkOperationResult>(null as any);
+    }
+
+    /**
+     * Delete and re-provision a subscription, discarding its backlog
+     * @return OK
+     */
+    postAdminServicebusSubscriptionRecreate(topicName: string, subscriptionName: string): Promise<SubscriptionActionResult> {
+        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/recreate";
+        if (topicName === undefined || topicName === null)
+            throw new globalThis.Error("The parameter 'topicName' must be defined.");
+        url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
+        if (subscriptionName === undefined || subscriptionName === null)
+            throw new globalThis.Error("The parameter 'subscriptionName' must be defined.");
+        url_ = url_.replace("{subscriptionName}", encodeURIComponent("" + subscriptionName));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminServicebusSubscriptionRecreate(_response);
+        });
+    }
+
+    protected processPostAdminServicebusSubscriptionRecreate(response: Response): Promise<SubscriptionActionResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SubscriptionActionResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Platform has no recipe for this subscription; it cannot be recreated", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SubscriptionActionResult>(null as any);
+    }
+
+    /**
+     * Delete a subscription without recreating it
+     * @return OK
+     */
+    deleteAdminServicebusSubscription(topicName: string, subscriptionName: string): Promise<SubscriptionActionResult> {
+        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}";
+        if (topicName === undefined || topicName === null)
+            throw new globalThis.Error("The parameter 'topicName' must be defined.");
+        url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
+        if (subscriptionName === undefined || subscriptionName === null)
+            throw new globalThis.Error("The parameter 'subscriptionName' must be defined.");
+        url_ = url_.replace("{subscriptionName}", encodeURIComponent("" + subscriptionName));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "DELETE",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processDeleteAdminServicebusSubscription(_response);
+        });
+    }
+
+    protected processDeleteAdminServicebusSubscription(response: Response): Promise<SubscriptionActionResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SubscriptionActionResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SubscriptionActionResult>(null as any);
+    }
+
+    /**
+     * Detach a rule so no new messages enter the subscription
+     * @return OK
+     */
+    deleteAdminServicebusSubscriptionRule(topicName: string, subscriptionName: string, ruleName: string): Promise<SubscriptionActionResult> {
+        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/rules/{ruleName}";
+        if (topicName === undefined || topicName === null)
+            throw new globalThis.Error("The parameter 'topicName' must be defined.");
+        url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
+        if (subscriptionName === undefined || subscriptionName === null)
+            throw new globalThis.Error("The parameter 'subscriptionName' must be defined.");
+        url_ = url_.replace("{subscriptionName}", encodeURIComponent("" + subscriptionName));
+        if (ruleName === undefined || ruleName === null)
+            throw new globalThis.Error("The parameter 'ruleName' must be defined.");
+        url_ = url_.replace("{ruleName}", encodeURIComponent("" + ruleName));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "DELETE",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processDeleteAdminServicebusSubscriptionRule(_response);
+        });
+    }
+
+    protected processDeleteAdminServicebusSubscriptionRule(response: Response): Promise<SubscriptionActionResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SubscriptionActionResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Topic, subscription or rule not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SubscriptionActionResult>(null as any);
+    }
+
+    /**
+     * Re-attach any expected rules missing from a subscription
+     * @return OK
+     */
+    postAdminServicebusSubscriptionRestoreRules(topicName: string, subscriptionName: string): Promise<SubscriptionActionResult> {
+        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/restore-rules";
+        if (topicName === undefined || topicName === null)
+            throw new globalThis.Error("The parameter 'topicName' must be defined.");
+        url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
+        if (subscriptionName === undefined || subscriptionName === null)
+            throw new globalThis.Error("The parameter 'subscriptionName' must be defined.");
+        url_ = url_.replace("{subscriptionName}", encodeURIComponent("" + subscriptionName));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminServicebusSubscriptionRestoreRules(_response);
+        });
+    }
+
+    protected processPostAdminServicebusSubscriptionRestoreRules(response: Response): Promise<SubscriptionActionResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SubscriptionActionResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Platform has no recipe for this subscription", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Topic or subscription not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SubscriptionActionResult>(null as any);
+    }
+
+    /**
      * Preview failed messages eligible for bulk resubmit
      * @return OK
      */
@@ -8264,6 +8721,412 @@ export interface ITopologyCleanupResult {
     [key: string]: any;
 }
 
+export class ServiceBusTopicOverview implements IServiceBusTopicOverview {
+    name?: string;
+    /** The platform's own Resolver topic rather than an endpoint topic */
+    isSystemTopic?: boolean;
+    /** False for a topic with no matching platform endpoint */
+    isKnownToPlatform?: boolean;
+    /** Service Bus EntityStatus: Active | SendDisabled | ReceiveDisabled | Disabled */
+    status?: string;
+    subscriptionCount?: number;
+    activeMessageCount?: number;
+    deadLetterMessageCount?: number;
+    /** Messages awaiting auto-forward out of this topic's subscriptions */
+    transferMessageCount?: number;
+    /** Messages Service Bus could not auto-forward. Azure strands these in a separate transfer dead-letter queue, so a page reporting only the regular one reads as "zero dead letters" in exactly the failed-forwarding incident this view diagnoses. */
+    transferDeadLetterMessageCount?: number;
+    scheduledMessageCount?: number;
+    sizeInBytes?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IServiceBusTopicOverview) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.name = _data["name"];
+            this.isSystemTopic = _data["isSystemTopic"];
+            this.isKnownToPlatform = _data["isKnownToPlatform"];
+            this.status = _data["status"];
+            this.subscriptionCount = _data["subscriptionCount"];
+            this.activeMessageCount = _data["activeMessageCount"];
+            this.deadLetterMessageCount = _data["deadLetterMessageCount"];
+            this.transferMessageCount = _data["transferMessageCount"];
+            this.transferDeadLetterMessageCount = _data["transferDeadLetterMessageCount"];
+            this.scheduledMessageCount = _data["scheduledMessageCount"];
+            this.sizeInBytes = _data["sizeInBytes"];
+        }
+    }
+
+    static fromJS(data: any): ServiceBusTopicOverview {
+        data = typeof data === 'object' ? data : {};
+        let result = new ServiceBusTopicOverview();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["name"] = this.name;
+        data["isSystemTopic"] = this.isSystemTopic;
+        data["isKnownToPlatform"] = this.isKnownToPlatform;
+        data["status"] = this.status;
+        data["subscriptionCount"] = this.subscriptionCount;
+        data["activeMessageCount"] = this.activeMessageCount;
+        data["deadLetterMessageCount"] = this.deadLetterMessageCount;
+        data["transferMessageCount"] = this.transferMessageCount;
+        data["transferDeadLetterMessageCount"] = this.transferDeadLetterMessageCount;
+        data["scheduledMessageCount"] = this.scheduledMessageCount;
+        data["sizeInBytes"] = this.sizeInBytes;
+        return data;
+    }
+
+    clone(): ServiceBusTopicOverview {
+        const json = this.toJSON();
+        let result = new ServiceBusTopicOverview();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IServiceBusTopicOverview {
+    name?: string;
+    /** The platform's own Resolver topic rather than an endpoint topic */
+    isSystemTopic?: boolean;
+    /** False for a topic with no matching platform endpoint */
+    isKnownToPlatform?: boolean;
+    /** Service Bus EntityStatus: Active | SendDisabled | ReceiveDisabled | Disabled */
+    status?: string;
+    subscriptionCount?: number;
+    activeMessageCount?: number;
+    deadLetterMessageCount?: number;
+    /** Messages awaiting auto-forward out of this topic's subscriptions */
+    transferMessageCount?: number;
+    /** Messages Service Bus could not auto-forward. Azure strands these in a separate transfer dead-letter queue, so a page reporting only the regular one reads as "zero dead letters" in exactly the failed-forwarding incident this view diagnoses. */
+    transferDeadLetterMessageCount?: number;
+    scheduledMessageCount?: number;
+    sizeInBytes?: number;
+
+    [key: string]: any;
+}
+
+export class ServiceBusSubscriptionInfo implements IServiceBusSubscriptionInfo {
+    name?: string;
+    topicName?: string;
+    /** Service Bus EntityStatus: Active | ReceiveDisabled | Disabled */
+    status?: string;
+    requiresSession?: boolean;
+    /** Auto-forward destination; null for a terminal subscription */
+    forwardTo?: string | undefined;
+    /** Where the platform topology says this subscription should forward. When set and forwardTo is null, forwarding is detached — a paused subscription, or a pause that was never resumed. */
+    expectedForwardTo?: string | undefined;
+    ruleNames?: string[];
+    /** Expected rules absent from the subscription (detached, or never created) */
+    missingRuleNames?: string[];
+    /** Rules the platform topology can put back, and therefore the only ones safe to offer as a reversible detach. */
+    detachableRuleNames?: string[];
+    /** Whether the platform has a recipe to rebuild this subscription after deletion */
+    canRecreate?: boolean;
+    activeMessageCount?: number;
+    deadLetterMessageCount?: number;
+    transferMessageCount?: number;
+    transferDeadLetterMessageCount?: number;
+    totalMessageCount?: number;
+    accessedAt?: moment.Moment;
+
+    [key: string]: any;
+
+    constructor(data?: IServiceBusSubscriptionInfo) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.name = _data["name"];
+            this.topicName = _data["topicName"];
+            this.status = _data["status"];
+            this.requiresSession = _data["requiresSession"];
+            this.forwardTo = _data["forwardTo"];
+            this.expectedForwardTo = _data["expectedForwardTo"];
+            if (Array.isArray(_data["ruleNames"])) {
+                this.ruleNames = [] as any;
+                for (let item of _data["ruleNames"])
+                    this.ruleNames!.push(item);
+            }
+            if (Array.isArray(_data["missingRuleNames"])) {
+                this.missingRuleNames = [] as any;
+                for (let item of _data["missingRuleNames"])
+                    this.missingRuleNames!.push(item);
+            }
+            if (Array.isArray(_data["detachableRuleNames"])) {
+                this.detachableRuleNames = [] as any;
+                for (let item of _data["detachableRuleNames"])
+                    this.detachableRuleNames!.push(item);
+            }
+            this.canRecreate = _data["canRecreate"];
+            this.activeMessageCount = _data["activeMessageCount"];
+            this.deadLetterMessageCount = _data["deadLetterMessageCount"];
+            this.transferMessageCount = _data["transferMessageCount"];
+            this.transferDeadLetterMessageCount = _data["transferDeadLetterMessageCount"];
+            this.totalMessageCount = _data["totalMessageCount"];
+            this.accessedAt = _data["accessedAt"] ? moment(_data["accessedAt"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): ServiceBusSubscriptionInfo {
+        data = typeof data === 'object' ? data : {};
+        let result = new ServiceBusSubscriptionInfo();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["name"] = this.name;
+        data["topicName"] = this.topicName;
+        data["status"] = this.status;
+        data["requiresSession"] = this.requiresSession;
+        data["forwardTo"] = this.forwardTo;
+        data["expectedForwardTo"] = this.expectedForwardTo;
+        if (Array.isArray(this.ruleNames)) {
+            data["ruleNames"] = [];
+            for (let item of this.ruleNames)
+                data["ruleNames"].push(item);
+        }
+        if (Array.isArray(this.missingRuleNames)) {
+            data["missingRuleNames"] = [];
+            for (let item of this.missingRuleNames)
+                data["missingRuleNames"].push(item);
+        }
+        if (Array.isArray(this.detachableRuleNames)) {
+            data["detachableRuleNames"] = [];
+            for (let item of this.detachableRuleNames)
+                data["detachableRuleNames"].push(item);
+        }
+        data["canRecreate"] = this.canRecreate;
+        data["activeMessageCount"] = this.activeMessageCount;
+        data["deadLetterMessageCount"] = this.deadLetterMessageCount;
+        data["transferMessageCount"] = this.transferMessageCount;
+        data["transferDeadLetterMessageCount"] = this.transferDeadLetterMessageCount;
+        data["totalMessageCount"] = this.totalMessageCount;
+        data["accessedAt"] = this.accessedAt ? this.accessedAt.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): ServiceBusSubscriptionInfo {
+        const json = this.toJSON();
+        let result = new ServiceBusSubscriptionInfo();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IServiceBusSubscriptionInfo {
+    name?: string;
+    topicName?: string;
+    /** Service Bus EntityStatus: Active | ReceiveDisabled | Disabled */
+    status?: string;
+    requiresSession?: boolean;
+    /** Auto-forward destination; null for a terminal subscription */
+    forwardTo?: string | undefined;
+    /** Where the platform topology says this subscription should forward. When set and forwardTo is null, forwarding is detached — a paused subscription, or a pause that was never resumed. */
+    expectedForwardTo?: string | undefined;
+    ruleNames?: string[];
+    /** Expected rules absent from the subscription (detached, or never created) */
+    missingRuleNames?: string[];
+    /** Rules the platform topology can put back, and therefore the only ones safe to offer as a reversible detach. */
+    detachableRuleNames?: string[];
+    /** Whether the platform has a recipe to rebuild this subscription after deletion */
+    canRecreate?: boolean;
+    activeMessageCount?: number;
+    deadLetterMessageCount?: number;
+    transferMessageCount?: number;
+    transferDeadLetterMessageCount?: number;
+    totalMessageCount?: number;
+    accessedAt?: moment.Moment;
+
+    [key: string]: any;
+}
+
+export class SubscriptionStatusRequest implements ISubscriptionStatusRequest {
+    action?: SubscriptionStatusRequestAction;
+
+    [key: string]: any;
+
+    constructor(data?: ISubscriptionStatusRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.action = _data["action"];
+        }
+    }
+
+    static fromJS(data: any): SubscriptionStatusRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new SubscriptionStatusRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["action"] = this.action;
+        return data;
+    }
+
+    clone(): SubscriptionStatusRequest {
+        const json = this.toJSON();
+        let result = new SubscriptionStatusRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISubscriptionStatusRequest {
+    action?: SubscriptionStatusRequestAction;
+
+    [key: string]: any;
+}
+
+export class SubscriptionActionResult implements ISubscriptionActionResult {
+    topicName?: string;
+    subscriptionName?: string;
+    action?: string;
+    succeeded?: boolean;
+    message?: string;
+    rulesRestored?: string[];
+    errors?: string[];
+
+    [key: string]: any;
+
+    constructor(data?: ISubscriptionActionResult) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.topicName = _data["topicName"];
+            this.subscriptionName = _data["subscriptionName"];
+            this.action = _data["action"];
+            this.succeeded = _data["succeeded"];
+            this.message = _data["message"];
+            if (Array.isArray(_data["rulesRestored"])) {
+                this.rulesRestored = [] as any;
+                for (let item of _data["rulesRestored"])
+                    this.rulesRestored!.push(item);
+            }
+            if (Array.isArray(_data["errors"])) {
+                this.errors = [] as any;
+                for (let item of _data["errors"])
+                    this.errors!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): SubscriptionActionResult {
+        data = typeof data === 'object' ? data : {};
+        let result = new SubscriptionActionResult();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["topicName"] = this.topicName;
+        data["subscriptionName"] = this.subscriptionName;
+        data["action"] = this.action;
+        data["succeeded"] = this.succeeded;
+        data["message"] = this.message;
+        if (Array.isArray(this.rulesRestored)) {
+            data["rulesRestored"] = [];
+            for (let item of this.rulesRestored)
+                data["rulesRestored"].push(item);
+        }
+        if (Array.isArray(this.errors)) {
+            data["errors"] = [];
+            for (let item of this.errors)
+                data["errors"].push(item);
+        }
+        return data;
+    }
+
+    clone(): SubscriptionActionResult {
+        const json = this.toJSON();
+        let result = new SubscriptionActionResult();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISubscriptionActionResult {
+    topicName?: string;
+    subscriptionName?: string;
+    action?: string;
+    succeeded?: boolean;
+    message?: string;
+    rulesRestored?: string[];
+    errors?: string[];
+
+    [key: string]: any;
+}
+
 export class BulkResubmitPreview implements IBulkResubmitPreview {
     eligibleCount?: number;
     totalFailedCount?: number;
@@ -11327,6 +12190,9 @@ export enum MessageAuditAuditType {
     PurgeMessages = "purgeMessages",
     Compose = "compose",
     ReportEvent = "reportEvent",
+    GrantRole = "grantRole",
+    RevokeRole = "revokeRole",
+    ManageSubscription = "manageSubscription",
 }
 
 export class MessageContent implements IMessageContent {
@@ -11424,6 +12290,11 @@ export enum MessageSearchFilterMessageType {
     HandoffFailedRequest = "handoffFailedRequest",
 }
 
+export enum SubscriptionStatusRequestAction {
+    Enable = "enable",
+    Disable = "disable",
+}
+
 export enum AuditSearchFilterAuditType {
     Resubmit = "resubmit",
     ResubmitWithChanges = "resubmitWithChanges",
@@ -11442,6 +12313,9 @@ export enum AuditSearchFilterAuditType {
     PurgeMessages = "purgeMessages",
     Compose = "compose",
     ReportEvent = "reportEvent",
+    GrantRole = "grantRole",
+    RevokeRole = "revokeRole",
+    ManageSubscription = "manageSubscription",
 }
 
 export enum RoleEntryRole {
@@ -11483,6 +12357,9 @@ export enum AuditEntryAuditType {
     PurgeMessages = "purgeMessages",
     Compose = "compose",
     ReportEvent = "reportEvent",
+    GrantRole = "grantRole",
+    RevokeRole = "revokeRole",
+    ManageSubscription = "manageSubscription",
 }
 
 export enum AgentSettleRequestOutcome {

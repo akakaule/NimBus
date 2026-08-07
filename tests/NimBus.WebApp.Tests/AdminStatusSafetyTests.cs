@@ -285,6 +285,9 @@ public sealed class AdminStatusSafetyTests
                     services.AddHttpContextAccessor();
                     services.AddSingleton<IPlatform>(platform);
                     services.AddSingleton<IAdminService>(adminService);
+                    // Not exercised by these status-validation routes, but the controller
+                    // takes it, so activation needs something to resolve.
+                    services.AddSingleton<ISubscriptionAdminService>(new ThrowingSubscriptionAdminService());
                     services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
                     services.AddSingleton<IAuditLogService, NoOpAuditLogService>();
                     // Real resolution over the same in-memory store: the injected
@@ -338,6 +341,7 @@ public sealed class AdminStatusSafetyTests
         return new AdminImplementation(
             accessor,
             service,
+            subscriptionAdminService: null!,
             platform,
             configuration,
             new NoOpAuditLogService(),
@@ -354,6 +358,21 @@ public sealed class AdminStatusSafetyTests
             managerClient: null!,
             logger: NullLogger<AdminService>.Instance,
             rawCosmosClient: null);
+
+    private sealed class ThrowingSubscriptionAdminService : ISubscriptionAdminService
+    {
+        private static Task<T> Unexpected<T>() =>
+            throw new AssertFailedException("The controller reached the subscription admin for invalid input.");
+
+        public Task<IEnumerable<ServiceBusTopicOverview>> GetTopicOverviewAsync() => Unexpected<IEnumerable<ServiceBusTopicOverview>>();
+        public Task<IEnumerable<ServiceBusSubscriptionInfo>> GetSubscriptionsAsync(string topicName) => Unexpected<IEnumerable<ServiceBusSubscriptionInfo>>();
+        public Task<SubscriptionActionResult> SetSubscriptionStatusAsync(string topicName, string subscriptionName, bool enable) => Unexpected<SubscriptionActionResult>();
+        public Task<BulkOperationResult> PurgeSubscriptionAsync(string topicName, string subscriptionName) => Unexpected<BulkOperationResult>();
+        public Task<SubscriptionActionResult> RecreateSubscriptionAsync(string topicName, string subscriptionName) => Unexpected<SubscriptionActionResult>();
+        public Task<SubscriptionActionResult> DeleteSubscriptionAsync(string topicName, string subscriptionName) => Unexpected<SubscriptionActionResult>();
+        public Task<SubscriptionActionResult> DeleteRuleAsync(string topicName, string subscriptionName, string ruleName) => Unexpected<SubscriptionActionResult>();
+        public Task<SubscriptionActionResult> RestoreRulesAsync(string topicName, string subscriptionName) => Unexpected<SubscriptionActionResult>();
+    }
 
     private sealed class ThrowingAdminService : IAdminService
     {

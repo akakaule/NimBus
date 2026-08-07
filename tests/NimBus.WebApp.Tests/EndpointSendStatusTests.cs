@@ -184,6 +184,13 @@ public sealed class EndpointSendStatusTests
         public Task<bool> IsSubscriptionActive(string t, string s) => throw new NotSupportedException();
         public Task<SubscriptionState> GetSubscriptionState(string t, string s) => throw new NotSupportedException();
         public Task UpdateForwardTo(string t, string s, string f) => throw new NotSupportedException();
+        public Task UpdateSubscription(string t, string s, Azure.Messaging.ServiceBus.Administration.EntityStatus status, string f, bool c) => throw new NotSupportedException();
+        public Task<Azure.Messaging.ServiceBus.Administration.SubscriptionProperties> GetSubscription(string t, string s) => throw new NotSupportedException();
+        public IAsyncEnumerable<Azure.Messaging.ServiceBus.Administration.TopicProperties> ListTopicsAsync() => throw new NotSupportedException();
+        public IAsyncEnumerable<Azure.Messaging.ServiceBus.Administration.SubscriptionProperties> ListSubscriptionsAsync(string t) => throw new NotSupportedException();
+        public IAsyncEnumerable<Azure.Messaging.ServiceBus.Administration.RuleProperties> ListRulesAsync(string t, string s) => throw new NotSupportedException();
+        public IAsyncEnumerable<Azure.Messaging.ServiceBus.Administration.TopicRuntimeProperties> ListTopicRuntimePropertiesAsync() => throw new NotSupportedException();
+        public IAsyncEnumerable<Azure.Messaging.ServiceBus.Administration.SubscriptionRuntimeProperties> ListSubscriptionRuntimePropertiesAsync(string t) => throw new NotSupportedException();
     }
 
     private sealed record AuditEntry(MessageAuditType Type, bool AccessDenied, string? EndpointId);

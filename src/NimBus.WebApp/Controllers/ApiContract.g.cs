@@ -1057,6 +1057,10 @@ namespace NimBus.WebApp.ManagementApi
         /// Get application status and version
         /// </summary>
 
+        /// <remarks>
+        /// Answers anonymously so liveness probes and status monitors work without credentials, but every ApplicationStatus field is populated only for an authenticated caller — an anonymous caller gets an empty status object, so the response discloses nothing about the deployment.
+        /// </remarks>
+
         /// <returns>OK</returns>
 
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<ApplicationStatus>> GetApiAppStatsAsync();
@@ -1085,6 +1089,9 @@ namespace NimBus.WebApp.ManagementApi
         /// <summary>
         /// Get application status and version
         /// </summary>
+        /// <remarks>
+        /// Answers anonymously so liveness probes and status monitors work without credentials, but every ApplicationStatus field is populated only for an authenticated caller — an anonymous caller gets an empty status object, so the response discloses nothing about the deployment.
+        /// </remarks>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/app/stats")]
         public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<ApplicationStatus>> GetApiAppStats()
@@ -3931,6 +3938,9 @@ namespace NimBus.WebApp.ManagementApi
         }
     }
 
+    /// <summary>
+    /// Deployment status of the management WebApp. Every field is optional and is populated only for an authenticated caller; an anonymous caller receives an empty status object with all fields null or absent, so the anonymous liveness response discloses no deployment detail (GH#93).
+    /// </summary>
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class ApplicationStatus : System.ComponentModel.INotifyPropertyChanged
     {
@@ -3939,7 +3949,10 @@ namespace NimBus.WebApp.ManagementApi
         private string _storageProvider;
         private string _ticketLinkTemplate;
 
-        [Newtonsoft.Json.JsonProperty("env", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        /// <summary>
+        /// Configured environment name (e.g. "Production"). Populated only for authenticated callers; null or absent for anonymous callers.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("env", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string Env    {
             get { return _env; }
             set
@@ -3952,7 +3965,10 @@ namespace NimBus.WebApp.ManagementApi
             }
         }
 
-        [Newtonsoft.Json.JsonProperty("platformVersion", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        /// <summary>
+        /// NimBus platform product version. Populated only for authenticated callers; null or absent for anonymous callers.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("platformVersion", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string PlatformVersion    {
             get { return _platformVersion; }
             set
@@ -3966,9 +3982,9 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// Human-readable name of the active NimBus message-store provider (e.g. "Cosmos DB", "SQL Server", "InMemory").
+        /// Human-readable name of the active NimBus message-store provider (e.g. "Cosmos DB", "SQL Server", "InMemory"). Populated only for authenticated callers; null or absent for anonymous callers.
         /// </summary>
-        [Newtonsoft.Json.JsonProperty("storageProvider", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonProperty("storageProvider", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string StorageProvider    {
             get { return _storageProvider; }
             set
@@ -3982,7 +3998,7 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// URL template for deep-linking reported events to the external ticket system, with "{ticket}" as the ticket-id placeholder (e.g. "https://support.example.com/browse/{ticket}"). Null or empty when no ticket system is configured — the UI then renders a plain "Reported" badge without a link.
+        /// URL template for deep-linking reported events to the external ticket system, with "{ticket}" as the ticket-id placeholder (e.g. "https://support.example.com/browse/{ticket}"). Null or empty when no ticket system is configured — the UI then renders a plain "Reported" badge without a link. Populated only for authenticated callers; null or absent for anonymous callers.
         /// </summary>
         [Newtonsoft.Json.JsonProperty("ticketLinkTemplate", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string TicketLinkTemplate    {

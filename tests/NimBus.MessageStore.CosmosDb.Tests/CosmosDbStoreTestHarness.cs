@@ -13,11 +13,19 @@ internal static class CosmosDbStoreTestHarness
     private const string EndpointEnvironmentVariable = "NIMBUS_COSMOS_TEST_ENDPOINT";
     private const string KeyEnvironmentVariable = "NIMBUS_COSMOS_TEST_KEY";
     private const string GatewayModeEnvironmentVariable = "NIMBUS_COSMOS_TEST_GATEWAY";
+    private const string RequiredEnvironmentVariable = "NIMBUS_COSMOS_TEST_REQUIRED";
 
     private static readonly Lazy<CosmosClient> Client = new(CreateClient);
 
+    /// <summary>The raw client, for assertions the store contracts cannot express — such as
+    /// reading back a container's <see cref="ContainerProperties.DefaultTimeToLive"/>.</summary>
+    public static CosmosClient RawClient => Client.Value;
+
     public static INimBusMessageStore CreateStore()
         => new CosmosDbClient(Client.Value);
+
+    public static INimBusMessageStore CreateStore(CosmosDbMessageStoreOptions options)
+        => new CosmosDbClient(Client.Value, null, options);
 
     public static IInboxStore CreateInboxStore()
         // The emulator only offers Session consistency, so the live suite acknowledges the
@@ -52,6 +60,17 @@ internal static class CosmosDbStoreTestHarness
 
         if (client == null)
         {
+            // A suite that can silently skip cannot establish that the provider conforms.
+            // CI sets NIMBUS_COSMOS_TEST_REQUIRED so a missing emulator fails the run
+            // instead of quietly reporting green; a developer without Docker still skips.
+            var required = Environment.GetEnvironmentVariable(RequiredEnvironmentVariable);
+            if (required is "1" or "true")
+            {
+                Assert.Fail(
+                    $"{RequiredEnvironmentVariable} is set but no Cosmos endpoint is configured: set " +
+                    $"{ConnectionStringEnvironmentVariable}, or {EndpointEnvironmentVariable} and {KeyEnvironmentVariable}.");
+            }
+
             Assert.Inconclusive(
                 $"{ConnectionStringEnvironmentVariable} or {EndpointEnvironmentVariable}/{KeyEnvironmentVariable} not set; skipping live Cosmos DB conformance suite.");
         }

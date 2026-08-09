@@ -386,6 +386,11 @@ internal sealed class InfrastructureDeployer
                     "--app", appInsightsName,
                     "--resource-group", resourceGroupName,
                     "--api-key", "management-app",
+
+                    // Without --yes the command prompts for confirmation, which fails with
+                    // EOFError wherever stdin is not a terminal (CI/CD, background shells).
+                    // Only re-deployments reach this branch, so a fresh deploy never sees it.
+                    "--yes",
                 },
                 cancellationToken,
                 $"Failed to delete the existing Application Insights API key for '{appInsightsName}'.").ConfigureAwait(false);

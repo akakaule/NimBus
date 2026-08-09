@@ -182,10 +182,7 @@ namespace NimBus.Core.Messages
                 // execution never reaches here — the catch branches below own it.
                 if (messageContext.HandlerOutcome == HandlerOutcome.PendingHandoff)
                 {
-                    await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata, cancellationToken);
-                    await BlockSession(messageContext, cancellationToken);
-                    await CompleteMessage(messageContext, cancellationToken);
-                    LogInfo(messageContext, "Successfully processed (PendingHandoff)");
+                    await ParkPendingHandoff(messageContext, requestName: null, cancellationToken);
                     return;
                 }
 
@@ -251,6 +248,15 @@ namespace NimBus.Core.Messages
 
                 await VerifySessionIsBlockedByThis(messageContext, cancellationToken);
                 var discardedFailure = await HandleEventContent(messageContext, cancellationToken);
+
+                // Park BEFORE unblocking: falling through would drain deferred siblings
+                // and send a ResolutionResponse, falsely completing the handoff.
+                if (discardedFailure is null && messageContext.HandlerOutcome == HandlerOutcome.PendingHandoff)
+                {
+                    await ParkPendingHandoff(messageContext, "RetryRequest", cancellationToken);
+                    return;
+                }
+
                 await UnblockSession(messageContext, cancellationToken);
                 await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
                 if (discardedFailure is not null)
@@ -303,6 +309,15 @@ namespace NimBus.Core.Messages
                 }
 
                 var discardedFailure = await HandleEventContent(messageContext, cancellationToken);
+
+                // Park BEFORE unblocking: falling through would drain deferred siblings
+                // and send a ResolutionResponse, falsely completing the handoff.
+                if (discardedFailure is null && messageContext.HandlerOutcome == HandlerOutcome.PendingHandoff)
+                {
+                    await ParkPendingHandoff(messageContext, "Resubmission", cancellationToken);
+                    return;
+                }
+
                 if (await messageContext.IsSessionBlockedByThis(cancellationToken))
                     await UnblockSession(messageContext, cancellationToken);
                 await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
@@ -487,6 +502,23 @@ namespace NimBus.Core.Messages
             await _responseService.SendDuplicateResponse(messageContext, cancellationToken);
             await CompleteMessage(messageContext, cancellationToken);
             LogInfo(messageContext, $"Successfully processed ({logSuffix})");
+        }
+
+        // Shared parking sequence for a handler that signalled MarkPendingHandoff:
+        // emit the PendingHandoffResponse (projected to Pending+Handoff, shown as
+        // "Awaiting External"), block the session so FIFO siblings defer and the
+        // Manager's later settlement can land, then complete the inbound message.
+        // Used by the EventRequest, RetryRequest and ResubmissionRequest paths —
+        // the latter two must NOT fall through to SendResolutionResponse, which
+        // would falsely flip the event to Completed.
+        private async Task ParkPendingHandoff(IMessageContext messageContext, string? requestName, CancellationToken cancellationToken)
+        {
+            await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata, cancellationToken);
+            await BlockSession(messageContext, cancellationToken);
+            await CompleteMessage(messageContext, cancellationToken);
+            LogInfo(messageContext, requestName == null
+                ? "Successfully processed (PendingHandoff)"
+                : $"Successfully processed ({requestName}, PendingHandoff)");
         }
 
         private Task DeferMessage(IMessageContext messageContext, CancellationToken cancellationToken = default) =>

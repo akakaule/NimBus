@@ -397,6 +397,89 @@ public class StrictMessageHandlerTests
         Assert.AreSame(second, ctx.HandoffMetadata);
     }
 
+    [TestMethod]
+    public async Task HandleResubmissionRequest_HandlerSignalsPendingHandoff_ParksAndKeepsSessionBlocked()
+    {
+        // Resubmitting a failed handoff message must park the event as
+        // Pending+Handoff ("Awaiting External"), not flip it to Completed.
+        var ctx = CreateContext(messageType: MessageType.ResubmissionRequest, from: "Manager");
+        ctx.IsSessionBlockedByThisResult = true;
+        var metadata = new HandoffMetadata("Awaiting external batch", "DMF-42", TimeSpan.FromMinutes(5));
+        var handler = new FakeEventContextHandler
+        {
+            OnHandle = c =>
+            {
+                c.HandlerOutcome = HandlerOutcome.PendingHandoff;
+                c.HandoffMetadata = metadata;
+            },
+        };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, response.PendingHandoffCalls, "PendingHandoffResponse should fire");
+        Assert.AreSame(metadata, response.LastPendingHandoffMetadata);
+        Assert.AreEqual(1, ctx.BlockSessionCalls, "Session must be blocked so siblings defer");
+        Assert.AreEqual(1, ctx.CompletedCalls);
+        // The session must stay blocked so the Manager's settlement can land.
+        Assert.AreEqual(0, ctx.UnblockSessionCalls, "Session must stay blocked for the later settlement");
+        Assert.AreEqual(0, response.ResolutionCalls, "ResolutionResponse must NOT fire when handler signals PendingHandoff");
+    }
+
+    [TestMethod]
+    public async Task HandleResubmissionRequest_HandlerSignalsPendingHandoff_DoesNotReleaseDeferredSiblings()
+    {
+        var ctx = CreateContext(messageType: MessageType.ResubmissionRequest, from: "Manager");
+        ctx.IsSessionBlockedByThisResult = true;
+        ctx.DeferredCountResult = 3;
+        var handler = new FakeEventContextHandler
+        {
+            OnHandle = c =>
+            {
+                c.HandlerOutcome = HandlerOutcome.PendingHandoff;
+                c.HandoffMetadata = new HandoffMetadata("r", null, null);
+            },
+        };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, response.ProcessDeferredCalls, "FIFO siblings must keep deferring while the handoff is pending");
+        Assert.AreEqual(0, response.ContinuationCalls);
+    }
+
+    [TestMethod]
+    public async Task HandleRetryRequest_HandlerSignalsPendingHandoff_ParksAndKeepsSessionBlocked()
+    {
+        // Same gap as resubmission: an automatic retry of a handoff-style
+        // handler must not false-complete.
+        var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.IsSessionBlockedByThisResult = true;
+        var metadata = new HandoffMetadata("Awaiting external batch", "DMF-42", TimeSpan.FromMinutes(5));
+        var handler = new FakeEventContextHandler
+        {
+            OnHandle = c =>
+            {
+                c.HandlerOutcome = HandlerOutcome.PendingHandoff;
+                c.HandoffMetadata = metadata;
+            },
+        };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, response.PendingHandoffCalls, "PendingHandoffResponse should fire");
+        Assert.AreSame(metadata, response.LastPendingHandoffMetadata);
+        Assert.AreEqual(1, ctx.BlockSessionCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+        Assert.AreEqual(0, ctx.UnblockSessionCalls, "Session must stay blocked for the later settlement");
+        Assert.AreEqual(0, response.ResolutionCalls);
+        Assert.AreEqual(0, response.ProcessDeferredCalls);
+    }
+
     // ── HandleHandoffCompletedRequest ───────────────────────────────────
 
     [TestMethod]

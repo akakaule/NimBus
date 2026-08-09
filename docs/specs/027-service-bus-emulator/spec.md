@@ -42,7 +42,7 @@ Both planes derive host *and port* from the same `Endpoint=` value, so a broker 
 
 - **G1** — The unmodified Azure SDK (data + admin planes) works against the emulator with a single connection string: `Endpoint=sb://localhost:{port};SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=<any>;UseDevelopmentEmulator=true`.
 - **G2** — Zero changes to NimBus product code. `ServiceBusTopologyProvisioner.ApplyAsync` provisions the full topology at runtime; a second apply is a **zero-churn no-op** (the byte-identical rule round-trip invariant, §7.1).
-- **G3** — Full NimBus feature coverage: session-ordered processing, rules with SET actions, auto-forwarding, request/reply, deferral, scheduling, purge/drain, subscription admin, runtime counts.
+- **G3** — Full NimBus feature coverage: session-ordered processing, rules with SET actions, auto-forwarding, request/reply, NimBus-level deferral (the `Deferred` subscription flow — plain routing, no SB defer), scheduling, purge/drain, subscription admin, runtime counts.
 - **G4** — First-class Aspire resource: `AddNimBusServiceBusEmulator()` in the main AppHost, provisioner **not** skipped, WebApp admin screens fully functional locally.
 - **G5** — Deterministic and fast: no warm-up flakiness, instant start, suitable for e2e tests (Playwright suites, `07-agent-enrichment` and future ones).
 
@@ -52,6 +52,7 @@ Both planes derive host *and port* from the same `Endpoint=` value, so a broker 
 - Duplicate detection **enforcement** (`RequiresDuplicateDetection` is never set; the `DuplicateDetectionHistoryTimeWindow` property must merely round-trip).
 - Partitioned entities, geo-DR, autoscale, quotas, large-message support beyond the configured max, JMS, AMQP WebSockets (NimBus never sets `TransportType`; SDK default is AmqpTcp).
 - Entra ID / real SAS signature validation (accept-all auth; see §6.2, §8.4).
+- SB message deferral (`receive-by-sequence-number`, defer disposition, deferred peek state) — dead code in NimBus, rejected loudly; see §3.
 - Performance/load testing fidelity. Correct under concurrency, not benchmarked.
 - A management UI. The NimBus WebApp *is* the management UI and it works against this emulator.
 
@@ -66,20 +67,20 @@ Both planes derive host *and port* from the same `Endpoint=` value, so a broker 
 
 ---
 
-## 3. ⚠ Scope discrepancy: message deferral IS still used
+## 3. Resolved: the SB defer API is dead code — out of scope
 
-The request for this spec stated that Service Bus **defer** is no longer used by NimBus. The code audit of current `master` contradicts this — defer is load-bearing in three subsystems:
+The `DeferMessageAsync`/`ReceiveDeferredMessage*` call sites that exist in `src/` are **not reachable from any live flow**; NimBus's deferral is its own mechanism (regular messages routed to the `Deferred` subscription and replayed by `DeferredMessageProcessor` — no SB defer involved). Verified on current `master`:
 
-| Call | Sites |
-|---|---|
-| `DeferMessageAsync` | `src/NimBus.ServiceBus/ServiceBusSession.cs:107,111,115` (reached from `MessageContext.Defer`/`DeferOnly`, `MessageContext.cs:330,349` — the blocked-session FIFO parking mechanism) |
-| `ReceiveDeferredMessagesAsync(long[])` | `ServiceBusSession.cs:190` |
-| `ReceiveDeferredMessageAsync(long)` | `AdminService.Purge.cs:140,358`, `SubscriptionAdminService.cs:420`, `CommandLine/Endpoint.cs:147,385` |
-| Peeked `State == ServiceBusMessageState.Deferred` | `AdminService.Purge.cs:136,285,318,354,370`, `SubscriptionAdminService.cs:410`, `Endpoint.cs:91,139,161,382` — **every purge/drain path branches on it** |
+- **Write path dead.** The blocked-session flow calls `DeferMessageToSubscription` (`StrictMessageHandler.cs:206` → `SendToDeferredSubscription` + `Complete`). The private `DeferMessage` wrapper (`StrictMessageHandler.cs:492`) is the *only* production caller of `IMessageContext.Defer` (the real SB API, `MessageContext.cs:319` → `ServiceBusSession.cs:107-115`) and is itself **never called**; `DeferOnly` has zero production callers. Only unit tests exercise them.
+- **Read paths are legacy-drain only.** `ReceiveNextDeferred(WithPop)` and `IsSessionBlocked` iterate `SessionState.DeferredSequenceNumbers`, whose only writer is the dead `Defer` (`MessageContext.cs:325`). On a fresh environment the list is always empty, so `ReceiveDeferredMessagesAsync` never hits the wire.
+- **Admin/purge/CLI `State == Deferred` branches** (`AdminService.Purge.cs`, `SubscriptionAdminService.cs:410`, `Endpoint.cs`) are defensive compatibility for legacy state in real Azure namespaces. A fresh emulator namespace can never contain an SB-deferred message, so these branches simply never trigger there.
 
-The `Deferred`/`DeferredProcessor` *subscriptions* are a separate NimBus-level parking mechanism (regular messages, no SB defer involved), but the session-state deferral above uses the real SB defer API.
+**Consequences for the emulator** (all requirements formerly tagged `[DEFER]` are removed):
 
-**Resolution taken by this spec:** defer support is **in scope**, isolated as its own module (§6.6-D) so it can be cut cheaply if deferral is removed from NimBus first. If that removal is planned, cut requirements tagged `[DEFER]` and the emulator sheds the deferred-message store, `receive-by-sequence-number`, the `Modified/undeliverable-here=true` disposition, and `x-opt-message-state`. **Do not start implementation of §6.6-D without confirming this decision** (OQ-1).
+- No deferred-message store. `receive-by-sequence-number` → `statusCode` 501. `update-disposition` supports `completed`/`abandoned`/`suspended` only; the defer disposition (`modified` with `undeliverable-here=true`) and a `"defered"` disposition-status are rejected with a clear error naming this section — so any future reintroduction of SB defer in NimBus fails loudly instead of silently misbehaving.
+- Peek returns active messages only; `x-opt-message-state` may be omitted (SDK default is `Active`), keeping all purge-path `State` branches on their no-op arms.
+
+**Follow-up recommendation for NimBus** (separate change, not part of this spec): mark the dead surface — `IMessageContext.Defer`/`DeferOnly`/`ReceiveNextDeferred*`/`RestoreNextDeferred` and `ServiceBusSession`'s defer members — `[Obsolete]` per repo convention, so the emulator's 501s are unreachable by construction.
 
 ---
 
@@ -99,8 +100,8 @@ This section is the contract. Anything not listed here is intentionally unimplem
 | `AcceptSessionAsync(topic, sub, sessionId)` | Always explicit id from app code; **`AcceptNextSessionAsync` never called by NimBus code** — but the **session processor calls it internally**, so next-available accept is P0 |
 | `CreateReceiver(topic, sub)` | Peek/drain paths; **peeks session-enabled subscriptions from a non-session receiver** (`SubscriptionAdminService.cs:344`) |
 | `ReceiveMessagesAsync(100, 5s)` / `ReceiveMessageAsync(timeout)` | Drain loops; reply receive `PublisherClient.cs:286` |
-| `PeekMessagesAsync(100[, fromSequenceNumber])` | Purge/drain/CLI; paginates `last.SequenceNumber + 1`; **must return active AND deferred** messages with correct `State` |
-| Settlement | `Complete` (4 SDK surfaces: receiver, session receiver, `ProcessMessageEventArgs`, Functions `ServiceBusMessageActions`), `Abandon` (never with properties), `DeadLetter(reason, description≤4096)`, `Defer` `[DEFER]`, `ReceiveDeferredMessage(s)Async` `[DEFER]` |
+| `PeekMessagesAsync(100[, fromSequenceNumber])` | Purge/drain/CLI; paginates `last.SequenceNumber + 1`; purge paths branch on `State`, which is always `Active` here (§3) |
+| Settlement | `Complete` (4 SDK surfaces: receiver, session receiver, `ProcessMessageEventArgs`, Functions `ServiceBusMessageActions`), `Abandon` (never with properties), `DeadLetter(reason, description≤4096)`. Defer/receive-deferred: dead code, excluded (§3) |
 | Lock renewal | Never explicit — **only** the processors' auto-renewal (`renew-lock` / `renew-session-lock` management ops fire on the wire) |
 | Session state | `GetSessionStateAsync` / `SetSessionStateAsync` — UTF-8 JSON payload; cleared with **empty `BinaryData`** on the Functions path and **null** on raw-receiver paths; null-or-empty read = fresh state |
 | Message fields written | `Body`, `MessageId`, `SessionId`, `CorrelationId`, `ReplyTo`, `ReplyToSessionId`, `ContentType` (CloudEvents), `TimeToLive` (replies: 5 min), `Subject`+`To`+`PartitionKey`+`TransactionPartitionKey` (throttle-redelivery clone only), **`ScheduledEnqueueTime` — always set, usually "now"** → a past/now value must mean *immediate* enqueue |
@@ -152,7 +153,7 @@ Topics = endpoint ids + literal `Resolver`. Per endpoint topic `E`, subscription
                  │  NamespaceState          │  per-entity ordered apply
                  │  ├ TopicEntity[]         │
                  │  │  └ SubscriptionEntity[]  (message log, sessions, locks, DLQ,
-                 │  │       rules, scheduled, deferred, counters)
+                 │  │       rules, scheduled, counters)
                  │  ├ FilterEngine (SQL subset, verbatim round-trip)
                  │  └ TimerWheel (lock expiry, scheduled due, TTL, session long-poll)
                  └───────────┬─────────────┘
@@ -209,7 +210,7 @@ Topics = endpoint ids + literal `Resolver`. Per endpoint topic `E`, subscription
 - **SES-1** — A session receiver attach carries `Source.FilterSet["com.microsoft:session-filter"]`. Value = session id string (explicit accept) or **null** (next-available — used constantly by `ServiceBusSessionProcessor`).
 - **SES-2** — The attach **response** must echo the filter with the **resolved** session id string; the SDK throws `SessionFilterMissing` if absent, and treats a null value as retryable-failure.
 - **SES-3** — Session lock expiry returns as link **property** `com.microsoft:locked-until-utc` = **.NET ticks** (`long`, 100 ns units since year 1 — NOT epoch ms; the per-message annotation `x-opt-locked-until` is by contrast a normal AMQP timestamp).
-- **SES-4** — Explicit accept of session `S`: succeed iff `S` has ≥1 active or deferred message **or** non-empty session state, and is not locked by another receiver; otherwise reject attach with error condition `com.microsoft:session-cannot-be-locked` (→ `SessionCannotBeLocked`, which five NimBus sites treat as the graceful "nothing there" signal — an empty receiver instead of the throw would break them).
+- **SES-4** — Explicit accept of session `S`: succeed iff `S` has ≥1 active message **or** non-empty session state, and is not locked by another receiver; otherwise reject attach with error condition `com.microsoft:session-cannot-be-locked` (→ `SessionCannotBeLocked`, which five NimBus sites treat as the graceful "nothing there" signal — an empty receiver instead of the throw would break them).
 - **SES-5** — Next-available accept: pick an unlocked session with ≥1 *deliverable* (active, due, unlocked) message; if none, wait up to the client's `com.microsoft:timeout` link property (uint ms), then reject attach with `com.microsoft:timeout` (→ `ServiceTimeout`, which the session processor swallows and retries — this is its idle loop).
 - **SES-6** — Session lock: one owner per (subscription, session); duration = subscription `LockDuration` (30 s); renewed via `renew-session-lock`; on expiry the session becomes acceptable elsewhere and any late settlement/state call from the old owner fails with `com.microsoft:session-lock-lost` (→ `SessionLockLost`, mapped to `TransientException` in eight `MessageContext` sites).
 - **SES-7** — Within a locked session, deliver strictly FIFO by sequence number, one credit at a time as granted (the ordering guarantee of ADR-001; `MaxConcurrentCallsPerSession=1` on the client side means the broker just must not reorder).
@@ -233,21 +234,20 @@ Request messages carry application-properties `operation`, `com.microsoft:server
 - **MGMT-2** `renew-session-lock` — body `{session-id}` → `{expiration}`. Lost → 410 + `com.microsoft:session-lock-lost`.
 
 **B. Peek**
-- **MGMT-3** `peek-message` — body `{from-sequence-number, message-count[, session-id]}` → `{messages: [{message: <full encoded AMQP message bytes>}...]}`, `statusCode` 200, or **204 when empty**. Must return **active + deferred + scheduled?** No: active and deferred only, in sequence order, non-destructive, no locks; each message carries `x-opt-message-state` (0=Active, 1=Deferred, 2=Scheduled) — every purge path branches on the resulting `State`. Works from non-session receivers against session subscriptions (LNK-1 note; peek is link-scoped to the subscription, not session-filtered unless `session-id` given).
+- **MGMT-3** `peek-message` — body `{from-sequence-number, message-count[, session-id]}` → `{messages: [{message: <full encoded AMQP message bytes>}...]}`, `statusCode` 200, or **204 when empty**. Returns **active** messages in sequence order, non-destructive, no locks; `x-opt-message-state` may be omitted (SDK default `Active` — the purge paths' `State` branches stay on their no-op arms, §3). Works from non-session receivers against session subscriptions (LNK-1 note; peek is link-scoped to the subscription, not session-filtered unless `session-id` given).
 - **MGMT-4** Scheduled messages **must not** appear in subscription peeks (they live topic-side; they surface in `ScheduledMessageCount` on the *topic* runtime properties instead).
 
 **C. Scheduling**
 - **MGMT-5** `schedule-message` — body `{messages: [{message: bytes, message-id, session-id?, partition-key?}...]}` → `{sequence-numbers: long[]}`. Park topic-side until due, then run the normal send pipeline (§6.5).
 - **MGMT-6** `cancel-scheduled-message` — body `{sequence-numbers}` → 200; unknown → 404 + `com.microsoft:message-not-found`.
 
-**D. Deferral `[DEFER]` (see §3)**
-- **MGMT-7** `update-disposition` — body `{disposition-status: "completed"|"abandoned"|"suspended"|"defered", lock-tokens[, deadletter-reason, deadletter-description, properties-to-modify, session-id]}`. This is the SDK's **fallback settlement path** after link reconnect (it retries here when a link disposition returns `Rejected`/`amqp:not-found`) — both paths (§6.7 and this) must hit the same state machine. Note the service's historical misspelling `"defered"`.
-- **MGMT-8** `receive-by-sequence-number` — body `{sequence-numbers, receiver-settle-mode[, session-id]}` → `{messages: [{message: bytes, lock-token: uuid}...]}`. Only **deferred** messages are addressable; an already-settled/never-deferred sequence number → 404 + `com.microsoft:message-not-found` (→ `MessageNotFound`, swallowed at four NimBus sites). Locks the returned messages like a normal delivery.
+**D. Settlement fallback**
+- **MGMT-7** `update-disposition` — body `{disposition-status: "completed"|"abandoned"|"suspended", lock-tokens[, deadletter-reason, deadletter-description, properties-to-modify, session-id]}`. This is the SDK's **fallback settlement path** after link reconnect (it retries here when a link disposition returns `Rejected`/`amqp:not-found`) — both paths (§6.7 and this) must hit the same state machine. The `"defered"` status (note the service's historical misspelling) is rejected per §3.
 
 **E. Session state**
 - **MGMT-9** `get-session-state` / `set-session-state` — per SES-8; body keys `session-id`, `session-state` (binary or null).
 
-Unimplemented operations (`add-rule`, `enumerate-rules`, `get-message-sessions`, `batch-delete-messages`, …) → `statusCode` 501 with a description naming this spec.
+Unimplemented operations (`receive-by-sequence-number`, `add-rule`, `enumerate-rules`, `get-message-sessions`, `batch-delete-messages`, …) → `statusCode` 501 with a description naming this spec.
 
 ### 6.7 `[SET]` Settlement via link dispositions
 
@@ -255,7 +255,7 @@ Unimplemented operations (`add-rule`, `enumerate-rules`, `get-message-sessions`,
 |---|---|---|
 | `accepted` | Complete | Remove message; counters update |
 | `modified`, `undeliverable-here` unset | Abandon | Release lock, keep at head of session/queue order, increment delivery count on **next** delivery |
-| `modified`, `undeliverable-here=true` | Defer `[DEFER]` | Move to deferred store, addressable only by sequence number; shows in peek with state Deferred |
+| `modified`, `undeliverable-here=true` | Defer | Reject with a clear error (§3 — SB defer is dead code in NimBus; loud failure beats silent mis-storage) |
 | `rejected` (with or without error) | Dead-letter | Move to subscription DLQ. When error present: condition `com.microsoft:dead-letter`, `Info["DeadLetterReason"]`/`Info["DeadLetterErrorDescription"]` (**PascalCase**) → store and surface as application properties on the DLQ copy. Accept descriptions ≥4096 chars |
 
 - **SET-1** — Do **not** implement `released`-as-abandon; the modern SDK never sends it (the public protocol guide's claim that `modified` "isn't used" is wrong — trust this table, which was read from SDK source and verified live).
@@ -264,7 +264,7 @@ Unimplemented operations (`add-rule`, `enumerate-rules`, `get-message-sessions`,
 
 ### 6.8 `[ANN]` Message annotations & properties written by the broker on delivery
 
-`x-opt-sequence-number` (long, per-subscription monotonic — see BRK-2), `x-opt-enqueued-time` (timestamp), `x-opt-locked-until` (timestamp), `x-opt-message-state` (peek only, when ≠ Active), `x-opt-deadletter-source` (DLQ deliveries, P2), `header.delivery-count`, `header.ttl` where set; session id rides standard `properties.group-id`, `ReplyToSessionId` = `properties.reply-to-group-id`, message id = `properties.message-id` (no `x-opt` for it).
+`x-opt-sequence-number` (long, per-subscription monotonic — see BRK-2), `x-opt-enqueued-time` (timestamp), `x-opt-locked-until` (timestamp), `x-opt-message-state` (may be omitted — always `Active`, §3), `x-opt-deadletter-source` (DLQ deliveries, P2), `header.delivery-count`, `header.ttl` where set; session id rides standard `properties.group-id`, `ReplyToSessionId` = `properties.reply-to-group-id`, message id = `properties.message-id` (no `x-opt` for it).
 
 ---
 
@@ -305,7 +305,7 @@ Required grammar (everything the repo emits — reject the rest with a clear par
 | Emulator condition (AMQP / HTTP) | SDK `ServiceBusFailureReason` | NimBus dependence |
 |---|---|---|
 | `com.microsoft:session-cannot-be-locked` on attach | `SessionCannotBeLocked` | "no messages for session" no-op ×5 sites |
-| mgmt 404 + `com.microsoft:message-not-found` | `MessageNotFound` | deferred already-settled, swallowed ×4 |
+| mgmt 404 + `com.microsoft:message-not-found` | `MessageNotFound` | `cancel-scheduled-message` unknown seq (legacy deferred paths also map here but never fire, §3) |
 | `com.microsoft:session-lock-lost` | `SessionLockLost` | → `TransientException` ×8 in `MessageContext` |
 | `com.microsoft:message-lock-lost` | `MessageLockLost` | never caught by reason — still map correctly |
 | `amqp:not-found` on attach / HTTP 404 | `MessagingEntityNotFound` | reply-subscription hint, recreate tolerance |
@@ -316,8 +316,8 @@ The processor-restart heuristic (`NimBusReceiverHostedService.cs:389-412`) resta
 
 ### 7.4 `[BRK]` Message lifecycle
 
-- **BRK-1** — Per-subscription message store; states: `Scheduled(topic-side) → Active → {Locked → (Completed|Abandoned→Active|Deferred|DLQ)}`, plus TTL expiry from any non-locked state.
-- **BRK-2** — Sequence numbers: monotonically increasing per **topic**, stamped at enqueue into subscriptions (copies share the topic sequence number — sufficient for NimBus's `+1` peek pagination and deferred addressing; matches ASB observable behavior closely enough. ⚠ If implementation finds the SDK exposes per-subscription gaps oddly, per-subscription counters are acceptable — nothing in NimBus compares sequence numbers across subscriptions).
+- **BRK-1** — Per-subscription message store; states: `Scheduled(topic-side) → Active → {Locked → (Completed|Abandoned→Active|DLQ)}`, plus TTL expiry from any non-locked state.
+- **BRK-2** — Sequence numbers: monotonically increasing per **topic**, stamped at enqueue into subscriptions (copies share the topic sequence number — sufficient for NimBus's `+1` peek pagination; matches ASB observable behavior closely enough. ⚠ If implementation finds the SDK exposes per-subscription gaps oddly, per-subscription counters are acceptable — nothing in NimBus compares sequence numbers across subscriptions).
 - **BRK-3** — Locks: per-message GUID token, `LockDuration` (30 s) from subscription config, renewable (MGMT-1), expiry via timer wheel → back to Active + delivery-count increment on next delivery.
 - **BRK-4** — TTL: message TTL = min(message `header.ttl`, subscription/topic `DefaultMessageTimeToLive` where set — Deferred sub: 14 d; replies carry 5 min). `DeadLetteringOnMessageExpiration` is never enabled → expired messages are **removed silently**.
 - **BRK-5** — DLQ: per-subscription sub-queue. Inbound paths: explicit dead-letter (SET table), max-delivery-count (SET-3), filter-eval exception (FLT). Counts surface in runtime properties; receive links on `/$DeadLetterQueue` are P2.
@@ -408,7 +408,7 @@ Implemented as a **ProjectResource** (the emulator project in the same solution 
 Framework: MSTest, same conventions as sibling test projects. All tests run the emulator in-process (no network flakes) except where noted.
 
 - **TST-1 — Zero-churn provisioning (the flagship acceptance test).** Build the full `TopologyDescriptor` topology for a representative platform (reuse the test platform from `EmulatorTopologyConfigBuilderTests`), run `ServiceBusTopologyProvisioner.ApplyAsync` **twice** against the emulator; assert via the emulator's operation log that the second apply performed **zero** creates/deletes. This single test pins FID-1, FID-2, ADM-3/4, and the reconcile semantics.
-- **TST-2 — SDK conformance suite.** One test per requirement ID in §6–§8, written **against the public SDK** (not the emulator's internals): session processor consumes in order; next-available idles correctly (SES-5); explicit accept of empty session throws `SessionCannotBeLocked`; defer → peek shows `Deferred` → receive-by-seq → complete; already-settled seq → `MessageNotFound`; schedule + cancel; TTL expiry; max-delivery → DLQ count; abandon → redelivery; lock expiry → redelivery; batch send format; peek pagination; forwarding with SET actions end-to-end (publish `EventTypeId=X` → arrives on consumer subscription with rewritten `From`/`EventId`/`To`); reply round-trip (`PublisherClient` semantics); status-flip guards (LNK-4); admin CRUD + runtime properties + paging; 404/409 mapping.
+- **TST-2 — SDK conformance suite.** One test per requirement ID in §6–§8, written **against the public SDK** (not the emulator's internals): session processor consumes in order; next-available idles correctly (SES-5); explicit accept of empty session throws `SessionCannotBeLocked`; defer disposition and `receive-by-sequence-number` rejected loudly (§3); NimBus-level deferral end-to-end (message routed to `Deferred` subscription, replayed by `DeferredMessageProcessor` idioms); schedule + cancel (unknown seq → `MessageNotFound`); TTL expiry; max-delivery → DLQ count; abandon → redelivery; lock expiry → redelivery; batch send format; peek pagination; forwarding with SET actions end-to-end (publish `EventTypeId=X` → arrives on consumer subscription with rewritten `From`/`EventId`/`To`); reply round-trip (`PublisherClient` semantics); status-flip guards (LNK-4); admin CRUD + runtime properties + paging; 404/409 mapping.
 - **TST-3 — Dual-target compatibility runs.** The TST-2 suite is written transport-agnostic and env-gated to also run against a **real Azure namespace** (`NIMBUS_SBEMULATOR_COMPAT_CS`), following the repo's existing conformance-gate pattern for Cosmos/SQL. Divergence between targets is a red build. This is the guard against "emulator-shaped" tests that encode our own bugs.
 - **TST-4 — AppHost e2e.** `samples/AspirePubSub` full cycle on the emulator: provisioner → publish → session processing → resolver tracking → WebApp shows the message; plus the previously-untestable WebApp subscription-admin flows (pause/resume/purge/rebuild) driven through `IServiceBusManagement`. Playwright `07-agent-enrichment` switches to it.
 - **TST-5 — No regressions.** Existing suites (`NimBus.EndToEnd.Tests`, unit tests) untouched and green; `dotnet build -c Release` clean (CS8767 warning gotcha applies to new projects — Release-build locally before pushing).
@@ -421,7 +421,7 @@ Framework: MSTest, same conventions as sibling test projects. All tests run the 
 |---|---|---|
 | **M1** | Multiplexer, SASL(`MSSBCBS`)/CBS, attach/transfer/dispositions for non-session subscriptions, in-memory entities, ATOM CRUD for topics/subscriptions/rules (fixture-driven serializer), SQL filter engine with verbatim round-trip | `SendMessageAsync`+`ReceiveMessagesAsync` round-trip; TST-1 passes |
 | **M2** | Sessions (explicit + next-available + state + locks), `$management` ops A/B/E, scheduled messages, TTL, delivery counts, DLQ, status enforcement, error mapping table | Session-processor conformance tests green; ASP-5 verified |
-| **M3** | Deferral module `[DEFER]` (pending OQ-1), peek-with-state, `update-disposition` fallback, batch format, runtime properties incl. collection-enrich, paging | Full TST-2 green |
+| **M3** | `update-disposition` fallback, batch format, runtime properties incl. collection-enrich, paging, loud-rejection paths for excluded features (§3) | Full TST-2 green |
 | **M4** | Aspire resource + AppHost integration + TST-3/TST-4; README + docs update (incl. fixing the stale "no local emulator path" claims in `README.md:182` and `samples/CrmErpDemo/README.md:318`) | Main AppHost runs fully local; WebApp admin screens work |
 | **M5** (optional) | P2 items on demand: SQLite journal, DLQ browsing, queues, correlation filters; CrmErpDemo migration (ASP-4) | — |
 
@@ -445,7 +445,7 @@ Suggested sizing: M1–M2 are the bulk (broker core + wire fidelity); M3–M4 ar
 
 ## 14. Open questions
 
-- **OQ-1** — Confirm deferral's future (§3). If NimBus drops the SB defer API, cut `[DEFER]` requirements and M3 shrinks substantially. **Blocking for M3 only.**
+- ~~OQ-1~~ — *Resolved:* the SB defer API is dead code on `master` (§3); SB deferral is out of scope. Follow-up: `[Obsolete]`-mark the dead NimBus surface (§3).
 - **OQ-2** — Queue entities: NimBus never uses queues, but non-NimBus consumers in samples (PartnerPortal, CloudEventsInterop non-NimBus consumer) use the raw SDK — verify they are topic-only too (research indicates yes). If any needs a queue, promote queues from 501 to a thin wrapper (a queue is a topic with one implicit subscription in this model).
 - **OQ-3** — Default-on: after M4, should the main AppHost default to the emulator (real namespace behind the flag instead)? Recommended yes; decide at M4 review.
 

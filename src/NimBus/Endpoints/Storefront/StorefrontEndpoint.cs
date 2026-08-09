@@ -1,4 +1,5 @@
 using NimBus.Core.Endpoints;
+using NimBus.Events.Customers;
 using NimBus.Events.Orders;
 
 namespace NimBus.Endpoints.Storefront
@@ -8,12 +9,14 @@ namespace NimBus.Endpoints.Storefront
         public StorefrontEndpoint()
         {
             Produces<OrderPlaced>();
+            Produces<OrderDeliveryDetailsCaptured>();
+            Produces<PlaceCustomerOnCreditHold>();
         }
 
         public override ISystem System => new StorefrontSystem();
 
         public override string Description =>
-            "Publisher endpoint that produces OrderPlaced events when customers place orders.";
+            "Publisher endpoint that produces order events when customers place orders, supply delivery details, or trigger a credit review.";
     }
 
     internal sealed class StorefrontSystem : ISystem

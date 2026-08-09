@@ -148,11 +148,10 @@ describe("buildFlowLayout", () => {
     // band (20 margin + 40 header). No platform chips anymore.
     expect(byId.get("topic::erp")!.y).toBe(60);
     expect(byId.get("topic::crm")!.y).toBe(116); // 60 + 40 + 16
-    // Platform column: the lone Resolver, centered against the consumer
-    // column (center 92, half-height 36 → y 56).
-    expect(byId.get("platform::resolver")!.y).toBe(56);
+    // The diagram ends at the consumer column — no platform/Resolver node.
+    expect(byId.has("platform::resolver")).toBe(false);
     // Canvas: fixed width; height clamps to the 600 minimum for small graphs.
-    expect(layout.width).toBe(1240);
+    expect(layout.width).toBe(900);
     expect(layout.height).toBe(600);
   });
 
@@ -183,9 +182,9 @@ describe("buildFlowLayout", () => {
     const routeIds = layout.routes.map((r) => r.id);
     expect(routeIds).toContain("publish::producer::erp::topic::erp");
     expect(routeIds).toContain("deliver::topic::erp::consumer::audit");
-    // Each consumer reports straight to the Resolver platform node.
-    expect(routeIds).toContain("outcome::consumer::audit::platform::resolver");
-    expect(routeIds).toContain("outcome::consumer::crm::platform::resolver");
+    // Outcome routes are gone with the Resolver node; only publish and deliver
+    // legs remain.
+    expect(layout.routes.every((r) => r.kind !== ("outcome" as never))).toBe(true);
   });
 
   it("unions + sorts publish-route event types from flow edges; deliver routes carry the edge's list verbatim", () => {
@@ -234,7 +233,6 @@ describe("buildFlowLayout", () => {
     for (const [endpointId, index] of Object.entries(layout.byEndpoint)) {
       expect(index.nodeId).toBe(`consumer::${endpointId}`);
       expect(nodeIds.has(index.nodeId)).toBe(true);
-      expect(routeIds.has(index.outcome)).toBe(true);
       // Every journey is [publish, deliver] and both segments exist.
       for (const journey of index.journeys) {
         expect(journey).toHaveLength(2);
@@ -258,7 +256,7 @@ describe("buildFlowLayout", () => {
     ]);
   });
 
-  it("filters hidden endpoints out of every column but always keeps platform fixtures", () => {
+  it("filters hidden endpoints out of every column", () => {
     const layout = buildFlowLayout(canonical(), {
       visibleEndpointIds: new Set(["erp", "audit"]),
     });
@@ -266,8 +264,6 @@ describe("buildFlowLayout", () => {
     expect(nodeIds.has("producer::crm")).toBe(false);
     expect(nodeIds.has("consumer::crm")).toBe(false);
     expect(nodeIds.has("topic::crm")).toBe(false);
-    // The Resolver platform fixture always survives filtering.
-    expect(nodeIds.has("platform::resolver")).toBe(true);
     const routeIds = layout.routes.map((r) => r.id);
     expect(routeIds).toContain("deliver::topic::erp::consumer::audit");
     // crm is hidden → its inbound (erp→crm) and outbound (crm→audit) deliver
@@ -288,24 +284,13 @@ describe("buildFlowLayout", () => {
     expect(layout.byEndpoint).toEqual({});
   });
 
-  it("renders a Resolver-only layout for empty topology data without throwing", () => {
+  it("renders an empty layout for empty topology data without throwing", () => {
     const layout = buildFlowLayout(topo([]));
-    expect(layout.nodes.map((n) => n.id)).toEqual(["platform::resolver"]);
+    expect(layout.nodes).toEqual([]);
     expect(layout.routes).toEqual([]);
     expect(layout.byEndpoint).toEqual({});
-    expect(layout.width).toBe(1240);
+    expect(layout.width).toBe(900);
     expect(layout.height).toBe(600);
-  });
-
-  it("labels the Resolver platform node per spec", () => {
-    const layout = buildFlowLayout(topo([]));
-    const byId = new Map(layout.nodes.map((n) => [n.id, n]));
-    expect(byId.get("platform::resolver")).toMatchObject({
-      kind: "platform",
-      title: "Resolver",
-      h: 72,
-      health: "good",
-    });
   });
 
   it("frames the topic column in a Service Bus container with header room", () => {
@@ -335,14 +320,12 @@ describe("buildFlowLayout", () => {
     });
     expect(layout.nodes.map((n) => n.id).sort()).toEqual([
       "consumer::audit",
-      "platform::resolver",
       "producer::crm",
       "topic::crm",
     ]);
     const routeIds = layout.routes.map((r) => r.id);
     expect(routeIds).toContain("publish::producer::crm::topic::crm");
     expect(routeIds).toContain("deliver::topic::crm::consumer::audit");
-    expect(routeIds).toContain("outcome::consumer::audit::platform::resolver");
     expect(routeIds).not.toContain("deliver::topic::erp::consumer::audit");
     expect(Object.keys(layout.byEndpoint)).toEqual(["audit"]);
   });
@@ -353,9 +336,9 @@ describe("buildFlowLayout", () => {
     );
   });
 
-  it("renders only the Resolver for an event type nobody carries", () => {
+  it("renders nothing for an event type nobody carries", () => {
     const layout = buildFlowLayout(canonical(), { eventType: "Nope" });
-    expect(layout.nodes.map((n) => n.id)).toEqual(["platform::resolver"]);
+    expect(layout.nodes).toEqual([]);
     expect(layout.serviceBus).toBeUndefined();
     expect(layout.byEndpoint).toEqual({});
   });

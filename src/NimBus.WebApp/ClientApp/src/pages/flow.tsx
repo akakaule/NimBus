@@ -113,22 +113,22 @@ export default function Flow() {
    * Resolves semantic activity onto concrete routes and spawns dots:
    * arrived/released ride the full inbound journey (producer adapter → topic →
    * consumer, round-robin when an endpoint has several upstream topics) so the
-   * message reads as sent from the left; every outcome kind rides the single
-   * endpoint → Resolver route. Events for endpoints that are filtered out or
-   * unknown to the catalog are skipped silently — the hook already recorded
-   * them in the log/counters. The ×N badge goes on the FIRST dot only (FR-009).
+   * message reads as sent from the left. Outcome kinds no longer animate — the
+   * diagram ends at the consuming endpoint, so there is no route for them to
+   * ride; the counters and the activity log still report them. Events for
+   * endpoints that are filtered out or unknown to the catalog are skipped
+   * silently — the hook already recorded them in the log/counters. The ×N badge
+   * goes on the FIRST dot only (FR-009).
    */
   const handleActivity = useCallback((events: FlowActivityEvent[]) => {
     const layout = layoutRef.current;
     const animator = animatorRef.current;
     if (layout === undefined || animator === null) return;
     for (const event of events) {
+      if (event.kind !== "arrived" && event.kind !== "released") continue;
       const index = layout.byEndpoint[event.endpointId];
       if (index === undefined) continue;
-      const journeys =
-        event.kind === "arrived" || event.kind === "released"
-          ? index.journeys
-          : [[index.outcome]];
+      const journeys = index.journeys;
       if (journeys.length === 0) continue;
       for (let i = 0; i < event.dots; i++) {
         spawnJourney(
@@ -495,11 +495,7 @@ const FlowNodeGroup = ({
   const degraded = isConsumer && snapshot !== undefined && !snapshot.storageOk;
   const deferred = isConsumer && snapshot !== undefined ? snapshot.deferred : 0;
   const isChip = node.kind === "topic";
-  const titleY = isChip
-    ? node.y + 17
-    : node.kind === "platform"
-      ? node.y + node.h / 2 + 4
-      : node.y + 24;
+  const titleY = isChip ? node.y + 17 : node.y + 24;
 
   return (
     <g>
@@ -579,7 +575,6 @@ const FlowStyles = () => (
       opacity: 0.32;
       transition: opacity 0.25s ease, stroke 0.2s ease, stroke-width 0.2s ease;
     }
-    .flow-route[data-kind="outcome"] { stroke-dasharray: 4 5; }
     /* Active edges light up teal and glow — reads on both themes, like the
        demo's bright cyan flow lines. */
     .flow-route-on {
@@ -612,7 +607,6 @@ const FlowStyles = () => (
     .flow-node-producer { fill: rgb(14 165 233 / 0.10); stroke: #0ea5e9; }
     .flow-node-topic { fill: rgb(100 116 139 / 0.12); stroke: rgb(100 116 139 / 0.8); }
     .flow-node-consumer { fill: rgb(20 184 166 / 0.10); stroke: #14b8a6; }
-    .flow-node-platform { fill: rgb(148 163 184 / 0.10); stroke: #94a3b8; }
 
     .flow-degraded { stroke: ${ACTIVITY_COLORS.failed}; stroke-dasharray: 5 3; }
     .flow-attention { animation: flow-attention-pulse 1.6s ease-in-out infinite; }

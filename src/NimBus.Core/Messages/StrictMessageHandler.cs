@@ -521,9 +521,6 @@ namespace NimBus.Core.Messages
                 : $"Successfully processed ({requestName}, PendingHandoff)");
         }
 
-        private Task DeferMessage(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
-            messageContext.Defer(cancellationToken);
-
         private async Task DeferMessageToSubscription(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
             int deferralSequence = await messageContext.GetNextDeferralSequenceAndIncrement(cancellationToken);
@@ -562,6 +559,7 @@ namespace NimBus.Core.Messages
         private async Task<IMessageContext> ReceiveNextDeferredAndVerifyEventId(IMessageContext messageContext, bool removeFromQueue = false, CancellationToken cancellationToken = default)
         {
             IMessageContext nextDeferred;
+#pragma warning disable CS0618
             if (removeFromQueue)
             {
                 nextDeferred = await messageContext.ReceiveNextDeferredWithPop(cancellationToken);
@@ -570,6 +568,7 @@ namespace NimBus.Core.Messages
             {
                 nextDeferred = await messageContext.ReceiveNextDeferred(cancellationToken);
             }
+#pragma warning restore CS0618
 
             if (!messageContext.EventId.Equals(nextDeferred?.EventId, StringComparison.OrdinalIgnoreCase))
             {
@@ -595,7 +594,9 @@ namespace NimBus.Core.Messages
                 // the restore. The recovery I/O runs under its own bounded token instead;
                 // the original failure still owns settlement and rethrows unchanged.
                 using var restoreCancellation = new CancellationTokenSource(DeferredRestoreTimeout);
+#pragma warning disable CS0618
                 await messageContext.RestoreNextDeferred(deferredMessageContext, restoreCancellation.Token);
+#pragma warning restore CS0618
             }
             catch (Exception restoreException)
             {
@@ -720,7 +721,9 @@ namespace NimBus.Core.Messages
 
         private async Task ContinueWithAnyDeferredMessages(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
+#pragma warning disable CS0618
             var next = await messageContext.ReceiveNextDeferred(cancellationToken);
+#pragma warning restore CS0618
             if (next != null)
             {
                 await _responseService.SendContinuationRequestToSelf(next, cancellationToken);

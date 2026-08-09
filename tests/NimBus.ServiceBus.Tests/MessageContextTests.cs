@@ -1,4 +1,4 @@
-#pragma warning disable CA1707, CA1515, CA2007
+#pragma warning disable CA1707, CA1515, CA2007, CS0618
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;

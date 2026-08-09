@@ -29,11 +29,15 @@ namespace NimBus.Core.Messages
 
         Task DeadLetter(string reason, Exception exception = null, CancellationToken cancellationToken = default);
 
+        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/specs/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead.")]
         Task Defer(CancellationToken cancellationToken = default);
 
+        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/specs/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead.")]
         Task DeferOnly(CancellationToken cancellationToken = default);
 
+        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/specs/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
         Task<IMessageContext> ReceiveNextDeferred(CancellationToken cancellationToken = default);
+        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/specs/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
         Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken cancellationToken = default);
 
         /// <summary>
@@ -47,6 +51,7 @@ namespace NimBus.Core.Messages
         /// </summary>
         /// <param name="deferredMessage">The context returned by <see cref="ReceiveNextDeferredWithPop"/>.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
+        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/specs/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
         Task RestoreNextDeferred(IMessageContext deferredMessage, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         Task BlockSession(CancellationToken cancellationToken = default);

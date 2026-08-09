@@ -600,9 +600,16 @@ export default function MessageListing(props: IMessageListingProps) {
     [resubmitPayload],
   );
 
-  // Spec 026: the server replaces the whole payload with "[REDACTED]" for
-  // users without the PII Reader role — nothing to blur or reveal client-side.
-  const isRedacted = resubmitPayload === "[REDACTED]";
+  // Masking is per-field, so the payload normally stays readable apart from its
+  // [Sensitive] values (hasPii above drives the blur for those). The server only
+  // falls back to replacing the whole payload when it cannot resolve the event
+  // type or parse the JSON — then there is nothing to blur or reveal. The bare
+  // "[REDACTED]" is the pre-field-level form, still possible in stored payloads
+  // that were resubmitted while whole-payload redaction was in effect.
+  const isRedacted =
+    resubmitPayload === "[REDACTED]" ||
+    resubmitPayload === "[REDACTED:unknown-type]" ||
+    resubmitPayload === "[REDACTED:invalid-json]";
 
   // Pretty-print the payload / hand-off result once and reuse across the
   // inline blocks and the resubmit-with-changes modal, so a keystroke

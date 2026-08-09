@@ -191,7 +191,9 @@ public sealed class EventImplementationPlainResubmitTests
             serviceBusClient: null!,
             new NoOpAuditLogService(),
             handoffSettlement: null!,   // resubmit/skip paths never touch handoff settlement
-            new HttpContextAccessor { HttpContext = new DefaultHttpContext() });
+            new HttpContextAccessor { HttpContext = new DefaultHttpContext() },
+            PayloadRedactionTests.NewRedaction(),
+            NimBus.Core.Messages.PII.NullEventJsonMasker.Instance);
 
     private sealed class CapturingManagerClient : IManagerClient
     {

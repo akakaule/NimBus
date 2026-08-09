@@ -39,6 +39,7 @@ public class EndpointImplementation : IEndpointApiController
     private readonly ILogger<EndpointImplementation> _logger;
     private readonly IAuditLogService _auditLogService;
     private readonly IStoreResultCache _storeResultCache;
+    private readonly PayloadRedaction _payloadRedaction;
     private const int InitialEvents = 40;
     private const int PagingEvents = 40;
     private const int SqlInvalidObjectNameErrorNumber = 208;
@@ -57,7 +58,8 @@ public class EndpointImplementation : IEndpointApiController
         IEndpointAuthorizationService authorizationService,
         ILogger<EndpointImplementation> logger,
         IAuditLogService auditLogService,
-        IStoreResultCache storeResultCache)
+        IStoreResultCache storeResultCache,
+        PayloadRedaction payloadRedaction)
     {
         this.platform = platform;
         this.configuration = configuration;
@@ -68,6 +70,7 @@ public class EndpointImplementation : IEndpointApiController
         _logger = logger;
         _auditLogService = auditLogService;
         _storeResultCache = storeResultCache;
+        _payloadRedaction = payloadRedaction;
     }
 
     // The endpoint lists are filtered per-user: any role on the endpoint (or any
@@ -153,7 +156,7 @@ public class EndpointImplementation : IEndpointApiController
             if (!await _authorizationService.CanReadPiiAsync())
             {
                 foreach (var e in res.Values)
-                    PayloadRedaction.Redact(e);
+                    _payloadRedaction.Redact(e);
             }
 
             return new OkObjectResult(res);
@@ -179,7 +182,7 @@ public class EndpointImplementation : IEndpointApiController
             var endpoint = await cosmosClient.DownloadEndpointStatePaging(endpointName, InitialEvents, "");
             var status = Mapper.EndpointStatusFromEndpointState(endpoint);
             if (!await _authorizationService.CanReadPiiAsync())
-                PayloadRedaction.Redact(status);
+                _payloadRedaction.Redact(status);
             return new OkObjectResult(status);
         }
         return new NotFoundObjectResult("Endpoint not found");
@@ -223,7 +226,7 @@ public class EndpointImplementation : IEndpointApiController
             var endpoint = await cosmosClient.DownloadEndpointStatePaging(endpointName, PagingEvents, body.Token);
             var status = Mapper.EndpointStatusFromEndpointState(endpoint);
             if (!await _authorizationService.CanReadPiiAsync())
-                PayloadRedaction.Redact(status);
+                _payloadRedaction.Redact(status);
             return new OkObjectResult(status);
         }
         return new NotFoundObjectResult("Endpoint not found");
@@ -352,7 +355,7 @@ public class EndpointImplementation : IEndpointApiController
             if (!await _authorizationService.CanReadPiiAsync())
             {
                 foreach (var e in res.Values)
-                    PayloadRedaction.Redact(e);
+                    _payloadRedaction.Redact(e);
             }
 
             return new OkObjectResult(res);
@@ -420,7 +423,7 @@ public class EndpointImplementation : IEndpointApiController
             var endpoint = await cosmosClient.DownloadEndpointStatePaging(endpointName, PagingEvents, body.Token);
             var status = Mapper.EndpointStatusFromEndpointState(endpoint);
             if (!await _authorizationService.CanReadPiiAsync())
-                PayloadRedaction.Redact(status);
+                _payloadRedaction.Redact(status);
             return new OkObjectResult(status);
         }
         return new NotFoundObjectResult("Endpoint not found");

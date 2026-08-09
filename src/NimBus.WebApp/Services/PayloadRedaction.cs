@@ -1,35 +1,45 @@
 using System.Collections.Generic;
+using NimBus.Core.Messages.PII;
 using NimBus.WebApp.ManagementApi;
 
 namespace NimBus.WebApp.Services;
 
 /// <summary>
-/// Whole-payload redaction for non-PiiReader responses (spec 026; refined to
-/// field-level [Sensitive] masking by spec 021 later). Applied server-side at
-/// DTO-mapping time so raw payloads never cross the wire — the SPA renders the
-/// placeholder with a lock affordance. The message store keeps the real
-/// payload; this is a response boundary transform only.
+/// Field-level payload masking for non-PiiReader responses. Only values annotated
+/// <see cref="SensitiveAttribute"/> on the event class are masked; every other field
+/// stays readable so operators can still triage a failure without PII access.
+/// Applied server-side at DTO-mapping time so raw sensitive values never cross the
+/// wire — the message store keeps the real payload; this is a response boundary
+/// transform only.
 /// </summary>
-public static class PayloadRedaction
+/// <remarks>
+/// Fails closed: <see cref="IEventJsonMasker.Mask"/> returns a marker string rather
+/// than the original payload when the event type cannot be resolved to a CLR type
+/// (dynamically-typed events) or the JSON does not parse, so an unrecognised shape
+/// is never emitted unmasked.
+/// </remarks>
+public class PayloadRedaction
 {
-    public const string Placeholder = "[REDACTED]";
+    private readonly IEventJsonMasker _masker;
 
-    public static Event? Redact(Event? e)
+    public PayloadRedaction(IEventJsonMasker masker) => _masker = masker ?? NullEventJsonMasker.Instance;
+
+    public Event? Redact(Event? e)
     {
         var content = e?.MessageContent?.EventContent;
         if (content != null && !string.IsNullOrEmpty(content.EventJson))
-            content.EventJson = Placeholder;
+            content.EventJson = _masker.Mask(content.EventTypeId, content.EventJson);
         return e;
     }
 
-    public static IEnumerable<Event> Redact(IEnumerable<Event> events)
+    public IEnumerable<Event> Redact(IEnumerable<Event> events)
     {
         foreach (var e in events)
             Redact(e);
         return events;
     }
 
-    public static EndpointStatus? Redact(EndpointStatus? status)
+    public EndpointStatus? Redact(EndpointStatus? status)
     {
         if (status?.EnrichedUnresolvedEvents != null)
         {
@@ -40,31 +50,32 @@ public static class PayloadRedaction
         return status;
     }
 
-    public static Message? Redact(Message? m)
+    public Message? Redact(Message? m)
     {
         if (m != null && !string.IsNullOrEmpty(m.EventContent))
-            m.EventContent = Placeholder;
+            m.EventContent = _masker.Mask(m.EventTypeId, m.EventContent);
         return m;
     }
 
-    public static EventDetails? Redact(EventDetails? details)
+    public EventDetails? Redact(EventDetails? details)
     {
         Redact(details?.FailedMessage);
         Redact(details?.OriginatingMessage);
         return details;
     }
 
-    public static EventLogEntry Redact(EventLogEntry log)
+    public EventLogEntry Redact(EventLogEntry log)
     {
         if (!string.IsNullOrEmpty(log.Payload))
-            log.Payload = Placeholder;
+            log.Payload = _masker.Mask(log.EventType, log.Payload);
         return log;
     }
 
     public static EndpointSubscription RedactSubscription(EndpointSubscription subscription)
     {
         // Subscription payload filters are operator-authored payload fragments —
-        // omit rather than placeholder them (the field is a filter, not a doc).
+        // omit rather than mask them (the field is a filter, not a document, so
+        // there is no event type to resolve annotations against).
         subscription.Payload = null;
         return subscription;
     }

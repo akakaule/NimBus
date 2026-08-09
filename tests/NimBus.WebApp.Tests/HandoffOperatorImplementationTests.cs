@@ -217,7 +217,9 @@ public sealed class HandoffOperatorImplementationTests
             serviceBusClient: null!,
             audit,
             settlement,
-            contextAccessor);
+            contextAccessor,
+            PayloadRedactionTests.NewRedaction(),
+            NimBus.Core.Messages.PII.NullEventJsonMasker.Instance);
 
         return new Harness(controller, store, handoffs, authorization);
     }

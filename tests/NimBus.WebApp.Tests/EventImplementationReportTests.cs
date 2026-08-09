@@ -114,7 +114,9 @@ public sealed class EventImplementationReportTests
             serviceBusClient: null!,
             new NoOpAuditLogService(),
             handoffSettlement: null!,
-            new HttpContextAccessor { HttpContext = new DefaultHttpContext() });
+            new HttpContextAccessor { HttpContext = new DefaultHttpContext() },
+            PayloadRedactionTests.NewRedaction(),
+            NimBus.Core.Messages.PII.NullEventJsonMasker.Instance);
 
     private sealed class FakePlatform : IPlatform
     {

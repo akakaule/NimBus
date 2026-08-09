@@ -21,6 +21,7 @@ using Microsoft.Net.Http.Headers;
 using NSwag.AspNetCore;
 using NimBus.Core;
 using NimBus.Core.Messages;
+using NimBus.Core.Messages.PII;
 using NimBus.OpenTelemetry;
 using NimBus.Manager;
 using NimBus.MessageStore;
@@ -363,6 +364,17 @@ namespace NimBus.WebApp
 
                 return (IPlatform)Activator.CreateInstance(type)!;
             });
+
+            // Field-level PII masking for non-PiiReader responses. Built from the same
+            // IPlatform catalog so the event-type -> CLR type map the masker resolves
+            // [Sensitive] annotations against is exactly the one the WebApp serves.
+            // The optional salt only affects MaskMode.Hash; an empty salt still yields
+            // deterministic output, it is simply not environment-specific.
+            services.AddSingleton<IEventJsonMasker>(sp => new EventJsonMasker(
+                sp.GetRequiredService<IPlatform>(),
+                sp.GetRequiredService<IConfiguration>()["NimBus:PiiHashSalt"] ?? string.Empty));
+
+            services.AddSingleton<PayloadRedaction>();
         }
 
         private void AddServiceBusClients(IServiceCollection services)

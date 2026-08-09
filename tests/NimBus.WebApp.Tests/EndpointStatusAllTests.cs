@@ -87,7 +87,8 @@ public sealed class EndpointStatusAllTests
             new AllowAllAuthorizationService(),
             NullLogger<EndpointImplementation>.Instance,
             auditLogService: null,
-            new StoreResultCache(new MemoryCache(new MemoryCacheOptions())));
+            new StoreResultCache(new MemoryCache(new MemoryCacheOptions())),
+            PayloadRedactionTests.NewRedaction());
     }
 
     /// <summary>

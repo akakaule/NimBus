@@ -143,7 +143,8 @@ public sealed class EndpointSendStatusTests
             new FakeAuthorizationService(canManage),
             NullLogger<EndpointImplementation>.Instance,
             audit,
-            new StoreResultCache(new MemoryCache(new MemoryCacheOptions())));
+            new StoreResultCache(new MemoryCache(new MemoryCacheOptions())),
+            PayloadRedactionTests.NewRedaction());
     }
 
     // ---------------- Fakes ----------------

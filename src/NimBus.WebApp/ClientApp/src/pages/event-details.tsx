@@ -6,6 +6,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import TabSelection from "components/tab-selection";
 import Loading from "components/loading/loading";
 import BlockedListing from "components/event-details/blocked-listing";
+import AuditListing from "components/event-details/audit-listing";
 import FlowTimeline from "components/event-details/flow-timeline";
 import { parseBlockedByEventId } from "functions/endpoint.functions";
 
@@ -56,6 +57,10 @@ const EventDetails = (props: EventDetailsProps) => {
   const [audits, setAudits] = useState<api.MessageAudit[]>([]);
   const [blockedEvents, setBlockedEvents] = useState<BlockedEvent[]>([]);
   const [blockedTotal, setBlockedTotal] = useState<number>(0);
+  // Bumped whenever an action writes a new audit row. The Audit tab fetches
+  // its own data, so remounting it on this key is what makes a just-added
+  // comment appear without a page reload.
+  const [auditReloadKey, setAuditReloadKey] = useState(0);
 
   useEffect(() => {
     // Reset before re-fetch so clicking a blocked row doesn't render the
@@ -161,6 +166,7 @@ const EventDetails = (props: EventDetailsProps) => {
     client.getMessageAuditsEventId(params.id!).then((res) => {
       setAudits(res);
     });
+    setAuditReloadKey((k) => k + 1);
   };
 
   const deleteEvent = async () => {
@@ -269,6 +275,21 @@ const EventDetails = (props: EventDetailsProps) => {
         name: `Flow (${histories.length + audits.length})`,
         isEnabled: histories.length > 0,
         content: <FlowTimeline messages={histories} audits={audits} key="Flow" />,
+      },
+      {
+        // Fetches its own rows from /api/audits/search rather than reusing the
+        // page's `audits`: that endpoint carries the Data and Access Denied
+        // columns the per-event MessageAudit shape does not, and supports
+        // paging past the first 30.
+        name: `Audit`,
+        isEnabled: true,
+        content: (
+          <AuditListing
+            endpointId={cosmosEvent?.endpointId ?? params.endpointId!}
+            eventId={cosmosEvent?.eventId ?? params.id!}
+            key={`Audit-${auditReloadKey}`}
+          />
+        ),
       },
       {
         name: `Blocked (${blockedCount})`,

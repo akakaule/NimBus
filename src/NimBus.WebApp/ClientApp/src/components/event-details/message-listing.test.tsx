@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import moment from "moment";
 import * as api from "api-client";
@@ -771,7 +771,7 @@ describe("MessageListing memoised payload derivations", () => {
       eventTypeId: "Demo.Type",
       resolutionStatus: "Completed",
     } as unknown as api.Event;
-    return render(
+    const ui = (
       <MemoryRouter>
         <MessageListing
           eventDetails={event}
@@ -787,26 +787,28 @@ describe("MessageListing memoised payload derivations", () => {
           resubmitEvent={async () => {}}
           resubmitEventWithChanges={async () => {}}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
     );
+    return { ...render(ui), ui };
   }
 
-  it("renders the pretty-printed payload and a Reveal PII control", () => {
+  it("renders the masked payload in the clear, with no reveal control", () => {
     const { container } = renderMasked();
 
     expect(screen.getByText("Payload")).toBeTruthy();
     // Pretty-printed (indented) form of the masked payload, unchanged by memo.
     expect(container.textContent).toContain('"$piiMasked": true');
     expect(container.textContent).toContain('"ssn": "***"');
-    expect(
-      screen.getByRole("button", { name: /Reveal PII/ }),
-    ).toBeTruthy();
+    // Masking is applied server-side, so there is nothing left to reveal — and
+    // nothing is blurred, since only the sensitive values were replaced.
+    expect(screen.queryByRole("button", { name: /Reveal PII/ })).toBeNull();
+    expect(container.querySelector(".blur-\\[5px\\]")).toBeNull();
   });
 
   it("formats the payload once and does not reformat on an unrelated re-render", () => {
     const parseSpy = vi.spyOn(JSON, "parse");
     try {
-      renderMasked();
+      const { rerender, ui } = renderMasked();
       const payloadParses = () =>
         parseSpy.mock.calls.filter((c) => c[0] === maskedPayload).length;
 
@@ -814,9 +816,9 @@ describe("MessageListing memoised payload derivations", () => {
       // resubmit modal, whose children are still evaluated each render.
       expect(payloadParses()).toBe(1);
 
-      // Toggling PII reveal re-renders MessageListing without changing
-      // `messages` — the memo holds, so the payload is not re-parsed.
-      fireEvent.click(screen.getByRole("button", { name: /Reveal PII/ }));
+      // Re-render with identical props — `messages` is unchanged, so the memo
+      // holds and the payload is not re-parsed.
+      rerender(ui);
       expect(payloadParses()).toBe(1);
     } finally {
       parseSpy.mockRestore();

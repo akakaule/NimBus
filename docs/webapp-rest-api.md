@@ -350,8 +350,13 @@ external-grade. Each item is its own focused workstream:
    responses so callers can branch on a stable schema instead of per-endpoint
    shapes. Touches every `*Implementation.cs` under
    `Controllers/ApiContract/`.
-3. **Rate limiting.** No `RateLimiter` middleware is currently configured;
-   external callers can hit the API as hard as their network allows.
+3. **Rate limiting — partial.** Four policies now protect the highest-cost
+   surfaces: a concurrency limiter on `GET /api/agent/receive` and fixed
+   windows on `/api/admin/*`, the two search endpoints, and
+   `POST /account/login`. See [Rate Limiting](rate-limiting.md) for values,
+   bounds and tuning. Every other `/api/*` route is still unthrottled — there
+   is no global limiter — and enforcement is per process, so a scaled-out
+   deployment multiplies effective limits by instance count.
 4. **Public base URL in the spec.** `api-spec.yaml:7` lists only
    `https://localhost:5001`. A production server entry should be added so
    external generators produce clients pointing at the right host out of the

@@ -621,6 +621,31 @@ public class InMemoryMessageStore : INimBusMessageStore
         });
     }
 
+    public virtual Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+    {
+        // Published (EventRequest) counts only; buckets stay sparse (no zero-fill)
+        // and sorted ascending — the contract shared with the SQL/Cosmos backends.
+        var series = _messages.Values
+            .Where(m => m.EnqueuedTimeUtc >= from
+                && m.MessageType == MessageType.EventRequest
+                && !string.IsNullOrEmpty(m.EventTypeId))
+            .GroupBy(m => m.EventTypeId!)
+            .Select(g => new EventTypeSeriesEntry
+            {
+                EventTypeId = g.Key,
+                Total = g.Count(),
+                DataPoints = g
+                    .GroupBy(m => m.EnqueuedTimeUtc.ToUniversalTime().ToString("o")[..substringLength])
+                    .OrderBy(b => b.Key)
+                    .Select(b => new EventTypeSeriesBucket { Timestamp = b.Key, Published = b.Count() })
+                    .ToList(),
+            })
+            .OrderByDescending(s => s.Total)
+            .ToList();
+
+        return Task.FromResult(new EventTypeTimeSeriesResult { BucketSize = bucketLabel, Series = series });
+    }
+
     private static List<EndpointEventTypeCount> CountByEndpointAndEventType(IEnumerable<MessageEntity> messages, bool published)
         => messages
             .GroupBy(m => (

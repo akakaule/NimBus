@@ -4454,6 +4454,50 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Time-series buckets of published messages grouped by event type.
+     * @return OK
+     */
+    getMetricsTimeseriesByEventtype(period: Period): Promise<EventTypeTimeSeriesOverview> {
+        let url_ = this.baseUrl + "/api/metrics/timeseries-by-eventtype?";
+        if (period === undefined || period === null)
+            throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
+        else
+            url_ += "period=" + encodeURIComponent("" + period) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetMetricsTimeseriesByEventtype(_response);
+        });
+    }
+
+    protected processGetMetricsTimeseriesByEventtype(response: Response): Promise<EventTypeTimeSeriesOverview> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = EventTypeTimeSeriesOverview.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<EventTypeTimeSeriesOverview>(null as any);
+    }
+
+    /**
      * Get agent catalog
      * @return OK
      */
@@ -10176,6 +10220,203 @@ export interface ITimeSeriesDataPoint {
     published?: number;
     handled?: number;
     failed?: number;
+
+    [key: string]: any;
+}
+
+export class EventTypeSeriesPoint implements IEventTypeSeriesPoint {
+    timestamp?: string;
+    published?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IEventTypeSeriesPoint) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.timestamp = _data["timestamp"];
+            this.published = _data["published"];
+        }
+    }
+
+    static fromJS(data: any): EventTypeSeriesPoint {
+        data = typeof data === 'object' ? data : {};
+        let result = new EventTypeSeriesPoint();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["timestamp"] = this.timestamp;
+        data["published"] = this.published;
+        return data;
+    }
+
+    clone(): EventTypeSeriesPoint {
+        const json = this.toJSON();
+        let result = new EventTypeSeriesPoint();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IEventTypeSeriesPoint {
+    timestamp?: string;
+    published?: number;
+
+    [key: string]: any;
+}
+
+export class EventTypeSeries implements IEventTypeSeries {
+    eventTypeId?: string;
+    total?: number;
+    dataPoints?: EventTypeSeriesPoint[];
+
+    [key: string]: any;
+
+    constructor(data?: IEventTypeSeries) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.eventTypeId = _data["eventTypeId"];
+            this.total = _data["total"];
+            if (Array.isArray(_data["dataPoints"])) {
+                this.dataPoints = [] as any;
+                for (let item of _data["dataPoints"])
+                    this.dataPoints!.push(EventTypeSeriesPoint.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): EventTypeSeries {
+        data = typeof data === 'object' ? data : {};
+        let result = new EventTypeSeries();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["eventTypeId"] = this.eventTypeId;
+        data["total"] = this.total;
+        if (Array.isArray(this.dataPoints)) {
+            data["dataPoints"] = [];
+            for (let item of this.dataPoints)
+                data["dataPoints"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): EventTypeSeries {
+        const json = this.toJSON();
+        let result = new EventTypeSeries();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IEventTypeSeries {
+    eventTypeId?: string;
+    total?: number;
+    dataPoints?: EventTypeSeriesPoint[];
+
+    [key: string]: any;
+}
+
+export class EventTypeTimeSeriesOverview implements IEventTypeTimeSeriesOverview {
+    bucketSize?: string;
+    series?: EventTypeSeries[];
+
+    [key: string]: any;
+
+    constructor(data?: IEventTypeTimeSeriesOverview) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.bucketSize = _data["bucketSize"];
+            if (Array.isArray(_data["series"])) {
+                this.series = [] as any;
+                for (let item of _data["series"])
+                    this.series!.push(EventTypeSeries.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): EventTypeTimeSeriesOverview {
+        data = typeof data === 'object' ? data : {};
+        let result = new EventTypeTimeSeriesOverview();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["bucketSize"] = this.bucketSize;
+        if (Array.isArray(this.series)) {
+            data["series"] = [];
+            for (let item of this.series)
+                data["series"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): EventTypeTimeSeriesOverview {
+        const json = this.toJSON();
+        let result = new EventTypeTimeSeriesOverview();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IEventTypeTimeSeriesOverview {
+    bucketSize?: string;
+    series?: EventTypeSeries[];
 
     [key: string]: any;
 }

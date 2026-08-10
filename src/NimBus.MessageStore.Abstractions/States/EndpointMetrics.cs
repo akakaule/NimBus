@@ -31,6 +31,26 @@ public class TimeSeriesBucket
     public int Failed { get; set; }
 }
 
+public class EventTypeTimeSeriesResult
+{
+    public string BucketSize { get; set; }
+    public List<EventTypeSeriesEntry> Series { get; set; } = new();
+}
+
+// Published-message counts only; dataPoints are sparse (no zero-fill) and sorted ascending.
+public class EventTypeSeriesEntry
+{
+    public string EventTypeId { get; set; }
+    public int Total { get; set; }
+    public List<EventTypeSeriesBucket> DataPoints { get; set; } = new();
+}
+
+public class EventTypeSeriesBucket
+{
+    public string Timestamp { get; set; }
+    public int Published { get; set; }
+}
+
 public class FailedMessageInfo
 {
     public string EndpointId { get; set; }

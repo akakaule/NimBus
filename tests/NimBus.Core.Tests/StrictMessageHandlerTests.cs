@@ -451,6 +451,36 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
+    public async Task HandleResubmissionRequest_PendingHandoffWhileBlockedByOtherEvent_DoesNotStealSessionBlock()
+    {
+        // A stale resubmission for event A while event B owns the session must
+        // not overwrite BlockedByEventId (that would strand B's settlement and
+        // deferred work). The row still goes Pending+Handoff — the external
+        // work is genuinely in flight — but the block is left alone.
+        var ctx = CreateContext(messageType: MessageType.ResubmissionRequest, from: "Manager", eventId: "event-a");
+        ctx.BlockedByEventId = "event-b";
+        ctx.IsSessionBlockedByThisResult = false;
+        var handler = new FakeEventContextHandler
+        {
+            OnHandle = c =>
+            {
+                c.HandlerOutcome = HandlerOutcome.PendingHandoff;
+                c.HandoffMetadata = new HandoffMetadata("r", null, null);
+            },
+        };
+        var response = new FakeResponseService();
+        var sut = CreateHandler(handler, response);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, response.PendingHandoffCalls);
+        Assert.AreEqual(0, ctx.BlockSessionCalls, "Must not steal the other event's session block");
+        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(0, response.ResolutionCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
     public async Task HandleRetryRequest_HandlerSignalsPendingHandoff_ParksAndKeepsSessionBlocked()
     {
         // Same gap as resubmission: an automatic retry of a handoff-style

@@ -51,7 +51,13 @@ namespace NimBus.SDK.EventHandlers
                 MessageId = context.MessageId,
                 SessionId = context.SessionId,
                 ParentMessageId = context.ParentMessageId,
-                OriginatingMessageId = context.OriginatingMessageId,
+                // "self" is an internal wire sentinel ("this message IS the
+                // origin"). Resolve it here so handler authors can persist
+                // OriginatingMessageId as handoff settlement coordinates and
+                // keep true lineage across retry/resubmission replays.
+                OriginatingMessageId = string.Equals(context.OriginatingMessageId, Constants.Self, StringComparison.OrdinalIgnoreCase)
+                    ? context.MessageId
+                    : context.OriginatingMessageId,
             };
             return _eventHandler.Handle(@event, eventHandlercontext, cancellationToken);
         }

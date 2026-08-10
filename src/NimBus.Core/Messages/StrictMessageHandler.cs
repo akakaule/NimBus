@@ -314,6 +314,24 @@ namespace NimBus.Core.Messages
                 // and send a ResolutionResponse, falsely completing the handoff.
                 if (discardedFailure is null && messageContext.HandlerOutcome == HandlerOutcome.PendingHandoff)
                 {
+                    // Unlike RetryRequest, a resubmission runs without an ownership
+                    // check, so a stale resubmission for event A can arrive while
+                    // event B owns the session block. Parking would overwrite
+                    // BlockedByEventId (B → A), stranding B's settlement and its
+                    // deferred siblings. Keep the row Pending+Handoff — the external
+                    // work is genuinely in flight — but leave the block alone; A's
+                    // eventual settlement resolves through the misaddressed-settlement
+                    // catches in HandleHandoffCompleted/FailedRequest.
+                    var blockedBy = await messageContext.GetBlockedByEventId(cancellationToken);
+                    if (!string.IsNullOrEmpty(blockedBy)
+                        && !blockedBy.Equals(messageContext.EventId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata, cancellationToken);
+                        await CompleteMessage(messageContext, cancellationToken);
+                        LogInfo(messageContext, $"Successfully processed (Resubmission, PendingHandoff) — session owned by event '{blockedBy}', block left intact");
+                        return;
+                    }
+
                     await ParkPendingHandoff(messageContext, "Resubmission", cancellationToken);
                     return;
                 }

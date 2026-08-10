@@ -1,4 +1,4 @@
-using Azure.Messaging.ServiceBus.Administration;
+﻿using Azure.Messaging.ServiceBus.Administration;
 using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Messages;
@@ -68,7 +68,13 @@ public sealed class ServiceBusTopologyProvisioner
     // emulator's hard caps (100 MB topics, conservative TTL upper bound),
     // so when we detect the emulator we drop those down to values the
     // emulator accepts. Production / real-Azure paths are untouched.
-    internal static bool IsEmulator(string? connectionString)
+    /// <summary>
+    /// True when <paramref name="connectionString"/> targets the official Service Bus
+    /// emulator, whose entity size and TTL caps are far below a real namespace's. Public
+    /// so callers that describe the topology without provisioning it — the WebApp's
+    /// subscription admin — can ask for the same emulator-safe values.
+    /// </summary>
+    public static bool IsEmulator(string? connectionString)
     {
         if (string.IsNullOrWhiteSpace(connectionString)) return false;
         return connectionString.IndexOf("UseDevelopmentEmulator=true", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -91,95 +97,101 @@ public sealed class ServiceBusTopologyProvisioner
             await EnsureTopicAsync(client, endpoint.Id, isEmulator, log, cancellationToken).ConfigureAwait(false);
         }
 
-        await EnsureSessionSubscriptionAsync(client, Constants.ResolverId, Constants.ResolverId, forwardTo: null, keepDefaultRule: true, log, cancellationToken).ConfigureAwait(false);
+        // What to lay down comes from TopologyDescriptor, not from strings interpolated
+        // here: the WebApp's subscription admin rebuilds a deleted subscription from the
+        // same descriptor, and that rebuild is only safe while the two cannot drift.
+        foreach (var expected in TopologyDescriptor.ForSystemTopic(Constants.ResolverId))
+        {
+            await EnsureSubscriptionAsync(client, Constants.ResolverId, expected, log, cancellationToken).ConfigureAwait(false);
+        }
+
+        var endpointIds = new HashSet<string>(
+            platform.Endpoints.Select(endpoint => endpoint.Id),
+            StringComparer.OrdinalIgnoreCase);
 
         foreach (var endpoint in platform.Endpoints.OrderBy(endpoint => endpoint.Id, StringComparer.Ordinal))
         {
-            await EnsureEndpointTopologyAsync(client, platform, endpoint, isEmulator, log, cancellationToken).ConfigureAwait(false);
-        }
-
-        // Dynamic-forward pass (spec 022 D5): provision forward subscription + EventTypeId rule
-        // for dynamically-typed events that the compiled-event loop above cannot derive.
-        foreach (var fwd in platform.DynamicForwards.OrderBy(f => f.EventTypeId, StringComparer.Ordinal))
-        {
-            var subName = $"AgentDyn-{fwd.TargetEndpoint}";
-            await EnsureForwardSubscriptionAsync(client, fwd.SourceEndpoint, subName, fwd.TargetEndpoint, log, cancellationToken).ConfigureAwait(false);
-            await EnsureRuleAsync(
-                client,
-                fwd.SourceEndpoint,
-                subName,
-                $"dyn-{fwd.EventTypeId}",
-                $"user.EventTypeId = '{fwd.EventTypeId}' AND user.From IS NULL",
-                $"SET user.From = '{fwd.SourceEndpoint}'; SET user.EventId = newid(); SET user.To = '{fwd.TargetEndpoint}';",
-                log,
-                cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private static async Task EnsureEndpointTopologyAsync(
-        ServiceBusAdministrationClient client,
-        IPlatform platform,
-        IEndpoint endpoint,
-        bool isEmulator,
-        Action<string> log,
-        CancellationToken cancellationToken)
-    {
-        await EnsureSessionSubscriptionAsync(client, endpoint.Id, endpoint.Id, forwardTo: null, keepDefaultRule: false, log, cancellationToken).ConfigureAwait(false);
-        await EnsureRuleAsync(client, endpoint.Id, endpoint.Id, $"to-{endpoint.Id}", $"user.To = '{endpoint.Id}'", action: null, log, cancellationToken).ConfigureAwait(false);
-
-        // Request/reply: replies land on the requesting endpoint's own topic in a
-        // session subscription named '{endpoint}-reply'. Replies carry a 5-minute
-        // message TTL (set by ReplyDispatcher), so orphaned replies self-clean.
-        // The filter string must stay byte-identical to the other emitters of this
-        // rule (e.g. CrmErpDemo's EmulatorTopologyConfigBuilder) — RuleMatches
-        // compares ordinally, so any drift churns the rule on the next apply.
-        var replySubscription = $"{endpoint.Id}-reply";
-        await EnsureSessionSubscriptionAsync(client, endpoint.Id, replySubscription, forwardTo: null, keepDefaultRule: false, log, cancellationToken).ConfigureAwait(false);
-        await EnsureRuleAsync(client, endpoint.Id, replySubscription, "ReplyFilter", $"user.To = '{replySubscription}'", action: null, log, cancellationToken).ConfigureAwait(false);
-
-        await EnsureForwardSubscriptionAsync(client, endpoint.Id, Constants.ResolverId, Constants.ResolverId, log, cancellationToken).ConfigureAwait(false);
-        await EnsureRuleAsync(client, endpoint.Id, Constants.ResolverId, $"from-{endpoint.Id}", $"user.To = '{Constants.ResolverId}'", $"SET user.From = '{endpoint.Id}'", log, cancellationToken).ConfigureAwait(false);
-        await EnsureRuleAsync(client, endpoint.Id, Constants.ResolverId, $"to-{endpoint.Id}", $"user.To = '{endpoint.Id}'", action: null, log, cancellationToken).ConfigureAwait(false);
-
-        await EnsureRuleAsync(client, endpoint.Id, endpoint.Id, "continuation", $"user.To = '{Constants.ContinuationId}'", $"SET user.To = '{endpoint.Id}'; SET user.From = '{Constants.ContinuationId}'", log, cancellationToken).ConfigureAwait(false);
-        await EnsureRuleAsync(client, endpoint.Id, endpoint.Id, "retry", $"user.To = '{Constants.RetryId}'", $"SET user.To = '{endpoint.Id}'; SET user.From = '{Constants.RetryId}'", log, cancellationToken).ConfigureAwait(false);
-
-        await EnsureDeferredSubscriptionAsync(client, endpoint.Id, isEmulator, log, cancellationToken).ConfigureAwait(false);
-        await EnsureDeferredProcessorSubscriptionAsync(client, endpoint.Id, log, cancellationToken).ConfigureAwait(false);
-
-        foreach (var eventType in endpoint.EventTypesProduced.OrderBy(eventType => eventType.Id, StringComparer.Ordinal))
-        {
-            foreach (var consumer in platform
-                .GetConsumers(eventType)
-                .Where(consumer => !string.Equals(consumer.Id, endpoint.Id, StringComparison.Ordinal))
-                .DistinctBy(consumer => consumer.Id)
-                .OrderBy(consumer => consumer.Id, StringComparer.Ordinal))
+            foreach (var expected in TopologyDescriptor.ForEndpointTopic(endpoint, platform, isEmulator))
             {
-                await EnsureForwardSubscriptionAsync(client, endpoint.Id, consumer.Id, consumer.Id, log, cancellationToken).ConfigureAwait(false);
-                // Filter must require user.From IS NULL so this rule only fires on
-                // ORIGINAL publishes, never on messages already forwarded into this
-                // topic by another endpoint. Without that guard, an event type that
-                // is produced AND consumed by both endpoints (e.g. ContactCreated in
-                // CrmErpDemo) creates a forwarding loop:
-                //   CRM publishes -> forwarded to ERP -> ERP's forward sub matches
-                //   the same EventTypeId -> forwarded back to CRM -> ...
-                // until Service Bus's MaxHopCount kicks in and dead-letters the
-                // message ("Maximum transfer hop count is exceeded").
-                // PublisherClient never sets From on the original publish; only the
-                // action below populates it, so checking IS NULL cleanly excludes
-                // forwarded copies.
-                await EnsureRuleAsync(
-                    client,
-                    endpoint.Id,
-                    consumer.Id,
-                    eventType.Id,
-                    $"user.EventTypeId = '{eventType.Id}' AND user.From IS NULL",
-                    $"SET user.From = '{endpoint.Id}'; SET user.EventId = newid(); SET user.To = '{consumer.Id}';",
-                    log,
-                    cancellationToken).ConfigureAwait(false);
+                await EnsureSubscriptionAsync(client, endpoint.Id, expected, log, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        // A DynamicForward (spec 022 D5) whose source isn't a declared endpoint has no
+        // topic in the loop above. It is malformed — its topic won't exist — but this
+        // pass keeps the failure exactly where it was before the descriptor refactor
+        // rather than silently dropping the forward.
+        foreach (var group in platform.DynamicForwards
+            .Where(forward => !endpointIds.Contains(forward.SourceEndpoint))
+            .GroupBy(forward => forward.SourceEndpoint, StringComparer.Ordinal)
+            .OrderBy(group => group.Key, StringComparer.Ordinal))
+        {
+            foreach (var target in group
+                .GroupBy(forward => forward.TargetEndpoint, StringComparer.Ordinal)
+                .OrderBy(byTarget => byTarget.Key, StringComparer.Ordinal))
+            {
+                var expected = TopologyDescriptor.DynamicForwardSubscription(
+                    group.Key,
+                    target.Key,
+                    target.Select(forward => forward.EventTypeId).OrderBy(id => id, StringComparer.Ordinal).Distinct(StringComparer.Ordinal));
+
+                await EnsureSubscriptionAsync(client, group.Key, expected, log, cancellationToken).ConfigureAwait(false);
             }
         }
     }
+
+    /// <summary>
+    /// Creates <paramref name="expected"/> on <paramref name="topicName"/>, or brings an
+    /// existing subscription up to it. A subscription whose session flag or forward target
+    /// differs is deleted and recreated — neither can be changed in place.
+    /// </summary>
+    /// <remarks>
+    /// Also the rebuild path behind <see cref="ITopologyRebuilder"/>: the WebApp's
+    /// subscription admin deletes a subscription to discard a backlog and calls this to put
+    /// back something identical to what provisioning would have created.
+    /// </remarks>
+    internal static async Task EnsureSubscriptionAsync(
+        ServiceBusAdministrationClient client,
+        string topicName,
+        ExpectedSubscription expected,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        var existing = await TryGetSubscriptionAsync(client, topicName, expected.Name, cancellationToken).ConfigureAwait(false);
+        var mismatched = existing is not null
+            && (existing.RequiresSession != expected.RequiresSession
+                || !ForwardToMatches(existing.ForwardTo, expected.ForwardTo));
+
+        if (existing is null || mismatched)
+        {
+            if (mismatched)
+            {
+                await client.DeleteSubscriptionAsync(topicName, expected.Name, cancellationToken).ConfigureAwait(false);
+            }
+
+            await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, expected), cancellationToken).ConfigureAwait(false);
+            log($"{(mismatched ? "Recreated" : "Created")} {DescribeKind(expected)}subscription '{expected.Name}' on topic '{topicName}'{DescribeForwarding(expected)}.");
+        }
+
+        // Service Bus auto-creates a $Default true-filter on every new subscription. Left
+        // in place it hands the subscription everything published to the topic, which is
+        // only ever right for the Resolver's own subscription.
+        if (!expected.KeepDefaultRule)
+        {
+            await DeleteRuleIfExistsAsync(client, topicName, expected.Name, TopologyDescriptor.DefaultRuleName, cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var rule in expected.Rules)
+        {
+            await EnsureRuleAsync(client, topicName, expected.Name, rule.Name, rule.Filter, rule.Action, log, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static string DescribeKind(ExpectedSubscription expected) =>
+        expected.ForwardTo is not null ? "forward " : expected.RequiresSession ? "session " : string.Empty;
+
+    private static string DescribeForwarding(ExpectedSubscription expected) =>
+        expected.ForwardTo is null ? string.Empty : $" to '{expected.ForwardTo}'";
 
     private static async Task EnsureTopicAsync(ServiceBusAdministrationClient client, string topicName, bool isEmulator, Action<string> log, CancellationToken cancellationToken)
     {
@@ -206,59 +218,6 @@ public sealed class ServiceBusTopologyProvisioner
 
         await client.CreateTopicAsync(options, cancellationToken).ConfigureAwait(false);
         log($"Created topic '{topicName}'.");
-    }
-
-    private static async Task EnsureSessionSubscriptionAsync(
-        ServiceBusAdministrationClient client,
-        string topicName,
-        string subscriptionName,
-        string? forwardTo,
-        bool keepDefaultRule,
-        Action<string> log,
-        CancellationToken cancellationToken)
-    {
-        var existing = await TryGetSubscriptionAsync(client, topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
-        if (existing is null)
-        {
-            await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: true, forwardTo), cancellationToken).ConfigureAwait(false);
-            existing = await client.GetSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
-            log($"Created session subscription '{subscriptionName}' on topic '{topicName}'.");
-        }
-        else if (!existing.RequiresSession || !ForwardToMatches(existing.ForwardTo, forwardTo))
-        {
-            await client.DeleteSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
-            await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: true, forwardTo), cancellationToken).ConfigureAwait(false);
-            log($"Recreated session subscription '{subscriptionName}' on topic '{topicName}'.");
-        }
-
-        if (!keepDefaultRule)
-        {
-            await DeleteRuleIfExistsAsync(client, topicName, subscriptionName, "$Default", cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private static async Task EnsureForwardSubscriptionAsync(
-        ServiceBusAdministrationClient client,
-        string topicName,
-        string subscriptionName,
-        string forwardTo,
-        Action<string> log,
-        CancellationToken cancellationToken)
-    {
-        var existing = await TryGetSubscriptionAsync(client, topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
-        if (existing is null)
-        {
-            await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: false, forwardTo), cancellationToken).ConfigureAwait(false);
-            log($"Created forward subscription '{subscriptionName}' on topic '{topicName}' to '{forwardTo}'.");
-        }
-        else if (existing.RequiresSession || !ForwardToMatches(existing.ForwardTo, forwardTo))
-        {
-            await client.DeleteSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
-            await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: false, forwardTo), cancellationToken).ConfigureAwait(false);
-            log($"Recreated forward subscription '{subscriptionName}' on topic '{topicName}' to '{forwardTo}'.");
-        }
-
-        await DeleteRuleIfExistsAsync(client, topicName, subscriptionName, "$Default", cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -290,55 +249,6 @@ public sealed class ServiceBusTopologyProvisioner
     {
         var lastSlash = path.LastIndexOf('/');
         return lastSlash < 0 ? path : path.Substring(lastSlash + 1);
-    }
-
-    private static async Task EnsureDeferredSubscriptionAsync(ServiceBusAdministrationClient client, string topicName, bool isEmulator, Action<string> log, CancellationToken cancellationToken)
-    {
-        const string subscriptionName = "Deferred";
-        var existing = await TryGetSubscriptionAsync(client, topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
-        var mustRecreate = existing is null || !existing.RequiresSession;
-
-        if (mustRecreate)
-        {
-            if (existing is not null)
-            {
-                await client.DeleteSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
-            }
-
-            var options = CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: true, forwardTo: null);
-            // 14 days matches what real Azure accepts and what operator workflows
-            // assume for parking deferred messages. The emulator's documented TTL
-            // upper bound is conservative and not pinned in the public docs, so
-            // for emulator runs we drop to 1 hour — long enough for sample/CI
-            // smoke runs, well inside any plausible upper limit.
-            options.DefaultMessageTimeToLive = isEmulator ? TimeSpan.FromHours(1) : TimeSpan.FromDays(14);
-            await client.CreateSubscriptionAsync(options, cancellationToken).ConfigureAwait(false);
-            log($"Ensured deferred subscription '{subscriptionName}' on topic '{topicName}'.");
-        }
-
-        await DeleteRuleIfExistsAsync(client, topicName, subscriptionName, "$Default", cancellationToken).ConfigureAwait(false);
-        await EnsureRuleAsync(client, topicName, subscriptionName, "DeferredFilter", "user.To = 'Deferred' AND user.OriginalSessionId IS NOT NULL", action: null, log, cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task EnsureDeferredProcessorSubscriptionAsync(ServiceBusAdministrationClient client, string topicName, Action<string> log, CancellationToken cancellationToken)
-    {
-        const string subscriptionName = "DeferredProcessor";
-        var existing = await TryGetSubscriptionAsync(client, topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
-        var mustRecreate = existing is null || existing.RequiresSession;
-
-        if (mustRecreate)
-        {
-            if (existing is not null)
-            {
-                await client.DeleteSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
-            }
-
-            await client.CreateSubscriptionAsync(CreateSubscriptionOptions(topicName, subscriptionName, requiresSession: false, forwardTo: null), cancellationToken).ConfigureAwait(false);
-            log($"Ensured deferred processor subscription '{subscriptionName}' on topic '{topicName}'.");
-        }
-
-        await DeleteRuleIfExistsAsync(client, topicName, subscriptionName, "$Default", cancellationToken).ConfigureAwait(false);
-        await EnsureRuleAsync(client, topicName, subscriptionName, "DeferredProcessorFilter", "user.To = 'DeferredProcessor'", action: null, log, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task EnsureRuleAsync(
@@ -385,20 +295,25 @@ public sealed class ServiceBusTopologyProvisioner
                string.Equals(existingAction, action ?? string.Empty, StringComparison.Ordinal);
     }
 
-    private static CreateSubscriptionOptions CreateSubscriptionOptions(string topicName, string subscriptionName, bool requiresSession, string? forwardTo)
+    private static CreateSubscriptionOptions CreateSubscriptionOptions(string topicName, ExpectedSubscription expected)
     {
-        var options = new CreateSubscriptionOptions(topicName, subscriptionName)
+        var options = new CreateSubscriptionOptions(topicName, expected.Name)
         {
             MaxDeliveryCount = 10,
             LockDuration = TimeSpan.FromSeconds(30),
             EnableBatchedOperations = true,
             EnableDeadLetteringOnFilterEvaluationExceptions = true,
-            RequiresSession = requiresSession,
+            RequiresSession = expected.RequiresSession,
         };
 
-        if (!string.IsNullOrWhiteSpace(forwardTo))
+        if (!string.IsNullOrWhiteSpace(expected.ForwardTo))
         {
-            options.ForwardTo = forwardTo;
+            options.ForwardTo = expected.ForwardTo;
+        }
+
+        if (expected.DefaultMessageTimeToLive is { } timeToLive)
+        {
+            options.DefaultMessageTimeToLive = timeToLive;
         }
 
         return options;

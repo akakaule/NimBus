@@ -42,7 +42,13 @@ export const getApplicationStatus = async () => {
       const apiMod = await import("api-client");
       const client = new apiMod.Client(apiMod.CookieAuth());
       const status = await client.getApiAppStats();
-      cachedStatus = status;
+      // GH#93: /api/app/stats returns an EMPTY status object to unauthenticated
+      // callers. Caching that would pin blank badges for the page's lifetime, so
+      // only a populated answer is cached — the next call then retries. For an
+      // authenticated caller these are always set, so no real cache is lost.
+      if (status?.env || status?.platformVersion || status?.storageProvider) {
+        cachedStatus = status;
+      }
       return status;
     } finally {
       pendingRequest = null;

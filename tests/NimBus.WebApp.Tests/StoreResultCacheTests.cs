@@ -148,7 +148,8 @@ public sealed class StoreResultCacheTests
             new AllowAllAuthorizationService(),
             NullLogger<EndpointImplementation>.Instance,
             auditLogService: null,
-            NewCache());
+            NewCache(),
+            PayloadRedactionTests.NewRedaction());
     }
 
     private sealed class CountingStore : InMemoryMessageStore

@@ -16,6 +16,13 @@ interface ConfirmDestructiveActionProps {
   description: string;
   confirmText: string;
   isLoading?: boolean;
+  /**
+   * Label for the confirm button. Defaults to "Permanently <last word of the
+   * title>", which reads well for titles ending in the noun being acted on
+   * ("Delete All Events" -> "Permanently events"). Pass this when the title
+   * doesn't end that way.
+   */
+  confirmLabel?: string;
 }
 
 export default function ConfirmDestructiveAction({
@@ -26,6 +33,7 @@ export default function ConfirmDestructiveAction({
   description,
   confirmText,
   isLoading = false,
+  confirmLabel,
 }: ConfirmDestructiveActionProps) {
   const [inputValue, setInputValue] = useState("");
   const isMatch = inputValue.toLowerCase() === confirmText.toLowerCase();
@@ -86,7 +94,7 @@ export default function ConfirmDestructiveAction({
           disabled={!isMatch || isLoading}
           isLoading={isLoading}
         >
-          Permanently {title.toLowerCase().replace(/^.*\s/, "")}
+          {confirmLabel ?? `Permanently ${title.toLowerCase().replace(/^.*\s/, "")}`}
         </Button>
       </ModalFooter>
     </Modal>

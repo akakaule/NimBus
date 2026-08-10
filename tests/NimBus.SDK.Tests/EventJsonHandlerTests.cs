@@ -47,6 +47,29 @@ public class EventJsonHandlerTests
     }
 
     [TestMethod]
+    public async Task Handle_SelfSentinelOriginatingMessageId_NormalizedToOwnMessageId()
+    {
+        // "self" is an internal wire sentinel meaning "this message IS the
+        // origin". Handler authors persist OriginatingMessageId as handoff
+        // settlement coordinates, so leaking the literal sentinel would
+        // corrupt lineage on the settlement wire message.
+        var handler = new RecordingHandler();
+        var sut = new EventJsonHandler<TestEvent>(handler);
+        var messageContext = MessageContextStub.ForWorkflowEvent(
+            nameof(TestEvent),
+            "{}",
+            messageId: "order-placed-1",
+            sessionId: "order-42",
+            correlationId: "conversation-7",
+            parentMessageId: "self",
+            originatingMessageId: "self");
+
+        await sut.Handle(messageContext);
+
+        Assert.AreEqual("order-placed-1", handler.LastContext?.OriginatingMessageId);
+    }
+
+    [TestMethod]
     public async Task Handle_LiteralNull_RejectsBeforeInvokingHandler()
     {
         var handler = new RecordingHandler();

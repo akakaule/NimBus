@@ -5,25 +5,8 @@ import Page from "components/page";
 import { Spinner } from "components/ui/spinner";
 import { NamespacePill } from "components/ui/namespace-pill";
 import { TopologyMiniMap } from "components/ui/topology-mini-map";
-import { Button } from "components/ui/button";
 import EventTypePropertiesTable from "components/event-types/event-type-properties-table";
 import EventTypeExamplePayload from "components/event-types/event-type-example-payload";
-
-const ExternalLinkIcon = () => (
-  <svg
-    className="w-3.5 h-3.5 inline-block ml-0.5"
-    fill="none"
-    stroke="currentColor"
-    viewBox="0 0 24 24"
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={1.6}
-      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-    />
-  </svg>
-);
 
 const EventTypeDetails: React.FC = () => {
   const params = useParams<{ id: string }>();
@@ -80,20 +63,6 @@ const EventTypeDetails: React.FC = () => {
       subtitle={eventType?.description || undefined}
       backbutton
       backUrl="/EventTypes"
-      actions={
-        details.codeRepoLink && (
-          <a
-            href={details.codeRepoLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="no-underline"
-          >
-            <Button variant="ghost" size="sm">
-              View Source <ExternalLinkIcon />
-            </Button>
-          </a>
-        )
-      }
     >
       <div className="w-full flex flex-col gap-5">
         {eventType?.namespace && (

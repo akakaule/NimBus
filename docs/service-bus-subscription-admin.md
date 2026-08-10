@@ -1,0 +1,100 @@
+# Admin → Subscriptions (Service Bus incident response)
+
+Operator reference for the **Subscriptions** tab in the NimBus WebApp admin page.
+Use it when a producer floods the bus and you need to find, stop and clear a
+backlog without collateral damage to other endpoints.
+
+Access is site **Owner**, same as the rest of `/admin`. Every mutating action is
+written to the audit trail as `ManageSubscription`.
+
+## What the numbers mean
+
+The first table lists every topic in the namespace — endpoint topics plus the
+platform's own `Resolver` topic.
+
+| Column | Meaning |
+| --- | --- |
+| **Active** | Messages waiting to be delivered, summed across the topic's subscriptions. A topic holds no messages of its own. |
+| **Dead-letter** | Messages that exhausted delivery or expired, **plus** messages Service Bus could not auto-forward. Azure keeps the latter in a separate *transfer* dead-letter queue; the page adds the two and breaks them out as `(N fwd)` with the split in the tooltip. |
+| **In transit** | Messages queued for auto-forward out of a subscription. A large number here means a forwarder is behind. |
+| **Scheduled** | Messages with a future enqueue time. |
+
+Columns sort on click; the table is alphabetical by default. Sorting on a count
+column puts the backlog at the top. Click a topic to see the same counters per
+subscription, plus its rules, its auto-forward destination and whether the
+platform can rebuild it.
+
+## Reading the NimBus topology
+
+Each endpoint topic carries:
+
+- the endpoint's **own subscription**, named after the endpoint — the
+  session-enabled one its adapter actually receives from, carrying the
+  `to-{endpoint}`, `continuation` and `retry` rules. Deleting this stops that
+  adapter until it is back, so prefer Purge here;
+- **`{endpoint}-reply`** — the session-enabled subscription request/reply
+  responses land on;
+- one **forwarder subscription per consuming endpoint**, auto-forwarding to that
+  consumer's own topic, with one rule per event type it consumes;
+- a **`Resolver`** subscription, auto-forwarding every audited message to the
+  `Resolver` topic — this is a second copy of *everything*, so a flood shows up
+  here as well as on the consumer;
+- **`Deferred`** (sessions on) and **`DeferredProcessor`** (sessions off);
+- **`AgentDyn-{target}`** forwarders for any dynamically-typed events declared as
+  `DynamicForward`s (spec 022).
+
+So one bad publishing run on `CrmEndpoint` inflates the `ErpEndpoint`
+subscription on `CrmEndpoint` *and* the `Resolver` subscription on `CrmEndpoint`
+*and* the `Resolver` topic itself. Check all three.
+
+## Choosing an action
+
+| You want to… | Use | Notes |
+| --- | --- | --- |
+| Stop a subscription taking anything new | **Detach rule** | Removes the matching rule, so nothing new enters. What's already queued still drains. Reverse with **Restore rules**. Only rules the platform topology can rebuild are detachable — a `$Default` that is a subscription's whole routing, or anything on a hand-made subscription, is shown greyed out because NimBus could not put it back. |
+| Stop a subscription delivering / forwarding | **Pause** | Sets `ReceiveDisabled`. On an auto-forwarding subscription it *also* detaches the forward destination, so messages collect in the subscription instead of moving on. **Resume** puts the destination back. |
+| Empty a normal subscription | **Purge** | Drains active and deferred messages one batch at a time. Fine for hundreds, slow for tens of thousands. Leaves both dead-letter queues alone. A paused subscription is made receivable for the duration and returned to Paused afterwards. |
+| Empty an auto-forwarding subscription | **Delete & recreate** | Service Bus refuses receive on a forwarding entity, so it can't be drained. Delete + re-provision discards the backlog in one management call. Alternatively **Pause** first (which detaches forwarding) and then **Purge**, if you'd rather not delete the entity. |
+| Remove something that shouldn't exist | **Delete** | No rebuild. |
+
+### Why "Delete & recreate" is safe
+
+The subscription is rebuilt from `TopologyDescriptor` — the same declarative
+topology `ServiceBusTopologyProvisioner` (and so `nb topology apply`) uses — so
+rules, filters, actions, session flag, TTL and forward destination come back
+exactly as provisioning would have created them. A test pins the descriptor and
+the provisioner against each other so the two cannot drift.
+
+Subscriptions the descriptor cannot describe show **no** recreate button, and
+deleting one needs an extra acknowledgement.
+
+There is a short window while the subscription does not exist. Messages published
+in that window are not captured by it. During an incident that is usually the
+point; outside one, prefer Pause.
+
+## Cautions
+
+- **Recreate loses the backlog on purpose.** The number on the confirmation is
+  everything the subscription holds, dead-lettered messages included — a purge
+  would have left those behind, a delete does not.
+- **A pause left unresumed is not silent, but it is easy to forget.** A paused
+  forwarding subscription shows `→ <destination> (detached)` and a *Paused*
+  badge. Messages accumulate and will eventually hit the topic's size quota.
+- **Dead-letter counts don't clear themselves.** If auto-forwarding failed
+  because a destination was disabled or full, Service Bus dead-letters on the
+  *source* — those messages need explicit handling, and Purge won't touch them.
+- **Topics the platform doesn't own are read-only.** They're listed so a stray
+  topic sitting on a backlog is visible, but every action is disabled — manage
+  those in the Azure portal.
+- **`Deferred` and `{endpoint}-reply` are session-enabled.** Purging one walks
+  sessions in turn and is slower than the flat count suggests.
+
+## Related
+
+- [architecture.md](architecture.md) — endpoint/event topology.
+- Admin → **Topology** tab — audits subscriptions and rules against the expected
+  topology and removes deprecated leftovers.
+- Admin → **Operations** tab — message-store operations (resubmit, skip, delete
+  by status). Those act on stored events, not on the bus.
+- [cli.md](cli.md) — `nb topology apply` re-provisions everything the descriptor
+  describes, and is the way back from a rebuild that failed.

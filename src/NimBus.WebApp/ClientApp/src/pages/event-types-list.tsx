@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import * as api from "api-client";
 import Page from "components/page";
 import { Spinner } from "components/ui/spinner";
@@ -6,13 +7,7 @@ import { Badge } from "components/ui/badge";
 import { NamespacePill } from "components/ui/namespace-pill";
 import { EmptyState } from "components/ui/empty-state";
 import DataTable, { ITableRow, ITableHeadCell } from "components/data-table";
-import EventTypeSearchToolbar, {
-  ViewMode,
-} from "components/event-types/event-type-search-toolbar";
-import EventTypeNamespaceGroup, {
-  INamespaceGroup,
-  EventTypeWithCounts,
-} from "components/event-types/event-type-namespace-group";
+import EventTypeSearchToolbar from "components/event-types/event-type-search-toolbar";
 import { useUrlFilters } from "hooks/use-url-filters";
 
 enum TableColumns {
@@ -23,32 +18,30 @@ enum TableColumns {
   consumers = "consumers",
 }
 
-// URL-driven filter shape. searchTerm + selectedNamespace + selectedEndpoint +
-// viewMode are all stored in query params so that pressing Back (e.g. after
-// drilling into an event type) restores the same filter state. Declared as a
+// URL-driven filter shape. The filters are stored in query params so that
+// pressing Back (e.g. after drilling into an event type) restores the same
+// filter state. Declared as a
 // closed `type` so it satisfies the index-signature constraint of `useUrlFilters<T>`.
 type EventTypesFilter = {
   searchTerm: string;
   selectedNamespace: string;
   selectedEndpoint: string;
-  viewMode: string;
 };
 
 const DEFAULT_EVENT_TYPES_FILTER: EventTypesFilter = {
   searchTerm: "",
   selectedNamespace: "",
   selectedEndpoint: "",
-  viewMode: "cards",
 };
 
 const EventTypesList: React.FC = () => {
-  const { applied, setFiltersWithoutHistory } =
-    useUrlFilters<EventTypesFilter>(DEFAULT_EVENT_TYPES_FILTER);
+  const { applied, setFiltersWithoutHistory } = useUrlFilters<EventTypesFilter>(
+    DEFAULT_EVENT_TYPES_FILTER,
+  );
 
   const searchTerm = applied.searchTerm;
   const selectedNamespace = applied.selectedNamespace;
   const selectedEndpoint = applied.selectedEndpoint;
-  const viewMode = (applied.viewMode === "table" ? "table" : "cards") as ViewMode;
 
   const [eventTypes, setEventTypes] = useState<api.EventType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -118,32 +111,6 @@ const EventTypesList: React.FC = () => {
     });
   }, [eventTypes, searchTerm, selectedNamespace, selectedEndpoint]);
 
-  const groupedEventTypes = useMemo((): INamespaceGroup[] => {
-    const groups: { [ns: string]: EventTypeWithCounts[] } = {};
-
-    filteredEventTypes.forEach((et) => {
-      const ns = et.namespace || UNCATEGORIZED;
-      if (!groups[ns]) {
-        groups[ns] = [];
-      }
-      const eventTypeWithCounts: EventTypeWithCounts = {
-        eventType: et,
-        producerCount: et.producerCount ?? 0,
-        consumerCount: et.consumerCount ?? 0,
-      };
-      groups[ns].push(eventTypeWithCounts);
-    });
-
-    return Object.entries(groups)
-      .map(([namespace, eventTypes]) => ({
-        namespace,
-        eventTypes: eventTypes.sort((a, b) =>
-          (a.eventType.name || "").localeCompare(b.eventType.name || ""),
-        ),
-      }))
-      .sort((a, b) => a.namespace.localeCompare(b.namespace));
-  }, [filteredEventTypes]);
-
   const tableRows = useMemo((): ITableRow[] => {
     return filteredEventTypes.map((et) => ({
       id: et.id,
@@ -172,28 +139,30 @@ const EventTypesList: React.FC = () => {
           },
         ],
         [
-          TableColumns.description,
-          {
-            value: (
-              <span className="text-sm line-clamp-2">
-                {et.description || "No description"}
-              </span>
-            ),
-            searchValue: et.description || "",
-          },
-        ],
-        [
           TableColumns.producers,
           {
-            value: <Badge variant="success">{et.producerCount ?? 0}</Badge>,
-            searchValue: String(et.producerCount ?? 0),
+            value: (
+              <EndpointBadges endpoints={et.producers} variant="success" />
+            ),
+            searchValue: et.producers?.join(" ") || "",
           },
         ],
         [
           TableColumns.consumers,
           {
-            value: <Badge variant="info">{et.consumerCount ?? 0}</Badge>,
-            searchValue: String(et.consumerCount ?? 0),
+            value: <EndpointBadges endpoints={et.consumers} variant="info" />,
+            searchValue: et.consumers?.join(" ") || "",
+          },
+        ],
+        [
+          TableColumns.description,
+          {
+            value: (
+              <span className="text-sm whitespace-normal line-clamp-2">
+                {et.description || "No description"}
+              </span>
+            ),
+            searchValue: et.description || "",
           },
         ],
       ]),
@@ -203,9 +172,9 @@ const EventTypesList: React.FC = () => {
   const headCells: ITableHeadCell[] = [
     { id: TableColumns.name, label: "Name", numeric: false },
     { id: TableColumns.namespace, label: "Namespace", numeric: false },
+    { id: TableColumns.producers, label: "Producers", numeric: false },
+    { id: TableColumns.consumers, label: "Consumers", numeric: false },
     { id: TableColumns.description, label: "Description", numeric: false },
-    { id: TableColumns.producers, label: "Producers", numeric: true },
-    { id: TableColumns.consumers, label: "Consumers", numeric: true },
   ];
 
   const eventTypeCount = eventTypes.length;
@@ -213,10 +182,7 @@ const EventTypesList: React.FC = () => {
 
   if (loading) {
     return (
-      <Page
-        title="Event Types"
-        subtitle="Contracts published across the bus"
-      >
+      <Page title="Event Types" subtitle="Contracts published across the bus">
         <div className="flex items-center justify-center w-full h-[200px]">
           <Spinner size="xl" color="primary" />
         </div>
@@ -234,9 +200,6 @@ const EventTypesList: React.FC = () => {
     setFiltersWithoutHistory({ ...applied, selectedNamespace: next });
   const setSelectedEndpoint = (next: string) =>
     setFiltersWithoutHistory({ ...applied, selectedEndpoint: next });
-  const setViewMode = (next: ViewMode) =>
-    setFiltersWithoutHistory({ ...applied, viewMode: next });
-
   const hasActiveFilters =
     searchTerm.length > 0 ||
     selectedNamespace.length > 0 ||
@@ -255,8 +218,6 @@ const EventTypesList: React.FC = () => {
           selectedEndpoint={selectedEndpoint}
           onEndpointChange={setSelectedEndpoint}
           endpoints={endpoints}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
         />
 
         {filteredEventTypes.length === 0 ? (
@@ -288,8 +249,6 @@ const EventTypesList: React.FC = () => {
               )
             }
           />
-        ) : viewMode === "cards" ? (
-          <EventTypeNamespaceGroup groups={groupedEventTypes} />
         ) : (
           <DataTable
             headCells={headCells}
@@ -304,6 +263,39 @@ const EventTypesList: React.FC = () => {
         )}
       </div>
     </Page>
+  );
+};
+
+interface EndpointBadgesProps {
+  endpoints?: string[];
+  variant: "success" | "info";
+}
+
+const EndpointBadges = ({ endpoints, variant }: EndpointBadgesProps) => {
+  if (!endpoints?.length) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+
+  return (
+    <span className="flex flex-wrap gap-1 whitespace-normal">
+      {endpoints.map((endpoint) => (
+        <Link
+          key={endpoint}
+          to={`/Endpoints/Details/${encodeURIComponent(endpoint)}`}
+          className="no-underline"
+          title={endpoint}
+        >
+          <Badge
+            variant={variant}
+            size="sm"
+            withDot={false}
+            className="rounded-nb-sm font-mono font-medium"
+          >
+            {endpoint}
+          </Badge>
+        </Link>
+      ))}
+    </span>
   );
 };
 

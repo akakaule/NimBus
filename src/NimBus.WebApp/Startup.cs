@@ -21,11 +21,13 @@ using Microsoft.Net.Http.Headers;
 using NSwag.AspNetCore;
 using NimBus.Core;
 using NimBus.Core.Messages;
+using NimBus.Core.Messages.PII;
 using NimBus.OpenTelemetry;
 using NimBus.Manager;
 using NimBus.MessageStore;
 using NimBus.SDK.Extensions;
 using NimBus.ServiceBus;
+using NimBus.ServiceBus.Provisioning;
 using NimBus.WebApp.Services;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Controllers;
@@ -371,6 +373,17 @@ namespace NimBus.WebApp
 
                 return (IPlatform)Activator.CreateInstance(type)!;
             });
+
+            // Field-level PII masking for non-PiiReader responses. Built from the same
+            // IPlatform catalog so the event-type -> CLR type map the masker resolves
+            // [Sensitive] annotations against is exactly the one the WebApp serves.
+            // The optional salt only affects MaskMode.Hash; an empty salt still yields
+            // deterministic output, it is simply not environment-specific.
+            services.AddSingleton<IEventJsonMasker>(sp => new EventJsonMasker(
+                sp.GetRequiredService<IPlatform>(),
+                sp.GetRequiredService<IConfiguration>()["NimBus:PiiHashSalt"] ?? string.Empty));
+
+            services.AddSingleton<PayloadRedaction>();
         }
 
         private void AddServiceBusClients(IServiceCollection services)
@@ -460,6 +473,12 @@ namespace NimBus.WebApp
             services.AddSingleton<IServiceBusManagement>(sp => new ServiceBusManagement(
                 sp.GetRequiredService<ServiceBusAdministrationClient>(),
                 sp.GetService<ILogger<ServiceBusManagement>>()));
+
+            // Rebuilding a subscription after an operator deletes it to discard a backlog
+            // is provisioning, so it goes through the provisioner rather than a second
+            // implementation that could drift from it.
+            services.AddSingleton<ITopologyRebuilder>(sp => new ServiceBusTopologyRebuilder(
+                sp.GetRequiredService<ServiceBusAdministrationClient>()));
         }
 
         private void AddObservability(IServiceCollection services, string storageProvider)
@@ -553,6 +572,18 @@ namespace NimBus.WebApp
             services.AddTransient<IApplicationApiController, ApplicationImplementation>();
             services.AddTransient<IMessageApiController, MessageImplementation>();
             services.AddScoped<IAdminService, AdminService>();
+            // The emulator caps entity TTLs far below a real namespace, so a rebuild has to
+            // ask the descriptor for emulator-safe values when that is what we're pointed at.
+            var isEmulator = ServiceBusTopologyProvisioner.IsEmulator(
+                Configuration.GetConnectionString("servicebus")
+                ?? Configuration.GetValue<string>("AzureWebJobsServiceBus"));
+            services.AddScoped<ISubscriptionAdminService>(sp => new SubscriptionAdminService(
+                sp.GetRequiredService<IPlatform>(),
+                sp.GetRequiredService<IServiceBusManagement>(),
+                sp.GetRequiredService<ITopologyRebuilder>(),
+                sp.GetRequiredService<ServiceBusClient>(),
+                sp.GetRequiredService<ILogger<SubscriptionAdminService>>(),
+                isEmulator));
             services.AddTransient<IAdminApiController, AdminImplementation>();
             services.AddTransient<IMetricsApiController, MetricsImplementation>();
             services.AddTransient<IAuditApiController, AuditImplementation>();

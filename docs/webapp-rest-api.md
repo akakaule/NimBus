@@ -16,7 +16,7 @@ are still on the roadmap.
 - **Spec version:** `0.0.1` (pre-1.0; see [Versioning + stability](#versioning--stability) below).
 - **Route prefix:** every operation lives under `/api/…`.
 - **Surface size:** 74 operations across 10 domains (Endpoint, Event, EventType, Application, Admin, Message, Audit, Metrics, Dev, StorageHook).
-- **Auth:** ASP.NET Identity cookie *and/or* Microsoft Entra ID (interactive browser flow + bearer-token flow). All `/api/…` endpoints require an authenticated principal — there is no anonymous surface beyond `/health`, `/alive`, `/ready`.
+- **Auth:** ASP.NET Identity cookie *and/or* Microsoft Entra ID (interactive browser flow + bearer-token flow). Effectively all `/api/…` endpoints require an authenticated principal. Two are reachable anonymously by design: `GET /api/app/stats` (a liveness shape that discloses nothing to an anonymous caller — see [Application](#application)) and `POST /api/storagehook/cosmos/{endpointId}` (gated by a shared webhook key rather than a principal). Beyond `/api/…`, `/health`, `/alive` and `/ready` are anonymous.
 - **Schema generation:** NSwag reads `api-spec.yaml` pre-build and emits server contracts (`Controllers/ApiContract.g.cs`) plus a TypeScript client (`ClientApp/src/api-client/index.ts`) — see [Code generation](#code-generation).
 
 ## Audience
@@ -231,12 +231,40 @@ registration is in `Startup.cs`.
 ### Application
 
 Process-wide platform stats and metadata about the running installation.
-Example — top-level dashboard counters:
+
+`GET /api/app/stats` is reachable without credentials so liveness probes and
+status monitors keep working, but its **payload is authenticated-only** (GH#93):
+environment name, exact platform version and backend topology would otherwise let
+an unauthenticated scanner fingerprint the deployment.
+
+Authenticated — the full shape:
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
      https://nimbus.example.com/api/app/stats
 ```
+
+```json
+{
+  "env": "Production",
+  "platformVersion": "1.4.2",
+  "storageProvider": "Cosmos DB",
+  "ticketLinkTemplate": "https://support.example.com/browse/{ticket}"
+}
+```
+
+Anonymous — 200 with an empty status object (every field null or absent):
+
+```bash
+curl https://nimbus.example.com/api/app/stats
+```
+
+```json
+{ "env": null, "platformVersion": null, "storageProvider": null, "ticketLinkTemplate": null }
+```
+
+All four fields are declared optional/nullable in `api-spec.yaml`, so generated
+clients accept either shape.
 
 ### Admin
 

@@ -121,12 +121,15 @@ public sealed class CrmAccountCreatedHandler(
             // Register the external work. The job needs the audit-row coordinates
             // (EventId, SessionId, MessageId, EventTypeId, CorrelationId) so the
             // settlement step can address the same message later.
+            // OriginatingMessageId must come from the context, NOT MessageId: on a
+            // retry/resubmission replay MessageId is the replay request's id, and
+            // persisting it here would corrupt the settlement's audit lineage.
             await jobRegistration.RegisterAsync(new HandoffJob
             {
                 EventId = context.EventId,
                 SessionId = message.AccountId.ToString(),
                 MessageId = context.MessageId,
-                OriginatingMessageId = context.MessageId,
+                OriginatingMessageId = context.OriginatingMessageId ?? context.MessageId,
                 EventTypeId = context.EventType,
                 CorrelationId = context.CorrelationId,
                 ExternalJobId = jobId,

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Azure.Messaging.ServiceBus.Administration;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Management.ServiceBus;
 
@@ -93,6 +94,29 @@ public sealed class EndpointManagementTests
             => throw new NotSupportedException();
 
         public Task UpdateForwardTo(string topicName, string subscriptionName, string forwardTo)
+            => throw new NotSupportedException();
+
+        // Read/inspect surface used by the WebApp's subscription admin, not by ClearEndpoint.
+        public Task UpdateSubscription(
+            string topicName, string subscriptionName, EntityStatus status, string forwardTo, bool changeForwardTo)
+            => throw new NotSupportedException();
+
+        public Task<SubscriptionProperties> GetSubscription(string topicName, string subscriptionName)
+            => throw new NotSupportedException();
+
+        public IAsyncEnumerable<TopicProperties> ListTopicsAsync()
+            => throw new NotSupportedException();
+
+        public IAsyncEnumerable<SubscriptionProperties> ListSubscriptionsAsync(string topicName)
+            => throw new NotSupportedException();
+
+        public IAsyncEnumerable<RuleProperties> ListRulesAsync(string topicName, string subscriptionName)
+            => throw new NotSupportedException();
+
+        public IAsyncEnumerable<TopicRuntimeProperties> ListTopicRuntimePropertiesAsync()
+            => throw new NotSupportedException();
+
+        public IAsyncEnumerable<SubscriptionRuntimeProperties> ListSubscriptionRuntimePropertiesAsync(string topicName)
             => throw new NotSupportedException();
 
         private Task Record(string call)

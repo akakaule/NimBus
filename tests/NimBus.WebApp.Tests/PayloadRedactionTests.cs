@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Newtonsoft.Json.Linq;
+using NimBus.Core.Messages.PII;
 using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.ManagementApi;
@@ -13,57 +15,110 @@ using NimBus.WebApp.Services;
 namespace NimBus.WebApp.Tests;
 
 /// <summary>
-/// Spec 026 phase D: whole-payload redaction helper semantics and the Reader
-/// floor on the previously-ungated cross-endpoint read APIs.
+/// Field-level payload masking: only [Sensitive] values are replaced for callers
+/// without the PII Reader role, and the helper fails closed to a whole-payload
+/// marker when the event type cannot be resolved. Also covers the Reader floor on
+/// the previously-ungated cross-endpoint read APIs.
 /// </summary>
 [TestClass]
 public class PayloadRedactionTests
 {
+    // Fully qualified: NimBus.Core's Event/Endpoint collide with the ManagementApi
+    // DTO Event and Microsoft.AspNetCore.Http.Endpoint used elsewhere in this file.
+    public class OrderPlaced : NimBus.Core.Events.Event
+    {
+        [Sensitive]
+        public string Cpr { get; set; } = string.Empty;
+
+        public string OrderId { get; set; } = string.Empty;
+    }
+
+    private sealed class MaskingEndpoint : NimBus.Core.Endpoints.Endpoint
+    {
+        public MaskingEndpoint() { Produces<OrderPlaced>(); }
+    }
+
+    private sealed class MaskingPlatform : NimBus.Core.Platform
+    {
+        public MaskingPlatform() { AddEndpoint(new MaskingEndpoint()); }
+    }
+
+    internal static PayloadRedaction NewRedaction() =>
+        new(new EventJsonMasker(new MaskingPlatform()));
+
+    private const string OrderJson = "{\"Cpr\":\"010101-1234\",\"OrderId\":\"A-1\"}";
+
     [TestMethod]
-    public void Redact_event_replaces_payload_and_keeps_type_id()
+    public void Redact_event_masks_only_sensitive_fields_and_keeps_type_id()
     {
         var e = new Event
         {
             MessageContent = new MessageContent
             {
-                EventContent = new EventContent { EventJson = "{\"cpr\":\"010101-1234\"}", EventTypeId = "OrderPlaced" },
+                EventContent = new EventContent { EventJson = OrderJson, EventTypeId = nameof(OrderPlaced) },
             },
         };
 
-        PayloadRedaction.Redact(e);
+        NewRedaction().Redact(e);
 
-        Assert.AreEqual(PayloadRedaction.Placeholder, e.MessageContent.EventContent.EventJson);
-        Assert.AreEqual("OrderPlaced", e.MessageContent.EventContent.EventTypeId);
+        var parsed = JObject.Parse(e.MessageContent.EventContent.EventJson);
+        Assert.AreEqual("***", (string?)parsed["Cpr"], "The [Sensitive] field must be masked.");
+        Assert.AreEqual("A-1", (string?)parsed["OrderId"], "Non-sensitive fields must stay readable.");
+        Assert.AreEqual(nameof(OrderPlaced), e.MessageContent.EventContent.EventTypeId);
+    }
+
+    [TestMethod]
+    public void Redact_event_fails_closed_when_event_type_is_unresolvable()
+    {
+        var e = new Event
+        {
+            MessageContent = new MessageContent
+            {
+                EventContent = new EventContent { EventJson = OrderJson, EventTypeId = "NotAKnownType" },
+            },
+        };
+
+        NewRedaction().Redact(e);
+
+        Assert.AreEqual(
+            EventJsonMasker.UnknownTypeMarker,
+            e.MessageContent.EventContent.EventJson,
+            "An unresolvable type must never leave the payload readable.");
     }
 
     [TestMethod]
     public void Redact_is_null_safe_and_leaves_empty_payloads_untouched()
     {
-        Assert.IsNull(PayloadRedaction.Redact((Event?)null));
-        Assert.IsNull(PayloadRedaction.Redact((Message?)null));
-        Assert.IsNull(PayloadRedaction.Redact((EventDetails?)null));
-        Assert.IsNull(PayloadRedaction.Redact((EndpointStatus?)null));
+        var redaction = NewRedaction();
+
+        Assert.IsNull(redaction.Redact((Event?)null));
+        Assert.IsNull(redaction.Redact((Message?)null));
+        Assert.IsNull(redaction.Redact((EventDetails?)null));
+        Assert.IsNull(redaction.Redact((EndpointStatus?)null));
 
         var noPayload = new Event { MessageContent = new MessageContent { EventContent = new EventContent() } };
-        PayloadRedaction.Redact(noPayload);
+        redaction.Redact(noPayload);
         Assert.IsNull(noPayload.MessageContent.EventContent.EventJson);
     }
 
     [TestMethod]
     public void Redact_message_and_details_and_status_and_log_and_subscription()
     {
-        var message = new Message { EventContent = "{\"secret\":1}" };
-        PayloadRedaction.Redact(message);
-        Assert.AreEqual(PayloadRedaction.Placeholder, message.EventContent);
+        var redaction = NewRedaction();
+
+        var message = new Message { EventTypeId = nameof(OrderPlaced), EventContent = OrderJson };
+        redaction.Redact(message);
+        Assert.AreEqual("***", (string?)JObject.Parse(message.EventContent)["Cpr"]);
+        Assert.AreEqual("A-1", (string?)JObject.Parse(message.EventContent)["OrderId"]);
 
         var details = new EventDetails
         {
-            FailedMessage = new Message { EventContent = "{\"a\":1}" },
-            OriginatingMessage = new Message { EventContent = "{\"b\":2}" },
+            FailedMessage = new Message { EventTypeId = nameof(OrderPlaced), EventContent = OrderJson },
+            OriginatingMessage = new Message { EventTypeId = nameof(OrderPlaced), EventContent = OrderJson },
         };
-        PayloadRedaction.Redact(details);
-        Assert.AreEqual(PayloadRedaction.Placeholder, details.FailedMessage.EventContent);
-        Assert.AreEqual(PayloadRedaction.Placeholder, details.OriginatingMessage.EventContent);
+        redaction.Redact(details);
+        Assert.AreEqual("***", (string?)JObject.Parse(details.FailedMessage.EventContent)["Cpr"]);
+        Assert.AreEqual("***", (string?)JObject.Parse(details.OriginatingMessage.EventContent)["Cpr"]);
 
         var status = new EndpointStatus
         {
@@ -73,23 +128,43 @@ public class PayloadRedactionTests
                 {
                     MessageContent = new MessageContent
                     {
-                        EventContent = new EventContent { EventJson = "{\"x\":1}" },
+                        EventContent = new EventContent { EventJson = OrderJson, EventTypeId = nameof(OrderPlaced) },
                     },
                 },
             },
         };
-        PayloadRedaction.Redact(status);
-        Assert.AreEqual(
-            PayloadRedaction.Placeholder,
-            status.EnrichedUnresolvedEvents.Single().MessageContent.EventContent.EventJson);
+        redaction.Redact(status);
+        var statusJson = status.EnrichedUnresolvedEvents.Single().MessageContent.EventContent.EventJson;
+        Assert.AreEqual("***", (string?)JObject.Parse(statusJson)["Cpr"]);
 
-        var log = new EventLogEntry { Payload = "{\"y\":2}" };
-        PayloadRedaction.Redact(log);
-        Assert.AreEqual(PayloadRedaction.Placeholder, log.Payload);
+        var log = new EventLogEntry { EventType = nameof(OrderPlaced), Payload = OrderJson };
+        redaction.Redact(log);
+        Assert.AreEqual("***", (string?)JObject.Parse(log.Payload)["Cpr"]);
 
+        // Subscription filters are operator-authored fragments with no event type to
+        // resolve annotations against, so they are omitted rather than masked.
         var sub = new ManagementApi.EndpointSubscription { Payload = "fragment" };
         PayloadRedaction.RedactSubscription(sub);
         Assert.IsNull(sub.Payload);
+    }
+
+    [TestMethod]
+    public void Redact_adds_marker_so_a_masked_payload_is_detectable_on_resubmit()
+    {
+        var e = new Event
+        {
+            MessageContent = new MessageContent
+            {
+                EventContent = new EventContent { EventJson = OrderJson, EventTypeId = nameof(OrderPlaced) },
+            },
+        };
+
+        NewRedaction().Redact(e);
+
+        var masker = new EventJsonMasker(new MaskingPlatform());
+        Assert.IsTrue(
+            masker.ContainsRedactPlaceholder(nameof(OrderPlaced), e.MessageContent.EventContent.EventJson),
+            "A masked payload must be detectable, otherwise the resubmit gate cannot reject it.");
     }
 }
 
@@ -126,7 +201,8 @@ public class ReaderFloorTests
     private static MessageImplementation Messages(StubAuthz authz) => new(
         new InMemoryMessageStore(),
         NullLogger<MessageImplementation>.Instance,
-        authz);
+        authz,
+        PayloadRedactionTests.NewRedaction());
 
     [TestMethod]
     public async Task Metrics_require_site_reader()

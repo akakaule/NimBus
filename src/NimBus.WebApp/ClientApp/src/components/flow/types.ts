@@ -68,7 +68,7 @@ export interface EndpointDelta {
 // Layout
 // ---------------------------------------------------------------------------
 
-export type FlowNodeKind = "producer" | "topic" | "consumer" | "platform";
+export type FlowNodeKind = "producer" | "topic" | "consumer";
 export type FlowNodeHealth = "good" | "warn" | "bad" | "idle";
 
 export interface FlowNode {
@@ -87,7 +87,7 @@ export interface FlowNode {
   health: FlowNodeHealth;
 }
 
-export type FlowRouteKind = "publish" | "deliver" | "outcome";
+export type FlowRouteKind = "publish" | "deliver";
 
 export interface FlowRoute {
   /** Stable: `${kind}::${fromNodeId}::${toNodeId}` — React key + animator handle. */
@@ -112,8 +112,6 @@ export interface EndpointRouteIndex {
    * its producer adapter, through its Service Bus topic, into this endpoint.
    */
   journeys: string[][];
-  /** Route carrying outcomes endpoint → Resolver topic. */
-  outcome: string;
 }
 
 export interface FlowLayout {

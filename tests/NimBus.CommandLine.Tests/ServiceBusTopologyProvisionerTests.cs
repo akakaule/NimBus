@@ -6,6 +6,7 @@ using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
+using NimBus.ServiceBus.Provisioning;
 using Xunit;
 
 namespace NimBus.CommandLine.Tests;
@@ -186,6 +187,135 @@ public sealed class ServiceBusTopologyProvisionerTests
         Assert.Empty(client.DeletedRules);
     }
 
+    [Fact]
+    public async Task ApplyAsync_CreatesExactlyWhatTheDescriptorDescribes()
+    {
+        // The WebApp's subscription admin rebuilds a deleted subscription from
+        // TopologyDescriptor. That is only safe while what the descriptor says and what
+        // the provisioner lays down cannot drift, so pin the two against each other on a
+        // platform exercising every subscription kind: a producer, a consumer, a
+        // self-consumed event type, and a dynamic forward.
+        var client = new RecordingAdministrationClient();
+
+        var crm = new EventEndpoint("CrmEndpoint", produces: new[] { "AccountCreated", "ContactCreated" }, consumes: new[] { "ContactCreated" });
+        var erp = new EventEndpoint("ErpEndpoint", produces: Array.Empty<string>(), consumes: new[] { "AccountCreated", "ContactCreated" });
+        var platform = new TestPlatform(new[] { new DynamicForward("CrmEndpoint", "LegacyOrderPlaced", "ErpEndpoint") }, crm, erp);
+
+        var sut = CreateProvisioner(client, platform);
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        foreach (var topicName in new[] { Constants.ResolverId, "CrmEndpoint", "ErpEndpoint" })
+        {
+            var described = TopologyDescriptor.ForTopic(topicName, platform);
+
+            Assert.Equal(
+                described.Select(subscription => subscription.Name).OrderBy(name => name, StringComparer.Ordinal),
+                client.CreatedSubscriptions
+                    .Where(subscription => subscription.TopicName == topicName)
+                    .Select(subscription => subscription.SubscriptionName)
+                    .OrderBy(name => name, StringComparer.Ordinal));
+
+            foreach (var expected in described)
+            {
+                var created = Assert.Single(client.CreatedSubscriptions, subscription =>
+                    subscription.TopicName == topicName && subscription.SubscriptionName == expected.Name);
+
+                Assert.Equal(expected.RequiresSession, created.RequiresSession);
+                Assert.Equal(expected.ForwardTo ?? string.Empty, created.ForwardTo ?? string.Empty);
+
+                // $Default is dropped everywhere the descriptor doesn't ask to keep it —
+                // a true-filter left in place hands the subscription the whole topic.
+                Assert.Equal(
+                    !expected.KeepDefaultRule,
+                    client.DeletedRules.Any(rule =>
+                        rule.TopicName == topicName &&
+                        rule.SubscriptionName == expected.Name &&
+                        rule.RuleName == TopologyDescriptor.DefaultRuleName));
+
+                Assert.Equal(
+                    expected.Rules.Select(rule => rule.Name).OrderBy(name => name, StringComparer.Ordinal),
+                    client.CreatedRules
+                        .Where(rule => rule.TopicName == topicName && rule.SubscriptionName == expected.Name)
+                        .Select(rule => rule.Rule.Name)
+                        .OrderBy(name => name, StringComparer.Ordinal));
+
+                foreach (var expectedRule in expected.Rules)
+                {
+                    var createdRule = Assert.Single(client.CreatedRules, rule =>
+                        rule.TopicName == topicName &&
+                        rule.SubscriptionName == expected.Name &&
+                        rule.Rule.Name == expectedRule.Name).Rule;
+
+                    // Ordinal: RuleMatches compares ordinally, so anything short of
+                    // byte-identical churns the rule on the next apply.
+                    Assert.Equal(expectedRule.Filter, ((SqlRuleFilter)createdRule.Filter).SqlExpression, StringComparer.Ordinal);
+                    Assert.Equal(
+                        expectedRule.Action ?? string.Empty,
+                        (createdRule.Action as SqlRuleAction)?.SqlExpression ?? string.Empty,
+                        StringComparer.Ordinal);
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void Descriptor_DescribesTheEndpointsOwnReplySubscription()
+    {
+        // The reply subscription is the one an endpoint's request/reply traffic lands on.
+        // Omitting it from the expected topology makes every consumer of that topology —
+        // the admin topology audit included — read it as deprecated.
+        var described = TopologyDescriptor.ForTopic("orders", new TestPlatform(new TestEndpoint("orders")));
+
+        var reply = Assert.Single(described, subscription => subscription.Name == "orders-reply");
+        Assert.True(reply.RequiresSession);
+        Assert.Null(reply.ForwardTo);
+        Assert.Equal("user.To = 'orders-reply'", Assert.Single(reply.Rules).Filter, StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public void Descriptor_OmitsAForwarderForAnEndpointConsumingItsOwnEvent()
+    {
+        // Such a forwarder would collide with the endpoint's own terminal subscription of
+        // the same name, and Service Bus rejects a subscription forwarding to its own topic.
+        var endpoint = new EventEndpoint("CrmEndpoint", produces: new[] { "ContactCreated" }, consumes: new[] { "ContactCreated" });
+        var described = TopologyDescriptor.ForTopic("CrmEndpoint", new TestPlatform(endpoint));
+
+        var own = Assert.Single(described, subscription => subscription.Name == "CrmEndpoint");
+        Assert.Null(own.ForwardTo);
+        Assert.True(own.RequiresSession);
+    }
+
+    [Fact]
+    public void FindSubscription_ReturnsNullForSomethingThePlatformCannotRebuild()
+    {
+        var platform = new TestPlatform(new TestEndpoint("orders"));
+
+        Assert.Null(TopologyDescriptor.FindSubscription("orders", "hand-made-by-an-operator", platform));
+        Assert.Null(TopologyDescriptor.FindSubscription("a-topic-nobody-declared", "orders", platform));
+        Assert.NotNull(TopologyDescriptor.FindSubscription("orders", Constants.DeferredSubscriptionName, platform));
+        // Case-insensitively, because Service Bus reports entity names as stored.
+        Assert.NotNull(TopologyDescriptor.FindSubscription("ORDERS", "deferredprocessor", platform));
+    }
+
+    [Fact]
+    public void ResolverSubscription_KeepsItsDefaultRule()
+    {
+        // The Resolver consumes everything forwarded to its topic, so $Default is its
+        // routing — dropping it would silence the resolver entirely.
+        var resolver = Assert.Single(TopologyDescriptor.ForSystemTopic(Constants.ResolverId));
+
+        Assert.True(resolver.KeepDefaultRule);
+        Assert.True(resolver.RequiresSession);
+        Assert.Empty(resolver.Rules);
+    }
+
+    [Fact]
+    public void DeferredSubscription_DropsToAnEmulatorSafeTimeToLive()
+    {
+        Assert.Equal(TimeSpan.FromDays(14), TopologyDescriptor.DeferredSubscription().DefaultMessageTimeToLive);
+        Assert.Equal(TimeSpan.FromHours(1), TopologyDescriptor.DeferredSubscription(isEmulator: true).DefaultMessageTimeToLive);
+    }
+
     private static SubscriptionProperties MakeSubscriptionProperties(
         string topicName, string subscriptionName,
         bool requiresSession = false, string? forwardTo = null) =>
@@ -349,12 +479,20 @@ public sealed class ServiceBusTopologyProvisionerTests
     private sealed class TestPlatform : Platform
     {
         public TestPlatform(params IEndpoint[] endpoints)
+            : this(Array.Empty<DynamicForward>(), endpoints)
         {
+        }
+
+        public TestPlatform(IReadOnlyList<DynamicForward> dynamicForwards, params IEndpoint[] endpoints)
+        {
+            DynamicForwards = dynamicForwards;
             foreach (var endpoint in endpoints)
             {
                 AddEndpoint(endpoint);
             }
         }
+
+        public override IReadOnlyList<DynamicForward> DynamicForwards { get; }
     }
 
     private sealed class TestEndpoint : IEndpoint

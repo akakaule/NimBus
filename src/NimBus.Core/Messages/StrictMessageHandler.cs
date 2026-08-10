@@ -182,10 +182,7 @@ namespace NimBus.Core.Messages
                 // execution never reaches here — the catch branches below own it.
                 if (messageContext.HandlerOutcome == HandlerOutcome.PendingHandoff)
                 {
-                    await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata, cancellationToken);
-                    await BlockSession(messageContext, cancellationToken);
-                    await CompleteMessage(messageContext, cancellationToken);
-                    LogInfo(messageContext, "Successfully processed (PendingHandoff)");
+                    await ParkPendingHandoff(messageContext, requestName: null, cancellationToken);
                     return;
                 }
 
@@ -251,6 +248,15 @@ namespace NimBus.Core.Messages
 
                 await VerifySessionIsBlockedByThis(messageContext, cancellationToken);
                 var discardedFailure = await HandleEventContent(messageContext, cancellationToken);
+
+                // Park BEFORE unblocking: falling through would drain deferred siblings
+                // and send a ResolutionResponse, falsely completing the handoff.
+                if (discardedFailure is null && messageContext.HandlerOutcome == HandlerOutcome.PendingHandoff)
+                {
+                    await ParkPendingHandoff(messageContext, "RetryRequest", cancellationToken);
+                    return;
+                }
+
                 await UnblockSession(messageContext, cancellationToken);
                 await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
                 if (discardedFailure is not null)
@@ -303,6 +309,33 @@ namespace NimBus.Core.Messages
                 }
 
                 var discardedFailure = await HandleEventContent(messageContext, cancellationToken);
+
+                // Park BEFORE unblocking: falling through would drain deferred siblings
+                // and send a ResolutionResponse, falsely completing the handoff.
+                if (discardedFailure is null && messageContext.HandlerOutcome == HandlerOutcome.PendingHandoff)
+                {
+                    // Unlike RetryRequest, a resubmission runs without an ownership
+                    // check, so a stale resubmission for event A can arrive while
+                    // event B owns the session block. Parking would overwrite
+                    // BlockedByEventId (B → A), stranding B's settlement and its
+                    // deferred siblings. Keep the row Pending+Handoff — the external
+                    // work is genuinely in flight — but leave the block alone; A's
+                    // eventual settlement resolves through the misaddressed-settlement
+                    // catches in HandleHandoffCompleted/FailedRequest.
+                    var blockedBy = await messageContext.GetBlockedByEventId(cancellationToken);
+                    if (!string.IsNullOrEmpty(blockedBy)
+                        && !blockedBy.Equals(messageContext.EventId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata, cancellationToken);
+                        await CompleteMessage(messageContext, cancellationToken);
+                        LogInfo(messageContext, $"Successfully processed (Resubmission, PendingHandoff) — session owned by event '{blockedBy}', block left intact");
+                        return;
+                    }
+
+                    await ParkPendingHandoff(messageContext, "Resubmission", cancellationToken);
+                    return;
+                }
+
                 if (await messageContext.IsSessionBlockedByThis(cancellationToken))
                     await UnblockSession(messageContext, cancellationToken);
                 await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
@@ -489,8 +522,22 @@ namespace NimBus.Core.Messages
             LogInfo(messageContext, $"Successfully processed ({logSuffix})");
         }
 
-        private Task DeferMessage(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
-            messageContext.Defer(cancellationToken);
+        // Shared parking sequence for a handler that signalled MarkPendingHandoff:
+        // emit the PendingHandoffResponse (projected to Pending+Handoff, shown as
+        // "Awaiting External"), block the session so FIFO siblings defer and the
+        // Manager's later settlement can land, then complete the inbound message.
+        // Used by the EventRequest, RetryRequest and ResubmissionRequest paths —
+        // the latter two must NOT fall through to SendResolutionResponse, which
+        // would falsely flip the event to Completed.
+        private async Task ParkPendingHandoff(IMessageContext messageContext, string? requestName, CancellationToken cancellationToken)
+        {
+            await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata, cancellationToken);
+            await BlockSession(messageContext, cancellationToken);
+            await CompleteMessage(messageContext, cancellationToken);
+            LogInfo(messageContext, requestName == null
+                ? "Successfully processed (PendingHandoff)"
+                : $"Successfully processed ({requestName}, PendingHandoff)");
+        }
 
         private async Task DeferMessageToSubscription(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
@@ -530,6 +577,7 @@ namespace NimBus.Core.Messages
         private async Task<IMessageContext> ReceiveNextDeferredAndVerifyEventId(IMessageContext messageContext, bool removeFromQueue = false, CancellationToken cancellationToken = default)
         {
             IMessageContext nextDeferred;
+#pragma warning disable CS0618
             if (removeFromQueue)
             {
                 nextDeferred = await messageContext.ReceiveNextDeferredWithPop(cancellationToken);
@@ -538,6 +586,7 @@ namespace NimBus.Core.Messages
             {
                 nextDeferred = await messageContext.ReceiveNextDeferred(cancellationToken);
             }
+#pragma warning restore CS0618
 
             if (!messageContext.EventId.Equals(nextDeferred?.EventId, StringComparison.OrdinalIgnoreCase))
             {
@@ -563,7 +612,9 @@ namespace NimBus.Core.Messages
                 // the restore. The recovery I/O runs under its own bounded token instead;
                 // the original failure still owns settlement and rethrows unchanged.
                 using var restoreCancellation = new CancellationTokenSource(DeferredRestoreTimeout);
+#pragma warning disable CS0618
                 await messageContext.RestoreNextDeferred(deferredMessageContext, restoreCancellation.Token);
+#pragma warning restore CS0618
             }
             catch (Exception restoreException)
             {
@@ -688,7 +739,9 @@ namespace NimBus.Core.Messages
 
         private async Task ContinueWithAnyDeferredMessages(IMessageContext messageContext, CancellationToken cancellationToken = default)
         {
+#pragma warning disable CS0618
             var next = await messageContext.ReceiveNextDeferred(cancellationToken);
+#pragma warning restore CS0618
             if (next != null)
             {
                 await _responseService.SendContinuationRequestToSelf(next, cancellationToken);

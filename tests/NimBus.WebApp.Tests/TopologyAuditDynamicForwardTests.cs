@@ -65,6 +65,36 @@ public sealed class TopologyAuditDynamicForwardTests
         Assert.IsTrue(orphan.IsDeprecated, "A subscription with no expected counterpart must still be flagged deprecated");
     }
 
+    [TestMethod]
+    public async Task AuditTopology_DoesNotDeprecateTheEndpointsReplySubscription()
+    {
+        // Regression: the expected topology was derived a second time from the compiled
+        // event catalog and never mentioned "{endpoint}-reply", which the provisioner
+        // creates for request/reply. The audit therefore reported it deprecated and
+        // RemoveDeprecatedTopologyAsync deleted it — silently breaking request/reply for
+        // that endpoint until the next topology apply.
+        var platform = new DynamicForwardPlatform(
+            Array.Empty<DynamicForward>(),
+            new TestEndpoint(SourceEndpoint));
+
+        var broker = new FakeAdminClient(new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            [$"{SourceEndpoint}-reply"] = new List<string> { "ReplyFilter" },
+            ["orphan-sub"] = new List<string> { "orphan-rule" },
+        });
+
+        var result = await BuildAdminService(platform, broker).AuditTopologyAsync(SourceEndpoint);
+
+        var reply = result.Subscriptions
+            .Single(s => string.Equals(s.Name, $"{SourceEndpoint}-reply", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(reply.IsDeprecated, "The endpoint's reply subscription must not be marked deprecated");
+        Assert.IsTrue(reply.Rules.All(r => !r.IsDeprecated), "ReplyFilter must not be marked deprecated");
+
+        // Control: the audit still flags something genuinely undeclared.
+        var orphan = result.Subscriptions.Single(s => string.Equals(s.Name, "orphan-sub", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(orphan.IsDeprecated);
+    }
+
     private static AdminService BuildAdminService(IPlatform platform, ServiceBusAdministrationClient admin) =>
         new AdminService(
             platform,

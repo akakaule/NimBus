@@ -135,7 +135,9 @@ public sealed class EventImplementationAuthorizationDenialTests
             serviceBusClient: null!,
             new AuditLogService(NullLogger<AuditLogService>.Instance, store),
             handoffSettlement: null!,
-            new StubHttpContextAccessor { HttpContext = context });
+            new StubHttpContextAccessor { HttpContext = context },
+            PayloadRedactionTests.NewRedaction(),
+            NimBus.Core.Messages.PII.NullEventJsonMasker.Instance);
 
         return new Harness(controller, store, manager);
     }

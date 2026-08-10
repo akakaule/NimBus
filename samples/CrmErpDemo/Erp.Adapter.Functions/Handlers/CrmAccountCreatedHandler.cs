@@ -26,7 +26,9 @@ public sealed class CrmAccountCreatedHandler(
                 EventId = context.EventId,
                 SessionId = message.AccountId.ToString(),
                 MessageId = context.MessageId,
-                OriginatingMessageId = context.MessageId,
+                // Not MessageId: on a retry/resubmission replay that would be the
+                // replay request's id and corrupt the settlement's audit lineage.
+                OriginatingMessageId = context.OriginatingMessageId ?? context.MessageId,
                 EventTypeId = context.EventType,
                 CorrelationId = context.CorrelationId,
                 ExternalJobId = jobId,

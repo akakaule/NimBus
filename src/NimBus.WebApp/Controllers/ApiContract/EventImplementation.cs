@@ -1,5 +1,6 @@
 using Azure.Messaging.ServiceBus;
 using NimBus.Core;
+using NimBus.Core.Messages.PII;
 using NimBus.Manager;
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
@@ -50,6 +51,8 @@ namespace NimBus.WebApp.Controllers.ApiContract
         private readonly IAuditLogService auditLogService;
         private readonly IHandoffSettlementService handoffSettlement;
         private readonly IHttpContextAccessor httpContextAccessor;
+        private readonly PayloadRedaction payloadRedaction;
+        private readonly IEventJsonMasker masker;
 
         public EventImplementation(
             IApplicationInsightsService applicationInsightsService,
@@ -63,8 +66,12 @@ namespace NimBus.WebApp.Controllers.ApiContract
             ServiceBusClient serviceBusClient,
             IAuditLogService auditLogService,
             IHandoffSettlementService handoffSettlement,
-            IHttpContextAccessor httpContextAccessor)
+            IHttpContextAccessor httpContextAccessor,
+            PayloadRedaction payloadRedaction,
+            IEventJsonMasker masker)
         {
+            this.payloadRedaction = payloadRedaction;
+            this.masker = masker ?? NullEventJsonMasker.Instance;
             this.platform = platform;
             this.logger = logger;
             this.cosmosClient = cosmosClient;
@@ -92,7 +99,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 {
                     var message = Mapper.MessageFromMessageEntity(messageEntity);
                     if (!await authorizationService.CanReadPiiAsync())
-                        PayloadRedaction.Redact(message);
+                        payloadRedaction.Redact(message);
                     return message;
                 }
                 return new NotFoundObjectResult("Event Message not found");
@@ -120,7 +127,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 var unresolvedEvent = await cosmosClient.GetFailedEvent(endpointId, eventId, sessionId);
                 var result = Mapper.EventFromMessageStoreEvent(unresolvedEvent);
                 if (!await authorizationService.CanReadPiiAsync())
-                    PayloadRedaction.Redact(result);
+                    payloadRedaction.Redact(result);
                 return result;
             }
             catch (Exception e)
@@ -434,7 +441,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 }
 
                 if (!await authorizationService.CanReadPiiAsync())
-                    PayloadRedaction.Redact(result);
+                    payloadRedaction.Redact(result);
 
                 return result;
             }
@@ -517,7 +524,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
         private async Task<EventDetails> RedactDetailsForNonPiiReadersAsync(EventDetails details)
         {
             if (!await authorizationService.CanReadPiiAsync())
-                PayloadRedaction.Redact(details);
+                payloadRedaction.Redact(details);
             return details;
         }
 
@@ -546,7 +553,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             }
 
             if (!await authorizationService.CanReadPiiAsync())
-                logs.ForEach(l => PayloadRedaction.Redact(l));
+                logs.ForEach(l => payloadRedaction.Redact(l));
 
             return logs;
         }
@@ -577,7 +584,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             }
 
             if (!await authorizationService.CanReadPiiAsync())
-                histories.ForEach(m => PayloadRedaction.Redact(m));
+                histories.ForEach(m => payloadRedaction.Redact(m));
 
             return histories;
         }
@@ -672,26 +679,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             string eventTypeId = body.EventTypeId;
             if (string.IsNullOrEmpty(body.EventTypeId))
             {
-                eventTypeId = errorResponse.EventTypeId;
-
-                if (string.IsNullOrEmpty(eventTypeId))
-                {
-                    // Same source as the frontend's resubmit prefill: the latest
-                    // request message that carries the event payload (the original
-                    // EventRequest, or a later resubmission/retry). For a failed
-                    // hand-off the terminal ErrorResponse carries no event type,
-                    // so resolve it from the request history rather than the
-                    // originating message. Falls back to the originating-message
-                    // lookup when no request message carries a payload, and
-                    // finally to the terminal message itself.
-                    var history = await cosmosClient.GetEventHistory(eventId);
-                    MessageEntity requestMessage = LatestRequestMessageWithPayload(history)
-                        ?? await GetMessageWithFallback(eventId, errorResponse.OriginatingMessageId)
-                        ?? errorResponse;
-                    eventTypeId = !string.IsNullOrWhiteSpace(requestMessage.EventTypeId)
-                        ? requestMessage.EventTypeId
-                        : requestMessage.MessageContent?.EventContent?.EventTypeId!;
-                }
+                eventTypeId = await ResolveServerEventTypeIdAsync(eventId, errorResponse);
             }
 
             if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpoint))
@@ -702,16 +690,72 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpoint}'.");
             }
 
+            // A non-PiiReader was served a payload whose [Sensitive] fields were masked.
+            // Resubmitting that body verbatim would overwrite the real values with the
+            // mask token, so reject it and make them re-enter the sensitive fields.
+            // The type id is always resolved server-side here: trusting body.EventTypeId
+            // would let a caller name a type with no [Sensitive] members to skip the check.
+            if (!await authorizationService.CanReadPiiAsync())
+            {
+                var serverEventTypeId = string.IsNullOrEmpty(body.EventTypeId)
+                    ? eventTypeId
+                    : await ResolveServerEventTypeIdAsync(eventId, errorResponse);
+
+                // Fail closed: with no resolvable type we cannot prove the body is clean.
+                if (string.IsNullOrEmpty(serverEventTypeId))
+                {
+                    await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext,
+                        accessDenied: true, data: JsonConvert.SerializeObject(body),
+                        eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
+                    return new BadRequestObjectResult(
+                        "Resubmit rejected: the event type could not be resolved server-side, so the payload cannot be checked for masked PII. Ask a site Owner for the PiiReader role on the Access Control page.");
+                }
+
+                if (masker.ContainsRedactPlaceholder(serverEventTypeId, body.EventContent))
+                {
+                    await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext,
+                        accessDenied: true, data: JsonConvert.SerializeObject(body),
+                        eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
+                    return new BadRequestObjectResult(
+                        "Resubmit rejected: sensitive fields still contain the mask placeholder. Re-enter every masked value, or ask a site Owner for the PiiReader role to resubmit the payload unmodified.");
+                }
+            }
+
+            // The body may have round-tripped the $piiMasked sidecar marker; strip it so
+            // the marker never leaks into the actual event payload.
+            var forwardedContent = masker.StripMaskedMarker(body.EventContent);
+
             // Deliberately sequential — do not parallelize. ArchiveFailedEvent
             // soft-deletes the event (deleted=true + 30d TTL); if the publish
             // fails, the event must remain visible in the failed list.
-            await managerClient.Resubmit(errorResponse, endpoint, eventTypeId, body.EventContent);
+            await managerClient.Resubmit(errorResponse, endpoint, eventTypeId, forwardedContent);
             await cosmosClient.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
             await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext,
                 data: JsonConvert.SerializeObject(body),
                 eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
 
             return new OkResult();
+        }
+
+        // Resolves the event type id from stored messages only, never from the request
+        // body. Same source as the frontend's resubmit prefill: the latest request
+        // message that carries the event payload (the original EventRequest, or a later
+        // resubmission/retry). For a failed hand-off the terminal ErrorResponse carries
+        // no event type, so resolve it from the request history rather than the
+        // originating message. Falls back to the originating-message lookup when no
+        // request message carries a payload, and finally to the terminal message itself.
+        private async Task<string> ResolveServerEventTypeIdAsync(string eventId, MessageEntity errorResponse)
+        {
+            if (!string.IsNullOrEmpty(errorResponse.EventTypeId))
+                return errorResponse.EventTypeId;
+
+            var history = await cosmosClient.GetEventHistory(eventId);
+            MessageEntity requestMessage = LatestRequestMessageWithPayload(history)
+                ?? await GetMessageWithFallback(eventId, errorResponse.OriginatingMessageId)
+                ?? errorResponse;
+            return !string.IsNullOrWhiteSpace(requestMessage.EventTypeId)
+                ? requestMessage.EventTypeId
+                : requestMessage.MessageContent?.EventContent?.EventTypeId!;
         }
 
         public async Task<ActionResult<BlockedEventsPage>> GetEventBlockedIdAsync(int skip, int take, string endpointId, string sessionId)
@@ -769,7 +813,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                     .ToList();
 
                 if (!await authorizationService.CanReadPiiAsync())
-                    PayloadRedaction.Redact(events);
+                    payloadRedaction.Redact(events);
 
                 return events;
             }
@@ -828,7 +872,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 var result = await cosmosClient.GetUnsupportedEvent(endpointId, eventId, sessionId);
                 var mapped = Mapper.EventFromMessageStoreEvent(result);
                 if (!await authorizationService.CanReadPiiAsync())
-                    PayloadRedaction.Redact(mapped);
+                    payloadRedaction.Redact(mapped);
                 return mapped;
             }
             catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
@@ -857,7 +901,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 var result = await cosmosClient.GetDeadletteredEvent(endpointId, eventId, sessionId);
                 var mapped = Mapper.EventFromMessageStoreEvent(result);
                 if (!await authorizationService.CanReadPiiAsync())
-                    PayloadRedaction.Redact(mapped);
+                    payloadRedaction.Redact(mapped);
                 return mapped;
             }
             catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
@@ -925,7 +969,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 await AttachReportFlags(endpointId, events);
 
                 if (!canReadPii)
-                    PayloadRedaction.Redact(events);
+                    payloadRedaction.Redact(events);
 
                 return new SearchResponse
                 {

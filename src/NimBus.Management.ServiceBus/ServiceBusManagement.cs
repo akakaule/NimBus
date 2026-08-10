@@ -1,6 +1,7 @@
 using Azure.Messaging.ServiceBus.Administration;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace NimBus.Management.ServiceBus;
@@ -39,6 +40,46 @@ public interface IServiceBusManagement
     Task EnableTopicSend(string topicName);
     Task<TopicSendState> GetTopicSendState(string topicName);
     Task UpdateForwardTo(string topicName, string subscriptionName, string forwardTo);
+
+    /// <summary>
+    /// Sets status and auto-forward destination in a single update, so a pause that both
+    /// blocks delivery and detaches forwarding cannot half-apply. A null or empty
+    /// <paramref name="forwardTo"/> clears auto-forwarding; pass
+    /// <paramref name="changeForwardTo"/> = false to leave the destination as it is.
+    /// </summary>
+    Task UpdateSubscription(
+        string topicName,
+        string subscriptionName,
+        EntityStatus status,
+        string forwardTo,
+        bool changeForwardTo);
+
+    /// <summary>
+    /// Fetches one subscription's settings (status, session flag, ForwardTo), or null when
+    /// it doesn't exist. Unlike the toggles above, nothing other than not-found is swallowed.
+    /// </summary>
+    Task<SubscriptionProperties> GetSubscription(string topicName, string subscriptionName);
+
+    /// <summary>Enumerates every topic in the namespace.</summary>
+    IAsyncEnumerable<TopicProperties> ListTopicsAsync();
+
+    /// <summary>Enumerates the subscriptions on a topic.</summary>
+    IAsyncEnumerable<SubscriptionProperties> ListSubscriptionsAsync(string topicName);
+
+    /// <summary>Enumerates the rules on a subscription.</summary>
+    IAsyncEnumerable<RuleProperties> ListRulesAsync(string topicName, string subscriptionName);
+
+    /// <summary>
+    /// Live message counters for every topic in the namespace — one management call per
+    /// page rather than one per topic, so this stays cheap as the platform grows.
+    /// </summary>
+    IAsyncEnumerable<TopicRuntimeProperties> ListTopicRuntimePropertiesAsync();
+
+    /// <summary>
+    /// Live message counters (active / dead-letter / in-transit) for every subscription on
+    /// a topic, in a single management call per page.
+    /// </summary>
+    IAsyncEnumerable<SubscriptionRuntimeProperties> ListSubscriptionRuntimePropertiesAsync(string topicName);
 }
 
 public class ServiceBusManagement : IServiceBusManagement
@@ -285,6 +326,123 @@ public class ServiceBusManagement : IServiceBusManagement
         {
             _logger?.LogError(e, "Could not update forward to for subscription");
             throw;
+        }
+    }
+
+    public async Task UpdateSubscription(
+        string topicName,
+        string subscriptionName,
+        EntityStatus status,
+        string forwardTo,
+        bool changeForwardTo)
+    {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
+        if (changeForwardTo && !String.IsNullOrEmpty(forwardTo))
+        {
+            ServiceBusFilterValidator.ValidateName(forwardTo, nameof(forwardTo));
+        }
+
+        try
+        {
+            var subscription = await client.GetSubscriptionAsync(topicName, subscriptionName);
+            if (subscription == null) return;
+
+            subscription.Value.Status = status;
+            if (changeForwardTo)
+            {
+                // Empty string is how the SDK expresses "no auto-forward"; null round-trips
+                // as "leave unchanged" on some paths, which would silently keep forwarding.
+                subscription.Value.ForwardTo = String.IsNullOrEmpty(forwardTo) ? String.Empty : forwardTo;
+            }
+
+            _logger?.LogTrace("Updating subscription status and forwarding...");
+            await client.UpdateSubscriptionAsync(subscription);
+            _logger?.LogTrace("Subscription updated successfully.");
+        }
+        catch (Exception e)
+        {
+            _logger?.LogError(e, "Could not update subscription");
+            throw;
+        }
+    }
+
+    public async Task<SubscriptionProperties> GetSubscription(string topicName, string subscriptionName)
+    {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
+        try
+        {
+            var subscription = await client.GetSubscriptionAsync(topicName, subscriptionName);
+            return subscription?.Value;
+        }
+        catch (Azure.Messaging.ServiceBus.ServiceBusException ex)
+            when (ex.Reason == Azure.Messaging.ServiceBus.ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            return null;
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
+    }
+
+    public async IAsyncEnumerable<TopicProperties> ListTopicsAsync()
+    {
+        await foreach (var page in client.GetTopicsAsync().AsPages())
+        {
+            foreach (var topic in page.Values)
+            {
+                yield return topic;
+            }
+        }
+    }
+
+    public async IAsyncEnumerable<SubscriptionProperties> ListSubscriptionsAsync(string topicName)
+    {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        await foreach (var page in client.GetSubscriptionsAsync(topicName).AsPages())
+        {
+            foreach (var subscription in page.Values)
+            {
+                yield return subscription;
+            }
+        }
+    }
+
+    public async IAsyncEnumerable<RuleProperties> ListRulesAsync(string topicName, string subscriptionName)
+    {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
+        await foreach (var page in client.GetRulesAsync(topicName, subscriptionName).AsPages())
+        {
+            foreach (var rule in page.Values)
+            {
+                yield return rule;
+            }
+        }
+    }
+
+    public async IAsyncEnumerable<TopicRuntimeProperties> ListTopicRuntimePropertiesAsync()
+    {
+        await foreach (var page in client.GetTopicsRuntimePropertiesAsync().AsPages())
+        {
+            foreach (var topic in page.Values)
+            {
+                yield return topic;
+            }
+        }
+    }
+
+    public async IAsyncEnumerable<SubscriptionRuntimeProperties> ListSubscriptionRuntimePropertiesAsync(string topicName)
+    {
+        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        await foreach (var page in client.GetSubscriptionsRuntimePropertiesAsync(topicName).AsPages())
+        {
+            foreach (var subscription in page.Values)
+            {
+                yield return subscription;
+            }
         }
     }
 

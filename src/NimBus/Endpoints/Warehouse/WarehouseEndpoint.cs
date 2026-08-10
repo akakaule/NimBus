@@ -8,6 +8,7 @@ namespace NimBus.Endpoints.Warehouse
         public WarehouseEndpoint()
         {
             Consumes<OrderPlaced>();
+            Consumes<OrderDeliveryDetailsCaptured>();
         }
 
         public override ISystem System => new WarehouseSystem();

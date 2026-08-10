@@ -1,6 +1,6 @@
 // Layout engine for the Live Flow page (spec 020, FR-002). Consumes the
 // Topology page's already-derived TopologyData and produces the deterministic
-// four-column layered layout: producers → topics → consumers → platform.
+// three-column layered layout: producers → topics → consumers.
 // Deliberately pure — no DOM, no clock, no randomness — so vitest can pin the
 // geometry exactly and the page can memoise the result by input identity.
 // The animator addresses routes by the stable ids built here; changing any id
@@ -31,24 +31,22 @@ export interface LayoutOptions {
 // measuring text) is what makes route paths reproducible in tests and stable
 // across renders. Topic chips get extra width because endpoint ids run longer
 // than display names.
-const COL_X = { producer: 20, topic: 330, consumer: 660, platform: 990 } as const;
-const COL_W = { producer: 220, topic: 240, consumer: 220, platform: 220 } as const;
+const COL_X = { producer: 20, topic: 330, consumer: 660 } as const;
+const COL_W = { producer: 220, topic: 240, consumer: 220 } as const;
 const ENDPOINT_H = 64;
 const TOPIC_H = 40;
-const PLATFORM_H = 72;
 const TOP_MARGIN = 20;
 const GAP = 16;
-const CANVAS_W = 1240;
+// Consumer column ends at 660 + 220 = 880; one top-margin's breathing room to
+// its right closes the canvas. Sized to the content so the viewBox does not
+// scale the diagram down around empty space.
+const CANVAS_W = 900;
 const MIN_CANVAS_H = 600;
 
 // "Azure Service Bus" container around the topic column: a header band above
 // the chips for the title/subtitle, and padding around the chip stack.
 const SB_HEADER_H = 40;
 const SB_PAD = 12;
-
-// Well-known node id for the Resolver — the single platform fixture, rendered
-// to the right of the consuming endpoints where every outcome converges.
-const RESOLVER_PLATFORM = "platform::resolver";
 
 /**
  * Builds the full flow layout (nodes, routes, byEndpoint index) from the
@@ -126,18 +124,10 @@ export function buildFlowLayout(
     health: "good",
   }));
 
-  // The Resolver is the only platform fixture — every consumer's outcomes
-  // converge on it. Present in every deployment and exempt from filtering.
-  const platformNodes: FlowNode[] = [platformNode(RESOLVER_PLATFORM, "Resolver")];
-
   stackColumn(producerNodes);
   // Topic chips start below the Service Bus header band that frames them.
   stackColumn(topicNodes, TOP_MARGIN + SB_HEADER_H);
   stackColumn(consumerNodes);
-  stackColumn(platformNodes);
-  // Sit the lone Resolver fixture beside the consumer column it collects
-  // outcomes from, rather than pinned to the top margin.
-  centerColumn(platformNodes, columnCenter(consumerNodes));
 
   // The Service Bus container wraps the topic chips with padding plus the
   // header band; only present when there are topics to frame.
@@ -152,12 +142,7 @@ export function buildFlowLayout(
     };
   }
 
-  const nodes: FlowNode[] = [
-    ...producerNodes,
-    ...topicNodes,
-    ...consumerNodes,
-    ...platformNodes,
-  ];
+  const nodes: FlowNode[] = [...producerNodes, ...topicNodes, ...consumerNodes];
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
 
   const routes: FlowRoute[] = [];
@@ -216,16 +201,6 @@ export function buildFlowLayout(
   deliverRoutes.sort(compareStrings((r) => r.id));
   routes.push(...deliverRoutes);
 
-  // outcome: every consumer reports to the Resolver, which sits to the right
-  // of the consumer column. Outcome routes carry no event types: outcomes are
-  // status records, not typed business events.
-  const resolver = nodeById.get(RESOLVER_PLATFORM)!;
-  for (const n of consumers) {
-    routes.push(
-      makeRoute("outcome", nodeById.get(`consumer::${n.id}`)!, resolver, []),
-    );
-  }
-
   // byEndpoint: the animator's entry point — it receives semantic events
   // keyed by endpoint id and needs the concrete route ids without scanning
   // the route list per event. Each inbound journey pairs the publish leg with
@@ -239,7 +214,6 @@ export function buildFlowLayout(
       journeys: deliverRoutes
         .filter((r) => r.toNodeId === consumerNodeId)
         .map((r) => [publishByDeliver.get(r.id)!, r.id]),
-      outcome: `outcome::${consumerNodeId}::${RESOLVER_PLATFORM}`,
     };
   }
 
@@ -303,22 +277,9 @@ function endpointNode(
     y: 0, // assigned by stackColumn
     w: COL_W[kind],
     h: ENDPOINT_H,
-    // Endpoint health travels onto both column instances; topics/platform
-    // stay "good" because the catalog has no health signal for them.
+    // Endpoint health travels onto both column instances; topics stay "good"
+    // because the catalog has no health signal for them.
     health: n.health,
-  };
-}
-
-function platformNode(id: string, title: string): FlowNode {
-  return {
-    id,
-    kind: "platform",
-    title,
-    x: COL_X.platform,
-    y: 0,
-    w: COL_W.platform,
-    h: PLATFORM_H,
-    health: "good",
   };
 }
 
@@ -333,29 +294,6 @@ function stackColumn(column: FlowNode[], startY: number = TOP_MARGIN): void {
     node.y = y;
     y += node.h + GAP;
   }
-}
-
-/** Vertical center of an already-stacked column; top margin when empty. */
-function columnCenter(column: FlowNode[]): number {
-  if (column.length === 0) return TOP_MARGIN;
-  const top = column[0].y;
-  const last = column[column.length - 1];
-  return (top + last.y + last.h) / 2;
-}
-
-/**
- * Shifts an already-stacked column so its block centers on `center`, never
- * rising above the top margin. Mutates y in place — safe because every node
- * was created inside buildFlowLayout.
- */
-function centerColumn(column: FlowNode[], center: number): void {
-  if (column.length === 0) return;
-  const top = column[0].y;
-  const last = column[column.length - 1];
-  const blockCenter = (top + last.y + last.h) / 2;
-  const shift = Math.max(center - blockCenter, TOP_MARGIN - top);
-  if (shift === 0) return;
-  for (const node of column) node.y += shift;
 }
 
 function makeRoute(
@@ -378,10 +316,8 @@ function makeRoute(
  * Cubic bezier from the from-node's right-center anchor to the to-node's
  * left-center anchor — same shape language as topology-flow.tsx ribbons.
  * dx clamps the control-point pull to [40, 120]: enough curve for short hops
- * to read as flow, without long platform routes ballooning; the 40 floor also
- * gives right-to-left routes (consumer → Resolver topic) a readable S-curve
- * instead of a degenerate straight line. Coordinates round to one decimal so
- * path strings stay byte-stable across runs and engines.
+ * to read as flow, without long routes ballooning. Coordinates round to one
+ * decimal so path strings stay byte-stable across runs and engines.
  */
 function bezier(from: FlowNode, to: FlowNode): string {
   const x1 = from.x + from.w;

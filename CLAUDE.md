@@ -71,6 +71,7 @@ docs/
   error-handling.md        # Adapter error-handling reference (exception types, retry vs DLQ)
   throughput-tuning.md     # Throughput parameters (concurrency, prefetch, topology, tier) + per-workload recommended values
   deferred-messages.md     # Deferred message processing guide
+  service-bus-subscription-admin.md # Admin > Subscriptions operator guide (per-subscription backlog incident response)
   cli.md                   # CLI command reference
   deployment.md            # Deployment guide (one-command, GitHub Actions OIDC, Azure DevOps, raw Bicep, RBAC)
   azure-requirements.md    # Azure requirements reference (resource inventory, provider registrations, RBAC matrix)

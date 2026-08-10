@@ -429,7 +429,6 @@ export default function MessageListing(props: IMessageListingProps) {
   const [failReason, setFailReason] = useState("");
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [operatorName, setOperatorName] = useState<string>("operator");
-  const [piiRevealed, setPiiRevealed] = useState(false);
 
   // The textarea prefill tracks the resolved request payload — `messages`
   // loads asynchronously after `eventDetails`, so keying on the payload (not
@@ -442,7 +441,6 @@ export default function MessageListing(props: IMessageListingProps) {
     setShowErrorDetails(false);
     // Reset handoff UI when navigating to a different event.
     setHeroOverride(null);
-    setPiiRevealed(false);
   }, [props.eventDetails]);
 
   useEffect(() => {
@@ -592,17 +590,17 @@ export default function MessageListing(props: IMessageListingProps) {
     }
   };
 
-  // PII gate evaluates the payload actually rendered below (the resolved
-  // request payload), so a masked request payload stays blurred by default.
-  const hasPii = useMemo(
-    () =>
-      !!resubmitPayload && /\$piiMasked"\s*:\s*true/i.test(resubmitPayload),
-    [resubmitPayload],
-  );
-
-  // Spec 026: the server replaces the whole payload with "[REDACTED]" for
-  // users without the PII Reader role — nothing to blur or reveal client-side.
-  const isRedacted = resubmitPayload === "[REDACTED]";
+  // Masking is per-field and happens server-side, so the payload renders as
+  // received — its [Sensitive] values are already masked for callers without
+  // the PII Reader role. The server only falls back to replacing the whole
+  // payload when it cannot resolve the event type or parse the JSON, and then
+  // there is nothing to show at all. The bare "[REDACTED]" is the
+  // pre-field-level form, still possible in stored payloads that were
+  // resubmitted while whole-payload redaction was in effect.
+  const isRedacted =
+    resubmitPayload === "[REDACTED]" ||
+    resubmitPayload === "[REDACTED:unknown-type]" ||
+    resubmitPayload === "[REDACTED:invalid-json]";
 
   // Pretty-print the payload / hand-off result once and reuse across the
   // inline blocks and the resubmit-with-changes modal, so a keystroke
@@ -1088,40 +1086,22 @@ export default function MessageListing(props: IMessageListingProps) {
 
       {resubmitPayload && !isRedacted && (
         <div className="mt-4">
-          {/* Masked payloads carry "$piiMasked": true. Keep the (already
-              server-hashed) values blurred by default so PII tokens aren't
-              shoulder-surfed; the operator reveals them on demand. */}
-          <div
-            className={
-              hasPii && !piiRevealed
-                ? "[&_pre]:blur-[5px] [&_pre]:select-none transition-[filter] duration-150"
-                : "transition-[filter] duration-150"
+          {/* Rendered as-is. Sensitive values are already masked server-side for
+              callers without the PII Reader role, so there is nothing here to
+              blur or reveal — and blurring would only hide the non-sensitive
+              fields an operator needs to triage. */}
+          <CodeBlock
+            title="Payload"
+            subtitle="application/json"
+            linkifyGuid={(_guid) =>
+              // Clicking a GUID in the payload jumps to the Messages search
+              // pre-filtered to that ID — IDs become first-class navigation
+              // bridges between pages (design rec §09 code).
+              `/Messages?eventId=${_guid}`
             }
           >
-            <CodeBlock
-              title="Payload"
-              subtitle="application/json"
-              actions={
-                hasPii ? (
-                  <button
-                    type="button"
-                    onClick={() => setPiiRevealed((v) => !v)}
-                    className="font-mono text-[11px] font-semibold text-primary-600 dark:text-primary-400 border border-border rounded px-2 py-1 hover:bg-primary-tint dark:hover:bg-primary-900/40"
-                  >
-                    {piiRevealed ? "Hide PII" : "Reveal PII"}
-                  </button>
-                ) : undefined
-              }
-              linkifyGuid={(_guid) =>
-                // Clicking a GUID in the payload jumps to the Messages search
-                // pre-filtered to that ID — IDs become first-class navigation
-                // bridges between pages (design rec §09 code).
-                `/Messages?eventId=${_guid}`
-              }
-            >
-              {formattedPayload}
-            </CodeBlock>
-          </div>
+            {formattedPayload}
+          </CodeBlock>
         </div>
       )}
 

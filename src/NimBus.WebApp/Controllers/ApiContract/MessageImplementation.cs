@@ -15,15 +15,18 @@ namespace NimBus.WebApp.Controllers.ApiContract
         private readonly INimBusMessageStore _cosmosClient;
         private readonly ILogger<MessageImplementation> _logger;
         private readonly IEndpointAuthorizationService _authorizationService;
+        private readonly PayloadRedaction _payloadRedaction;
 
         public MessageImplementation(
             INimBusMessageStore cosmosClient,
             ILogger<MessageImplementation> logger,
-            IEndpointAuthorizationService authorizationService)
+            IEndpointAuthorizationService authorizationService,
+            PayloadRedaction payloadRedaction)
         {
             _cosmosClient = cosmosClient;
             _logger = logger;
             _authorizationService = authorizationService;
+            _payloadRedaction = payloadRedaction;
         }
 
         public async Task<ActionResult<MessageSearchResponse>> PostMessagesSearchAsync(MessageSearchRequest body)
@@ -41,7 +44,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             var messages = result.Messages.Select(Mapper.MessageFromMessageEntity).ToList();
             if (!await _authorizationService.CanReadPiiAsync())
-                messages.ForEach(m => PayloadRedaction.Redact(m));
+                messages.ForEach(m => _payloadRedaction.Redact(m));
 
             return new MessageSearchResponse
             {

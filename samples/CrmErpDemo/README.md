@@ -315,7 +315,8 @@ samples/CrmErpDemo/
 - .NET 10 SDK (preview)
 - Node.js 22+ (for the SPAs)
 - Docker (for the Aspire-managed SQL Server container)
-- Azure Service Bus connection string (real Azure namespace — there is no local emulator path)
+- Azure Service Bus connection string for this sample. NimBus now includes a local emulator in
+  `src/NimBus.ServiceBusEmulator`; migrating CrmErpDemo to it is a follow-up after its compatibility suite.
 - Azure Cosmos DB connection string only when running with `--StorageProvider cosmos` (default is SQL Server, no Cosmos required)
 
 ## Storage provider

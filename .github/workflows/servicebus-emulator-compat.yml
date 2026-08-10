@@ -1,0 +1,30 @@
+name: Service Bus emulator compatibility
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  common-fidelity:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment: servicebus-emulator-compat
+    env:
+      NIMBUS_SBEMULATOR_TEST_CS: ${{ secrets.NIMBUS_SBEMULATOR_COMPAT_CS }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore tests/NimBus.ServiceBusEmulator.Tests/NimBus.ServiceBusEmulator.Tests.csproj
+      - name: Run common fidelity tests against Azure Service Bus
+        run: >-
+          dotnet test tests/NimBus.ServiceBusEmulator.Tests/NimBus.ServiceBusEmulator.Tests.csproj
+          --no-restore
+          --filter TestCategory=CommonFidelity
+          --configuration Release

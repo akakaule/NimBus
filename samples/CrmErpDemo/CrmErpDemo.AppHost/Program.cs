@@ -31,16 +31,10 @@ var identityEnabled = string.Equals(
 // Service Bus source. Default is a real Azure namespace via AddConnectionString
 // (connection string supplied by the AppHost's user-secrets). Setting
 // `UseEmulator=true` (CLI flag) or `NIMBUS_SB_EMULATOR=true` (env var) instead
-// spins up Microsoft's official emulator container under Aspire — no Azure
-// dependency required for local/CI demos.
-//
-// Emulator mode also pre-declares topology via a generated config.json (see
-// EmulatorTopologyConfigBuilder), because the SDK's ServiceBusAdministrationClient
-// can't reach the emulator's REST admin endpoint over the connection string
-// alone — the emulator exposes admin on container port 5300, which the SDK's
-// connection-string-driven URL synthesis doesn't know about. Pre-declaring
-// the topology at boot makes the runtime provisioner unnecessary in this
-// mode; production keeps using ServiceBusTopologyProvisioner unchanged.
+// runs the in-process NimBus Service Bus emulator (spec 027) under Aspire — no
+// Azure dependency and no container required for local/CI demos. The emulator
+// multiplexes AMQP and the ATOM admin API on one port, so the regular runtime
+// provisioner works against it — no pre-declared UserConfig needed.
 var useEmulator = string.Equals(
     builder.Configuration["UseEmulator"]
         ?? Environment.GetEnvironmentVariable("NIMBUS_SB_EMULATOR")
@@ -49,21 +43,12 @@ var useEmulator = string.Equals(
     StringComparison.OrdinalIgnoreCase);
 
 IResourceBuilder<IResourceWithConnectionString> servicebus;
+IResourceBuilder<ProjectResource>? serviceBusEmulatorProject = null;
 if (useEmulator)
 {
-    var emulatorConfigPath = Path.Combine(
-        AppContext.BaseDirectory,
-        "servicebus-emulator-config.generated.json");
-    File.WriteAllText(
-        emulatorConfigPath,
-        CrmErpDemo.Contracts.EmulatorTopologyConfigBuilder.Build(
-            new CrmErpDemo.Contracts.CrmErpPlatformConfiguration()));
-
-    servicebus = builder
-        .AddAzureServiceBus("servicebus")
-        .RunAsEmulator(emulator => emulator
-            .WithImageTag("2.0.0")
-            .WithConfigurationFile(emulatorConfigPath));
+    var emulator = builder.AddNimBusServiceBusEmulator<Projects.NimBus_ServiceBusEmulator>("servicebus");
+    servicebus = emulator.ConnectionString;
+    serviceBusEmulatorProject = emulator.Project;
 }
 else
 {
@@ -98,13 +83,15 @@ builder.AddDbGate("dbgate")
         ctx.EnvironmentVariables["PASSWORD_sql"] = sql.Resource.PasswordParameter;
     });
 
-// Provision topics/subscriptions for CrmEndpoint + ErpEndpoint at runtime
-// against a real Azure namespace. Skipped in emulator mode — topology is
-// pre-declared via the emulator's UserConfig (see EmulatorTopologyConfigBuilder).
-IResourceBuilder<ProjectResource>? provisioner = useEmulator
-    ? null
-    : builder.AddProject<Projects.CrmErpDemo_Provisioner>("provisioner")
-        .WithReference(servicebus);
+// Provision topics/subscriptions for CrmEndpoint + ErpEndpoint at runtime.
+// Runs in both modes — the NimBus emulator serves the ATOM admin API, so
+// ServiceBusTopologyProvisioner works against it exactly like real Azure.
+var provisioner = builder.AddProject<Projects.CrmErpDemo_Provisioner>("provisioner")
+    .WithReference(servicebus);
+if (serviceBusEmulatorProject is not null)
+{
+    provisioner.WaitFor(serviceBusEmulatorProject);
+}
 
 // Reused operator surface — the same Resolver + WebApp used in the main NimBus.AppHost.
 //
@@ -201,8 +188,8 @@ var crmApi = builder.AddProject<Projects.Crm_Api>("crm-api")
     .WithReference(crmDb)
     .WithEndpoint("http", e => e.Port = 5080)
     .WithExternalHttpEndpoints()
-    .WaitFor(crmDb);
-if (provisioner is not null) crmApi = crmApi.WaitFor(provisioner);
+    .WaitFor(crmDb)
+    .WaitFor(provisioner);
 
 var crmAdapter = builder.AddProject<Projects.Crm_Adapter>("crm-adapter")
     .WithReference(servicebus)
@@ -211,8 +198,8 @@ var crmAdapter = builder.AddProject<Projects.Crm_Adapter>("crm-adapter")
     // ([nimbus].[InboxMessages]) — see the inbox showcase in the README.
     .WithReference(crmDb)
     .WaitFor(crmDb)
-    .WaitFor(crmApi);
-if (provisioner is not null) crmAdapter.WaitFor(provisioner);
+    .WaitFor(crmApi)
+    .WaitFor(provisioner);
 
 builder.AddViteApp("crm-web", "../Crm.Web")
     .WithReference(crmApi)
@@ -225,8 +212,8 @@ var erpApi = builder.AddProject<Projects.Erp_Api>("erp-api")
     .WithReference(erpDb)
     .WithEndpoint("http", e => e.Port = 5090)
     .WithExternalHttpEndpoints()
-    .WaitFor(erpDb);
-if (provisioner is not null) erpApi = erpApi.WaitFor(provisioner);
+    .WaitFor(erpDb)
+    .WaitFor(provisioner);
 
 var erpAdapter = builder.AddAzureFunctionsProject<Projects.Erp_Adapter_Functions>("erp-adapter")
     .WithReference(servicebus)
@@ -234,8 +221,8 @@ var erpAdapter = builder.AddAzureFunctionsProject<Projects.Erp_Adapter_Functions
     .WithEnvironment("AzureWebJobsServiceBus", servicebus.Resource.ConnectionStringExpression)
     .WithEnvironment("TopicName", "ErpEndpoint")
     .WithEnvironment("SubscriptionName", "ErpEndpoint")
-    .WaitFor(erpApi);
-if (provisioner is not null) erpAdapter.WaitFor(provisioner);
+    .WaitFor(erpApi)
+    .WaitFor(provisioner);
 
 builder.AddViteApp("erp-web", "../Erp.Web")
     .WithReference(erpApi)
@@ -251,18 +238,17 @@ var dataPlatformAdapter = builder
     .WithReference(servicebus)
     .WithEnvironment("AzureWebJobsServiceBus", servicebus.Resource.ConnectionStringExpression)
     .WithEnvironment("TopicName", "DataPlatformEndpoint")
-    .WithEnvironment("SubscriptionName", "DataPlatformEndpoint");
-if (provisioner is not null) dataPlatformAdapter.WaitFor(provisioner);
+    .WithEnvironment("SubscriptionName", "DataPlatformEndpoint")
+    .WaitFor(provisioner);
 
 // Agent Zone (spec 022). The park host subscribes to AgentZoneEndpoint and parks
 // every inbound CrmContactCreated as Pending+Handoff. Wired exactly like the
 // Crm.Adapter worker subscriber (WithReference(servicebus) + gate on the
-// provisioner): the AgentZoneEndpoint topology is created by the provisioner in
-// real-Azure mode, or pre-declared in the emulator's UserConfig otherwise — the
-// same topology gate the other subscribers rely on.
+// provisioner): the AgentZoneEndpoint topology is created by the provisioner —
+// the same topology gate the other subscribers rely on.
 var agentZone = builder.AddProject<Projects.CrmErpDemo_AgentZone>("agent-zone")
-    .WithReference(servicebus);
-if (provisioner is not null) agentZone.WaitFor(provisioner);
+    .WithReference(servicebus)
+    .WaitFor(provisioner);
 
 // PartnerPortal — simulated EXTERNAL partner for the CloudEvents interop showcase.
 // Deliberately references only Azure.Messaging.ServiceBus (zero NimBus): it publishes
@@ -272,8 +258,8 @@ if (provisioner is not null) agentZone.WaitFor(provisioner);
 // don't pile up before the subscriber is listening.
 var partnerPortal = builder.AddProject<Projects.PartnerPortal>("partner-portal")
     .WithReference(servicebus)
-    .WaitFor(crmAdapter);
-if (provisioner is not null) partnerPortal.WaitFor(provisioner);
+    .WaitFor(crmAdapter)
+    .WaitFor(provisioner);
 
 // EnrichmentAgent (spec 022). Runs the receive->classify->define->publish->settle
 // loop against the agent REST API on nimbus-ops. nimbus-ops is registered

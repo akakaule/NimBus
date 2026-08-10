@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>NimBus.ServiceBusEmulator.Tests</AssemblyName>
+    <RootNamespace>NimBus.ServiceBusEmulator.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageReference Include="MSTest.TestAdapter" Version="3.11.1" />
+    <PackageReference Include="MSTest.TestFramework" Version="3.11.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/NimBus.ServiceBusEmulator/NimBus.ServiceBusEmulator.csproj" />
+    <ProjectReference Include="../../src/NimBus.ServiceBusEmulator.AspireHosting/NimBus.ServiceBusEmulator.AspireHosting.csproj" />
+    <ProjectReference Include="../../src/NimBus.ServiceBus/NimBus.ServiceBus.csproj" />
+  </ItemGroup>
+
+</Project>

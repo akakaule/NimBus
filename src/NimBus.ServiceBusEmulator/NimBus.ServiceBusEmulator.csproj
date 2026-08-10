@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>NimBus.ServiceBusEmulator</AssemblyName>
+    <RootNamespace>NimBus.ServiceBusEmulator</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="NimBus.ServiceBusEmulator.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- AMQPNetLite.Core 2.5.1 is pinned after reviewing its MIT license and
+         2.5.x changelog. Upgrade only with the SDK conformance suite green. -->
+    <PackageReference Include="AMQPNetLite.Core" Version="2.5.1" />
+  </ItemGroup>
+
+</Project>

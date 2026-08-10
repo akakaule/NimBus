@@ -1,3 +1,4 @@
+using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
 
 var builder = DistributedApplication.CreateBuilder(args);
@@ -19,8 +20,23 @@ var identityEnabled = string.Equals(
     "true",
     StringComparison.OrdinalIgnoreCase);
 
-// Real Azure Service Bus (connection string from configuration/user secrets)
-var servicebus = builder.AddConnectionString("servicebus");
+var useServiceBusEmulator = string.Equals(
+    Environment.GetEnvironmentVariable("NIMBUS_SB_EMULATOR") ?? builder.Configuration["UseEmulator"],
+    "true",
+    StringComparison.OrdinalIgnoreCase);
+
+IResourceBuilder<IResourceWithConnectionString> servicebus;
+IResourceBuilder<ProjectResource>? serviceBusEmulatorProject = null;
+if (useServiceBusEmulator)
+{
+    var emulator = builder.AddNimBusServiceBusEmulator<Projects.NimBus_ServiceBusEmulator>("servicebus");
+    servicebus = emulator.ConnectionString;
+    serviceBusEmulatorProject = emulator.Project;
+}
+else
+{
+    servicebus = builder.AddConnectionString("servicebus");
+}
 
 // Aspire-managed SQL Server container — provisioned when storage is sqlserver
 // OR when Identity is enabled (Identity always needs SQL, even if messages are
@@ -56,12 +72,16 @@ if (storageProvider == "sqlserver" || identityEnabled)
 // Topology provisioner — runs once then exits
 var provisioner = builder.AddProject<Projects.AspirePubSub_Provisioner>("provisioner")
     .WithReference(servicebus);
+if (serviceBusEmulatorProject is not null)
+{
+    provisioner.WaitFor(serviceBusEmulatorProject);
+}
 
 // Resolver Function App
 var resolver = builder.AddProject<Projects.NimBus_Resolver>("resolver")
     .WithReference(servicebus)
     .WithEnvironment("ResolverId", "Resolver")
-    .WithEnvironment("AzureWebJobsServiceBus", builder.Configuration["ConnectionStrings:servicebus"]!)
+    .WithEnvironment("AzureWebJobsServiceBus", servicebus.Resource.ConnectionStringExpression)
     .WaitFor(provisioner);
 
 // WebApp (Management UI)

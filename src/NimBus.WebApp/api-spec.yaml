@@ -438,6 +438,11 @@ paths:
   /api/app/stats:
     get:
       summary: Get application status and version
+      description: >-
+        Answers anonymously so liveness probes and status monitors work without
+        credentials, but every ApplicationStatus field is populated only for an
+        authenticated caller — an anonymous caller gets an empty status object,
+        so the response discloses nothing about the deployment.
       tags:
         - Application
       responses:
@@ -2628,14 +2633,31 @@ components:
     ApplicationStatus:
       title: ApplicationStatus
       type: object
+      description: >-
+        Deployment status of the management WebApp. Every field is optional and
+        is populated only for an authenticated caller; an anonymous caller
+        receives an empty status object with all fields null or absent, so the
+        anonymous liveness response discloses no deployment detail (GH#93).
       properties:
         env:
           type: string
+          nullable: true
+          description: >-
+            Configured environment name (e.g. "Production"). Populated only for
+            authenticated callers; null or absent for anonymous callers.
         platformVersion:
           type: string
+          nullable: true
+          description: >-
+            NimBus platform product version. Populated only for authenticated
+            callers; null or absent for anonymous callers.
         storageProvider:
           type: string
-          description: Human-readable name of the active NimBus message-store provider (e.g. "Cosmos DB", "SQL Server", "InMemory").
+          nullable: true
+          description: >-
+            Human-readable name of the active NimBus message-store provider
+            (e.g. "Cosmos DB", "SQL Server", "InMemory"). Populated only for
+            authenticated callers; null or absent for anonymous callers.
         ticketLinkTemplate:
           type: string
           nullable: true
@@ -2644,7 +2666,8 @@ components:
             ticket system, with "{ticket}" as the ticket-id placeholder (e.g.
             "https://support.example.com/browse/{ticket}"). Null or empty when
             no ticket system is configured — the UI then renders a plain
-            "Reported" badge without a link.
+            "Reported" badge without a link. Populated only for authenticated
+            callers; null or absent for anonymous callers.
     EndpointStatusCount:
       title: EndpointStatusCount
       type: object

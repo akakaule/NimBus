@@ -11,9 +11,11 @@ namespace NimBus.WebApp;
 /// action on the controller — including ones added later. This convention
 /// scopes the exemption to exactly the actions that must stay anonymous:
 /// /api/app/stats, which health probes and status monitors call without
-/// credentials and which only returns non-sensitive information (environment
-/// name, version, storage provider). /api/me on the same controller stays
-/// behind the global authorization filter.
+/// credentials. Reachability is all that exemption grants — the response body is
+/// deployment detail (environment name, exact version, storage provider, ticket
+/// template), so ApplicationImplementation trims it to an empty status object for
+/// anonymous callers (GH#93). /api/me on the same controller stays behind the
+/// global authorization filter.
 /// </summary>
 internal sealed class AllowAnonymousActionsConvention : IApplicationModelConvention
 {

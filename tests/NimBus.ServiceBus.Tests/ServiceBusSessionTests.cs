@@ -1,4 +1,4 @@
-#pragma warning disable CA1707
+#pragma warning disable CA1707, CS0618
 using Azure.Messaging.ServiceBus;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.ServiceBus;

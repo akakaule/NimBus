@@ -13,7 +13,9 @@ namespace NimBus.ServiceBus
     {
         Task CompleteAsync(IServiceBusMessage message, CancellationToken cancellationToken = default);
         Task DeadLetterAsync(IServiceBusMessage message, string reason, string v, CancellationToken cancellationToken = default);
+        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/specs/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead.")]
         Task DeferAsync(IServiceBusMessage message, CancellationToken cancellationToken = default);
+        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/specs/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
         Task<IServiceBusMessage> ReceiveDeferredMessageAsync(long nextSequenceNumber, CancellationToken cancellationToken = default);
         Task SetStateAsync(SessionState sessionState, CancellationToken cancellationToken = default);
         Task<SessionState> GetStateAsync(CancellationToken cancellationToken = default);
@@ -100,6 +102,7 @@ namespace NimBus.ServiceBus
                 "Cannot dead-letter message: no ServiceBusMessageActions, ServiceBusSessionReceiver, or ProcessSessionMessageEventArgs available.");
         }
 
+        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/specs/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead.")]
         public Task DeferAsync(IServiceBusMessage message, CancellationToken cancellationToken = default)
         {
             if (_messageActions != null)
@@ -172,6 +175,7 @@ namespace NimBus.ServiceBus
             }
         }
 
+        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/specs/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
         public async Task<IServiceBusMessage> ReceiveDeferredMessageAsync(long nextSequenceNumber, CancellationToken cancellationToken = default)
         {
             try

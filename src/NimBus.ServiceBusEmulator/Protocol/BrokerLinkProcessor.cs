@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Amqp;
 using Amqp.Framing;
 using Amqp.Listener;
@@ -225,13 +226,21 @@ internal sealed class BrokerLinkProcessor(
         {
             while (!link.IsClosed)
             {
-                var delivery = broker.TryAcquire(topicName, subscriptionName, sessionId, owner);
-                if (delivery is not null)
+                // Only acquire (and thereby lock) a message while the peer still
+                // grants credit: the client rescinds credit the moment its receive
+                // call returns, and a message locked after that would be sent
+                // uncredited, dropped unsettled, and stranded until lock expiry --
+                // for session subscriptions, until the session lock itself lapses.
+                if (GetCredit(link) > 0)
                 {
-                    return new ReceiveContext(link, AmqpMessageConverter.ToAmqp(delivery.Message))
+                    var delivery = broker.TryAcquire(topicName, subscriptionName, sessionId, owner);
+                    if (delivery is not null)
                     {
-                        UserToken = delivery.LockToken,
-                    };
+                        return new ReceiveContext(link, AmqpMessageConverter.ToAmqp(delivery.Message))
+                        {
+                            UserToken = delivery.LockToken,
+                        };
+                    }
                 }
 
                 if (link.IsDraining)
@@ -244,6 +253,10 @@ internal sealed class BrokerLinkProcessor(
 
             return null;
         }
+
+        // ListenerLink.Credit is internal in AMQPNetLite.Core 2.5.1.
+        [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "get_Credit")]
+        private static extern uint GetCredit(ListenerLink link);
 
         public void DisposeMessage(ReceiveContext receiveContext, DispositionContext dispositionContext)
         {

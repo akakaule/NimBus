@@ -537,6 +537,22 @@ public class RateLimitEnforcementTests
 
         public Task<ActionResult<TopologyCleanupResult>> PostAdminTopologyRemoveDeprecatedAsync(string endpointName) => Ok<TopologyCleanupResult>();
 
+        public Task<ActionResult<IEnumerable<ServiceBusTopicOverview>>> GetAdminServicebusTopicsAsync() => Ok<IEnumerable<ServiceBusTopicOverview>>();
+
+        public Task<ActionResult<IEnumerable<ServiceBusSubscriptionInfo>>> GetAdminServicebusSubscriptionsAsync(string topicName) => Ok<IEnumerable<ServiceBusSubscriptionInfo>>();
+
+        public Task<ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionStatusAsync(SubscriptionStatusRequest body, string topicName, string subscriptionName) => Ok<SubscriptionActionResult>();
+
+        public Task<ActionResult<BulkOperationResult>> PostAdminServicebusSubscriptionPurgeAsync(string topicName, string subscriptionName) => Ok<BulkOperationResult>();
+
+        public Task<ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionRecreateAsync(string topicName, string subscriptionName) => Ok<SubscriptionActionResult>();
+
+        public Task<ActionResult<SubscriptionActionResult>> DeleteAdminServicebusSubscriptionAsync(string topicName, string subscriptionName) => Ok<SubscriptionActionResult>();
+
+        public Task<ActionResult<SubscriptionActionResult>> DeleteAdminServicebusSubscriptionRuleAsync(string topicName, string subscriptionName, string ruleName) => Ok<SubscriptionActionResult>();
+
+        public Task<ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionRestoreRulesAsync(string topicName, string subscriptionName) => Ok<SubscriptionActionResult>();
+
         public Task<ActionResult<BulkResubmitPreview>> GetAdminFailedPreviewAsync(string endpointId) => Ok<BulkResubmitPreview>();
 
         public Task<ActionResult<BulkOperationResult>> PostAdminBulkResubmitAsync(string endpointId) => Ok<BulkOperationResult>();

@@ -139,7 +139,7 @@ internal sealed class BrokerLinkProcessor(
             subscriptionName,
             sessionId,
             owner);
-        context.Complete(new ReleasingSourceLinkEndpoint(messageSource, context.Link), 0);
+        context.Complete(new ResilientSourceLinkEndpoint(messageSource, context.Link), 0);
     }
 
     private static TimeSpan GetTimeout(Attach attach)
@@ -263,15 +263,6 @@ internal sealed class BrokerLinkProcessor(
             return null;
         }
 
-        // ListenerLink.Credit is internal in AMQPNetLite.Core 2.5.1.
-        [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "get_Credit")]
-        private static extern uint GetCredit(ListenerLink link);
-
-        private static readonly TimeSpan? DeliveryDelay =
-            int.TryParse(Environment.GetEnvironmentVariable("NIMBUS_SBEMULATOR_TEST_DELIVERY_DELAY_MS"), out var ms) && ms > 0
-                ? TimeSpan.FromMilliseconds(ms)
-                : null;
-
         public void DisposeMessage(ReceiveContext receiveContext, DispositionContext dispositionContext)
         {
             if (receiveContext.UserToken is not Guid lockToken)
@@ -306,6 +297,7 @@ internal sealed class BrokerLinkProcessor(
             }
             catch (KeyNotFoundException exception)
             {
+                EmulatorDiagnostics.Write("Disposition failed", $"lock={lockToken} {exception.Message}");
                 var condition = sessionId is null
                     ? "com.microsoft:message-lock-lost"
                     : "com.microsoft:session-lock-lost";
@@ -323,14 +315,131 @@ internal sealed class BrokerLinkProcessor(
         }
     }
 
-    private sealed class ReleasingSourceLinkEndpoint(SubscriptionMessageSource source, ListenerLink link)
-        : SourceLinkEndpoint(source, link)
+    // ListenerLink.Credit is internal in AMQPNetLite.Core 2.5.1.
+    [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "get_Credit")]
+    private static extern uint GetCredit(ListenerLink link);
+
+    private static readonly TimeSpan? DeliveryDelay =
+        int.TryParse(Environment.GetEnvironmentVariable("NIMBUS_SBEMULATOR_TEST_DELIVERY_DELAY_MS"), out var ms) && ms > 0
+            ? TimeSpan.FromMilliseconds(ms)
+            : null;
+
+    /// <summary>
+    /// Replacement for AMQPNetLite's <c>SourceLinkEndpoint</c>. The library's send
+    /// pump has a terminal flaw: a transient send failure breaks the pump loop
+    /// WITHOUT resetting its <c>receiving</c> flag, so every later flow performative
+    /// is ignored and the link never delivers again (fatal for session receivers,
+    /// whose locked messages only free when the session lock lapses). This pump
+    /// releases the failed delivery back to the broker and resets the flag so the
+    /// next credit restarts delivery.
+    /// </summary>
+    private sealed class ResilientSourceLinkEndpoint(SubscriptionMessageSource source, ListenerLink link) : LinkEndpoint
     {
+        // Message.Delivery and Amqp.Delivery are internal; the delivery's UserToken
+        // carries the ReceiveContext that maps a disposition back to its lock token.
+        private static readonly System.Reflection.PropertyInfo DeliveryProperty =
+            typeof(Message).GetProperty("Delivery", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        private static readonly System.Reflection.PropertyInfo DeliveryUserTokenProperty =
+            DeliveryProperty.PropertyType.GetProperty("UserToken")!;
+
+        // ListenerLink.SendMessageInternal is the only send API that attaches a user
+        // token to the outgoing delivery; the public SendMessage overloads do not.
+        [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "SendMessageInternal")]
+        private static extern uint SendMessageInternal(ListenerLink link, Message message, ByteBuffer? buffer, object? userToken);
+
+        [UnsafeAccessor(UnsafeAccessorKind.Constructor)]
+        private static extern DispositionContext NewDispositionContext(ListenerLink link, Message message, DeliveryState state, bool settled);
+
+        private readonly object _gate = new();
+        private bool _receiving;
+
+        public override void OnFlow(FlowContext flowContext)
+        {
+            EmulatorDiagnostics.Write("Flow", $"messages={flowContext.Messages} credit={GetCredit(link)}");
+            lock (_gate)
+            {
+                if (_receiving || GetCredit(link) == 0)
+                {
+                    return;
+                }
+
+                _receiving = true;
+            }
+
+            PumpAsync().Observe();
+        }
+
+        public override void OnDisposition(DispositionContext dispositionContext)
+        {
+            if (DeliveryProperty.GetValue(dispositionContext.Message) is { } delivery &&
+                DeliveryUserTokenProperty.GetValue(delivery) is ReceiveContext receiveContext)
+            {
+                source.DisposeMessage(receiveContext, dispositionContext);
+            }
+        }
+
         public override void OnLinkClosed(ListenerLink closedLink, Error error)
         {
             EmulatorDiagnostics.Write("Link closed", $"{closedLink.Name} error={error?.Condition}");
             source.ReleaseSession();
             base.OnLinkClosed(closedLink, error);
+        }
+
+        private async Task PumpAsync()
+        {
+            while (!link.IsClosed)
+            {
+                ReceiveContext? context = await source.GetMessageAsync(link).ConfigureAwait(false);
+                if (context is null)
+                {
+                    lock (_gate)
+                    {
+                        _receiving = false;
+                    }
+
+                    if (link.IsDraining)
+                    {
+                        link.CompleteDrain();
+                    }
+
+                    return;
+                }
+
+                try
+                {
+                    var remaining = SendMessageInternal(link, context.Message, null, context);
+                    if (remaining == 0)
+                    {
+                        lock (_gate)
+                        {
+                            // Credit could arrive right after the send; only park
+                            // the pump when none remains.
+                            if (GetCredit(link) == 0)
+                            {
+                                _receiving = false;
+                                return;
+                            }
+                        }
+                    }
+                }
+                catch (Exception exception)
+                {
+                    EmulatorDiagnostics.Write("Send failed", exception.Message);
+                    source.DisposeMessage(context, NewDispositionContext(link, context.Message, new Released(), true));
+                    lock (_gate)
+                    {
+                        _receiving = false;
+                    }
+
+                    return;
+                }
+            }
+
+            lock (_gate)
+            {
+                _receiving = false;
+            }
         }
     }
 }

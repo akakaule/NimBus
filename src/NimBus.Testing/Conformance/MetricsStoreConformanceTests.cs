@@ -116,19 +116,27 @@ public abstract class MetricsStoreConformanceTests
     public async Task GetEventTypeTimeSeriesMetrics_buckets_published_counts_by_event_type()
     {
         var store = CreateStore();
-        var from = DateTime.UtcNow.AddMinutes(5);
+        // +65min keeps this test's messages a full hour bucket away from
+        // GetTimeSeriesMetrics' window: providers without per-test reset
+        // (Cosmos) share one database, and that test counts by MessageType
+        // across all event types.
+        var from = DateTime.UtcNow.AddMinutes(65);
         var bucketTime = from.AddMinutes(1);
         var bucketKey = bucketTime.ToString("o")[..13];
         var receiver = Id("receiver");
         var publisher = Id("publisher");
+        // Scoped event type: the series query has no endpoint filter, so a
+        // shared-database provider would otherwise fold other tests'
+        // "OrderPlaced" rows into this entry.
+        var eventTypeId = Id("OrderPlaced");
 
-        await store.StoreMessage(SampleMessage(Id("evt-et-1"), Id("msg-et-1"), MessageType.EventRequest, bucketTime, endpointId: receiver, fromAddress: publisher));
-        await store.StoreMessage(SampleMessage(Id("evt-et-2"), Id("msg-et-2"), MessageType.EventRequest, bucketTime, endpointId: receiver, fromAddress: publisher));
+        await store.StoreMessage(SampleMessage(Id("evt-et-1"), Id("msg-et-1"), MessageType.EventRequest, bucketTime, endpointId: receiver, fromAddress: publisher, eventTypeId: eventTypeId));
+        await store.StoreMessage(SampleMessage(Id("evt-et-2"), Id("msg-et-2"), MessageType.EventRequest, bucketTime, endpointId: receiver, fromAddress: publisher, eventTypeId: eventTypeId));
         // Non-published outcome in the same window must not count.
-        await store.StoreMessage(SampleMessage(Id("evt-et-3"), Id("msg-et-3"), MessageType.ResolutionResponse, bucketTime, endpointId: receiver, fromAddress: publisher));
+        await store.StoreMessage(SampleMessage(Id("evt-et-3"), Id("msg-et-3"), MessageType.ResolutionResponse, bucketTime, endpointId: receiver, fromAddress: publisher, eventTypeId: eventTypeId));
 
         var result = await store.GetEventTypeTimeSeriesMetrics(from, substringLength: 13, bucketLabel: "hour");
-        var entry = result.Series.Single(s => s.EventTypeId == "OrderPlaced");
+        var entry = result.Series.Single(s => s.EventTypeId == eventTypeId);
 
         Assert.AreEqual("hour", result.BucketSize);
         Assert.AreEqual(2, entry.Total);
@@ -145,14 +153,15 @@ public abstract class MetricsStoreConformanceTests
         string fromAddress = "publisher",
         long? queueTimeMs = null,
         long? processingTimeMs = null,
-        string? errorText = null) => new()
+        string? errorText = null,
+        string eventTypeId = "OrderPlaced") => new()
     {
         EventId = eventId,
         MessageId = messageId,
         EndpointId = endpointId,
         SessionId = "session-1",
         CorrelationId = "corr-1",
-        EventTypeId = "OrderPlaced",
+        EventTypeId = eventTypeId,
         EnqueuedTimeUtc = enqueuedTimeUtc,
         MessageType = messageType,
         EndpointRole = EndpointRole.Subscriber,

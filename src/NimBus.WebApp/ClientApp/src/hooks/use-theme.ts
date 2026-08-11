@@ -20,7 +20,9 @@ const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 const STORAGE_KEY = "dis-theme";
 
 function getSystemTheme(): "light" | "dark" {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
+  // matchMedia is absent in some test runners (jsdom without a stub).
+  return typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches
     ? "dark"
     : "light";
 }
@@ -52,6 +54,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (theme !== "system") return;
+    if (typeof window.matchMedia !== "function") return;
 
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = () => setResolvedTheme(applyTheme("system"));

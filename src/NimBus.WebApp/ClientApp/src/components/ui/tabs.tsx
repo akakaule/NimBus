@@ -26,6 +26,10 @@ function useTabsContext() {
 // Tabs container
 export interface TabsProps extends HTMLAttributes<HTMLDivElement> {
   defaultIndex?: number;
+  /** Controlled mode — when set, the active tab follows this prop and
+      `onTabChange` reports clicks; internal state is bypassed. */
+  index?: number;
+  onTabChange?: (index: number) => void;
   isLazy?: boolean;
   isFitted?: boolean;
   variant?: "enclosed" | "line";
@@ -34,6 +38,8 @@ export interface TabsProps extends HTMLAttributes<HTMLDivElement> {
 
 const Tabs = ({
   defaultIndex = 0,
+  index,
+  onTabChange,
   isLazy = true,
   isFitted = false,
   variant = "enclosed",
@@ -41,7 +47,12 @@ const Tabs = ({
   children,
   ...props
 }: TabsProps) => {
-  const [activeIndex, setActiveIndex] = useState(defaultIndex);
+  const [internalIndex, setInternalIndex] = useState(defaultIndex);
+  const activeIndex = index ?? internalIndex;
+  const setActiveIndex = (i: number) => {
+    if (index === undefined) setInternalIndex(i);
+    onTabChange?.(i);
+  };
 
   return (
     <TabsContext.Provider value={{ activeIndex, setActiveIndex }}>
@@ -153,12 +164,15 @@ const TabPanel = ({
     return null;
   }
 
-  // If not lazy, hide inactive panels with CSS
+  // If not lazy, hide inactive panels with CSS. The display class must go —
+  // an explicit `display: flex` overrides the `hidden` attribute's
+  // UA `display: none`, so the inline style makes the hiding unambiguous.
   if (!isActive) {
     return (
       <div
         role="tabpanel"
         hidden
+        style={{ display: "none" }}
         className={cn("flex overflow-auto w-full", className)}
         {...props}
       >

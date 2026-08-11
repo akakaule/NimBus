@@ -47,6 +47,7 @@ refuses to deploy to a Flex Consumption plan with an older az.
 |---|---|
 | `-sbc`, `--sb-connection-string` | Azure Service Bus connection string, or a fully qualified namespace for Entra ID auth (overrides `AzureServiceBus_ConnectionString` env var) |
 | `-dbc`, `--db-connection-string` | Cosmos DB connection string, or an account endpoint URI for Entra ID auth (overrides `CosmosDb_ConnectionString` env var) |
+| `--unresolved-retention-days` | Retention in days stamped on unresolved rows this command rewrites: `-1` for unlimited (default) or `1`–`365` (overrides `NimBus__Cosmos__UnresolvedRetentionDays` env var). Registered on `nb container resubmit` |
 | `-h`, `--help` | Show help for any command |
 
 Connection strings can be set via environment variables instead of passing them on every call:
@@ -54,7 +55,13 @@ Connection strings can be set via environment variables instead of passing them 
 ```bash
 export AzureServiceBus_ConnectionString="Endpoint=sb://..."
 export CosmosDb_ConnectionString="AccountEndpoint=https://..."
+export NimBus__Cosmos__UnresolvedRetentionDays="365"
 ```
+
+`NimBus__Cosmos__UnresolvedRetentionDays` is the environment form of the host
+configuration key `NimBus:Cosmos:UnresolvedRetentionDays`, so one exported value
+configures the NimBus hosts and the CLI alike. See
+[Retention of unresolved rows](storage-providers.md#retention-of-unresolved-rows).
 
 ### Entra ID / managed identity
 
@@ -282,10 +289,15 @@ Valid statuses: `Pending`, `Deferred`, `Failed`, `DeadLettered`, `Unsupported`, 
 Resubmit failed messages older than 10 minutes via Service Bus.
 
 ```bash
-nb container resubmit <endpoint-name> -sbc "..." -dbc "..."
+nb container resubmit <endpoint-name> -sbc "..." -dbc "..." --unresolved-retention-days 365
 ```
 
 Finds failed events in Cosmos DB, updates their status, and sends `ResubmissionRequest` messages to the Manager topic for re-processing.
+
+Resubmission **rewrites the whole tracking document**. On an account using bounded
+retention, pass `--unresolved-retention-days` (or export
+`NimBus__Cosmos__UnresolvedRetentionDays`) with the same value the hosts are
+configured with — otherwise the rewritten rows revert to unlimited retention.
 
 ---
 
@@ -306,6 +318,13 @@ nb container copy <endpoint-name> -dbc "source-conn-string" --target-dbc "target
 | `-b`, `--batch-size` | No | Documents per batch (default: all) |
 
 Creates target containers if they don't exist. Removes TTL from copied documents to prevent premature expiration. Only copies messages for events that were copied.
+
+Because copied documents carry no `ttl` field, they never expire in the target
+until an operator backfills them — see
+[the backfill procedure](storage-providers.md#the-setting-applies-to-newly-written-documents-only).
+The target endpoint container is created with container-level TTL enabled, and an
+endpoint name that collides with one of the store's own container ids is rejected
+(see [Reserved endpoint ids](storage-providers.md#reserved-endpoint-ids)).
 
 ---
 

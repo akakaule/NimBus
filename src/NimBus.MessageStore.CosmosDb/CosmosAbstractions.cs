@@ -45,6 +45,34 @@ public interface ICosmosDatabaseAdapter
         cancellationToken.ThrowIfCancellationRequested();
         return CreateContainerIfNotExistsAsync(id, partitionKeyPath);
     }
+
+    /// <summary>
+    /// Creates or resolves a container, applying container-level settings such as
+    /// <see cref="ContainerProperties.DefaultTimeToLive"/>. Cosmos honours a document's
+    /// <c>ttl</c> only when the container's DefaultTimeToLive is set.
+    /// The default implementation fails closed: an adapter that has not overridden this
+    /// overload cannot apply container-level settings, and silently dropping a requested
+    /// DefaultTimeToLive would create a TTL-disabled container that accepts item TTLs and
+    /// never expires anything — so a non-null DefaultTimeToLive throws instead. Properties
+    /// that carry no DefaultTimeToLive forward for compatibility.
+    /// </summary>
+    Task<ICosmosContainerAdapter> CreateContainerIfNotExistsAsync(
+        ContainerProperties containerProperties,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(containerProperties);
+
+        if (containerProperties.DefaultTimeToLive is null)
+        {
+            return CreateContainerIfNotExistsAsync(
+                containerProperties.Id, containerProperties.PartitionKeyPath, cancellationToken);
+        }
+
+        throw new NotSupportedException(
+            $"This {nameof(ICosmosDatabaseAdapter)} implementation cannot apply {nameof(ContainerProperties)}. " +
+            $"Override CreateContainerIfNotExistsAsync({nameof(ContainerProperties)}, CancellationToken) to honor " +
+            $"container-level settings such as {nameof(ContainerProperties.DefaultTimeToLive)}.");
+    }
 }
 
 public interface ICosmosContainerAdapter
@@ -197,6 +225,19 @@ internal sealed class TransientTranslatingCosmosDatabaseAdapter : ICosmosDatabas
     {
         var container = await CosmosExceptionTranslation.TranslateTransientAsync(
             () => _inner.CreateContainerIfNotExistsAsync(id, partitionKeyPath, cancellationToken),
+            _logger);
+        return new TransientTranslatingCosmosContainerAdapter(container, _logger);
+    }
+
+    // Forward explicitly: default interface dispatch happens on this wrapper's type, so
+    // without the forward an inner adapter's override would be unreachable and the
+    // fail-closed default would fire even for TTL-aware adapters.
+    public async Task<ICosmosContainerAdapter> CreateContainerIfNotExistsAsync(
+        ContainerProperties containerProperties,
+        CancellationToken cancellationToken = default)
+    {
+        var container = await CosmosExceptionTranslation.TranslateTransientAsync(
+            () => _inner.CreateContainerIfNotExistsAsync(containerProperties, cancellationToken),
             _logger);
         return new TransientTranslatingCosmosContainerAdapter(container, _logger);
     }
@@ -422,6 +463,19 @@ public sealed class CosmosDatabaseAdapter : ICosmosDatabaseAdapter
             () => _database.CreateContainerIfNotExistsAsync(
                 id,
                 partitionKeyPath,
+                cancellationToken: cancellationToken),
+            _logger);
+        return new CosmosContainerAdapter(response.Container, _logger);
+    }
+
+    /// <inheritdoc />
+    public async Task<ICosmosContainerAdapter> CreateContainerIfNotExistsAsync(
+        ContainerProperties containerProperties,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await CosmosExceptionTranslation.TranslateTransientAsync(
+            () => _database.CreateContainerIfNotExistsAsync(
+                containerProperties,
                 cancellationToken: cancellationToken),
             _logger);
         return new CosmosContainerAdapter(response.Container, _logger);

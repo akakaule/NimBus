@@ -112,6 +112,30 @@ public abstract class MetricsStoreConformanceTests
         Assert.AreEqual(1, bucket.Failed);
     }
 
+    [TestMethod]
+    public async Task GetEventTypeTimeSeriesMetrics_buckets_published_counts_by_event_type()
+    {
+        var store = CreateStore();
+        var from = DateTime.UtcNow.AddMinutes(5);
+        var bucketTime = from.AddMinutes(1);
+        var bucketKey = bucketTime.ToString("o")[..13];
+        var receiver = Id("receiver");
+        var publisher = Id("publisher");
+
+        await store.StoreMessage(SampleMessage(Id("evt-et-1"), Id("msg-et-1"), MessageType.EventRequest, bucketTime, endpointId: receiver, fromAddress: publisher));
+        await store.StoreMessage(SampleMessage(Id("evt-et-2"), Id("msg-et-2"), MessageType.EventRequest, bucketTime, endpointId: receiver, fromAddress: publisher));
+        // Non-published outcome in the same window must not count.
+        await store.StoreMessage(SampleMessage(Id("evt-et-3"), Id("msg-et-3"), MessageType.ResolutionResponse, bucketTime, endpointId: receiver, fromAddress: publisher));
+
+        var result = await store.GetEventTypeTimeSeriesMetrics(from, substringLength: 13, bucketLabel: "hour");
+        var entry = result.Series.Single(s => s.EventTypeId == "OrderPlaced");
+
+        Assert.AreEqual("hour", result.BucketSize);
+        Assert.AreEqual(2, entry.Total);
+        var bucket = entry.DataPoints.Single(dp => dp.Timestamp == bucketKey);
+        Assert.AreEqual(2, bucket.Published);
+    }
+
     private static MessageEntity SampleMessage(
         string eventId,
         string messageId,

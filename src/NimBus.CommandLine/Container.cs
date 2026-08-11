@@ -77,12 +77,17 @@ static class Container
     public static async Task CopyEndpointData(CosmosClient sourceClient, CosmosClient targetClient, CommandArgument endpointNameArg, DateTime? from, DateTime? to, List<string> statuses, int? batchSize = null)
     {
         var endpointName = endpointNameArg.Value!;
+        CosmosContainerDefaults.EnsureNotReservedEndpointId(endpointName);
 
         var sourceDb = sourceClient.GetDatabase(DatabaseId);
         var targetDb = targetClient.GetDatabase(DatabaseId);
 
         var sourceEndpointContainer = sourceDb.GetContainer(endpointName);
-        var targetEndpointContainer = (await targetDb.CreateContainerIfNotExistsAsync(endpointName, "/id")).Container;
+        // Endpoint containers must be created with TTL enabled or the item-level ttl values
+        // written by CosmosDbClient.UploadMessage are inert in the target — and
+        // CreateContainerIfNotExistsAsync never reconciles a container it did not create.
+        var targetEndpointContainer =
+            (await targetDb.CreateContainerIfNotExistsAsync(CosmosContainerDefaults.EndpointContainer(endpointName))).Container;
 
         var copiedEventIds = new HashSet<string>();
         var eventCount = await CopyDocuments(

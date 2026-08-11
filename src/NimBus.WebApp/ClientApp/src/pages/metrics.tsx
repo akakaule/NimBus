@@ -1,18 +1,31 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import * as api from "api-client";
+import ByEventTypeTab, {
+  spansMoreThanOneDay,
+} from "components/metrics/by-event-type-tab";
 import Page from "components/page";
 import { Spinner } from "components/ui/spinner";
 import { EmptyState } from "components/ui/empty-state";
 import { StatRow, StatTile, type StatTileTone } from "components/ui/stat-tile";
+import { Tab, TabList, TabPanel, TabPanels, Tabs } from "components/ui/tabs";
+import { useUrlFilters } from "hooks/use-url-filters";
 import { cn } from "lib/utils";
+
+// Tab + event-type filter state lives in the URL (`?tab=by-event-type&types=X`)
+// so views are linkable and browser Back restores them. Stable module-level
+// defaults per the use-url-filters contract.
+const TAB_NAMES = ["overview", "by-event-type"] as const;
+const FILTER_DEFAULTS = { tab: "overview", types: [] as string[] };
 
 const PERIODS: { label: string; value: api.Period }[] = [
   { label: "1h", value: api.Period._1h },
@@ -57,6 +70,7 @@ function formatNumber(n: number): string {
 function formatTimestamp(
   ts: string | undefined,
   bucketSize: string | undefined,
+  withDate = false,
 ): string {
   if (!ts) return "";
   let iso = ts;
@@ -77,18 +91,28 @@ function formatTimestamp(
 
   if (bucketSize === "day") return `${day}/${mon}`;
   if (bucketSize === "minute") return `${hr}:${min}`;
-  return `${hr}:00`;
+  return withDate ? `${day}/${mon} ${hr}:00` : `${hr}:00`;
 }
 
 export default function Metrics() {
   const [overview, setOverview] = useState<api.MetricsOverview | null>(null);
   const [latency, setLatency] = useState<api.LatencyOverview | null>(null);
-  const [timeseries, setTimeseries] =
-    useState<api.TimeSeriesOverview | null>(null);
-  const [insights, setInsights] =
-    useState<api.FailedInsightsOverview | null>(null);
+  const [timeseries, setTimeseries] = useState<api.TimeSeriesOverview | null>(
+    null,
+  );
+  const [insights, setInsights] = useState<api.FailedInsightsOverview | null>(
+    null,
+  );
+  const [byEventType, setByEventType] =
+    useState<api.EventTypeTimeSeriesOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<api.Period>(api.Period._1d);
+
+  const { applied, applyFilters } = useUrlFilters(FILTER_DEFAULTS);
+  const tabIndex = Math.max(
+    0,
+    (TAB_NAMES as readonly string[]).indexOf(applied.tab),
+  );
 
   const fetchAll = useCallback(async (p: api.Period) => {
     setLoading(true);
@@ -96,16 +120,18 @@ export default function Metrics() {
       const client = new api.Client(api.CookieAuth());
       // Insights is optional — Metrics still renders if the call fails so a
       // misconfigured /metrics/failed-insights route doesn't blank the page.
-      const [o, l, t, i] = await Promise.all([
+      const [o, l, t, i, e] = await Promise.all([
         client.getMetricsOverview(p),
         client.getMetricsLatency(p).catch(() => null),
         client.getMetricsTimeseries(p).catch(() => null),
         client.getMetricsFailedInsights(p).catch(() => null),
+        client.getMetricsTimeseriesByEventtype(p).catch(() => null),
       ]);
       setOverview(o);
       setLatency(l);
       setTimeseries(t);
       setInsights(i);
+      setByEventType(e);
     } catch (err) {
       console.error("Failed to load metrics", err);
     } finally {
@@ -206,7 +232,11 @@ export default function Metrics() {
 
   // ---- Tone heuristics --------------------------------------------------
   const failureRateTone: StatTileTone =
-    totals.failureRate >= 1 ? "danger" : totals.failureRate > 0 ? "warning" : "default";
+    totals.failureRate >= 1
+      ? "danger"
+      : totals.failureRate > 0
+        ? "warning"
+        : "default";
   const maxLatencyTone: StatTileTone =
     latencyKpis.maxProc >= OUTLIER_MS
       ? "danger"
@@ -243,205 +273,194 @@ export default function Metrics() {
         </>
       }
     >
-      <div className="flex flex-col w-full gap-4 pb-8">
-        {/* KPI strip — 5 hero numbers. Latency is hoisted out of the bottom
+      <Tabs
+        index={tabIndex}
+        onTabChange={(i) =>
+          applyFilters({ ...applied, tab: TAB_NAMES[i] ?? "overview" })
+        }
+        className="w-full"
+      >
+        <TabList className="mb-4">
+          <Tab index={0}>Overview</Tab>
+          <Tab index={1}>By event type</Tab>
+        </TabList>
+        <TabPanels>
+          <TabPanel index={0} isLazy={false}>
+            <div className="flex flex-col w-full gap-4 pb-8">
+              {/* KPI strip — 5 hero numbers. Latency is hoisted out of the bottom
             table and into the headline so the question "is anything slow?"
             answers itself on page load (design §03 · pin 1). */}
-        <StatRow columns={5}>
-          <StatTile
-            label="Total Messages"
-            value={loading ? "—" : formatNumber(totals.total)}
-            delta={
-              loading
-                ? undefined
-                : totals.total === 0
-                  ? "no traffic yet"
-                  : `${formatNumber(totals.handled)} handled · ${formatNumber(totals.failed)} failed`
-            }
-            tone="muted"
-          />
-          <StatTile
-            label="Failure Rate"
-            value={loading ? "—" : `${totals.failureRate.toFixed(2)}%`}
-            delta={
-              loading
-                ? undefined
-                : totals.failed === 0
-                  ? `all clear · ${periodLabel}`
-                  : `${formatNumber(totals.failed)} of ${formatNumber(totals.total)} · ${periodLabel}`
-            }
-            tone={failureRateTone}
-          />
-          <StatTile
-            label="Avg Latency"
-            value={loading ? "—" : formatMs(latencyKpis.avgProc)}
-            delta={
-              loading
-                ? undefined
-                : latencyKpis.totalRoutes === 0
-                  ? "no samples"
-                  : `processing · ${latencyKpis.totalRoutes} route${latencyKpis.totalRoutes === 1 ? "" : "s"}`
-            }
-            tone={avgLatencyTone}
-          />
-          <StatTile
-            label="Max Latency"
-            value={loading ? "—" : formatMs(latencyKpis.maxProc)}
-            delta={
-              loading
-                ? undefined
-                : latencyKpis.maxProc === 0
-                  ? "no samples"
-                  : latencyKpis.outliers > 0
-                    ? `${latencyKpis.outliers} outlier route${latencyKpis.outliers === 1 ? "" : "s"}`
-                    : "within budget"
-            }
-            tone={maxLatencyTone}
-          />
-          <StatTile
-            label="Outliers"
-            value={
-              loading
-                ? "—"
-                : latencyKpis.outliers === 0
-                  ? "0"
-                  : formatNumber(latencyKpis.outliers)
-            }
-            delta={
-              loading
-                ? undefined
-                : latencyKpis.outliers === 0
-                  ? `under ${formatMs(OUTLIER_MS)} · ${periodLabel}`
-                  : `route${latencyKpis.outliers === 1 ? "" : "s"} over ${formatMs(OUTLIER_MS)}`
-            }
-            tone={outliersTone}
-          />
-        </StatRow>
+              <StatRow columns={5}>
+                <StatTile
+                  label="Total Messages"
+                  value={loading ? "—" : formatNumber(totals.total)}
+                  delta={
+                    loading
+                      ? undefined
+                      : totals.total === 0
+                        ? "no traffic yet"
+                        : `${formatNumber(totals.handled)} handled · ${formatNumber(totals.failed)} failed`
+                  }
+                  tone="muted"
+                />
+                <StatTile
+                  label="Failure Rate"
+                  value={loading ? "—" : `${totals.failureRate.toFixed(2)}%`}
+                  delta={
+                    loading
+                      ? undefined
+                      : totals.failed === 0
+                        ? `all clear · ${periodLabel}`
+                        : `${formatNumber(totals.failed)} of ${formatNumber(totals.total)} · ${periodLabel}`
+                  }
+                  tone={failureRateTone}
+                />
+                <StatTile
+                  label="Avg Latency"
+                  value={loading ? "—" : formatMs(latencyKpis.avgProc)}
+                  delta={
+                    loading
+                      ? undefined
+                      : latencyKpis.totalRoutes === 0
+                        ? "no samples"
+                        : `processing · ${latencyKpis.totalRoutes} route${latencyKpis.totalRoutes === 1 ? "" : "s"}`
+                  }
+                  tone={avgLatencyTone}
+                />
+                <StatTile
+                  label="Max Latency"
+                  value={loading ? "—" : formatMs(latencyKpis.maxProc)}
+                  delta={
+                    loading
+                      ? undefined
+                      : latencyKpis.maxProc === 0
+                        ? "no samples"
+                        : latencyKpis.outliers > 0
+                          ? `${latencyKpis.outliers} outlier route${latencyKpis.outliers === 1 ? "" : "s"}`
+                          : "within budget"
+                  }
+                  tone={maxLatencyTone}
+                />
+                <StatTile
+                  label="Outliers"
+                  value={
+                    loading
+                      ? "—"
+                      : latencyKpis.outliers === 0
+                        ? "0"
+                        : formatNumber(latencyKpis.outliers)
+                  }
+                  delta={
+                    loading
+                      ? undefined
+                      : latencyKpis.outliers === 0
+                        ? `under ${formatMs(OUTLIER_MS)} · ${periodLabel}`
+                        : `route${latencyKpis.outliers === 1 ? "" : "s"} over ${formatMs(OUTLIER_MS)}`
+                  }
+                  tone={outliersTone}
+                />
+              </StatRow>
 
-        {loading ? (
-          <div className="flex justify-center items-center py-20">
-            <Spinner size="lg" />
-          </div>
-        ) : (
-          <>
-            {/* Activity chart — Published + Handled on shared axis, failed
-                events as red dots at the baseline (design §03 · pin 2). */}
-            <ChartCard
-              title="Activity & failures"
-              meta={`shared time axis · ${periodLabel}`}
-              legend={
+              {loading ? (
+                <div className="flex justify-center items-center py-20">
+                  <Spinner size="lg" />
+                </div>
+              ) : (
                 <>
-                  <LegendArea color={PALETTE.published}>Published</LegendArea>
-                  <LegendArea color={PALETTE.handled}>Handled</LegendArea>
-                  <LegendDot color={PALETTE.failed}>Failed events</LegendDot>
-                </>
-              }
-            >
-              <ActivityChart
-                dataPoints={timeseries?.dataPoints ?? []}
-                bucketSize={timeseries?.bucketSize}
-              />
-            </ChartCard>
+                  {/* Activity chart — Published + Handled on shared axis, failed
+                events as red dots at the baseline (design §03 · pin 2). */}
+                  <ChartCard
+                    title="Activity & failures"
+                    meta={`shared time axis · ${periodLabel}`}
+                    legend={
+                      <>
+                        <LegendArea color={PALETTE.published}>
+                          Published
+                        </LegendArea>
+                        <LegendArea color={PALETTE.handled}>Handled</LegendArea>
+                        <LegendDot color={PALETTE.failed}>
+                          Failed events
+                        </LegendDot>
+                      </>
+                    }
+                  >
+                    <ActivityChart
+                      dataPoints={timeseries?.dataPoints ?? []}
+                      bucketSize={timeseries?.bucketSize}
+                    />
+                  </ChartCard>
 
-            {/* 4-up health strip — multi-dimensional health, not just a single
-                "0 failed" green tick (design §03 · pin 3). */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-              <HealthCard
-                tone={totals.failed > 0 ? "bad" : "ok"}
-                icon={totals.failed > 0 ? "⚠" : "✓"}
-                label={`Failed · ${periodLabel}`}
-                value={
-                  totals.total === 0
-                    ? "no traffic"
-                    : `${formatNumber(totals.failed)} of ${formatNumber(totals.total)}`
-                }
-              />
-              <HealthCard
-                tone={latencyKpis.slow > 0 ? "warn" : "ok"}
-                icon="⏱"
-                label="Slow routes"
-                value={
-                  latencyKpis.totalRoutes === 0
-                    ? "no samples"
-                    : latencyKpis.slow === 0
-                      ? "0 above target"
-                      : `${latencyKpis.slow} over ${formatMs(SLOW_MS)}`
-                }
-              />
-              <HealthCard
-                tone={latencyKpis.outliers > 0 ? "bad" : "ok"}
-                icon="!"
-                label={`Outliers · ${periodLabel}`}
-                value={
-                  latencyKpis.totalRoutes === 0
-                    ? "no samples"
-                    : latencyKpis.outliers === 0
-                      ? `0 over ${formatMs(OUTLIER_MS)}`
-                      : `${latencyKpis.outliers} over ${formatMs(OUTLIER_MS)}`
-                }
-              />
-              <HealthCard
-                tone="ok"
-                icon="↻"
-                label="Active routes"
-                value={
-                  latencyKpis.totalRoutes === 0
-                    ? "0 tracked"
-                    : `${latencyKpis.totalRoutes} tracked`
-                }
-              />
-            </div>
-
-            {/* Top failure causes — compact teaser linking to /Insights. We
+                  {/* Top failure causes — compact teaser linking to /Insights. We
                 deliberately don't duplicate the full grouped table here;
                 Metrics is "what's happening", Insights is "why" (design §04). */}
-            {topFailures.length > 0 && (
-              <FailureSummary
-                groups={topFailures}
-                totalFailed={totalFailureCount ?? 0}
-              />
-            )}
+                  {topFailures.length > 0 && (
+                    <FailureSummary
+                      groups={topFailures}
+                      totalFailed={totalFailureCount ?? 0}
+                    />
+                  )}
 
-            {/* Published × Consumed — symmetric small-multiples instead of a
+                  {/* Published × Consumed — symmetric small-multiples instead of a
                 stacked horizontal bar that mixes "who publishes most" with
                 "what's the type split" (design §03 · pin 4). */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              <ChartCard title="Published by endpoint" meta={`top 5 · ${periodLabel}`}>
-                <BarList
-                  rows={publishedByEndpoint.slice(0, 5)}
-                  color={PALETTE.published}
-                  emptyLabel="No published messages in this window."
-                />
-              </ChartCard>
-              <ChartCard title="Consumed by endpoint" meta={`top 5 · ${periodLabel}`}>
-                <BarList
-                  rows={consumedByEndpoint.slice(0, 5)}
-                  color={PALETTE.handled}
-                  emptyLabel="No handled messages in this window."
-                />
-              </ChartCard>
-            </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    <ChartCard
+                      title="Published by endpoint"
+                      meta={`top 5 · ${periodLabel}`}
+                    >
+                      <BarList
+                        rows={publishedByEndpoint.slice(0, 5)}
+                        color={PALETTE.published}
+                        emptyLabel="No published messages in this window."
+                      />
+                    </ChartCard>
+                    <ChartCard
+                      title="Consumed by endpoint"
+                      meta={`top 5 · ${periodLabel}`}
+                    >
+                      <BarList
+                        rows={consumedByEndpoint.slice(0, 5)}
+                        color={PALETTE.handled}
+                        emptyLabel="No handled messages in this window."
+                      />
+                    </ChartCard>
+                  </div>
 
-            {/* Latency by route — single row per route with a queue/processing
+                  {/* Latency by route — single row per route with a queue/processing
                 ratio bar so the operator can tell "scale subscribers" from
                 "profile the handler" at a glance (design §03 · pin 5). */}
-            <ChartCard
-              title="Latency by route"
-              meta="queue + processing · sorted by max desc"
-            >
-              {latRows.length === 0 ? (
-                <EmptyState
-                  icon="—"
-                  title="No latency samples in this window"
-                  description="Latency is recorded when handlers complete. Try a wider time range."
-                />
-              ) : (
-                <LatencyTable rows={latRows} />
+                  <ChartCard
+                    title="Latency by route"
+                    meta="queue + processing · sorted by max desc"
+                  >
+                    {latRows.length === 0 ? (
+                      <EmptyState
+                        icon="—"
+                        title="No latency samples in this window"
+                        description="Latency is recorded when handlers complete. Try a wider time range."
+                      />
+                    ) : (
+                      <LatencyTable rows={latRows} />
+                    )}
+                  </ChartCard>
+                </>
               )}
-            </ChartCard>
-          </>
-        )}
-      </div>
+            </div>
+          </TabPanel>
+          <TabPanel index={1} isLazy={false}>
+            <ByEventTypeTab
+              data={byEventType}
+              overview={overview}
+              periodLabel={periodLabel}
+              loading={loading}
+              selectedTypes={applied.types}
+              onSelectedTypesChange={(types) =>
+                applyFilters({ ...applied, types })
+              }
+            />
+          </TabPanel>
+        </TabPanels>
+      </Tabs>
     </Page>
   );
 }
@@ -512,23 +531,27 @@ const LegendDot: React.FC<{ color: string; children: React.ReactNode }> = ({
 );
 
 // -------------------------------------------------------------------------
-// Activity chart — custom SVG so the gradients, axis layout, and baseline
-// dot-markers match the design exactly. Recharts' ComposedChart can't render
-// "failed dots at y=0 only when the bucket has failures" without bending
-// the API into knots, so a hand-rolled chart wins on clarity here.
+// Activity chart — uses the same Recharts line treatment as the event-type
+// chart. Failures remain baseline markers so they flag affected buckets
+// without changing the scale used to compare published and handled traffic.
 // -------------------------------------------------------------------------
 interface ActivityChartProps {
   dataPoints: api.TimeSeriesDataPoint[];
   bucketSize?: string;
 }
 
-const ActivityChart: React.FC<ActivityChartProps> = ({
+interface ActivityChartRow {
+  timestamp?: string;
+  published: number;
+  handled: number;
+  failed: number;
+  failureMarker: number | null;
+}
+
+export const ActivityChart: React.FC<ActivityChartProps> = ({
   dataPoints,
   bucketSize,
 }) => {
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-
   if (dataPoints.length === 0) {
     return (
       <EmptyState
@@ -539,312 +562,137 @@ const ActivityChart: React.FC<ActivityChartProps> = ({
     );
   }
 
-  const W = 1100;
-  const H = 200;
-  const padL = 38;
-  const padR = 12;
-  const padT = 14;
-  const padB = 26;
+  const rows: ActivityChartRow[] = dataPoints.map((point) => ({
+    timestamp: point.timestamp,
+    published: point.published ?? 0,
+    handled: point.handled ?? 0,
+    failed: point.failed ?? 0,
+    failureMarker: (point.failed ?? 0) > 0 ? 0 : null,
+  }));
 
-  const rawMax = Math.max(
-    1,
-    ...dataPoints.map((d) =>
-      Math.max(d.published ?? 0, d.handled ?? 0, d.failed ?? 0),
-    ),
-  );
-  const maxY = niceCeil(rawMax);
-  const baselineY = H - padB;
-  const innerH = baselineY - padT;
-  const innerW = W - padL - padR;
-
-  // Single point gets centered; otherwise spread evenly across the width.
-  const xAt = (i: number) =>
-    dataPoints.length === 1
-      ? padL + innerW / 2
-      : padL + (i / (dataPoints.length - 1)) * innerW;
-  const yAt = (v: number) => padT + (1 - v / maxY) * innerH;
-
-  const pubPoints = dataPoints.map(
-    (d, i) => `${xAt(i)},${yAt(d.published ?? 0)}`,
-  );
-  const handPoints = dataPoints.map(
-    (d, i) => `${xAt(i)},${yAt(d.handled ?? 0)}`,
-  );
-
-  const pubLine = "M" + pubPoints.join(" L");
-  const handLine = "M" + handPoints.join(" L");
-  const pubArea = `${pubLine} L${xAt(dataPoints.length - 1)},${baselineY} L${xAt(0)},${baselineY} Z`;
-  const handArea = `${handLine} L${xAt(dataPoints.length - 1)},${baselineY} L${xAt(0)},${baselineY} Z`;
-
-  // Y-axis gridlines at quarter ticks so the eye can compare buckets without
-  // squinting. niceCeil makes maxY divide cleanly so the labels are integers.
-  const yTicks = [0, maxY * 0.25, maxY * 0.5, maxY * 0.75, maxY];
-
-  // X-axis labels — every Nth point so we don't crowd the axis on long
-  // periods (30d × hourly buckets = 720 points; we sample down to ~6).
-  const labelEvery = Math.max(1, Math.ceil(dataPoints.length / 6));
-
-  const handleMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const wrap = wrapRef.current;
-    if (!wrap) return;
-    const r = wrap.getBoundingClientRect();
-    const xPx = ((e.clientX - r.left) / r.width) * W;
-    // Inverse of xAt — find the nearest bucket by viewBox x.
-    if (dataPoints.length === 1) {
-      setHoverIdx(0);
-      return;
-    }
-    const ratio = (xPx - padL) / innerW;
-    const idx = Math.round(ratio * (dataPoints.length - 1));
-    setHoverIdx(Math.max(0, Math.min(dataPoints.length - 1, idx)));
-  };
-
-  const hover = hoverIdx != null ? dataPoints[hoverIdx] : null;
-  const hoverX = hoverIdx != null ? xAt(hoverIdx) : 0;
+  // Hour ticks are ambiguous once the window crosses a day — carry the date
+  // on axis and tooltip labels then.
+  const ticksWithDate = spansMoreThanOneDay(dataPoints.map((p) => p.timestamp));
 
   return (
-    <div ref={wrapRef} className="relative w-full">
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        preserveAspectRatio="none"
-        className="block w-full h-[220px]"
-        onMouseMove={handleMove}
-        onMouseLeave={() => setHoverIdx(null)}
-      >
-        <defs>
-          <linearGradient id="nb-grad-published" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor={PALETTE.published} stopOpacity="0.32" />
-            <stop offset="100%" stopColor={PALETTE.published} stopOpacity="0" />
-          </linearGradient>
-          <linearGradient id="nb-grad-handled" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor={PALETTE.handled} stopOpacity="0.28" />
-            <stop offset="100%" stopColor={PALETTE.handled} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-
-        {/* Horizontal gridlines */}
-        <g stroke={PALETTE.grid} strokeWidth="1" strokeDasharray="2 4">
-          {yTicks.map((t, i) => (
-            <line key={i} x1={padL} x2={W - padR} y1={yAt(t)} y2={yAt(t)} />
-          ))}
-        </g>
-        {/* Y-axis labels */}
-        <g
-          fontFamily="JetBrains Mono, monospace"
-          fontSize="9.5"
-          fill={PALETTE.ink3}
-        >
-          {yTicks
-            .slice()
-            .reverse()
-            .map((t, i) => (
-              <text
-                key={i}
-                x={padL - 6}
-                y={yAt(t) + 3}
-                textAnchor="end"
-              >
-                {Math.round(t)}
-              </text>
-            ))}
-        </g>
-
-        {/* Published area + line */}
-        <path d={pubArea} fill="url(#nb-grad-published)" />
-        <path
-          d={pubLine}
-          fill="none"
-          stroke={PALETTE.published}
-          strokeWidth="1.8"
+    <ResponsiveContainer width="100%" height={280}>
+      <LineChart data={rows} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+        <CartesianGrid
+          stroke={PALETTE.grid}
+          strokeDasharray="3 3"
+          vertical={false}
         />
-
-        {/* Handled area + line */}
-        <path d={handArea} fill="url(#nb-grad-handled)" />
-        <path
-          d={handLine}
-          fill="none"
-          stroke={PALETTE.handled}
-          strokeWidth="1.6"
+        <XAxis
+          dataKey="timestamp"
+          tickFormatter={(timestamp: string) =>
+            formatTimestamp(timestamp, bucketSize, ticksWithDate)
+          }
+          tick={{ fontSize: 10.5, fill: PALETTE.ink3 }}
+          stroke={PALETTE.grid}
+          tickLine={false}
+          minTickGap={32}
         />
-
-        {/* Failure dots — sit on the baseline, scaled subtly with magnitude
-            so a 50-failure spike reads heavier than a 1-failure blip. */}
-        <g fill={PALETTE.failed}>
-          {dataPoints.map((d, i) => {
-            const f = d.failed ?? 0;
-            if (f <= 0) return null;
-            const r = Math.min(5, 2 + Math.log10(f + 1) * 2);
-            return <circle key={i} cx={xAt(i)} cy={baselineY} r={r} />;
-          })}
-        </g>
-
-        {/* X-axis tick labels */}
-        <g
-          fontFamily="JetBrains Mono, monospace"
-          fontSize="9.5"
-          fill={PALETTE.ink3}
-          textAnchor="middle"
-        >
-          {dataPoints.map((d, i) => {
-            const isEdge = i === 0 || i === dataPoints.length - 1;
-            if (!isEdge && i % labelEvery !== 0) return null;
+        <YAxis
+          allowDecimals={false}
+          tick={{ fontSize: 10.5, fill: PALETTE.ink3 }}
+          stroke={PALETTE.grid}
+          tickLine={false}
+          width={44}
+        />
+        <Tooltip
+          content={({ active, payload, label }) => {
+            const point = payload?.[0]?.payload as ActivityChartRow | undefined;
+            if (!active || !point) return null;
             return (
-              <text key={i} x={xAt(i)} y={H - 8}>
-                {formatTimestamp(d.timestamp, bucketSize)}
-              </text>
+              <div className="bg-popover text-popover-foreground border border-border rounded-md shadow-lg px-3 py-2 text-[11.5px] min-w-[170px]">
+                <div className="font-mono text-muted-foreground mb-1">
+                  {formatTimestamp(String(label), bucketSize, ticksWithDate)}
+                </div>
+                <ActivityTooltipRow
+                  color={PALETTE.published}
+                  label="Published"
+                  value={point.published}
+                />
+                <ActivityTooltipRow
+                  color={PALETTE.handled}
+                  label="Handled"
+                  value={point.handled}
+                />
+                <ActivityTooltipRow
+                  color={PALETTE.failed}
+                  label="Failed"
+                  value={point.failed}
+                  emphasize={point.failed > 0}
+                />
+              </div>
             );
-          })}
-        </g>
-
-        {/* Hover guide — vertical rule + markers on each series */}
-        {hover && hoverIdx != null && (
-          <g>
-            <line
-              x1={hoverX}
-              x2={hoverX}
-              y1={padT}
-              y2={baselineY}
-              stroke={PALETTE.ink3}
-              strokeWidth="1"
-              strokeDasharray="3 3"
-              opacity="0.5"
-            />
-            <circle
-              cx={hoverX}
-              cy={yAt(hover.published ?? 0)}
-              r="3"
-              fill={PALETTE.published}
-              stroke="#fff"
-              strokeWidth="1.5"
-            />
-            <circle
-              cx={hoverX}
-              cy={yAt(hover.handled ?? 0)}
-              r="3"
-              fill={PALETTE.handled}
-              stroke="#fff"
-              strokeWidth="1.5"
-            />
-          </g>
-        )}
-      </svg>
-
-      {/* Tooltip — positioned in container space so it survives the SVG's
-          preserveAspectRatio scaling without anchoring to a node. */}
-      {hover && hoverIdx != null && wrapRef.current && (
-        <ActivityTooltip
-          containerRef={wrapRef}
-          xRatio={hoverX / W}
-          point={hover}
-          bucketSize={bucketSize}
-        />
-      )}
-    </div>
-  );
-};
-
-const ActivityTooltip: React.FC<{
-  containerRef: React.RefObject<HTMLDivElement | null>;
-  xRatio: number;
-  point: api.TimeSeriesDataPoint;
-  bucketSize: string | undefined;
-}> = ({ containerRef, xRatio, point, bucketSize }) => {
-  const width = containerRef.current?.clientWidth ?? 0;
-  const left = Math.max(8, Math.min(width - 180, xRatio * width - 90));
-  return (
-    <div
-      style={{ left, top: 8 } as CSSProperties}
-      className={cn(
-        "absolute z-10 pointer-events-none",
-        "bg-ink/95 text-canvas rounded-md shadow-nb-md",
-        "px-3 py-2 font-mono text-[11px] min-w-[170px]",
-      )}
-    >
-      <div className="text-[10px] uppercase tracking-[0.1em] opacity-70 mb-1">
-        {formatTimestamp(point.timestamp, bucketSize)}
-      </div>
-      <div className="flex justify-between gap-3">
-        <span>
-          <span
-            className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle"
-            style={{ background: PALETTE.published }}
-          />
-          Published
-        </span>
-        <span className="tabular-nums">{formatNumber(point.published ?? 0)}</span>
-      </div>
-      <div className="flex justify-between gap-3">
-        <span>
-          <span
-            className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle"
-            style={{ background: PALETTE.handled }}
-          />
-          Handled
-        </span>
-        <span className="tabular-nums">{formatNumber(point.handled ?? 0)}</span>
-      </div>
-      <div className="flex justify-between gap-3">
-        <span>
-          <span
-            className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle"
-            style={{ background: PALETTE.failed }}
-          />
-          Failed
-        </span>
-        <span
-          className="tabular-nums"
-          style={{
-            color:
-              (point.failed ?? 0) > 0 ? PALETTE.failed : undefined,
-            fontWeight: (point.failed ?? 0) > 0 ? 700 : undefined,
           }}
-        >
-          {formatNumber(point.failed ?? 0)}
-        </span>
-      </div>
-    </div>
+        />
+        <Line
+          type="monotone"
+          dataKey="published"
+          stroke={PALETTE.published}
+          strokeWidth={2}
+          dot={false}
+          activeDot={{ r: 4 }}
+          isAnimationActive={false}
+        />
+        <Line
+          type="monotone"
+          dataKey="handled"
+          stroke={PALETTE.handled}
+          strokeWidth={2}
+          dot={false}
+          activeDot={{ r: 4 }}
+          isAnimationActive={false}
+        />
+        <Line
+          dataKey="failureMarker"
+          stroke="none"
+          dot={<FailureDot />}
+          activeDot={false}
+          isAnimationActive={false}
+        />
+      </LineChart>
+    </ResponsiveContainer>
   );
 };
 
-// -------------------------------------------------------------------------
-// Health strip card — 4-up coloured tile with icon + label + value. The
-// happy path looks happy; the unhappy path screams (design rec §3 · pin 3).
-// -------------------------------------------------------------------------
-interface HealthCardProps {
-  tone: "ok" | "warn" | "bad";
-  icon: string;
+const FailureDot = ({
+  cx,
+  cy,
+  payload,
+}: {
+  cx?: number;
+  cy?: number;
+  payload?: ActivityChartRow;
+}) => {
+  if (cx == null || cy == null || !payload || payload.failed <= 0) return null;
+  const radius = Math.min(5, 2 + Math.log10(payload.failed + 1) * 2);
+  return <circle cx={cx} cy={cy} r={radius} fill={PALETTE.failed} />;
+};
+
+const ActivityTooltipRow: React.FC<{
+  color: string;
   label: string;
-  value: string;
-}
-
-const HealthCard: React.FC<HealthCardProps> = ({ tone, icon, label, value }) => {
-  const iconClass = {
-    ok: "bg-status-success-50 text-status-success",
-    warn: "bg-status-warning-50 text-status-warning",
-    bad: "bg-status-danger-50 text-status-danger",
-  }[tone];
-  return (
-    <div className="bg-card border border-border rounded-nb-md px-3.5 py-3 flex items-center gap-3">
-      <span
-        aria-hidden="true"
-        className={cn(
-          "w-8 h-8 rounded-md inline-flex items-center justify-center font-mono font-bold text-base",
-          iconClass,
-        )}
-      >
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-          {label}
-        </div>
-        <div className="text-[15px] font-bold leading-tight tracking-tight tabular-nums">
-          {value}
-        </div>
-      </div>
-    </div>
-  );
-};
+  value: number;
+  emphasize?: boolean;
+}> = ({ color, label, value, emphasize = false }) => (
+  <div className="flex items-center gap-1.5">
+    <span
+      aria-hidden="true"
+      className="inline-block w-2 h-2 rounded-sm"
+      style={{ background: color }}
+    />
+    <span>{label}</span>
+    <span
+      className="ml-auto pl-3 font-mono font-bold tabular-nums"
+      style={emphasize ? { color } : undefined}
+    >
+      {formatNumber(value)}
+    </span>
+  </div>
+);
 
 // -------------------------------------------------------------------------
 // Top failure causes — compact teaser linking to /Insights. Metrics shows
@@ -872,7 +720,8 @@ const FailureSummary: React.FC<FailureSummaryProps> = ({
       </h4>
       <div className="flex items-center gap-3 font-mono text-[11px] text-muted-foreground">
         <span>
-          {totalFailed} failure{totalFailed === 1 ? "" : "s"} · {groups.length} pattern
+          {totalFailed} failure{totalFailed === 1 ? "" : "s"} · {groups.length}{" "}
+          pattern
           {groups.length === 1 ? "" : "s"}
         </span>
         <Link
@@ -943,8 +792,8 @@ const FailureSummary: React.FC<FailureSummaryProps> = ({
       </table>
     </div>
     <p className="mt-3 pt-2.5 border-t border-dashed border-border font-mono text-[11px] text-muted-foreground italic">
-      Top 3 patterns shown as a teaser. Full grouping, stack traces, and
-      replay actions live on{" "}
+      Top 3 patterns shown as a teaser. Full grouping, stack traces, and replay
+      actions live on{" "}
       <Link
         to="/Insights"
         className="text-primary-600 font-semibold no-underline not-italic hover:text-primary"
@@ -1158,21 +1007,4 @@ function rollupByEndpoint(
     .map(([endpointId, count]) => ({ endpointId, count }))
     .filter((r) => r.count > 0)
     .sort((a, b) => b.count - a.count);
-}
-
-// Round up to a "nice" multiple so y-axis labels are integers and the chart
-// frame doesn't end on awkward numbers like 17 or 213.
-function niceCeil(v: number): number {
-  if (v <= 1) return 1;
-  if (v <= 5) return 5;
-  if (v <= 10) return 10;
-  const order = Math.pow(10, Math.floor(Math.log10(v)));
-  const norm = v / order;
-  let nice: number;
-  if (norm <= 1) nice = 1;
-  else if (norm <= 2) nice = 2;
-  else if (norm <= 4) nice = 4;
-  else if (norm <= 5) nice = 5;
-  else nice = 10;
-  return nice * order;
 }

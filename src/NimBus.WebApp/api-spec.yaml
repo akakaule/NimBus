@@ -2091,6 +2091,25 @@ paths:
                 $ref: '#/components/schemas/TimeSeriesOverview'
       tags:
         - Metrics
+  /api/metrics/timeseries-by-eventtype:
+    get:
+      summary: Time-series buckets of published messages grouped by event type.
+      operationId: get-metrics-timeseries-by-eventtype
+      parameters:
+        - name: period
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/Period'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventTypeTimeSeriesOverview'
+      tags:
+        - Metrics
   /api/agent/catalog:
     get:
       summary: Get agent catalog
@@ -3676,6 +3695,36 @@ components:
           type: integer
         failed:
           type: integer
+    EventTypeSeriesPoint:
+      title: EventTypeSeriesPoint
+      type: object
+      properties:
+        timestamp:
+          type: string
+        published:
+          type: integer
+    EventTypeSeries:
+      title: EventTypeSeries
+      type: object
+      properties:
+        eventTypeId:
+          type: string
+        total:
+          type: integer
+        dataPoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventTypeSeriesPoint'
+    EventTypeTimeSeriesOverview:
+      title: EventTypeTimeSeriesOverview
+      type: object
+      properties:
+        bucketSize:
+          type: string
+        series:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventTypeSeries'
     AuditSearchRequest:
       title: AuditSearchRequest
       type: object

@@ -717,6 +717,7 @@ public class ResolverServiceTests
         public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from) => throw new NotSupportedException();
         public Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from) => throw new NotSupportedException();
         public Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel) => throw new NotSupportedException();
+        public Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel) => throw new NotSupportedException();
 
         public Task StoreMessage(MessageEntity message)
         {

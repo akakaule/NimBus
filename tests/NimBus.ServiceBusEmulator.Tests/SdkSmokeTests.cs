@@ -97,7 +97,14 @@ public sealed class SdkSmokeTests
         await receiver.SetSessionStateAsync(BinaryData.FromString("state"), timeout.Token);
         BinaryData? state = await receiver.GetSessionStateAsync(timeout.Token);
         Assert.AreEqual("state", state?.ToString());
-        IReadOnlyList<ServiceBusReceivedMessage> messages = await receiver.ReceiveMessagesAsync(2, TimeSpan.FromSeconds(5), timeout.Token);
+        // ReceiveMessagesAsync may return fewer than maxMessages (the SDK only
+        // waits a short batch window after the first message), so accumulate
+        // until both arrive; the outer timeout token bounds the loop.
+        var messages = new List<ServiceBusReceivedMessage>();
+        while (messages.Count < 2)
+        {
+            messages.AddRange(await receiver.ReceiveMessagesAsync(2 - messages.Count, TimeSpan.FromSeconds(5), timeout.Token));
+        }
         Assert.HasCount(2, messages);
         Assert.AreEqual("first", messages[0].Body.ToString());
         Assert.AreEqual("second", messages[1].Body.ToString());

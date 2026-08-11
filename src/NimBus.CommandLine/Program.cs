@@ -28,6 +28,17 @@ internal static class Program
                 $"Overrides environment variable '{CommandRunner.DbConnectionStringEnvName}'"
         };
 
+        // Deliberately no DefaultValue: McMaster treats HasValue() as true whenever a
+        // DefaultValue is set, which would make the environment-variable fallback
+        // unreachable. The default lives in CosmosDbMessageStoreOptions.
+        var unresolvedRetentionDays = new CommandOption("--unresolved-retention-days", CommandOptionType.SingleValue)
+        {
+            Description = "Retention in days stamped on unresolved (Pending/Failed/Deferred/DeadLettered/Unsupported) " +
+                $"rows this command rewrites: -1 for unlimited (default) or 1-{CosmosDbMessageStoreOptions.MaxRetentionDays}. " +
+                $"Overrides environment variable '{CommandRunner.UnresolvedRetentionEnvName}'. Must match the value the " +
+                "NimBus hosts are configured with."
+        };
+
         app.HelpOption(inherited: true);
         app.HelpTextGenerator = new ColoredHelpTextGenerator();
 
@@ -36,7 +47,7 @@ internal static class Program
         ConfigureDeployCommands(app);
         ConfigureSetupCommand(app);
         ConfigureEndpointCommands(app, sbConnectionString, dbConnectionString);
-        ConfigureContainerCommands(app, sbConnectionString, dbConnectionString);
+        ConfigureContainerCommands(app, sbConnectionString, dbConnectionString, unresolvedRetentionDays);
         ConfigureCatalogCommands(app);
         ConfigureAsyncApiCommands(app);
 
@@ -454,7 +465,7 @@ internal static class Program
         });
     }
 
-    private static void ConfigureContainerCommands(CommandLineApplication app, CommandOption sbConnectionString, CommandOption dbConnectionString)
+    private static void ConfigureContainerCommands(CommandLineApplication app, CommandOption sbConnectionString, CommandOption dbConnectionString, CommandOption unresolvedRetentionDays)
     {
         app.Command("container", containerCommand =>
         {
@@ -564,10 +575,13 @@ internal static class Program
                 var endpointName = resubmitCommand.Argument("endpoint-name", "Name of endpoint (required)").IsRequired();
                 resubmitCommand.AddOption(sbConnectionString);
                 resubmitCommand.AddOption(dbConnectionString);
+                // Resubmission rewrites the tracking document, so it is the one command that
+                // would otherwise reset a bounded retention back to unlimited.
+                resubmitCommand.AddOption(unresolvedRetentionDays);
 
                 resubmitCommand.OnExecuteAsync(async ct =>
                 {
-                    await CommandRunner.Run(sbConnectionString, dbConnectionString, (sbClient, dbClient) => Container.ResubmitMessages(sbClient, dbClient, endpointName));
+                    await CommandRunner.Run(sbConnectionString, dbConnectionString, (sbClient, dbClient) => Container.ResubmitMessages(sbClient, dbClient, endpointName), unresolvedRetentionDays);
                 });
             });
 

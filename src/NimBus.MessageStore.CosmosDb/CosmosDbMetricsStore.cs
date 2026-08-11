@@ -229,6 +229,56 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
         return new TimeSeriesResult { BucketSize = bucketLabel, DataPoints = dataPoints };
     }
 
+    public async Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+    {
+        var container = await _getMessagesContainer();
+        var fromIso = from.ToString("o");
+
+        // Same `SELECT VALUE { agg, non-agg }` restriction as GetEndpointMetrics —
+        // use plain column aliases instead. Result rows: { count, eventTypeId, bucket }.
+        var sql =
+            $"SELECT COUNT(1) AS count, c.message.EventTypeId AS eventTypeId, " +
+            $"SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
+            "FROM c WHERE c.message.MessageType = 'EventRequest' " +
+            "AND c.message.EnqueuedTimeUtc >= @from " +
+            $"GROUP BY c.message.EventTypeId, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})";
+
+        var query = new QueryDefinition(sql).WithParameter("@from", fromIso);
+        var iterator = container.GetItemQueryIterator<EventTypeBucketCountRow>(query);
+
+        // Cross-partition GROUP BY can surface partial aggregates per physical
+        // partition — accumulate with += rather than assigning.
+        var counts = new Dictionary<(string EventTypeId, string Bucket), int>();
+        while (iterator.HasMoreResults)
+        {
+            var page = await iterator.ReadNextAsync();
+            foreach (var item in page)
+            {
+                if (string.IsNullOrEmpty(item.EventTypeId) || string.IsNullOrEmpty(item.Bucket))
+                    continue;
+                var key = (item.EventTypeId, item.Bucket);
+                counts.TryGetValue(key, out var existing);
+                counts[key] = existing + item.Count;
+            }
+        }
+
+        var series = counts
+            .GroupBy(kv => kv.Key.EventTypeId)
+            .Select(g => new EventTypeSeriesEntry
+            {
+                EventTypeId = g.Key,
+                Total = g.Sum(kv => kv.Value),
+                DataPoints = g
+                    .OrderBy(kv => kv.Key.Bucket)
+                    .Select(kv => new EventTypeSeriesBucket { Timestamp = kv.Key.Bucket, Published = kv.Value })
+                    .ToList(),
+            })
+            .OrderByDescending(s => s.Total)
+            .ToList();
+
+        return new EventTypeTimeSeriesResult { BucketSize = bucketLabel, Series = series };
+    }
+
     private static async Task<List<LatencyAggregateRow>> RunLatencyAggregateQuery(ICosmosContainerAdapter container, string sql, string fromIso)
     {
         var query = new QueryDefinition(sql).WithParameter("@from", fromIso);
@@ -311,6 +361,13 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
         }
 
         return results;
+    }
+
+    private sealed class EventTypeBucketCountRow
+    {
+        [JsonProperty("count")] public int Count { get; set; }
+        [JsonProperty("eventTypeId")] public string EventTypeId { get; set; }
+        [JsonProperty("bucket")] public string Bucket { get; set; }
     }
 
     private sealed class LatencyAggregateRow

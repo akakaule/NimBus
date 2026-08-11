@@ -16,4 +16,11 @@ public interface IMetricsStore
     Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from);
     Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from);
     Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel);
+
+    /// <summary>
+    /// Time-series buckets of published (EventRequest) counts grouped by event
+    /// type. Series are sorted by total desc; buckets are sparse (no zero-fill)
+    /// and sorted ascending. Bucket key contract matches GetTimeSeriesMetrics.
+    /// </summary>
+    Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel);
 }

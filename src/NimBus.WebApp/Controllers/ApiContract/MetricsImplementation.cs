@@ -193,6 +193,37 @@ public class MetricsImplementation : IMetricsApiController
         };
     }
 
+    public async Task<ActionResult<EventTypeTimeSeriesOverview>> GetMetricsTimeseriesByEventtypeAsync(Period period)
+    {
+        if (!await IsSiteReaderAsync())
+            return new ForbidResult();
+
+        var result = await _storeResultCache.GetOrCreateAsync(
+            $"metrics:timeseries-by-eventtype:{period}",
+            MetricsTtl,
+            () =>
+            {
+                var from = DateTime.UtcNow - PeriodToTimeSpan(period);
+                var (substringLength, bucketLabel) = PeriodToBucketConfig(period);
+                return _cosmosClient.GetEventTypeTimeSeriesMetrics(from, substringLength, bucketLabel);
+            });
+
+        return new EventTypeTimeSeriesOverview
+        {
+            BucketSize = result.BucketSize,
+            Series = result.Series.Select(s => new EventTypeSeries
+            {
+                EventTypeId = s.EventTypeId,
+                Total = s.Total,
+                DataPoints = s.DataPoints.Select(p => new EventTypeSeriesPoint
+                {
+                    Timestamp = p.Timestamp,
+                    Published = p.Published,
+                }).ToList(),
+            }).ToList(),
+        };
+    }
+
     private static (int substringLength, string label) PeriodToBucketConfig(Period period) => period switch
     {
         Period._1h => (16, "minute"),

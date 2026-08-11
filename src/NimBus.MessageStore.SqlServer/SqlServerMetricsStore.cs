@@ -202,6 +202,54 @@ GROUP BY EndpointId, EventTypeId";
         };
     }
 
+    public async Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+    {
+        // Same version-agnostic flooring as GetTimeSeriesMetrics; the unit is a
+        // switch-constrained literal, never user input. Buckets stay sparse (no
+        // zero-fill) — the contract shared with the Cosmos backend.
+        var bucketUnit = substringLength switch
+        {
+            16 => "minute",
+            13 => "hour",
+            10 => "day",
+            _ => "hour",
+        };
+        var bucketExpr = $"DATEADD({bucketUnit}, DATEDIFF({bucketUnit}, 0, EnqueuedTimeUtc), 0)";
+
+        await using var conn = await _ctx.Open();
+        var rows = await conn.QueryAsync<(string EventTypeId, DateTime Bucket, long Count)>(
+            $@"SELECT EventTypeId, {bucketExpr} AS Bucket, COUNT_BIG(*) AS [Count]
+               FROM {T("Messages")}
+               WHERE EnqueuedTimeUtc >= @From
+                 AND MessageType = 'EventRequest'
+                 AND EventTypeId IS NOT NULL
+               GROUP BY EventTypeId, {bucketExpr}",
+            new { From = from },
+            commandTimeout: _ctx.CommandTimeout);
+
+        var series = rows
+            .Where(r => !string.IsNullOrEmpty(r.EventTypeId))
+            .GroupBy(r => r.EventTypeId)
+            .Select(g => new EventTypeSeriesEntry
+            {
+                EventTypeId = g.Key,
+                Total = (int)g.Sum(r => r.Count),
+                DataPoints = g
+                    .OrderBy(r => r.Bucket)
+                    .Select(r => new EventTypeSeriesBucket
+                    {
+                        // Same truncated-ISO key contract as GetTimeSeriesMetrics.
+                        Timestamp = DateTime.SpecifyKind(r.Bucket, DateTimeKind.Utc).ToString("o")[..substringLength],
+                        Published = (int)r.Count,
+                    })
+                    .ToList(),
+            })
+            .OrderByDescending(s => s.Total)
+            .ToList();
+
+        return new EventTypeTimeSeriesResult { BucketSize = bucketLabel, Series = series };
+    }
+
     private static List<string> GenerateBucketKeys(DateTime from, DateTime to, int substringLength)
     {
         var current = substringLength switch

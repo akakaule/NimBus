@@ -57,9 +57,26 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     private const string EventSchemasContainer = "eventschemas";
     private const string EventReportsContainer = "eventreports";
     private const string AccessControlContainer = "accesscontrol";
+    private const string MetadataContainer = "Metadata";
+
+    // Seconds stamped as the document ttl on non-terminal tracking rows. -1 disables
+    // expiry, which is the default and the behaviour before the option existed.
+    private readonly int _unresolvedTtlSeconds;
 
     public CosmosDbClient(CosmosClient cosmosClient, ILogger<CosmosDbClient> logger = null)
+        : this(cosmosClient, logger, new CosmosDbMessageStoreOptions())
     {
+    }
+
+    /// <summary>
+    /// Creates the store with explicit options. The third parameter is non-optional so
+    /// existing one- and two-argument calls keep binding the overload above.
+    /// </summary>
+    public CosmosDbClient(CosmosClient cosmosClient, ILogger<CosmosDbClient> logger, CosmosDbMessageStoreOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+        _unresolvedTtlSeconds = options.ResolveUnresolvedTimeToLiveSeconds();
         _logger = logger;
         _cosmosClient = new CosmosClientAdapter(cosmosClient, _logger);
         _metrics = new CosmosDbMetricsStore(GetMessagesContainer);
@@ -68,7 +85,19 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     }
 
     public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient> logger = null)
+        : this(cosmosClient, logger, new CosmosDbMessageStoreOptions())
     {
+    }
+
+    /// <summary>
+    /// Creates the store with explicit options. The third parameter is non-optional so
+    /// existing one- and two-argument calls keep binding the overload above.
+    /// </summary>
+    public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient> logger, CosmosDbMessageStoreOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+        _unresolvedTtlSeconds = options.ResolveUnresolvedTimeToLiveSeconds();
         _logger = logger;
         _cosmosClient = new TransientTranslatingCosmosClientAdapter(cosmosClient, _logger);
         _metrics = new CosmosDbMetricsStore(GetMessagesContainer);
@@ -998,7 +1027,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
 
         if (!ValidateEmail(mail)) throw new Exception($"Invalid email: {mail}");
 
-        var subscriptionContainer = await GetEndpointContainer(SubscriptionsContainer);
+        var subscriptionContainer = await GetSubscriptionsContainer();
         var subscription = new EndpointSubscription
         {
             Mail = mail,
@@ -1099,7 +1128,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     {
         if (string.IsNullOrWhiteSpace(subscriptionId)) return false;
 
-        var subscriptionContainer = await GetEndpointContainer(SubscriptionsContainer);
+        var subscriptionContainer = await GetSubscriptionsContainer();
 
         try
         {
@@ -1119,7 +1148,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     {
         if (string.IsNullOrWhiteSpace(id)) return false;
 
-        var subscriptionContainer = await GetEndpointContainer(SubscriptionsContainer);
+        var subscriptionContainer = await GetSubscriptionsContainer();
 
         try
         {
@@ -1157,7 +1186,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         subscription.NotifiedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm");
         try
         {
-            var subscriberContainer = await GetEndpointContainer(SubscriptionsContainer);
+            var subscriberContainer = await GetSubscriptionsContainer();
             await subscriberContainer.UpsertItemAsync(subscription, new PartitionKey(subscription.Id));
             return true;
         }
@@ -1222,9 +1251,16 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     // A faulted creation is never left cached: the faulted entry is evicted
     // (key + value match, so a newer good entry is never removed) and the
     // next caller retries.
-    private async Task<ICosmosContainerAdapter> GetCachedContainerAsync(string containerId, string partitionKeyPath)
+    // defaultTimeToLive is null for every shared container (TTL stays disabled at container
+    // level) and set only for per-endpoint tracking containers. Keying the cache by container
+    // id alone stays safe because reserved ids are rejected below, so an id can never be
+    // reached with two different TTL modes.
+    private async Task<ICosmosContainerAdapter> GetCachedContainerAsync(
+        string containerId,
+        string partitionKeyPath,
+        int? defaultTimeToLive = null)
     {
-        var containerTask = _containerCache.GetOrAdd(containerId, id => EnsureContainerExistsAsync(id, partitionKeyPath));
+        var containerTask = _containerCache.GetOrAdd(containerId, id => EnsureContainerExistsAsync(id, partitionKeyPath, defaultTimeToLive));
         try
         {
             return await containerTask;
@@ -1236,11 +1272,24 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         }
     }
 
-    private async Task<ICosmosContainerAdapter> EnsureContainerExistsAsync(string containerId, string partitionKeyPath)
+    private async Task<ICosmosContainerAdapter> EnsureContainerExistsAsync(
+        string containerId,
+        string partitionKeyPath,
+        int? defaultTimeToLive)
     {
         var db = _cosmosClient.GetDatabase(DatabaseId);
+
+        if (defaultTimeToLive is null)
+        {
+            // Shared containers keep TTL disabled at container level.
+            return await CosmosExceptionTranslation.TranslateTransientAsync(
+                () => db.CreateContainerIfNotExistsAsync(containerId, partitionKeyPath),
+                _logger);
+        }
+
+        var properties = CosmosContainerDefaults.EndpointContainer(containerId);
         return await CosmosExceptionTranslation.TranslateTransientAsync(
-            () => db.CreateContainerIfNotExistsAsync(containerId, partitionKeyPath),
+            () => db.CreateContainerIfNotExistsAsync(properties),
             _logger);
     }
 
@@ -1250,11 +1299,23 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         {
             throw new ArgumentNullException(nameof(endpointId), "EndpointId cannot be null or empty");
         }
-        return GetCachedContainerAsync(endpointId, "/id");
+
+        // An endpoint id equal to one of the store's own container ids resolves to the same
+        // physical container and the same _containerCache entry, so call order would decide the
+        // container's partition key path and TTL mode. Reject instead.
+        CosmosContainerDefaults.EnsureNotReservedEndpointId(endpointId);
+
+        return GetCachedContainerAsync(
+            endpointId,
+            CosmosContainerDefaults.EndpointPartitionKeyPath,
+            CosmosContainerDefaults.EndpointContainerDefaultTimeToLive);
     }
 
     private Task<ICosmosContainerAdapter> GetSubscriptionsContainer() =>
         GetCachedContainerAsync(SubscriptionsContainer, "/id");
+
+    private Task<ICosmosContainerAdapter> GetMetadataContainer() =>
+        GetCachedContainerAsync(MetadataContainer, "/id");
 
     private Task<ICosmosContainerAdapter> GetMessagesContainer() =>
         GetCachedContainerAsync(MessagesContainer, "/eventId");
@@ -1899,7 +1960,10 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
             Status = status,
             EventType = content.EventTypeId,
             Deleted = false,
-            TimeToLive = -1 // TTL Disabled
+            // Configurable retention (CosmosDbMessageStoreOptions.UnresolvedRetentionDays);
+            // -1 is "TTL disabled" and remains the default. UpsertItemAsync writes the whole
+            // document, so every retry re-stamps this and the window slides forward.
+            TimeToLive = _unresolvedTtlSeconds
         };
 
         try
@@ -1926,7 +1990,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
 
     public async Task<EndpointMetadata> GetEndpointMetadata(string endpointId)
     {
-        var container = await GetEndpointContainer("Metadata");
+        var container = await GetMetadataContainer();
         try
         {
             var rel = await container.ReadItemAsync<EndpointMetadata>(endpointId, new PartitionKey(endpointId));
@@ -1944,7 +2008,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
 
     public async Task<List<EndpointMetadata>>? GetMetadatas(IEnumerable<string> endpointIds)
     {
-        var container = await GetEndpointContainer("Metadata");
+        var container = await GetMetadataContainer();
         try
         {
             var rel = await container.ReadManyItemsAsync<EndpointMetadata>(endpointIds.Select(x => (x, new PartitionKey(x))).ToList());
@@ -1972,7 +2036,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
 
     private async Task<List<EndpointMetadata>> GetMetadatasByFilter(string sqlQuery)
     {
-        var container = await GetEndpointContainer("Metadata");
+        var container = await GetMetadataContainer();
         var result = container.GetItemQueryIterator<EndpointMetadata>(sqlQuery);
         var metadatas = new List<EndpointMetadata>();
 
@@ -1989,7 +2053,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
 
     public async Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata)
     {
-        var container = await GetEndpointContainer("Metadata");
+        var container = await GetMetadataContainer();
 
         try
         {
@@ -2016,6 +2080,8 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from) => _metrics.GetFailedMessageInsights(from);
 
     public Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel) => _metrics.GetTimeSeriesMetrics(from, substringLength, bucketLabel);
+
+    public Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel) => _metrics.GetEventTypeTimeSeriesMetrics(from, substringLength, bucketLabel);
 
     class StatusQueryResult
     {

@@ -52,6 +52,13 @@ public sealed class CosmosDbClientPurgeTests
 
         public Task<ICosmosContainerAdapter> CreateContainerIfNotExistsAsync(string id, string partitionKeyPath)
             => Task.FromResult(_container);
+
+        // Endpoint containers are created through the ContainerProperties overload, which
+        // fails closed unless an adapter implements it.
+        public Task<ICosmosContainerAdapter> CreateContainerIfNotExistsAsync(
+            ContainerProperties containerProperties,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(_container);
     }
 
     private sealed class RecordingContainerAdapter : ICosmosContainerAdapter

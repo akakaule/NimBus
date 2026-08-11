@@ -9,7 +9,9 @@ import ByEventTypeTab, {
   buildBucketGrid,
   buildChartRows,
   buildTableRows,
+  formatBucketLabel,
   pickVisibleSeries,
+  spansMoreThanOneDay,
 } from "./by-event-type-tab";
 
 function series(
@@ -53,6 +55,44 @@ describe("pickVisibleSeries", () => {
   it("caps an oversized selection at the palette size", () => {
     const visible = pickVisibleSeries(all, ["A", "B", "C", "D", "E", "F"]);
     expect(visible).toHaveLength(MAX_CHART_SERIES);
+  });
+});
+
+describe("spansMoreThanOneDay", () => {
+  it("is false for a window of 24 hours or less", () => {
+    expect(spansMoreThanOneDay(["2026-08-09T10", "2026-08-10T10"])).toBe(false);
+    expect(spansMoreThanOneDay(["2026-08-10T00", "2026-08-10T23"])).toBe(false);
+  });
+
+  it("is true when the window exceeds one day", () => {
+    expect(spansMoreThanOneDay(["2026-08-08T10", "2026-08-10T11"])).toBe(true);
+  });
+
+  it("is false for empty or single-bucket windows", () => {
+    expect(spansMoreThanOneDay([])).toBe(false);
+    expect(spansMoreThanOneDay(["2026-08-10T10"])).toBe(false);
+    expect(spansMoreThanOneDay([undefined, "2026-08-10T10"])).toBe(false);
+  });
+});
+
+describe("formatBucketLabel", () => {
+  it("keeps plain hour labels inside a single day", () => {
+    expect(formatBucketLabel("2026-08-10T14", "hour")).toMatch(/^\d{2}:00$/);
+  });
+
+  it("carries the date on hour labels when asked", () => {
+    expect(formatBucketLabel("2026-08-10T14", "hour", true)).toMatch(
+      /^\d{2}\/\d{2} \d{2}:00$/,
+    );
+  });
+
+  it("leaves day and minute labels unchanged by the flag", () => {
+    expect(formatBucketLabel("2026-08-10", "day", true)).toMatch(
+      /^\d{2}\/\d{2}$/,
+    );
+    expect(formatBucketLabel("2026-08-10T14:30", "minute", true)).toMatch(
+      /^\d{2}:\d{2}$/,
+    );
   });
 });
 

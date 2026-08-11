@@ -10,7 +10,9 @@ import {
   YAxis,
 } from "recharts";
 import * as api from "api-client";
-import ByEventTypeTab from "components/metrics/by-event-type-tab";
+import ByEventTypeTab, {
+  spansMoreThanOneDay,
+} from "components/metrics/by-event-type-tab";
 import Page from "components/page";
 import { Spinner } from "components/ui/spinner";
 import { EmptyState } from "components/ui/empty-state";
@@ -68,6 +70,7 @@ function formatNumber(n: number): string {
 function formatTimestamp(
   ts: string | undefined,
   bucketSize: string | undefined,
+  withDate = false,
 ): string {
   if (!ts) return "";
   let iso = ts;
@@ -88,7 +91,7 @@ function formatTimestamp(
 
   if (bucketSize === "day") return `${day}/${mon}`;
   if (bucketSize === "minute") return `${hr}:${min}`;
-  return `${hr}:00`;
+  return withDate ? `${day}/${mon} ${hr}:00` : `${hr}:00`;
 }
 
 export default function Metrics() {
@@ -567,6 +570,10 @@ export const ActivityChart: React.FC<ActivityChartProps> = ({
     failureMarker: (point.failed ?? 0) > 0 ? 0 : null,
   }));
 
+  // Hour ticks are ambiguous once the window crosses a day — carry the date
+  // on axis and tooltip labels then.
+  const ticksWithDate = spansMoreThanOneDay(dataPoints.map((p) => p.timestamp));
+
   return (
     <ResponsiveContainer width="100%" height={280}>
       <LineChart data={rows} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
@@ -578,7 +585,7 @@ export const ActivityChart: React.FC<ActivityChartProps> = ({
         <XAxis
           dataKey="timestamp"
           tickFormatter={(timestamp: string) =>
-            formatTimestamp(timestamp, bucketSize)
+            formatTimestamp(timestamp, bucketSize, ticksWithDate)
           }
           tick={{ fontSize: 10.5, fill: PALETTE.ink3 }}
           stroke={PALETTE.grid}
@@ -599,7 +606,7 @@ export const ActivityChart: React.FC<ActivityChartProps> = ({
             return (
               <div className="bg-popover text-popover-foreground border border-border rounded-md shadow-lg px-3 py-2 text-[11.5px] min-w-[170px]">
                 <div className="font-mono text-muted-foreground mb-1">
-                  {formatTimestamp(String(label), bucketSize)}
+                  {formatTimestamp(String(label), bucketSize, ticksWithDate)}
                 </div>
                 <ActivityTooltipRow
                   color={PALETTE.published}

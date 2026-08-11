@@ -57,9 +57,21 @@ export function bucketKeyToDate(key: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** True when the rendered window covers more than 24 hours — hour ticks are
+    ambiguous then ("14:00" of which day?), so labels carry the date too. */
+export function spansMoreThanOneDay(keys: (string | undefined)[]): boolean {
+  const times = keys
+    .filter((k): k is string => Boolean(k))
+    .map((k) => bucketKeyToDate(k)?.getTime())
+    .filter((t): t is number => t !== undefined);
+  if (times.length < 2) return false;
+  return Math.max(...times) - Math.min(...times) > 86_400_000;
+}
+
 export function formatBucketLabel(
   key: string | undefined,
   bucketSize: string | undefined,
+  withDate = false,
 ): string {
   if (!key) return "";
   const d = bucketKeyToDate(key);
@@ -70,7 +82,7 @@ export function formatBucketLabel(
   const min = String(d.getMinutes()).padStart(2, "0");
   if (bucketSize === "day") return `${day}/${mon}`;
   if (bucketSize === "minute") return `${hr}:${min}`;
-  return `${hr}:00`;
+  return withDate ? `${day}/${mon} ${hr}:00` : `${hr}:00`;
 }
 
 /** Fill the gaps between the earliest and latest observed bucket keys so the
@@ -262,6 +274,13 @@ export default function ByEventTypeTab({
     [visible, data?.bucketSize],
   );
 
+  // Hour ticks are ambiguous once the rendered window crosses a day — carry
+  // the date on axis and tooltip labels then.
+  const ticksWithDate = useMemo(
+    () => spansMoreThanOneDay(chartRows.map((r) => r.ts)),
+    [chartRows],
+  );
+
   const filterOptions: ComboboxOption[] = useMemo(
     () =>
       series
@@ -380,7 +399,7 @@ export default function ByEventTypeTab({
               <XAxis
                 dataKey="ts"
                 tickFormatter={(ts: string) =>
-                  formatBucketLabel(ts, data?.bucketSize)
+                  formatBucketLabel(ts, data?.bucketSize, ticksWithDate)
                 }
                 tick={{ fontSize: 10.5, fill: ink }}
                 stroke={grid}
@@ -403,7 +422,11 @@ export default function ByEventTypeTab({
                   return (
                     <div className="bg-popover text-popover-foreground border border-border rounded-md shadow-lg px-3 py-2 text-[11.5px]">
                       <div className="font-mono text-muted-foreground mb-1">
-                        {formatBucketLabel(String(label), data?.bucketSize)}
+                        {formatBucketLabel(
+                          String(label),
+                          data?.bucketSize,
+                          ticksWithDate,
+                        )}
                       </div>
                       {entries.map((e) => (
                         <div

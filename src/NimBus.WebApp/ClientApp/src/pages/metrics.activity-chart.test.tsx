@@ -15,7 +15,16 @@ vi.mock("recharts", () => ({
     <div>{children}</div>
   ),
   Tooltip: () => null,
-  XAxis: () => null,
+  XAxis: ({
+    tickFormatter,
+  }: {
+    tickFormatter?: (timestamp: string) => string;
+  }) => (
+    <span
+      data-testid="x-axis"
+      data-sample-tick={tickFormatter?.("2026-08-10T14")}
+    />
+  ),
   YAxis: () => null,
 }));
 
@@ -49,5 +58,37 @@ describe("ActivityChart", () => {
     render(<ActivityChart bucketSize="hour" dataPoints={[]} />);
 
     expect(screen.getByText(/no activity in this window/i)).toBeTruthy();
+  });
+
+  it("keeps plain hour ticks when the window fits in one day", () => {
+    render(
+      <ActivityChart
+        bucketSize="hour"
+        dataPoints={[
+          { timestamp: "2026-08-10T02", published: 1, handled: 1, failed: 0 },
+          { timestamp: "2026-08-10T14", published: 2, handled: 2, failed: 0 },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByTestId("x-axis").getAttribute("data-sample-tick"),
+    ).toMatch(/^\d{2}:00$/);
+  });
+
+  it("adds the date to hour ticks when the window spans more than one day", () => {
+    render(
+      <ActivityChart
+        bucketSize="hour"
+        dataPoints={[
+          { timestamp: "2026-08-07T10", published: 1, handled: 1, failed: 0 },
+          { timestamp: "2026-08-10T14", published: 2, handled: 2, failed: 0 },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByTestId("x-axis").getAttribute("data-sample-tick"),
+    ).toMatch(/^\d{2}\/\d{2} \d{2}:00$/);
   });
 });

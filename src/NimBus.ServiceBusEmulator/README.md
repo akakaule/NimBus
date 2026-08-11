@@ -1,0 +1,38 @@
+# NimBus Service Bus Emulator
+
+This project is a loopback-only Azure Service Bus emulator for NimBus development. The unmodified `Azure.Messaging.ServiceBus` 7.20.x data and administration clients use one connection string and one TCP port.
+
+## Stand-alone
+
+```powershell
+dotnet run --project src/NimBus.ServiceBusEmulator -- --port 5672
+```
+
+```text
+Endpoint=sb://127.0.0.1:5672;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=nimbus-local;UseDevelopmentEmulator=true
+```
+
+The process binds loopback only. `GET /health` is unauthenticated; administration routes require a `SharedAccessSignature` authorization header. SAS signatures are accepted but not validated, so the emulator must never be exposed remotely.
+
+## Aspire
+
+Set `NIMBUS_SB_EMULATOR=true` when running `src/NimBus.AppHost`. The AppHost creates the emulator project, injects `ConnectionStrings__servicebus`, waits for readiness, and runs the normal topology provisioner.
+
+The Aspire integration is also available directly:
+
+```csharp
+var servicebus = builder.AddNimBusServiceBusEmulator<Projects.NimBus_ServiceBusEmulator>("servicebus");
+builder.AddProject<Projects.AspirePubSub_Provisioner>("provisioner")
+    .WithReference(servicebus.ConnectionString)
+    .WaitFor(servicebus.Project);
+```
+
+## Storage and limits
+
+Messages, locks, and session state are in memory and are lost on restart. Topology is replayed from an atomically written JSON journal before health becomes ready. Override its location with `NIMBUS_SBEMULATOR_TOPOLOGY_PATH`; Aspire assigns a resource-specific default beneath the operating-system temporary directory.
+
+The broker memory budget defaults to 512 MiB and can be set with `NIMBUS_SBEMULATOR_MAX_STORED_BYTES`. The per-message limit defaults to 256 KiB and can be raised, up to 1 MiB, with `NIMBUS_SBEMULATOR_MAX_MESSAGE_SIZE`. Invalid or incompatible topology journals are renamed with a `.corrupt-{timestamp}` suffix and the broker starts empty so the provisioner can recover it.
+
+The emulator supports the NimBus topic/subscription surface: SQL rules and SET actions, sessions and session state, peek, scheduling/cancellation, settlement, delivery limits, TTL, runtime properties, and auto-forwarding. Queues, transactions, WebSockets, Entra ID, duplicate-detection enforcement, and Service Bus message deferral are intentionally unsupported.
+
+NimBus detects `UseDevelopmentEmulator=true`, so local `Deferred` subscriptions retain the existing one-hour development TTL profile even though the emulator itself does not impose Azure's emulator TTL cap.

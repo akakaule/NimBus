@@ -25,6 +25,16 @@ internal sealed class ServiceBusTopologyProvisioner
     {
     }
 
+    internal ServiceBusTopologyProvisioner(AzureCliRunner az, string connectionString)
+        : this(
+            az,
+            (_, _, _) => Task.FromResult(connectionString),
+            static value => new ServiceBusAdministrationClient(value),
+            static () => new PlatformConfiguration())
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+    }
+
     internal ServiceBusTopologyProvisioner(
         AzureCliRunner az,
         Func<TopologyOptions, CancellationToken, AzureCliRunner, Task<string>> connectionStringProvider,

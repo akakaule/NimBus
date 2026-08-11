@@ -179,7 +179,8 @@ What it demonstrates:
 ### Run it
 
 ```powershell
-# 1. One-time secret (real Azure Service Bus namespace; no local emulator path)
+# 1. This demo still uses a real namespace pending its emulator migration.
+#    The main src/NimBus.AppHost already supports NIMBUS_SB_EMULATOR=true.
 dotnet user-secrets --project samples/CrmErpDemo/CrmErpDemo.AppHost set ConnectionStrings:servicebus "Endpoint=sb://..."
 
 # 2. SPA dependencies (first run only)

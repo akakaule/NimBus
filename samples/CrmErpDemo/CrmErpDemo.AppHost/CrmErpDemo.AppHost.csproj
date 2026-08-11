@@ -13,7 +13,6 @@
     <PackageReference Include="Aspire.Hosting.SqlServer" Version="13.4.6" />
     <PackageReference Include="Aspire.Hosting.JavaScript" Version="13.4.6" />
     <PackageReference Include="Aspire.Hosting.Azure.Functions" Version="13.4.6" />
-    <PackageReference Include="Aspire.Hosting.Azure.ServiceBus" Version="13.4.6" />
     <PackageReference Include="CommunityToolkit.Aspire.Hosting.DbGate" Version="9.7.0" />
     <!-- Force the patched MessagePack over Aspire's vulnerable transitive 2.5.192
          (CVE-2026-48109 et al., patched in 2.5.301) so the audited Release build passes. -->
@@ -33,6 +32,8 @@
     <ProjectReference Include="..\PartnerPortal\PartnerPortal.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.Resolver\NimBus.Resolver.csproj" />
     <ProjectReference Include="..\..\..\src\NimBus.WebApp\NimBus.WebApp.csproj" />
+    <ProjectReference Include="..\..\..\src\NimBus.ServiceBusEmulator\NimBus.ServiceBusEmulator.csproj" />
+    <ProjectReference Include="..\..\..\src\NimBus.ServiceBusEmulator.AspireHosting\NimBus.ServiceBusEmulator.AspireHosting.csproj" IsAspireProjectResource="false" />
   </ItemGroup>
 
 </Project>

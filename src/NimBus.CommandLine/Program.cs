@@ -43,7 +43,7 @@ internal static class Program
         app.HelpTextGenerator = new ColoredHelpTextGenerator();
 
         ConfigureInfraCommands(app);
-        ConfigureTopologyCommands(app);
+        ConfigureTopologyCommands(app, sbConnectionString);
         ConfigureDeployCommands(app);
         ConfigureSetupCommand(app);
         ConfigureEndpointCommands(app, sbConnectionString, dbConnectionString);
@@ -166,7 +166,7 @@ internal static class Program
         });
     }
 
-    private static void ConfigureTopologyCommands(CommandLineApplication app)
+    private static void ConfigureTopologyCommands(CommandLineApplication app, CommandOption sbConnectionString)
     {
         app.Command("topology", topologyCommand =>
         {
@@ -193,16 +193,37 @@ internal static class Program
             {
                 applyCommand.Description = "Provision the Service Bus topology for the current PlatformConfiguration.";
                 applyCommand.HelpOption(inherited: true);
+                applyCommand.AddOption(sbConnectionString);
 
-                var solutionId = applyCommand.Option("--solution-id <ID>", "Solution identifier used in Azure resource names.", CommandOptionType.SingleValue).IsRequired();
-                var environment = applyCommand.Option("--environment <NAME>", "Environment name used in Azure resource names.", CommandOptionType.SingleValue).IsRequired();
-                var resourceGroup = applyCommand.Option("--resource-group <NAME>", "Azure resource group containing the Service Bus namespace.", CommandOptionType.SingleValue).IsRequired();
+                var solutionId = applyCommand.Option("--solution-id <ID>", "Solution identifier used in Azure resource names (required without --sb-connection-string).", CommandOptionType.SingleValue);
+                var environment = applyCommand.Option("--environment <NAME>", "Environment name used in Azure resource names (required without --sb-connection-string).", CommandOptionType.SingleValue);
+                var resourceGroup = applyCommand.Option("--resource-group <NAME>", "Azure resource group containing the Service Bus namespace (required without --sb-connection-string).", CommandOptionType.SingleValue);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
                     var az = new AzureCliRunner();
-                    var provisioner = new ServiceBusTopologyProvisioner(az);
-                    var options = new TopologyOptions(solutionId.Value(), environment.Value(), resourceGroup.Value());
+                    var suppliedConnection = sbConnectionString.Value()
+                        ?? Environment.GetEnvironmentVariable(CommandRunner.SbConnectionStringEnvName);
+                    ServiceBusTopologyProvisioner provisioner;
+                    TopologyOptions options;
+                    if (!string.IsNullOrWhiteSpace(suppliedConnection))
+                    {
+                        provisioner = new ServiceBusTopologyProvisioner(az, suppliedConnection);
+                        options = new TopologyOptions(string.Empty, string.Empty, string.Empty);
+                    }
+                    else
+                    {
+                        if (string.IsNullOrWhiteSpace(solutionId.Value()) ||
+                            string.IsNullOrWhiteSpace(environment.Value()) ||
+                            string.IsNullOrWhiteSpace(resourceGroup.Value()))
+                        {
+                            throw new InvalidOperationException(
+                                "Provide --sb-connection-string (or AzureServiceBus_ConnectionString), or all of --solution-id, --environment, and --resource-group.");
+                        }
+
+                        provisioner = new ServiceBusTopologyProvisioner(az);
+                        options = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!);
+                    }
 
                     await provisioner.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
                     return 0;

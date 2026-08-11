@@ -225,6 +225,7 @@ internal sealed class BrokerLinkProcessor(
     {
         public async Task<ReceiveContext?> GetMessageAsync(ListenerLink link)
         {
+            var lastEcho = Environment.TickCount64;
             while (!link.IsClosed)
             {
                 // Only acquire (and thereby lock) a message while the peer still
@@ -251,6 +252,22 @@ internal sealed class BrokerLinkProcessor(
                         };
                     }
                 }
+                else if (!link.IsDraining && Environment.TickCount64 - lastEcho >= 500)
+                {
+                    // Deadlock breaker: when the client settles a surplus delivery
+                    // as Released, Microsoft.Azure.Amqp restores that credit
+                    // client-side WITHOUT sending a flow (its restoration is
+                    // batched), so its next receive call believes credit is
+                    // already outstanding while this side sees zero. Both peers
+                    // then wait forever. An echo flow obliges the client to
+                    // publish its flow state, re-syncing the credit windows.
+                    lastEcho = Environment.TickCount64;
+                    if (broker.Peek(topicName, subscriptionName, 0, 1, sessionId).Count > 0)
+                    {
+                        EmulatorDiagnostics.Write("Echo flow", $"{topicName}/{subscriptionName} session={sessionId}");
+                        SendEchoFlow(link);
+                    }
+                }
 
                 if (link.IsDraining)
                 {
@@ -261,6 +278,30 @@ internal sealed class BrokerLinkProcessor(
             }
 
             return null;
+        }
+
+        // ListenerLink.deliveryCount is a private field of the internal struct
+        // Amqp.SequenceNumber (single int inside), and Session.SendFlow is
+        // internal -- reflection for the former, UnsafeAccessor for the latter.
+        private static readonly System.Reflection.FieldInfo DeliveryCountField =
+            typeof(ListenerLink).GetField("deliveryCount", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        private static readonly System.Reflection.FieldInfo SequenceNumberValueField =
+            DeliveryCountField.FieldType.GetFields(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Single();
+
+        [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "SendFlow")]
+        private static extern void SessionSendFlow(Session session, Flow flow);
+
+        private static void SendEchoFlow(ListenerLink link)
+        {
+            var deliveryCount = SequenceNumberValueField.GetValue(DeliveryCountField.GetValue(link))!;
+            SessionSendFlow(link.Session, new Flow
+            {
+                Handle = link.Handle,
+                DeliveryCount = unchecked((uint)Convert.ToInt64(deliveryCount, System.Globalization.CultureInfo.InvariantCulture)),
+                LinkCredit = 0,
+                Echo = true,
+            });
         }
 
         public void DisposeMessage(ReceiveContext receiveContext, DispositionContext dispositionContext)
@@ -408,20 +449,10 @@ internal sealed class BrokerLinkProcessor(
 
                 try
                 {
-                    var remaining = SendMessageInternal(link, context.Message, null, context);
-                    if (remaining == 0)
-                    {
-                        lock (_gate)
-                        {
-                            // Credit could arrive right after the send; only park
-                            // the pump when none remains.
-                            if (GetCredit(link) == 0)
-                            {
-                                _receiving = false;
-                                return;
-                            }
-                        }
-                    }
+                    // Unlike the library pump, stay resident at zero credit:
+                    // GetMessageAsync idles cheaply, and its stall detector
+                    // (echo flow) must keep running while the peer grants none.
+                    SendMessageInternal(link, context.Message, null, context);
                 }
                 catch (Exception exception)
                 {

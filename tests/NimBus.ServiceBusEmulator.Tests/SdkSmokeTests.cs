@@ -109,6 +109,85 @@ public sealed class SdkSmokeTests
     [TestMethod]
     [TestCategory("CommonFidelity")]
     [Timeout(60_000)]
+    public async Task Stock_sdk_contended_explicit_session_reports_session_cannot_be_locked()
+    {
+        await using var emulator = await EmulatorProcess.StartAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var entityName = $"contended-{Guid.NewGuid():N}";
+        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+        await admin.CreateTopicAsync(entityName, timeout.Token);
+        await admin.CreateSubscriptionAsync(
+            new CreateSubscriptionOptions(entityName, "consumer") { RequiresSession = true },
+            timeout.Token);
+
+        await using var client = new ServiceBusClient(
+            emulator.ConnectionString,
+            new ServiceBusClientOptions
+            {
+                RetryOptions = new ServiceBusRetryOptions
+                {
+                    MaxRetries = 0,
+                    TryTimeout = TimeSpan.FromSeconds(2),
+                },
+            });
+        await client.CreateSender(entityName).SendMessageAsync(
+            new ServiceBusMessage("held") { SessionId = "S" },
+            timeout.Token);
+        await using ServiceBusSessionReceiver first = await client.AcceptSessionAsync(
+            entityName,
+            "consumer",
+            "S",
+            cancellationToken: timeout.Token);
+
+        var exception = await Assert.ThrowsExactlyAsync<ServiceBusException>(() =>
+            client.AcceptSessionAsync(entityName, "consumer", "S", cancellationToken: timeout.Token));
+        Assert.AreEqual(ServiceBusFailureReason.SessionCannotBeLocked, exception.Reason);
+    }
+
+    [TestMethod]
+    [TestCategory("CommonFidelity")]
+    [Timeout(60_000)]
+    public async Task Stock_sdk_stale_session_receiver_cannot_change_the_current_owners_state()
+    {
+        await using var emulator = await EmulatorProcess.StartAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var entityName = $"ownership-{Guid.NewGuid():N}";
+        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+        await admin.CreateTopicAsync(entityName, timeout.Token);
+        await admin.CreateSubscriptionAsync(
+            new CreateSubscriptionOptions(entityName, "consumer")
+            {
+                RequiresSession = true,
+                LockDuration = TimeSpan.FromSeconds(5),
+            },
+            timeout.Token);
+
+        await using var client = new ServiceBusClient(emulator.ConnectionString);
+        await client.CreateSender(entityName).SendMessageAsync(
+            new ServiceBusMessage("held") { SessionId = "S" },
+            timeout.Token);
+        await using ServiceBusSessionReceiver stale = await client.AcceptSessionAsync(
+            entityName,
+            "consumer",
+            "S",
+            cancellationToken: timeout.Token);
+        await stale.SetSessionStateAsync(BinaryData.FromString("stale"), timeout.Token);
+        await Task.Delay(TimeSpan.FromSeconds(6), timeout.Token);
+        await using ServiceBusSessionReceiver current = await client.AcceptSessionAsync(
+            entityName,
+            "consumer",
+            "S",
+            cancellationToken: timeout.Token);
+
+        var exception = await Assert.ThrowsExactlyAsync<ServiceBusException>(() =>
+            stale.SetSessionStateAsync(BinaryData.FromString("overwritten"), timeout.Token));
+        Assert.AreEqual(ServiceBusFailureReason.SessionLockLost, exception.Reason);
+        Assert.AreEqual("stale", (await current.GetSessionStateAsync(timeout.Token))?.ToString());
+    }
+
+    [TestMethod]
+    [TestCategory("CommonFidelity")]
+    [Timeout(60_000)]
     public async Task Stock_sdk_schedules_and_cancels_messages()
     {
         await using var emulator = await EmulatorProcess.StartAsync();
@@ -390,7 +469,7 @@ public sealed class SdkSmokeTests
             journalPath ??= Path.Combine(Path.GetTempPath(), $"nimbus-sbemulator-test-{Guid.NewGuid():N}", "topology.json");
             var startInfo = new ProcessStartInfo("dotnet")
             {
-                Arguments = $"run --no-build --project \"{project}\" -- --port {port}",
+                Arguments = $"run --no-build --configuration \"{GetBuildConfiguration()}\" --project \"{project}\" -- --port {port}",
                 WorkingDirectory = Path.GetDirectoryName(project),
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
@@ -434,6 +513,12 @@ public sealed class SdkSmokeTests
 
             await instance.DisposeAsync();
             throw new TimeoutException("The emulator did not become healthy.");
+        }
+
+        private static string GetBuildConfiguration()
+        {
+            return new DirectoryInfo(AppContext.BaseDirectory).Parent?.Name
+                ?? throw new InvalidOperationException("Could not determine the active test build configuration.");
         }
 
         public ValueTask DisposeAsync()

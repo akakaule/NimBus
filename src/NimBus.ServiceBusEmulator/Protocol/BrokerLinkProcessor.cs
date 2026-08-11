@@ -6,7 +6,10 @@ using NimBus.ServiceBusEmulator.Broker;
 
 namespace NimBus.ServiceBusEmulator.Protocol;
 
-internal sealed class BrokerLinkProcessor(BrokerNamespace broker, int maxMessageSize = 262_144) : ILinkProcessor
+internal sealed class BrokerLinkProcessor(
+    BrokerNamespace broker,
+    SessionLinkRegistry sessionLinks,
+    int maxMessageSize = 262_144) : ILinkProcessor
 {
     private static readonly Symbol SessionFilter = new("com.microsoft:session-filter");
     private static readonly Symbol LockedUntilUtc = new("com.microsoft:locked-until-utc");
@@ -73,19 +76,36 @@ internal sealed class BrokerLinkProcessor(BrokerNamespace broker, int maxMessage
         string? sessionId = null;
         if (isSessionReceiver)
         {
-            var described = filterValue as DescribedValue;
-            var requestedSession = described?.Value as string;
+            var requestedSession = filterValue switch
+            {
+                string value => value,
+                DescribedValue { Value: string value } => value,
+                _ => null,
+            };
             var timeout = GetTimeout(context.Attach);
             var started = TimeProvider.System.GetTimestamp();
             AcceptedSession? accepted;
             do
             {
-                accepted = requestedSession is null
-                    ? broker.TryAcceptNextSession(topicName, subscriptionName, owner)
-                    : broker.TryAcceptSession(topicName, subscriptionName, requestedSession, owner);
+                accepted = null;
+                try
+                {
+                    accepted = requestedSession is null
+                        ? broker.TryAcceptNextSession(topicName, subscriptionName, owner)
+                        : broker.TryAcceptSession(topicName, subscriptionName, requestedSession, owner);
+                }
+                catch (SessionCannotBeLockedException exception)
+                {
+                    context.Complete(new Error("com.microsoft:session-cannot-be-locked")
+                    {
+                        Description = exception.Message,
+                    });
+                    return;
+                }
                 if (accepted is not null)
                 {
                     sessionId = accepted.SessionId;
+                    sessionLinks.Register(context.Link.Session.Connection, context.Attach.LinkName, owner);
                     source.FilterSet![SessionFilter] = sessionId;
                     context.Attach.Properties ??= new Fields();
                     context.Attach.Properties[LockedUntilUtc] = accepted.LockedUntil.UtcTicks;
@@ -108,7 +128,15 @@ internal sealed class BrokerLinkProcessor(BrokerNamespace broker, int maxMessage
             }
         }
 
-        var messageSource = new SubscriptionMessageSource(broker, topicName, subscriptionName, sessionId, owner);
+        var messageSource = new SubscriptionMessageSource(
+            broker,
+            sessionLinks,
+            context.Link.Session.Connection,
+            context.Attach.LinkName,
+            topicName,
+            subscriptionName,
+            sessionId,
+            owner);
         context.Complete(new ReleasingSourceLinkEndpoint(messageSource, context.Link), 0);
     }
 
@@ -185,6 +213,9 @@ internal sealed class BrokerLinkProcessor(BrokerNamespace broker, int maxMessage
 
     private sealed class SubscriptionMessageSource(
         BrokerNamespace broker,
+        SessionLinkRegistry sessionLinks,
+        Connection connection,
+        string linkName,
         string topicName,
         string subscriptionName,
         string? sessionId,
@@ -258,6 +289,7 @@ internal sealed class BrokerLinkProcessor(BrokerNamespace broker, int maxMessage
         {
             if (sessionId is not null)
             {
+                sessionLinks.Unregister(connection, linkName, owner);
                 broker.ReleaseSession(topicName, subscriptionName, sessionId, owner);
             }
         }

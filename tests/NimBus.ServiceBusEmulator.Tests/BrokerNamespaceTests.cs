@@ -88,7 +88,8 @@ public sealed class BrokerNamespaceTests
 
         var session = broker.TryAcceptSession("events", "consumer", "session-1", "receiver-1");
         Assert.IsNotNull(session);
-        Assert.IsNull(broker.TryAcceptSession("events", "consumer", "session-1", "receiver-2"));
+        Assert.ThrowsExactly<SessionCannotBeLockedException>(() =>
+            broker.TryAcceptSession("events", "consumer", "session-1", "receiver-2"));
 
         var first = broker.TryAcquire("events", "consumer", "session-1", "receiver-1");
         Assert.IsNotNull(first);
@@ -100,6 +101,93 @@ public sealed class BrokerNamespaceTests
         var second = broker.TryAcquire("events", "consumer", "session-1", "receiver-2");
         Assert.IsNotNull(second);
         Assert.AreEqual(1, second.Message.DeliveryCount);
+    }
+
+    [TestMethod]
+    [DataRow("complete")]
+    [DataRow("abandon")]
+    [DataRow("dead-letter")]
+    [DataRow("release")]
+    [DataRow("complete-by-token")]
+    [DataRow("abandon-by-token")]
+    [DataRow("dead-letter-by-token")]
+    public void Expired_message_lock_cannot_be_settled(string operation)
+    {
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 8, 10, 12, 0, 0, TimeSpan.Zero));
+        var broker = new BrokerNamespace(new BrokerOptions { TimeProvider = clock });
+        broker.CreateTopic(new TopicDefinition("events"));
+        broker.CreateSubscription(
+            "events",
+            new SubscriptionDefinition("consumer") { LockDuration = TimeSpan.FromSeconds(1) });
+        broker.Publish("events", NewMessage("message-1"));
+
+        var expired = broker.TryAcquire("events", "consumer", null, "receiver-1");
+        Assert.IsNotNull(expired);
+        clock.Advance(TimeSpan.FromSeconds(2));
+
+        Assert.ThrowsExactly<KeyNotFoundException>(() => SettleExpired(operation, broker, expired.LockToken));
+        var redelivered = broker.TryAcquire("events", "consumer", null, "receiver-2");
+        Assert.IsNotNull(redelivered);
+        Assert.AreEqual(2, redelivered.Message.DeliveryCount);
+    }
+
+    [TestMethod]
+    public void Session_management_requires_the_current_lock_owner()
+    {
+        var broker = new BrokerNamespace(new BrokerOptions());
+        broker.CreateTopic(new TopicDefinition("events"));
+        broker.CreateSubscription(
+            "events",
+            new SubscriptionDefinition("consumer") { RequiresSession = true });
+        broker.Publish("events", NewMessage("message-1", "session-1"));
+        Assert.IsNotNull(broker.TryAcceptSession("events", "consumer", "session-1", "receiver-1"));
+
+        Assert.ThrowsExactly<KeyNotFoundException>(() =>
+            broker.RenewSessionLock("events", "consumer", "session-1", "receiver-2"));
+        Assert.ThrowsExactly<KeyNotFoundException>(() =>
+            broker.GetSessionState("events", "consumer", "session-1", "receiver-2"));
+        Assert.ThrowsExactly<KeyNotFoundException>(() =>
+            broker.SetSessionState("events", "consumer", "session-1", "receiver-2", new byte[] { 1 }));
+
+        broker.SetSessionState("events", "consumer", "session-1", "receiver-1", new byte[] { 1 });
+        Assert.AreEqual(1, broker.GetSessionState("events", "consumer", "session-1", "receiver-1")?.Length);
+        Assert.IsGreaterThan(
+            DateTimeOffset.UtcNow,
+            broker.RenewSessionLock("events", "consumer", "session-1", "receiver-1"));
+    }
+
+    [TestMethod]
+    public void Expired_session_lock_cannot_be_completed_or_managed()
+    {
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 8, 10, 12, 0, 0, TimeSpan.Zero));
+        var broker = new BrokerNamespace(new BrokerOptions { TimeProvider = clock });
+        broker.CreateTopic(new TopicDefinition("events"));
+        broker.CreateSubscription(
+            "events",
+            new SubscriptionDefinition("consumer")
+            {
+                RequiresSession = true,
+                LockDuration = TimeSpan.FromSeconds(1),
+            });
+        broker.Publish("events", NewMessage("message-1", "session-1"));
+        Assert.IsNotNull(broker.TryAcceptSession("events", "consumer", "session-1", "receiver-1"));
+        var expired = broker.TryAcquire("events", "consumer", "session-1", "receiver-1");
+        Assert.IsNotNull(expired);
+        clock.Advance(TimeSpan.FromSeconds(2));
+
+        Assert.ThrowsExactly<KeyNotFoundException>(() =>
+            broker.Complete("events", "consumer", expired.LockToken, "receiver-1"));
+        Assert.ThrowsExactly<KeyNotFoundException>(() =>
+            broker.RenewSessionLock("events", "consumer", "session-1", "receiver-1"));
+        Assert.ThrowsExactly<KeyNotFoundException>(() =>
+            broker.GetSessionState("events", "consumer", "session-1", "receiver-1"));
+        Assert.ThrowsExactly<KeyNotFoundException>(() =>
+            broker.SetSessionState("events", "consumer", "session-1", "receiver-1", new byte[] { 1 }));
+
+        Assert.IsNotNull(broker.TryAcceptSession("events", "consumer", "session-1", "receiver-2"));
+        var redelivered = broker.TryAcquire("events", "consumer", "session-1", "receiver-2");
+        Assert.IsNotNull(redelivered);
+        Assert.AreEqual(2, redelivered.Message.DeliveryCount);
     }
 
     [TestMethod]
@@ -134,6 +222,36 @@ public sealed class BrokerNamespaceTests
         SessionId = sessionId,
         Body = System.Text.Encoding.UTF8.GetBytes("payload"),
     };
+
+    private static void SettleExpired(string operation, BrokerNamespace broker, Guid lockToken)
+    {
+        switch (operation)
+        {
+            case "complete":
+                broker.Complete("events", "consumer", lockToken, "receiver-1");
+                break;
+            case "abandon":
+                broker.Abandon("events", "consumer", lockToken, "receiver-1");
+                break;
+            case "dead-letter":
+                broker.DeadLetter("events", "consumer", lockToken, "receiver-1", null, null);
+                break;
+            case "release":
+                broker.Release("events", "consumer", lockToken, "receiver-1");
+                break;
+            case "complete-by-token":
+                broker.CompleteByLockToken("events", "consumer", lockToken);
+                break;
+            case "abandon-by-token":
+                broker.AbandonByLockToken("events", "consumer", lockToken);
+                break;
+            case "dead-letter-by-token":
+                broker.DeadLetterByLockToken("events", "consumer", lockToken, null, null);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(operation), operation, "Unknown settlement operation.");
+        }
+    }
 
     private sealed class ManualTimeProvider(DateTimeOffset initial) : TimeProvider
     {

@@ -18,6 +18,8 @@ internal sealed class BrokerOptions
 
 internal sealed class BrokerQuotaExceededException(string message) : InvalidOperationException(message);
 
+internal sealed class SessionCannotBeLockedException(string message) : InvalidOperationException(message);
+
 internal sealed record TopicDefinition(string Name)
 {
     public BrokerEntityStatus Status { get; init; } = BrokerEntityStatus.Active;

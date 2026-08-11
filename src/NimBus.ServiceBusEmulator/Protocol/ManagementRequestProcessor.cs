@@ -6,7 +6,10 @@ using NimBus.ServiceBusEmulator.Broker;
 
 namespace NimBus.ServiceBusEmulator.Protocol;
 
-internal sealed class ManagementRequestProcessor(BrokerNamespace broker, string? fixedEntityPath = null) : IRequestProcessor
+internal sealed class ManagementRequestProcessor(
+    BrokerNamespace broker,
+    SessionLinkRegistry sessionLinks,
+    string? fixedEntityPath = null) : IRequestProcessor
 {
     internal const string ManagementStatusCode = "statusCode";
 
@@ -28,7 +31,12 @@ internal sealed class ManagementRequestProcessor(BrokerNamespace broker, string?
         try
         {
             var body = requestContext.Message.Body as Map ?? new Map();
-            var responseBody = Dispatch(operation, entityPath, body);
+            var owner = IsSessionOperation(operation)
+                ? sessionLinks.GetOwner(
+                    requestContext.Link.Session.Connection,
+                    GetApplicationProperty(requestContext.Message, "associated-link-name")?.ToString())
+                : null;
+            var responseBody = Dispatch(operation, entityPath, body, owner);
             requestContext.Complete(Response(200, "OK", responseBody));
         }
         catch (NotSupportedException exception)
@@ -45,7 +53,7 @@ internal sealed class ManagementRequestProcessor(BrokerNamespace broker, string?
         }
     }
 
-    private Map Dispatch(string? operation, string entityPath, Map body)
+    private Map Dispatch(string? operation, string entityPath, Map body, string? owner)
     {
         if (operation == "schedule-message")
         {
@@ -61,9 +69,9 @@ internal sealed class ManagementRequestProcessor(BrokerNamespace broker, string?
         return operation switch
         {
             "renew-lock" => RenewLocks(topicName, subscriptionName, body),
-            "renew-session-lock" => RenewSession(topicName, subscriptionName, body),
-            "get-session-state" => GetSessionState(topicName, subscriptionName, body),
-            "set-session-state" => SetSessionState(topicName, subscriptionName, body),
+            "renew-session-lock" => RenewSession(topicName, subscriptionName, body, owner!),
+            "get-session-state" => GetSessionState(topicName, subscriptionName, body, owner!),
+            "set-session-state" => SetSessionState(topicName, subscriptionName, body, owner!),
             "peek-message" => Peek(topicName, subscriptionName, body),
             "update-disposition" => UpdateDisposition(topicName, subscriptionName, body),
             "receive-by-sequence-number" => throw new NotSupportedException("Service Bus deferral is outside Spec 027 section 3."),
@@ -127,23 +135,23 @@ internal sealed class ManagementRequestProcessor(BrokerNamespace broker, string?
         return new Map { ["expirations"] = expirations };
     }
 
-    private Map RenewSession(string topicName, string subscriptionName, Map body)
+    private Map RenewSession(string topicName, string subscriptionName, Map body, string owner)
     {
         var sessionId = RequiredString(body, "session-id");
-        return new Map { ["expiration"] = broker.RenewSessionLock(topicName, subscriptionName, sessionId).UtcDateTime };
+        return new Map { ["expiration"] = broker.RenewSessionLock(topicName, subscriptionName, sessionId, owner).UtcDateTime };
     }
 
-    private Map GetSessionState(string topicName, string subscriptionName, Map body)
+    private Map GetSessionState(string topicName, string subscriptionName, Map body, string owner)
     {
-        var state = broker.GetSessionState(topicName, subscriptionName, RequiredString(body, "session-id"));
+        var state = broker.GetSessionState(topicName, subscriptionName, RequiredString(body, "session-id"), owner);
         return new Map { ["session-state"] = state?.ToArray() };
     }
 
-    private Map SetSessionState(string topicName, string subscriptionName, Map body)
+    private Map SetSessionState(string topicName, string subscriptionName, Map body, string owner)
     {
         var sessionId = RequiredString(body, "session-id");
         var state = GetValue(body, "session-state") as byte[];
-        broker.SetSessionState(topicName, subscriptionName, sessionId, state);
+        broker.SetSessionState(topicName, subscriptionName, sessionId, owner, state);
         return new Map();
     }
 
@@ -220,7 +228,7 @@ internal sealed class ManagementRequestProcessor(BrokerNamespace broker, string?
         response.ApplicationProperties["statusDescription"] = description;
         if (errorCondition is not null)
         {
-            response.ApplicationProperties["errorCondition"] = errorCondition;
+            response.ApplicationProperties["errorCondition"] = new Symbol(errorCondition);
         }
         return response;
     }
@@ -228,12 +236,15 @@ internal sealed class ManagementRequestProcessor(BrokerNamespace broker, string?
     private static string ErrorCondition(string? operation) => operation switch
     {
         "cancel-scheduled-message" => "com.microsoft:message-not-found",
-        "renew-session-lock" => "com.microsoft:session-lock-lost",
+        "renew-session-lock" or "get-session-state" or "set-session-state" => "com.microsoft:session-lock-lost",
         _ => "com.microsoft:message-lock-lost",
     };
 
     private static object? GetApplicationProperty(Message message, string key) =>
         message.ApplicationProperties?.Map.TryGetValue(key, out var value) == true ? value : null;
+
+    private static bool IsSessionOperation(string? operation) => operation is
+        "renew-session-lock" or "get-session-state" or "set-session-state";
 
     private static object? GetValue(Map map, string key)
     {

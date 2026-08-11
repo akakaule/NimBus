@@ -349,7 +349,7 @@ internal sealed class BrokerNamespace
             var now = _options.TimeProvider.GetUtcNow();
             if (subscription.Sessions.TryGetValue(sessionId, out var existing) && existing.LockedUntil > now)
             {
-                return null;
+                throw new SessionCannotBeLockedException($"Session '{sessionId}' is already locked.");
             }
 
             var lockedUntil = now.Add(subscription.Definition.LockDuration);
@@ -378,6 +378,7 @@ internal sealed class BrokerNamespace
     {
         lock (_gate)
         {
+            ProcessDueWorkCore();
             var subscription = GetSubscription(topicName, subscriptionName);
             if (!subscription.Sessions.TryGetValue(sessionId, out var session) ||
                 !string.Equals(session.Owner, owner, StringComparison.Ordinal))
@@ -396,16 +397,13 @@ internal sealed class BrokerNamespace
         }
     }
 
-    public DateTimeOffset RenewSessionLock(string topicName, string subscriptionName, string sessionId)
+    public DateTimeOffset RenewSessionLock(string topicName, string subscriptionName, string sessionId, string owner)
     {
         lock (_gate)
         {
+            ProcessDueWorkCore();
             var subscription = GetSubscription(topicName, subscriptionName);
-            if (!subscription.Sessions.TryGetValue(sessionId, out var session) ||
-                session.LockedUntil <= _options.TimeProvider.GetUtcNow())
-            {
-                throw new KeyNotFoundException($"Session '{sessionId}' is not locked.");
-            }
+            var session = FindOwnedSession(subscription, sessionId, owner);
 
             var expiration = _options.TimeProvider.GetUtcNow().Add(subscription.Definition.LockDuration);
             subscription.Sessions[sessionId] = session with { LockedUntil = expiration };
@@ -421,25 +419,38 @@ internal sealed class BrokerNamespace
         }
     }
 
-    public ReadOnlyMemory<byte>? GetSessionState(string topicName, string subscriptionName, string sessionId)
+    public ReadOnlyMemory<byte>? GetSessionState(
+        string topicName,
+        string subscriptionName,
+        string sessionId,
+        string owner)
     {
         lock (_gate)
         {
+            ProcessDueWorkCore();
             var subscription = GetSubscription(topicName, subscriptionName);
+            FindOwnedSession(subscription, sessionId, owner);
             return subscription.SessionState.TryGetValue(sessionId, out var state) ? state : null;
         }
     }
 
-    public void SetSessionState(string topicName, string subscriptionName, string sessionId, ReadOnlyMemory<byte>? state)
+    public void SetSessionState(
+        string topicName,
+        string subscriptionName,
+        string sessionId,
+        string owner,
+        ReadOnlyMemory<byte>? state)
     {
         lock (_gate)
         {
+            ProcessDueWorkCore();
             if (state is { Length: > 256 * 1024 })
             {
                 throw new InvalidOperationException("Session state exceeds the 256 KiB limit.");
             }
 
             var subscription = GetSubscription(topicName, subscriptionName);
+            FindOwnedSession(subscription, sessionId, owner);
             if (state is null || state.Value.IsEmpty)
             {
                 subscription.SessionState.Remove(sessionId);
@@ -455,6 +466,7 @@ internal sealed class BrokerNamespace
     {
         lock (_gate)
         {
+            ProcessDueWorkCore();
             var subscription = GetSubscription(topicName, subscriptionName);
             var stored = subscription.Messages.FirstOrDefault(message =>
                 message.State == MessageState.Locked && message.LockToken == lockToken)
@@ -490,6 +502,7 @@ internal sealed class BrokerNamespace
     {
         lock (_gate)
         {
+            ProcessDueWorkCore();
             var subscription = GetSubscription(topicName, subscriptionName);
             var stored = FindLocked(subscription, lockToken, owner);
             subscription.Messages.Remove(stored);
@@ -500,6 +513,7 @@ internal sealed class BrokerNamespace
     {
         lock (_gate)
         {
+            ProcessDueWorkCore();
             var subscription = GetSubscription(topicName, subscriptionName);
             var stored = FindLocked(subscription, lockToken, owner);
             FailDelivery(subscription, stored, "MaxDeliveryCountExceeded", null);
@@ -516,6 +530,7 @@ internal sealed class BrokerNamespace
     {
         lock (_gate)
         {
+            ProcessDueWorkCore();
             var subscription = GetSubscription(topicName, subscriptionName);
             var stored = FindLocked(subscription, lockToken, owner);
             MoveToDeadLetter(subscription, stored, reason, description);
@@ -526,6 +541,7 @@ internal sealed class BrokerNamespace
     {
         lock (_gate)
         {
+            ProcessDueWorkCore();
             var subscription = GetSubscription(topicName, subscriptionName);
             FindLocked(subscription, lockToken, owner).ReleaseWithoutFailure();
         }
@@ -535,6 +551,7 @@ internal sealed class BrokerNamespace
     {
         lock (_gate)
         {
+            ProcessDueWorkCore();
             var subscription = GetSubscription(topicName, subscriptionName);
             subscription.Messages.Remove(FindLocked(subscription, lockToken));
         }
@@ -544,6 +561,7 @@ internal sealed class BrokerNamespace
     {
         lock (_gate)
         {
+            ProcessDueWorkCore();
             var subscription = GetSubscription(topicName, subscriptionName);
             FailDelivery(subscription, FindLocked(subscription, lockToken), "MaxDeliveryCountExceeded", null);
         }
@@ -558,6 +576,7 @@ internal sealed class BrokerNamespace
     {
         lock (_gate)
         {
+            ProcessDueWorkCore();
             var subscription = GetSubscription(topicName, subscriptionName);
             MoveToDeadLetter(subscription, FindLocked(subscription, lockToken), reason, description);
         }
@@ -752,7 +771,7 @@ internal sealed class BrokerNamespace
                 subscription.Sessions.Remove(session.Key);
                 foreach (var message in subscription.Messages.Where(message =>
                              message.State == MessageState.Locked &&
-                             string.Equals(message.Message.SessionId, session.Key, StringComparison.Ordinal)))
+                             string.Equals(message.Message.SessionId, session.Key, StringComparison.Ordinal)).ToArray())
                 {
                     FailDelivery(subscription, message, "MaxDeliveryCountExceeded", null);
                 }
@@ -821,6 +840,14 @@ internal sealed class BrokerNamespace
         return subscription.Messages.FirstOrDefault(message =>
                    message.State == MessageState.Locked && message.LockToken == lockToken)
                ?? throw new KeyNotFoundException($"Lock token '{lockToken}' is not active.");
+    }
+
+    private static SessionLock FindOwnedSession(SubscriptionState subscription, string sessionId, string owner)
+    {
+        return subscription.Sessions.TryGetValue(sessionId, out var session) &&
+               string.Equals(session.Owner, owner, StringComparison.Ordinal)
+            ? session
+            : throw new KeyNotFoundException($"Session '{sessionId}' is not locked by this receiver.");
     }
 
     private TopicState GetTopic(string topicName) =>

@@ -11,6 +11,7 @@ internal sealed class AmqpFrontend : IDisposable
 
     public AmqpFrontend(int port, BrokerNamespace broker, int maxMessageSize = 262_144)
     {
+        var sessionLinks = new SessionLinkRegistry();
         _host = new ContainerHost(new Address($"amqp://127.0.0.1:{port}"));
         var listener = _host.Listeners[0];
         listener.SASL.EnableMechanism("MSSBCBS", new MssbcbsSaslProfile());
@@ -33,7 +34,7 @@ internal sealed class AmqpFrontend : IDisposable
                 RegisterSubscriptionManagement(topic.Name, subscription.Name);
             }
         }
-        _host.RegisterLinkProcessor(new BrokerLinkProcessor(broker, maxMessageSize));
+        _host.RegisterLinkProcessor(new BrokerLinkProcessor(broker, sessionLinks, maxMessageSize));
 
         void RegisterTopicManagement(string topicName) => RegisterManagementNode(topicName);
 
@@ -47,7 +48,7 @@ internal sealed class AmqpFrontend : IDisposable
             {
                 if (_managementNodes.Add(node))
                 {
-                    _host.RegisterRequestProcessor(node, new ManagementRequestProcessor(broker, entityPath));
+                    _host.RegisterRequestProcessor(node, new ManagementRequestProcessor(broker, sessionLinks, entityPath));
                 }
             }
         }

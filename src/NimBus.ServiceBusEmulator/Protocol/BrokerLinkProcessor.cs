@@ -97,6 +97,7 @@ internal sealed class BrokerLinkProcessor(
                 }
                 catch (SessionCannotBeLockedException exception)
                 {
+                    EmulatorDiagnostics.Write("Session accept rejected", requestedSession);
                     context.Complete(new Error("com.microsoft:session-cannot-be-locked")
                     {
                         Description = exception.Message,
@@ -236,6 +237,14 @@ internal sealed class BrokerLinkProcessor(
                     var delivery = broker.TryAcquire(topicName, subscriptionName, sessionId, owner);
                     if (delivery is not null)
                     {
+                        // Test hook: widen the acquire-to-send window to make the
+                        // credit-rescind race deterministic instead of CI-timing-dependent.
+                        if (DeliveryDelay is { } delay)
+                        {
+                            await Task.Delay(delay).ConfigureAwait(false);
+                        }
+
+                        EmulatorDiagnostics.Write("Deliver", $"{topicName}/{subscriptionName} session={sessionId} lock={delivery.LockToken} credit={GetCredit(link)}");
                         return new ReceiveContext(link, AmqpMessageConverter.ToAmqp(delivery.Message))
                         {
                             UserToken = delivery.LockToken,
@@ -258,6 +267,11 @@ internal sealed class BrokerLinkProcessor(
         [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "get_Credit")]
         private static extern uint GetCredit(ListenerLink link);
 
+        private static readonly TimeSpan? DeliveryDelay =
+            int.TryParse(Environment.GetEnvironmentVariable("NIMBUS_SBEMULATOR_TEST_DELIVERY_DELAY_MS"), out var ms) && ms > 0
+                ? TimeSpan.FromMilliseconds(ms)
+                : null;
+
         public void DisposeMessage(ReceiveContext receiveContext, DispositionContext dispositionContext)
         {
             if (receiveContext.UserToken is not Guid lockToken)
@@ -266,6 +280,7 @@ internal sealed class BrokerLinkProcessor(
                 return;
             }
 
+            EmulatorDiagnostics.Write("Disposition", $"{dispositionContext.DeliveryState?.GetType().Name} lock={lockToken}");
             try
             {
                 switch (dispositionContext.DeliveryState)
@@ -313,6 +328,7 @@ internal sealed class BrokerLinkProcessor(
     {
         public override void OnLinkClosed(ListenerLink closedLink, Error error)
         {
+            EmulatorDiagnostics.Write("Link closed", $"{closedLink.Name} error={error?.Condition}");
             source.ReleaseSession();
             base.OnLinkClosed(closedLink, error);
         }

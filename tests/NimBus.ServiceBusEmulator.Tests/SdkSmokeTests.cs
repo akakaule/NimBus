@@ -72,45 +72,54 @@ public sealed class SdkSmokeTests
     public async Task Stock_sdk_session_receiver_preserves_fifo_under_an_explicit_lock()
     {
         await using var emulator = await EmulatorProcess.StartAsync();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-        var entityName = $"session-{Guid.NewGuid():N}";
-        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
-        await admin.CreateTopicAsync(entityName, timeout.Token);
-        await admin.CreateSubscriptionAsync(
-            new CreateSubscriptionOptions(entityName, "consumer") { RequiresSession = true },
-            timeout.Token);
-
-        var client = new ServiceBusClient(emulator.ConnectionString);
-        ServiceBusSender sender = client.CreateSender(entityName);
-        await sender.SendMessagesAsync(
-            [
-                new ServiceBusMessage("first") { SessionId = "S" },
-                new ServiceBusMessage("second") { SessionId = "S" },
-            ],
-            timeout.Token);
-
-        ServiceBusSessionReceiver receiver = await client.AcceptSessionAsync(
-            entityName,
-            "consumer",
-            "S",
-            cancellationToken: timeout.Token);
-        await receiver.SetSessionStateAsync(BinaryData.FromString("state"), timeout.Token);
-        BinaryData? state = await receiver.GetSessionStateAsync(timeout.Token);
-        Assert.AreEqual("state", state?.ToString());
-        // ReceiveMessagesAsync may return fewer than maxMessages (the SDK only
-        // waits a short batch window after the first message), so accumulate
-        // until both arrive; the outer timeout token bounds the loop.
-        var messages = new List<ServiceBusReceivedMessage>();
-        while (messages.Count < 2)
+        try
         {
-            messages.AddRange(await receiver.ReceiveMessagesAsync(2 - messages.Count, TimeSpan.FromSeconds(5), timeout.Token));
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            var entityName = $"session-{Guid.NewGuid():N}";
+            var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+            await admin.CreateTopicAsync(entityName, timeout.Token);
+            await admin.CreateSubscriptionAsync(
+                new CreateSubscriptionOptions(entityName, "consumer") { RequiresSession = true },
+                timeout.Token);
+
+            var client = new ServiceBusClient(emulator.ConnectionString);
+            ServiceBusSender sender = client.CreateSender(entityName);
+            await sender.SendMessagesAsync(
+                [
+                    new ServiceBusMessage("first") { SessionId = "S" },
+                    new ServiceBusMessage("second") { SessionId = "S" },
+                ],
+                timeout.Token);
+
+            ServiceBusSessionReceiver receiver = await client.AcceptSessionAsync(
+                entityName,
+                "consumer",
+                "S",
+                cancellationToken: timeout.Token);
+            await receiver.SetSessionStateAsync(BinaryData.FromString("state"), timeout.Token);
+            BinaryData? state = await receiver.GetSessionStateAsync(timeout.Token);
+            Assert.AreEqual("state", state?.ToString());
+            // ReceiveMessagesAsync may return fewer than maxMessages (the SDK only
+            // waits a short batch window after the first message), so accumulate
+            // until both arrive; the outer timeout token bounds the loop.
+            var messages = new List<ServiceBusReceivedMessage>();
+            while (messages.Count < 2)
+            {
+                messages.AddRange(await receiver.ReceiveMessagesAsync(2 - messages.Count, TimeSpan.FromSeconds(5), timeout.Token));
+            }
+            Assert.HasCount(2, messages);
+            Assert.AreEqual("first", messages[0].Body.ToString());
+            Assert.AreEqual("second", messages[1].Body.ToString());
+            await receiver.CompleteMessageAsync(messages[0], timeout.Token);
+            await receiver.CompleteMessageAsync(messages[1], timeout.Token);
+            await admin.DeleteTopicAsync(entityName, timeout.Token);
         }
-        Assert.HasCount(2, messages);
-        Assert.AreEqual("first", messages[0].Body.ToString());
-        Assert.AreEqual("second", messages[1].Body.ToString());
-        await receiver.CompleteMessageAsync(messages[0], timeout.Token);
-        await receiver.CompleteMessageAsync(messages[1], timeout.Token);
-        await admin.DeleteTopicAsync(entityName, timeout.Token);
+        catch (Exception exception)
+        {
+            throw new InvalidOperationException(
+                $"FIFO test failed; emulator protocol trace:{System.Environment.NewLine}{emulator.DumpOutput()}",
+                exception);
+        }
     }
 
     [TestMethod]
@@ -443,6 +452,7 @@ public sealed class SdkSmokeTests
         private readonly Process? _process;
         private readonly string? _journalPath;
         private readonly bool _deleteJournalOnDispose;
+        private readonly ConcurrentQueue<string> _output = new();
 
         private EmulatorProcess(
             Process? process,
@@ -471,6 +481,26 @@ public sealed class SdkSmokeTests
                 return new EmulatorProcess(null, 0, existing);
             }
 
+            // Startup can fail transiently on a loaded runner (port stolen
+            // between probe and bind, resource pressure); retry on a new port.
+            Exception? lastFailure = null;
+            for (var launch = 0; launch < 3; launch++)
+            {
+                try
+                {
+                    return await StartOnceAsync(journalPath, deleteJournalOnDispose);
+                }
+                catch (Exception exception) when (exception is InvalidOperationException or TimeoutException)
+                {
+                    lastFailure = exception;
+                }
+            }
+
+            throw new InvalidOperationException("The emulator failed to start after 3 attempts.", lastFailure);
+        }
+
+        private static async Task<EmulatorProcess> StartOnceAsync(string? journalPath, bool deleteJournalOnDispose)
+        {
             var port = GetAvailablePort();
             var project = FindProject();
             journalPath ??= Path.Combine(Path.GetTempPath(), $"nimbus-sbemulator-test-{Guid.NewGuid():N}", "topology.json");
@@ -484,20 +514,24 @@ public sealed class SdkSmokeTests
                 CreateNoWindow = true,
             };
             startInfo.Environment["NIMBUS_SBEMULATOR_TOPOLOGY_PATH"] = journalPath;
+            startInfo.Environment["NIMBUS_SBEMULATOR_DIAGNOSTICS"] = "1";
             var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start the emulator process.");
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
             var instance = new EmulatorProcess(
                 process,
                 port,
                 journalPath: journalPath,
                 deleteJournalOnDispose: deleteJournalOnDispose);
+            process.OutputDataReceived += (_, args) => instance.CaptureOutput(args.Data);
+            process.ErrorDataReceived += (_, args) => instance.CaptureOutput(args.Data);
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
             for (var attempt = 0; attempt < 100; attempt++)
             {
                 if (process.HasExited)
                 {
-                    throw new InvalidOperationException($"The emulator exited during startup with code {process.ExitCode}.");
+                    throw new InvalidOperationException(
+                        $"The emulator exited during startup with code {process.ExitCode}. Output:{System.Environment.NewLine}{instance.DumpOutput()}");
                 }
 
                 try
@@ -520,6 +554,21 @@ public sealed class SdkSmokeTests
 
             await instance.DisposeAsync();
             throw new TimeoutException("The emulator did not become healthy.");
+        }
+
+        public string DumpOutput() => string.Join(System.Environment.NewLine, _output);
+
+        private void CaptureOutput(string? line)
+        {
+            if (line is null)
+            {
+                return;
+            }
+
+            _output.Enqueue(line);
+            while (_output.Count > 1000 && _output.TryDequeue(out _))
+            {
+            }
         }
 
         private static string GetBuildConfiguration()

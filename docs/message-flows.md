@@ -235,7 +235,7 @@ sequenceDiagram
 
     Note over Web: 30s tick, interval elapsed, claim won
     Web->>Store: write Pending row (key = CorrelationId)
-    Web->>Ep: EventRequest EventTypeId=Heartbeat, session Heartbeat
+    Web->>Ep: EventRequest EventTypeId=NimBus.Platform.Heartbeat, session Heartbeat
     Ep->>Sub: main sub
     Sub->>Sub: detect Heartbeat, skip handler + inbox + session guard
     Sub->>Sub: stamp ForwardReceivedTime, BackwardSendTime, Endpoint, SdkVersion

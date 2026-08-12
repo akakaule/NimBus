@@ -6,7 +6,9 @@ running?*
 
 The heartbeat probes every catalog endpoint without adapter authors writing a
 handler. The WebApp sends an ordinary `EventRequest` with
-`EventTypeId = "Heartbeat"`; a subscriber on a current SDK answers it inside
+`EventTypeId = "NimBus.Platform.Heartbeat"` (a reserved, dotted id — application
+event ids are unqualified CLR type names and can never contain a dot, so no
+business event can collide with the probe); a subscriber on a current SDK answers it inside
 `StrictMessageHandler`, and an older subscriber answers `UnsupportedResponse`,
 which still proves the endpoint is reachable.
 
@@ -174,5 +176,5 @@ the heartbeat.
 | One endpoint reads `Unsupported` | That adapter runs a pre-heartbeat SDK. Reachability is fine; upgrade the package. |
 | An endpoint stays `Unknown` | It has never been probed: heartbeats disabled, the endpoint opted out, or no fan-out has run yet. |
 | Everything stays `Pending` | Replies are not coming back. The probes are being sent, so look at the Resolver and the endpoint's Resolver subscription. |
-| Heartbeat rows appear in the Flow or Monitor pages | The Resolver divert is not matching. Check that the probe carries the exact `EventTypeId` `"Heartbeat"`. |
+| Heartbeat rows appear in the Flow or Monitor pages | The Resolver divert is not matching. Check that the probe carries the exact `EventTypeId` `"NimBus.Platform.Heartbeat"`. |
 | Statuses only change on manual refresh | The storage hook or the SignalR connection is broken, not the heartbeat itself. |

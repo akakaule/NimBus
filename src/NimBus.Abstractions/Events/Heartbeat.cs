@@ -32,14 +32,24 @@ namespace NimBus.Core.Events
         /// this exact string.
         /// </summary>
         /// <remarks>
-        /// Spelled out as a literal rather than derived with <c>nameof</c>: callers
-        /// that import this type under a <c>using</c> alias (both the WebApp and the
-        /// Resolver do, to disambiguate it from the message-store Heartbeat) get the
-        /// <em>alias</em> back from <c>nameof</c>, not the type name. That silently
-        /// put "CoreHeartbeat" on the wire, which the SDK's check never matched, so
-        /// every adapter answered UnsupportedResponse instead of the auto-response.
+        /// <para>
+        /// A reserved, dotted identifier rather than the bare type name: application
+        /// event ids are unqualified CLR type names, which can never contain a dot,
+        /// so no business event — typed or dynamically registered — can collide with
+        /// this id. A collision would be silently destructive in both directions: the
+        /// SDK would answer and complete the business event before its registered
+        /// handler ran, and the Resolver would divert it away from the audit trail.
+        /// </para>
+        /// <para>
+        /// Also spelled out as a literal rather than derived with <c>nameof</c>:
+        /// callers that import this type under a <c>using</c> alias (both the WebApp
+        /// and the Resolver do, to disambiguate it from the message-store Heartbeat)
+        /// get the <em>alias</em> back from <c>nameof</c>, not the type name. That
+        /// once silently put "CoreHeartbeat" on the wire, which the SDK's check never
+        /// matched, so every adapter answered UnsupportedResponse.
+        /// </para>
         /// </remarks>
-        public const string EventTypeId = "Heartbeat";
+        public const string EventTypeId = "NimBus.Platform.Heartbeat";
 
         /// <summary>Gets or sets the time the heartbeat is sent out in forward propagation.</summary>
         [Description("The time the heartbeat is sent out in forward propagation")]

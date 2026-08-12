@@ -55,8 +55,8 @@ public class HeartbeatServiceTests
         Assert.AreEqual(CoreConstants.ManagerId, message.From);
         Assert.AreEqual(WorkerA, message.To);
         Assert.AreEqual("Heartbeat", message.SessionId);
-        Assert.AreEqual("Heartbeat", message.EventTypeId);
-        Assert.AreEqual("Heartbeat", message.MessageContent.EventContent.EventTypeId);
+        Assert.AreEqual("NimBus.Platform.Heartbeat", message.EventTypeId);
+        Assert.AreEqual("NimBus.Platform.Heartbeat", message.MessageContent.EventContent.EventTypeId);
         Assert.AreEqual(CoreConstants.Self, message.ParentMessageId);
         Assert.AreEqual(CoreConstants.Self, message.OriginatingMessageId);
         Assert.AreEqual(CoreConstants.ManagerId, message.OriginatingFrom);
@@ -340,7 +340,7 @@ public class HeartbeatServiceTests
         Assert.AreEqual(CoreConstants.ResolverId, topic, "The probe goes straight to the Resolver topic.");
         Assert.AreEqual(MessageType.EventRequest, message.MessageType);
         Assert.AreEqual(CoreConstants.ResolverId, message.To);
-        Assert.AreEqual("Heartbeat", message.EventTypeId);
+        Assert.AreEqual("NimBus.Platform.Heartbeat", message.EventTypeId);
         // Its own session: sharing "Heartbeat" would queue the probe behind every
         // endpoint reply on the session-enabled Resolver subscription.
         Assert.AreEqual("Heartbeat-Resolver", message.SessionId);

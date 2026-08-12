@@ -15,7 +15,7 @@ namespace NimBus.Core.Tests.Events;
 public class HeartbeatEventTypeIdContractTests
 {
     [TestMethod]
-    public void EventTypeId_IsTheTypeName_NotAConsumersUsingAlias()
+    public void EventTypeId_IsTheReservedLiteral_NotAConsumersUsingAlias()
     {
         // Regression from the fork parent: the WebApp and the Resolver both import
         // this type under a `using CoreHeartbeat = ...` alias to disambiguate it from
@@ -27,7 +27,19 @@ public class HeartbeatEventTypeIdContractTests
         //
         // Asserting the literal is the point: re-deriving it from the type would
         // reintroduce exactly the coupling that hid the bug.
-        Assert.AreEqual("Heartbeat", Heartbeat.EventTypeId);
-        Assert.AreEqual(typeof(Heartbeat).Name, Heartbeat.EventTypeId);
+        Assert.AreEqual("NimBus.Platform.Heartbeat", Heartbeat.EventTypeId);
+    }
+
+    [TestMethod]
+    public void EventTypeId_CanNeverCollideWithAnApplicationEventName()
+    {
+        // Application EventTypeIds are unqualified CLR type names, global to the
+        // namespace. If the probe travelled under a plain type-name-shaped id, an
+        // application event class with that name would be silently swallowed: the
+        // SDK would answer and complete it before its registered handler ran, and
+        // the Resolver would divert it from the audit trail. The dot makes the id
+        // unspellable as an unqualified type name, so the collision is impossible.
+        StringAssert.Contains(Heartbeat.EventTypeId, ".");
+        Assert.AreNotEqual(typeof(Heartbeat).Name, Heartbeat.EventTypeId);
     }
 }

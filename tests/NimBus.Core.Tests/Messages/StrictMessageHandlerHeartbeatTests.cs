@@ -136,7 +136,7 @@ public class StrictMessageHandlerHeartbeatTests
     [TestMethod]
     public async Task HandleEventRequest_HeartbeatEventTypeIdCasingDiffers_StillAnswers()
     {
-        var ctx = CreateHeartbeatContext(eventTypeId: "heartbeat");
+        var ctx = CreateHeartbeatContext(eventTypeId: Heartbeat.EventTypeId.ToUpperInvariant());
         var response = new CountingResponseService();
         var sut = new StrictMessageHandler(new FakeEventContextHandler(), response, NullLogger.Instance);
 

@@ -14,6 +14,24 @@ namespace NimBus.MessageStore.Abstractions;
 public interface IMessageStateChangeNotifier
 {
     Task NotifyEndpointStateChangedAsync(string endpointId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Fires after an endpoint's heartbeat state changed. Default-implemented as a no-op
+    /// so notifiers that predate the platform heartbeat keep compiling.
+    /// </summary>
+    /// <param name="endpointId">The endpoint whose heartbeat state changed.</param>
+    /// <param name="cancellationToken">Cancels the notification.</param>
+    Task NotifyHeartbeatChangedAsync(string endpointId, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    /// <summary>
+    /// Fires after a platform service's liveness changed. Default-implemented as a no-op
+    /// so notifiers that predate the platform heartbeat keep compiling.
+    /// </summary>
+    /// <param name="serviceId">The platform service whose liveness changed.</param>
+    /// <param name="cancellationToken">Cancels the notification.</param>
+    Task NotifyServiceHealthChangedAsync(string serviceId, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
 }
 
 /// <summary>

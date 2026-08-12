@@ -604,6 +604,8 @@ public class ResolverServiceTests
         public Exception? StoreMessageException { get; set; }
         public Exception? UploadException { get; set; }
         public Exception? StoreAuditException { get; set; }
+        public Exception? SetHeartbeatException { get; set; }
+        public Exception? SetServiceHealthException { get; set; }
         public List<MessageEntity> StoredMessages { get; } = new();
         public List<(string EventId, MessageAuditEntity Audit)> StoredAudits { get; } = new();
         public List<UploadCall> PendingUploads { get; } = new();
@@ -613,6 +615,8 @@ public class ResolverServiceTests
         public List<UploadCall> UnsupportedUploads { get; } = new();
         public List<UploadCall> CompletedUploads { get; } = new();
         public List<UploadCall> SkippedUploads { get; } = new();
+        public List<(string EndpointId, Heartbeat Heartbeat)> WrittenHeartbeats { get; } = new();
+        public List<ServiceHealth> WrittenServiceHealth { get; } = new();
 
         public Task<bool> UploadPendingMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content)
         {
@@ -697,6 +701,32 @@ public class ResolverServiceTests
         public Task<List<EndpointMetadata>> GetMetadatas() => throw new NotSupportedException();
         public Task<List<EndpointMetadata>?> GetMetadatas(IEnumerable<string> endpointIds) => throw new NotSupportedException();
         public Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata) => throw new NotSupportedException();
+        // Heartbeat surface: the Resolver writes through it, so these record instead
+        // of throwing. Reads return the empty/default shape a store with no rows would.
+        public Task<bool> SetHeartbeat(Heartbeat heartbeat, string endpointId)
+        {
+            if (SetHeartbeatException is not null) return Task.FromException<bool>(SetHeartbeatException);
+            WrittenHeartbeats.Add((endpointId, heartbeat));
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> SetServiceHealth(ServiceHealth serviceHealth)
+        {
+            if (SetServiceHealthException is not null) return Task.FromException<bool>(SetServiceHealthException);
+            WrittenServiceHealth.Add(serviceHealth);
+            return Task.FromResult(true);
+        }
+
+        public Task<List<EndpointMetadata>> GetMetadatasWithEnabledHeartbeat() => Task.FromResult(new List<EndpointMetadata>());
+        public Task EnableHeartbeatOnEndpoint(string endpointId, bool enable) => Task.CompletedTask;
+        public Task<List<string>> SweepTimedOutHeartbeats(DateTime cutoffUtc) => Task.FromResult(new List<string>());
+        public Task<HeartbeatSettings> GetHeartbeatSettings() => Task.FromResult(new HeartbeatSettings());
+        public Task<bool> SetHeartbeatSettings(HeartbeatSettings settings) => Task.FromResult(true);
+        public Task<bool> TryClaimHeartbeatSend(DateTime dueBefore) => Task.FromResult(true);
+        public Task<List<HeartbeatOverviewItem>> GetHeartbeatOverview() => Task.FromResult(new List<HeartbeatOverviewItem>());
+        public Task<List<ServiceHealth>> GetServiceHealth() => Task.FromResult(new List<ServiceHealth>());
+        public Task<bool> TryClaimServiceProbe(string serviceId, DateTime dueBefore, string probeMessageId) => Task.FromResult(true);
+        public Task<List<string>> SweepTimedOutServiceProbes(DateTime cutoffUtc) => Task.FromResult(new List<string>());
         public Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount) => throw new NotSupportedException();
         public Task<MessageEntity> GetMessage(string eventId, string messageId) => throw new NotSupportedException();
         public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId) =>

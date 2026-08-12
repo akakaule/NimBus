@@ -16,6 +16,7 @@ using Microsoft.Identity.Web.UI;
 using NimBus;
 using NimBus.WebApp.Hubs;
 using NimBus.WebApp.Services.ApplicationInsights;
+using NimBus.WebApp.Services.Heartbeat;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Net.Http.Headers;
 using NSwag.AspNetCore;
@@ -593,6 +594,13 @@ namespace NimBus.WebApp
             services.AddSingleton<IAgentEventPublisher, AgentEventPublisher>();
             services.AddSingleton<IAgentSubscriptionRegistry, AgentSubscriptionRegistry>();
             services.AddScoped<SeedDataService>();
+
+            // Platform heartbeat. Scoped to match INimBusMessageStore; the sender is
+            // a singleton because it wraps the singleton ServiceBusClient. The
+            // scheduler resolves the service through a scope on each tick.
+            services.AddSingleton<IHeartbeatMessageSender, ServiceBusHeartbeatMessageSender>();
+            services.AddScoped<IHeartbeatService, HeartbeatService>();
+            services.AddHostedService<HeartbeatBackgroundService>();
         }
 
 

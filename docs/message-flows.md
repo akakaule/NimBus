@@ -218,19 +218,53 @@ sequenceDiagram
 
 ### 8. Heartbeat
 
-Heartbeat messages bypass all handler logic and session checks:
+The platform heartbeat probes an endpoint without any registered handler. The
+WebApp scheduler sends straight to the endpoint topic with `From=Manager`; the
+SDK answers inside `StrictMessageHandler` before the inbox check and the session
+guard; the Resolver diverts the reply to the heartbeat store instead of writing
+a tracking record, so heartbeats never reach the Flow or Monitor pages. See
+[heartbeat.md](heartbeat.md) for the operator view.
 
 ```mermaid
 sequenceDiagram
+    participant Web as WebApp Scheduler
     participant Ep as Endpoint Topic
     participant Sub as SubscriberClient
     participant Res as Resolver
+    participant Store as Message Store
 
-    Note over Ep: EventRequest with EventTypeId=Heartbeat
+    Note over Web: 30s tick, interval elapsed, claim won
+    Web->>Store: write Pending row (key = CorrelationId)
+    Web->>Ep: EventRequest EventTypeId=Heartbeat, session Heartbeat
     Ep->>Sub: main sub
-    Sub->>Sub: detect Heartbeat → skip handler + skip session
-    Sub->>Ep: ResolutionResponse → Resolver
-    Ep->>Res: status = Completed
+    Sub->>Sub: detect Heartbeat, skip handler + inbox + session guard
+    Sub->>Sub: stamp ForwardReceivedTime, BackwardSendTime, Endpoint, SdkVersion
+    Sub->>Ep: ResolutionResponse, From = endpoint
+    Ep->>Res: Resolver subscription
+    Res->>Res: divert before CreateMessageEntity
+    Res->>Store: settle row On, round-trip, SDK version
+    Res->>Web: storagehook POST
+    Web->>Web: SignalR heartbeatupdate to browsers
+```
+
+The Resolver liveness probe reuses the same machinery on its own session and
+settles itself rather than replying over the bus:
+
+```mermaid
+sequenceDiagram
+    participant Web as WebApp Scheduler
+    participant Top as Resolver Topic
+    participant Res as ResolverService
+    participant Store as Message Store
+
+    Note over Web: every tick, independent of the Enabled switch
+    Web->>Store: TryClaimServiceProbe (atomic, one instance wins)
+    Web->>Top: EventRequest To=Resolver, session Heartbeat-Resolver
+    Top->>Res: session subscription
+    Res->>Res: recognise own probe, self-settle
+    Res->>Store: ServiceHealth On, version, round-trip, clear claim
+    Res->>Web: storagehook POST
+    Web->>Web: SignalR servicehealthupdate to browsers
 ```
 
 ### 9. Unsupported Event Type

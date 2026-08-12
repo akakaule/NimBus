@@ -1123,6 +1123,30 @@ namespace NimBus.WebApp.ManagementApi
 
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> StoragehookReceiveCosmosAsync(string endpointId);
 
+        /// <summary>
+        /// Notify operators that an endpoint's heartbeat state changed
+        /// </summary>
+
+        /// <remarks>
+        /// Called by the Resolver after it settles a heartbeat. Authenticated with the shared webhook key.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostStoragehookHeartbeatAsync(string endpointId);
+
+        /// <summary>
+        /// Notify operators that a platform service's liveness changed
+        /// </summary>
+
+        /// <remarks>
+        /// Called by the Resolver after it answers a liveness probe. Only the Resolver service id is accepted — "Resolver" is not an endpoint, so the heartbeat hook's catalog check would reject it.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostStoragehookServicehealthAsync(string serviceId);
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -1142,6 +1166,34 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.StoragehookReceiveCosmosAsync(endpointId);
+        }
+
+        /// <summary>
+        /// Notify operators that an endpoint's heartbeat state changed
+        /// </summary>
+        /// <remarks>
+        /// Called by the Resolver after it settles a heartbeat. Authenticated with the shared webhook key.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/storagehook/heartbeat/{endpointId}")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostStoragehookHeartbeat(string endpointId)
+        {
+
+            return _implementation.PostStoragehookHeartbeatAsync(endpointId);
+        }
+
+        /// <summary>
+        /// Notify operators that a platform service's liveness changed
+        /// </summary>
+        /// <remarks>
+        /// Called by the Resolver after it answers a liveness probe. Only the Resolver service id is accepted — "Resolver" is not an endpoint, so the heartbeat hook's catalog check would reject it.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/storagehook/servicehealth/{serviceId}")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostStoragehookServicehealth(string serviceId)
+        {
+
+            return _implementation.PostStoragehookServicehealthAsync(serviceId);
         }
 
     }
@@ -1167,6 +1219,68 @@ namespace NimBus.WebApp.ManagementApi
         /// <returns>OK</returns>
 
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> GetAdminAsyncapiAsync(string format);
+
+        /// <summary>
+        /// Get the platform heartbeat schedule
+        /// </summary>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<HeartbeatSettings>> GetAdminHeartbeatSettingsAsync();
+
+        /// <summary>
+        /// Update the platform heartbeat schedule
+        /// </summary>
+
+        /// <remarks>
+        /// Interval is clamped to at least 30 seconds and the timeout to [5, interval] — a timeout longer than the interval could never elapse between probes. lastSentAtUtc is owned by the send claim and is ignored on write.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<HeartbeatSettings>> PutAdminHeartbeatSettingsAsync(HeartbeatSettings body);
+
+        /// <summary>
+        /// Send a heartbeat to every monitored endpoint now
+        /// </summary>
+
+        /// <remarks>
+        /// Runs the fan-out regardless of the enabled flag. Returns the number of probes sent.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<CountResponse>> PostAdminHeartbeatSendAsync();
+
+        /// <summary>
+        /// Heartbeat status per endpoint
+        /// </summary>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<HeartbeatOverviewRow>>> GetAdminHeartbeatOverviewAsync();
+
+        /// <summary>
+        /// Include or exclude one endpoint from the heartbeat fan-out
+        /// </summary>
+
+        /// <remarks>
+        /// The fan-out is opt-out: an endpoint with no stored preference is probed. Setting enabled to false excludes it.
+        /// </remarks>
+
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PutAdminHeartbeatEndpointEnabledAsync(HeartbeatEndpointEnabledRequest body, string endpointId);
+
+        /// <summary>
+        /// Liveness of the platform's own services
+        /// </summary>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<ServiceHealthRow>>> GetAdminHealthServicesAsync();
 
         /// <summary>
         /// Audit Service Bus topology for endpoint
@@ -1446,6 +1560,81 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.GetAdminAsyncapiAsync(format);
+        }
+
+        /// <summary>
+        /// Get the platform heartbeat schedule
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/admin/heartbeat/settings")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<HeartbeatSettings>> GetAdminHeartbeatSettings()
+        {
+
+            return _implementation.GetAdminHeartbeatSettingsAsync();
+        }
+
+        /// <summary>
+        /// Update the platform heartbeat schedule
+        /// </summary>
+        /// <remarks>
+        /// Interval is clamped to at least 30 seconds and the timeout to [5, interval] — a timeout longer than the interval could never elapse between probes. lastSentAtUtc is owned by the send claim and is ignored on write.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPut, Microsoft.AspNetCore.Mvc.Route("api/admin/heartbeat/settings")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<HeartbeatSettings>> PutAdminHeartbeatSettings([Microsoft.AspNetCore.Mvc.FromBody] HeartbeatSettings body)
+        {
+
+            return _implementation.PutAdminHeartbeatSettingsAsync(body);
+        }
+
+        /// <summary>
+        /// Send a heartbeat to every monitored endpoint now
+        /// </summary>
+        /// <remarks>
+        /// Runs the fan-out regardless of the enabled flag. Returns the number of probes sent.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/heartbeat/send")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<CountResponse>> PostAdminHeartbeatSend()
+        {
+
+            return _implementation.PostAdminHeartbeatSendAsync();
+        }
+
+        /// <summary>
+        /// Heartbeat status per endpoint
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/admin/heartbeat/overview")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<HeartbeatOverviewRow>>> GetAdminHeartbeatOverview()
+        {
+
+            return _implementation.GetAdminHeartbeatOverviewAsync();
+        }
+
+        /// <summary>
+        /// Include or exclude one endpoint from the heartbeat fan-out
+        /// </summary>
+        /// <remarks>
+        /// The fan-out is opt-out: an endpoint with no stored preference is probed. Setting enabled to false excludes it.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPut, Microsoft.AspNetCore.Mvc.Route("api/admin/heartbeat/endpoint/{endpointId}/enabled")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PutAdminHeartbeatEndpointEnabled([Microsoft.AspNetCore.Mvc.FromBody] HeartbeatEndpointEnabledRequest body, string endpointId)
+        {
+
+            return _implementation.PutAdminHeartbeatEndpointEnabledAsync(body, endpointId);
+        }
+
+        /// <summary>
+        /// Liveness of the platform's own services
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/admin/health/services")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<ServiceHealthRow>>> GetAdminHealthServices()
+        {
+
+            return _implementation.GetAdminHealthServicesAsync();
         }
 
         /// <summary>
@@ -11063,6 +11252,456 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class HeartbeatSettings : System.ComponentModel.INotifyPropertyChanged
+    {
+        private bool _enabled;
+        private int _intervalSeconds;
+        private int _timeoutSeconds;
+        private System.DateTime? _lastSentAtUtc;
+
+        /// <summary>
+        /// Whether the scheduled endpoint fan-out runs. The Resolver liveness probe runs either way.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("enabled", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Enabled    {
+            get { return _enabled; }
+            set
+            {
+                if (_enabled != value)
+                {
+                    _enabled = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Seconds between scheduled fan-outs. Clamped to a minimum of 30.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("intervalSeconds", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int IntervalSeconds    {
+            get { return _intervalSeconds; }
+            set
+            {
+                if (_intervalSeconds != value)
+                {
+                    _intervalSeconds = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Seconds a probe may stay pending before it settles to Off. Clamped to [5, intervalSeconds].
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("timeoutSeconds", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int TimeoutSeconds    {
+            get { return _timeoutSeconds; }
+            set
+            {
+                if (_timeoutSeconds != value)
+                {
+                    _timeoutSeconds = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// When the last fan-out was claimed. Read-only — owned by the send claim.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("lastSentAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? LastSentAtUtc    {
+            get { return _lastSentAtUtc; }
+            set
+            {
+                if (_lastSentAtUtc != value)
+                {
+                    _lastSentAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static HeartbeatSettings FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<HeartbeatSettings>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class HeartbeatOverviewRow : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _endpointId;
+        private bool? _isHeartbeatEnabled;
+        private string _status;
+        private System.DateTime? _lastStartTime;
+        private System.DateTime? _lastReceivedTime;
+        private System.DateTime? _lastEndTime;
+        private long? _roundTripMs;
+        private string _sdkVersion;
+
+        [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EndpointId    {
+            get { return _endpointId; }
+            set
+            {
+                if (_endpointId != value)
+                {
+                    _endpointId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Null when the endpoint has never been configured either way, which means it is probed.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("isHeartbeatEnabled", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool? IsHeartbeatEnabled    {
+            get { return _isHeartbeatEnabled; }
+            set
+            {
+                if (_isHeartbeatEnabled != value)
+                {
+                    _isHeartbeatEnabled = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Last settled outcome: On, Off, Pending, Unknown or Unsupported.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("status", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Status    {
+            get { return _status; }
+            set
+            {
+                if (_status != value)
+                {
+                    _status = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("lastStartTime", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? LastStartTime    {
+            get { return _lastStartTime; }
+            set
+            {
+                if (_lastStartTime != value)
+                {
+                    _lastStartTime = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("lastReceivedTime", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? LastReceivedTime    {
+            get { return _lastReceivedTime; }
+            set
+            {
+                if (_lastReceivedTime != value)
+                {
+                    _lastReceivedTime = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("lastEndTime", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? LastEndTime    {
+            get { return _lastEndTime; }
+            set
+            {
+                if (_lastEndTime != value)
+                {
+                    _lastEndTime = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("roundTripMs", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long? RoundTripMs    {
+            get { return _roundTripMs; }
+            set
+            {
+                if (_roundTripMs != value)
+                {
+                    _roundTripMs = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Absent for endpoints on an SDK that predates the heartbeat handler.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("sdkVersion", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SdkVersion    {
+            get { return _sdkVersion; }
+            set
+            {
+                if (_sdkVersion != value)
+                {
+                    _sdkVersion = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static HeartbeatOverviewRow FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<HeartbeatOverviewRow>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class ServiceHealthRow : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _serviceId;
+        private string _status;
+        private string _version;
+        private System.DateTime? _lastProbeSentUtc;
+        private System.DateTime? _lastSeenUtc;
+        private long? _roundTripMs;
+        private bool _probeInFlight;
+
+        [Newtonsoft.Json.JsonProperty("serviceId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ServiceId    {
+            get { return _serviceId; }
+            set
+            {
+                if (_serviceId != value)
+                {
+                    _serviceId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Last settled outcome: On, Off or Unknown. Never Pending.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("status", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Status    {
+            get { return _status; }
+            set
+            {
+                if (_status != value)
+                {
+                    _status = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("version", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Version    {
+            get { return _version; }
+            set
+            {
+                if (_version != value)
+                {
+                    _version = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("lastProbeSentUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? LastProbeSentUtc    {
+            get { return _lastProbeSentUtc; }
+            set
+            {
+                if (_lastProbeSentUtc != value)
+                {
+                    _lastProbeSentUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("lastSeenUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? LastSeenUtc    {
+            get { return _lastSeenUtc; }
+            set
+            {
+                if (_lastSeenUtc != value)
+                {
+                    _lastSeenUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("roundTripMs", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long? RoundTripMs    {
+            get { return _roundTripMs; }
+            set
+            {
+                if (_roundTripMs != value)
+                {
+                    _roundTripMs = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// True while a probe is outstanding. Status keeps the last settled outcome meanwhile.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("probeInFlight", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool ProbeInFlight    {
+            get { return _probeInFlight; }
+            set
+            {
+                if (_probeInFlight != value)
+                {
+                    _probeInFlight = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static ServiceHealthRow FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<ServiceHealthRow>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class HeartbeatEndpointEnabledRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private bool _enabled;
+
+        /// <summary>
+        /// False excludes the endpoint from the fan-out; true opts it back in.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("enabled", Required = Newtonsoft.Json.Required.Always)]
+        public bool Enabled    {
+            get { return _enabled; }
+            set
+            {
+                if (_enabled != value)
+                {
+                    _enabled = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static HeartbeatEndpointEnabledRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<HeartbeatEndpointEnabledRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class AuditEntry : System.ComponentModel.INotifyPropertyChanged
     {
         private string _eventId;
@@ -12206,6 +12845,18 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"manageSubscription")]
         ManageSubscription = 19,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"updateHeartbeatSettings")]
+        UpdateHeartbeatSettings = 20,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"sendHeartbeatNow")]
+        SendHeartbeatNow = 21,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"enableEndpointHeartbeat")]
+        EnableEndpointHeartbeat = 22,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"disableEndpointHeartbeat")]
+        DisableEndpointHeartbeat = 23,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -12446,6 +13097,18 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"manageSubscription")]
         ManageSubscription = 19,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"updateHeartbeatSettings")]
+        UpdateHeartbeatSettings = 20,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"sendHeartbeatNow")]
+        SendHeartbeatNow = 21,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"enableEndpointHeartbeat")]
+        EnableEndpointHeartbeat = 22,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"disableEndpointHeartbeat")]
+        DisableEndpointHeartbeat = 23,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -12565,6 +13228,18 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"manageSubscription")]
         ManageSubscription = 19,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"updateHeartbeatSettings")]
+        UpdateHeartbeatSettings = 20,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"sendHeartbeatNow")]
+        SendHeartbeatNow = 21,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"enableEndpointHeartbeat")]
+        EnableEndpointHeartbeat = 22,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"disableEndpointHeartbeat")]
+        DisableEndpointHeartbeat = 23,
 
     }
 

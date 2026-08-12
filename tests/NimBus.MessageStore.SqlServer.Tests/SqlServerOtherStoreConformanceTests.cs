@@ -80,3 +80,18 @@ public sealed class SqlServerAccessControlStoreConformanceTests : AccessControlS
     protected override IAccessControlStore CreateStore()
         => SqlServerStoreTestHarness.CreateStore(typeof(SqlServerAccessControlStoreConformanceTests));
 }
+
+[TestClass]
+public sealed class SqlServerServiceHealthStoreConformanceTests : ServiceHealthStoreConformanceTests
+{
+    [ClassInitialize]
+    public static Task ClassInit(TestContext context)
+        => SqlServerStoreTestHarness.InitializeAsync(typeof(SqlServerServiceHealthStoreConformanceTests));
+
+    [TestInitialize]
+    public Task ResetSchema()
+        => SqlServerStoreTestHarness.ResetAsync(typeof(SqlServerServiceHealthStoreConformanceTests));
+
+    protected override IServiceHealthStore CreateStore()
+        => SqlServerStoreTestHarness.CreateStore(typeof(SqlServerServiceHealthStoreConformanceTests));
+}

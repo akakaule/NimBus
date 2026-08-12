@@ -79,6 +79,42 @@ public sealed class SqlServerSchemaInitializerTests
         }
     }
 
+    [TestMethod]
+    public async Task AutoApply_recreates_the_platform_heartbeat_objects_dropped_by_0010()
+    {
+        var schema = NewSchemaName();
+        var initializer = CreateInitializer(schema, SchemaProvisioningMode.AutoApply);
+
+        await initializer.StartAsync(CancellationToken.None);
+
+        foreach (var column in new[] { "IsHeartbeatEnabled", "EndpointHeartbeatStatus" })
+        {
+            Assert.IsTrue(await NullableColumnExists(schema, "EndpointMetadata", column),
+                $"[{schema}].[EndpointMetadata].[{column}] should be re-added by 0018 after 0010 dropped it.");
+        }
+
+        Assert.IsTrue(await NullableColumnExists(schema, "Heartbeats", "SdkVersion"),
+            "Heartbeats.SdkVersion should exist and stay nullable for pre-heartbeat SDKs.");
+        Assert.IsTrue(
+            await IndexExists(schema, "Heartbeats", "IX_Heartbeats_EndpointId_ReceivedTimeUtc"),
+            "IX_Heartbeats_EndpointId_ReceivedTimeUtc should exist after provisioning.");
+        Assert.AreEqual(1, await RowCount(schema, "HeartbeatSettings"),
+            "0018 seeds exactly one HeartbeatSettings row.");
+        Assert.AreEqual(1, await RowCount(schema, "ServiceHealth"),
+            "0018 seeds the Resolver service-health row.");
+    }
+
+    private static async Task<int> RowCount(string schema, string table)
+    {
+        await using var conn = new SqlConnection(SqlServerStoreTestHarness.GetConnectionString());
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        // Schema and table names are test-owned constants, never user input.
+        cmd.CommandText = $"SELECT COUNT(1) FROM [{schema}].[{table}]";
+        var result = await cmd.ExecuteScalarAsync();
+        return result is int count ? count : 0;
+    }
+
     private static async Task<bool> IndexExists(string schema, string table, string indexName)
     {
         await using var conn = new SqlConnection(SqlServerStoreTestHarness.GetConnectionString());

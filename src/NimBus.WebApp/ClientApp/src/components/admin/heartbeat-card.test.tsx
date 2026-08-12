@@ -1,0 +1,196 @@
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
+import {
+  cleanup,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import HeartbeatCard from "./heartbeat-card";
+
+const mocks = vi.hoisted(() => ({
+  getAdminHeartbeatSettings: vi.fn(),
+  putAdminHeartbeatSettings: vi.fn(),
+  postAdminHeartbeatSend: vi.fn(),
+  getAdminHeartbeatOverview: vi.fn(),
+  putAdminHeartbeatEndpointEnabled: vi.fn(),
+  subscribeHeartbeatUpdates: vi.fn(),
+}));
+
+vi.mock("api-client", async () => {
+  const actual: typeof import("api-client") = await vi.importActual("api-client");
+  class FakeClient {
+    getAdminHeartbeatSettings = mocks.getAdminHeartbeatSettings;
+    putAdminHeartbeatSettings = mocks.putAdminHeartbeatSettings;
+    postAdminHeartbeatSend = mocks.postAdminHeartbeatSend;
+    getAdminHeartbeatOverview = mocks.getAdminHeartbeatOverview;
+    putAdminHeartbeatEndpointEnabled = mocks.putAdminHeartbeatEndpointEnabled;
+  }
+  return { ...actual, Client: FakeClient, CookieAuth: () => ({}) };
+});
+
+// No real hub connection in tests — see platform-services-card.test.tsx.
+vi.mock("lib/grid-events-connection", () => ({
+  subscribeHeartbeatUpdates: mocks.subscribeHeartbeatUpdates,
+}));
+
+function overviewRow(overrides: Record<string, unknown> = {}) {
+  return {
+    endpointId: "crm",
+    isHeartbeatEnabled: true,
+    status: "On",
+    roundTripMs: 120,
+    sdkVersion: "1.4.2",
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  mocks.getAdminHeartbeatSettings.mockReset().mockResolvedValue({
+    enabled: true,
+    intervalSeconds: 300,
+    timeoutSeconds: 60,
+  });
+  mocks.putAdminHeartbeatSettings
+    .mockReset()
+    .mockImplementation((body: unknown) => Promise.resolve(body));
+  mocks.postAdminHeartbeatSend.mockReset().mockResolvedValue({ count: 2 });
+  mocks.getAdminHeartbeatOverview.mockReset().mockResolvedValue([overviewRow()]);
+  mocks.putAdminHeartbeatEndpointEnabled.mockReset().mockResolvedValue(undefined);
+  mocks.subscribeHeartbeatUpdates
+    .mockReset()
+    .mockReturnValue({ dispose: () => {} });
+});
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+describe("HeartbeatCard", () => {
+  it("renders the stored schedule and the clamp minimums", async () => {
+    render(<HeartbeatCard />);
+
+    const interval = (await screen.findByLabelText(
+      "Interval seconds",
+    )) as HTMLInputElement;
+    const timeout = screen.getByLabelText("Timeout seconds") as HTMLInputElement;
+    const toggle = screen.getByLabelText(
+      "Scheduled heartbeat enabled",
+    ) as HTMLInputElement;
+
+    await waitFor(() => expect(interval.value).toBe("300"));
+    expect(timeout.value).toBe("60");
+    expect(toggle.checked).toBe(true);
+    expect(interval.min).toBe("30");
+    expect(timeout.min).toBe("5");
+    expect(screen.getByText(/minimum of 30 seconds/)).toBeTruthy();
+  });
+
+  it("saves the values as typed — the server owns the clamping", async () => {
+    render(<HeartbeatCard />);
+
+    const interval = (await screen.findByLabelText(
+      "Interval seconds",
+    )) as HTMLInputElement;
+    await waitFor(() => expect(interval.value).toBe("300"));
+
+    fireEvent.change(interval, { target: { value: "45" } });
+    fireEvent.change(screen.getByLabelText("Timeout seconds"), {
+      target: { value: "10" },
+    });
+    fireEvent.click(screen.getByLabelText("Scheduled heartbeat enabled"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mocks.putAdminHeartbeatSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          enabled: false,
+          intervalSeconds: 45,
+          timeoutSeconds: 10,
+        }),
+      ),
+    );
+  });
+
+  it("sends a heartbeat now and reports how many endpoints it reached", async () => {
+    render(<HeartbeatCard />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Send heartbeat now" }),
+    );
+
+    await waitFor(() =>
+      expect(mocks.postAdminHeartbeatSend).toHaveBeenCalledTimes(1),
+    );
+    expect(
+      await screen.findByText("Heartbeat sent to 2 endpoint(s)."),
+    ).toBeTruthy();
+  });
+
+  it("renders a status badge, round trip, and SDK version per endpoint", async () => {
+    render(<HeartbeatCard />);
+
+    const cell = await screen.findByText("crm");
+    const row = cell.closest("tr") as HTMLTableRowElement;
+    expect(within(row).getByText("On")).toBeTruthy();
+    expect(within(row).getByText("120 ms")).toBeTruthy();
+    expect(within(row).getByText("1.4.2")).toBeTruthy();
+  });
+
+  it("labels an Unsupported endpoint with no version as a pre-heartbeat SDK", async () => {
+    mocks.getAdminHeartbeatOverview.mockResolvedValue([
+      overviewRow({
+        endpointId: "legacy",
+        status: "Unsupported",
+        sdkVersion: undefined,
+        roundTripMs: undefined,
+      }),
+    ]);
+    render(<HeartbeatCard />);
+
+    const cell = await screen.findByText("legacy");
+    const row = cell.closest("tr") as HTMLTableRowElement;
+    expect(within(row).getByText("Unsupported")).toBeTruthy();
+    expect(within(row).getByText("pre-heartbeat SDK")).toBeTruthy();
+  });
+
+  it("opts an endpoint out of the fan-out", async () => {
+    render(<HeartbeatCard />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Exclude" }));
+
+    await waitFor(() =>
+      expect(mocks.putAdminHeartbeatEndpointEnabled).toHaveBeenCalledWith(
+        "crm",
+        expect.objectContaining({ enabled: false }),
+      ),
+    );
+  });
+
+  it("opts an excluded endpoint back in", async () => {
+    mocks.getAdminHeartbeatOverview.mockResolvedValue([
+      overviewRow({ isHeartbeatEnabled: false }),
+    ]);
+    render(<HeartbeatCard />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Include" }));
+
+    await waitFor(() =>
+      expect(mocks.putAdminHeartbeatEndpointEnabled).toHaveBeenCalledWith(
+        "crm",
+        expect.objectContaining({ enabled: true }),
+      ),
+    );
+  });
+
+  it("surfaces a failed load instead of an empty 'no endpoints' table", async () => {
+    mocks.getAdminHeartbeatOverview.mockRejectedValue(new Error("boom"));
+    render(<HeartbeatCard />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("boom");
+    await waitFor(() => expect(screen.queryByText("No endpoints.")).toBeNull());
+  });
+});

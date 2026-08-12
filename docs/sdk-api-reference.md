@@ -684,19 +684,21 @@ Standard `IHealthCheck` implementations for ASP.NET Core.
 
 ### Registration
 
+Both extensions hang off `IHealthChecksBuilder` and resolve their client from DI:
+
 ```csharp
-services.AddServiceBusHealthCheck(serviceBusClient);        // checks ServiceBusClient.IsClosed
-services.AddCosmosDbHealthCheck(cosmosClient);               // calls ReadAccountAsync
-services.AddResolverLagCheck(cosmosClient, endpointId);      // heartbeat age thresholds
+var healthChecks = services.AddHealthChecks()
+    .AddServiceBusHealthCheck();   // checks ServiceBusClient.IsClosed
+healthChecks.AddCosmosDbHealthCheck();  // calls ReadAccountAsync
 ```
 
-### Thresholds (Resolver Lag)
+### Checking whether the platform is alive
 
-| Status | Heartbeat Age |
-|---|---|
-| Healthy | < 5 minutes |
-| Degraded | 5–15 minutes |
-| Unhealthy | > 15 minutes |
+These probes cover the transport and the store, not the platform's own liveness.
+For "is the Resolver running?" and "are my endpoints reachable?", use the
+platform heartbeat and its Admin → Health tab — it probes every catalog endpoint
+without an adapter-side handler and settles a Resolver liveness probe on every
+tick. See [heartbeat.md](heartbeat.md).
 
 ### Endpoints
 

@@ -9,6 +9,8 @@ import * as signalR from "@microsoft/signalr";
 
 const HUB_URL = "/hubs/gridevents";
 const ENDPOINT_UPDATE_EVENT = "endpointupdate";
+const HEARTBEAT_UPDATE_EVENT = "heartbeatupdate";
+const SERVICE_HEALTH_UPDATE_EVENT = "servicehealthupdate";
 
 export type HubState = "connecting" | "connected" | "disconnected";
 
@@ -34,6 +36,39 @@ export function subscribeEndpointUpdates(
   onUpdate: (raw: unknown) => void,
   onStateChange: (state: HubState) => void,
 ): GridEventsSubscription {
+  return subscribe(ENDPOINT_UPDATE_EVENT, onUpdate, onStateChange);
+}
+
+/**
+ * Opens a GridEventsHub connection for `heartbeatupdate` — broadcast whenever
+ * an endpoint heartbeat settles or the sweep flips one to Off. The payload is
+ * a hint only ("something changed"); consumers re-read the overview endpoint.
+ * Connection semantics are identical to subscribeEndpointUpdates.
+ */
+export function subscribeHeartbeatUpdates(
+  onUpdate: (raw: unknown) => void,
+  onStateChange: (state: HubState) => void,
+): GridEventsSubscription {
+  return subscribe(HEARTBEAT_UPDATE_EVENT, onUpdate, onStateChange);
+}
+
+/**
+ * Opens a GridEventsHub connection for `servicehealthupdate` — broadcast when
+ * a platform-service liveness probe settles. Same payload-is-a-hint contract
+ * as subscribeHeartbeatUpdates.
+ */
+export function subscribeServiceHealthUpdates(
+  onUpdate: (raw: unknown) => void,
+  onStateChange: (state: HubState) => void,
+): GridEventsSubscription {
+  return subscribe(SERVICE_HEALTH_UPDATE_EVENT, onUpdate, onStateChange);
+}
+
+function subscribe(
+  eventName: string,
+  onUpdate: (raw: unknown) => void,
+  onStateChange: (state: HubState) => void,
+): GridEventsSubscription {
   const connection = new signalR.HubConnectionBuilder()
     .withUrl(HUB_URL)
     .withAutomaticReconnect()
@@ -45,7 +80,7 @@ export function subscribeEndpointUpdates(
   // that has already moved on.
   let disposed = false;
 
-  connection.on(ENDPOINT_UPDATE_EVENT, onUpdate);
+  connection.on(eventName, onUpdate);
   connection.onreconnecting(() => {
     if (!disposed) onStateChange("disconnected");
   });
@@ -71,7 +106,7 @@ export function subscribeEndpointUpdates(
   return {
     dispose() {
       disposed = true;
-      connection.off(ENDPOINT_UPDATE_EVENT, onUpdate);
+      connection.off(eventName, onUpdate);
       // stop() rejects if called while start() is still negotiating; the
       // subscription is gone either way, so swallow it.
       void connection.stop().catch(() => undefined);

@@ -25,7 +25,8 @@ This document is a concise catalog of the current NimBus feature set, grouped in
 | Operations UI | Management WebApp | Authenticated UI/API for endpoint/event/message inspection and operational workflows. | `NimBus.WebApp` |
 | Operations automation | CLI provisioning + operations | `nb` CLI commands for infra/topology/app deploy, purge, session cleanup, and container operations. | `NimBus.CommandLine` |
 | Topology management | Declarative topology export/apply | Export platform config and provision topics/subscriptions/rules from it. | `NimBus`, `NimBus.Management.ServiceBus`, `NimBus.CommandLine` |
-| Observability | Health checks + resolver lag checks | Health probes for Service Bus/Cosmos and resolver heartbeat age thresholds. | `NimBus.ServiceBus`, `NimBus.MessageStore` |
+| Observability | Health checks | `IHealthCheck` probes for Service Bus and the message store, surfaced on `/health`, `/alive` and `/ready`. | `NimBus.ServiceBus`, `NimBus.MessageStore.CosmosDb` |
+| Observability | Platform heartbeat + Resolver liveness | Admin → Health probes every catalog endpoint with no adapter-side handler and settles a Resolver liveness probe, reporting status, round-trip and SDK version. | `NimBus.Core`, `NimBus.Resolver`, `NimBus.WebApp` |
 | Testing | In-memory test transport | Run the full pipeline in tests without Azure Service Bus. | `NimBus.Testing` |
 | Local development | Aspire orchestration | Local AppHost orchestrates provisioner, resolver, webapp, publisher, and subscriber. | `NimBus.AppHost`, `NimBus.ServiceDefaults` |
 

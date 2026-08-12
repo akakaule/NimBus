@@ -1,3 +1,4 @@
+using NimBus.Core.Events;
 using NimBus.Core.Extensions;
 using NimBus.Core.Inbox;
 using NimBus.Core.Messages.Exceptions;
@@ -151,6 +152,19 @@ namespace NimBus.Core.Messages
             try
             {
                 LogInfo(messageContext, "Handle");
+
+                // Answered before the inbox pre-check and the session guard: a heartbeat is a
+                // liveness probe, not business traffic. It must reach the reply even when the
+                // session is blocked by a failed event (otherwise a stuck endpoint would look
+                // dead), and it must never be recorded for inbox deduplication — every probe
+                // carries a fresh id and consuming inbox rows for them is pure waste.
+                if (IsHeartbeat(messageContext))
+                {
+                    await _responseService.SendHeartbeatResolutionResponse(messageContext, cancellationToken);
+                    await CompleteMessage(messageContext, cancellationToken);
+                    LogInfo(messageContext, "Successfully processed (Heartbeat)");
+                    return;
+                }
 
                 // Inbox pre-check ahead of the session guard: a recorded EventRequest that
                 // redelivers while its session is blocked by another event must surface as a
@@ -503,6 +517,16 @@ namespace NimBus.Core.Messages
 
         private Task CompleteMessage(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
             messageContext.Complete(cancellationToken);
+
+        // The user property is authoritative; the deserialized body is the fallback for
+        // senders that only stamp the event type inside the content.
+        private static bool IsHeartbeat(IMessageContext messageContext)
+        {
+            var eventTypeId = messageContext.EventTypeId
+                ?? messageContext.MessageContent?.EventContent?.EventTypeId;
+
+            return eventTypeId?.Equals(Heartbeat.EventTypeId, StringComparison.OrdinalIgnoreCase) == true;
+        }
 
         private async Task<bool> IsInboxDuplicate(IMessageContext messageContext, CancellationToken cancellationToken)
         {

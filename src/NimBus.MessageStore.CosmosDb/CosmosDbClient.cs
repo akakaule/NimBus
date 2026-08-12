@@ -59,6 +59,11 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     private const string AccessControlContainer = "accesscontrol";
     private const string MetadataContainer = "Metadata";
 
+    // The heartbeat schedule and the service-health rows must NOT live in Metadata:
+    // its "SELECT * FROM c" reads would surface them as phantom endpoints.
+    private const string SettingsContainer = "settings";
+    private const string ServiceHealthContainer = "servicehealth";
+
     // Seconds stamped as the document ttl on non-terminal tracking rows. -1 disables
     // expiry, which is the default and the behaviour before the option existed.
     private readonly int _unresolvedTtlSeconds;
@@ -1334,6 +1339,12 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     private Task<ICosmosContainerAdapter> GetAccessControlContainer() =>
         GetCachedContainerAsync(AccessControlContainer, "/id");
 
+    private Task<ICosmosContainerAdapter> GetSettingsContainer() =>
+        GetCachedContainerAsync(SettingsContainer, "/id");
+
+    private Task<ICosmosContainerAdapter> GetServiceHealthContainer() =>
+        GetCachedContainerAsync(ServiceHealthContainer, "/id");
+
     // ── IAccessControlStore (spec 026) — implementation in CosmosDbAccessControlStore ──
 
     public Task<AccessControlList?> GetSiteAccessControl() => _accessControl.GetSiteAccessControl();
@@ -2069,6 +2080,332 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
                 "COSMOS UPSERT-ERROR: Metadata upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointMetadata.EndpointId, e.StatusCode);
             throw;
         }
+    }
+
+    // ── Endpoint heartbeat — rows embedded in the endpoint's metadata document ──
+
+    public Task<List<EndpointMetadata>> GetMetadatasWithEnabledHeartbeat() =>
+        GetMetadatasByFilter("SELECT * FROM c WHERE c.IsHeartbeatEnabled = true");
+
+    public async Task EnableHeartbeatOnEndpoint(string endpointId, bool enable)
+    {
+        var container = await GetMetadataContainer();
+        var patchOperations = new List<PatchOperation>
+        {
+            PatchOperation.Set("/IsHeartbeatEnabled", enable),
+        };
+
+        try
+        {
+            await container.PatchItemAsync<EndpointMetadata>(endpointId, new PartitionKey(endpointId), patchOperations);
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            await SetEndpointMetadata(new EndpointMetadata
+            {
+                EndpointId = endpointId,
+                IsHeartbeatEnabled = enable,
+            });
+        }
+    }
+
+    public async Task<bool> SetHeartbeat(Heartbeat heartbeat, string endpointId)
+    {
+        ArgumentNullException.ThrowIfNull(heartbeat);
+
+        var container = await GetMetadataContainer();
+        var metadata = await GetEndpointMetadata(endpointId) ?? new EndpointMetadata { EndpointId = endpointId };
+        metadata.Heartbeats ??= new List<Heartbeat>();
+
+        // Keyed by MessageId so the Pending probe and the answer that settles it
+        // share one row instead of accumulating a duplicate.
+        var existing = metadata.Heartbeats.Find(h => h.MessageId == heartbeat.MessageId);
+        if (existing != null)
+        {
+            existing.StartTime = heartbeat.StartTime;
+            existing.ReceivedTime = heartbeat.ReceivedTime;
+            existing.EndTime = heartbeat.EndTime;
+            existing.SdkVersion = heartbeat.SdkVersion;
+            existing.EndpointHeartbeatStatus = heartbeat.EndpointHeartbeatStatus;
+        }
+        else
+        {
+            metadata.Heartbeats.Add(heartbeat);
+        }
+
+        metadata.Heartbeats = HeartbeatRollup.Prune(metadata.Heartbeats);
+        HeartbeatRollup.Apply(metadata);
+
+        try
+        {
+            var response = await container.UpsertItemAsync(metadata, new PartitionKey(endpointId));
+            _logger?.LogTrace(
+                "COSMOS UPSERT-RESPONSE: Heartbeat upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointId, response.StatusCode);
+            return true;
+        }
+        catch (CosmosException e)
+        {
+            _logger?.LogError(e,
+                "COSMOS UPSERT-ERROR: Heartbeat upsert. Id: {EndpointId}, HttpStatusCode: {StatusCode}", endpointId, e.StatusCode);
+            throw;
+        }
+    }
+
+    public async Task<List<string>> SweepTimedOutHeartbeats(DateTime cutoffUtc)
+    {
+        var container = await GetMetadataContainer();
+        var swept = new List<string>();
+
+        foreach (var metadata in await GetMetadatas())
+        {
+            var timedOut = metadata.Heartbeats?
+                .Where(h => h.EndpointHeartbeatStatus == HeartbeatStatus.Pending && h.StartTime <= cutoffUtc)
+                .ToList();
+            if (timedOut is not { Count: > 0 }) continue;
+
+            foreach (var heartbeat in timedOut)
+            {
+                heartbeat.EndpointHeartbeatStatus = HeartbeatStatus.Off;
+            }
+
+            HeartbeatRollup.Apply(metadata);
+
+            try
+            {
+                await container.UpsertItemAsync(metadata, new PartitionKey(metadata.EndpointId));
+                swept.Add(metadata.EndpointId);
+            }
+            catch (CosmosException e)
+            {
+                _logger?.LogError(e,
+                    "COSMOS UPSERT-ERROR: Heartbeat sweep. Id: {EndpointId}, HttpStatusCode: {StatusCode}", metadata.EndpointId, e.StatusCode);
+                throw;
+            }
+        }
+
+        return swept;
+    }
+
+    public async Task<HeartbeatSettings> GetHeartbeatSettings()
+    {
+        var container = await GetSettingsContainer();
+        try
+        {
+            var response = await container.ReadItemAsync<HeartbeatSettings>(
+                HeartbeatSettings.SingletonId,
+                new PartitionKey(HeartbeatSettings.SingletonId));
+            return response.Resource ?? new HeartbeatSettings();
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            return new HeartbeatSettings();
+        }
+    }
+
+    public async Task<bool> SetHeartbeatSettings(HeartbeatSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (string.IsNullOrWhiteSpace(settings.Id)) settings.Id = HeartbeatSettings.SingletonId;
+
+        // The claim owns LastSentAtUtc: an operator edit that carries no value must
+        // not reset the send schedule.
+        if (settings.LastSentAtUtc == null)
+        {
+            var stored = await GetHeartbeatSettings();
+            settings.LastSentAtUtc = stored.LastSentAtUtc;
+        }
+
+        var container = await GetSettingsContainer();
+        try
+        {
+            var response = await container.UpsertItemAsync(settings, new PartitionKey(settings.Id));
+            _logger?.LogTrace(
+                "COSMOS UPSERT-RESPONSE: HeartbeatSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}", settings.Id, response.StatusCode);
+            return true;
+        }
+        catch (CosmosException e)
+        {
+            _logger?.LogError(e,
+                "COSMOS UPSERT-ERROR: HeartbeatSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}", settings.Id, e.StatusCode);
+            throw;
+        }
+    }
+
+    public async Task<bool> TryClaimHeartbeatSend(DateTime dueBefore)
+    {
+        // The ETag precondition is what makes at most one scaled-out instance send
+        // per interval: the loser gets 412 and skips this tick.
+        var container = await GetSettingsContainer();
+        try
+        {
+            var response = await container.ReadItemAsync<HeartbeatSettings>(
+                HeartbeatSettings.SingletonId,
+                new PartitionKey(HeartbeatSettings.SingletonId));
+            var settings = response.Resource ?? new HeartbeatSettings();
+
+            if (!settings.Enabled || (settings.LastSentAtUtc.HasValue && settings.LastSentAtUtc.Value > dueBefore))
+            {
+                return false;
+            }
+
+            settings.LastSentAtUtc = DateTime.UtcNow;
+            await container.UpsertItemAsync(
+                settings,
+                new PartitionKey(settings.Id),
+                new ItemRequestOptions { IfMatchEtag = response.ETag });
+            return true;
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            // Nothing configured yet: create the (disabled) defaults and skip this tick.
+            await SetHeartbeatSettings(new HeartbeatSettings());
+            return false;
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.PreconditionFailed)
+        {
+            return false;
+        }
+    }
+
+    public async Task<List<HeartbeatOverviewItem>> GetHeartbeatOverview()
+    {
+        var metadatas = await GetMetadatas();
+        return metadatas
+            .OrderBy(m => m.EndpointId, StringComparer.Ordinal)
+            .Select(HeartbeatRollup.BuildOverviewItem)
+            .ToList();
+    }
+
+    // ── Service health (platform services, not endpoints) ──
+    //
+    // One document per service in its own container. Deliberately not in Metadata,
+    // whose "SELECT * FROM c" reads would surface the row as a phantom endpoint.
+
+    public async Task<List<ServiceHealth>> GetServiceHealth()
+    {
+        var container = await GetServiceHealthContainer();
+        var results = new List<ServiceHealth>();
+        var iterator = container.GetItemQueryIterator<ServiceHealth>("SELECT * FROM c ORDER BY c.id");
+        while (iterator.HasMoreResults)
+        {
+            foreach (var item in await iterator.ReadNextAsync())
+            {
+                results.Add(item);
+            }
+        }
+
+        return results;
+    }
+
+    public async Task<bool> TryClaimServiceProbe(string serviceId, DateTime dueBefore, string probeMessageId)
+    {
+        if (string.IsNullOrWhiteSpace(serviceId)) throw new ArgumentNullException(nameof(serviceId));
+
+        var container = await GetServiceHealthContainer();
+        try
+        {
+            var response = await container.ReadItemAsync<ServiceHealth>(serviceId, new PartitionKey(serviceId));
+            var health = response.Resource;
+
+            if (health.LastProbeSentUtc.HasValue && health.LastProbeSentUtc.Value > dueBefore)
+            {
+                return false;
+            }
+
+            health.LastProbeSentUtc = DateTime.UtcNow;
+            health.LastProbeMessageId = probeMessageId;
+            await container.UpsertItemAsync(
+                health,
+                new PartitionKey(serviceId),
+                new ItemRequestOptions { IfMatchEtag = response.ETag });
+            return true;
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            // First probe ever. A concurrent creator loses the race on the
+            // pre-condition and simply skips this interval.
+            try
+            {
+                await container.CreateItemAsync(
+                    new ServiceHealth
+                    {
+                        ServiceId = serviceId,
+                        LastProbeSentUtc = DateTime.UtcNow,
+                        LastProbeMessageId = probeMessageId,
+                    },
+                    new PartitionKey(serviceId));
+                return true;
+            }
+            catch (CosmosException conflict) when (conflict.StatusCode == HttpStatusCode.Conflict)
+            {
+                return false;
+            }
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.PreconditionFailed)
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> SetServiceHealth(ServiceHealth serviceHealth)
+    {
+        ArgumentNullException.ThrowIfNull(serviceHealth);
+        if (string.IsNullOrWhiteSpace(serviceHealth.ServiceId)) throw new ArgumentNullException(nameof(serviceHealth));
+
+        var container = await GetServiceHealthContainer();
+        var serviceId = serviceHealth.ServiceId;
+
+        // The claim owns LastProbeSentUtc; preserve it so a response never resets
+        // the send schedule, and clear the in-flight marker.
+        DateTime? lastProbeSentUtc = null;
+        try
+        {
+            var existing = await container.ReadItemAsync<ServiceHealth>(serviceId, new PartitionKey(serviceId));
+            lastProbeSentUtc = existing.Resource?.LastProbeSentUtc;
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+        }
+
+        serviceHealth.LastProbeSentUtc = lastProbeSentUtc;
+        serviceHealth.LastProbeMessageId = null;
+
+        try
+        {
+            var response = await container.UpsertItemAsync(serviceHealth, new PartitionKey(serviceId));
+            _logger?.LogTrace(
+                "COSMOS UPSERT-RESPONSE: ServiceHealth upsert. Id: {ServiceId}, HttpStatusCode: {StatusCode}", serviceId, response.StatusCode);
+            return true;
+        }
+        catch (CosmosException e)
+        {
+            _logger?.LogError(e,
+                "COSMOS UPSERT-ERROR: ServiceHealth upsert. Id: {ServiceId}, HttpStatusCode: {StatusCode}", serviceId, e.StatusCode);
+            throw;
+        }
+    }
+
+    public async Task<List<string>> SweepTimedOutServiceProbes(DateTime cutoffUtc)
+    {
+        var container = await GetServiceHealthContainer();
+        var swept = new List<string>();
+
+        foreach (var health in await GetServiceHealth())
+        {
+            if (health.LastProbeMessageId == null ||
+                !health.LastProbeSentUtc.HasValue ||
+                health.LastProbeSentUtc.Value > cutoffUtc)
+            {
+                continue;
+            }
+
+            health.Status = HeartbeatStatus.Off;
+            health.LastProbeMessageId = null;
+            await container.UpsertItemAsync(health, new PartitionKey(health.ServiceId));
+            swept.Add(health.ServiceId);
+        }
+
+        return swept;
     }
 
     // ── IMetricsStore — implementation in CosmosDbMetricsStore ──

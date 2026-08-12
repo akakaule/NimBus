@@ -108,7 +108,8 @@ public sealed class AdminAsyncApiExportTests
             platform,
             configuration: null!,
             auditLogService: null!,
-            authorizationService: new ClaimGateAuthService(ctx));
+            authorizationService: new ClaimGateAuthService(ctx),
+            heartbeatService: null!);
     }
 
     // Claims-shaped gate double: Owner iff the context carries the marker group

@@ -20,17 +20,23 @@ Pluggable storage therefore calls for:
 ## Decision
 
 ### Contract decomposition
-The `ICosmosDbClient` 60+ method surface is split into four provider-neutral
-contracts in `NimBus.MessageStore.Abstractions`:
+The `ICosmosDbClient` 60+ method surface is split into provider-neutral
+contracts in `NimBus.MessageStore.Abstractions` (four originally; `IServiceHealthStore`
+was added with the platform heartbeat):
 
 - `IMessageTrackingStore` — message records, audit, resolver state, status transitions, search
 - `ISubscriptionStore` — endpoint subscriptions (notifications)
-- `IEndpointMetadataStore` — endpoint metadata + heartbeats
+- `IEndpointMetadataStore` — endpoint metadata, ownership, and endpoint
+  heartbeat state (rows, per-endpoint opt-in, the platform-wide schedule, and the
+  atomic send claim); see [heartbeat.md](../heartbeat.md)
 - `IMetricsStore` — endpoint metrics, latency, time-series
+- `IServiceHealthStore` — liveness of the platform's own services (the Resolver),
+  kept out of `IEndpointMetadataStore` because Cosmos embeds heartbeats in the
+  endpoint document, where a `"Resolver"` row would read as a phantom endpoint
 
-A convenience `INimBusMessageStore` aggregate combines all four for consumers
-(like the WebApp) that touch every concern. Each provider package implements all
-four; mixing providers per contract is out of scope for v1.
+A convenience `INimBusMessageStore` aggregate combines them all for consumers
+(like the WebApp) that touch every concern. Each provider package implements
+every contract; mixing providers per contract is out of scope for v1.
 
 ### Provider validation at builder time
 `NimBusBuilder.Build()` (`src/NimBus.Core/Extensions/NimBusBuilder.cs`)

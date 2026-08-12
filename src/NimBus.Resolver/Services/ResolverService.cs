@@ -1,15 +1,19 @@
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
+using NimBus.MessageStore.States;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using CoreHeartbeat = NimBus.Core.Events.Heartbeat;
 
 namespace NimBus.Broker.Services
 {
@@ -18,6 +22,8 @@ namespace NimBus.Broker.Services
         private readonly IMessageTrackingStore _store;
         private readonly IMessageStateChangeNotifier _notifier;
         private readonly ILogger _logger;
+        private readonly IEndpointMetadataStore _metadataStore;
+        private readonly IServiceHealthStore _serviceHealthStore;
 
         private const int MaxThrottleRetries = 10;
         private const int BaseDelaySeconds = 5;
@@ -44,11 +50,33 @@ namespace NimBus.Broker.Services
             [MessageType.UnsupportedResponse] = ResolutionStatus.Unsupported,
         };
 
-        public ResolverService(IMessageTrackingStore store, IMessageStateChangeNotifier notifier = null, ILogger<ResolverService> logger = null)
+        /// <summary>
+        /// Creates the Resolver message handler.
+        /// </summary>
+        /// <param name="store">Tracking store the audit trail and endpoint state are written to.</param>
+        /// <param name="notifier">Write-path state-change notifier; a no-op notifier is used when omitted.</param>
+        /// <param name="logger">Optional logger.</param>
+        /// <param name="metadataStore">
+        /// Optional heartbeat store. When absent the platform heartbeat degrades gracefully:
+        /// heartbeat traffic is still diverted away from the audit trail and completed, just
+        /// not recorded.
+        /// </param>
+        /// <param name="serviceHealthStore">
+        /// Optional service-liveness store backing the Resolver's own probe. Same graceful
+        /// degradation as <paramref name="metadataStore"/> when absent.
+        /// </param>
+        public ResolverService(
+            IMessageTrackingStore store,
+            IMessageStateChangeNotifier notifier = null,
+            ILogger<ResolverService> logger = null,
+            IEndpointMetadataStore metadataStore = null,
+            IServiceHealthStore serviceHealthStore = null)
         {
             _store = store;
             _notifier = notifier ?? new NoopMessageStateChangeNotifier();
             _logger = logger;
+            _metadataStore = metadataStore;
+            _serviceHealthStore = serviceHealthStore;
         }
 
         public async Task Handle(IMessageContext messageContext, CancellationToken cancellationToken = default)
@@ -66,6 +94,16 @@ namespace NimBus.Broker.Services
             // a transport span when there isn't one.
             try
             {
+                // Platform heartbeat traffic is diverted before anything touches the
+                // tracking store: it is infrastructure chatter, not integration events,
+                // so it must never appear on the Events / Flow / Monitor pages nor in
+                // the latency aggregates.
+                if (IsHeartbeat(messageContext))
+                {
+                    await HandleHeartbeatMessage(messageContext, cancellationToken);
+                    return;
+                }
+
                 MessageEntity messageEntity = await CreateMessageEntity(messageContext);
 
                 await _store.StoreMessage(messageEntity);
@@ -150,6 +188,208 @@ namespace NimBus.Broker.Services
                 await messageContext.Abandon(ex);
             }
         }
+
+        /// <summary>
+        /// Routes one heartbeat message. Endpoint answers update the heartbeat store; the
+        /// Resolver's own liveness probe settles itself; the copies of endpoint requests
+        /// that the Resolver's subscription also receives are dropped.
+        /// </summary>
+        /// <remarks>
+        /// Heartbeat traffic is never dead-lettered — a monitoring probe must not be able
+        /// to fill an operator's dead-letter queue. Transient storage failures leave the
+        /// message unsettled so the session redelivers it; everything else completes.
+        /// </remarks>
+        private async Task HandleHeartbeatMessage(IMessageContext messageContext, CancellationToken cancellationToken)
+        {
+            if (messageContext.MessageType == MessageType.EventRequest)
+            {
+                // A heartbeat EventRequest addressed to the Resolver itself is the
+                // WebApp's liveness probe; every other one is the copy of an
+                // endpoint request the Resolver subscription also receives.
+                if (Constants.ResolverId.Equals(messageContext.To, StringComparison.OrdinalIgnoreCase))
+                {
+                    await HandleSelfProbe(messageContext, cancellationToken);
+                    return;
+                }
+
+                _logger?.LogTrace("Resolver: Dropped Heartbeat request copy. EventId:{EventId}, MessageId:{MessageId}",
+                    messageContext.EventId, messageContext.MessageId);
+                await messageContext.Complete(cancellationToken);
+                return;
+            }
+
+            var endpointId = GetHeartbeatEndpointId(messageContext);
+            if (string.IsNullOrWhiteSpace(endpointId))
+            {
+                _logger?.LogWarning("Resolver: Heartbeat response without endpoint. EventId:{EventId}, MessageId:{MessageId}",
+                    messageContext.EventId, messageContext.MessageId);
+                await messageContext.Complete(cancellationToken);
+                return;
+            }
+
+            if (_metadataStore is null)
+            {
+                _logger?.LogWarning("Resolver: heartbeat store not configured; completing without recording. EndpointId:{EndpointId}, EventId:{EventId}",
+                    endpointId, messageContext.EventId);
+                await messageContext.Complete(cancellationToken);
+                return;
+            }
+
+            var heartbeat = CreateHeartbeat(messageContext);
+
+            try
+            {
+                await _metadataStore.SetHeartbeat(heartbeat, endpointId);
+            }
+            catch (StorageProviderTransientException ex)
+            {
+                // Return without settling: the session redelivers the message. Heartbeats
+                // deliberately skip the scheduled-redelivery path used for event traffic —
+                // the next probe supersedes this one anyway.
+                _logger?.LogInformation(ex, "Resolver: Storage temporarily unavailable, will reprocess heartbeat. EndpointId:{EndpointId}, EventId:{EventId}",
+                    endpointId, messageContext.EventId);
+                return;
+            }
+
+            _logger?.LogInformation("Resolver: Updated Heartbeat EndpointId:{EndpointId}, Status:{Status}, EventId:{EventId}, MessageId:{MessageId}",
+                endpointId, heartbeat.EndpointHeartbeatStatus, messageContext.EventId, messageContext.MessageId);
+
+            try { await _notifier.NotifyHeartbeatChangedAsync(endpointId, cancellationToken); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception notifyEx) { _logger?.LogWarning(notifyEx, "Resolver: heartbeat notification failed (non-fatal)"); }
+
+            await messageContext.Complete(cancellationToken);
+        }
+
+        /// <summary>
+        /// Answers the WebApp's Resolver liveness probe. Reaching this point already
+        /// proves what the probe asks: the host is up, it is draining its Service Bus
+        /// session subscription, and — once the write below succeeds — it can reach
+        /// the message store. So the probe settles itself here rather than sending a
+        /// response back over the bus.
+        /// </summary>
+        private async Task HandleSelfProbe(IMessageContext messageContext, CancellationToken cancellationToken)
+        {
+            if (_serviceHealthStore is null)
+            {
+                _logger?.LogWarning("Resolver: service health store not configured; completing liveness probe without recording. MessageId:{MessageId}",
+                    messageContext.MessageId);
+                await messageContext.Complete(cancellationToken);
+                return;
+            }
+
+            var content = DeserializeHeartbeat(messageContext);
+            var now = DateTime.UtcNow;
+            var sentAt = TimestampOrDefault(content.ForwardSendTime, messageContext.EnqueuedTimeUtc);
+
+            var health = new ServiceHealth
+            {
+                ServiceId = Constants.ResolverId,
+                Status = HeartbeatStatus.On,
+                Version = GetResolverVersion(),
+                LastSeenUtc = now,
+                RoundTripMs = sentAt == default ? null : (long?)Math.Max(0, (now - sentAt).TotalMilliseconds),
+            };
+
+            try
+            {
+                await _serviceHealthStore.SetServiceHealth(health);
+            }
+            catch (StorageProviderTransientException ex)
+            {
+                _logger?.LogInformation(ex, "Resolver: Storage temporarily unavailable, will reprocess liveness probe. EventId:{EventId}",
+                    messageContext.EventId);
+                return;
+            }
+
+            _logger?.LogInformation("Resolver: Answered liveness probe. RoundTripMs:{RoundTripMs}, Version:{Version}, MessageId:{MessageId}",
+                health.RoundTripMs, health.Version, messageContext.MessageId);
+
+            try { await _notifier.NotifyServiceHealthChangedAsync(Constants.ResolverId, cancellationToken); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception notifyEx) { _logger?.LogWarning(notifyEx, "Resolver: service health notification failed (non-fatal)"); }
+
+            await messageContext.Complete(cancellationToken);
+        }
+
+        private static string GetResolverVersion()
+        {
+            var assembly = typeof(ResolverService).Assembly;
+            var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+            if (!string.IsNullOrWhiteSpace(informational))
+                return informational;
+
+            return assembly.GetName().Version?.ToString() ?? "unknown";
+        }
+
+        private static bool IsHeartbeat(IReceivedMessage message)
+        {
+            var eventTypeId = message.EventTypeId
+                ?? message.MessageContent?.EventContent?.EventTypeId;
+            return eventTypeId?.Equals(CoreHeartbeat.EventTypeId, StringComparison.OrdinalIgnoreCase) == true;
+        }
+
+        /// <summary>
+        /// Attributes a heartbeat answer to an endpoint. The endpoint the payload names wins
+        /// over the message's <c>From</c> — <c>ResponseService.CreateResponse</c> is static
+        /// and does not stamp <c>From</c>, so a response from an older or hand-rolled
+        /// emitter can arrive with it blank while the payload always carries the endpoint
+        /// the SDK answered for.
+        /// </summary>
+        private static string GetHeartbeatEndpointId(IReceivedMessage message)
+        {
+            var content = DeserializeHeartbeat(message);
+            return !string.IsNullOrWhiteSpace(content.Endpoint)
+                ? content.Endpoint
+                : message.From;
+        }
+
+        private static Heartbeat CreateHeartbeat(IReceivedMessage message)
+        {
+            var content = DeserializeHeartbeat(message);
+            var now = DateTime.UtcNow;
+            return new Heartbeat
+            {
+                MessageId = !string.IsNullOrWhiteSpace(message.CorrelationId)
+                    ? message.CorrelationId
+                    : message.MessageId,
+                StartTime = TimestampOrDefault(content.ForwardSendTime, TimestampOrDefault(message.EnqueuedTimeUtc, now)),
+                ReceivedTime = TimestampOrDefault(content.ForwardReceivedTime, now),
+                EndTime = now,
+                SdkVersion = content.SdkVersion ?? string.Empty,
+                EndpointHeartbeatStatus = message.MessageType switch
+                {
+                    MessageType.ResolutionResponse => HeartbeatStatus.On,
+                    MessageType.UnsupportedResponse => HeartbeatStatus.Unsupported,
+                    MessageType.ErrorResponse => HeartbeatStatus.Off,
+                    MessageType.DeferralResponse => HeartbeatStatus.Off,
+                    _ => HeartbeatStatus.Unknown,
+                },
+            };
+        }
+
+        private static CoreHeartbeat DeserializeHeartbeat(IReceivedMessage message)
+        {
+            var json = message.MessageContent?.EventContent?.EventJson;
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return new CoreHeartbeat();
+            }
+
+            try
+            {
+                return JsonConvert.DeserializeObject<CoreHeartbeat>(json) ?? new CoreHeartbeat();
+            }
+            catch (JsonException)
+            {
+                // A malformed probe payload still proves the endpoint answered; fall back
+                // to the empty shape so attribution and timings degrade rather than fail.
+                return new CoreHeartbeat();
+            }
+        }
+
+        private static DateTime TimestampOrDefault(DateTime value, DateTime fallback) =>
+            value == default ? fallback : value;
 
         private async Task<MessageEntity> CreateMessageEntity(IReceivedMessage message)
         {

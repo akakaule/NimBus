@@ -586,6 +586,18 @@ public class RateLimitEnforcementTests
         public Task<ActionResult<BulkOperationResult>> PostAdminSkipAsync(string endpointId, SkipRequest body) => Ok<BulkOperationResult>();
 
         public Task<ActionResult<CopyResult>> PostAdminCopyAsync(string endpointId, CopyRequest body) => Ok<CopyResult>();
+
+        public Task<ActionResult<HeartbeatSettings>> GetAdminHeartbeatSettingsAsync() => Ok<HeartbeatSettings>();
+
+        public Task<ActionResult<HeartbeatSettings>> PutAdminHeartbeatSettingsAsync(HeartbeatSettings body) => Ok<HeartbeatSettings>();
+
+        public Task<ActionResult<CountResponse>> PostAdminHeartbeatSendAsync() => Ok<CountResponse>();
+
+        public Task<ActionResult<IEnumerable<HeartbeatOverviewRow>>> GetAdminHeartbeatOverviewAsync() => Ok<IEnumerable<HeartbeatOverviewRow>>();
+
+        public Task<IActionResult> PutAdminHeartbeatEndpointEnabledAsync(HeartbeatEndpointEnabledRequest body, string endpointId) => OkPlain();
+
+        public Task<ActionResult<IEnumerable<ServiceHealthRow>>> GetAdminHealthServicesAsync() => Ok<IEnumerable<ServiceHealthRow>>();
     }
 
     /// <summary>

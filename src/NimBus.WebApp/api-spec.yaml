@@ -633,6 +633,49 @@ paths:
           description: OK
       tags:
         - StorageHook
+  '/api/storagehook/heartbeat/{endpointId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    post:
+      summary: Notify operators that an endpoint's heartbeat state changed
+      description: Called by the Resolver after it settles a heartbeat. Authenticated with the shared webhook key.
+      operationId: post-storagehook-heartbeat
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Unknown endpoint
+        '401':
+          description: Missing or invalid webhook key
+      tags:
+        - StorageHook
+  '/api/storagehook/servicehealth/{serviceId}':
+    parameters:
+      - schema:
+          type: string
+        name: serviceId
+        in: path
+        required: true
+    post:
+      summary: Notify operators that a platform service's liveness changed
+      description: >-
+        Called by the Resolver after it answers a liveness probe. Only the
+        Resolver service id is accepted — "Resolver" is not an endpoint, so the
+        heartbeat hook's catalog check would reject it.
+      operationId: post-storagehook-servicehealth
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Unknown service
+        '401':
+          description: Missing or invalid webhook key
+      tags:
+        - StorageHook
   '/api/event/audit/{eventId}':
     parameters:
       - schema:
@@ -1227,6 +1270,126 @@ paths:
                 format: binary
         '400':
           description: Invalid format
+        '403':
+          description: Forbidden
+  /api/admin/heartbeat/settings:
+    get:
+      summary: Get the platform heartbeat schedule
+      operationId: get-admin-heartbeat-settings
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatSettings'
+        '403':
+          description: Forbidden
+    put:
+      summary: Update the platform heartbeat schedule
+      description: >-
+        Interval is clamped to at least 30 seconds and the timeout to
+        [5, interval] — a timeout longer than the interval could never elapse
+        between probes. lastSentAtUtc is owned by the send claim and is ignored
+        on write.
+      operationId: put-admin-heartbeat-settings
+      tags:
+        - Admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeartbeatSettings'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatSettings'
+        '400':
+          description: Bad Request
+        '403':
+          description: Forbidden
+  /api/admin/heartbeat/send:
+    post:
+      summary: Send a heartbeat to every monitored endpoint now
+      description: Runs the fan-out regardless of the enabled flag. Returns the number of probes sent.
+      operationId: post-admin-heartbeat-send
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CountResponse'
+        '403':
+          description: Forbidden
+  /api/admin/heartbeat/overview:
+    get:
+      summary: Heartbeat status per endpoint
+      operationId: get-admin-heartbeat-overview
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/HeartbeatOverviewRow'
+        '403':
+          description: Forbidden
+  '/api/admin/heartbeat/endpoint/{endpointId}/enabled':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    put:
+      summary: Include or exclude one endpoint from the heartbeat fan-out
+      description: >-
+        The fan-out is opt-out: an endpoint with no stored preference is probed.
+        Setting enabled to false excludes it.
+      operationId: put-admin-heartbeat-endpoint-enabled
+      tags:
+        - Admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeartbeatEndpointEnabledRequest'
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Bad Request
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+  /api/admin/health/services:
+    get:
+      summary: Liveness of the platform's own services
+      operationId: get-admin-health-services
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServiceHealthRow'
         '403':
           description: Forbidden
   '/api/admin/topology/{endpointName}':
@@ -2767,6 +2930,10 @@ components:
             - grantRole
             - revokeRole
             - manageSubscription
+            - updateHeartbeatSettings
+            - sendHeartbeatNow
+            - enableEndpointHeartbeat
+            - disableEndpointHeartbeat
         comment:
           type: string
           nullable: true
@@ -3780,6 +3947,10 @@ components:
             - grantRole
             - revokeRole
             - manageSubscription
+            - updateHeartbeatSettings
+            - sendHeartbeatNow
+            - enableEndpointHeartbeat
+            - disableEndpointHeartbeat
         createdAtFrom:
           type: string
           format: date-time
@@ -4015,6 +4186,93 @@ components:
       properties:
         count:
           type: integer
+    HeartbeatSettings:
+      title: HeartbeatSettings
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          description: Whether the scheduled endpoint fan-out runs. The Resolver liveness probe runs either way.
+        intervalSeconds:
+          type: integer
+          description: Seconds between scheduled fan-outs. Clamped to a minimum of 30.
+        timeoutSeconds:
+          type: integer
+          description: Seconds a probe may stay pending before it settles to Off. Clamped to [5, intervalSeconds].
+        lastSentAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the last fan-out was claimed. Read-only — owned by the send claim.
+    HeartbeatOverviewRow:
+      title: HeartbeatOverviewRow
+      type: object
+      properties:
+        endpointId:
+          type: string
+        isHeartbeatEnabled:
+          type: boolean
+          nullable: true
+          description: Null when the endpoint has never been configured either way, which means it is probed.
+        status:
+          type: string
+          description: 'Last settled outcome: On, Off, Pending, Unknown or Unsupported.'
+        lastStartTime:
+          type: string
+          format: date-time
+          nullable: true
+        lastReceivedTime:
+          type: string
+          format: date-time
+          nullable: true
+        lastEndTime:
+          type: string
+          format: date-time
+          nullable: true
+        roundTripMs:
+          type: integer
+          format: int64
+          nullable: true
+        sdkVersion:
+          type: string
+          nullable: true
+          description: Absent for endpoints on an SDK that predates the heartbeat handler.
+    ServiceHealthRow:
+      title: ServiceHealthRow
+      type: object
+      properties:
+        serviceId:
+          type: string
+        status:
+          type: string
+          description: 'Last settled outcome: On, Off or Unknown. Never Pending.'
+        version:
+          type: string
+          nullable: true
+        lastProbeSentUtc:
+          type: string
+          format: date-time
+          nullable: true
+        lastSeenUtc:
+          type: string
+          format: date-time
+          nullable: true
+        roundTripMs:
+          type: integer
+          format: int64
+          nullable: true
+        probeInFlight:
+          type: boolean
+          description: True while a probe is outstanding. Status keeps the last settled outcome meanwhile.
+    HeartbeatEndpointEnabledRequest:
+      title: HeartbeatEndpointEnabledRequest
+      type: object
+      required:
+        - enabled
+      properties:
+        enabled:
+          type: boolean
+          description: False excludes the endpoint from the fan-out; true opts it back in.
     AuditEntry:
       title: AuditEntry
       type: object
@@ -4055,6 +4313,10 @@ components:
             - grantRole
             - revokeRole
             - manageSubscription
+            - updateHeartbeatSettings
+            - sendHeartbeatNow
+            - enableEndpointHeartbeat
+            - disableEndpointHeartbeat
         comment:
           type: string
           nullable: true

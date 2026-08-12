@@ -288,6 +288,14 @@ public sealed class AdminStatusSafetyTests
                     // Not exercised by these status-validation routes, but the controller
                     // takes it, so activation needs something to resolve.
                     services.AddSingleton<ISubscriptionAdminService>(new ThrowingSubscriptionAdminService());
+                    // Same: the heartbeat routes are not under test here, but the
+                    // controller's constructor has to resolve.
+                    services.AddScoped<NimBus.WebApp.Services.Heartbeat.IHeartbeatService>(sp =>
+                        new NimBus.WebApp.Services.Heartbeat.HeartbeatService(
+                            platform,
+                            store,
+                            new UnusedHeartbeatMessageSender(),
+                            NullLogger<NimBus.WebApp.Services.Heartbeat.HeartbeatService>.Instance));
                     services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
                     services.AddSingleton<IAuditLogService, NoOpAuditLogService>();
                     // Real resolution over the same in-memory store: the injected
@@ -345,7 +353,8 @@ public sealed class AdminStatusSafetyTests
             platform,
             configuration,
             new NoOpAuditLogService(),
-            authorizationService);
+            authorizationService,
+            heartbeatService: null!);
     }
 
     private static AdminService CreateAdminService(InMemoryMessageStore store) =>
@@ -358,6 +367,15 @@ public sealed class AdminStatusSafetyTests
             managerClient: null!,
             logger: NullLogger<AdminService>.Instance,
             rawCosmosClient: null);
+
+    private sealed class UnusedHeartbeatMessageSender : NimBus.WebApp.Services.Heartbeat.IHeartbeatMessageSender
+    {
+        public System.Threading.Tasks.Task SendAsync(
+            string topicName,
+            NimBus.Core.Messages.Message message,
+            System.Threading.CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("These tests never exercise a heartbeat route.");
+    }
 
     private sealed class ThrowingSubscriptionAdminService : ISubscriptionAdminService
     {

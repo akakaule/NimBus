@@ -115,6 +115,60 @@ public class StorageHookWebhookKeyTests
         Assert.IsInstanceOfType(result, typeof(BadRequestResult));
     }
 
+    [TestMethod]
+    public async Task Heartbeat_hook_pushes_update_for_a_known_endpoint()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers[StorageHookImplementation.WebhookKeyHeaderName] = ConfiguredKey;
+        var proxy = new RecordingClientProxy();
+        var sut = CreateSut(ConfiguredKey, Environments.Production, context, proxy);
+
+        var result = await sut.PostStoragehookHeartbeatAsync(KnownEndpointId);
+
+        Assert.IsInstanceOfType(result, typeof(OkResult));
+        CollectionAssert.AreEqual(new[] { NimBus.WebApp.Constants.EventSignalNames.HeartbeatUpdate }, proxy.SentMethods);
+    }
+
+    [TestMethod]
+    public async Task Heartbeat_hook_rejects_missing_key_and_unknown_endpoint()
+    {
+        var unauthenticated = CreateSut(ConfiguredKey, Environments.Production, new DefaultHttpContext(), new RecordingClientProxy());
+        Assert.IsInstanceOfType(await unauthenticated.PostStoragehookHeartbeatAsync(KnownEndpointId), typeof(UnauthorizedResult));
+
+        var context = new DefaultHttpContext();
+        context.Request.Headers[StorageHookImplementation.WebhookKeyHeaderName] = ConfiguredKey;
+        var authenticated = CreateSut(ConfiguredKey, Environments.Production, context, new RecordingClientProxy());
+        Assert.IsInstanceOfType(await authenticated.PostStoragehookHeartbeatAsync("unknown-endpoint"), typeof(BadRequestResult));
+    }
+
+    [TestMethod]
+    public async Task Servicehealth_hook_accepts_only_the_resolver()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers[StorageHookImplementation.WebhookKeyHeaderName] = ConfiguredKey;
+        var proxy = new RecordingClientProxy();
+        var sut = CreateSut(ConfiguredKey, Environments.Production, context, proxy);
+
+        Assert.IsInstanceOfType(
+            await sut.PostStoragehookServicehealthAsync(NimBus.Core.Messages.Constants.ResolverId),
+            typeof(OkResult));
+        CollectionAssert.AreEqual(new[] { NimBus.WebApp.Constants.EventSignalNames.ServiceHealthUpdate }, proxy.SentMethods);
+
+        // The route must not become an open broadcast channel for arbitrary ids.
+        Assert.IsInstanceOfType(await sut.PostStoragehookServicehealthAsync(KnownEndpointId), typeof(BadRequestResult));
+        Assert.AreEqual(1, proxy.SentMethods.Count);
+    }
+
+    [TestMethod]
+    public async Task Servicehealth_hook_rejects_missing_key()
+    {
+        var sut = CreateSut(ConfiguredKey, Environments.Production, new DefaultHttpContext(), new RecordingClientProxy());
+
+        var result = await sut.PostStoragehookServicehealthAsync(NimBus.Core.Messages.Constants.ResolverId);
+
+        Assert.IsInstanceOfType(result, typeof(UnauthorizedResult));
+    }
+
     private static StorageHookImplementation CreateSut(
         string? configuredKey, string environment, HttpContext httpContext, RecordingClientProxy proxy)
     {

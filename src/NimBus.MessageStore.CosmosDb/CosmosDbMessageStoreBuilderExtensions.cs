@@ -134,6 +134,7 @@ public static class CosmosDbMessageStoreBuilderExtensions
         services.AddSingleton<IMetricsStore>(sp => sp.GetRequiredService<INimBusMessageStore>());
         services.AddSingleton<IEventSchemaStore>(sp => sp.GetRequiredService<INimBusMessageStore>());
         services.AddSingleton<IAccessControlStore>(sp => sp.GetRequiredService<INimBusMessageStore>());
+        services.AddSingleton<IServiceHealthStore>(sp => sp.GetRequiredService<INimBusMessageStore>());
         services.AddSingleton<IStorageProviderRegistration>(_ => new CosmosDbStorageProviderRegistration());
         services.AddSingleton<IStorageProviderCapabilities>(_ => new CosmosDbStorageProviderCapabilities());
     }

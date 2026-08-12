@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using NimBus.Core.Diagnostics;
+using NimBus.Core.Events;
 using NimBus.Core.Inbox;
 
 namespace NimBus.Core.Messages
@@ -68,6 +71,61 @@ namespace NimBus.Core.Messages
             };
             IMessage response = CreateResponse(messageContext, MessageType.SkipResponse, content);
             await _sender.Send(response, cancellationToken: cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public async Task SendHeartbeatResolutionResponse(IMessageContext messageContext, CancellationToken cancellationToken = default)
+        {
+            var heartbeat = DeserializeHeartbeat(messageContext);
+            var now = DateTime.UtcNow;
+            heartbeat.ForwardReceivedTime = now;
+            heartbeat.BackwardSendTime = now;
+            heartbeat.Endpoint = messageContext.To;
+            heartbeat.SdkVersion = GetSdkVersion();
+
+            // A fresh MessageContent: the reply carries the stamped heartbeat, never the
+            // inbound body. The Resolver attributes the row to an endpoint by the payload's
+            // Endpoint first and the message's From second, so From must be stamped here —
+            // CreateResponse deliberately leaves it unset for the topology rule to fill in,
+            // and heartbeat replies must not depend on that rule being provisioned.
+            var response = (Message)CreateResponse(messageContext, MessageType.ResolutionResponse, new MessageContent
+            {
+                EventContent = new EventContent
+                {
+                    EventTypeId = Heartbeat.EventTypeId,
+                    EventJson = JsonConvert.SerializeObject(heartbeat),
+                },
+            });
+            response.From = messageContext.To;
+            await _sender.Send(response, cancellationToken: cancellationToken);
+        }
+
+        private static Heartbeat DeserializeHeartbeat(IMessageContext messageContext)
+        {
+            // A probe with a missing or malformed body must still be answered — the
+            // reply's own stamps are what the WebApp reads.
+            var eventJson = messageContext.MessageContent?.EventContent?.EventJson;
+            if (string.IsNullOrWhiteSpace(eventJson))
+                return new Heartbeat();
+
+            try
+            {
+                return JsonConvert.DeserializeObject<Heartbeat>(eventJson) ?? new Heartbeat();
+            }
+            catch (JsonException)
+            {
+                return new Heartbeat();
+            }
+        }
+
+        private static string GetSdkVersion()
+        {
+            var assembly = typeof(ResponseService).Assembly;
+            var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+            if (!string.IsNullOrWhiteSpace(informational))
+                return informational;
+
+            return assembly.GetName().Version?.ToString() ?? "unknown";
         }
 
         public async Task SendErrorResponse(IMessageContext messageContext, Exception exception, CancellationToken cancellationToken = default)

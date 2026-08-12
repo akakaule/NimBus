@@ -77,6 +77,64 @@ public class HttpEndpointStateChangeNotifierTests
         Assert.IsFalse(handler.Sent, "No request should be sent for an empty endpoint id.");
     }
 
+    [TestMethod]
+    public async Task NotifyHeartbeat_PostsToHeartbeatRoute_WithEscapedEndpointId()
+    {
+        var handler = new CapturingHandler(HttpStatusCode.OK);
+        using var client = new HttpClient(handler) { BaseAddress = WebAppBase };
+        var notifier = new HttpEndpointStateChangeNotifier(client, webhookKey: "s3cret");
+
+        await notifier.NotifyHeartbeatChangedAsync("Crm Endpoint");
+
+        Assert.AreEqual(HttpMethod.Post, handler.Method);
+        Assert.AreEqual(
+            "http://webapp.local/api/storagehook/heartbeat/Crm%20Endpoint",
+            handler.RequestUri!.AbsoluteUri);
+        Assert.AreEqual("s3cret", handler.WebhookKey);
+    }
+
+    [TestMethod]
+    public async Task NotifyServiceHealth_PostsToServiceHealthRoute()
+    {
+        var handler = new CapturingHandler(HttpStatusCode.OK);
+        using var client = new HttpClient(handler) { BaseAddress = WebAppBase };
+        var notifier = new HttpEndpointStateChangeNotifier(client, webhookKey: "s3cret");
+
+        await notifier.NotifyServiceHealthChangedAsync("Resolver");
+
+        Assert.AreEqual(HttpMethod.Post, handler.Method);
+        Assert.AreEqual(
+            "http://webapp.local/api/storagehook/servicehealth/Resolver",
+            handler.RequestUri!.AbsoluteUri);
+        Assert.AreEqual("s3cret", handler.WebhookKey);
+    }
+
+    [TestMethod]
+    public async Task NotifyHeartbeatAndServiceHealth_SwallowTransportFailures()
+    {
+        var handler = new ThrowingHandler();
+        using var client = new HttpClient(handler) { BaseAddress = WebAppBase };
+        var notifier = new HttpEndpointStateChangeNotifier(client, webhookKey: null);
+
+        // Must not throw — the heartbeat push is best-effort, and a failed push must
+        // never stop the Resolver from settling the message it just recorded.
+        await notifier.NotifyHeartbeatChangedAsync("BillingEndpoint");
+        await notifier.NotifyServiceHealthChangedAsync("Resolver");
+    }
+
+    [TestMethod]
+    public async Task NotifyHeartbeatAndServiceHealth_DoNotPost_ForEmptyIds()
+    {
+        var handler = new CapturingHandler(HttpStatusCode.OK);
+        using var client = new HttpClient(handler) { BaseAddress = WebAppBase };
+        var notifier = new HttpEndpointStateChangeNotifier(client, webhookKey: null);
+
+        await notifier.NotifyHeartbeatChangedAsync("");
+        await notifier.NotifyServiceHealthChangedAsync("");
+
+        Assert.IsFalse(handler.Sent, "No request should be sent for an empty id.");
+    }
+
     private sealed class CapturingHandler : HttpMessageHandler
     {
         private readonly HttpStatusCode _status;

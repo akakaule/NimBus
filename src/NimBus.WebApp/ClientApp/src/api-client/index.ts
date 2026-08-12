@@ -1322,6 +1322,100 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Notify operators that an endpoint's heartbeat state changed
+     * @return OK
+     */
+    postStoragehookHeartbeat(endpointId: string): Promise<void> {
+        let url_ = this.baseUrl + "/api/storagehook/heartbeat/{endpointId}";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostStoragehookHeartbeat(_response);
+        });
+    }
+
+    protected processPostStoragehookHeartbeat(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Unknown endpoint", status, _responseText, _headers);
+            });
+        } else if (status === 401) {
+            return response.text().then((_responseText) => {
+            return throwException("Missing or invalid webhook key", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * Notify operators that a platform service's liveness changed
+     * @return OK
+     */
+    postStoragehookServicehealth(serviceId: string): Promise<void> {
+        let url_ = this.baseUrl + "/api/storagehook/servicehealth/{serviceId}";
+        if (serviceId === undefined || serviceId === null)
+            throw new globalThis.Error("The parameter 'serviceId' must be defined.");
+        url_ = url_.replace("{serviceId}", encodeURIComponent("" + serviceId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostStoragehookServicehealth(_response);
+        });
+    }
+
+    protected processPostStoragehookServicehealth(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Unknown service", status, _responseText, _headers);
+            });
+        } else if (status === 401) {
+            return response.text().then((_responseText) => {
+            return throwException("Missing or invalid webhook key", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
      * Your GET endpoint
      * @return OK
      */
@@ -2582,6 +2676,305 @@ export class Client extends ApiClientBase {
             });
         }
         return Promise.resolve<FileResponse>(null as any);
+    }
+
+    /**
+     * Get the platform heartbeat schedule
+     * @return OK
+     */
+    getAdminHeartbeatSettings(): Promise<HeartbeatSettings> {
+        let url_ = this.baseUrl + "/api/admin/heartbeat/settings";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminHeartbeatSettings(_response);
+        });
+    }
+
+    protected processGetAdminHeartbeatSettings(response: Response): Promise<HeartbeatSettings> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = HeartbeatSettings.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<HeartbeatSettings>(null as any);
+    }
+
+    /**
+     * Update the platform heartbeat schedule
+     * @param body (optional) 
+     * @return OK
+     */
+    putAdminHeartbeatSettings(body?: HeartbeatSettings | undefined): Promise<HeartbeatSettings> {
+        let url_ = this.baseUrl + "/api/admin/heartbeat/settings";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPutAdminHeartbeatSettings(_response);
+        });
+    }
+
+    protected processPutAdminHeartbeatSettings(response: Response): Promise<HeartbeatSettings> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = HeartbeatSettings.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Bad Request", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<HeartbeatSettings>(null as any);
+    }
+
+    /**
+     * Send a heartbeat to every monitored endpoint now
+     * @return OK
+     */
+    postAdminHeartbeatSend(): Promise<CountResponse> {
+        let url_ = this.baseUrl + "/api/admin/heartbeat/send";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminHeartbeatSend(_response);
+        });
+    }
+
+    protected processPostAdminHeartbeatSend(response: Response): Promise<CountResponse> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = CountResponse.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<CountResponse>(null as any);
+    }
+
+    /**
+     * Heartbeat status per endpoint
+     * @return OK
+     */
+    getAdminHeartbeatOverview(): Promise<HeartbeatOverviewRow[]> {
+        let url_ = this.baseUrl + "/api/admin/heartbeat/overview";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminHeartbeatOverview(_response);
+        });
+    }
+
+    protected processGetAdminHeartbeatOverview(response: Response): Promise<HeartbeatOverviewRow[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(HeartbeatOverviewRow.fromJS(item));
+            }
+            else {
+                result200 = null as any;
+            }
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<HeartbeatOverviewRow[]>(null as any);
+    }
+
+    /**
+     * Include or exclude one endpoint from the heartbeat fan-out
+     * @param body (optional) 
+     * @return OK
+     */
+    putAdminHeartbeatEndpointEnabled(endpointId: string, body?: HeartbeatEndpointEnabledRequest | undefined): Promise<void> {
+        let url_ = this.baseUrl + "/api/admin/heartbeat/endpoint/{endpointId}/enabled";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPutAdminHeartbeatEndpointEnabled(_response);
+        });
+    }
+
+    protected processPutAdminHeartbeatEndpointEnabled(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Bad Request", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
+     * Liveness of the platform's own services
+     * @return OK
+     */
+    getAdminHealthServices(): Promise<ServiceHealthRow[]> {
+        let url_ = this.baseUrl + "/api/admin/health/services";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminHealthServices(_response);
+        });
+    }
+
+    protected processGetAdminHealthServices(response: Response): Promise<ServiceHealthRow[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(ServiceHealthRow.fromJS(item));
+            }
+            else {
+                result200 = null as any;
+            }
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<ServiceHealthRow[]>(null as any);
     }
 
     /**
@@ -11610,6 +12003,310 @@ export interface ICountResponse {
     [key: string]: any;
 }
 
+export class HeartbeatSettings implements IHeartbeatSettings {
+    /** Whether the scheduled endpoint fan-out runs. The Resolver liveness probe runs either way. */
+    enabled?: boolean;
+    /** Seconds between scheduled fan-outs. Clamped to a minimum of 30. */
+    intervalSeconds?: number;
+    /** Seconds a probe may stay pending before it settles to Off. Clamped to [5, intervalSeconds]. */
+    timeoutSeconds?: number;
+    /** When the last fan-out was claimed. Read-only — owned by the send claim. */
+    lastSentAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IHeartbeatSettings) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.enabled = _data["enabled"];
+            this.intervalSeconds = _data["intervalSeconds"];
+            this.timeoutSeconds = _data["timeoutSeconds"];
+            this.lastSentAtUtc = _data["lastSentAtUtc"] ? moment(_data["lastSentAtUtc"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): HeartbeatSettings {
+        data = typeof data === 'object' ? data : {};
+        let result = new HeartbeatSettings();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["enabled"] = this.enabled;
+        data["intervalSeconds"] = this.intervalSeconds;
+        data["timeoutSeconds"] = this.timeoutSeconds;
+        data["lastSentAtUtc"] = this.lastSentAtUtc ? this.lastSentAtUtc.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): HeartbeatSettings {
+        const json = this.toJSON();
+        let result = new HeartbeatSettings();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IHeartbeatSettings {
+    /** Whether the scheduled endpoint fan-out runs. The Resolver liveness probe runs either way. */
+    enabled?: boolean;
+    /** Seconds between scheduled fan-outs. Clamped to a minimum of 30. */
+    intervalSeconds?: number;
+    /** Seconds a probe may stay pending before it settles to Off. Clamped to [5, intervalSeconds]. */
+    timeoutSeconds?: number;
+    /** When the last fan-out was claimed. Read-only — owned by the send claim. */
+    lastSentAtUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class HeartbeatOverviewRow implements IHeartbeatOverviewRow {
+    endpointId?: string;
+    /** Null when the endpoint has never been configured either way, which means it is probed. */
+    isHeartbeatEnabled?: boolean | undefined;
+    /** Last settled outcome: On, Off, Pending, Unknown or Unsupported. */
+    status?: string;
+    lastStartTime?: moment.Moment | undefined;
+    lastReceivedTime?: moment.Moment | undefined;
+    lastEndTime?: moment.Moment | undefined;
+    roundTripMs?: number | undefined;
+    /** Absent for endpoints on an SDK that predates the heartbeat handler. */
+    sdkVersion?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IHeartbeatOverviewRow) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.endpointId = _data["endpointId"];
+            this.isHeartbeatEnabled = _data["isHeartbeatEnabled"];
+            this.status = _data["status"];
+            this.lastStartTime = _data["lastStartTime"] ? moment(_data["lastStartTime"].toString()) : undefined as any;
+            this.lastReceivedTime = _data["lastReceivedTime"] ? moment(_data["lastReceivedTime"].toString()) : undefined as any;
+            this.lastEndTime = _data["lastEndTime"] ? moment(_data["lastEndTime"].toString()) : undefined as any;
+            this.roundTripMs = _data["roundTripMs"];
+            this.sdkVersion = _data["sdkVersion"];
+        }
+    }
+
+    static fromJS(data: any): HeartbeatOverviewRow {
+        data = typeof data === 'object' ? data : {};
+        let result = new HeartbeatOverviewRow();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["endpointId"] = this.endpointId;
+        data["isHeartbeatEnabled"] = this.isHeartbeatEnabled;
+        data["status"] = this.status;
+        data["lastStartTime"] = this.lastStartTime ? this.lastStartTime.toISOString() : undefined as any;
+        data["lastReceivedTime"] = this.lastReceivedTime ? this.lastReceivedTime.toISOString() : undefined as any;
+        data["lastEndTime"] = this.lastEndTime ? this.lastEndTime.toISOString() : undefined as any;
+        data["roundTripMs"] = this.roundTripMs;
+        data["sdkVersion"] = this.sdkVersion;
+        return data;
+    }
+
+    clone(): HeartbeatOverviewRow {
+        const json = this.toJSON();
+        let result = new HeartbeatOverviewRow();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IHeartbeatOverviewRow {
+    endpointId?: string;
+    /** Null when the endpoint has never been configured either way, which means it is probed. */
+    isHeartbeatEnabled?: boolean | undefined;
+    /** Last settled outcome: On, Off, Pending, Unknown or Unsupported. */
+    status?: string;
+    lastStartTime?: moment.Moment | undefined;
+    lastReceivedTime?: moment.Moment | undefined;
+    lastEndTime?: moment.Moment | undefined;
+    roundTripMs?: number | undefined;
+    /** Absent for endpoints on an SDK that predates the heartbeat handler. */
+    sdkVersion?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class ServiceHealthRow implements IServiceHealthRow {
+    serviceId?: string;
+    /** Last settled outcome: On, Off or Unknown. Never Pending. */
+    status?: string;
+    version?: string | undefined;
+    lastProbeSentUtc?: moment.Moment | undefined;
+    lastSeenUtc?: moment.Moment | undefined;
+    roundTripMs?: number | undefined;
+    /** True while a probe is outstanding. Status keeps the last settled outcome meanwhile. */
+    probeInFlight?: boolean;
+
+    [key: string]: any;
+
+    constructor(data?: IServiceHealthRow) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.serviceId = _data["serviceId"];
+            this.status = _data["status"];
+            this.version = _data["version"];
+            this.lastProbeSentUtc = _data["lastProbeSentUtc"] ? moment(_data["lastProbeSentUtc"].toString()) : undefined as any;
+            this.lastSeenUtc = _data["lastSeenUtc"] ? moment(_data["lastSeenUtc"].toString()) : undefined as any;
+            this.roundTripMs = _data["roundTripMs"];
+            this.probeInFlight = _data["probeInFlight"];
+        }
+    }
+
+    static fromJS(data: any): ServiceHealthRow {
+        data = typeof data === 'object' ? data : {};
+        let result = new ServiceHealthRow();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["serviceId"] = this.serviceId;
+        data["status"] = this.status;
+        data["version"] = this.version;
+        data["lastProbeSentUtc"] = this.lastProbeSentUtc ? this.lastProbeSentUtc.toISOString() : undefined as any;
+        data["lastSeenUtc"] = this.lastSeenUtc ? this.lastSeenUtc.toISOString() : undefined as any;
+        data["roundTripMs"] = this.roundTripMs;
+        data["probeInFlight"] = this.probeInFlight;
+        return data;
+    }
+
+    clone(): ServiceHealthRow {
+        const json = this.toJSON();
+        let result = new ServiceHealthRow();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IServiceHealthRow {
+    serviceId?: string;
+    /** Last settled outcome: On, Off or Unknown. Never Pending. */
+    status?: string;
+    version?: string | undefined;
+    lastProbeSentUtc?: moment.Moment | undefined;
+    lastSeenUtc?: moment.Moment | undefined;
+    roundTripMs?: number | undefined;
+    /** True while a probe is outstanding. Status keeps the last settled outcome meanwhile. */
+    probeInFlight?: boolean;
+
+    [key: string]: any;
+}
+
+export class HeartbeatEndpointEnabledRequest implements IHeartbeatEndpointEnabledRequest {
+    /** False excludes the endpoint from the fan-out; true opts it back in. */
+    enabled!: boolean;
+
+    [key: string]: any;
+
+    constructor(data?: IHeartbeatEndpointEnabledRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.enabled = _data["enabled"];
+        }
+    }
+
+    static fromJS(data: any): HeartbeatEndpointEnabledRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new HeartbeatEndpointEnabledRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["enabled"] = this.enabled;
+        return data;
+    }
+
+    clone(): HeartbeatEndpointEnabledRequest {
+        const json = this.toJSON();
+        let result = new HeartbeatEndpointEnabledRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IHeartbeatEndpointEnabledRequest {
+    /** False excludes the endpoint from the fan-out; true opts it back in. */
+    enabled: boolean;
+
+    [key: string]: any;
+}
+
 export class AuditEntry implements IAuditEntry {
     eventId?: string;
     endpointId?: string | undefined;
@@ -12440,6 +13137,10 @@ export enum MessageAuditAuditType {
     GrantRole = "grantRole",
     RevokeRole = "revokeRole",
     ManageSubscription = "manageSubscription",
+    UpdateHeartbeatSettings = "updateHeartbeatSettings",
+    SendHeartbeatNow = "sendHeartbeatNow",
+    EnableEndpointHeartbeat = "enableEndpointHeartbeat",
+    DisableEndpointHeartbeat = "disableEndpointHeartbeat",
 }
 
 export class MessageContent implements IMessageContent {
@@ -12563,6 +13264,10 @@ export enum AuditSearchFilterAuditType {
     GrantRole = "grantRole",
     RevokeRole = "revokeRole",
     ManageSubscription = "manageSubscription",
+    UpdateHeartbeatSettings = "updateHeartbeatSettings",
+    SendHeartbeatNow = "sendHeartbeatNow",
+    EnableEndpointHeartbeat = "enableEndpointHeartbeat",
+    DisableEndpointHeartbeat = "disableEndpointHeartbeat",
 }
 
 export enum RoleEntryRole {
@@ -12607,6 +13312,10 @@ export enum AuditEntryAuditType {
     GrantRole = "grantRole",
     RevokeRole = "revokeRole",
     ManageSubscription = "manageSubscription",
+    UpdateHeartbeatSettings = "updateHeartbeatSettings",
+    SendHeartbeatNow = "sendHeartbeatNow",
+    EnableEndpointHeartbeat = "enableEndpointHeartbeat",
+    DisableEndpointHeartbeat = "disableEndpointHeartbeat",
 }
 
 export enum AgentSettleRequestOutcome {

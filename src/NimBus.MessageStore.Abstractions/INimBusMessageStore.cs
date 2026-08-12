@@ -9,7 +9,8 @@ namespace NimBus.MessageStore.Abstractions;
 /// Code that only needs one concern should inject the corresponding interface
 /// (<see cref="IMessageTrackingStore"/>, <see cref="ISubscriptionStore"/>,
 /// <see cref="IEndpointMetadataStore"/>, <see cref="IMetricsStore"/>,
-/// <see cref="IEventSchemaStore"/>, or <see cref="IAccessControlStore"/>) directly.
+/// <see cref="IEventSchemaStore"/>, <see cref="IAccessControlStore"/>, or
+/// <see cref="IServiceHealthStore"/>) directly.
 /// </summary>
 public interface INimBusMessageStore
     : IMessageTrackingStore,
@@ -17,6 +18,7 @@ public interface INimBusMessageStore
       IEndpointMetadataStore,
       IMetricsStore,
       IEventSchemaStore,
-      IAccessControlStore
+      IAccessControlStore,
+      IServiceHealthStore
 {
 }

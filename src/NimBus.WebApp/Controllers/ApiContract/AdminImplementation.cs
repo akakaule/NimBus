@@ -13,6 +13,7 @@ using NimBus.ServiceBus.AsyncApi;
 using NimBus.ServiceBus.Provisioning;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.Heartbeat;
 using AsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
 
 namespace NimBus.WebApp.Controllers.ApiContract;
@@ -26,6 +27,7 @@ public class AdminImplementation : IAdminApiController
     private readonly HttpContext _context;
     private readonly IAuditLogService _auditLogService;
     private readonly IEndpointAuthorizationService _authorizationService;
+    private readonly IHeartbeatService _heartbeatService;
 
     public AdminImplementation(
         IHttpContextAccessor contextAccessor,
@@ -34,7 +36,8 @@ public class AdminImplementation : IAdminApiController
         IPlatform platform,
         IConfiguration configuration,
         IAuditLogService auditLogService,
-        IEndpointAuthorizationService authorizationService)
+        IEndpointAuthorizationService authorizationService,
+        IHeartbeatService heartbeatService)
     {
         _adminService = adminService;
         _subscriptionAdminService = subscriptionAdminService;
@@ -43,6 +46,7 @@ public class AdminImplementation : IAdminApiController
         _context = contextAccessor.HttpContext;
         _auditLogService = auditLogService;
         _authorizationService = authorizationService;
+        _heartbeatService = heartbeatService;
     }
 
     public async Task<ActionResult<PlatformConfig>> GetAdminPlatformConfigAsync()
@@ -457,6 +461,101 @@ public class AdminImplementation : IAdminApiController
             body.From, body.To,
             body.Statuses?.ToList() ?? new(), body.BatchSize);
         return new OkObjectResult(result);
+    }
+
+    // ───────────── Platform heartbeat ─────────────
+    //
+    // Reads are Owner-gated like everything else here; the three mutations are
+    // audited on both the success and the denial branch.
+
+    public async Task<ActionResult<HeartbeatSettings>> GetAdminHeartbeatSettingsAsync()
+    {
+        if (!await IsSiteOwnerAsync())
+            return new ForbidResult();
+
+        var settings = await _heartbeatService.GetSettingsAsync();
+        return new OkObjectResult(Mapper.HeartbeatSettingsFromState(settings));
+    }
+
+    public async Task<ActionResult<HeartbeatSettings>> PutAdminHeartbeatSettingsAsync(HeartbeatSettings body)
+    {
+        if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.UpdateHeartbeatSettings, _context,
+                accessDenied: true, data: JsonConvert.SerializeObject(body));
+            return new ForbidResult();
+        }
+
+        if (body is null)
+            return new BadRequestObjectResult("A heartbeat settings body is required.");
+
+        // The service clamps interval and timeout, so the audit records what was
+        // actually stored rather than what was asked for.
+        var stored = await _heartbeatService.SetSettingsAsync(Mapper.HeartbeatSettingsToState(body));
+        var result = Mapper.HeartbeatSettingsFromState(stored);
+        await _auditLogService.LogAuditAsync(MessageAuditType.UpdateHeartbeatSettings, _context,
+            data: JsonConvert.SerializeObject(result));
+        return new OkObjectResult(result);
+    }
+
+    public async Task<ActionResult<CountResponse>> PostAdminHeartbeatSendAsync()
+    {
+        if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.SendHeartbeatNow, _context, accessDenied: true);
+            return new ForbidResult();
+        }
+
+        // "Send now" ignores the Enabled switch — an operator asking for a probe
+        // right now has said what they want.
+        var count = await _heartbeatService.SendHeartbeatsAsync(force: true);
+        await _auditLogService.LogAuditAsync(MessageAuditType.SendHeartbeatNow, _context,
+            data: JsonConvert.SerializeObject(new { count }));
+        return new OkObjectResult(new CountResponse { Count = count });
+    }
+
+    public async Task<ActionResult<IEnumerable<HeartbeatOverviewRow>>> GetAdminHeartbeatOverviewAsync()
+    {
+        if (!await IsSiteOwnerAsync())
+            return new ForbidResult();
+
+        var rows = await _heartbeatService.GetOverviewAsync();
+        return new OkObjectResult(rows.Select(Mapper.HeartbeatOverviewRowFromItem).ToList());
+    }
+
+    public async Task<IActionResult> PutAdminHeartbeatEndpointEnabledAsync(HeartbeatEndpointEnabledRequest body, string endpointId)
+    {
+        // Which action this is depends on the body, and the denial branch has to
+        // record the attempt, so resolve the audit type before the gate.
+        var auditType = body?.Enabled == false
+            ? MessageAuditType.DisableEndpointHeartbeat
+            : MessageAuditType.EnableEndpointHeartbeat;
+
+        if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(auditType, _context,
+                accessDenied: true, endpointId: endpointId);
+            return new ForbidResult();
+        }
+
+        if (body is null)
+            return new BadRequestObjectResult("An enabled flag is required.");
+
+        if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
+            return new NotFoundObjectResult("Endpoint not found");
+
+        await _heartbeatService.SetEndpointEnabledAsync(endpointId, body.Enabled);
+        await _auditLogService.LogAuditAsync(auditType, _context, endpointId: endpointId);
+        return new OkResult();
+    }
+
+    public async Task<ActionResult<IEnumerable<ServiceHealthRow>>> GetAdminHealthServicesAsync()
+    {
+        if (!await IsSiteOwnerAsync())
+            return new ForbidResult();
+
+        var rows = await _heartbeatService.GetServiceHealthAsync();
+        return new OkObjectResult(rows.Select(Mapper.ServiceHealthRowFromState).ToList());
     }
 
     // Every /api/admin/* operation is cross-endpoint and destructive-capable, so

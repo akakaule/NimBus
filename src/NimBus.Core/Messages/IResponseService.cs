@@ -32,6 +32,18 @@ namespace NimBus.Core.Messages
             CancellationToken cancellationToken = default) =>
             SendSkipResponse(messageContext, cancellationToken);
 
+        /// <summary>
+        /// Answers a platform heartbeat probe with a <see cref="MessageType.ResolutionResponse"/>
+        /// carrying a stamped <see cref="Events.Heartbeat"/> payload (receive/send times, endpoint,
+        /// SDK version) so the WebApp can report round-trip time and adapter version.
+        /// The default implementation preserves compatibility with existing custom response
+        /// services by sending the plain resolution outcome without the heartbeat stamps.
+        /// </summary>
+        /// <param name="messageContext">The inbound heartbeat request.</param>
+        /// <param name="cancellationToken">A token used to cancel the operation.</param>
+        Task SendHeartbeatResolutionResponse(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
+            SendResolutionResponse(messageContext, cancellationToken);
+
         Task SendErrorResponse(IMessageContext messageContext, Exception exception, CancellationToken cancellationToken = default);
 
         /// <summary>

@@ -34,6 +34,12 @@ public class InMemoryMessageStore : INimBusMessageStore
     private readonly ConcurrentDictionary<string, EndpointMetadata> _metadata = new();
     private readonly ConcurrentDictionary<string, EventSchema> _schemas = new();
     private readonly ConcurrentDictionary<string, AccessControlList> _accessControls = new();
+    // Heartbeat state is read-modify-write across several records (rows, rollup,
+    // claims), so it is guarded by one lock rather than by concurrent collections:
+    // the claim methods are only atomic if the read and the write are one step.
+    private readonly Dictionary<string, ServiceHealth> _serviceHealth = new(StringComparer.Ordinal);
+    private readonly object _heartbeatLock = new();
+    private HeartbeatSettings? _heartbeatSettings;
 
     private (string, string, string) Key(string endpoint, string eventId, string session) => (endpoint, eventId, session ?? string.Empty);
 
@@ -531,6 +537,253 @@ public class InMemoryMessageStore : INimBusMessageStore
         _metadata[endpointMetadata.EndpointId] = endpointMetadata;
         return Task.FromResult(true);
     }
+
+    // ───────── Endpoint heartbeat ─────────
+
+    public Task<List<EndpointMetadata>> GetMetadatasWithEnabledHeartbeat()
+        => Task.FromResult(_metadata.Values.Where(m => m.IsHeartbeatEnabled == true).ToList());
+
+    public Task EnableHeartbeatOnEndpoint(string endpointId, bool enable)
+    {
+        lock (_heartbeatLock)
+        {
+            MetadataFor(endpointId).IsHeartbeatEnabled = enable;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> SetHeartbeat(Heartbeat heartbeat, string endpointId)
+    {
+        ArgumentNullException.ThrowIfNull(heartbeat);
+
+        lock (_heartbeatLock)
+        {
+            var metadata = MetadataFor(endpointId);
+            metadata.Heartbeats ??= new List<Heartbeat>();
+
+            // Keyed by MessageId so the Pending probe and the answer that settles it
+            // share one row instead of accumulating a duplicate.
+            var existing = metadata.Heartbeats.FirstOrDefault(h => h.MessageId == heartbeat.MessageId);
+            if (existing != null)
+            {
+                existing.StartTime = heartbeat.StartTime;
+                existing.ReceivedTime = heartbeat.ReceivedTime;
+                existing.EndTime = heartbeat.EndTime;
+                existing.SdkVersion = heartbeat.SdkVersion;
+                existing.EndpointHeartbeatStatus = heartbeat.EndpointHeartbeatStatus;
+            }
+            else
+            {
+                metadata.Heartbeats.Add(CloneHeartbeat(heartbeat));
+            }
+
+            metadata.Heartbeats = HeartbeatRollup.Prune(metadata.Heartbeats);
+            HeartbeatRollup.Apply(metadata);
+        }
+
+        return Task.FromResult(true);
+    }
+
+    public Task<List<string>> SweepTimedOutHeartbeats(DateTime cutoffUtc)
+    {
+        var swept = new List<string>();
+        lock (_heartbeatLock)
+        {
+            foreach (var metadata in _metadata.Values)
+            {
+                var timedOut = metadata.Heartbeats?
+                    .Where(h => h.EndpointHeartbeatStatus == HeartbeatStatus.Pending && h.StartTime <= cutoffUtc)
+                    .ToList();
+                if (timedOut is not { Count: > 0 }) continue;
+
+                foreach (var heartbeat in timedOut)
+                {
+                    heartbeat.EndpointHeartbeatStatus = HeartbeatStatus.Off;
+                }
+
+                HeartbeatRollup.Apply(metadata);
+                swept.Add(metadata.EndpointId);
+            }
+        }
+
+        return Task.FromResult(swept);
+    }
+
+    public Task<HeartbeatSettings> GetHeartbeatSettings()
+    {
+        lock (_heartbeatLock)
+        {
+            return Task.FromResult(CloneSettings(_heartbeatSettings) ?? new HeartbeatSettings());
+        }
+    }
+
+    public Task<bool> SetHeartbeatSettings(HeartbeatSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        lock (_heartbeatLock)
+        {
+            var stored = CloneSettings(settings)!;
+            if (string.IsNullOrWhiteSpace(stored.Id)) stored.Id = HeartbeatSettings.SingletonId;
+            // The claim owns LastSentAtUtc: an operator edit that carries no value
+            // must not reset the send schedule.
+            stored.LastSentAtUtc ??= _heartbeatSettings?.LastSentAtUtc;
+            _heartbeatSettings = stored;
+        }
+
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> TryClaimHeartbeatSend(DateTime dueBefore)
+    {
+        lock (_heartbeatLock)
+        {
+            _heartbeatSettings ??= new HeartbeatSettings();
+            if (!_heartbeatSettings.Enabled ||
+                (_heartbeatSettings.LastSentAtUtc.HasValue && _heartbeatSettings.LastSentAtUtc.Value > dueBefore))
+            {
+                return Task.FromResult(false);
+            }
+
+            _heartbeatSettings.LastSentAtUtc = DateTime.UtcNow;
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<List<HeartbeatOverviewItem>> GetHeartbeatOverview()
+    {
+        lock (_heartbeatLock)
+        {
+            return Task.FromResult(_metadata.Values
+                .OrderBy(m => m.EndpointId, StringComparer.Ordinal)
+                .Select(HeartbeatRollup.BuildOverviewItem)
+                .ToList());
+        }
+    }
+
+    // ───────── Service health (platform services, not endpoints) ─────────
+
+    public Task<List<ServiceHealth>> GetServiceHealth()
+    {
+        lock (_heartbeatLock)
+        {
+            return Task.FromResult(_serviceHealth.Values
+                .OrderBy(s => s.ServiceId, StringComparer.Ordinal)
+                .Select(s => CloneServiceHealth(s)!)
+                .ToList());
+        }
+    }
+
+    public Task<bool> TryClaimServiceProbe(string serviceId, DateTime dueBefore, string probeMessageId)
+    {
+        if (string.IsNullOrWhiteSpace(serviceId)) throw new ArgumentNullException(nameof(serviceId));
+
+        lock (_heartbeatLock)
+        {
+            if (!_serviceHealth.TryGetValue(serviceId, out var health))
+            {
+                _serviceHealth[serviceId] = new ServiceHealth
+                {
+                    ServiceId = serviceId,
+                    LastProbeSentUtc = DateTime.UtcNow,
+                    LastProbeMessageId = probeMessageId,
+                };
+                return Task.FromResult(true);
+            }
+
+            if (health.LastProbeSentUtc.HasValue && health.LastProbeSentUtc.Value > dueBefore)
+            {
+                return Task.FromResult(false);
+            }
+
+            health.LastProbeSentUtc = DateTime.UtcNow;
+            health.LastProbeMessageId = probeMessageId;
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<bool> SetServiceHealth(ServiceHealth serviceHealth)
+    {
+        ArgumentNullException.ThrowIfNull(serviceHealth);
+        if (string.IsNullOrWhiteSpace(serviceHealth.ServiceId)) throw new ArgumentNullException(nameof(serviceHealth));
+
+        lock (_heartbeatLock)
+        {
+            var stored = CloneServiceHealth(serviceHealth)!;
+            // The claim owns LastProbeSentUtc; preserve it so an answer never resets
+            // the send schedule, and clear the in-flight marker.
+            stored.LastProbeSentUtc = _serviceHealth.TryGetValue(stored.ServiceId, out var existing)
+                ? existing.LastProbeSentUtc
+                : null;
+            stored.LastProbeMessageId = null;
+            _serviceHealth[stored.ServiceId] = stored;
+        }
+
+        return Task.FromResult(true);
+    }
+
+    public Task<List<string>> SweepTimedOutServiceProbes(DateTime cutoffUtc)
+    {
+        var swept = new List<string>();
+        lock (_heartbeatLock)
+        {
+            foreach (var health in _serviceHealth.Values)
+            {
+                if (health.LastProbeMessageId == null ||
+                    !health.LastProbeSentUtc.HasValue ||
+                    health.LastProbeSentUtc.Value > cutoffUtc)
+                {
+                    continue;
+                }
+
+                health.Status = HeartbeatStatus.Off;
+                health.LastProbeMessageId = null;
+                swept.Add(health.ServiceId);
+            }
+        }
+
+        return Task.FromResult(swept);
+    }
+
+    // Callers must hold _heartbeatLock.
+    private EndpointMetadata MetadataFor(string endpointId)
+        => _metadata.GetOrAdd(endpointId, id => new EndpointMetadata
+        {
+            EndpointId = id,
+            TechnicalContacts = new List<TechnicalContact>(),
+        });
+
+    // Copy on write and on read so callers can never mutate stored state in place.
+    private static Heartbeat CloneHeartbeat(Heartbeat source) => new()
+    {
+        MessageId = source.MessageId,
+        StartTime = source.StartTime,
+        ReceivedTime = source.ReceivedTime,
+        EndTime = source.EndTime,
+        SdkVersion = source.SdkVersion,
+        EndpointHeartbeatStatus = source.EndpointHeartbeatStatus,
+    };
+
+    private static HeartbeatSettings? CloneSettings(HeartbeatSettings? source) => source == null ? null : new HeartbeatSettings
+    {
+        Id = source.Id,
+        Enabled = source.Enabled,
+        IntervalSeconds = source.IntervalSeconds,
+        TimeoutSeconds = source.TimeoutSeconds,
+        LastSentAtUtc = source.LastSentAtUtc,
+    };
+
+    private static ServiceHealth? CloneServiceHealth(ServiceHealth? source) => source == null ? null : new ServiceHealth
+    {
+        ServiceId = source.ServiceId,
+        Status = source.Status,
+        Version = source.Version,
+        LastProbeMessageId = source.LastProbeMessageId,
+        LastProbeSentUtc = source.LastProbeSentUtc,
+        LastSeenUtc = source.LastSeenUtc,
+        RoundTripMs = source.RoundTripMs,
+    };
 
     public virtual Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from)
     {

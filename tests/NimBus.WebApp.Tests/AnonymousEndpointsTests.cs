@@ -132,6 +132,12 @@ public class AnonymousEndpointsTests
     {
         public Task<IActionResult> StoragehookReceiveCosmosAsync(string endpointId)
             => Task.FromResult<IActionResult>(new OkResult());
+
+        public Task<IActionResult> PostStoragehookHeartbeatAsync(string endpointId)
+            => Task.FromResult<IActionResult>(new OkResult());
+
+        public Task<IActionResult> PostStoragehookServicehealthAsync(string serviceId)
+            => Task.FromResult<IActionResult>(new OkResult());
     }
 
     private sealed class HeaderAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>

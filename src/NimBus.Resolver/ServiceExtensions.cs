@@ -23,10 +23,15 @@ namespace NimBus.Resolver
         {
             // Serilog stays a host concern (Program.cs AddSerilog registers it
             // as an MEL provider, per ADR-006); ResolverService itself takes MEL.
+            // The heartbeat stores are resolved with GetService, not GetRequiredService:
+            // a provider registered without the platform-heartbeat surface still yields a
+            // working Resolver, it just completes heartbeat traffic without recording it.
             services.AddSingleton<IMessageHandler>(sp => new ResolverService(
                 sp.GetRequiredService<IMessageTrackingStore>(),
                 sp.GetRequiredService<IMessageStateChangeNotifier>(),
-                sp.GetService<ILogger<ResolverService>>()));
+                sp.GetService<ILogger<ResolverService>>(),
+                sp.GetService<IEndpointMetadataStore>(),
+                sp.GetService<IServiceHealthStore>()));
             services.AddFlowStateChangeNotifier();
 
             services.AddSingleton(sp =>

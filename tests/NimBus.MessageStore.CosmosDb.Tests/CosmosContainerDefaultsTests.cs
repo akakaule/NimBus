@@ -79,7 +79,11 @@ public sealed class CosmosContainerDefaultsTests
     public void ReservedContainerIds_lists_exactly_the_stores_own_containers()
     {
         CollectionAssert.AreEquivalent(
-            new[] { "subscriptions", "messages", "audits", "eventschemas", "eventreports", "accesscontrol", "Metadata", "inbox" },
+            new[]
+            {
+                "subscriptions", "messages", "audits", "eventschemas", "eventreports",
+                "accesscontrol", "Metadata", "inbox", "settings", "servicehealth",
+            },
             System.Linq.Enumerable.ToArray(CosmosContainerDefaults.ReservedContainerIds));
     }
 }

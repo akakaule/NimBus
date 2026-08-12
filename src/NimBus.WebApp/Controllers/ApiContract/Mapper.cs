@@ -10,6 +10,8 @@ using System.Collections;
 using System.Collections.Generic;
 using TechnicalContact = NimBus.WebApp.ManagementApi.TechnicalContact;
 using ResolutionStatus = NimBus.MessageStore.ResolutionStatus;
+using HeartbeatSettings = NimBus.WebApp.ManagementApi.HeartbeatSettings;
+using StoreHeartbeatSettings = NimBus.MessageStore.States.HeartbeatSettings;
 
 namespace NimBus.WebApp.Controllers;
 
@@ -400,6 +402,67 @@ public static class Mapper
         {
             EndpointId = metadata.EndpointId,
             SubscriptionStatus = SubscriptionStatusFromMetadata(metadata),
+        };
+    }
+
+    /// <summary>Projects the stored heartbeat schedule onto the API contract.</summary>
+    public static HeartbeatSettings HeartbeatSettingsFromState(StoreHeartbeatSettings settings)
+    {
+        return new HeartbeatSettings
+        {
+            Enabled = settings.Enabled,
+            IntervalSeconds = settings.IntervalSeconds,
+            TimeoutSeconds = settings.TimeoutSeconds,
+            LastSentAtUtc = settings.LastSentAtUtc,
+        };
+    }
+
+    /// <summary>
+    /// Reads a schedule out of a request body. <c>LastSentAtUtc</c> is deliberately
+    /// not carried across: it is owned by the send claim, and the store keeps its
+    /// own value whenever a write omits one — so a client cannot rewind the
+    /// schedule by echoing back a stale timestamp.
+    /// </summary>
+    public static StoreHeartbeatSettings HeartbeatSettingsToState(HeartbeatSettings body)
+    {
+        return new StoreHeartbeatSettings
+        {
+            Enabled = body.Enabled,
+            IntervalSeconds = body.IntervalSeconds,
+            TimeoutSeconds = body.TimeoutSeconds,
+        };
+    }
+
+    /// <summary>Projects one heartbeat overview row onto the API contract.</summary>
+    public static HeartbeatOverviewRow HeartbeatOverviewRowFromItem(HeartbeatOverviewItem item)
+    {
+        return new HeartbeatOverviewRow
+        {
+            EndpointId = item.EndpointId,
+            IsHeartbeatEnabled = item.IsHeartbeatEnabled,
+            Status = item.Status.ToString(),
+            LastStartTime = item.LastStartTime,
+            LastReceivedTime = item.LastReceivedTime,
+            LastEndTime = item.LastEndTime,
+            RoundTripMs = item.RoundTripMs,
+            SdkVersion = item.SdkVersion,
+        };
+    }
+
+    /// <summary>Projects one platform-service liveness row onto the API contract.</summary>
+    public static ServiceHealthRow ServiceHealthRowFromState(ServiceHealth serviceHealth)
+    {
+        return new ServiceHealthRow
+        {
+            ServiceId = serviceHealth.ServiceId,
+            Status = serviceHealth.Status.ToString(),
+            Version = serviceHealth.Version,
+            LastProbeSentUtc = serviceHealth.LastProbeSentUtc,
+            LastSeenUtc = serviceHealth.LastSeenUtc,
+            RoundTripMs = serviceHealth.RoundTripMs,
+            // Status only ever holds a settled outcome, so "waiting on an answer"
+            // has to be read off the outstanding claim rather than off Status.
+            ProbeInFlight = serviceHealth.LastProbeMessageId != null,
         };
     }
 

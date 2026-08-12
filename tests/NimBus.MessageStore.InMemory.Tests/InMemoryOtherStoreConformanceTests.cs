@@ -34,3 +34,9 @@ public sealed class InMemoryAccessControlStoreConformanceTests : AccessControlSt
 {
     protected override IAccessControlStore CreateStore() => new InMemoryMessageStore();
 }
+
+[TestClass]
+public sealed class InMemoryServiceHealthStoreConformanceTests : ServiceHealthStoreConformanceTests
+{
+    protected override IServiceHealthStore CreateStore() => new InMemoryMessageStore();
+}

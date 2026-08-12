@@ -67,11 +67,12 @@ docs/
   sdk-api-reference.md     # SDK API guide
   getting-started.md       # Quick start
   pipeline-middleware.md   # Middleware pattern documentation
-  message-flows.md         # 12 message flow diagrams
+  message-flows.md         # 13 message flow diagrams
   error-handling.md        # Adapter error-handling reference (exception types, retry vs DLQ)
   throughput-tuning.md     # Throughput parameters (concurrency, prefetch, topology, tier) + per-workload recommended values
   deferred-messages.md     # Deferred message processing guide
   service-bus-subscription-admin.md # Admin > Subscriptions operator guide (per-subscription backlog incident response)
+  heartbeat.md             # Admin > Health operator guide (endpoint heartbeat + Resolver liveness)
   cli.md                   # CLI command reference
   deployment.md            # Deployment guide (one-command, GitHub Actions OIDC, Azure DevOps, raw Bicep, RBAC)
   azure-requirements.md    # Azure requirements reference (resource inventory, provider registrations, RBAC matrix)

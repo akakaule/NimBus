@@ -38,6 +38,9 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
         "EndpointMetadata",
         "EventSchemas",
         "AccessControl",
+        "Heartbeats",
+        "HeartbeatSettings",
+        "ServiceHealth",
     };
 
     private static readonly string[] RequiredViews =

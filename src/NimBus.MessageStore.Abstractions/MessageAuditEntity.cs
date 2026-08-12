@@ -114,5 +114,17 @@ namespace NimBus.MessageStore
         /// subscription and action are recorded as Data.
         /// </summary>
         ManageSubscription,
+
+        /// <summary>Operator changed the platform heartbeat schedule (the new settings are recorded as Data).</summary>
+        UpdateHeartbeatSettings,
+
+        /// <summary>Operator triggered an immediate heartbeat fan-out from Admin → Health.</summary>
+        SendHeartbeatNow,
+
+        /// <summary>Operator opted one endpoint back into the heartbeat fan-out.</summary>
+        EnableEndpointHeartbeat,
+
+        /// <summary>Operator excluded one endpoint from the heartbeat fan-out.</summary>
+        DisableEndpointHeartbeat,
     }
 }

@@ -73,6 +73,7 @@ docs/
   deferred-messages.md     # Deferred message processing guide
   service-bus-subscription-admin.md # Admin > Subscriptions operator guide (per-subscription backlog incident response)
   heartbeat.md             # Admin > Health operator guide (endpoint heartbeat + Resolver liveness)
+  dependency-security.md   # Daily NuGet/npm vulnerability audit workflow (auto-PR on fixes)
   cli.md                   # CLI command reference
   deployment.md            # Deployment guide (one-command, GitHub Actions OIDC, Azure DevOps, raw Bicep, RBAC)
   azure-requirements.md    # Azure requirements reference (resource inventory, provider registrations, RBAC matrix)

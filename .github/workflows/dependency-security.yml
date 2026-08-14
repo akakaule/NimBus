@@ -1,0 +1,234 @@
+# Daily third-party dependency security audit.
+#
+# Scans every NuGet package the solutions restore (top-level and transitive) and every
+# tracked npm workspace, applies the minimal version bumps that clear the advisories, and
+# opens a pull request with the result. Nothing is pushed to master.
+#
+# The build gate in Directory.Build.props (NuGetAudit) only covers packages the compiler
+# sees at restore time and only fails a build once someone triggers one; this job runs on a
+# clock, so an advisory published against an unchanged dependency still gets caught.
+
+name: Dependency security audit
+
+on:
+  schedule:
+    # 04:17 UTC daily - offset from the hour so it is not queued with everyone else's cron.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+    inputs:
+      create-pull-request:
+        description: 'Open/refresh a pull request when fixes are available'
+        type: boolean
+        default: true
+      fail-on:
+        description: 'Fail the run when a vulnerability at or above this severity is left unfixed'
+        type: choice
+        options: [none, low, moderate, high, critical]
+        default: high
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# One audit at a time: two runs racing on the same bot branch would clobber each other.
+concurrency:
+  group: dependency-security
+  cancel-in-progress: false
+
+env:
+  AUDIT_BRANCH: deps/security-audit
+  # A PR opened with GITHUB_TOKEN does not trigger other workflows, so the .NET CI would
+  # not run on it. Set the DEPS_PR_TOKEN secret (a PAT or GitHub App token with
+  # contents:write + pull_requests:write) to get full CI on the generated PR.
+  GH_TOKEN: ${{ secrets.DEPS_PR_TOKEN || secrets.GITHUB_TOKEN }}
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.DEPS_PR_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Audit NuGet packages
+        id: nuget
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # raises the GitHub Advisory API rate limit
+        run: |
+          ./.github/scripts/Invoke-NuGetAudit.ps1 -Fix -JsonOut audit-nuget.json -MarkdownOut audit-nuget.md
+
+      - name: Audit npm packages
+        id: npm
+        shell: pwsh
+        run: |
+          ./.github/scripts/Invoke-NpmAudit.ps1 -Fix -JsonOut audit-npm.json -MarkdownOut audit-npm.md
+
+      - name: Collect the applied fixes
+        id: changes
+        run: |
+          # Recorded before the verification build, which runs `npm install` for the
+          # WebApp SPA and can touch lockfiles we did not deliberately change.
+          git diff --name-only -z > /tmp/audit-changed.txt
+          echo "Files changed by the audit:"
+          git diff --name-only
+          if [ -s /tmp/audit-changed.txt ]; then
+            echo "has-changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify the bumped dependencies still build
+        id: verify
+        if: steps.changes.outputs.has-changes == 'true'
+        continue-on-error: true
+        run: |
+          # Release matches the CI configuration, where TreatWarningsAsErrors is on and a
+          # dependency bump can surface a compiler error that Debug hides.
+          # Projects outside a solution (e.g. src/NimBus.Manager) are still covered at
+          # restore level by the re-scan below, which restores every tracked project.
+          set -e
+          for solution in $(git ls-files '*.sln' '*.slnx'); do
+            echo "::group::dotnet build $solution"
+            dotnet build "$solution" --configuration Release
+            echo "::endgroup::"
+          done
+
+      - name: Confirm the advisories are cleared
+        id: rescan
+        if: steps.changes.outputs.has-changes == 'true'
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Written to its own file so the PR keeps both halves of the story: what the fix
+          # run changed, and what is left afterwards. The re-scan is what catches transitive
+          # advisories that the top-level bump already resolved - the fix run still lists
+          # those as outstanding, because it saw the tree before the bump.
+          ./.github/scripts/Invoke-NuGetAudit.ps1 -JsonOut audit-nuget-after.json -MarkdownOut audit-nuget-after.md
+
+      - name: Restrict the commit to the audit's own changes
+        if: steps.changes.outputs.has-changes == 'true'
+        run: |
+          git add --pathspec-from-file=/tmp/audit-changed.txt --pathspec-file-nul
+          # Everything else the build produced in tracked files goes back to HEAD.
+          git checkout -- .
+          git status --short
+
+      - name: Build the report
+        id: report
+        run: |
+          # The re-scan, when it ran, is the authority on what is still outstanding.
+          nuget_outstanding='${{ steps.rescan.outputs.nuget-outstanding || steps.nuget.outputs.nuget-outstanding }}'
+          {
+            echo "## Summary"
+            echo
+            echo "| Ecosystem | Vulnerable | Fixed here | Still outstanding |"
+            echo "| --- | --- | --- | --- |"
+            echo "| NuGet | ${{ steps.nuget.outputs.nuget-total }} | ${{ steps.nuget.outputs.nuget-fixed }} | ${nuget_outstanding} |"
+            echo "| npm | ${{ steps.npm.outputs.npm-total }} | ${{ steps.npm.outputs.npm-fixed }} | ${{ steps.npm.outputs.npm-outstanding }} |"
+            echo
+            if [ "${{ steps.verify.outcome }}" = "failure" ]; then
+              echo "> [!WARNING]"
+              echo "> The Release build failed after the bumps. The changes are pushed anyway so the"
+              echo "> break is visible, but this PR needs manual work before it can merge."
+              echo
+            fi
+            cat audit-nuget.md
+            echo
+            if [ -f audit-nuget-after.md ]; then
+              echo "<details><summary>NuGet, re-scanned after the bumps</summary>"
+              echo
+              cat audit-nuget-after.md
+              echo
+              echo "</details>"
+              echo
+            fi
+            cat audit-npm.md
+            echo
+            echo "---"
+            echo
+            echo "Generated by [\`dependency-security.yml\`](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/dependency-security.yml)."
+            echo "The \`${{ env.AUDIT_BRANCH }}\` branch is rebuilt from \`master\` on every run - do not commit to it by hand."
+          } > /tmp/audit-report.md
+          cat /tmp/audit-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or refresh the pull request
+        id: pr
+        if: steps.changes.outputs.has-changes == 'true' && (github.event_name == 'schedule' || inputs.create-pull-request)
+        run: |
+          set -e
+          fixed=$(( ${{ steps.nuget.outputs.nuget-fixed }} + ${{ steps.npm.outputs.npm-fixed }} ))
+          if [ "$fixed" -eq 1 ]; then noun='advisory'; else noun='advisories'; fi
+          title="chore(deps): fix ${fixed} security ${noun} in third-party packages"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit \
+            --message "$title" \
+            --message "NuGet: ${{ steps.nuget.outputs.nuget-fixed }} fixed, ${{ steps.nuget.outputs.nuget-outstanding }} outstanding. npm: ${{ steps.npm.outputs.npm-fixed }} fixed, ${{ steps.npm.outputs.npm-outstanding }} outstanding." \
+            --message "Opened by the daily dependency security audit; the full report is in the pull request."
+
+          # The branch is bot-owned and rebuilt from master daily, so force-push is the
+          # intended update mechanism (same model Dependabot uses).
+          git push --force origin "HEAD:refs/heads/${AUDIT_BRANCH}"
+
+          number=$(gh pr list --head "$AUDIT_BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --title "$title" --body-file /tmp/audit-report.md
+            echo "Refreshed PR #${number}"
+          else
+            gh pr create --base "${{ github.event.repository.default_branch }}" \
+              --head "$AUDIT_BRANCH" --title "$title" --body-file /tmp/audit-report.md
+          fi
+
+      - name: Upload the audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit
+          path: |
+            audit-nuget.json
+            audit-nuget-after.json
+            audit-npm.json
+          if-no-files-found: warn
+
+      - name: Fail on unfixed vulnerabilities
+        if: always()
+        run: |
+          threshold='${{ inputs.fail-on || 'high' }}'
+          rank() {
+            case "$1" in
+              critical) echo 4 ;;
+              high) echo 3 ;;
+              moderate) echo 2 ;;
+              low) echo 1 ;;
+              *) echo 0 ;;   # info / none / empty
+            esac
+          }
+
+          [ "$threshold" = "none" ] && exit 0
+
+          worst=0
+          # Prefer the post-fix re-scan; it is the state the PR would actually merge.
+          for severity in '${{ steps.rescan.outputs.nuget-max-severity || steps.nuget.outputs.nuget-max-severity }}' '${{ steps.npm.outputs.npm-max-severity }}'; do
+            value=$(rank "$(echo "$severity" | tr '[:upper:]' '[:lower:]')")
+            [ "$value" -gt "$worst" ] && worst=$value
+          done
+
+          if [ "$worst" -ge "$(rank "$threshold")" ]; then
+            echo "::error::Vulnerabilities at or above '${threshold}' are still unfixed after this run; see the job summary."
+            exit 1
+          fi
+          echo "No unfixed vulnerabilities at or above '${threshold}'."

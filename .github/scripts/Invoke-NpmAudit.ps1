@@ -233,3 +233,10 @@ if ($env:GITHUB_OUTPUT) {
 }
 
 Write-Host $markdown.ToString()
+
+# Finding vulnerabilities is a successful run, not a failed one - the workflow's own gate
+# step decides whether they are bad enough to fail the job. Without this the script inherits
+# $LASTEXITCODE from `npm audit`, which exits 1 whenever it reports anything, and a
+# `shell: pwsh` step propagates that. An uncaught error still exits non-zero: the script
+# terminates before reaching this line.
+exit 0

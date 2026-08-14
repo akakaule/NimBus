@@ -216,12 +216,20 @@ if ($JsonOut) { $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Js
 if ($MarkdownOut) { $markdown.ToString() | Set-Content -LiteralPath $MarkdownOut }
 
 if ($env:GITHUB_OUTPUT) {
-    "npm-total=$($before.Count)" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
-    "npm-fixed=$($resolved.Count)" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
-    "npm-outstanding=$($after.Count)" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
     # The gate cares about what is still vulnerable after the run, not what was fixed.
-    "npm-max-severity=$(($after | Sort-Object @{ Expression = { $severityRank[$_.Severity] } } -Descending | Select-Object -First 1).Severity ?? 'none')" |
-        Add-Content -LiteralPath $env:GITHUB_OUTPUT
+    # Assigned before it is formatted: `$null.Severity` is a terminating error under
+    # StrictMode, so `?? 'none'` on the property access never gets to default it.
+    $worst = $after |
+        Sort-Object @{ Expression = { $severityRank[$_.Severity] } } -Descending |
+        Select-Object -First 1
+    $worstSeverity = if ($worst) { $worst.Severity } else { 'none' }
+
+    @(
+        "npm-total=$($before.Count)"
+        "npm-fixed=$($resolved.Count)"
+        "npm-outstanding=$($after.Count)"
+        "npm-max-severity=$worstSeverity"
+    ) | Add-Content -LiteralPath $env:GITHUB_OUTPUT
 }
 
 Write-Host $markdown.ToString()

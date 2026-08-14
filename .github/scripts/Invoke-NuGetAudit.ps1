@@ -549,12 +549,20 @@ if ($JsonOut) { $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Js
 if ($MarkdownOut) { $markdown.ToString() | Set-Content -LiteralPath $MarkdownOut }
 
 if ($env:GITHUB_OUTPUT) {
-    "nuget-total=$($findings.Count)" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
-    "nuget-fixed=$($fixed.Count)" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
-    "nuget-outstanding=$($outstanding.Count)" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
     # The gate cares about what is still vulnerable after the run, not what was fixed.
-    "nuget-max-severity=$(($outstanding | Sort-Object @{ Expression = { $severityRank[$_.Severity.ToLowerInvariant()] } } -Descending | Select-Object -First 1).Severity ?? 'none')" |
-        Add-Content -LiteralPath $env:GITHUB_OUTPUT
+    # Assigned before it is formatted: `$null.Severity` is a terminating error under
+    # StrictMode, so `?? 'none'` on the property access never gets to default it.
+    $worst = $outstanding |
+        Sort-Object @{ Expression = { $severityRank[$_.Severity.ToLowerInvariant()] } } -Descending |
+        Select-Object -First 1
+    $worstSeverity = if ($worst) { $worst.Severity } else { 'none' }
+
+    @(
+        "nuget-total=$($findings.Count)"
+        "nuget-fixed=$($fixed.Count)"
+        "nuget-outstanding=$($outstanding.Count)"
+        "nuget-max-severity=$worstSeverity"
+    ) | Add-Content -LiteralPath $env:GITHUB_OUTPUT
 }
 
 Write-Host $markdown.ToString()

@@ -61,6 +61,15 @@ jobs:
         with:
           node-version: 22
 
+      - name: Upgrade npm
+        # Node 22 ships npm 10, which silently declines fixes that npm 11 applies - proven
+        # on fast-uri in the WebApp SPA: identical lockfile and flags, npm 10 leaves 3.1.4
+        # in place while npm 11 bumps it to the patched 3.1.5. Node itself stays on 22
+        # because the SPA build targets it; only the client is upgraded.
+        run: |
+          npm install -g npm@11
+          npm --version
+
       - name: Audit NuGet packages
         id: nuget
         shell: pwsh

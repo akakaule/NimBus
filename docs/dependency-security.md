@@ -41,6 +41,18 @@ keeps the Playwright suite from downloading browsers). Without `--force` it stay
 semver range declared in `package.json`, so anything needing a major bump is reported rather
 than applied.
 
+The workflow upgrades to **npm 11** before auditing. Node stays on 22 because the SPA build
+targets it, but the npm 10 that ships with Node 22 silently declines fixes npm 11 applies:
+given an identical lockfile and identical flags, npm 10 left `fast-uri` on the vulnerable
+3.1.4 while npm 11 bumped it to the patched 3.1.5. Note also that `npm audit fix --dry-run`
+under-reports — it printed "up to date" for that same fix the real run then applied — so
+verify a suspected miss by running it for real and reverting, not by trusting `--dry-run`.
+
+Beware npm's "fix available via `npm audit fix`" wording in the report: it means the advisory
+*has* a patched version, not that npm can reach it from your declared ranges. `react-router`
+is the current example — patched only in 7.17.1, while the workspaces declare `^6.x`, so only
+`--force` would take it, and that is a v6 to v7 migration rather than a dependency bump.
+
 ## The pull request
 
 Fixes land on the bot-owned branch `deps/security-audit`, which is **rebuilt from `master` and

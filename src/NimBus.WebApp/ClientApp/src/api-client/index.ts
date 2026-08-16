@@ -4891,6 +4891,55 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Get fleet heartbeat history and current liveness
+     * @param windowDays (optional)
+     * @return Fleet heartbeat page
+     */
+    getHeartbeatPage(windowDays?: number | undefined): Promise<HeartbeatPage> {
+        let url_ = this.baseUrl + "/api/heartbeat/page?";
+        if (windowDays === null)
+            throw new globalThis.Error("The parameter 'windowDays' cannot be null.");
+        else if (windowDays !== undefined)
+            url_ += "windowDays=" + encodeURIComponent("" + windowDays) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetHeartbeatPage(_response);
+        });
+    }
+
+    protected processGetHeartbeatPage(response: Response): Promise<HeartbeatPage> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = HeartbeatPage.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<HeartbeatPage>(null as any);
+    }
+
+    /**
      * Get agent catalog
      * @return OK
      */
@@ -12163,6 +12212,368 @@ export interface IHeartbeatOverviewRow {
     roundTripMs?: number | undefined;
     /** Absent for endpoints on an SDK that predates the heartbeat handler. */
     sdkVersion?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class HeartbeatPage implements IHeartbeatPage {
+    windowDays?: number;
+    adaptersReporting?: number;
+    adaptersTotal?: number;
+    adaptersNeedingAttention?: string[];
+    fleetUptime?: number | undefined;
+    missedBeatsToday?: number;
+    adaptersMissingBeatsToday?: number;
+    longestGap?: number | undefined;
+    adapters?: HeartbeatAdapterRow[];
+    gaps?: HeartbeatGapRow[];
+
+    [key: string]: any;
+
+    constructor(data?: IHeartbeatPage) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.windowDays = _data["windowDays"];
+            this.adaptersReporting = _data["adaptersReporting"];
+            this.adaptersTotal = _data["adaptersTotal"];
+            if (Array.isArray(_data["adaptersNeedingAttention"])) {
+                this.adaptersNeedingAttention = [] as any;
+                for (let item of _data["adaptersNeedingAttention"])
+                    this.adaptersNeedingAttention!.push(item);
+            }
+            this.fleetUptime = _data["fleetUptime"];
+            this.missedBeatsToday = _data["missedBeatsToday"];
+            this.adaptersMissingBeatsToday = _data["adaptersMissingBeatsToday"];
+            this.longestGap = _data["longestGap"];
+            if (Array.isArray(_data["adapters"])) {
+                this.adapters = [] as any;
+                for (let item of _data["adapters"])
+                    this.adapters!.push(HeartbeatAdapterRow.fromJS(item));
+            }
+            if (Array.isArray(_data["gaps"])) {
+                this.gaps = [] as any;
+                for (let item of _data["gaps"])
+                    this.gaps!.push(HeartbeatGapRow.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): HeartbeatPage {
+        data = typeof data === 'object' ? data : {};
+        let result = new HeartbeatPage();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["windowDays"] = this.windowDays;
+        data["adaptersReporting"] = this.adaptersReporting;
+        data["adaptersTotal"] = this.adaptersTotal;
+        if (Array.isArray(this.adaptersNeedingAttention)) {
+            data["adaptersNeedingAttention"] = [];
+            for (let item of this.adaptersNeedingAttention)
+                data["adaptersNeedingAttention"].push(item);
+        }
+        data["fleetUptime"] = this.fleetUptime;
+        data["missedBeatsToday"] = this.missedBeatsToday;
+        data["adaptersMissingBeatsToday"] = this.adaptersMissingBeatsToday;
+        data["longestGap"] = this.longestGap;
+        if (Array.isArray(this.adapters)) {
+            data["adapters"] = [];
+            for (let item of this.adapters)
+                data["adapters"].push(item ? item.toJSON() : undefined as any);
+        }
+        if (Array.isArray(this.gaps)) {
+            data["gaps"] = [];
+            for (let item of this.gaps)
+                data["gaps"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): HeartbeatPage {
+        const json = this.toJSON();
+        let result = new HeartbeatPage();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IHeartbeatPage {
+    windowDays?: number;
+    adaptersReporting?: number;
+    adaptersTotal?: number;
+    adaptersNeedingAttention?: string[];
+    fleetUptime?: number | undefined;
+    missedBeatsToday?: number;
+    adaptersMissingBeatsToday?: number;
+    longestGap?: number | undefined;
+    adapters?: HeartbeatAdapterRow[];
+    gaps?: HeartbeatGapRow[];
+
+    [key: string]: any;
+}
+
+export class HeartbeatAdapterRow implements IHeartbeatAdapterRow {
+    endpointId?: string;
+    /** Current liveness: alive, late, missing or notDeployed. */
+    liveness?: string;
+    /** Last outcome: On, Off, Pending, Unknown or Unsupported. */
+    status?: string;
+    lastBeatUtc?: moment.Moment | undefined;
+    roundTripMs?: number | undefined;
+    uptime?: number | undefined;
+    sdkVersion?: string | undefined;
+    days?: HeartbeatDay[];
+
+    [key: string]: any;
+
+    constructor(data?: IHeartbeatAdapterRow) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.endpointId = _data["endpointId"];
+            this.liveness = _data["liveness"];
+            this.status = _data["status"];
+            this.lastBeatUtc = _data["lastBeatUtc"] ? moment(_data["lastBeatUtc"].toString()) : undefined as any;
+            this.roundTripMs = _data["roundTripMs"];
+            this.uptime = _data["uptime"];
+            this.sdkVersion = _data["sdkVersion"];
+            if (Array.isArray(_data["days"])) {
+                this.days = [] as any;
+                for (let item of _data["days"])
+                    this.days!.push(HeartbeatDay.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): HeartbeatAdapterRow {
+        data = typeof data === 'object' ? data : {};
+        let result = new HeartbeatAdapterRow();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["endpointId"] = this.endpointId;
+        data["liveness"] = this.liveness;
+        data["status"] = this.status;
+        data["lastBeatUtc"] = this.lastBeatUtc ? this.lastBeatUtc.toISOString() : undefined as any;
+        data["roundTripMs"] = this.roundTripMs;
+        data["uptime"] = this.uptime;
+        data["sdkVersion"] = this.sdkVersion;
+        if (Array.isArray(this.days)) {
+            data["days"] = [];
+            for (let item of this.days)
+                data["days"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): HeartbeatAdapterRow {
+        const json = this.toJSON();
+        let result = new HeartbeatAdapterRow();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IHeartbeatAdapterRow {
+    endpointId?: string;
+    /** Current liveness: alive, late, missing or notDeployed. */
+    liveness?: string;
+    /** Last outcome: On, Off, Pending, Unknown or Unsupported. */
+    status?: string;
+    lastBeatUtc?: moment.Moment | undefined;
+    roundTripMs?: number | undefined;
+    uptime?: number | undefined;
+    sdkVersion?: string | undefined;
+    days?: HeartbeatDay[];
+
+    [key: string]: any;
+}
+
+export class HeartbeatDay implements IHeartbeatDay {
+    dayUtc?: moment.Moment;
+    /** History state: none, full, partial or gap. */
+    state?: string;
+    missed?: number;
+    expected?: number;
+    coverage?: number;
+    longestGapSeconds?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IHeartbeatDay) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.dayUtc = _data["dayUtc"] ? moment(_data["dayUtc"].toString()) : undefined as any;
+            this.state = _data["state"];
+            this.missed = _data["missed"];
+            this.expected = _data["expected"];
+            this.coverage = _data["coverage"];
+            this.longestGapSeconds = _data["longestGapSeconds"];
+        }
+    }
+
+    static fromJS(data: any): HeartbeatDay {
+        data = typeof data === 'object' ? data : {};
+        let result = new HeartbeatDay();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["dayUtc"] = this.dayUtc ? this.dayUtc.toISOString() : undefined as any;
+        data["state"] = this.state;
+        data["missed"] = this.missed;
+        data["expected"] = this.expected;
+        data["coverage"] = this.coverage;
+        data["longestGapSeconds"] = this.longestGapSeconds;
+        return data;
+    }
+
+    clone(): HeartbeatDay {
+        const json = this.toJSON();
+        let result = new HeartbeatDay();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IHeartbeatDay {
+    dayUtc?: moment.Moment;
+    /** History state: none, full, partial or gap. */
+    state?: string;
+    missed?: number;
+    expected?: number;
+    coverage?: number;
+    longestGapSeconds?: number;
+
+    [key: string]: any;
+}
+
+export class HeartbeatGapRow implements IHeartbeatGapRow {
+    endpointId?: string;
+    fromUtc?: moment.Moment;
+    toUtc?: moment.Moment | undefined;
+    durationSeconds?: number;
+    ongoing?: boolean;
+    cause?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IHeartbeatGapRow) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.endpointId = _data["endpointId"];
+            this.fromUtc = _data["fromUtc"] ? moment(_data["fromUtc"].toString()) : undefined as any;
+            this.toUtc = _data["toUtc"] ? moment(_data["toUtc"].toString()) : undefined as any;
+            this.durationSeconds = _data["durationSeconds"];
+            this.ongoing = _data["ongoing"];
+            this.cause = _data["cause"];
+        }
+    }
+
+    static fromJS(data: any): HeartbeatGapRow {
+        data = typeof data === 'object' ? data : {};
+        let result = new HeartbeatGapRow();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["endpointId"] = this.endpointId;
+        data["fromUtc"] = this.fromUtc ? this.fromUtc.toISOString() : undefined as any;
+        data["toUtc"] = this.toUtc ? this.toUtc.toISOString() : undefined as any;
+        data["durationSeconds"] = this.durationSeconds;
+        data["ongoing"] = this.ongoing;
+        data["cause"] = this.cause;
+        return data;
+    }
+
+    clone(): HeartbeatGapRow {
+        const json = this.toJSON();
+        let result = new HeartbeatGapRow();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IHeartbeatGapRow {
+    endpointId?: string;
+    fromUtc?: moment.Moment;
+    toUtc?: moment.Moment | undefined;
+    durationSeconds?: number;
+    ongoing?: boolean;
+    cause?: string | undefined;
 
     [key: string]: any;
 }

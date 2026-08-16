@@ -145,6 +145,8 @@ silently broke every adapter's auto-answer.
 | Per-endpoint opt-in and rollup | `EndpointMetadata.IsHeartbeatEnabled` / `.EndpointHeartbeatStatus` | Same fields on the endpoint document |
 | Schedule | `HeartbeatSettings` single-row table | Singleton document in the `settings` container |
 | Service liveness | `ServiceHealth` table | `servicehealth` container |
+| Daily uptime | `HeartbeatUptimeDays` table (migration `0019_HeartbeatHistory.sql`) | `heartbeatuptimedays` container, partitioned by endpoint |
+| Outage gaps | `HeartbeatGaps` table (migration `0019_HeartbeatHistory.sql`) | `heartbeatgaps` container, partitioned by endpoint |
 
 Service liveness deliberately does **not** share the endpoint heartbeat store.
 On Cosmos, heartbeats live inside the endpoint metadata document, so a
@@ -154,6 +156,38 @@ container. The schedule singleton is kept out of `Metadata` for the same reason.
 A store that has never been written returns schedule defaults rather than null,
 and the service-health row is created on first probe, so an empty database
 behaves like a disabled-but-healthy one instead of erroring.
+
+## Heartbeat history page
+
+The top-level **Heartbeat** page is available to site Readers and above. It
+shows current fleet reachability, weighted uptime, UTC-day history cells, SDK
+versions, and recent or ongoing gaps. Use the 7, 30, or 90 day controls to
+change the history window. The Admin → Health card remains the place to change
+the schedule, send a probe immediately, or opt an endpoint out.
+
+History is folded from the retained per-probe rows after every timeout sweep.
+The fold has its own durable interval claim, so it continues while scheduled
+fan-out is disabled and runs only once in a scaled-out WebApp. Failures are
+fail-soft for current liveness and emit both a warning and the
+`nimbus.store.operation.failed` counter with operation
+`heartbeat_history_fold`; persistent failures must be fixed before retained
+probe rows age out.
+
+The history has a few deliberate interpretation rules:
+
+- Uptime is `received / expected` for probes actually sent. `Unsupported` and
+  a settled `Unknown` prove reachability and count as received; only `Off`
+  counts as missed. An in-flight `Pending` probe is not folded yet.
+- Daily cells are UTC calendar days, not rolling 24-hour windows. Green means
+  no misses and at least 90% of that UTC day was observed; incomplete coverage
+  stays amber even when every observed probe answered.
+- Observation coverage comes from the interval stored with each probe, so a
+  schedule change does not rewrite earlier history. Legacy probes without an
+  interval use the current clamped interval as a fallback.
+- History starts empty on a new or upgraded database and fills only as sweeps
+  run. No backfill is inferred for time when the WebApp was not observing.
+- Closed daily rows and gaps are retained for 90 days. An ongoing gap is never
+  pruned merely because it began before that window.
 
 ## Scale-out
 

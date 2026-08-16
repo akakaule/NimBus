@@ -28,6 +28,13 @@ public class Heartbeat
     /// <summary>When the platform received the answer.</summary>
     public DateTime EndTime { get; set; }
 
+    /// <summary>
+    /// Schedule interval represented by this probe. Persisted on the pending row and
+    /// preserved when the response settles it so historical coverage remains correct
+    /// after settings changes. Zero identifies a legacy row.
+    /// </summary>
+    public int IntervalSeconds { get; set; }
+
     /// <summary>NimBus SDK version reported by the answering endpoint; absent for pre-heartbeat SDKs.</summary>
     public string SdkVersion { get; set; }
 

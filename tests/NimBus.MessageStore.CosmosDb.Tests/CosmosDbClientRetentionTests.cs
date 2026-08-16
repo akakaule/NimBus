@@ -150,6 +150,39 @@ public sealed class CosmosDbClientRetentionTests
         Assert.AreEqual(-1, properties.DefaultTimeToLive);
     }
 
+    [TestMethod]
+    public async Task Heartbeat_history_uses_endpoint_partitions_and_item_level_retention()
+    {
+        var adapter = new RecordingCosmosClientAdapter();
+        var client = new CosmosDbClient(adapter, null, new CosmosDbMessageStoreOptions());
+        var now = DateTime.UtcNow;
+
+        await client.UpsertHeartbeatUptimeDays([new HeartbeatUptimeDay
+        {
+            EndpointId = "endpoint-1",
+            DayUtc = now.Date,
+            LastBeatUtc = now,
+        }]);
+        await client.UpsertHeartbeatGaps([
+            new HeartbeatGap { EndpointId = "endpoint-1", FromUtc = now.AddMinutes(-10) },
+            new HeartbeatGap { EndpointId = "endpoint-1", FromUtc = now.AddMinutes(-20), ToUtc = now },
+        ]);
+
+        foreach (var containerId in new[] { "heartbeatuptimedays", "heartbeatgaps" })
+        {
+            var properties = adapter.CreationPropertiesFor(containerId);
+            Assert.IsNotNull(properties);
+            Assert.AreEqual("/EndpointId", properties.PartitionKeyPath);
+            Assert.AreEqual(-1, properties.DefaultTimeToLive);
+        }
+
+        Assert.AreEqual(7_776_000,
+            (int)adapter.Container("heartbeatuptimedays").SingleUpsertedDocument()["ttl"]!);
+        var gaps = adapter.Container("heartbeatgaps");
+        Assert.AreEqual(-1, (int)gaps.UpsertedDocument(0)["ttl"]!, "An open outage must not expire.");
+        Assert.AreEqual(7_776_000, (int)gaps.UpsertedDocument(1)["ttl"]!);
+    }
+
     // ── AC 10: documents that never carried a ttl still do not get one ──
 
     [TestMethod]

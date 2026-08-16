@@ -2250,6 +2250,45 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public interface IHeartbeatApiController
+    {
+
+        /// <summary>
+        /// Get fleet heartbeat history and current liveness
+        /// </summary>
+
+
+        /// <returns>Fleet heartbeat page</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<HeartbeatPage>> GetHeartbeatPageAsync(int windowDays);
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+
+    public partial class HeartbeatApiController : Microsoft.AspNetCore.Mvc.Controller
+    {
+        private IHeartbeatApiController _implementation;
+
+        public HeartbeatApiController(IHeartbeatApiController implementation)
+        {
+            _implementation = implementation;
+        }
+
+        /// <summary>
+        /// Get fleet heartbeat history and current liveness
+        /// </summary>
+        /// <returns>Fleet heartbeat page</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/heartbeat/page")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<HeartbeatPage>> GetHeartbeatPage([Microsoft.AspNetCore.Mvc.FromQuery] int? windowDays)
+        {
+
+            return _implementation.GetHeartbeatPageAsync(windowDays ?? 30);
+        }
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
     public interface IAgentApiController
     {
 
@@ -11498,6 +11537,575 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return Newtonsoft.Json.JsonConvert.DeserializeObject<HeartbeatOverviewRow>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class HeartbeatPage : System.ComponentModel.INotifyPropertyChanged
+    {
+        private int _windowDays;
+        private int _adaptersReporting;
+        private int _adaptersTotal;
+        private System.Collections.Generic.List<string> _adaptersNeedingAttention;
+        private double? _fleetUptime;
+        private int _missedBeatsToday;
+        private int _adaptersMissingBeatsToday;
+        private int? _longestGap;
+        private System.Collections.Generic.List<HeartbeatAdapterRow> _adapters;
+        private System.Collections.Generic.List<HeartbeatGapRow> _gaps;
+
+        [Newtonsoft.Json.JsonProperty("windowDays", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int WindowDays    {
+            get { return _windowDays; }
+            set
+            {
+                if (_windowDays != value)
+                {
+                    _windowDays = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("adaptersReporting", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int AdaptersReporting    {
+            get { return _adaptersReporting; }
+            set
+            {
+                if (_adaptersReporting != value)
+                {
+                    _adaptersReporting = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("adaptersTotal", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int AdaptersTotal    {
+            get { return _adaptersTotal; }
+            set
+            {
+                if (_adaptersTotal != value)
+                {
+                    _adaptersTotal = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("adaptersNeedingAttention", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> AdaptersNeedingAttention    {
+            get { return _adaptersNeedingAttention; }
+            set
+            {
+                if (_adaptersNeedingAttention != value)
+                {
+                    _adaptersNeedingAttention = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("fleetUptime", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public double? FleetUptime    {
+            get { return _fleetUptime; }
+            set
+            {
+                if (_fleetUptime != value)
+                {
+                    _fleetUptime = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("missedBeatsToday", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int MissedBeatsToday    {
+            get { return _missedBeatsToday; }
+            set
+            {
+                if (_missedBeatsToday != value)
+                {
+                    _missedBeatsToday = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("adaptersMissingBeatsToday", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int AdaptersMissingBeatsToday    {
+            get { return _adaptersMissingBeatsToday; }
+            set
+            {
+                if (_adaptersMissingBeatsToday != value)
+                {
+                    _adaptersMissingBeatsToday = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("longestGap", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? LongestGap    {
+            get { return _longestGap; }
+            set
+            {
+                if (_longestGap != value)
+                {
+                    _longestGap = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("adapters", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<HeartbeatAdapterRow> Adapters    {
+            get { return _adapters; }
+            set
+            {
+                if (_adapters != value)
+                {
+                    _adapters = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("gaps", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<HeartbeatGapRow> Gaps    {
+            get { return _gaps; }
+            set
+            {
+                if (_gaps != value)
+                {
+                    _gaps = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static HeartbeatPage FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<HeartbeatPage>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class HeartbeatAdapterRow : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _endpointId;
+        private string _liveness;
+        private string _status;
+        private System.DateTime? _lastBeatUtc;
+        private long? _roundTripMs;
+        private double? _uptime;
+        private string _sdkVersion;
+        private System.Collections.Generic.List<HeartbeatDay> _days;
+
+        [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EndpointId    {
+            get { return _endpointId; }
+            set
+            {
+                if (_endpointId != value)
+                {
+                    _endpointId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Current liveness: alive, late, missing or notDeployed.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("liveness", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Liveness    {
+            get { return _liveness; }
+            set
+            {
+                if (_liveness != value)
+                {
+                    _liveness = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Last outcome: On, Off, Pending, Unknown or Unsupported.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("status", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Status    {
+            get { return _status; }
+            set
+            {
+                if (_status != value)
+                {
+                    _status = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("lastBeatUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? LastBeatUtc    {
+            get { return _lastBeatUtc; }
+            set
+            {
+                if (_lastBeatUtc != value)
+                {
+                    _lastBeatUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("roundTripMs", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long? RoundTripMs    {
+            get { return _roundTripMs; }
+            set
+            {
+                if (_roundTripMs != value)
+                {
+                    _roundTripMs = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("uptime", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public double? Uptime    {
+            get { return _uptime; }
+            set
+            {
+                if (_uptime != value)
+                {
+                    _uptime = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("sdkVersion", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SdkVersion    {
+            get { return _sdkVersion; }
+            set
+            {
+                if (_sdkVersion != value)
+                {
+                    _sdkVersion = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("days", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<HeartbeatDay> Days    {
+            get { return _days; }
+            set
+            {
+                if (_days != value)
+                {
+                    _days = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static HeartbeatAdapterRow FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<HeartbeatAdapterRow>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class HeartbeatDay : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.DateTime _dayUtc;
+        private string _state;
+        private int _missed;
+        private int _expected;
+        private double _coverage;
+        private int _longestGapSeconds;
+
+        [Newtonsoft.Json.JsonProperty("dayUtc", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime DayUtc    {
+            get { return _dayUtc; }
+            set
+            {
+                if (_dayUtc != value)
+                {
+                    _dayUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// History state: none, full, partial or gap.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("state", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string State    {
+            get { return _state; }
+            set
+            {
+                if (_state != value)
+                {
+                    _state = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("missed", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Missed    {
+            get { return _missed; }
+            set
+            {
+                if (_missed != value)
+                {
+                    _missed = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("expected", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Expected    {
+            get { return _expected; }
+            set
+            {
+                if (_expected != value)
+                {
+                    _expected = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("coverage", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public double Coverage    {
+            get { return _coverage; }
+            set
+            {
+                if (_coverage != value)
+                {
+                    _coverage = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("longestGapSeconds", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int LongestGapSeconds    {
+            get { return _longestGapSeconds; }
+            set
+            {
+                if (_longestGapSeconds != value)
+                {
+                    _longestGapSeconds = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static HeartbeatDay FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<HeartbeatDay>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class HeartbeatGapRow : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _endpointId;
+        private System.DateTime _fromUtc;
+        private System.DateTime? _toUtc;
+        private int _durationSeconds;
+        private bool _ongoing;
+        private string _cause;
+
+        [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EndpointId    {
+            get { return _endpointId; }
+            set
+            {
+                if (_endpointId != value)
+                {
+                    _endpointId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("fromUtc", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime FromUtc    {
+            get { return _fromUtc; }
+            set
+            {
+                if (_fromUtc != value)
+                {
+                    _fromUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("toUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ToUtc    {
+            get { return _toUtc; }
+            set
+            {
+                if (_toUtc != value)
+                {
+                    _toUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("durationSeconds", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int DurationSeconds    {
+            get { return _durationSeconds; }
+            set
+            {
+                if (_durationSeconds != value)
+                {
+                    _durationSeconds = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("ongoing", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Ongoing    {
+            get { return _ongoing; }
+            set
+            {
+                if (_ongoing != value)
+                {
+                    _ongoing = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("cause", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Cause    {
+            get { return _cause; }
+            set
+            {
+                if (_cause != value)
+                {
+                    _cause = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static HeartbeatGapRow FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<HeartbeatGapRow>(data, new Newtonsoft.Json.JsonSerializerSettings());
 
         }
         public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;

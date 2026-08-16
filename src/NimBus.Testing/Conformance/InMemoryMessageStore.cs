@@ -22,7 +22,7 @@ namespace NimBus.Testing.Conformance;
 /// transitions, message persistence, and basic queries the conformance suite cares
 /// about. Search/pagination methods return empty results.
 /// </summary>
-public class InMemoryMessageStore : INimBusMessageStore
+public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
 {
     private readonly ConcurrentDictionary<(string Endpoint, string EventId, string Session), UnresolvedEvent> _events = new();
     private readonly ConcurrentDictionary<(string EventId, string MessageId), MessageEntity> _messages = new();
@@ -38,6 +38,8 @@ public class InMemoryMessageStore : INimBusMessageStore
     // claims), so it is guarded by one lock rather than by concurrent collections:
     // the claim methods are only atomic if the read and the write are one step.
     private readonly Dictionary<string, ServiceHealth> _serviceHealth = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string EndpointId, DateTime DayUtc), HeartbeatUptimeDay> _heartbeatUptimeDays = new();
+    private readonly Dictionary<(string EndpointId, DateTime FromUtc), HeartbeatGap> _heartbeatGaps = new();
     private readonly object _heartbeatLock = new();
     private HeartbeatSettings? _heartbeatSettings;
 
@@ -572,6 +574,10 @@ public class InMemoryMessageStore : INimBusMessageStore
                 existing.EndTime = heartbeat.EndTime;
                 existing.SdkVersion = heartbeat.SdkVersion;
                 existing.EndpointHeartbeatStatus = heartbeat.EndpointHeartbeatStatus;
+                if (heartbeat.IntervalSeconds > 0)
+                {
+                    existing.IntervalSeconds = heartbeat.IntervalSeconds;
+                }
             }
             else
             {
@@ -629,6 +635,7 @@ public class InMemoryMessageStore : INimBusMessageStore
             // The claim owns LastSentAtUtc: an operator edit that carries no value
             // must not reset the send schedule.
             stored.LastSentAtUtc ??= _heartbeatSettings?.LastSentAtUtc;
+            stored.LastHeartbeatFoldAtUtc ??= _heartbeatSettings?.LastHeartbeatFoldAtUtc;
             _heartbeatSettings = stored;
         }
 
@@ -660,6 +667,101 @@ public class InMemoryMessageStore : INimBusMessageStore
                 .Select(HeartbeatRollup.BuildOverviewItem)
                 .ToList());
         }
+    }
+
+    // ───────── Durable endpoint heartbeat history ─────────
+
+    public Task<List<HeartbeatUptimeDay>> GetHeartbeatUptimeDays(DateTime fromDayUtc)
+    {
+        lock (_heartbeatLock)
+        {
+            return Task.FromResult(_heartbeatUptimeDays.Values
+                .Where(day => day.DayUtc >= fromDayUtc)
+                .OrderBy(day => day.EndpointId, StringComparer.Ordinal)
+                .ThenBy(day => day.DayUtc)
+                .Select(CloneUptimeDay)
+                .ToList());
+        }
+    }
+
+    public Task<bool> UpsertHeartbeatUptimeDays(IEnumerable<HeartbeatUptimeDay> days)
+    {
+        ArgumentNullException.ThrowIfNull(days);
+        lock (_heartbeatLock)
+        {
+            foreach (var day in days)
+            {
+                _heartbeatUptimeDays[(day.EndpointId, day.DayUtc)] = CloneUptimeDay(day);
+            }
+        }
+
+        return Task.FromResult(true);
+    }
+
+    public Task<List<HeartbeatGap>> GetHeartbeatGaps(DateTime fromUtc)
+    {
+        lock (_heartbeatLock)
+        {
+            return Task.FromResult(_heartbeatGaps.Values
+                .Where(gap => gap.ToUtc is null || gap.ToUtc >= fromUtc)
+                .OrderByDescending(gap => gap.FromUtc)
+                .Select(CloneGap)
+                .ToList());
+        }
+    }
+
+    public Task<bool> UpsertHeartbeatGaps(IEnumerable<HeartbeatGap> gaps)
+    {
+        ArgumentNullException.ThrowIfNull(gaps);
+        lock (_heartbeatLock)
+        {
+            foreach (var gap in gaps)
+            {
+                _heartbeatGaps[(gap.EndpointId, gap.FromUtc)] = CloneGap(gap);
+            }
+        }
+
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> TryClaimHeartbeatHistoryFold(DateTime dueBefore)
+    {
+        lock (_heartbeatLock)
+        {
+            _heartbeatSettings ??= new HeartbeatSettings();
+            if (_heartbeatSettings.LastHeartbeatFoldAtUtc.HasValue &&
+                _heartbeatSettings.LastHeartbeatFoldAtUtc.Value > dueBefore)
+            {
+                return Task.FromResult(false);
+            }
+
+            _heartbeatSettings.LastHeartbeatFoldAtUtc = DateTime.UtcNow;
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task PruneHeartbeatHistory(DateTime cutoffUtc)
+    {
+        lock (_heartbeatLock)
+        {
+            foreach (var key in _heartbeatUptimeDays
+                .Where(pair => pair.Value.DayUtc < cutoffUtc.Date)
+                .Select(pair => pair.Key)
+                .ToList())
+            {
+                _heartbeatUptimeDays.Remove(key);
+            }
+
+            foreach (var key in _heartbeatGaps
+                .Where(pair => pair.Value.ToUtc.HasValue && pair.Value.ToUtc.Value < cutoffUtc)
+                .Select(pair => pair.Key)
+                .ToList())
+            {
+                _heartbeatGaps.Remove(key);
+            }
+        }
+
+        return Task.CompletedTask;
     }
 
     // ───────── Service health (platform services, not endpoints) ─────────
@@ -761,6 +863,7 @@ public class InMemoryMessageStore : INimBusMessageStore
         StartTime = source.StartTime,
         ReceivedTime = source.ReceivedTime,
         EndTime = source.EndTime,
+        IntervalSeconds = source.IntervalSeconds,
         SdkVersion = source.SdkVersion,
         EndpointHeartbeatStatus = source.EndpointHeartbeatStatus,
     };
@@ -772,6 +875,32 @@ public class InMemoryMessageStore : INimBusMessageStore
         IntervalSeconds = source.IntervalSeconds,
         TimeoutSeconds = source.TimeoutSeconds,
         LastSentAtUtc = source.LastSentAtUtc,
+        LastHeartbeatFoldAtUtc = source.LastHeartbeatFoldAtUtc,
+    };
+
+    private static HeartbeatUptimeDay CloneUptimeDay(HeartbeatUptimeDay source) => new()
+    {
+        Id = source.Id,
+        EndpointId = source.EndpointId,
+        DayUtc = source.DayUtc,
+        Expected = source.Expected,
+        Received = source.Received,
+        Missed = source.Missed,
+        ObservedSeconds = source.ObservedSeconds,
+        LongestGapSeconds = source.LongestGapSeconds,
+        LastBeatUtc = source.LastBeatUtc,
+        TimeToLiveSeconds = source.TimeToLiveSeconds,
+    };
+
+    private static HeartbeatGap CloneGap(HeartbeatGap source) => new()
+    {
+        Id = source.Id,
+        EndpointId = source.EndpointId,
+        FromUtc = source.FromUtc,
+        ToUtc = source.ToUtc,
+        SdkVersionBefore = source.SdkVersionBefore,
+        SdkVersionAfter = source.SdkVersionAfter,
+        TimeToLiveSeconds = source.TimeToLiveSeconds,
     };
 
     private static ServiceHealth? CloneServiceHealth(ServiceHealth? source) => source == null ? null : new ServiceHealth

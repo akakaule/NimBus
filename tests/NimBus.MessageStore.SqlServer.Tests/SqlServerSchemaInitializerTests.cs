@@ -104,6 +104,22 @@ public sealed class SqlServerSchemaInitializerTests
             "0018 seeds the Resolver service-health row.");
     }
 
+    [TestMethod]
+    public async Task AutoApply_creates_heartbeat_history_objects()
+    {
+        var schema = NewSchemaName();
+        var initializer = CreateInitializer(schema, SchemaProvisioningMode.AutoApply);
+
+        await initializer.StartAsync(CancellationToken.None);
+
+        Assert.IsTrue(await ColumnExists(schema, "Heartbeats", "IntervalSeconds", nullable: false));
+        Assert.IsTrue(await ColumnExists(schema, "HeartbeatSettings", "LastHeartbeatFoldAtUtc", nullable: true));
+        Assert.IsTrue(await TableExists(schema, "HeartbeatUptimeDays"));
+        Assert.IsTrue(await TableExists(schema, "HeartbeatGaps"));
+        Assert.IsTrue(await IndexExists(schema, "HeartbeatUptimeDays", "IX_HeartbeatUptimeDays_DayUtc"));
+        Assert.IsTrue(await IndexExists(schema, "HeartbeatGaps", "IX_HeartbeatGaps_ToUtc"));
+    }
+
     private static async Task<int> RowCount(string schema, string table)
     {
         await using var conn = new SqlConnection(SqlServerStoreTestHarness.GetConnectionString());
@@ -134,6 +150,9 @@ WHERE s.name = @Schema AND t.name = @Table AND i.name = @Index";
     }
 
     private static async Task<bool> NullableColumnExists(string schema, string table, string column)
+        => await ColumnExists(schema, table, column, nullable: true);
+
+    private static async Task<bool> ColumnExists(string schema, string table, string column, bool nullable)
     {
         await using var conn = new SqlConnection(SqlServerStoreTestHarness.GetConnectionString());
         await conn.OpenAsync();
@@ -143,10 +162,27 @@ SELECT COUNT(1)
 FROM sys.columns c
 INNER JOIN sys.tables t ON c.object_id = t.object_id
 INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-WHERE s.name = @Schema AND t.name = @Table AND c.name = @Column AND c.is_nullable = 1";
+WHERE s.name = @Schema AND t.name = @Table AND c.name = @Column AND c.is_nullable = @Nullable";
         cmd.Parameters.AddWithValue("@Schema", schema);
         cmd.Parameters.AddWithValue("@Table", table);
         cmd.Parameters.AddWithValue("@Column", column);
+        cmd.Parameters.AddWithValue("@Nullable", nullable);
+        var result = await cmd.ExecuteScalarAsync();
+        return result is int count && count > 0;
+    }
+
+    private static async Task<bool> TableExists(string schema, string table)
+    {
+        await using var conn = new SqlConnection(SqlServerStoreTestHarness.GetConnectionString());
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+SELECT COUNT(1)
+FROM sys.tables t
+INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+WHERE s.name = @Schema AND t.name = @Table";
+        cmd.Parameters.AddWithValue("@Schema", schema);
+        cmd.Parameters.AddWithValue("@Table", table);
         var result = await cmd.ExecuteScalarAsync();
         return result is int count && count > 0;
     }

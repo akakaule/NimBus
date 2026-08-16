@@ -24,6 +24,7 @@ const AccessControl = lazy(() => import("pages/access-control"));
 const Metrics = lazy(() => import("pages/metrics"));
 const Topology = lazy(() => import("pages/topology"));
 const Flow = lazy(() => import("pages/flow"));
+const Heartbeat = lazy(() => import("pages/heartbeat"));
 const Insights = lazy(() => import("pages/insights"));
 const Monitor = lazy(() => import("pages/monitor"));
 const AuditsList = lazy(() => import("pages/audits-list"));
@@ -88,6 +89,12 @@ const navigation: Navigation = [
     path: "/Flow",
     header: true,
     render: () => <Flow />,
+  },
+  {
+    name: "Heartbeat",
+    path: "/Heartbeat",
+    header: true,
+    render: () => <Heartbeat />,
   },
   {
     name: "Monitor",

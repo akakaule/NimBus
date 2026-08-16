@@ -40,6 +40,8 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
         "AccessControl",
         "Heartbeats",
         "HeartbeatSettings",
+        "HeartbeatUptimeDays",
+        "HeartbeatGaps",
         "ServiceHealth",
     };
 

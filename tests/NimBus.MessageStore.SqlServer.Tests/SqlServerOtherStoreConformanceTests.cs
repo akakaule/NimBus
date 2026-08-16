@@ -95,3 +95,18 @@ public sealed class SqlServerServiceHealthStoreConformanceTests : ServiceHealthS
     protected override IServiceHealthStore CreateStore()
         => SqlServerStoreTestHarness.CreateStore(typeof(SqlServerServiceHealthStoreConformanceTests));
 }
+
+[TestClass]
+public sealed class SqlServerHeartbeatHistoryStoreConformanceTests : HeartbeatHistoryStoreConformanceTests
+{
+    [ClassInitialize]
+    public static Task ClassInit(TestContext context)
+        => SqlServerStoreTestHarness.InitializeAsync(typeof(SqlServerHeartbeatHistoryStoreConformanceTests));
+
+    [TestInitialize]
+    public Task ResetSchema()
+        => SqlServerStoreTestHarness.ResetAsync(typeof(SqlServerHeartbeatHistoryStoreConformanceTests));
+
+    protected override IHeartbeatHistoryStore CreateStore()
+        => (IHeartbeatHistoryStore)SqlServerStoreTestHarness.CreateStore(typeof(SqlServerHeartbeatHistoryStoreConformanceTests));
+}

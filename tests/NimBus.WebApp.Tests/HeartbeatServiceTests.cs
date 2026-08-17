@@ -458,18 +458,56 @@ public class HeartbeatServiceTests
         Assert.AreEqual(300, day.ObservedSeconds);
     }
 
+    [TestMethod]
+    public async Task RunScheduledTickAsync_persists_gaps_before_advancing_day_watermarks()
+    {
+        var store = new RecordingStore();
+        await store.SetHeartbeatSettings(new HeartbeatSettings { Enabled = false, IntervalSeconds = 300, TimeoutSeconds = 60 });
+        var start = DateTime.UtcNow.AddMinutes(-5);
+        await store.SetHeartbeat(new StoreHeartbeat
+        {
+            MessageId = "missed",
+            StartTime = start,
+            ReceivedTime = start,
+            EndTime = start,
+            IntervalSeconds = 300,
+            EndpointHeartbeatStatus = HeartbeatStatus.Off,
+        }, WorkerA);
+        var history = new RecordingHistoryStore(store);
+        var service = CreateService(store, historyStore: history);
+
+        await service.RunScheduledTickAsync();
+
+        string[] expectedWrites = ["gaps", "days", "prune"];
+        CollectionAssert.AreEqual(expectedWrites, history.Writes);
+    }
+
+    [TestMethod]
+    public async Task RunScheduledTickAsync_skips_explicit_prune_for_automatic_retention_store()
+    {
+        var store = new RecordingStore();
+        await store.SetHeartbeatSettings(new HeartbeatSettings { Enabled = false, IntervalSeconds = 300, TimeoutSeconds = 60 });
+        var history = new RecordingHistoryStore(store, prunesAutomatically: true);
+        var service = CreateService(store, historyStore: history);
+
+        await service.RunScheduledTickAsync();
+
+        CollectionAssert.DoesNotContain(history.Writes, "prune");
+    }
+
     private static HeartbeatService CreateService(
         InMemoryMessageStore store,
         IHeartbeatMessageSender? sender = null,
         IHubContext<GridEventsHub>? hubContext = null,
-        IPlatform? platform = null)
+        IPlatform? platform = null,
+        IHeartbeatHistoryStore? historyStore = null)
         => new(
             platform ?? new FakePlatform(WorkerA, WorkerB),
             store,
             sender ?? new RecordingSender(),
             NullLogger<HeartbeatService>.Instance,
             hubContext,
-            store);
+            historyStore ?? store);
 
     private static async Task<StoreHeartbeat> SingleHeartbeatAsync(INimBusMessageStore store, string endpointId)
     {
@@ -508,6 +546,42 @@ public class HeartbeatServiceTests
         {
             ServiceSweepCutoffs.Add(cutoffUtc);
             return SweepTimedOutServiceProbes(cutoffUtc);
+        }
+    }
+
+    private sealed class RecordingHistoryStore(
+        InMemoryMessageStore inner,
+        bool prunesAutomatically = false) : IHeartbeatHistoryStore
+    {
+        public List<string> Writes { get; } = new();
+
+        public bool PrunesHeartbeatHistoryAutomatically => prunesAutomatically;
+
+        public Task<List<HeartbeatUptimeDay>> GetHeartbeatUptimeDays(DateTime fromDayUtc)
+            => inner.GetHeartbeatUptimeDays(fromDayUtc);
+
+        public Task<bool> UpsertHeartbeatUptimeDays(IEnumerable<HeartbeatUptimeDay> days)
+        {
+            Writes.Add("days");
+            return inner.UpsertHeartbeatUptimeDays(days);
+        }
+
+        public Task<List<HeartbeatGap>> GetHeartbeatGaps(DateTime fromUtc)
+            => inner.GetHeartbeatGaps(fromUtc);
+
+        public Task<bool> UpsertHeartbeatGaps(IEnumerable<HeartbeatGap> gaps)
+        {
+            Writes.Add("gaps");
+            return inner.UpsertHeartbeatGaps(gaps);
+        }
+
+        public Task<bool> TryClaimHeartbeatHistoryFold(DateTime dueBefore)
+            => inner.TryClaimHeartbeatHistoryFold(dueBefore);
+
+        public Task PruneHeartbeatHistory(DateTime cutoffUtc)
+        {
+            Writes.Add("prune");
+            return inner.PruneHeartbeatHistory(cutoffUtc);
         }
     }
 

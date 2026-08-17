@@ -113,15 +113,18 @@ The first draft left this blank and it is the one part with a trap that corrupts
 
 ### 4.3 `Expected` counts probes sent, not time elapsed
 
-`Expected = Received + Missed` counts only beats the platform actually sent. Nothing is recorded for a period when the WebApp was not running, so **a day on which the WebApp ran for ten minutes and answered every probe scores `Missed = 0` and renders a clean green cell** — asserting a full day of proven liveness the data does not support. This is the same failure §8.1 rejects for never-probed adapters, one level up.
+`Expected = Received + Missed` counts only beats the platform actually sent. Nothing is recorded for a period when the WebApp was not running, so **a past day on which the WebApp ran for ten minutes and answered every probe scores `Missed = 0` but must not render a clean green cell** — asserting a full day of proven liveness the data does not support. The current UTC day is different: its denominator is only the portion of the day that has elapsed, so an adapter observed continuously since midnight stays green instead of remaining amber until 21:36 UTC.
 
 Each stored probe carries the interval it represents. Folding adds that value to `ObservedSeconds`, capped at the UTC day boundary, so schedule changes within a day remain correct:
 
 ```csharp
-coverage = Math.Clamp(day.ObservedSeconds / 86400.0, 0, 1)
+var spanSeconds = day.DayUtc.Date == now.Date
+    ? Math.Max(1, (now - day.DayUtc.Date).TotalSeconds)
+    : 86400.0;
+coverage = Math.Clamp(day.ObservedSeconds / spanSeconds, 0, 1);
 ```
 
-For a legacy heartbeat whose stored interval is zero, use `HeartbeatSettings.IntervalSeconds` floored by `MinimumIntervalSeconds`. §8 uses `coverage` for day state and the tile copy; §10 tests both mixed-interval days and the legacy fallback.
+Use the request's single captured `UtcNow` for the current-day denominator. For a legacy heartbeat whose stored interval is zero, use `HeartbeatSettings.IntervalSeconds` floored by `MinimumIntervalSeconds`. §8 uses `coverage` for day state and the tile copy; §10 tests mixed-interval days, the legacy fallback, and a healthy in-progress current day.
 
 ---
 
@@ -194,9 +197,10 @@ In practice only the newest beat is ever `Pending` — one probe is in flight pe
 
 ## 6. Store methods
 
-Six methods, implemented in **all three** backends, covered by `HeartbeatHistoryStoreConformanceTests`:
+Six methods and one retention capability, implemented in **all three** backends, covered by `HeartbeatHistoryStoreConformanceTests`:
 
 ```csharp
+bool PrunesHeartbeatHistoryAutomatically { get; }
 Task<List<HeartbeatUptimeDay>> GetHeartbeatUptimeDays(DateTime fromDayUtc);
 Task<bool> UpsertHeartbeatUptimeDays(IEnumerable<HeartbeatUptimeDay> days);
 Task<List<HeartbeatGap>> GetHeartbeatGaps(DateTime fromUtc);
@@ -225,6 +229,8 @@ An outage that began before the window and ended inside it is exactly the one an
 
 The fold recomputes each row from the stored value plus new beats. An incrementing upsert would double-count on any retry.
 
+Persist changed gaps before uptime days. `HeartbeatUptimeDay.LastBeatUtc` is the durable watermark; advancing it before a gap write succeeds can suppress the exact opening or closing transition on retry. Gap upserts use a stable endpoint/start key and are therefore safe to repeat if the later day write fails.
+
 ### 6.3 Conformance coverage
 
 Round-trip; replace-on-upsert; the overlap predicate in all four cases (started-before/ended-inside, wholly-inside, ongoing-from-before-window, wholly-before); empty input returns empty without error.
@@ -234,6 +240,8 @@ Round-trip; replace-on-upsert; the overlap predicate in all four cases (started-
 ## 7. Where the fold runs
 
 In `HeartbeatService.RunScheduledTickAsync` (`src/NimBus.WebApp/Services/Heartbeat/HeartbeatService.cs:258`), **after** `await SweepTimeoutsAsync()` — the sweep is what settles unanswered beats to `Off`, so folding before it would see them as `Pending` and stop there under §5.4. Enumerate `_platform.Endpoints`, load their metadata with `GetMetadatas(ids)`, and exclude only explicit `IsHeartbeatEnabled == false`, exactly like `SendHeartbeatsAsync`; `GetMetadatasWithEnabledHeartbeat()` omits the default opt-out fleet and must not be used.
+
+`GetMetadatas(ids)` must return complete metadata, including retained `Heartbeats`, on every provider. SQL Server loads the child rows in one batched query and groups them by endpoint; an N+1 call to `GetEndpointMetadata` is not acceptable. Pin this in `EndpointMetadataStoreConformanceTests`, because the fold's in-memory tests cannot detect an incomplete SQL batch projection.
 
 Call it from the tick, **not from inside `SweepTimeoutsAsync`**: that method is also reachable on other paths, and the fold is a scheduled concern rather than part of sweeping.
 
@@ -284,6 +292,8 @@ Day state, in order:
 - `full` — everything else.
 
 `coverage` ships on the row so the cell's tooltip can say *why* a day with no misses is not green: "platform observed 4h of this day".
+
+Before building adapters or fleet totals, reconcile history rows case-insensitively by platform endpoint id and UTC day. Prefer the row whose `EndpointId` exactly matches the platform catalog casing; otherwise prefer the greatest `LastBeatUtc`, with ordinal endpoint id as the final deterministic tie-breaker. Cosmos partition keys and ids are case-sensitive, so both `Orders` and `orders` can exist even though the WebApp treats them as one adapter. The folder applies the same rule before deriving its watermark. Never allow a duplicate to throw or double-count fleet totals.
 
 `durationSeconds` is the non-negative whole-second difference between `FromUtc` and `ToUtc`, or between `FromUtc` and the request's captured `UtcNow` for an ongoing gap. No interval is added (§5.2).
 
@@ -381,7 +391,9 @@ Subscribe via `subscribeHeartbeatUpdates` (`lib/grid-events-connection.ts`); the
 - **Stops at the first unsettled beat** (§5.4): fold `[On, Pending, On]`, then re-fold with the middle settled — `Received == 3`. Filter-and-continue yields 2 and never recovers.
 - **Per-probe `IntervalSeconds` is folded into `ObservedSeconds`** so coverage is derivable (§4.3): a day with four probes at a 300 s interval yields `coverage ≈ 0.014`, not 1.0; a mixed-interval day remains correct after settings change.
 
-**Conformance.** The four store methods across all three backends (§6.3).
+**Conformance.** The six store methods across all three backends (§6.3).
+
+**Cross-provider regression.** Batch metadata reads retain heartbeat rows, including the filtered overload used by the scheduled fold. SQL Server must execute this test on its conformance harness when `NIMBUS_SQL_TEST_CONNECTION` is available.
 
 **Page (vitest).** Tiles; the SDK version column including the missing case; liveness labels; one strip cell per day; window toggle refetches with the new `windowDays`; gaps list with the ongoing pill; empty-gaps message; load failure; a hub update triggers a refetch. Plus:
 
@@ -402,7 +414,7 @@ Expressing "overlaps the window" against an id-range key is awkward on Cosmos; t
 
 Do it as part of this work; it is the kind of follow-up that never gets done. The cost is asymmetric and lower than it looks:
 
-- **Cosmos: free.** The containers run "TTL on, no container default" (`DefaultTimeToLive = -1`). Set an item-level `ttl` of 90 days on uptime days and closed gaps; set `ttl = -1` on open gaps. §4.2.
+- **Cosmos: free.** The containers run "TTL on, no container default" (`DefaultTimeToLive = -1`). Set an item-level `ttl` of 90 days on uptime days and closed gaps; set `ttl = -1` on open gaps. The provider reports `PrunesHeartbeatHistoryAutomatically = true`, so the scheduled fold does not issue redundant cross-partition prune queries. §4.2.
 - **SQL Server: one `DELETE`.** `DELETE FROM HeartbeatUptimeDays WHERE DayUtc < @Cutoff` plus the `ToUtc`-bounded equivalent for closed gaps, run beside the fold at its gated cadence (§7.1). Never delete a gap with `ToUtc IS NULL` — an ongoing outage that started 91 days ago is exactly the row an operator needs.
 
 The in-memory store needs no retention beyond matching the same semantics in conformance.

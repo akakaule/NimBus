@@ -181,6 +181,8 @@ public sealed class CosmosDbClientRetentionTests
         var gaps = adapter.Container("heartbeatgaps");
         Assert.AreEqual(-1, (int)gaps.UpsertedDocument(0)["ttl"]!, "An open outage must not expire.");
         Assert.AreEqual(7_776_000, (int)gaps.UpsertedDocument(1)["ttl"]!);
+        Assert.IsTrue(client.PrunesHeartbeatHistoryAutomatically,
+            "The scheduled fold must rely on these TTLs instead of scanning both containers every interval.");
     }
 
     // ── AC 10: documents that never carried a ttl still do not get one ──

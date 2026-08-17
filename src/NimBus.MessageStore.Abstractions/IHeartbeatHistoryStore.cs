@@ -8,6 +8,11 @@ namespace NimBus.MessageStore.Abstractions;
 /// <summary>Durable daily heartbeat history and endpoint outage transitions.</summary>
 public interface IHeartbeatHistoryStore
 {
+    /// <summary>
+    /// Gets a value indicating whether the provider expires heartbeat history without an explicit prune call.
+    /// </summary>
+    bool PrunesHeartbeatHistoryAutomatically => false;
+
     /// <summary>Gets uptime days on or after <paramref name="fromDayUtc"/>.</summary>
     Task<List<HeartbeatUptimeDay>> GetHeartbeatUptimeDays(DateTime fromDayUtc);
 

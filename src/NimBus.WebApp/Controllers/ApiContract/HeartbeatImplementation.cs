@@ -17,15 +17,18 @@ public sealed class HeartbeatImplementation : IHeartbeatApiController
     private readonly IHeartbeatService _heartbeatService;
     private readonly IHeartbeatHistoryStore? _historyStore;
     private readonly IEndpointAuthorizationService _authorizationService;
+    private readonly TimeProvider _timeProvider;
 
     public HeartbeatImplementation(
         IHeartbeatService heartbeatService,
         IEnumerable<IHeartbeatHistoryStore> historyStores,
-        IEndpointAuthorizationService authorizationService)
+        IEndpointAuthorizationService authorizationService,
+        TimeProvider? timeProvider = null)
     {
         _heartbeatService = heartbeatService;
         _historyStore = historyStores.SingleOrDefault();
         _authorizationService = authorizationService;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<ActionResult<HeartbeatPage>> GetHeartbeatPageAsync(int windowDays)
@@ -36,21 +39,24 @@ public sealed class HeartbeatImplementation : IHeartbeatApiController
         }
 
         windowDays = Math.Clamp(windowDays, 1, 90);
-        var now = DateTime.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         var fromDayUtc = now.Date.AddDays(-(windowDays - 1));
         var overview = (await _heartbeatService.GetOverviewAsync())
             .Where(row => row.IsHeartbeatEnabled != false)
             .ToList();
-        var uptimeDays = _historyStore is null
+        var storedUptimeDays = _historyStore is null
             ? []
             : await _historyStore.GetHeartbeatUptimeDays(fromDayUtc);
         var activeIds = overview.Select(row => row.EndpointId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var uptimeDays = overview
+            .SelectMany(row => SelectCanonicalDays(row.EndpointId, storedUptimeDays))
+            .ToList();
         var gaps = _historyStore is null
             ? []
             : (await _historyStore.GetHeartbeatGaps(fromDayUtc))
                 .Where(gap => activeIds.Contains(gap.EndpointId))
                 .ToList();
-        var adapters = overview.Select(row => BuildAdapter(row, uptimeDays, fromDayUtc, windowDays)).ToList();
+        var adapters = overview.Select(row => BuildAdapter(row, uptimeDays, fromDayUtc, windowDays, now)).ToList();
         var gapRows = gaps.Select(gap => BuildGap(gap, now)).OrderByDescending(gap => gap.FromUtc).ToList();
         var expected = uptimeDays.Where(day => activeIds.Contains(day.EndpointId)).Sum(day => day.Expected);
         var received = uptimeDays.Where(day => activeIds.Contains(day.EndpointId)).Sum(day => day.Received);
@@ -78,10 +84,10 @@ public sealed class HeartbeatImplementation : IHeartbeatApiController
         HeartbeatOverviewItem overview,
         IEnumerable<HeartbeatUptimeDay> allDays,
         DateTime fromDayUtc,
-        int windowDays)
+        int windowDays,
+        DateTime now)
     {
-        var rows = allDays
-            .Where(day => string.Equals(day.EndpointId, overview.EndpointId, StringComparison.OrdinalIgnoreCase))
+        var rows = SelectCanonicalDays(overview.EndpointId, allDays)
             .ToDictionary(day => day.DayUtc.Date);
         var days = new List<HeartbeatDay>(windowDays);
         for (var offset = 0; offset < windowDays; offset++)
@@ -93,7 +99,10 @@ public sealed class HeartbeatImplementation : IHeartbeatApiController
                 continue;
             }
 
-            var coverage = Math.Clamp(row.ObservedSeconds / 86400.0, 0, 1);
+            var observedSpanSeconds = dayUtc == now.Date
+                ? Math.Max(1, (now - dayUtc).TotalSeconds)
+                : 86400.0;
+            var coverage = Math.Clamp(row.ObservedSeconds / observedSpanSeconds, 0, 1);
             days.Add(new HeartbeatDay
             {
                 DayUtc = dayUtc,
@@ -123,6 +132,18 @@ public sealed class HeartbeatImplementation : IHeartbeatApiController
             Days = days,
         };
     }
+
+    private static IEnumerable<HeartbeatUptimeDay> SelectCanonicalDays(
+        string endpointId,
+        IEnumerable<HeartbeatUptimeDay> allDays)
+        => allDays
+            .Where(day => string.Equals(day.EndpointId, endpointId, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(day => day.DayUtc.Date)
+            .Select(group => group
+                .OrderByDescending(day => string.Equals(day.EndpointId, endpointId, StringComparison.Ordinal))
+                .ThenByDescending(day => day.LastBeatUtc)
+                .ThenBy(day => day.EndpointId, StringComparer.Ordinal)
+                .First());
 
     private static HeartbeatGapRow BuildGap(HeartbeatGap gap, DateTime now)
     {

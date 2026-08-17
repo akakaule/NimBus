@@ -1254,7 +1254,9 @@ WHERE Id = @Id";
     {
         await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync($"SELECT * FROM {T("EndpointMetadata")}", commandTimeout: _commandTimeout);
-        return rows.Select(MapMetadataRow).Cast<EndpointMetadata>().ToList();
+        var metadatas = rows.Select(MapMetadataRow).Cast<EndpointMetadata>().ToList();
+        await PopulateHeartbeats(conn, metadatas);
+        return metadatas;
     }
 
     public async Task<List<EndpointMetadata>?> GetMetadatas(IEnumerable<string> endpointIds)
@@ -1265,7 +1267,9 @@ WHERE Id = @Id";
         var rows = await conn.QueryAsync(
             $"SELECT * FROM {T("EndpointMetadata")} WHERE EndpointId IN @Ids",
             new { Ids = ids }, commandTimeout: _commandTimeout);
-        return rows.Select(MapMetadataRow).Cast<EndpointMetadata>().ToList();
+        var metadatas = rows.Select(MapMetadataRow).Cast<EndpointMetadata>().ToList();
+        await PopulateHeartbeats(conn, metadatas);
+        return metadatas;
     }
 
     public async Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata)
@@ -1598,19 +1602,49 @@ ORDER BY m.EndpointId";
             new { EndpointId = endpointId },
             commandTimeout: _commandTimeout);
 
-        return rows.Select(row => new Heartbeat
-        {
-            MessageId = row.MessageId ?? string.Empty,
-            StartTime = row.StartTimeUtc,
-            ReceivedTime = row.ReceivedTimeUtc,
-            EndTime = row.EndTimeUtc,
-            SdkVersion = row.SdkVersion ?? string.Empty,
-            IntervalSeconds = row.IntervalSeconds,
-            EndpointHeartbeatStatus = Enum.TryParse((string?)row.EndpointHeartbeatStatus, out HeartbeatStatus status)
-                ? status
-                : HeartbeatStatus.Unknown,
-        }).Cast<Heartbeat>().ToList();
+        return rows.Select(MapHeartbeatRow).Cast<Heartbeat>().ToList();
     }
+
+    private async Task PopulateHeartbeats(SqlConnection conn, IReadOnlyCollection<EndpointMetadata> metadatas)
+    {
+        if (metadatas.Count == 0) return;
+
+        var endpointIds = metadatas.Select(metadata => metadata.EndpointId).ToArray();
+        var rows = await conn.QueryAsync(
+            $@"SELECT EndpointId, MessageId, StartTimeUtc, ReceivedTimeUtc, EndTimeUtc, EndpointHeartbeatStatus, SdkVersion, IntervalSeconds
+               FROM {T("Heartbeats")}
+               WHERE EndpointId IN @EndpointIds
+               ORDER BY EndpointId, StartTimeUtc",
+            new { EndpointIds = endpointIds },
+            commandTimeout: _commandTimeout);
+        var byEndpoint = rows
+            .Select(row => (EndpointId: (string)row.EndpointId, Heartbeat: (Heartbeat)MapHeartbeatRow(row)))
+            .GroupBy(row => row.EndpointId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(row => row.Heartbeat).ToList(),
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var metadata in metadatas)
+        {
+            metadata.Heartbeats = byEndpoint.TryGetValue(metadata.EndpointId, out var heartbeats)
+                ? heartbeats
+                : [];
+        }
+    }
+
+    private static Heartbeat MapHeartbeatRow(dynamic row) => new()
+    {
+        MessageId = row.MessageId ?? string.Empty,
+        StartTime = row.StartTimeUtc,
+        ReceivedTime = row.ReceivedTimeUtc,
+        EndTime = row.EndTimeUtc,
+        SdkVersion = row.SdkVersion ?? string.Empty,
+        IntervalSeconds = row.IntervalSeconds,
+        EndpointHeartbeatStatus = Enum.TryParse((string?)row.EndpointHeartbeatStatus, out HeartbeatStatus status)
+            ? status
+            : HeartbeatStatus.Unknown,
+    };
 
     // ───────── Durable endpoint heartbeat history ─────────
 

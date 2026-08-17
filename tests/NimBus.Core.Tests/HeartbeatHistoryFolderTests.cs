@@ -50,6 +50,33 @@ public sealed class HeartbeatHistoryFolderTests
     }
 
     [TestMethod]
+    public void Fold_prefers_exact_endpoint_casing_when_history_contains_case_variants()
+    {
+        var canonical = new HeartbeatUptimeDay
+        {
+            EndpointId = "Orders",
+            DayUtc = Day,
+            LastBeatUtc = Day.AddMinutes(5),
+            Expected = 2,
+            Received = 2,
+        };
+        var duplicate = new HeartbeatUptimeDay
+        {
+            EndpointId = "orders",
+            DayUtc = Day,
+            LastBeatUtc = Day.AddMinutes(10),
+            Expected = 99,
+            Received = 99,
+        };
+
+        var result = HeartbeatHistoryFolder.Fold(
+            "Orders", [Beat(15, HeartbeatStatus.On)], [canonical, duplicate], null, Day.AddDays(-1), 300);
+
+        Assert.AreEqual(3, result.Days.Single().Expected);
+        Assert.AreEqual(3, result.Days.Single().Received);
+    }
+
+    [TestMethod]
     public void Fold_stops_at_pending_and_recovers_when_it_settles()
     {
         var first = HeartbeatHistoryFolder.Fold("orders", [

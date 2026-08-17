@@ -338,9 +338,12 @@ public sealed partial class HeartbeatService : IHeartbeatService
                 changedGaps.AddRange(result.Gaps);
             }
 
-            await _historyStore.UpsertHeartbeatUptimeDays(changedDays);
             await _historyStore.UpsertHeartbeatGaps(changedGaps);
-            await _historyStore.PruneHeartbeatHistory(historyStartUtc);
+            await _historyStore.UpsertHeartbeatUptimeDays(changedDays);
+            if (!_historyStore.PrunesHeartbeatHistoryAutomatically)
+            {
+                await _historyStore.PruneHeartbeatHistory(historyStartUtc);
+            }
         }
         catch (Exception exception)
         {

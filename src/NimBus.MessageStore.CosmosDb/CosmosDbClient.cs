@@ -18,6 +18,9 @@ namespace NimBus.MessageStore;
 
 public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore, IHeartbeatHistoryStore
 {
+    /// <inheritdoc />
+    public bool PrunesHeartbeatHistoryAutomatically => true;
+
     private readonly ICosmosClientAdapter _cosmosClient;
     private readonly ILogger _logger;
 

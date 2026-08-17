@@ -25,7 +25,14 @@ public static class HeartbeatHistoryFolder
 
         var existingDays = (existing ?? [])
             .Where(day => string.Equals(day.EndpointId, endpointId, StringComparison.OrdinalIgnoreCase))
-            .ToDictionary(day => day.DayUtc.Date, CloneDay);
+            .GroupBy(day => day.DayUtc.Date)
+            .ToDictionary(
+                group => group.Key,
+                group => CloneDay(group
+                    .OrderByDescending(day => string.Equals(day.EndpointId, endpointId, StringComparison.Ordinal))
+                    .ThenByDescending(day => day.LastBeatUtc)
+                    .ThenBy(day => day.EndpointId, StringComparer.Ordinal)
+                    .First()));
         var watermark = existingDays.Count == 0
             ? historyStartUtc
             : existingDays.Values.Max(day => day.LastBeatUtc);

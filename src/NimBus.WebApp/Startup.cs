@@ -587,6 +587,7 @@ namespace NimBus.WebApp
                 isEmulator));
             services.AddTransient<IAdminApiController, AdminImplementation>();
             services.AddTransient<IMetricsApiController, MetricsImplementation>();
+            services.AddTransient<IHeartbeatApiController, HeartbeatImplementation>();
             services.AddTransient<IAuditApiController, AuditImplementation>();
             services.AddTransient<IAccessControlApiController, AccessControlImplementation>();
             services.AddTransient<IDevApiController, DevImplementation>();

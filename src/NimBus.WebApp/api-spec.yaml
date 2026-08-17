@@ -2273,6 +2273,30 @@ paths:
                 $ref: '#/components/schemas/EventTypeTimeSeriesOverview'
       tags:
         - Metrics
+  /api/heartbeat/page:
+    get:
+      summary: Get fleet heartbeat history and current liveness
+      operationId: get-heartbeat-page
+      parameters:
+        - name: windowDays
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 30
+            minimum: 1
+            maximum: 90
+      responses:
+        '200':
+          description: Fleet heartbeat page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatPage'
+        '403':
+          description: Forbidden
+      tags:
+        - Heartbeat
   /api/agent/catalog:
     get:
       summary: Get agent catalog
@@ -4237,6 +4261,109 @@ components:
           type: string
           nullable: true
           description: Absent for endpoints on an SDK that predates the heartbeat handler.
+    HeartbeatPage:
+      title: HeartbeatPage
+      type: object
+      properties:
+        windowDays:
+          type: integer
+        adaptersReporting:
+          type: integer
+        adaptersTotal:
+          type: integer
+        adaptersNeedingAttention:
+          type: array
+          items:
+            type: string
+        fleetUptime:
+          type: number
+          format: double
+          nullable: true
+        missedBeatsToday:
+          type: integer
+        adaptersMissingBeatsToday:
+          type: integer
+        longestGap:
+          type: integer
+          nullable: true
+        adapters:
+          type: array
+          items:
+            $ref: '#/components/schemas/HeartbeatAdapterRow'
+        gaps:
+          type: array
+          items:
+            $ref: '#/components/schemas/HeartbeatGapRow'
+    HeartbeatAdapterRow:
+      title: HeartbeatAdapterRow
+      type: object
+      properties:
+        endpointId:
+          type: string
+        liveness:
+          type: string
+          description: 'Current liveness: alive, late, missing or notDeployed.'
+        status:
+          type: string
+          description: 'Last outcome: On, Off, Pending, Unknown or Unsupported.'
+        lastBeatUtc:
+          type: string
+          format: date-time
+          nullable: true
+        roundTripMs:
+          type: integer
+          format: int64
+          nullable: true
+        uptime:
+          type: number
+          format: double
+          nullable: true
+        sdkVersion:
+          type: string
+          nullable: true
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/HeartbeatDay'
+    HeartbeatDay:
+      title: HeartbeatDay
+      type: object
+      properties:
+        dayUtc:
+          type: string
+          format: date-time
+        state:
+          type: string
+          description: 'History state: none, full, partial or gap.'
+        missed:
+          type: integer
+        expected:
+          type: integer
+        coverage:
+          type: number
+          format: double
+        longestGapSeconds:
+          type: integer
+    HeartbeatGapRow:
+      title: HeartbeatGapRow
+      type: object
+      properties:
+        endpointId:
+          type: string
+        fromUtc:
+          type: string
+          format: date-time
+        toUtc:
+          type: string
+          format: date-time
+          nullable: true
+        durationSeconds:
+          type: integer
+        ongoing:
+          type: boolean
+        cause:
+          type: string
+          nullable: true
     ServiceHealthRow:
       title: ServiceHealthRow
       type: object

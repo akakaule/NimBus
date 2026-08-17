@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using NimBus.Core;
+using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
@@ -31,6 +32,7 @@ public sealed partial class HeartbeatService : IHeartbeatService
 {
     private const int MinimumIntervalSeconds = 30;
     private const int MinimumTimeoutSeconds = 5;
+    private const int HeartbeatHistoryRetentionDays = 90;
     private const string HeartbeatSessionId = "Heartbeat";
 
     // Resolver subscriptions are session-enabled, so a probe sharing the endpoint
@@ -43,6 +45,7 @@ public sealed partial class HeartbeatService : IHeartbeatService
     private readonly IHeartbeatMessageSender _sender;
     private readonly ILogger<HeartbeatService> _logger;
     private readonly IHubContext<GridEventsHub>? _hubContext;
+    private readonly IHeartbeatHistoryStore? _historyStore;
 
     /// <summary>Creates the heartbeat service.</summary>
     /// <param name="platform">The compile-time endpoint catalog that defines who gets probed.</param>
@@ -50,12 +53,14 @@ public sealed partial class HeartbeatService : IHeartbeatService
     /// <param name="sender">Transport seam for the probes.</param>
     /// <param name="logger">Diagnostics.</param>
     /// <param name="hubContext">SignalR hub for live operator updates; optional so the service is testable headless.</param>
+    /// <param name="historyStore">Durable history capability; optional for backward-compatible third-party stores.</param>
     public HeartbeatService(
         IPlatform platform,
         INimBusMessageStore store,
         IHeartbeatMessageSender sender,
         ILogger<HeartbeatService> logger,
-        IHubContext<GridEventsHub>? hubContext = null)
+        IHubContext<GridEventsHub>? hubContext = null,
+        IHeartbeatHistoryStore? historyStore = null)
     {
         ArgumentNullException.ThrowIfNull(platform);
         ArgumentNullException.ThrowIfNull(store);
@@ -67,6 +72,7 @@ public sealed partial class HeartbeatService : IHeartbeatService
         _sender = sender;
         _logger = logger;
         _hubContext = hubContext;
+        _historyStore = historyStore;
     }
 
     /// <inheritdoc />
@@ -235,6 +241,7 @@ public sealed partial class HeartbeatService : IHeartbeatService
                 StartTime = now,
                 ReceivedTime = now,
                 EndTime = now,
+                IntervalSeconds = Math.Max(settings.IntervalSeconds, MinimumIntervalSeconds),
                 EndpointHeartbeatStatus = HeartbeatStatus.Pending,
             };
 
@@ -262,6 +269,8 @@ public sealed partial class HeartbeatService : IHeartbeatService
         // disabled or between claims (e.g. after a manual "Send now").
         await SweepTimeoutsAsync();
 
+        await FoldHeartbeatHistoryAsync();
+
         // Resolver liveness is deliberately outside the Enabled gate below.
         await ProbeResolverAsync();
 
@@ -278,6 +287,72 @@ public sealed partial class HeartbeatService : IHeartbeatService
         cancellationToken.ThrowIfCancellationRequested();
         await SendHeartbeatsAsync(force: true);
         return true;
+    }
+
+    private async Task FoldHeartbeatHistoryAsync()
+    {
+        if (_historyStore is null) return;
+
+        try
+        {
+            var settings = await _store.GetHeartbeatSettings();
+            var intervalSeconds = Math.Max(settings.IntervalSeconds, MinimumIntervalSeconds);
+            var now = DateTime.UtcNow;
+            if (!await _historyStore.TryClaimHeartbeatHistoryFold(now.AddSeconds(-intervalSeconds)))
+            {
+                return;
+            }
+
+            var historyStartUtc = now.AddDays(-HeartbeatHistoryRetentionDays);
+            var endpointIds = _platform.Endpoints.Select(endpoint => endpoint.Id).ToList();
+            var metadatas = await _store.GetMetadatas(endpointIds) ?? [];
+            var metadataByEndpoint = IndexByEndpointId(
+                metadatas,
+                metadata => metadata.EndpointId,
+                (winner, candidate) => winner.IsHeartbeatEnabled == false ? winner : candidate,
+                "heartbeat history metadata");
+            var existingDays = await _historyStore.GetHeartbeatUptimeDays(historyStartUtc.Date);
+            var existingGaps = await _historyStore.GetHeartbeatGaps(historyStartUtc);
+            var changedDays = new List<HeartbeatUptimeDay>();
+            var changedGaps = new List<HeartbeatGap>();
+
+            foreach (var endpoint in _platform.Endpoints)
+            {
+                if (!metadataByEndpoint.TryGetValue(endpoint.Id, out var metadata) ||
+                    metadata.IsHeartbeatEnabled == false)
+                {
+                    continue;
+                }
+
+                var result = HeartbeatHistoryFolder.Fold(
+                    endpoint.Id,
+                    metadata.Heartbeats,
+                    existingDays.Where(day => string.Equals(day.EndpointId, endpoint.Id, StringComparison.OrdinalIgnoreCase)),
+                    existingGaps
+                        .Where(gap => gap.ToUtc is null && string.Equals(gap.EndpointId, endpoint.Id, StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(gap => gap.FromUtc)
+                        .FirstOrDefault(),
+                    historyStartUtc,
+                    intervalSeconds);
+                changedDays.AddRange(result.Days);
+                changedGaps.AddRange(result.Gaps);
+            }
+
+            await _historyStore.UpsertHeartbeatGaps(changedGaps);
+            await _historyStore.UpsertHeartbeatUptimeDays(changedDays);
+            if (!_historyStore.PrunesHeartbeatHistoryAutomatically)
+            {
+                await _historyStore.PruneHeartbeatHistory(historyStartUtc);
+            }
+        }
+        catch (Exception exception)
+        {
+            NimBusMeters.StoreOperationFailed.Add(
+                1,
+                new KeyValuePair<string, object?>(MessagingAttributes.NimBusStoreOperation, "heartbeat_history_fold"),
+                new KeyValuePair<string, object?>(MessagingAttributes.ErrorType, exception.GetType().FullName));
+            LogHeartbeatHistoryFoldFailed(exception);
+        }
     }
 
     /// <summary>
@@ -386,4 +461,8 @@ public sealed partial class HeartbeatService : IHeartbeatService
     [LoggerMessage(EventId = 5, Level = LogLevel.Warning,
         Message = "Duplicate {What} rows for endpoint(s) {Endpoints} — endpoint ids must be unique (case-insensitively); using one row per endpoint and ignoring the rest.")]
     private partial void LogDuplicateEndpointRows(string what, string endpoints);
+
+    [LoggerMessage(EventId = 6, Level = LogLevel.Warning,
+        Message = "Heartbeat history fold failed; retained probes will be retried on the next interval.")]
+    private partial void LogHeartbeatHistoryFoldFailed(Exception exception);
 }

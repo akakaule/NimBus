@@ -32,4 +32,10 @@ public class HeartbeatSettings
     /// operator edit never resets the schedule.
     /// </summary>
     public DateTime? LastSentAtUtc { get; set; }
+
+    /// <summary>
+    /// When durable heartbeat history was last claimed for folding. This claim is
+    /// independent of <see cref="Enabled"/> so manual probes are folded too.
+    /// </summary>
+    public DateTime? LastHeartbeatFoldAtUtc { get; set; }
 }

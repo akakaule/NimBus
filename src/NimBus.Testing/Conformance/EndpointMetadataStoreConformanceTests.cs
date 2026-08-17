@@ -60,6 +60,26 @@ public abstract class EndpointMetadataStoreConformanceTests
         Assert.AreEqual(endpointTwo, filtered[0].EndpointId);
     }
 
+    [TestMethod]
+    public async Task GetMetadatas_includes_heartbeat_rows()
+    {
+        var store = CreateStore();
+        var endpointId = Id("batch-heartbeats");
+        await store.SetHeartbeat(
+            Probe("probe-1", HeartbeatStatus.On, T0, T0.AddMilliseconds(50), "1.2.3"),
+            endpointId);
+
+        var filtered = await store.GetMetadatas([endpointId]);
+        var fromAll = (await store.GetMetadatas()).Single(metadata => metadata.EndpointId == endpointId);
+
+        Assert.IsNotNull(filtered);
+        Assert.AreEqual(1, filtered!.Single().Heartbeats.Count,
+            "The scheduled history fold uses the filtered batch overload and requires its probe rows.");
+        Assert.AreEqual("probe-1", filtered.Single().Heartbeats.Single().MessageId);
+        Assert.AreEqual(1, fromAll.Heartbeats.Count,
+            "Both batch overloads must return complete EndpointMetadata records.");
+    }
+
     // ───────── Heartbeat ─────────
 
     [TestMethod]

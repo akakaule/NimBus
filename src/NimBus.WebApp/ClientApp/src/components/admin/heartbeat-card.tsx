@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import * as api from "api-client";
 import { Button } from "components/ui/button";
-import { Badge } from "components/ui/badge";
 import { Checkbox } from "components/ui/checkbox";
 import { Input } from "components/ui/input";
 import {
@@ -13,7 +13,6 @@ import {
 } from "components/ui/card";
 import { subscribeHeartbeatUpdates } from "lib/grid-events-connection";
 import { formatMoment } from "functions/endpoint.functions";
-import { normalizeStatus, statusHints, statusVariants } from "./heartbeat-status";
 
 /** Fallback poll cadence while the hub is down (see PlatformServicesCard). */
 const POLL_MS = 30_000;
@@ -105,7 +104,9 @@ export default function HeartbeatCard() {
       setError(null);
     } catch (err: unknown) {
       setError(
-        err instanceof Error ? err.message : "Failed to save heartbeat settings",
+        err instanceof Error
+          ? err.message
+          : "Failed to save heartbeat settings",
       );
     } finally {
       setSaving(false);
@@ -120,9 +121,7 @@ export default function HeartbeatCard() {
       setSentCount(result.count ?? 0);
       await loadAll();
     } catch (err: unknown) {
-      setError(
-        err instanceof Error ? err.message : "Failed to send heartbeat",
-      );
+      setError(err instanceof Error ? err.message : "Failed to send heartbeat");
     } finally {
       setSending(false);
     }
@@ -157,9 +156,12 @@ export default function HeartbeatCard() {
           <div className="space-y-1.5">
             <CardTitle>Endpoint heartbeat</CardTitle>
             <CardDescription>
-              Round-trip probe per endpoint: reachability, latency, and the SDK
-              version on the other side. The Resolver liveness probe above runs
-              whether or not this schedule is enabled.
+              Configure the endpoint probe schedule and inclusion list. Current
+              liveness, uptime, SDK versions, and gaps are on the{" "}
+              <Link className="text-primary hover:underline" to="/Heartbeat">
+                Heartbeat page
+              </Link>
+              .
             </CardDescription>
           </div>
           <Button
@@ -270,16 +272,11 @@ export default function HeartbeatCard() {
             <thead>
               <tr className="border-b bg-muted">
                 <th className="text-left p-3 font-medium">Endpoint</th>
-                <th className="text-left p-3 font-medium">Status</th>
-                <th className="text-left p-3 font-medium">Round trip</th>
-                <th className="text-left p-3 font-medium">SDK version</th>
-                <th className="text-left p-3 font-medium">Last seen</th>
                 <th className="text-left p-3 font-medium">Included</th>
               </tr>
             </thead>
             <tbody>
               {overview.map((row) => {
-                const status = normalizeStatus(row.status);
                 // Null means "never configured either way", which is included.
                 const included = row.isHeartbeatEnabled !== false;
                 const endpointId = row.endpointId ?? "";
@@ -290,26 +287,6 @@ export default function HeartbeatCard() {
                     className="border-b border-border/50 last:border-b-0"
                   >
                     <td className="p-3 font-medium">{endpointId}</td>
-                    <td className="p-3">
-                      <Badge
-                        variant={statusVariants[status]}
-                        title={statusHints[status]}
-                      >
-                        {status}
-                      </Badge>
-                    </td>
-                    <td className="p-3 font-mono text-xs">
-                      {row.roundTripMs == null ? "—" : `${row.roundTripMs} ms`}
-                    </td>
-                    <td className="p-3 font-mono text-xs">
-                      {row.sdkVersion ||
-                        (status === "Unsupported"
-                          ? "pre-heartbeat SDK"
-                          : "unknown")}
-                    </td>
-                    <td className="p-3 text-xs text-muted-foreground">
-                      {row.lastEndTime ? formatMoment(row.lastEndTime) : "—"}
-                    </td>
                     <td className="p-3">
                       <Button
                         size="xs"
@@ -330,7 +307,7 @@ export default function HeartbeatCard() {
               {overview.length === 0 && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={2}
                     className="p-6 text-center text-muted-foreground"
                   >
                     {/* Never claim "no endpoints" when the load failed — the

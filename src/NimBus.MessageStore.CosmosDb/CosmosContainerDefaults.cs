@@ -33,7 +33,7 @@ public static class CosmosContainerDefaults
         {
             "subscriptions", "messages", "audits", "eventschemas",
             "eventreports", "accesscontrol", "Metadata", "inbox",
-            "settings", "servicehealth",
+            "settings", "servicehealth", "heartbeatuptimedays", "heartbeatgaps",
         };
 
     /// <summary>Throws when <paramref name="endpointId"/> is null, empty, or a reserved container id.</summary>

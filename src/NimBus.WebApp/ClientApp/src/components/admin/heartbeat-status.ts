@@ -45,3 +45,20 @@ export function normalizeStatus(status?: string): HeartbeatStatus {
 
   return "Unknown";
 }
+
+export type HeartbeatLiveness = "alive" | "late" | "missing" | "notDeployed";
+export type HeartbeatDayState = "none" | "full" | "partial" | "gap";
+
+export function normalizeLiveness(value?: string): HeartbeatLiveness {
+  if (value === "alive" || value === "late" || value === "missing") {
+    return value;
+  }
+  return "notDeployed";
+}
+
+export function normalizeDayState(value?: string): HeartbeatDayState {
+  if (value === "full" || value === "partial" || value === "gap") {
+    return value;
+  }
+  return "none";
+}

@@ -32,6 +32,10 @@ public sealed class CosmosContainerDefaultsTests
     [DataRow("accesscontrol")]
     [DataRow("Metadata")]
     [DataRow("inbox")]
+    [DataRow("settings")]
+    [DataRow("servicehealth")]
+    [DataRow("heartbeatuptimedays")]
+    [DataRow("heartbeatgaps")]
     public void EnsureNotReservedEndpointId_rejects_the_stores_own_container_ids(string reserved)
     {
         var ex = Assert.ThrowsExactly<ArgumentException>(
@@ -83,6 +87,7 @@ public sealed class CosmosContainerDefaultsTests
             {
                 "subscriptions", "messages", "audits", "eventschemas", "eventreports",
                 "accesscontrol", "Metadata", "inbox", "settings", "servicehealth",
+                "heartbeatuptimedays", "heartbeatgaps",
             },
             System.Linq.Enumerable.ToArray(CosmosContainerDefaults.ReservedContainerIds));
     }

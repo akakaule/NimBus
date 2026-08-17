@@ -29,7 +29,7 @@ namespace NimBus.MessageStore.SqlServer;
 /// Concurrency: ROWVERSION on UnresolvedEvents enables optimistic conflict
 /// detection if needed by future writers.
 /// </summary>
-public sealed class SqlServerMessageStore : INimBusMessageStore
+public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
 {
     private readonly SqlServerMessageStoreOptions _options;
     private readonly string _schema;
@@ -1254,7 +1254,9 @@ WHERE Id = @Id";
     {
         await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync($"SELECT * FROM {T("EndpointMetadata")}", commandTimeout: _commandTimeout);
-        return rows.Select(MapMetadataRow).Cast<EndpointMetadata>().ToList();
+        var metadatas = rows.Select(MapMetadataRow).Cast<EndpointMetadata>().ToList();
+        await PopulateHeartbeats(conn, metadatas);
+        return metadatas;
     }
 
     public async Task<List<EndpointMetadata>?> GetMetadatas(IEnumerable<string> endpointIds)
@@ -1265,7 +1267,9 @@ WHERE Id = @Id";
         var rows = await conn.QueryAsync(
             $"SELECT * FROM {T("EndpointMetadata")} WHERE EndpointId IN @Ids",
             new { Ids = ids }, commandTimeout: _commandTimeout);
-        return rows.Select(MapMetadataRow).Cast<EndpointMetadata>().ToList();
+        var metadatas = rows.Select(MapMetadataRow).Cast<EndpointMetadata>().ToList();
+        await PopulateHeartbeats(conn, metadatas);
+        return metadatas;
     }
 
     public async Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata)
@@ -1358,9 +1362,10 @@ WHEN MATCHED THEN UPDATE SET
     ReceivedTimeUtc = @ReceivedTime,
     EndTimeUtc = @EndTime,
     EndpointHeartbeatStatus = @Status,
-    SdkVersion = @SdkVersion
-WHEN NOT MATCHED THEN INSERT (EndpointId, MessageId, StartTimeUtc, ReceivedTimeUtc, EndTimeUtc, EndpointHeartbeatStatus, SdkVersion)
-VALUES (@EndpointId, @MessageId, @StartTime, @ReceivedTime, @EndTime, @Status, @SdkVersion);
+    SdkVersion = @SdkVersion,
+    IntervalSeconds = CASE WHEN @IntervalSeconds > 0 THEN @IntervalSeconds ELSE target.IntervalSeconds END
+WHEN NOT MATCHED THEN INSERT (EndpointId, MessageId, StartTimeUtc, ReceivedTimeUtc, EndTimeUtc, EndpointHeartbeatStatus, SdkVersion, IntervalSeconds)
+VALUES (@EndpointId, @MessageId, @StartTime, @ReceivedTime, @EndTime, @Status, @SdkVersion, @IntervalSeconds);
 
 WITH ranked AS (
     SELECT Id,
@@ -1388,6 +1393,7 @@ VALUES (@EndpointId, @Status);
             heartbeat.EndTime,
             Status = heartbeat.EndpointHeartbeatStatus.ToString(),
             heartbeat.SdkVersion,
+            heartbeat.IntervalSeconds,
             MaxHeartbeats = HeartbeatRollup.MaxHeartbeatsPerEndpoint,
             PendingStatus = nameof(HeartbeatStatus.Pending),
         }, commandTimeout: _commandTimeout);
@@ -1445,7 +1451,7 @@ SELECT DISTINCT EndpointId FROM @swept;";
     {
         await using var conn = await OpenAsync();
         var row = await conn.QueryFirstOrDefaultAsync(
-            $@"SELECT TOP 1 Id, Enabled, IntervalSeconds, TimeoutSeconds, LastSentAtUtc
+            $@"SELECT TOP 1 Id, Enabled, IntervalSeconds, TimeoutSeconds, LastSentAtUtc, LastHeartbeatFoldAtUtc
                FROM {T("HeartbeatSettings")}
                WHERE Id = @Id",
             new { Id = HeartbeatSettings.SingletonId },
@@ -1460,6 +1466,7 @@ SELECT DISTINCT EndpointId FROM @swept;";
                 IntervalSeconds = row.IntervalSeconds,
                 TimeoutSeconds = row.TimeoutSeconds,
                 LastSentAtUtc = row.LastSentAtUtc,
+                LastHeartbeatFoldAtUtc = row.LastHeartbeatFoldAtUtc,
             };
     }
 
@@ -1479,9 +1486,10 @@ WHEN MATCHED THEN UPDATE SET
     IntervalSeconds = @IntervalSeconds,
     TimeoutSeconds = @TimeoutSeconds,
     LastSentAtUtc = COALESCE(@LastSentAtUtc, target.LastSentAtUtc),
+    LastHeartbeatFoldAtUtc = COALESCE(@LastHeartbeatFoldAtUtc, target.LastHeartbeatFoldAtUtc),
     UpdatedAtUtc = SYSUTCDATETIME()
-WHEN NOT MATCHED THEN INSERT (Id, Enabled, IntervalSeconds, TimeoutSeconds, LastSentAtUtc)
-VALUES (@Id, @Enabled, @IntervalSeconds, @TimeoutSeconds, @LastSentAtUtc);";
+WHEN NOT MATCHED THEN INSERT (Id, Enabled, IntervalSeconds, TimeoutSeconds, LastSentAtUtc, LastHeartbeatFoldAtUtc)
+VALUES (@Id, @Enabled, @IntervalSeconds, @TimeoutSeconds, @LastSentAtUtc, @LastHeartbeatFoldAtUtc);";
         await using var conn = await OpenAsync();
         var rows = await conn.ExecuteAsync(sql, settings, commandTimeout: _commandTimeout);
         return rows > 0;
@@ -1587,24 +1595,165 @@ ORDER BY m.EndpointId";
     private async Task<List<Heartbeat>> GetHeartbeats(SqlConnection conn, string endpointId)
     {
         var rows = await conn.QueryAsync(
-            $@"SELECT MessageId, StartTimeUtc, ReceivedTimeUtc, EndTimeUtc, EndpointHeartbeatStatus, SdkVersion
+            $@"SELECT MessageId, StartTimeUtc, ReceivedTimeUtc, EndTimeUtc, EndpointHeartbeatStatus, SdkVersion, IntervalSeconds
                FROM {T("Heartbeats")}
                WHERE EndpointId = @EndpointId
                ORDER BY StartTimeUtc",
             new { EndpointId = endpointId },
             commandTimeout: _commandTimeout);
 
-        return rows.Select(row => new Heartbeat
+        return rows.Select(MapHeartbeatRow).Cast<Heartbeat>().ToList();
+    }
+
+    private async Task PopulateHeartbeats(SqlConnection conn, IReadOnlyCollection<EndpointMetadata> metadatas)
+    {
+        if (metadatas.Count == 0) return;
+
+        var endpointIds = metadatas.Select(metadata => metadata.EndpointId).ToArray();
+        var rows = await conn.QueryAsync(
+            $@"SELECT EndpointId, MessageId, StartTimeUtc, ReceivedTimeUtc, EndTimeUtc, EndpointHeartbeatStatus, SdkVersion, IntervalSeconds
+               FROM {T("Heartbeats")}
+               WHERE EndpointId IN @EndpointIds
+               ORDER BY EndpointId, StartTimeUtc",
+            new { EndpointIds = endpointIds },
+            commandTimeout: _commandTimeout);
+        var byEndpoint = rows
+            .Select(row => (EndpointId: (string)row.EndpointId, Heartbeat: (Heartbeat)MapHeartbeatRow(row)))
+            .GroupBy(row => row.EndpointId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(row => row.Heartbeat).ToList(),
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var metadata in metadatas)
         {
-            MessageId = row.MessageId ?? string.Empty,
-            StartTime = row.StartTimeUtc,
-            ReceivedTime = row.ReceivedTimeUtc,
-            EndTime = row.EndTimeUtc,
-            SdkVersion = row.SdkVersion ?? string.Empty,
-            EndpointHeartbeatStatus = Enum.TryParse((string?)row.EndpointHeartbeatStatus, out HeartbeatStatus status)
-                ? status
-                : HeartbeatStatus.Unknown,
-        }).Cast<Heartbeat>().ToList();
+            metadata.Heartbeats = byEndpoint.TryGetValue(metadata.EndpointId, out var heartbeats)
+                ? heartbeats
+                : [];
+        }
+    }
+
+    private static Heartbeat MapHeartbeatRow(dynamic row) => new()
+    {
+        MessageId = row.MessageId ?? string.Empty,
+        StartTime = row.StartTimeUtc,
+        ReceivedTime = row.ReceivedTimeUtc,
+        EndTime = row.EndTimeUtc,
+        SdkVersion = row.SdkVersion ?? string.Empty,
+        IntervalSeconds = row.IntervalSeconds,
+        EndpointHeartbeatStatus = Enum.TryParse((string?)row.EndpointHeartbeatStatus, out HeartbeatStatus status)
+            ? status
+            : HeartbeatStatus.Unknown,
+    };
+
+    // ───────── Durable endpoint heartbeat history ─────────
+
+    public async Task<List<HeartbeatUptimeDay>> GetHeartbeatUptimeDays(DateTime fromDayUtc)
+    {
+        await using var conn = await OpenAsync();
+        var rows = await conn.QueryAsync<HeartbeatUptimeDay>(
+            $@"SELECT EndpointId, DayUtc, Expected, Received, Missed, ObservedSeconds,
+                      LongestGapSeconds, LastBeatUtc
+               FROM {T("HeartbeatUptimeDays")}
+               WHERE DayUtc >= @FromDayUtc
+               ORDER BY EndpointId, DayUtc",
+            new { FromDayUtc = fromDayUtc.Date },
+            commandTimeout: _commandTimeout);
+        return rows.Select(day =>
+        {
+            day.Id = $"{day.EndpointId}|{day.DayUtc:yyyy-MM-dd}";
+            return day;
+        }).ToList();
+    }
+
+    public async Task<bool> UpsertHeartbeatUptimeDays(IEnumerable<HeartbeatUptimeDay> days)
+    {
+        ArgumentNullException.ThrowIfNull(days);
+        var rows = days.ToList();
+        if (rows.Count == 0) return true;
+
+        const string fields = "Expected = @Expected, Received = @Received, Missed = @Missed, "
+            + "ObservedSeconds = @ObservedSeconds, LongestGapSeconds = @LongestGapSeconds, LastBeatUtc = @LastBeatUtc";
+        var sql = $@"
+MERGE {T("HeartbeatUptimeDays")} WITH (HOLDLOCK) AS target
+USING (SELECT @EndpointId AS EndpointId, @DayUtc AS DayUtc) AS source
+ON target.EndpointId = source.EndpointId AND target.DayUtc = source.DayUtc
+WHEN MATCHED THEN UPDATE SET {fields}
+WHEN NOT MATCHED THEN INSERT
+    (EndpointId, DayUtc, Expected, Received, Missed, ObservedSeconds, LongestGapSeconds, LastBeatUtc)
+VALUES
+    (@EndpointId, @DayUtc, @Expected, @Received, @Missed, @ObservedSeconds, @LongestGapSeconds, @LastBeatUtc);";
+        await using var conn = await OpenAsync();
+        await conn.ExecuteAsync(sql, rows, commandTimeout: _commandTimeout);
+        return true;
+    }
+
+    public async Task<List<HeartbeatGap>> GetHeartbeatGaps(DateTime fromUtc)
+    {
+        await using var conn = await OpenAsync();
+        var rows = await conn.QueryAsync<HeartbeatGap>(
+            $@"SELECT EndpointId, FromUtc, ToUtc, SdkVersionBefore, SdkVersionAfter
+               FROM {T("HeartbeatGaps")}
+               WHERE ToUtc IS NULL OR ToUtc >= @FromUtc
+               ORDER BY FromUtc DESC",
+            new { FromUtc = fromUtc },
+            commandTimeout: _commandTimeout);
+        return rows.Select(gap =>
+        {
+            gap.Id = $"{gap.EndpointId}|{gap.FromUtc:O}";
+            return gap;
+        }).ToList();
+    }
+
+    public async Task<bool> UpsertHeartbeatGaps(IEnumerable<HeartbeatGap> gaps)
+    {
+        ArgumentNullException.ThrowIfNull(gaps);
+        var rows = gaps.ToList();
+        if (rows.Count == 0) return true;
+
+        var sql = $@"
+MERGE {T("HeartbeatGaps")} WITH (HOLDLOCK) AS target
+USING (SELECT @EndpointId AS EndpointId, @FromUtc AS FromUtc) AS source
+ON target.EndpointId = source.EndpointId AND target.FromUtc = source.FromUtc
+WHEN MATCHED THEN UPDATE SET
+    ToUtc = @ToUtc, SdkVersionBefore = @SdkVersionBefore, SdkVersionAfter = @SdkVersionAfter
+WHEN NOT MATCHED THEN INSERT
+    (EndpointId, FromUtc, ToUtc, SdkVersionBefore, SdkVersionAfter)
+VALUES
+    (@EndpointId, @FromUtc, @ToUtc, @SdkVersionBefore, @SdkVersionAfter);";
+        await using var conn = await OpenAsync();
+        await conn.ExecuteAsync(sql, rows, commandTimeout: _commandTimeout);
+        return true;
+    }
+
+    public async Task<bool> TryClaimHeartbeatHistoryFold(DateTime dueBefore)
+    {
+        var sql = $@"
+MERGE {T("HeartbeatSettings")} WITH (HOLDLOCK) AS target
+USING (SELECT @Id AS Id) AS source ON target.Id = source.Id
+WHEN MATCHED AND (target.LastHeartbeatFoldAtUtc IS NULL OR target.LastHeartbeatFoldAtUtc <= @DueBefore)
+    THEN UPDATE SET LastHeartbeatFoldAtUtc = SYSUTCDATETIME(), UpdatedAtUtc = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN
+    INSERT (Id, Enabled, IntervalSeconds, TimeoutSeconds, LastHeartbeatFoldAtUtc)
+    VALUES (@Id, 0, 300, 60, SYSUTCDATETIME());";
+        await using var conn = await OpenAsync();
+        var rows = await conn.ExecuteAsync(
+            sql,
+            new { Id = HeartbeatSettings.SingletonId, DueBefore = dueBefore },
+            commandTimeout: _commandTimeout);
+        return rows == 1;
+    }
+
+    public async Task PruneHeartbeatHistory(DateTime cutoffUtc)
+    {
+        var sql = $@"
+DELETE FROM {T("HeartbeatUptimeDays")} WHERE DayUtc < @CutoffDayUtc;
+DELETE FROM {T("HeartbeatGaps")} WHERE ToUtc IS NOT NULL AND ToUtc < @CutoffUtc;";
+        await using var conn = await OpenAsync();
+        await conn.ExecuteAsync(
+            sql,
+            new { CutoffDayUtc = cutoffUtc.Date, CutoffUtc = cutoffUtc },
+            commandTimeout: _commandTimeout);
     }
 
     // ───────── Service health (platform services, not endpoints) ─────────

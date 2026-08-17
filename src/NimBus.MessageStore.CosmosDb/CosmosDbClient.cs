@@ -16,8 +16,11 @@ using System.Threading.Tasks;
 
 namespace NimBus.MessageStore;
 
-public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore
+public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageStore, IHeartbeatHistoryStore
 {
+    /// <inheritdoc />
+    public bool PrunesHeartbeatHistoryAutomatically => true;
+
     private readonly ICosmosClientAdapter _cosmosClient;
     private readonly ILogger _logger;
 
@@ -63,6 +66,9 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     // its "SELECT * FROM c" reads would surface them as phantom endpoints.
     private const string SettingsContainer = "settings";
     private const string ServiceHealthContainer = "servicehealth";
+    private const string HeartbeatUptimeDaysContainer = "heartbeatuptimedays";
+    private const string HeartbeatGapsContainer = "heartbeatgaps";
+    private const int HeartbeatHistoryTtlSeconds = 90 * 24 * 60 * 60;
 
     // Seconds stamped as the document ttl on non-terminal tracking rows. -1 disables
     // expiry, which is the default and the behaviour before the option existed.
@@ -1292,7 +1298,10 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
                 _logger);
         }
 
-        var properties = CosmosContainerDefaults.EndpointContainer(containerId);
+        var properties = new ContainerProperties(containerId, partitionKeyPath)
+        {
+            DefaultTimeToLive = defaultTimeToLive,
+        };
         return await CosmosExceptionTranslation.TranslateTransientAsync(
             () => db.CreateContainerIfNotExistsAsync(properties),
             _logger);
@@ -1344,6 +1353,12 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
 
     private Task<ICosmosContainerAdapter> GetServiceHealthContainer() =>
         GetCachedContainerAsync(ServiceHealthContainer, "/id");
+
+    private Task<ICosmosContainerAdapter> GetHeartbeatUptimeDaysContainer() =>
+        GetCachedContainerAsync(HeartbeatUptimeDaysContainer, "/EndpointId", CosmosContainerDefaults.EndpointContainerDefaultTimeToLive);
+
+    private Task<ICosmosContainerAdapter> GetHeartbeatGapsContainer() =>
+        GetCachedContainerAsync(HeartbeatGapsContainer, "/EndpointId", CosmosContainerDefaults.EndpointContainerDefaultTimeToLive);
 
     // ── IAccessControlStore (spec 026) — implementation in CosmosDbAccessControlStore ──
 
@@ -2127,6 +2142,10 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
             existing.EndTime = heartbeat.EndTime;
             existing.SdkVersion = heartbeat.SdkVersion;
             existing.EndpointHeartbeatStatus = heartbeat.EndpointHeartbeatStatus;
+            if (heartbeat.IntervalSeconds > 0)
+            {
+                existing.IntervalSeconds = heartbeat.IntervalSeconds;
+            }
         }
         else
         {
@@ -2209,10 +2228,11 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
 
         // The claim owns LastSentAtUtc: an operator edit that carries no value must
         // not reset the send schedule.
-        if (settings.LastSentAtUtc == null)
+        if (settings.LastSentAtUtc == null || settings.LastHeartbeatFoldAtUtc == null)
         {
             var stored = await GetHeartbeatSettings();
-            settings.LastSentAtUtc = stored.LastSentAtUtc;
+            settings.LastSentAtUtc ??= stored.LastSentAtUtc;
+            settings.LastHeartbeatFoldAtUtc ??= stored.LastHeartbeatFoldAtUtc;
         }
 
         var container = await GetSettingsContainer();
@@ -2274,6 +2294,141 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
             .OrderBy(m => m.EndpointId, StringComparer.Ordinal)
             .Select(HeartbeatRollup.BuildOverviewItem)
             .ToList();
+    }
+
+    // ── Durable endpoint heartbeat history ──
+
+    public async Task<List<HeartbeatUptimeDay>> GetHeartbeatUptimeDays(DateTime fromDayUtc)
+    {
+        var container = await GetHeartbeatUptimeDaysContainer();
+        var query = new QueryDefinition(
+            "SELECT * FROM c WHERE c.DayUtc >= @fromDayUtc ORDER BY c.EndpointId, c.DayUtc")
+            .WithParameter("@fromDayUtc", fromDayUtc.Date);
+        var iterator = container.GetItemQueryIterator<HeartbeatUptimeDay>(query);
+        var rows = new List<HeartbeatUptimeDay>();
+        while (iterator.HasMoreResults)
+        {
+            rows.AddRange(await iterator.ReadNextAsync());
+        }
+
+        return rows;
+    }
+
+    public async Task<bool> UpsertHeartbeatUptimeDays(IEnumerable<HeartbeatUptimeDay> days)
+    {
+        ArgumentNullException.ThrowIfNull(days);
+        var container = await GetHeartbeatUptimeDaysContainer();
+        foreach (var day in days)
+        {
+            day.Id = string.IsNullOrWhiteSpace(day.Id)
+                ? $"{day.EndpointId}|{day.DayUtc:yyyy-MM-dd}"
+                : day.Id;
+            day.TimeToLiveSeconds = HeartbeatHistoryTtlSeconds;
+            await container.UpsertItemAsync(day, new PartitionKey(day.EndpointId), SuppressContentOnWrite);
+        }
+
+        return true;
+    }
+
+    public async Task<List<HeartbeatGap>> GetHeartbeatGaps(DateTime fromUtc)
+    {
+        var container = await GetHeartbeatGapsContainer();
+        var query = new QueryDefinition(
+            "SELECT * FROM c WHERE IS_NULL(c.ToUtc) OR c.ToUtc >= @fromUtc ORDER BY c.FromUtc DESC")
+            .WithParameter("@fromUtc", fromUtc);
+        var iterator = container.GetItemQueryIterator<HeartbeatGap>(query);
+        var rows = new List<HeartbeatGap>();
+        while (iterator.HasMoreResults)
+        {
+            rows.AddRange(await iterator.ReadNextAsync());
+        }
+
+        return rows;
+    }
+
+    public async Task<bool> UpsertHeartbeatGaps(IEnumerable<HeartbeatGap> gaps)
+    {
+        ArgumentNullException.ThrowIfNull(gaps);
+        var container = await GetHeartbeatGapsContainer();
+        foreach (var gap in gaps)
+        {
+            gap.Id = string.IsNullOrWhiteSpace(gap.Id)
+                ? $"{gap.EndpointId}|{gap.FromUtc:O}"
+                : gap.Id;
+            gap.TimeToLiveSeconds = gap.ToUtc.HasValue ? HeartbeatHistoryTtlSeconds : -1;
+            await container.UpsertItemAsync(gap, new PartitionKey(gap.EndpointId), SuppressContentOnWrite);
+        }
+
+        return true;
+    }
+
+    public async Task<bool> TryClaimHeartbeatHistoryFold(DateTime dueBefore)
+    {
+        var container = await GetSettingsContainer();
+        try
+        {
+            var response = await container.ReadItemAsync<HeartbeatSettings>(
+                HeartbeatSettings.SingletonId,
+                new PartitionKey(HeartbeatSettings.SingletonId));
+            var settings = response.Resource ?? new HeartbeatSettings();
+            if (settings.LastHeartbeatFoldAtUtc.HasValue && settings.LastHeartbeatFoldAtUtc.Value > dueBefore)
+            {
+                return false;
+            }
+
+            settings.LastHeartbeatFoldAtUtc = DateTime.UtcNow;
+            await container.UpsertItemAsync(
+                settings,
+                new PartitionKey(settings.Id),
+                new ItemRequestOptions { IfMatchEtag = response.ETag });
+            return true;
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            try
+            {
+                await container.CreateItemAsync(
+                    new HeartbeatSettings { LastHeartbeatFoldAtUtc = DateTime.UtcNow },
+                    new PartitionKey(HeartbeatSettings.SingletonId));
+                return true;
+            }
+            catch (CosmosException conflict) when (conflict.StatusCode == HttpStatusCode.Conflict)
+            {
+                return false;
+            }
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.PreconditionFailed)
+        {
+            return false;
+        }
+    }
+
+    public async Task PruneHeartbeatHistory(DateTime cutoffUtc)
+    {
+        var daysContainer = await GetHeartbeatUptimeDaysContainer();
+        var dayQuery = new QueryDefinition("SELECT * FROM c WHERE c.DayUtc < @cutoffDayUtc")
+            .WithParameter("@cutoffDayUtc", cutoffUtc.Date);
+        var dayIterator = daysContainer.GetItemQueryIterator<HeartbeatUptimeDay>(dayQuery);
+        while (dayIterator.HasMoreResults)
+        {
+            foreach (var day in await dayIterator.ReadNextAsync())
+            {
+                await daysContainer.DeleteItemAsync<HeartbeatUptimeDay>(day.Id, new PartitionKey(day.EndpointId));
+            }
+        }
+
+        var gapsContainer = await GetHeartbeatGapsContainer();
+        var gapQuery = new QueryDefinition(
+            "SELECT * FROM c WHERE NOT IS_NULL(c.ToUtc) AND c.ToUtc < @cutoffUtc")
+            .WithParameter("@cutoffUtc", cutoffUtc);
+        var gapIterator = gapsContainer.GetItemQueryIterator<HeartbeatGap>(gapQuery);
+        while (gapIterator.HasMoreResults)
+        {
+            foreach (var gap in await gapIterator.ReadNextAsync())
+            {
+                await gapsContainer.DeleteItemAsync<HeartbeatGap>(gap.Id, new PartitionKey(gap.EndpointId));
+            }
+        }
     }
 
     // ── Service health (platform services, not endpoints) ──

@@ -44,6 +44,9 @@ describe("Sidebar environment badge", () => {
     await settleAppStatus(hooks);
 
     expect(screen.getAllByText(/ProdCanary/).length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("link", { name: "Heartbeat" }).getAttribute("href"),
+    ).toBe("/Heartbeat");
   });
 
   it("renders without the environment badge for the anonymous body", async () => {

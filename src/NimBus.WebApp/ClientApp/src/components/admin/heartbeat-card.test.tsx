@@ -5,8 +5,8 @@ import {
   screen,
   fireEvent,
   waitFor,
-  within,
 } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import HeartbeatCard from "./heartbeat-card";
 
 const mocks = vi.hoisted(() => ({
@@ -19,7 +19,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("api-client", async () => {
-  const actual: typeof import("api-client") = await vi.importActual("api-client");
+  const actual: typeof import("api-client") =
+    await vi.importActual("api-client");
   class FakeClient {
     getAdminHeartbeatSettings = mocks.getAdminHeartbeatSettings;
     putAdminHeartbeatSettings = mocks.putAdminHeartbeatSettings;
@@ -56,12 +57,24 @@ beforeEach(() => {
     .mockReset()
     .mockImplementation((body: unknown) => Promise.resolve(body));
   mocks.postAdminHeartbeatSend.mockReset().mockResolvedValue({ count: 2 });
-  mocks.getAdminHeartbeatOverview.mockReset().mockResolvedValue([overviewRow()]);
-  mocks.putAdminHeartbeatEndpointEnabled.mockReset().mockResolvedValue(undefined);
+  mocks.getAdminHeartbeatOverview
+    .mockReset()
+    .mockResolvedValue([overviewRow()]);
+  mocks.putAdminHeartbeatEndpointEnabled
+    .mockReset()
+    .mockResolvedValue(undefined);
   mocks.subscribeHeartbeatUpdates
     .mockReset()
     .mockReturnValue({ dispose: () => {} });
 });
+
+function renderCard() {
+  return render(
+    <MemoryRouter>
+      <HeartbeatCard />
+    </MemoryRouter>,
+  );
+}
 
 afterEach(() => {
   cleanup();
@@ -70,12 +83,14 @@ afterEach(() => {
 
 describe("HeartbeatCard", () => {
   it("renders the stored schedule and the clamp minimums", async () => {
-    render(<HeartbeatCard />);
+    renderCard();
 
     const interval = (await screen.findByLabelText(
       "Interval seconds",
     )) as HTMLInputElement;
-    const timeout = screen.getByLabelText("Timeout seconds") as HTMLInputElement;
+    const timeout = screen.getByLabelText(
+      "Timeout seconds",
+    ) as HTMLInputElement;
     const toggle = screen.getByLabelText(
       "Scheduled heartbeat enabled",
     ) as HTMLInputElement;
@@ -89,7 +104,7 @@ describe("HeartbeatCard", () => {
   });
 
   it("saves the values as typed — the server owns the clamping", async () => {
-    render(<HeartbeatCard />);
+    renderCard();
 
     const interval = (await screen.findByLabelText(
       "Interval seconds",
@@ -115,7 +130,7 @@ describe("HeartbeatCard", () => {
   });
 
   it("sends a heartbeat now and reports how many endpoints it reached", async () => {
-    render(<HeartbeatCard />);
+    renderCard();
 
     fireEvent.click(
       await screen.findByRole("button", { name: "Send heartbeat now" }),
@@ -129,35 +144,15 @@ describe("HeartbeatCard", () => {
     ).toBeTruthy();
   });
 
-  it("renders a status badge, round trip, and SDK version per endpoint", async () => {
-    render(<HeartbeatCard />);
+  it("links operational status to the heartbeat page", async () => {
+    renderCard();
 
-    const cell = await screen.findByText("crm");
-    const row = cell.closest("tr") as HTMLTableRowElement;
-    expect(within(row).getByText("On")).toBeTruthy();
-    expect(within(row).getByText("120 ms")).toBeTruthy();
-    expect(within(row).getByText("1.4.2")).toBeTruthy();
-  });
-
-  it("labels an Unsupported endpoint with no version as a pre-heartbeat SDK", async () => {
-    mocks.getAdminHeartbeatOverview.mockResolvedValue([
-      overviewRow({
-        endpointId: "legacy",
-        status: "Unsupported",
-        sdkVersion: undefined,
-        roundTripMs: undefined,
-      }),
-    ]);
-    render(<HeartbeatCard />);
-
-    const cell = await screen.findByText("legacy");
-    const row = cell.closest("tr") as HTMLTableRowElement;
-    expect(within(row).getByText("Unsupported")).toBeTruthy();
-    expect(within(row).getByText("pre-heartbeat SDK")).toBeTruthy();
+    const link = await screen.findByRole("link", { name: "Heartbeat page" });
+    expect(link.getAttribute("href")).toBe("/Heartbeat");
   });
 
   it("opts an endpoint out of the fan-out", async () => {
-    render(<HeartbeatCard />);
+    renderCard();
 
     fireEvent.click(await screen.findByRole("button", { name: "Exclude" }));
 
@@ -173,7 +168,7 @@ describe("HeartbeatCard", () => {
     mocks.getAdminHeartbeatOverview.mockResolvedValue([
       overviewRow({ isHeartbeatEnabled: false }),
     ]);
-    render(<HeartbeatCard />);
+    renderCard();
 
     fireEvent.click(await screen.findByRole("button", { name: "Include" }));
 
@@ -187,7 +182,7 @@ describe("HeartbeatCard", () => {
 
   it("surfaces a failed load instead of an empty 'no endpoints' table", async () => {
     mocks.getAdminHeartbeatOverview.mockRejectedValue(new Error("boom"));
-    render(<HeartbeatCard />);
+    renderCard();
 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("boom");

@@ -142,6 +142,17 @@ const Icon = {
       />
     </svg>
   ),
+  heartbeat: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
+      <path
+        d="M1.5 8h3l1.5-4 3 8 1.5-4h4"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
   monitor: (
     <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
       <rect
@@ -216,6 +227,7 @@ const NAV: NavGroup[] = [
         icon: Icon.flow,
         badge: "live",
       },
+      { name: "Heartbeat", path: "/Heartbeat", icon: Icon.heartbeat },
       {
         name: "Monitor",
         path: "/Monitor",
@@ -257,9 +269,7 @@ const useVisibleNav = (): NavGroup[] => {
     return {
       ...group,
       items: group.items.filter((item) =>
-        item.path === "/Admin"
-          ? canManageSite
-          : canManageSite || ownsEndpoint,
+        item.path === "/Admin" ? canManageSite : canManageSite || ownsEndpoint,
       ),
     };
   }).filter((group) => group.items.length > 0);

@@ -40,3 +40,9 @@ public sealed class InMemoryServiceHealthStoreConformanceTests : ServiceHealthSt
 {
     protected override IServiceHealthStore CreateStore() => new InMemoryMessageStore();
 }
+
+[TestClass]
+public sealed class InMemoryHeartbeatHistoryStoreConformanceTests : HeartbeatHistoryStoreConformanceTests
+{
+    protected override IHeartbeatHistoryStore CreateStore() => new InMemoryMessageStore();
+}

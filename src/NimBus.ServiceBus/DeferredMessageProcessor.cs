@@ -165,6 +165,18 @@ namespace NimBus.ServiceBus
             result.SessionId = sessionId;
             result.CorrelationId = deferredMessage.CorrelationId;
 
+            // Ensure From is set. Messages parked by pre-NimBus SDKs lack From because
+            // subscription rule actions stamped it, so the parked copy never carried it.
+            // Fall back to OriginatingFrom so the receiving handler's From read succeeds.
+            var fromKey = UserPropertyName.From.ToString();
+            var hasFrom = result.ApplicationProperties.TryGetValue(fromKey, out var from) &&
+                !string.IsNullOrEmpty(from?.ToString());
+            if (!hasFrom &&
+                result.ApplicationProperties.TryGetValue(UserPropertyName.OriginatingFrom.ToString(), out var originatingFrom))
+            {
+                result.ApplicationProperties[fromKey] = originatingFrom;
+            }
+
             return result;
         }
     }

@@ -425,6 +425,62 @@ public class DeferredMessageProcessorTests
         Assert.AreEqual(batchSize, span.GetTagItem(MessagingAttributes.NimBusDeferredBatchSize));
     }
 
+    // ── From fallback ───────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task ProcessDeferredMessagesAsync_MissingFrom_FallsBackToOriginatingFrom()
+    {
+        // Messages parked by pre-NimBus SDKs lack From (subscription rule actions
+        // stamped it), so the republish must backfill it from OriginatingFrom.
+        var client = new RecordingServiceBusClient();
+        var msg = CreateReceivedMessage("corr-1", deferralSequence: 1, extraProps: new Dictionary<string, object>
+        {
+            { UserPropertyName.OriginatingFrom.ToString(), "LegacyEndpoint" },
+        });
+        client.SessionReceiver.ReceiveBatches.Add(new List<ServiceBusReceivedMessage> { msg });
+
+        var sut = new DeferredMessageProcessor(client);
+        await sut.ProcessDeferredMessagesAsync("session-1", "my-topic");
+
+        var republished = client.Sender.SentMessages.Single();
+        Assert.AreEqual("LegacyEndpoint", republished.ApplicationProperties[UserPropertyName.From.ToString()],
+            "Missing From must be backfilled from OriginatingFrom");
+    }
+
+    [TestMethod]
+    public async Task ProcessDeferredMessagesAsync_ExistingFrom_IsPreservedUnchanged()
+    {
+        var client = new RecordingServiceBusClient();
+        var msg = CreateReceivedMessage("corr-1", deferralSequence: 1, extraProps: new Dictionary<string, object>
+        {
+            { UserPropertyName.From.ToString(), "OriginalSender" },
+            { UserPropertyName.OriginatingFrom.ToString(), "LegacyEndpoint" },
+        });
+        client.SessionReceiver.ReceiveBatches.Add(new List<ServiceBusReceivedMessage> { msg });
+
+        var sut = new DeferredMessageProcessor(client);
+        await sut.ProcessDeferredMessagesAsync("session-1", "my-topic");
+
+        var republished = client.Sender.SentMessages.Single();
+        Assert.AreEqual("OriginalSender", republished.ApplicationProperties[UserPropertyName.From.ToString()],
+            "An existing From must not be overwritten by the OriginatingFrom fallback");
+    }
+
+    [TestMethod]
+    public async Task ProcessDeferredMessagesAsync_NeitherFromNorOriginatingFrom_LeavesFromAbsent()
+    {
+        var client = new RecordingServiceBusClient();
+        var msg = CreateReceivedMessage("corr-1", deferralSequence: 1);
+        client.SessionReceiver.ReceiveBatches.Add(new List<ServiceBusReceivedMessage> { msg });
+
+        var sut = new DeferredMessageProcessor(client);
+        await sut.ProcessDeferredMessagesAsync("session-1", "my-topic");
+
+        var republished = client.Sender.SentMessages.Single();
+        Assert.IsFalse(republished.ApplicationProperties.ContainsKey(UserPropertyName.From.ToString()),
+            "Without From or OriginatingFrom the republished message must keep From absent");
+    }
+
     // ── Body preservation ───────────────────────────────────────────────
 
     [TestMethod]

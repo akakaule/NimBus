@@ -56,6 +56,13 @@ internal sealed class AppDeploymentService
             var webAppPublish = Path.Combine(publishRoot, "webapp");
             Directory.CreateDirectory(webAppPublish);
             await PublishAsync(_context.WebAppProjectPath, webAppPublish, options.Configuration, version, cancellationToken).ConfigureAwait(false);
+
+            if (!string.IsNullOrWhiteSpace(options.CatalogAssemblyPath))
+            {
+                var copied = CopyExternalCatalogAssemblies(options.CatalogAssemblyPath!, webAppPublish);
+                CliOutput.WriteLine($"Added external catalog assemblies to the web app package: {string.Join(", ", copied)}.");
+            }
+
             var webAppZip = PackagePublishOutput(webAppPublish, "webapp.zip");
 
             await _az.EnsureSuccessAsync(
@@ -237,6 +244,49 @@ internal sealed class AppDeploymentService
 
         version = value;
         return true;
+    }
+
+    /// <summary>
+    /// Copies an external platform catalog assembly into the web app publish directory root,
+    /// plus any sibling DLLs beside it that the publish output does not already contain (the
+    /// catalog's own dependencies). Files the publish output already ships (e.g. NimBus.Core.dll)
+    /// are left untouched so the published versions win; the catalog assembly itself always wins.
+    /// The deployed WebApp then loads the catalog via <c>NimBus__PlatformAssembly</c> set to the
+    /// file name relative to the app root. Returns the copied file names in stable order.
+    /// </summary>
+    internal static IReadOnlyList<string> CopyExternalCatalogAssemblies(string catalogAssemblyPath, string publishDirectory)
+    {
+        var fullPath = Path.GetFullPath(catalogAssemblyPath);
+        if (!File.Exists(fullPath))
+        {
+            throw new CommandException($"Catalog assembly not found: '{fullPath}'.");
+        }
+
+        var catalogFileName = Path.GetFileName(fullPath);
+        File.Copy(fullPath, Path.Combine(publishDirectory, catalogFileName), overwrite: true);
+
+        var copied = new List<string> { catalogFileName };
+        var siblings = Directory.EnumerateFiles(Path.GetDirectoryName(fullPath)!, "*.dll")
+            .OrderBy(static path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase);
+        foreach (var sibling in siblings)
+        {
+            var fileName = Path.GetFileName(sibling);
+            if (string.Equals(fileName, catalogFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var destination = Path.Combine(publishDirectory, fileName);
+            if (File.Exists(destination))
+            {
+                continue;
+            }
+
+            File.Copy(sibling, destination);
+            copied.Add(fileName);
+        }
+
+        return copied;
     }
 
     private static string PackagePublishOutput(string publishDirectory, string zipFileName)

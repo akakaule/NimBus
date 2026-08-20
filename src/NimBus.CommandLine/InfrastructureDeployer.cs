@@ -340,6 +340,19 @@ internal sealed class InfrastructureDeployer
             arguments.Add($"identityAdminEmail={options.IdentityAdminEmail}");
         }
 
+        // External platform catalog: template-owned so the NimBus__PlatformType /
+        // NimBus__PlatformAssembly app settings survive re-runs instead of relying on
+        // operators re-setting them after every deployment.
+        if (!string.IsNullOrWhiteSpace(options.PlatformCatalogType))
+        {
+            arguments.Add($"platformCatalogType={options.PlatformCatalogType}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.PlatformCatalogAssembly))
+        {
+            arguments.Add($"platformCatalogAssembly={options.PlatformCatalogAssembly}");
+        }
+
         if (!string.IsNullOrWhiteSpace(options.Location))
         {
             arguments.Add($"locationParam={options.Location}");

@@ -187,7 +187,7 @@ trap - EXIT
 
 The Service Bus namespace follows the convention `sb-{solutionId}-{environment}.servicebus.windows.net`.
 
-**Re-running against an existing WebApp?** Pass `webAppExists=true`. The app-settings deployment is a full replace, and several settings are configured out of band — `webAppExists=true` makes the template read the site's current settings and carry those keys forward instead of wiping them (which, for the auth settings, takes authentication down). Four prefixes are preserved:
+**Re-running against an existing WebApp?** Pass `webAppExists=true`. The app-settings deployment is a full replace, and several settings are configured out of band — `webAppExists=true` makes the template read the site's current settings and carry those keys forward instead of wiping them (which, for the auth settings, takes authentication down). Five prefixes are preserved:
 
 | Prefix | Why it is set out of band |
 |---|---|
@@ -195,8 +195,9 @@ The Service Bus namespace follows the convention `sb-{solutionId}-{environment}.
 | `ServiceBusManagement__` | Optional portal deep-link config |
 | `Authorization__` | Platform-admin grants |
 | `RateLimiting__` | Operator-tuned request-rate limits ([Rate Limiting](rate-limiting.md)) |
+| `NimBus__` | Operator-set NimBus config, e.g. a hand-configured external platform catalog |
 
-The one exception is `RateLimiting__TrustForwardedForHeader`, which the template owns and sets itself — it describes deployment topology rather than a tuning preference, so a portal edit to it does **not** survive a re-run. The numeric limits and `RateLimiting__Enabled` do survive.
+Template-managed settings always win on a key collision. Two exceptions follow from that rule: `RateLimiting__TrustForwardedForHeader`, which the template owns and sets itself — it describes deployment topology rather than a tuning preference, so a portal edit to it does **not** survive a re-run (the numeric limits and `RateLimiting__Enabled` do survive) — and `NimBus__PlatformType`/`NimBus__PlatformAssembly`, which become template-owned when the `platformCatalogType`/`platformCatalogAssembly` parameters are supplied (the `nb` CLI passes them when `infra apply`/`setup` are given `--assembly`; `platformCatalogAssembly` is the DLL's file name relative to the app root, where `nb deploy apps --assembly` places it).
 
 The `nb` CLI passes `webAppExists` automatically from its resource discovery; only raw-Bicep deployments need it by hand. Leave it `false` on first deployment — the template cannot read settings from a site that does not exist yet.
 

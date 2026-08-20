@@ -27,6 +27,16 @@ param identityAdminEmail string = ''
 @secure()
 param identityAdminPassword string = ''
 
+// External platform catalog served by the WebApp. Empty (the default) keeps the
+// built-in catalog. When set, the template owns the NimBus__PlatformType /
+// NimBus__PlatformAssembly app settings so they survive re-runs instead of being
+// wiped by the full-replace appSettings deployment. platformCatalogAssembly is a
+// file NAME relative to the app root — `nb deploy apps --assembly <PATH>` copies
+// the DLL into the package root — and the WebApp resolves relative values against
+// its base directory.
+param platformCatalogType string = ''
+param platformCatalogAssembly string = ''
+
 // Per-resource location override. Empty means "use the global locationParam".
 // The CLI pins this to the existing web app's location when one is already
 // present so we don't try to migrate it to a different region.
@@ -141,7 +151,24 @@ var identitySettings = identityEnabled ? [
   }
 ] : []
 
-var baseWebAppSettings = concat(coreWebAppSettings, cosmosSetting, identitySettings)
+// External platform catalog settings, emitted only when supplied so a catalog-less
+// deployment leaves any operator-set NimBus__* values alone (they are preserved by
+// the NimBus__ prefix filter below).
+var platformCatalogSettings = concat(
+  empty(platformCatalogType) ? [] : [
+    {
+      name: 'NimBus__PlatformType'
+      value: platformCatalogType
+    }
+  ],
+  empty(platformCatalogAssembly) ? [] : [
+    {
+      name: 'NimBus__PlatformAssembly'
+      value: platformCatalogAssembly
+    }
+  ])
+
+var baseWebAppSettings = concat(coreWebAppSettings, cosmosSetting, identitySettings, platformCatalogSettings)
 
 // Secret settings cross the nested-deployment boundary as a secure object. If
 // they were folded into the ordinary settings array, Azure deployment history
@@ -195,21 +222,29 @@ var webappsettings = concat(baseWebAppSettings, developmentDiagnosticSettings)
 // on any key collision" rule above.
 var templateManagedKeys = map(webappsettings, managed => managed.name)
 
-// Operator-tuned rate limits (RateLimiting__*) are set out of band from the
-// portal / az CLI, like the auth settings above, and appSettings deployment is a
-// FULL REPLACE — without this a re-run silently restores the shipped defaults.
-// Unlike the auth settings these are not secrets, so they travel in the plain
-// settings array and stay visible in deployment history. Excluding the
-// template-managed keys keeps the final array free of duplicate names, which
-// Azure does not define behaviour for.
-var preservedRateLimitAppSettings = [for preserved in filter(
+// Operator-tuned rate limits (RateLimiting__*) and operator-set NimBus config
+// (NimBus__*, e.g. an external platform catalog configured by hand) are set out
+// of band from the portal / az CLI, like the auth settings above, and appSettings
+// deployment is a FULL REPLACE — without this a re-run silently restores the
+// shipped defaults. Unlike the auth settings these are not secrets, so they
+// travel in the plain settings array and stay visible in deployment history.
+// Excluding the template-managed keys keeps the final array free of duplicate
+// names, which Azure does not define behaviour for — and keeps the "template
+// wins on collision" rule: when platformCatalogType/-Assembly are supplied, the
+// template-owned NimBus__Platform* values replace any hand-set ones.
+// map() rather than a [for ...] loop: for-expressions must be calculable at the
+// start of the deployment (BCP178), which the list()-backed existingAppSettings
+// is not; map() carries no such restriction and compiles to the same array.
+var preservedOperatorAppSettings = map(
+  filter(
     items(existingAppSettings),
-    setting => startsWith(setting.key, 'RateLimiting__') && !contains(templateManagedKeys, setting.key)): {
-  name: preserved.key
-  value: preserved.value
-}]
+    setting => (startsWith(setting.key, 'RateLimiting__') || startsWith(setting.key, 'NimBus__')) && !contains(templateManagedKeys, setting.key)),
+  preserved => {
+    name: preserved.key
+    value: preserved.value
+  })
 
-var webappsettingsFinal = concat(webappsettings, preservedRateLimitAppSettings)
+var webappsettingsFinal = concat(webappsettings, preservedOperatorAppSettings)
 
 module webAppModule 'templates/webApp.bicep' = {
   name: 'webAppDeploy'

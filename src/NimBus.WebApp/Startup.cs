@@ -355,7 +355,7 @@ namespace NimBus.WebApp
                 if (string.IsNullOrWhiteSpace(typeName))
                     return new PlatformConfiguration();
 
-                var assemblyPath = cfg["NimBus:PlatformAssembly"];
+                var assemblyPath = ResolvePlatformAssemblyPath(cfg["NimBus:PlatformAssembly"]);
                 System.Reflection.Assembly? assembly = null;
                 if (!string.IsNullOrWhiteSpace(assemblyPath) && System.IO.File.Exists(assemblyPath))
                     assembly = System.Reflection.Assembly.LoadFrom(assemblyPath);
@@ -385,6 +385,21 @@ namespace NimBus.WebApp
                 sp.GetRequiredService<IConfiguration>()["NimBus:PiiHashSalt"] ?? string.Empty));
 
             services.AddSingleton<PayloadRedaction>();
+        }
+
+        /// <summary>
+        /// Resolves the <c>NimBus:PlatformAssembly</c> setting to a loadable path. Deployed app
+        /// settings carry a file name relative to the app root (<c>nb deploy apps</c> copies the
+        /// catalog DLL there and the bicep template stores just the name), and the process working
+        /// directory on App Service is not the app root — so relative values are anchored to
+        /// <see cref="AppContext.BaseDirectory"/>. Absolute paths pass through unchanged.
+        /// </summary>
+        internal static string? ResolvePlatformAssemblyPath(string? assemblyPath)
+        {
+            if (string.IsNullOrWhiteSpace(assemblyPath) || System.IO.Path.IsPathRooted(assemblyPath))
+                return assemblyPath;
+
+            return System.IO.Path.Combine(AppContext.BaseDirectory, assemblyPath);
         }
 
         private void AddServiceBusClients(IServiceCollection services)

@@ -98,8 +98,9 @@ internal static class Program
     }
 
 
-    // Adds the external-catalog options shared by `topology export`, `topology apply`,
-    // and `setup`, mirroring the option names used by `catalog export`.
+    // Adds the external-catalog options shared by `infra apply`, `topology export`,
+    // `topology apply`, `deploy apps`, and `setup`, mirroring the option names used
+    // by `catalog export`.
     private static (CommandOption Assembly, CommandOption Platform) AddPlatformCatalogOptions(CommandLineApplication command)
     {
         var assemblyOption = command.Option("-a|--assembly <PATH>",
@@ -158,6 +159,7 @@ internal static class Program
                 var sqlServerName = applyCommand.Option("--sql-server-name <NAME>", "Override the SQL server name (default: 'sql-{solution-id}-{environment}'). Use this when the default DNS name is held in Azure's global namespace from a recent delete (24-72h cooldown).", CommandOptionType.SingleValue);
                 var resolverPlan = applyCommand.Option("--resolver-plan <PLAN>", "Hosting plan for the resolver Function App: ElasticPremium | FlexConsumption. Defaults to the existing plan when one is deployed, otherwise 'FlexConsumption' (FC1, scale-to-zero Linux). 'ElasticPremium' (EP1, Windows) remains available.", CommandOptionType.SingleValue);
                 var managementPlanSku = applyCommand.Option("--management-plan-sku <SKU>", "SKU for the management App Service Plan hosting the WebApp. Defaults to the existing plan's SKU when one is deployed, otherwise 'B1' for dev/development and 'S1' for other environments.", CommandOptionType.SingleValue);
+                var (infraAssembly, infraPlatform) = AddPlatformCatalogOptions(applyCommand);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
@@ -165,6 +167,7 @@ internal static class Program
                     var az = new AzureCliRunner();
                     var deployer = new InfrastructureDeployer(context, az);
 
+                    var platformFactory = CreatePlatformFactory(infraAssembly, infraPlatform);
                     var providerChoice = ParseStorageProvider(storageProvider.Value());
                     var sqlProvisioningMode = ParseSqlMode(sqlMode.Value());
                     var resolverPlanChoice = PlanSelection.ParseResolverPlanOption(resolverPlan.Value());
@@ -193,7 +196,9 @@ internal static class Program
                         secrets.SqlAdminPassword,
                         sqlServerName.Value(),
                         resolverPlanChoice,
-                        ManagementPlanSku: managementPlanSku.Value());
+                        ManagementPlanSku: managementPlanSku.Value(),
+                        PlatformCatalogType: platformFactory?.Invoke().GetType().FullName,
+                        PlatformCatalogAssembly: platformFactory is null ? null : Path.GetFileName(infraAssembly.Value()!));
 
                     await deployer.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
                     return 0;
@@ -289,18 +294,25 @@ internal static class Program
                 var repoRoot = appsCommand.Option("--repo-root <PATH>", "Repository root. Defaults to the current directory or a parent directory containing deploy/ and src/.", CommandOptionType.SingleValue);
                 var configuration = appsCommand.Option("--configuration <NAME>", "Build configuration passed to dotnet publish.", CommandOptionType.SingleValue);
                 var only = appsCommand.Option("--only <APP>", "Deploy a single application: resolver | webapp. Defaults to both.", CommandOptionType.SingleValue);
+                var (appsAssembly, appsPlatform) = AddPlatformCatalogOptions(appsCommand);
 
                 appsCommand.OnExecuteAsync(async cancellationToken =>
                 {
                     var context = CommandContext.Create(repoRoot.Value());
                     var az = new AzureCliRunner();
                     var deployer = new AppDeploymentService(context, az);
+
+                    // The publish step needs only the assembly path, but loading the platform
+                    // eagerly applies the same validation as `topology apply`: a missing file or
+                    // a DLL without a usable IPlatform fails before any build/deploy work starts.
+                    var platformFactory = CreatePlatformFactory(appsAssembly, appsPlatform);
                     var options = new AppDeploymentOptions(
                         solutionId.Value(),
                         environment.Value(),
                         resourceGroup.Value(),
                         configuration.HasValue() ? configuration.Value()! : "Release",
-                        DeployTargetSelection.ParseOnlyOption(only.Value()));
+                        DeployTargetSelection.ParseOnlyOption(only.Value()),
+                        platformFactory is null ? null : appsAssembly.Value());
 
                     await deployer.DeployAsync(options, cancellationToken).ConfigureAwait(false);
                     return 0;
@@ -337,8 +349,9 @@ internal static class Program
             {
                 var context = CommandContext.Create(repoRoot.Value());
                 var az = new AzureCliRunner();
+                var platformFactory = CreatePlatformFactory(setupAssembly, setupPlatform);
                 var infra = new InfrastructureDeployer(context, az);
-                var topology = new ServiceBusTopologyProvisioner(az, CreatePlatformFactory(setupAssembly, setupPlatform));
+                var topology = new ServiceBusTopologyProvisioner(az, platformFactory);
                 var apps = new AppDeploymentService(context, az);
 
                 var providerChoice = ParseStorageProvider(setupStorageProvider.Value());
@@ -375,14 +388,17 @@ internal static class Program
                     PlanSelection.ParseResolverPlanOption(setupResolverPlan.Value()),
                     setupIdentityAdminEmail.Value(),
                     secrets.IdentityAdminPassword,
-                    setupManagementPlanSku.Value());
+                    setupManagementPlanSku.Value(),
+                    PlatformCatalogType: platformFactory?.Invoke().GetType().FullName,
+                    PlatformCatalogAssembly: platformFactory is null ? null : Path.GetFileName(setupAssembly.Value()!));
 
                 var topologyOptions = new TopologyOptions(solutionId.Value(), environment.Value(), resourceGroup.Value());
                 var appOptions = new AppDeploymentOptions(
                     solutionId.Value(),
                     environment.Value(),
                     resourceGroup.Value(),
-                    configuration.HasValue() ? configuration.Value()! : "Release");
+                    configuration.HasValue() ? configuration.Value()! : "Release",
+                    CatalogAssemblyPath: platformFactory is null ? null : setupAssembly.Value());
 
                 await infra.ApplyAsync(infraOptions, cancellationToken).ConfigureAwait(false);
                 await topology.ApplyAsync(topologyOptions, cancellationToken).ConfigureAwait(false);

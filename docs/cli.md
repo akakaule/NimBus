@@ -104,6 +104,8 @@ nb infra apply --solution-id nimbus --environment dev --resource-group rg-nimbus
 | `--sql-server-name` | No | Override the SQL server name (default: `sql-{solution-id}-{environment}`). Useful when the default DNS name is held in Azure's global namespace from a recent delete (24–72h cooldown). |
 | `--resolver-plan` | No | Resolver Function App hosting plan: `FlexConsumption` (default for new deployments; FC1, scale-to-zero Linux) or `ElasticPremium` (EP1 Windows). Existing deployments keep their current plan type unless this flag is passed. |
 | `--management-plan-sku` | No | SKU for the management App Service Plan hosting the WebApp. Default for new deployments: `B1` for `dev`/`development`, `S1` otherwise. Existing deployments keep their current SKU unless this flag is passed. |
+| `-a`, `--assembly` | No | Host assembly exposing a public parameterless `IPlatform`. When supplied, the WebApp app settings `NimBus__PlatformType`/`NimBus__PlatformAssembly` become template-owned (passed to bicep as `platformCatalogType`/`platformCatalogAssembly`), so the external catalog survives re-runs. Pair with `nb deploy apps --assembly` so the DLL is packaged with the WebApp. |
+| `--platform` | No | `IPlatform` type name when the assembly exposes more than one |
 
 Deployment secrets are intentionally not accepted as command-line options because process arguments can be inspected by other tools. Set the required environment variable before invoking `nb`:
 
@@ -186,8 +188,12 @@ nb deploy apps --solution-id nimbus --environment dev --resource-group rg-nimbus
 | `--repo-root` | No | Repository root (auto-detected) |
 | `--configuration` | No | Build configuration (default: `Release`) |
 | `--only` | No | Deploy a single application: `resolver` \| `webapp`. Defaults to both. |
+| `-a`, `--assembly` | No | External platform catalog assembly (a public parameterless `IPlatform`). The DLL — plus any sibling DLLs beside it that the publish output does not already contain — is copied into the WebApp package root before zipping, so `NimBus__PlatformAssembly` can be just the file name (e.g. `MyCompany.Catalog.dll`). |
+| `--platform` | No | `IPlatform` type name when the assembly exposes more than one |
 
 Publishes the resolver (Azure Function) and web app, packages as ZIP, and deploys via Azure CLI. `--only webapp` skips the resolver build and deploy entirely (and vice versa) — useful for fast WebApp-only iterations. On a Flex Consumption resolver the zip is deployed directly (the app must stay running — the Azure CLI verifies host health after publishing); on Elastic Premium the app is stopped for the deployment and restarted afterwards.
+
+With `--assembly`, the external catalog assembly is validated up front (same rules as `nb topology apply --assembly`) and bundled into the WebApp package. DLLs already present in the publish output are never overwritten — the published versions win — so only the catalog assembly and its private dependencies are added. Configure the WebApp to load it via `nb infra apply --assembly` (which makes the `NimBus__PlatformType`/`NimBus__PlatformAssembly` settings template-owned), or set those app settings by hand.
 
 ---
 
@@ -201,7 +207,7 @@ nb setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 
 Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resolver-plan`, and `--management-plan-sku`. SQL and bootstrap-admin secrets use the environment variables documented under `nb infra apply`.
 
-The topology step accepts the same external-catalog options as `nb topology apply`: `-a`/`--assembly <PATH>` (host assembly exposing a public parameterless `IPlatform`) and `--platform <TYPE>` (type name when the assembly exposes more than one). Without them, the built-in `PlatformConfiguration` is provisioned.
+The external-catalog options `-a`/`--assembly <PATH>` (host assembly exposing a public parameterless `IPlatform`) and `--platform <TYPE>` (type name when the assembly exposes more than one) apply to every step: the infra step makes the `NimBus__PlatformType`/`NimBus__PlatformAssembly` WebApp settings template-owned, the topology step provisions the external catalog's endpoints, and the app step bundles the catalog DLL (and its private dependencies) into the WebApp package. Without them, the built-in `PlatformConfiguration` is provisioned and served.
 
 ---
 

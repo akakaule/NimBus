@@ -124,7 +124,9 @@ internal sealed record InfrastructureOptions(
     ResolverPlanChoice? ResolverPlan = null,
     string? IdentityAdminEmail = null,
     string? IdentityAdminPassword = null,
-    string? ManagementPlanSku = null);
+    string? ManagementPlanSku = null,
+    string? PlatformCatalogType = null,
+    string? PlatformCatalogAssembly = null);
 
 internal enum StorageProviderChoice
 {
@@ -154,7 +156,8 @@ internal sealed record AppDeploymentOptions(
     string Environment,
     string ResourceGroupName,
     string Configuration,
-    AppDeploymentTarget Target = AppDeploymentTarget.All);
+    AppDeploymentTarget Target = AppDeploymentTarget.All,
+    string? CatalogAssemblyPath = null);
 
 /// <summary>Which application(s) `nb deploy apps` builds and deploys.</summary>
 internal enum AppDeploymentTarget

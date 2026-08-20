@@ -159,6 +159,7 @@ nb topology apply --solution-id nimbus --environment dev --resource-group rg-nim
 | `--solution-id` | Yes | Solution identifier |
 | `--environment` | Yes | Environment name |
 | `--resource-group` | Yes | Resource group with the Service Bus namespace |
+| `--storage-provider` | No | Storage backend: `cosmos` (default) or `sqlserver`. Controls whether the per-endpoint Cosmos containers are provisioned (see below). |
 | `-a`, `--assembly` | No | Host assembly exposing a public parameterless `IPlatform`; default is the built-in platform |
 | `--platform` | No | `IPlatform` type name when the assembly exposes more than one |
 
@@ -169,6 +170,8 @@ Creates topics, subscriptions, and routing rules for each endpoint. With `--asse
 - Deferred subscription (session-enabled)
 - DeferredProcessor subscription (sessions=OFF)
 - Event-type forwarding subscriptions for cross-endpoint routing
+
+**Per-endpoint Cosmos containers.** When the storage provider is `cosmos` (the default) and the command runs against a resource group (not `--sb-connection-string`), one Cosmos SQL container per catalog endpoint is also provisioned through the control plane: account `cosmos-{solution-id}-{environment}`, database `MessageDatabase`, container id = endpoint id, partition key `/id`, default TTL `-1`. The runtime otherwise creates these lazily, which only works with account keys — Entra data-plane RBAC (what the deployed apps use) cannot create containers, so under managed identity the first endpoint with a missing container would fail. Containers that already exist are left untouched (an operator may have customized their TTL), and an endpoint id colliding with a container id reserved by the message store (`messages`, `audits`, `subscriptions`, ...) fails with guidance. `--storage-provider sqlserver` skips this step.
 
 ---
 
@@ -205,7 +208,7 @@ Run infrastructure, topology, and app deployment in sequence.
 nb setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
-Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resolver-plan`, and `--management-plan-sku`. SQL and bootstrap-admin secrets use the environment variables documented under `nb infra apply`.
+Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resolver-plan`, and `--management-plan-sku`. SQL and bootstrap-admin secrets use the environment variables documented under `nb infra apply`. With `--storage-provider cosmos` (the default), the per-endpoint Cosmos containers are provisioned after the topology step, exactly as described under `nb topology apply`.
 
 The external-catalog options `-a`/`--assembly <PATH>` (host assembly exposing a public parameterless `IPlatform`) and `--platform <TYPE>` (type name when the assembly exposes more than one) apply to every step: the infra step makes the `NimBus__PlatformType`/`NimBus__PlatformAssembly` WebApp settings template-owned, the topology step provisions the external catalog's endpoints, and the app step bundles the catalog DLL (and its private dependencies) into the WebApp package. Without them, the built-in `PlatformConfiguration` is provisioned and served.
 

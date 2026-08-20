@@ -240,20 +240,27 @@ internal static class Program
                 var solutionId = applyCommand.Option("--solution-id <ID>", "Solution identifier used in Azure resource names (required without --sb-connection-string).", CommandOptionType.SingleValue);
                 var environment = applyCommand.Option("--environment <NAME>", "Environment name used in Azure resource names (required without --sb-connection-string).", CommandOptionType.SingleValue);
                 var resourceGroup = applyCommand.Option("--resource-group <NAME>", "Azure resource group containing the Service Bus namespace (required without --sb-connection-string).", CommandOptionType.SingleValue);
+                var applyStorageProvider = applyCommand.Option("--storage-provider <PROVIDER>", "Storage provider for NimBus message persistence: cosmos | sqlserver. With 'cosmos' (the default) the per-endpoint Cosmos containers are provisioned alongside the Service Bus topology; 'sqlserver' skips that step.", CommandOptionType.SingleValue);
                 var (applyAssembly, applyPlatform) = AddPlatformCatalogOptions(applyCommand);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
                     var az = new AzureCliRunner();
                     var platformFactory = CreatePlatformFactory(applyAssembly, applyPlatform);
+                    var providerChoice = ParseStorageProvider(applyStorageProvider.Value());
                     var suppliedConnection = sbConnectionString.Value()
                         ?? Environment.GetEnvironmentVariable(CommandRunner.SbConnectionStringEnvName);
-                    ServiceBusTopologyProvisioner provisioner;
-                    TopologyOptions options;
                     if (!string.IsNullOrWhiteSpace(suppliedConnection))
                     {
-                        provisioner = new ServiceBusTopologyProvisioner(az, suppliedConnection, platformFactory);
-                        options = new TopologyOptions(string.Empty, string.Empty, string.Empty);
+                        var provisioner = new ServiceBusTopologyProvisioner(az, suppliedConnection, platformFactory);
+                        await provisioner.ApplyAsync(new TopologyOptions(string.Empty, string.Empty, string.Empty), cancellationToken).ConfigureAwait(false);
+
+                        // No resource group is known on this path, so control-plane Cosmos
+                        // container provisioning cannot run here.
+                        if (providerChoice == StorageProviderChoice.Cosmos)
+                        {
+                            CliOutput.WriteLine("Skipping Cosmos endpoint container provisioning (requires --solution-id, --environment, and --resource-group instead of a connection string).");
+                        }
                     }
                     else
                     {
@@ -265,11 +272,17 @@ internal static class Program
                                 "Provide --sb-connection-string (or AzureServiceBus_ConnectionString), or all of --solution-id, --environment, and --resource-group.");
                         }
 
-                        provisioner = new ServiceBusTopologyProvisioner(az, platformFactory);
-                        options = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!);
+                        var provisioner = new ServiceBusTopologyProvisioner(az, platformFactory);
+                        var options = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!);
+                        await provisioner.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
+
+                        // Entra data-plane RBAC cannot create Cosmos containers lazily, so the
+                        // per-endpoint containers for this catalog are provisioned here through
+                        // the control plane (idempotent; existing containers stay untouched).
+                        var containers = new CosmosContainerProvisioner(az, platformFactory);
+                        await containers.ApplyAsync(options, providerChoice, cancellationToken).ConfigureAwait(false);
                     }
 
-                    await provisioner.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
                     return 0;
                 });
             });
@@ -402,6 +415,13 @@ internal static class Program
 
                 await infra.ApplyAsync(infraOptions, cancellationToken).ConfigureAwait(false);
                 await topology.ApplyAsync(topologyOptions, cancellationToken).ConfigureAwait(false);
+
+                // Entra data-plane RBAC cannot create Cosmos containers lazily, so the
+                // per-endpoint containers for this catalog are provisioned here through
+                // the control plane (idempotent; existing containers stay untouched).
+                var cosmosContainers = new CosmosContainerProvisioner(az, platformFactory);
+                await cosmosContainers.ApplyAsync(topologyOptions, providerChoice, cancellationToken).ConfigureAwait(false);
+
                 await apps.DeployAsync(appOptions, cancellationToken).ConfigureAwait(false);
                 return 0;
             });

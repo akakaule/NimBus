@@ -78,7 +78,9 @@ resource auditsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/con
 // deployed apps use) allows item reads/writes but NOT container management —
 // so every shared container must be declared here. Per-endpoint containers
 // (one per catalog endpoint, PK /id) are catalog-dependent and cannot be
-// declared statically; create them alongside topology provisioning.
+// declared statically; `nb topology apply` / `nb setup` provision them through
+// the control plane alongside the Service Bus topology (see
+// CosmosContainerProvisioner in NimBus.CommandLine).
 var sharedContainers = [
   { name: 'subscriptions', pk: '/id' }   // endpoint notification subscriptions
   { name: 'eventschemas', pk: '/id' }    // agent-defined event schemas (spec 022)

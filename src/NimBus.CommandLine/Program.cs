@@ -1,4 +1,5 @@
 using McMaster.Extensions.CommandLineUtils;
+using NimBus.Core;
 using NimBus.Core.Events;
 using NimBus.MessageStore;
 using Spectre.Console;
@@ -97,6 +98,41 @@ internal static class Program
     }
 
 
+    // Adds the external-catalog options shared by `topology export`, `topology apply`,
+    // and `setup`, mirroring the option names used by `catalog export`.
+    private static (CommandOption Assembly, CommandOption Platform) AddPlatformCatalogOptions(CommandLineApplication command)
+    {
+        var assemblyOption = command.Option("-a|--assembly <PATH>",
+            "Host assembly exposing a public parameterless IPlatform; default is the built-in platform",
+            CommandOptionType.SingleValue);
+
+        var platformOption = command.Option("--platform <TYPE>",
+            "IPlatform type name when the assembly exposes more than one",
+            CommandOptionType.SingleValue);
+
+        return (assemblyOption, platformOption);
+    }
+
+    // Builds the platform factory for commands accepting an external catalog. The assembly is
+    // loaded eagerly so a missing file, missing type, or non-IPlatform type fails with
+    // PlatformLoader's guidance before any Azure work starts. Returns null when --assembly is
+    // absent so callers fall back to the built-in PlatformConfiguration.
+    private static Func<IPlatform>? CreatePlatformFactory(CommandOption assemblyOption, CommandOption platformOption)
+    {
+        if (!assemblyOption.HasValue())
+        {
+            if (platformOption.HasValue())
+            {
+                throw new InvalidOperationException("--platform requires --assembly <PATH>.");
+            }
+
+            return null;
+        }
+
+        var platform = PlatformLoader.Load(assemblyOption.Value()!, platformOption.Value());
+        return () => platform;
+    }
+
     private static void ConfigureInfraCommands(CommandLineApplication app)
     {
         app.Command("infra", infraCommand =>
@@ -179,10 +215,11 @@ internal static class Program
                 exportCommand.HelpOption(inherited: true);
 
                 var output = exportCommand.Option("-o|--output <PATH>", "Output path. Defaults to platform-config.json in the current directory.", CommandOptionType.SingleValue);
+                var (exportAssembly, exportPlatform) = AddPlatformCatalogOptions(exportCommand);
 
                 exportCommand.OnExecuteAsync(async cancellationToken =>
                 {
-                    var exporter = new PlatformConfigExporter();
+                    var exporter = new PlatformConfigExporter(CreatePlatformFactory(exportAssembly, exportPlatform));
                     var outputPath = output.HasValue() ? output.Value()! : Path.Combine(Environment.CurrentDirectory, "platform-config.json");
                     await exporter.ExportAsync(outputPath, cancellationToken).ConfigureAwait(false);
                     return 0;
@@ -198,17 +235,19 @@ internal static class Program
                 var solutionId = applyCommand.Option("--solution-id <ID>", "Solution identifier used in Azure resource names (required without --sb-connection-string).", CommandOptionType.SingleValue);
                 var environment = applyCommand.Option("--environment <NAME>", "Environment name used in Azure resource names (required without --sb-connection-string).", CommandOptionType.SingleValue);
                 var resourceGroup = applyCommand.Option("--resource-group <NAME>", "Azure resource group containing the Service Bus namespace (required without --sb-connection-string).", CommandOptionType.SingleValue);
+                var (applyAssembly, applyPlatform) = AddPlatformCatalogOptions(applyCommand);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
                     var az = new AzureCliRunner();
+                    var platformFactory = CreatePlatformFactory(applyAssembly, applyPlatform);
                     var suppliedConnection = sbConnectionString.Value()
                         ?? Environment.GetEnvironmentVariable(CommandRunner.SbConnectionStringEnvName);
                     ServiceBusTopologyProvisioner provisioner;
                     TopologyOptions options;
                     if (!string.IsNullOrWhiteSpace(suppliedConnection))
                     {
-                        provisioner = new ServiceBusTopologyProvisioner(az, suppliedConnection);
+                        provisioner = new ServiceBusTopologyProvisioner(az, suppliedConnection, platformFactory);
                         options = new TopologyOptions(string.Empty, string.Empty, string.Empty);
                     }
                     else
@@ -221,7 +260,7 @@ internal static class Program
                                 "Provide --sb-connection-string (or AzureServiceBus_ConnectionString), or all of --solution-id, --environment, and --resource-group.");
                         }
 
-                        provisioner = new ServiceBusTopologyProvisioner(az);
+                        provisioner = new ServiceBusTopologyProvisioner(az, platformFactory);
                         options = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!);
                     }
 
@@ -292,13 +331,14 @@ internal static class Program
             var setupSqlAdminLogin = setupCommand.Option("--sql-admin-login <VALUE>", "SQL admin login when --sql-mode is 'provision'.", CommandOptionType.SingleValue);
             var setupSqlServerName = setupCommand.Option("--sql-server-name <NAME>", "Override the SQL server name (default: 'sql-{solution-id}-{environment}'). Use this when the default DNS name is held in Azure's global namespace from a recent delete (24-72h cooldown).", CommandOptionType.SingleValue);
             var setupIdentityAdminEmail = setupCommand.Option("--identity-admin-email <EMAIL>", "When using --storage-provider sqlserver, enables username/password sign-in and seeds this email as the first admin on first boot.", CommandOptionType.SingleValue);
+            var (setupAssembly, setupPlatform) = AddPlatformCatalogOptions(setupCommand);
 
             setupCommand.OnExecuteAsync(async cancellationToken =>
             {
                 var context = CommandContext.Create(repoRoot.Value());
                 var az = new AzureCliRunner();
                 var infra = new InfrastructureDeployer(context, az);
-                var topology = new ServiceBusTopologyProvisioner(az);
+                var topology = new ServiceBusTopologyProvisioner(az, CreatePlatformFactory(setupAssembly, setupPlatform));
                 var apps = new AppDeploymentService(context, az);
 
                 var providerChoice = ParseStorageProvider(setupStorageProvider.Value());

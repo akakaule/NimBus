@@ -137,8 +137,10 @@ nb topology export -o platform-config.json
 | Option | Required | Description |
 |---|---|---|
 | `-o`, `--output` | No | Output file path (default: `platform-config.json`) |
+| `-a`, `--assembly` | No | Host assembly exposing a public parameterless `IPlatform`; default is the built-in platform |
+| `--platform` | No | `IPlatform` type name when the assembly exposes more than one |
 
-Outputs a JSON file with all endpoints, event types, and Service Bus identifiers for use by deployment scripts.
+Outputs a JSON file with all endpoints, event types, and Service Bus identifiers for use by deployment scripts. With `--assembly`, the exported configuration describes the external platform catalog instead of the built-in `PlatformConfiguration`.
 
 ---
 
@@ -155,8 +157,10 @@ nb topology apply --solution-id nimbus --environment dev --resource-group rg-nim
 | `--solution-id` | Yes | Solution identifier |
 | `--environment` | Yes | Environment name |
 | `--resource-group` | Yes | Resource group with the Service Bus namespace |
+| `-a`, `--assembly` | No | Host assembly exposing a public parameterless `IPlatform`; default is the built-in platform |
+| `--platform` | No | `IPlatform` type name when the assembly exposes more than one |
 
-Creates topics, subscriptions, and routing rules for each endpoint. Idempotent — only recreates entities if configuration has changed. Creates:
+Creates topics, subscriptions, and routing rules for each endpoint. With `--assembly`, the topology is provisioned for the external platform catalog instead of the built-in `PlatformConfiguration`. Idempotent — only recreates entities if configuration has changed. Creates:
 - Main subscription (session-enabled) per endpoint
 - Resolver subscription (forwarding)
 - Continuation and Retry subscriptions (forwarding back to self)
@@ -196,6 +200,8 @@ nb setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
 Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resolver-plan`, and `--management-plan-sku`. SQL and bootstrap-admin secrets use the environment variables documented under `nb infra apply`.
+
+The topology step accepts the same external-catalog options as `nb topology apply`: `-a`/`--assembly <PATH>` (host assembly exposing a public parameterless `IPlatform`) and `--platform <TYPE>` (type name when the assembly exposes more than one). Without them, the built-in `PlatformConfiguration` is provisioned.
 
 ---
 

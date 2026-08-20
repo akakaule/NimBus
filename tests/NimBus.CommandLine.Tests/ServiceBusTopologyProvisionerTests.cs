@@ -316,6 +316,30 @@ public sealed class ServiceBusTopologyProvisionerTests
         Assert.Equal(TimeSpan.FromHours(1), TopologyDescriptor.DeferredSubscription(isEmulator: true).DefaultMessageTimeToLive);
     }
 
+    [Fact]
+    public void DefaultPlatformFactory_ReturnsTheBuiltInPlatformConfiguration()
+    {
+        // `topology apply` and `setup` without --assembly must keep provisioning the
+        // built-in platform exactly as before the external-catalog options existed.
+        Assert.IsType<PlatformConfiguration>(ServiceBusTopologyProvisioner.DefaultPlatformFactory());
+    }
+
+    [Fact]
+    public async Task ApplyAsync_WithInjectedPlatformFactory_ProvisionsThatPlatformsEndpoints()
+    {
+        // An externally loaded catalog (nb topology apply --assembly ...) must drive the
+        // provisioned topology instead of the built-in PlatformConfiguration.
+        var client = new RecordingAdministrationClient();
+        var sut = CreateProvisioner(client, new TestPlatform(new TestEndpoint("ExternalEndpoint")));
+
+        await sut.ApplyAsync(new TopologyOptions("nimbus", "dev", "rg-test"), CancellationToken.None);
+
+        Assert.Contains("ExternalEndpoint", client.CreatedTopics);
+
+        var builtInEndpointIds = new PlatformConfiguration().Endpoints.Select(endpoint => endpoint.Id).ToHashSet(StringComparer.Ordinal);
+        Assert.DoesNotContain(client.CreatedTopics, topic => builtInEndpointIds.Contains(topic));
+    }
+
     private static SubscriptionProperties MakeSubscriptionProperties(
         string topicName, string subscriptionName,
         bool requiresSession = false, string? forwardTo = null) =>

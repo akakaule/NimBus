@@ -6,31 +6,36 @@ namespace NimBus.CommandLine;
 
 /// <summary>
 /// CLI-side wrapper for <see cref="CoreProvisioner"/>: resolves the namespace connection
-/// string via the Azure CLI for the built-in <see cref="PlatformConfiguration"/> and then
-/// delegates the actual topology work to the shared provisioning library.
+/// string via the Azure CLI for the platform under provisioning (the built-in
+/// <see cref="PlatformConfiguration"/> by default, or an externally loaded
+/// <see cref="IPlatform"/>) and then delegates the actual topology work to the shared
+/// provisioning library.
 /// </summary>
 internal sealed class ServiceBusTopologyProvisioner
 {
+    /// <summary>Default platform when no external catalog is supplied: the built-in configuration.</summary>
+    internal static readonly Func<IPlatform> DefaultPlatformFactory = static () => new PlatformConfiguration();
+
     private readonly AzureCliRunner _az;
     private readonly Func<TopologyOptions, CancellationToken, Task<string>> _connectionStringProvider;
     private readonly Func<string, ServiceBusAdministrationClient> _clientFactory;
     private readonly Func<IPlatform> _platformFactory;
 
-    internal ServiceBusTopologyProvisioner(AzureCliRunner az)
+    internal ServiceBusTopologyProvisioner(AzureCliRunner az, Func<IPlatform>? platformFactory = null)
         : this(
             az,
             static (options, cancellationToken, runner) => ReadConnectionStringAsync(runner, options, cancellationToken),
             static connectionString => new ServiceBusAdministrationClient(connectionString),
-            static () => new PlatformConfiguration())
+            platformFactory ?? DefaultPlatformFactory)
     {
     }
 
-    internal ServiceBusTopologyProvisioner(AzureCliRunner az, string connectionString)
+    internal ServiceBusTopologyProvisioner(AzureCliRunner az, string connectionString, Func<IPlatform>? platformFactory = null)
         : this(
             az,
             (_, _, _) => Task.FromResult(connectionString),
             static value => new ServiceBusAdministrationClient(value),
-            static () => new PlatformConfiguration())
+            platformFactory ?? DefaultPlatformFactory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
     }

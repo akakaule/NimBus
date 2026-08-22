@@ -2301,8 +2301,13 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public async Task<List<HeartbeatUptimeDay>> GetHeartbeatUptimeDays(DateTime fromDayUtc)
     {
         var container = await GetHeartbeatUptimeDaysContainer();
+        // No ORDER BY: a multi-property ORDER BY needs a composite index the
+        // container does not define (default indexing policy — both lazy SDK
+        // creation and the bicep create it that way), so Cosmos rejects the
+        // query with BadRequest. The result set is small (endpoints × ≤90
+        // days); sort in memory instead.
         var query = new QueryDefinition(
-            "SELECT * FROM c WHERE c.DayUtc >= @fromDayUtc ORDER BY c.EndpointId, c.DayUtc")
+            "SELECT * FROM c WHERE c.DayUtc >= @fromDayUtc")
             .WithParameter("@fromDayUtc", fromDayUtc.Date);
         var iterator = container.GetItemQueryIterator<HeartbeatUptimeDay>(query);
         var rows = new List<HeartbeatUptimeDay>();
@@ -2311,7 +2316,10 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
             rows.AddRange(await iterator.ReadNextAsync());
         }
 
-        return rows;
+        return rows
+            .OrderBy(day => day.EndpointId, StringComparer.Ordinal)
+            .ThenBy(day => day.DayUtc)
+            .ToList();
     }
 
     public async Task<bool> UpsertHeartbeatUptimeDays(IEnumerable<HeartbeatUptimeDay> days)

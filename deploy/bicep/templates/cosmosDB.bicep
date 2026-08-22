@@ -84,6 +84,11 @@ var sharedContainers = [
   { name: 'eventschemas', pk: '/id' }    // agent-defined event schemas (spec 022)
   { name: 'eventreports', pk: '/EndpointId' } // per-event reported markers
   { name: 'accesscontrol', pk: '/id' }   // site + endpoint ACLs (spec 026)
+  { name: 'Metadata', pk: '/id' }        // endpoint metadata (owner, heartbeat opt-in)
+  { name: 'settings', pk: '/id' }        // operator-tuned platform settings
+  { name: 'servicehealth', pk: '/id' }   // Resolver liveness beats
+  { name: 'heartbeatuptimedays', pk: '/EndpointId', ttl: -1 } // heartbeat uptime rollups; TTL on, items decide expiry
+  { name: 'heartbeatgaps', pk: '/EndpointId', ttl: -1 }       // heartbeat silent periods; TTL on, items decide expiry
 ]
 
 resource sharedContainerResources 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2021-06-15' = [for c in sharedContainers: {
@@ -96,6 +101,7 @@ resource sharedContainerResources 'Microsoft.DocumentDB/databaseAccounts/sqlData
         paths: [c.pk]
         kind: 'Hash'
       }
+      defaultTtl: c.?ttl
     }
   }
 }]

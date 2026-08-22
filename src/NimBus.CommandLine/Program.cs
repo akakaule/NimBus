@@ -198,6 +198,7 @@ internal static class Program
                 var solutionId = applyCommand.Option("--solution-id <ID>", "Solution identifier used in Azure resource names (required without --sb-connection-string).", CommandOptionType.SingleValue);
                 var environment = applyCommand.Option("--environment <NAME>", "Environment name used in Azure resource names (required without --sb-connection-string).", CommandOptionType.SingleValue);
                 var resourceGroup = applyCommand.Option("--resource-group <NAME>", "Azure resource group containing the Service Bus namespace (required without --sb-connection-string).", CommandOptionType.SingleValue);
+                var storageProvider = applyCommand.Option("--storage-provider <PROVIDER>", "Storage provider for NimBus message persistence: cosmos | sqlserver. Controls whether the per-endpoint Cosmos containers are provisioned. Defaults to 'cosmos'.", CommandOptionType.SingleValue);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
@@ -206,9 +207,10 @@ internal static class Program
                         ?? Environment.GetEnvironmentVariable(CommandRunner.SbConnectionStringEnvName);
                     ServiceBusTopologyProvisioner provisioner;
                     TopologyOptions options;
-                    if (!string.IsNullOrWhiteSpace(suppliedConnection))
+                    var runsAgainstResourceGroup = string.IsNullOrWhiteSpace(suppliedConnection);
+                    if (!runsAgainstResourceGroup)
                     {
-                        provisioner = new ServiceBusTopologyProvisioner(az, suppliedConnection);
+                        provisioner = new ServiceBusTopologyProvisioner(az, suppliedConnection!);
                         options = new TopologyOptions(string.Empty, string.Empty, string.Empty);
                     }
                     else
@@ -226,6 +228,16 @@ internal static class Program
                     }
 
                     await provisioner.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
+
+                    // Per-endpoint Cosmos containers go through the control plane here
+                    // because the deployed apps' Entra data-plane tokens cannot create
+                    // containers lazily. Connection-string runs have no resource group
+                    // to target, and the SQL provider has no per-endpoint containers.
+                    if (runsAgainstResourceGroup && ParseStorageProvider(storageProvider.Value()) == StorageProviderChoice.Cosmos)
+                    {
+                        await new EndpointContainerProvisioner(az).ApplyAsync(options, cancellationToken).ConfigureAwait(false);
+                    }
+
                     return 0;
                 });
             });
@@ -346,6 +358,14 @@ internal static class Program
 
                 await infra.ApplyAsync(infraOptions, cancellationToken).ConfigureAwait(false);
                 await topology.ApplyAsync(topologyOptions, cancellationToken).ConfigureAwait(false);
+
+                // See the topology apply command: managed identity cannot create the
+                // per-endpoint Cosmos containers lazily, so provision them here.
+                if (providerChoice == StorageProviderChoice.Cosmos)
+                {
+                    await new EndpointContainerProvisioner(az).ApplyAsync(topologyOptions, cancellationToken).ConfigureAwait(false);
+                }
+
                 await apps.DeployAsync(appOptions, cancellationToken).ConfigureAwait(false);
                 return 0;
             });

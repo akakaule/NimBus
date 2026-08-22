@@ -271,6 +271,19 @@ namespace NimBus.WebApp
                     };
                 });
             }
+
+            if (!hasNimBusIdentity)
+            {
+                // The Identity extension's controllers reach MVC as an application
+                // part on every build (Razor class library), but their
+                // SignInManager/UserManager dependencies exist only when
+                // AddNimBusIdentity ran above. Unregister them so /api/auth/* and
+                // /account/* 404 — which is what the SPA expects — instead of
+                // failing activation with a 500. See
+                // IdentityControllersDisabledFeatureProvider.
+                services.AddControllers().ConfigureApplicationPartManager(
+                    apm => apm.FeatureProviders.Add(new IdentityControllersDisabledFeatureProvider()));
+            }
         }
 
         // Controllers/JSON, Razor, NSwag, response compression, SignalR.

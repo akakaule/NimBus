@@ -95,14 +95,15 @@ resource sharedContainerResources 'Microsoft.DocumentDB/databaseAccounts/sqlData
   parent: sqlDb
   name: c.name
   properties: {
-    resource: {
+    // union() so containers without a ttl entry omit defaultTtl entirely —
+    // the Cosmos RP rejects an explicit "defaultTtl": null as invalid input.
+    resource: union({
       id: c.name
       partitionKey: {
         paths: [c.pk]
         kind: 'Hash'
       }
-      defaultTtl: c.?ttl
-    }
+    }, c.?ttl != null ? { defaultTtl: c.?ttl } : {})
   }
 }]
 

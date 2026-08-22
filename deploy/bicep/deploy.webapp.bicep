@@ -201,13 +201,17 @@ var templateManagedKeys = map(webappsettings, managed => managed.name)
 // Unlike the auth settings these are not secrets, so they travel in the plain
 // settings array and stay visible in deployment history. Excluding the
 // template-managed keys keeps the final array free of duplicate names, which
-// Azure does not define behaviour for.
-var preservedRateLimitAppSettings = [for preserved in filter(
+// Azure does not define behaviour for. map()/filter() rather than a
+// for-expression: existingAppSettings comes from the runtime list() call, and a
+// for-expression's collection must be calculable at deployment start (BCP178).
+var preservedRateLimitAppSettings = map(
+  filter(
     items(existingAppSettings),
-    setting => startsWith(setting.key, 'RateLimiting__') && !contains(templateManagedKeys, setting.key)): {
-  name: preserved.key
-  value: preserved.value
-}]
+    setting => startsWith(setting.key, 'RateLimiting__') && !contains(templateManagedKeys, setting.key)),
+  preserved => {
+    name: preserved.key
+    value: preserved.value
+  })
 
 var webappsettingsFinal = concat(webappsettings, preservedRateLimitAppSettings)
 

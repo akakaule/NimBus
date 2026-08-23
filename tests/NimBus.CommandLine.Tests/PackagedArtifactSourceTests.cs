@@ -37,7 +37,10 @@ public sealed class PackagedArtifactSourceTests : IDisposable
 
         Assert.Equal("resolver-bits", File.ReadAllText(resolver));
         Assert.Equal("webapp-bits", File.ReadAllText(webApp));
-        Assert.Equal(1, handler.Requests);
+        // One probe for the feed's service index, then one download. The stub answers the
+        // index with the package bytes, so the source falls back to nuget.org's layout —
+        // which is what a feed that serves no usable index should produce.
+        Assert.Equal(2, handler.Requests);
         Assert.Contains($"/v3-flatcontainer/akaule.nimbus.deploy/{Version}/akaule.nimbus.deploy.{Version}.nupkg", handler.LastUrl, StringComparison.Ordinal);
     }
 
@@ -48,9 +51,11 @@ public sealed class PackagedArtifactSourceTests : IDisposable
         var source = CreateSource(handler);
 
         await source.GetResolverZipAsync(CancellationToken.None);
+        var afterFirst = handler.Requests;
         await source.GetResolverZipAsync(CancellationToken.None);
 
-        Assert.Equal(1, handler.Requests);
+        // The point is that the cache hit costs nothing more, whatever the first call spent.
+        Assert.Equal(afterFirst, handler.Requests);
     }
 
     [Fact]

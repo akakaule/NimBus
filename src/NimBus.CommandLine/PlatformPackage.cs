@@ -68,16 +68,18 @@ internal sealed class PlatformPackage
     {
         var (packageId, version) = ParseReference(reference);
 
+        var credentials = ResolveFeedCredentials(
+            feed,
+            Environment.GetEnvironmentVariable(FeedEnvironmentVariable),
+            Environment.GetEnvironmentVariable(FeedTokenEnvironmentVariable),
+            Environment.GetEnvironmentVariable(PackagedArtifactSource.FeedEnvironmentVariable),
+            Environment.GetEnvironmentVariable(PackagedArtifactSource.FeedTokenEnvironmentVariable));
+
         var packages = new NuGetPackageSource(
             http,
-            feed
-                ?? Environment.GetEnvironmentVariable(FeedEnvironmentVariable)
-                // Falls back to the artifact feed: a customer mirroring NimBus into their
-                // own feed usually publishes their contracts to the same one.
-                ?? Environment.GetEnvironmentVariable(PackagedArtifactSource.FeedEnvironmentVariable),
-            Environment.GetEnvironmentVariable(FeedTokenEnvironmentVariable)
-                ?? Environment.GetEnvironmentVariable(PackagedArtifactSource.FeedTokenEnvironmentVariable),
-            FeedTokenEnvironmentVariable);
+            credentials.Feed,
+            credentials.Token,
+            credentials.TokenVariable);
 
         var cacheDirectory = Path.Combine(
             cacheRoot ?? Path.Combine(
@@ -97,6 +99,36 @@ internal sealed class PlatformPackage
 
         CliOutput.WriteLine($"Using platform '{typeName}' from {packageId} {version}.");
         return new PlatformPackage(packageId, version, assemblies, primary, typeName);
+    }
+
+    /// <summary>
+    /// Pairs the feed to contact with the token that belongs to it. A token authenticates
+    /// one feed: borrowing the artifact-feed PAT for a platform feed the customer named
+    /// separately would send their credential to a host it was never issued for.
+    /// </summary>
+    /// <remarks>
+    /// Falling back to the artifact feed stays supported — a customer mirroring NimBus into
+    /// their own feed usually publishes contracts to the same one — but the fallback now
+    /// carries that feed's own token rather than mixing the two.
+    /// </remarks>
+    internal static (string? Feed, string? Token, string TokenVariable) ResolveFeedCredentials(
+        string? explicitFeed,
+        string? platformFeed,
+        string? platformToken,
+        string? artifactFeed,
+        string? artifactToken)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitFeed))
+            return (explicitFeed, platformToken, FeedTokenEnvironmentVariable);
+
+        if (!string.IsNullOrWhiteSpace(platformFeed))
+            return (platformFeed, platformToken, FeedTokenEnvironmentVariable);
+
+        if (!string.IsNullOrWhiteSpace(artifactFeed))
+            return (artifactFeed, artifactToken, PackagedArtifactSource.FeedTokenEnvironmentVariable);
+
+        // No feed configured: the public default, which never receives a credential.
+        return (null, null, FeedTokenEnvironmentVariable);
     }
 
     /// <summary>

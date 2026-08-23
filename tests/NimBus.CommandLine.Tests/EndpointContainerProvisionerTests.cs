@@ -76,6 +76,9 @@ public sealed class EndpointContainerProvisionerTests
 
     private sealed class FakeAzureCliRunner : IAzureCliRunner
     {
+
+        public Task<System.Text.Json.JsonDocument> CaptureJsonAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string failureMessage) =>
+            Task.FromResult(System.Text.Json.JsonDocument.Parse("{}"));
         public List<IReadOnlyList<string>> Commands { get; } = new();
 
         public string ListResponse { get; set; } = "[]";

@@ -25,6 +25,11 @@ internal interface IAzureCliRunner
         CancellationToken cancellationToken,
         string failureMessage);
 
+    Task<JsonDocument> CaptureJsonAsync(
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken,
+        string failureMessage);
+
     Task<ProcessResult> TryRunAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken);
 }
 #pragma warning restore CA1068

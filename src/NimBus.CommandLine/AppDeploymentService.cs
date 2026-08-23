@@ -8,11 +8,11 @@ internal sealed class AppDeploymentService
     private static readonly Version MinimumFlexConsumptionAzureCliVersion = new(2, 60, 0);
     private static readonly string[] AzureCliVersionArguments = ["version", "--output", "json"];
 
-    private readonly AzureCliRunner _az;
+    private readonly IAzureCliRunner _az;
     private readonly IDeploymentArtifactSource _artifacts;
     private readonly PlatformPackage? _platformPackage;
 
-    public AppDeploymentService(AzureCliRunner az, IDeploymentArtifactSource artifacts, PlatformPackage? platformPackage = null)
+    public AppDeploymentService(IAzureCliRunner az, IDeploymentArtifactSource artifacts, PlatformPackage? platformPackage = null)
     {
         _az = az;
         _artifacts = artifacts;
@@ -72,10 +72,10 @@ internal sealed class AppDeploymentService
                 if (staged is not null && File.Exists(staged)) File.Delete(staged);
             }
 
-            if (_platformPackage is not null)
-            {
-                await ApplyPlatformSettingsAsync(options, names, cancellationToken).ConfigureAwait(false);
-            }
+            // Always reconcile, never only on the way in: the settings outlive a zip deploy,
+            // so a later deployment without a platform package would leave the WebApp
+            // pointing at an assembly that is no longer in the zip.
+            await ApplyPlatformSettingsAsync(options, names, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -104,6 +104,15 @@ internal sealed class AppDeploymentService
                 // customer happened to build against.
                 if (archive.GetEntry(entryName) is not null)
                 {
+                    // Skipping the assembly that actually exposes the platform would leave
+                    // NimBus__PlatformAssembly pointing at the WebApp's own file of that
+                    // name, and startup would throw on a type it cannot find there.
+                    if (string.Equals(assemblyPath, _platformPackage.PrimaryAssemblyPath, StringComparison.Ordinal))
+                    {
+                        throw new CommandException(
+                            $"The platform package's assembly '{entryName}' has the same name as one the WebApp already ships, so the catalog cannot be deployed. Rename the assembly that contains your IPlatform type.");
+                    }
+
                     CliOutput.WriteLine($"Skipping '{entryName}' from the platform package: the WebApp already ships it.");
                     continue;
                 }
@@ -117,12 +126,37 @@ internal sealed class AppDeploymentService
     }
 
     /// <summary>
-    /// Points the deployed WebApp at the catalog that just travelled with it. The assembly
-    /// setting is a bare file name; the WebApp resolves it against its content root, which
-    /// keeps the setting identical on Windows and Linux App Service.
+    /// Points the deployed WebApp at the catalog that just travelled with it, or clears the
+    /// settings when none did. The assembly setting is a bare file name; the WebApp resolves
+    /// it against its content root, which keeps the setting identical on Windows and Linux
+    /// App Service.
     /// </summary>
+    /// <remarks>
+    /// Clearing matters as much as setting. <c>AddPlatformCatalog</c> throws when
+    /// PlatformType names a type it cannot load, so a stale setting left over from an
+    /// earlier <c>--platform-package</c> deployment would fail every request that touches
+    /// <c>IPlatform</c>. Falling back to the built-in catalog is the recoverable outcome.
+    /// </remarks>
     private async Task ApplyPlatformSettingsAsync(AppDeploymentOptions options, DeploymentNames names, CancellationToken cancellationToken)
     {
+        if (_platformPackage is null)
+        {
+            // Deleting settings that are not present succeeds, so this is safe to run on
+            // every plain deployment.
+            await _az.EnsureSuccessAsync(
+                new[]
+                {
+                    "webapp", "config", "appsettings", "delete",
+                    "--resource-group", options.ResourceGroupName,
+                    "--name", names.WebAppName,
+                    "--setting-names", "NimBus__PlatformType", "NimBus__PlatformAssembly",
+                    "--output", "none",
+                },
+                cancellationToken,
+                $"Failed to clear the platform catalog settings on '{names.WebAppName}'.").ConfigureAwait(false);
+            return;
+        }
+
         await _az.EnsureSuccessAsync(
             new[]
             {
@@ -130,7 +164,7 @@ internal sealed class AppDeploymentService
                 "--resource-group", options.ResourceGroupName,
                 "--name", names.WebAppName,
                 "--settings",
-                $"NimBus__PlatformType={_platformPackage!.PlatformTypeName}",
+                $"NimBus__PlatformType={_platformPackage.PlatformTypeName}",
                 $"NimBus__PlatformAssembly={Path.GetFileName(_platformPackage.PrimaryAssemblyPath)}",
                 "--output", "none",
             },

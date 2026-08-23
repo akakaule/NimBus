@@ -53,6 +53,9 @@ public sealed class InfrastructureDeployerSecretTests
 
     private sealed class RecordingAzureCliRunner : IAzureCliRunner
     {
+
+        public Task<System.Text.Json.JsonDocument> CaptureJsonAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string failureMessage) =>
+            Task.FromResult(System.Text.Json.JsonDocument.Parse("{}"));
         internal const string ApiKey = "app-insights-api-key-marker";
         internal const string InstrumentationKey = "instrumentation-key-marker";
 

@@ -10,7 +10,11 @@ Primary targets:
 
 - `ClientApp/src/components/endpoint-details/events-panel.tsx`
 - `ClientApp/src/components/event-details/message-listing.tsx`
-- their existing tests and directly related event-detail components/functions
+- `ClientApp/src/components/endpoint-details/events-panel.paint.test.tsx`
+- `ClientApp/src/components/endpoint-details/events-panel.columns.test.ts`
+- `ClientApp/src/components/event-details/message-listing.test.tsx`
+- `ClientApp/src/components/event-details/audit-listing.test.tsx`
+- directly related event-detail components and feature-local functions
 
 This is a structural refactor. Redesigning the UI, changing API contracts, replacing state management libraries, changing table behavior, or regenerating the API client is out of scope.
 
@@ -95,12 +99,14 @@ From `src/NimBus.WebApp/ClientApp` with Node.js 22:
 ```powershell
 npm run lint
 npm test -- --run src/components/endpoint-details/events-panel.paint.test.tsx
+npm test -- --run src/components/endpoint-details/events-panel.columns.test.ts
 npm test -- --run src/components/event-details/message-listing.test.tsx
+npm test -- --run src/components/event-details/audit-listing.test.tsx
 npm test -- --run
 npm run build
 ```
 
-If the full Vitest run lacks browser `localStorage`, set a process-local Node `--localstorage-file` pointing to a unique temporary file. Do not change application code to accommodate the test runner.
+Do not change application code to accommodate the test runner.
 
 Then run:
 

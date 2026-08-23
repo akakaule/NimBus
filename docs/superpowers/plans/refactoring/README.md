@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This directory turns the maintainability audit into five independently executable plans. Each plan preserves current behavior, starts with characterization or architecture tests, and uses small RED-GREEN-REFACTOR increments.
+This directory coordinates five independently executable refactoring plans. Each plan preserves current behavior, starts with characterization or architecture tests, and uses small RED-GREEN-REFACTOR increments. The plans incorporate the source-verified findings in [REVIEW.md](REVIEW.md).
 
 ## Plans
 
@@ -14,15 +14,7 @@ This directory turns the maintainability audit into five independently executabl
 
 ## Recommended sequence
 
-```text
-Plan 1: narrow store consumers ──> Plan 2: split provider internals
-
-Plan 3: WebApp event components ────────────────────────────────┐
-Plan 4: CLI composition ────────────────────────────────────────┼─> Plan 5: core lifecycle
-                                                               ┘
-```
-
-Plans 3 and 4 are independent of the storage work and may run in parallel in separate worktrees. Plan 5 should run last: it changes the most sensitive orchestration code and benefits from a quieter branch and the testing patterns established by the other refactors.
+Plan 1 must precede Plan 2 so consumers narrow their dependencies before provider internals move. Plans 3 and 4 are independent of the storage work and may run in parallel in separate worktrees. Plan 5 Phases 1–3 are also independent; its optional processor extraction requires the explicit decision gate defined in that plan rather than completion of the other refactors.
 
 ## Delivery rules
 
@@ -43,5 +35,9 @@ dotnet restore src/NimBus.sln
 dotnet build src/NimBus.sln -c Release
 dotnet test src/NimBus.sln -c Release --no-build
 ```
+
+Use Release deliberately: repository analyzers promote warnings such as interface nullability mismatches to errors there, while a Debug-only loop can miss failures that CI catches.
+
+The solution test command is not sufficient proof when live provider suites skip. Complete storage-related plans with a SQL Server 2022 test instance exposed through `NIMBUS_SQL_TEST_CONNECTION` and a Cosmos instance/emulator configured through `NIMBUS_COSMOS_TEST_CONNECTION` or `NIMBUS_COSMOS_TEST_ENDPOINT` plus `NIMBUS_COSMOS_TEST_KEY`. Set `NIMBUS_COSMOS_TEST_REQUIRED=1` when Cosmos conformance must fail instead of skip, and inspect the test summary for inconclusive/skipped provider tests.
 
 For WebApp changes, also run the ClientApp lint, tests, and production build using Node.js 22 as described in Plan 3.

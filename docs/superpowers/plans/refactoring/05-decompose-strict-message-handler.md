@@ -2,11 +2,11 @@
 
 ## Goal
 
-Reduce the size and change risk of `StrictMessageHandler` by moving request-specific orchestration behind internal collaborators while keeping the public handler, constructor compatibility bridges, message semantics, and settlement ordering unchanged.
+Reduce repetition and change risk in `StrictMessageHandler` by extracting shared lifecycle and failure helpers while keeping request ordering in the public handler unless a later decision proves further decomposition worthwhile.
 
-## Why this plan is last
+## Risk posture
 
-`StrictMessageHandler` is the core lifecycle state machine. Its ordering is operational behavior: a response may need to be published before completion, sessions must be unblocked before deferred siblings drain, and some exceptions are intentionally rethrown while others are converted into settlement. A broad rewrite would be riskier than the current size. This plan therefore uses characterization tests and migrates one flow at a time.
+`StrictMessageHandler` is the core lifecycle state machine, but at roughly 839 lines it is the smallest target in this roadmap and already has a test file more than twice its size. Its ordering is operational behavior: a response may need to be published before completion, sessions must be unblocked before deferred siblings drain, and some exceptions are intentionally rethrown while others are converted into settlement. Phases 1–3 are the committed scope. Moving request flows into separate processors is conditional and requires a new review after the helper extractions land.
 
 ## Scope
 
@@ -14,7 +14,9 @@ In scope:
 
 - `NimBus.Core/Messages/StrictMessageHandler.cs`
 - focused internal lifecycle collaborators in `NimBus.Core/Messages`
-- `StrictMessageHandlerTests.cs` and related heartbeat, inbox, retry, handoff, and deferred-processing tests
+- `tests/NimBus.Core.Tests/StrictMessageHandlerTests.cs`
+- `tests/NimBus.Core.Tests/Messages/StrictMessageHandlerHeartbeatTests.cs`
+- related inbox, retry, handoff, and deferred-processing tests
 - DI construction in the SDK where required
 
 Out of scope:
@@ -23,24 +25,20 @@ Out of scope:
 - changing retry, failure-disposition, inbox, heartbeat, or handoff semantics;
 - changing the separate deferred-processor architecture;
 - deleting obsolete public constructors or APIs;
-- replacing the message lifecycle with an external state-machine package.
+- replacing the message lifecycle with an external state-machine package;
+- consolidating the other `FakeMessageContext` or `TestMessageContext` doubles in `ResponseServiceTests`, `ExtensionFrameworkTests`, `BuiltInMiddlewareTests`, or the heartbeat test file.
 
 ## Target design
 
-Keep `StrictMessageHandler : MessageHandler` as the only public entry point. Its overrides delegate to internal request processors sharing a small lifecycle-operations collaborator:
+Keep `StrictMessageHandler : MessageHandler` as the only public entry point. The committed target is deliberately small:
 
 ```text
 StrictMessageHandler
-├── EventRequestProcessor
-├── RetryRequestProcessor
-├── ResubmissionRequestProcessor
-├── ManagerRequestProcessor       (skip and handoff settlement)
-├── ContinuationRequestProcessor
 ├── MessageLifecycleOperations    (response, block/unblock, completion, drain)
 └── FailureProcessor              (classification, discard, retry scheduling)
 ```
 
-The exact class split may be reduced if two processors are inseparable, but ownership must follow message flow rather than arbitrary method-count targets.
+Request-specific methods remain in `StrictMessageHandler` through Phase 3. A conditional follow-up may introduce processors only if the decision gate in Phase 4 is met.
 
 ## Compatibility constraints
 
@@ -54,7 +52,7 @@ The exact class split may be reduced if two processors are inseparable, but owne
 
 ## Phase 1: build an ordering test harness
 
-1. Add a recording `IMessageContext` test double or extend the existing one to capture ordered operations:
+1. Extend only `FakeMessageContext` in `tests/NimBus.Core.Tests/StrictMessageHandlerTests.cs` to capture ordered operations:
    - response publication;
    - block/unblock;
    - receive/defer/restore;
@@ -70,6 +68,8 @@ The exact class split may be reduced if two processors are inseparable, but owne
    - continuation unexpected failure: restore the deferred reference before rethrowing.
 5. Add explicit “settled exactly once” assertions and cancellation tests.
 6. Run the new tests against the current handler and correct the expected sequence to match proven behavior, not assumptions.
+
+Do not consolidate or modify the four other message-context doubles as part of this plan. The heartbeat-specific double remains local to `StrictMessageHandlerHeartbeatTests.cs`; that file must explicitly preserve the heartbeat-before-inbox-and-session-guards behavior.
 
 ## Phase 2: introduce dependency composition without moving flows
 
@@ -89,9 +89,20 @@ Do not hide multiple side effects behind a vaguely named helper. Operations such
 4. Preserve the legacy permanent-failure classifier bridge and its obsolete annotations.
 5. Run failure-disposition, retry-policy, cancellation, logging, and dead-letter tests.
 
-## Phase 4: migrate request processors one at a time
+## Phase 4: conditional decision gate
 
-Use this order from least coupled to most coupled:
+Stop after Phase 3 and review the resulting handler before creating request-processor classes. Continue only if all of the following are true:
+
+- repeated multi-step orchestration remains in at least two request flows after `MessageLifecycleOperations` and `FailureProcessor` are in place;
+- extracting that orchestration has a clearer ownership boundary than leaving the readable flow methods together;
+- the ordering harness covers every branch that would move;
+- a focused design review concludes that the benefit exceeds the added indirection.
+
+If those conditions are not met, close the plan after documentation and verification. The default decision is to stop.
+
+## Conditional Phase 5: migrate request processors
+
+If Phase 4 explicitly approves further work, migrate one processor at a time in this order:
 
 1. `ManagerRequestProcessor`: skip, handoff completed, and handoff failed.
 2. `ContinuationRequestProcessor`.
@@ -110,13 +121,15 @@ For each processor:
 
 Retry and resubmission move last because they combine duplicate detection, session ownership, handoff parking, unblock/drain behavior, failure handling, and compatibility paths.
 
-## Phase 5: simplify the public facade
+After each processor, repeat the Phase 4 decision: stop if the remaining flow methods are clearer in the facade than behind another collaborator.
 
-1. Reduce `StrictMessageHandler` to public constructors, collaborator construction, and public dispatch overrides.
+## Documentation and facade cleanup
+
+1. Keep `StrictMessageHandler` as the public SDK-visible entry point and preserve all public dispatch overrides.
 2. Keep XML documentation on all public members.
-3. Remove only private helpers proven unused after processor extraction.
-4. Update `docs/architecture.md` to describe the handler as a facade over request-specific lifecycle processors.
-5. Add an architecture test ensuring the public handler remains the SDK-visible entry point and internal processors do not become public API.
+3. Remove only private helpers proven unused after the approved extractions.
+4. Update `docs/architecture.md` to describe the lifecycle and failure helper boundaries. Mention request processors only if Conditional Phase 5 actually occurs.
+5. Add an architecture test ensuring new collaborators remain internal and the public handler remains the SDK-visible entry point.
 
 ## Verification
 
@@ -149,14 +162,18 @@ Review the final diff specifically for changed await order, catch ordering, canc
 
 1. `test(core): characterize strict message lifecycle ordering`
 2. `refactor(core): extract lifecycle and failure operations`
-3. `refactor(core): extract manager and continuation processors`
-4. `refactor(core): extract event retry and resubmission processors`
-5. `docs(core): document strict lifecycle processor boundaries`
+3. `docs(core): document strict lifecycle helper boundaries`
+
+Only after an approved Phase 4 decision:
+
+4. `refactor(core): extract approved request processors`
 
 ## Exit criteria
 
 - `StrictMessageHandler` remains the compatible public facade.
-- Every request flow has focused direct tests plus facade-level regression coverage.
+- The ordering harness covers every request flow and handled exception branch.
+- Shared lifecycle and failure behavior has focused direct tests.
 - Settlement, response, session, deferred, retry, duplicate, heartbeat, and cancellation ordering is unchanged.
 - No public constructor or wire-contract break is introduced.
+- Request processors are not required for completion; if introduced, the Phase 4 decision is documented.
 - Core, SDK, Service Bus, end-to-end, and full solution Release gates pass.

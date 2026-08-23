@@ -97,8 +97,9 @@ Message tracking owns the largest and most coupled surface: state transitions, s
 1. Reduce each public provider class to construction, shared provider plumbing, and straightforward delegation.
 2. Add XML documentation explaining that it is a compatibility aggregate facade.
 3. Ensure internal stores are not independently public or independently registered.
-4. Update `docs/architecture.md` and `docs/storage-providers.md` so they no longer describe provider logic as concentrated in one client.
+4. Update `docs/architecture.md` and `docs/storage-providers.md` so they no longer describe provider logic as concentrated in one client. In `docs/architecture.md`, specifically replace the line 759 tradeoff about logic concentrated in `CosmosDbClient` and correct the stale line 770 path `src/NimBus.MessageStore/CosmosDbClient.cs` to the current provider-package path.
 5. Run a source-compatibility check against representative existing constructor calls in tests and samples.
+6. Decide separately whether to seal `CosmosDbClient`. It currently has no virtual members or repository subclasses, but sealing a public type is an API change and must not be folded silently into this refactor. Default to leaving it unsealed unless a separately reviewed compatibility decision approves the change.
 
 ## Verification
 

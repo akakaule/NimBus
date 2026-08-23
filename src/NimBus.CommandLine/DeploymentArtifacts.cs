@@ -71,22 +71,21 @@ internal static class DeploymentArtifactSource
 internal sealed class PackagedArtifactSource : IDeploymentArtifactSource
 {
     internal const string PackageId = "akaule.nimbus.deploy";
-    internal const string DefaultFeed = "https://api.nuget.org";
     internal const string FeedEnvironmentVariable = "NIMBUS_ARTIFACT_FEED";
     internal const string FeedTokenEnvironmentVariable = "NIMBUS_ARTIFACT_FEED_TOKEN";
 
-    private readonly HttpClient _http;
-    private readonly string _feed;
+    private readonly NuGetPackageSource _packages;
     private readonly string _version;
     private readonly string _cacheDirectory;
 
     public PackagedArtifactSource(HttpClient http, string? feed = null, string? version = null, string? cacheDirectory = null)
     {
-        _http = http;
         _version = version ?? BicepTemplateProvider.ResolveVersion();
-        _feed = (feed
-            ?? Environment.GetEnvironmentVariable(FeedEnvironmentVariable)
-            ?? DefaultFeed).TrimEnd('/');
+        _packages = new NuGetPackageSource(
+            http,
+            feed ?? Environment.GetEnvironmentVariable(FeedEnvironmentVariable),
+            Environment.GetEnvironmentVariable(FeedTokenEnvironmentVariable),
+            FeedTokenEnvironmentVariable);
         _cacheDirectory = cacheDirectory ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "nimbus", "artifacts", _version);
@@ -104,82 +103,22 @@ internal sealed class PackagedArtifactSource : IDeploymentArtifactSource
 
     private async Task<string> GetArtifactAsync(string fileName, CancellationToken cancellationToken)
     {
-        var cached = Path.Combine(_cacheDirectory, fileName);
-        if (File.Exists(cached))
-        {
-            CliOutput.WriteLine($"Using cached {fileName} for NimBus {_version}.");
-            return cached;
-        }
+        var root = await _packages.EnsureExtractedAsync(
+            PackageId,
+            _version,
+            _cacheDirectory,
+            feed => $"No deployment artifacts published for NimBus {_version} on {feed}. Install a CLI version that has them (dotnet tool update --global Akaule.NimBus.CommandLine), point {FeedEnvironmentVariable} at a feed that mirrors them, or build from source with --from-source --repo-root <path>.",
+            cancellationToken).ConfigureAwait(false);
 
-        await DownloadAndExtractAsync(cancellationToken).ConfigureAwait(false);
-
-        if (!File.Exists(cached))
+        var artifact = Path.Combine(root, "content", fileName);
+        if (!File.Exists(artifact))
         {
             throw new CommandException(
                 $"The NimBus {_version} deployment package does not contain '{fileName}'. This usually means the package was built by an older release process; deploy from source with --from-source --repo-root <path> instead.");
         }
 
-        return cached;
+        return artifact;
     }
-
-    private async Task DownloadAndExtractAsync(CancellationToken cancellationToken)
-    {
-        // NuGet's V3 flat container serves the .nupkg — itself a zip — over a plain GET,
-        // so resolving artifacts needs no NuGet client library.
-        var url = $"{_feed}/v3-flatcontainer/{PackageId}/{_version}/{PackageId}.{_version}.nupkg";
-        CliOutput.WriteLine($"Downloading NimBus {_version} deployment artifacts from {_feed}...");
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        var token = Environment.GetEnvironmentVariable(FeedTokenEnvironmentVariable);
-        if (!string.IsNullOrWhiteSpace(token))
-        {
-            // Azure Artifacts and other private feeds authenticate a PAT as the password
-            // half of Basic auth; the username is ignored.
-            var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"nb:{token}"));
-            request.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
-        }
-
-        using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new CommandException(BuildDownloadFailureMessage(response.StatusCode, url));
-        }
-
-        Directory.CreateDirectory(_cacheDirectory);
-
-        // Buffer to a temp file first: ZipArchive needs to seek, and a failed download
-        // must never leave a half-written package behind in the cache.
-        var packagePath = Path.Combine(_cacheDirectory, $"{PackageId}.{_version}.nupkg.tmp");
-        try
-        {
-            await using (var target = File.Create(packagePath))
-            {
-                await response.Content.CopyToAsync(target, cancellationToken).ConfigureAwait(false);
-            }
-
-            using var archive = ZipFile.OpenRead(packagePath);
-            foreach (var entry in archive.Entries.Where(e => e.FullName.StartsWith("content/", StringComparison.OrdinalIgnoreCase)))
-            {
-                if (string.IsNullOrEmpty(entry.Name)) continue;
-                entry.ExtractToFile(Path.Combine(_cacheDirectory, entry.Name), overwrite: true);
-            }
-        }
-        finally
-        {
-            if (File.Exists(packagePath)) File.Delete(packagePath);
-        }
-    }
-
-    private string BuildDownloadFailureMessage(HttpStatusCode statusCode, string url) => statusCode switch
-    {
-        // Never fall back to a source tree here: it would be a different revision than
-        // the CLI, and the mismatch would only surface as strange runtime behaviour.
-        HttpStatusCode.NotFound =>
-            $"No deployment artifacts published for NimBus {_version} on {_feed}. Install a CLI version that has them (dotnet tool update --global Akaule.NimBus.CommandLine), point {FeedEnvironmentVariable} at a feed that mirrors them, or build from source with --from-source --repo-root <path>.",
-        HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden =>
-            $"Access to {_feed} was denied ({(int)statusCode}). Set {FeedTokenEnvironmentVariable} to a token that can read the feed.",
-        _ => $"Failed to download the NimBus {_version} deployment artifacts ({(int)statusCode}) from {url}.",
-    };
 }
 
 /// <summary>

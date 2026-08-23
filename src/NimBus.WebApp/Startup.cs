@@ -368,7 +368,7 @@ namespace NimBus.WebApp
                 if (string.IsNullOrWhiteSpace(typeName))
                     return new PlatformConfiguration();
 
-                var assemblyPath = cfg["NimBus:PlatformAssembly"];
+                var assemblyPath = ResolvePlatformAssemblyPath(cfg["NimBus:PlatformAssembly"], sp);
                 System.Reflection.Assembly? assembly = null;
                 if (!string.IsNullOrWhiteSpace(assemblyPath) && System.IO.File.Exists(assemblyPath))
                     assembly = System.Reflection.Assembly.LoadFrom(assemblyPath);
@@ -398,6 +398,33 @@ namespace NimBus.WebApp
                 sp.GetRequiredService<IConfiguration>()["NimBus:PiiHashSalt"] ?? string.Empty));
 
             services.AddSingleton<PayloadRedaction>();
+        }
+
+        /// <summary>
+        /// Resolves <c>NimBus:PlatformAssembly</c>. An absolute path is used as given, which
+        /// is how the Aspire samples point at a project's build output. A bare file name is
+        /// resolved against the app's own directory: `nb deploy apps --platform-package`
+        /// ships the customer's catalog assembly inside the deployment zip, and the deployed
+        /// location differs between Windows and Linux App Service — so the setting stays a
+        /// file name and the lookup happens here.
+        /// </summary>
+        private static string? ResolvePlatformAssemblyPath(string? configured, IServiceProvider sp)
+        {
+            if (string.IsNullOrWhiteSpace(configured) || Path.IsPathRooted(configured))
+                return configured;
+
+            foreach (var root in new[]
+                     {
+                         sp.GetService<IWebHostEnvironment>()?.ContentRootPath,
+                         AppContext.BaseDirectory,
+                     })
+            {
+                if (string.IsNullOrWhiteSpace(root)) continue;
+                var candidate = Path.Combine(root, configured);
+                if (File.Exists(candidate)) return candidate;
+            }
+
+            return configured;
         }
 
         private void AddServiceBusClients(IServiceCollection services)

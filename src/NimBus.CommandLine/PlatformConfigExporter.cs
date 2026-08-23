@@ -1,14 +1,19 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using NimBus.Core;
 using NimBus.Core.Messages;
 
 namespace NimBus.CommandLine;
 
 internal sealed class PlatformConfigExporter
 {
-    public async Task ExportAsync(string outputPath, CancellationToken cancellationToken)
+    /// <param name="platformFactory">
+    /// Catalog to export. Null keeps the built-in platform; callers pass a factory to
+    /// export a customer's own catalog from --assembly or --platform-package.
+    /// </param>
+    public async Task ExportAsync(string outputPath, CancellationToken cancellationToken, Func<IPlatform>? platformFactory = null)
     {
-        var platform = new PlatformConfiguration();
+        var platform = platformFactory?.Invoke() ?? new PlatformConfiguration();
         var config = new PlatformConfigJson
         {
             BrokerId = Constants.ManagerId,

@@ -1,5 +1,6 @@
 using McMaster.Extensions.CommandLineUtils;
 using NimBus.Core.Events;
+using NimBus.Core;
 using NimBus.MessageStore;
 using Spectre.Console;
 using CoreAsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
@@ -179,12 +180,26 @@ internal static class Program
                 exportCommand.HelpOption(inherited: true);
 
                 var output = exportCommand.Option("-o|--output <PATH>", "Output path. Defaults to platform-config.json in the current directory.", CommandOptionType.SingleValue);
+                var exportAssembly = exportCommand.Option("-a|--assembly <PATH>",
+                    "Host assembly exposing a public parameterless IPlatform; default is the built-in platform.",
+                    CommandOptionType.SingleValue);
+                var exportPackage = exportCommand.Option("--platform-package <ID@VERSION>",
+                    "NuGet package containing your IPlatform catalog, e.g. Acme.Contracts@1.4.0.",
+                    CommandOptionType.SingleValue);
+                var exportFeed = exportCommand.Option("--platform-feed <URL>",
+                    $"Feed serving --platform-package (default: {PlatformPackage.FeedEnvironmentVariable}, else the artifact feed, else nuget.org).",
+                    CommandOptionType.SingleValue);
+                var exportPlatformType = exportCommand.Option("--platform <TYPE>",
+                    "IPlatform type name when the assembly or package exposes more than one",
+                    CommandOptionType.SingleValue);
 
                 exportCommand.OnExecuteAsync(async cancellationToken =>
                 {
                     var exporter = new PlatformConfigExporter();
                     var outputPath = output.HasValue() ? output.Value()! : Path.Combine(Environment.CurrentDirectory, "platform-config.json");
-                    await exporter.ExportAsync(outputPath, cancellationToken).ConfigureAwait(false);
+                    var factory = await ResolvePlatformFactoryAsync(
+                        exportAssembly.Value(), exportPackage.Value(), exportFeed.Value(), exportPlatformType.Value(), cancellationToken).ConfigureAwait(false);
+                    await exporter.ExportAsync(outputPath, cancellationToken, factory).ConfigureAwait(false);
                     return 0;
                 });
             });
@@ -202,14 +217,21 @@ internal static class Program
                 var topologyAssembly = applyCommand.Option("-a|--assembly <PATH>",
                     "Host assembly exposing a public parameterless IPlatform; default is the built-in platform. Required to provision a catalog that is not compiled into this CLI.",
                     CommandOptionType.SingleValue);
+                var topologyPackage = applyCommand.Option("--platform-package <ID@VERSION>",
+                    "NuGet package containing your IPlatform catalog, e.g. Acme.Contracts@1.4.0. Resolved from --platform-feed; use this instead of --assembly to provision without a local build.",
+                    CommandOptionType.SingleValue);
+                var topologyFeed = applyCommand.Option("--platform-feed <URL>",
+                    $"Feed serving --platform-package (default: {PlatformPackage.FeedEnvironmentVariable}, else the artifact feed, else nuget.org).",
+                    CommandOptionType.SingleValue);
                 var topologyPlatform = applyCommand.Option("--platform <TYPE>",
-                    "IPlatform type name when the assembly exposes more than one",
+                    "IPlatform type name when the assembly or package exposes more than one",
                     CommandOptionType.SingleValue);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
                     var az = new AzureCliRunner();
-                    var platformFactory = PlatformLoader.CreateFactory(topologyAssembly.Value(), topologyPlatform.Value());
+                    var platformFactory = await ResolvePlatformFactoryAsync(
+                        topologyAssembly.Value(), topologyPackage.Value(), topologyFeed.Value(), topologyPlatform.Value(), cancellationToken).ConfigureAwait(false);
                     var suppliedConnection = sbConnectionString.Value()
                         ?? Environment.GetEnvironmentVariable(CommandRunner.SbConnectionStringEnvName);
                     ServiceBusTopologyProvisioner provisioner;
@@ -270,18 +292,30 @@ internal static class Program
                 var fromSource = appsCommand.Option("--from-source", "Build the applications from a repository clone instead of deploying the published release artifacts.", CommandOptionType.NoValue);
                 var configuration = appsCommand.Option("--configuration <NAME>", "Build configuration passed to dotnet publish. Source builds only.", CommandOptionType.SingleValue);
                 var only = appsCommand.Option("--only <APP>", "Deploy a single application: resolver | webapp. Defaults to both.", CommandOptionType.SingleValue);
+                var appsPackage = appsCommand.Option("--platform-package <ID@VERSION>",
+                    "NuGet package containing your IPlatform catalog, e.g. Acme.Contracts@1.4.0. Its assemblies are deployed with the WebApp so Endpoints, Event Types and PII masking show your platform instead of the built-in one.",
+                    CommandOptionType.SingleValue);
+                var appsFeed = appsCommand.Option("--platform-feed <URL>",
+                    $"Feed serving --platform-package (default: {PlatformPackage.FeedEnvironmentVariable}, else the artifact feed, else nuget.org).",
+                    CommandOptionType.SingleValue);
+                var appsPlatformType = appsCommand.Option("--platform <TYPE>",
+                    "IPlatform type name when the package exposes more than one",
+                    CommandOptionType.SingleValue);
 
                 appsCommand.OnExecuteAsync(async cancellationToken =>
                 {
                     var context = CommandContext.Create(repoRoot.Value());
                     var az = new AzureCliRunner();
+                    var platformPackage = appsPackage.HasValue()
+                        ? await PlatformPackage.ResolveAsync(PlatformHttpClient, appsPackage.Value()!, appsFeed.Value(), appsPlatformType.Value(), cancellationToken).ConfigureAwait(false)
+                        : null;
                     var deployer = new AppDeploymentService(az, DeploymentArtifactSource.Create(
                         context,
                         fromSource.HasValue(),
                         repoRoot.HasValue(),
                         configuration.Value(),
                         solutionId.Value()!,
-                        environment.Value()!));
+                        environment.Value()!), platformPackage);
                     var options = new AppDeploymentOptions(
                         solutionId.Value(),
                         environment.Value(),
@@ -322,23 +356,34 @@ internal static class Program
             var setupAssembly = setupCommand.Option("-a|--assembly <PATH>",
                 "Host assembly exposing a public parameterless IPlatform; default is the built-in platform. Required to provision a catalog that is not compiled into this CLI.",
                 CommandOptionType.SingleValue);
+            var setupPackage = setupCommand.Option("--platform-package <ID@VERSION>",
+                "NuGet package containing your IPlatform catalog, e.g. Acme.Contracts@1.4.0. Provisions your topology and deploys the catalog with the WebApp — no local build required.",
+                CommandOptionType.SingleValue);
+            var setupFeed = setupCommand.Option("--platform-feed <URL>",
+                $"Feed serving --platform-package (default: {PlatformPackage.FeedEnvironmentVariable}, else the artifact feed, else nuget.org).",
+                CommandOptionType.SingleValue);
             var setupPlatform = setupCommand.Option("--platform <TYPE>",
-                "IPlatform type name when the assembly exposes more than one",
+                "IPlatform type name when the assembly or package exposes more than one",
                 CommandOptionType.SingleValue);
 
             setupCommand.OnExecuteAsync(async cancellationToken =>
             {
                 var context = CommandContext.Create(repoRoot.Value());
                 var az = new AzureCliRunner();
+                var setupPlatformPackage = setupPackage.HasValue()
+                    ? await PlatformPackage.ResolveAsync(PlatformHttpClient, setupPackage.Value()!, setupFeed.Value(), setupPlatform.Value(), cancellationToken).ConfigureAwait(false)
+                    : null;
+                var setupPlatformFactory = setupPlatformPackage?.CreateFactory()
+                    ?? PlatformLoader.CreateFactory(setupAssembly.Value(), setupPlatform.Value());
                 var infra = new InfrastructureDeployer(context, az);
-                var topology = new ServiceBusTopologyProvisioner(az, PlatformLoader.CreateFactory(setupAssembly.Value(), setupPlatform.Value()));
+                var topology = new ServiceBusTopologyProvisioner(az, setupPlatformFactory);
                 var apps = new AppDeploymentService(az, DeploymentArtifactSource.Create(
                     context,
                     setupFromSource.HasValue(),
                     repoRoot.HasValue(),
                     configuration.Value(),
                     solutionId.Value()!,
-                    environment.Value()!));
+                    environment.Value()!), setupPlatformPackage);
 
                 var providerChoice = ParseStorageProvider(setupStorageProvider.Value());
                 var sqlProvisioningMode = ParseSqlMode(setupSqlMode.Value());
@@ -390,7 +435,7 @@ internal static class Program
                 // per-endpoint Cosmos containers lazily, so provision them here.
                 if (providerChoice == StorageProviderChoice.Cosmos)
                 {
-                    await new EndpointContainerProvisioner(az, PlatformLoader.CreateFactory(setupAssembly.Value(), setupPlatform.Value())).ApplyAsync(topologyOptions, cancellationToken).ConfigureAwait(false);
+                    await new EndpointContainerProvisioner(az, setupPlatformFactory).ApplyAsync(topologyOptions, cancellationToken).ConfigureAwait(false);
                 }
 
                 await apps.DeployAsync(appOptions, cancellationToken).ConfigureAwait(false);
@@ -823,6 +868,34 @@ internal static class Program
 
     // Parses the -f|--format option. Returns false (after printing an error) on an unknown value;
     // leaves 'format' null when the option is absent so the caller can infer from the output path.
+    private static readonly HttpClient PlatformHttpClient = new();
+
+    /// <summary>
+    /// Resolves the catalog to provision from, in precedence order: a NuGet package, a
+    /// local assembly, or the platform compiled into this CLI. The package path is the one
+    /// a customer pipeline uses — it needs neither a NimBus clone nor a build of their own
+    /// solution (ADR-015).
+    /// </summary>
+    private static async Task<Func<IPlatform>> ResolvePlatformFactoryAsync(
+        string? assemblyPath,
+        string? packageReference,
+        string? feed,
+        string? platformTypeName,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(packageReference))
+        {
+            if (!string.IsNullOrWhiteSpace(assemblyPath))
+                throw new CommandException("Use either --assembly or --platform-package, not both.");
+
+            var package = await PlatformPackage.ResolveAsync(
+                PlatformHttpClient, packageReference, feed, platformTypeName, cancellationToken).ConfigureAwait(false);
+            return package.CreateFactory();
+        }
+
+        return PlatformLoader.CreateFactory(assemblyPath, platformTypeName);
+    }
+
     private static bool TryParseFormat(CommandOption formatOption, out CoreAsyncApiFormat? format)
     {
         format = null;

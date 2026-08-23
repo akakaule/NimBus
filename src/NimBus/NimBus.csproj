@@ -2,11 +2,19 @@
 
   <PropertyGroup>
 	  <TargetFrameworks>net10.0</TargetFrameworks>
+    <IsPackable>true</IsPackable>
+    <!-- Explicit: the Directory.Build.props default would make this Akaule.NimBus — the
+         bare family name — for a package that only carries the demo catalog. The sample
+         platform is what the platform-package option on `nb topology apply` (ADR-015)
+         resolves when you want to try that flow without publishing your own contracts
+         assembly. -->
+    <PackageId>Akaule.NimBus.SamplePlatform</PackageId>
+    <Description>Sample NimBus platform configuration: Storefront, Billing, and Warehouse endpoints with example events. Intended for demos, tests, and trying the --platform-package deployment flow, not for production topology.</Description>
   </PropertyGroup>
 
-	<ItemGroup>		
-		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-	</ItemGroup>
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\NimBus.Abstractions\NimBus.Abstractions.csproj" />

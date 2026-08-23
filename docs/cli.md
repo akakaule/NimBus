@@ -159,16 +159,33 @@ nb topology apply --solution-id nimbus --environment dev --resource-group rg-nim
 | `--solution-id` | Yes | Solution identifier |
 | `--environment` | Yes | Environment name |
 | `--resource-group` | Yes | Resource group with the Service Bus namespace |
-| `-a`, `--assembly` | No | Host assembly exposing a public parameterless `IPlatform`. Required to provision **your own** catalog — without it the CLI provisions only the platform compiled into it. |
-| `--platform` | No | `IPlatform` type name when the assembly exposes more than one |
+| `--platform-package` | No | NuGet package containing **your** catalog, as `Id@Version`. Required to provision a catalog that is not compiled into this CLI. |
+| `--platform-feed` | No | Feed serving that package |
+| `-a`, `--assembly` | No | Local assembly exposing a public parameterless `IPlatform` — the same thing from a build output instead of a feed |
+| `--platform` | No | `IPlatform` type name when the assembly or package exposes more than one |
 
-The topology is generated from a compiled `PlatformConfiguration`, so point `--assembly`
-at the build output of the project that declares your endpoints and event types:
+The topology is generated from a compiled `PlatformConfiguration`. In a pipeline, resolve
+it from the feed you already publish your contracts to — no clone and no build of your
+solution:
 
 ```bash
 nb topology apply --solution-id acme --environment dev --resource-group rg-acme-dev \
-  --assembly ./src/Acme.Contracts/bin/Release/net10.0/Acme.Contracts.dll
+  --platform-package Acme.Contracts@1.4.0
 ```
+
+The version is deliberately explicit: the catalog decides the Service Bus topology, so a
+floating version would let a contracts release change routing without a reviewed change.
+
+Locally, `--assembly ./src/Acme.Contracts/bin/Release/net10.0/Acme.Contracts.dll` does the
+same from a build output. Use one or the other, not both.
+
+| Environment variable | Purpose |
+|---|---|
+| `NIMBUS_PLATFORM_FEED` | Feed serving `--platform-package`. Falls back to `NIMBUS_ARTIFACT_FEED`, then nuget.org. |
+| `NIMBUS_PLATFORM_FEED_TOKEN` | Token for a private feed (Azure Artifacts PAT), sent as Basic auth. Falls back to `NIMBUS_ARTIFACT_FEED_TOKEN`. |
+
+Your contracts package must be built against a compatible NimBus version, since the CLI
+loads it to resolve the `IPlatform` type.
 
 Creates topics, subscriptions, and routing rules for each endpoint. Idempotent — only recreates entities if configuration has changed. Creates:
 - Main subscription (session-enabled) per endpoint
@@ -193,10 +210,29 @@ nb deploy apps --solution-id nimbus --environment dev --resource-group rg-nimbus
 | `--solution-id` | Yes | Solution identifier |
 | `--environment` | Yes | Environment name |
 | `--resource-group` | Yes | Resource group with target apps |
+| `--platform-package` | No | NuGet package containing your catalog, as `Id@Version`. Its assemblies are deployed with the WebApp. |
+| `--platform-feed` | No | Feed serving that package |
+| `--platform` | No | `IPlatform` type name when the package exposes more than one |
 | `--from-source` | No | Build the applications from a repository clone instead of deploying the released artifacts |
 | `--repo-root` | No | Repository root for a source build. Implies `--from-source`. |
 | `--configuration` | No | Build configuration (default: `Release`). Source builds only. |
 | `--only` | No | Deploy a single application: `resolver` \| `webapp`. Defaults to both. |
+
+**Deploying your own catalog.** The management UI renders Endpoints, Event Types and PII
+masking from an `IPlatform`, and the released WebApp artifact carries only NimBus's
+built-in one. Pass `--platform-package` and the CLI adds your assemblies to a copy of the
+released zip and points the site at them via `NimBus__PlatformType` /
+`NimBus__PlatformAssembly`:
+
+```bash
+nb deploy apps --solution-id acme --environment dev --resource-group rg-acme-dev \
+  --platform-package Acme.Contracts@1.4.0
+```
+
+The cached artifact is never modified, and an assembly the WebApp already ships is skipped
+rather than replacing a tested binary. **The Resolver needs none of this** — it holds no
+catalog, so one released `resolver.zip` is correct for every platform and adding endpoints
+never requires redeploying it.
 
 By default the CLI downloads the Resolver and WebApp built for **its own version** and
 zip-deploys them, so the deploying machine needs neither the .NET SDK nor Node.js, and

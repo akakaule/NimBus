@@ -56,7 +56,7 @@ dnx Akaule.NimBus.CommandLine -- setup --solution-id nimbus --environment dev --
 
 No clone: the CLI carries the bicep templates and downloads the Resolver and WebApp built for its own version ([ADR-015](adr/015-customer-deployment-distribution.md)). `dnx` ships with the .NET 10 SDK and runs the published CLI without installing it (the `--` separator is required).
 
-Deploying your own event catalog rather than the built-in demo one means pointing the topology step at your compiled platform: add `--assembly ./path/to/YourContracts.dll`. Full option reference, including `--resolver-plan`, `--management-plan-sku`, and the SQL Server storage variants: [docs/cli.md](cli.md).
+Deploying your own event catalog rather than the built-in demo one means adding `--platform-package Acme.Contracts@1.4.0` — resolved from the feed you already publish your contracts to, so the pipeline needs neither a NimBus clone nor a build of your own solution. It provisions your topology *and* travels with the WebApp so the management UI shows your endpoints. Full option reference, including `--resolver-plan`, `--management-plan-sku`, and the SQL Server storage variants: [docs/cli.md](cli.md).
 
 To deploy unreleased changes from a working tree, add `--from-source --repo-root .` from a clone.
 

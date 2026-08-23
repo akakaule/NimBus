@@ -39,6 +39,20 @@ Two changes for external customers:
 - **Prebuilt application zips are published per release** (GitHub Release assets or an OCI artifact) and downloaded by the CLI for its own version. The customer's agents then need neither Node 22 nor a .NET SDK, and they deploy the exact artifact that was tested rather than rebuilding it on an agent NimBus has never seen.
 - `--repo-root` remains, demoted to a developer override.
 
+**The customer's own catalog travels the same way.** Removing the NimBus source
+requirement exposes a second one: the topology is generated from a compiled
+`PlatformConfiguration`, and the WebApp renders Endpoints, Event Types and PII masking
+from an `IPlatform`. Shipping only NimBus's artifacts would leave every customer
+provisioning and displaying *our* demo catalog. So `--platform-package <Id>@<Version>`
+resolves their catalog from a NuGet feed — typically the private Azure Artifacts feed in
+the organisation running the deployment — and the CLI adds those assemblies to a copy of
+the released WebApp zip before deploying. The version is explicit because the catalog
+determines the Service Bus topology.
+
+The Resolver is unaffected: `ResolverService` depends only on stores, with no `IPlatform`,
+so one released `resolver.zip` serves every catalog and adding endpoints or event types
+never requires redeploying it.
+
 Once Phase 2 lands, onboarding is: install the tool, create a service connection, run `nb setup` — and `nb init` becomes worth building, because the generated pipeline can ship with the CLI version it belongs to instead of living in a separately maintained template.
 
 ## Consequences

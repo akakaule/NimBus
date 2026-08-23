@@ -16,6 +16,21 @@
     <None Include="../../README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
+  <!--
+    The bicep templates ship inside the tool so `nb infra apply` works without a
+    repository clone (ADR-015). LogicalName is set explicitly because the default
+    manifest naming folds directory separators into dots, which would make the
+    templates/ subdirectory unreconstructable — and deploy.core.bicep resolves its
+    modules as 'templates/*.bicep' relative to itself. The names mirror the repo
+    layout so BicepTemplateProvider can rebuild it verbatim on extraction.
+    %(RecursiveDir) uses the platform separator, so the reader normalizes to '/'.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="../../deploy/bicep/**/*.bicep">
+      <LogicalName>deploy/bicep/%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="NimBus.CommandLine.Tests" />
   </ItemGroup>

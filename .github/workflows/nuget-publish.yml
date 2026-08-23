@@ -48,6 +48,25 @@ jobs:
       - name: Pack
         run: dotnet pack src/NimBus.sln -c Release --no-build -o ./nupkgs /p:Version=${{ steps.version.outputs.VERSION }}
 
+      # The deployable applications ship as a payload package (ADR-015) so `nb deploy apps`
+      # works without a repository clone. --no-build reuses the binaries that were just
+      # tested, which is the point: customers deploy the exact bits this run validated.
+      - name: Publish deployable applications
+        run: |
+          dotnet publish src/NimBus.Resolver/NimBus.Resolver.csproj -c Release --no-build \
+            -o ./artifacts/resolver /p:Version=${{ steps.version.outputs.VERSION }}
+          dotnet publish src/NimBus.WebApp/NimBus.WebApp.csproj -c Release --no-build \
+            -o ./artifacts/webapp /p:Version=${{ steps.version.outputs.VERSION }}
+
+      - name: Package deployable applications
+        run: |
+          # -X keeps the archives reproducible-ish by dropping extra file attributes.
+          (cd ./artifacts/resolver && zip -qrX ../resolver.zip .)
+          (cd ./artifacts/webapp && zip -qrX ../webapp.zip .)
+          dotnet pack deploy/package/NimBus.Deploy.csproj -o ./nupkgs \
+            /p:Version=${{ steps.version.outputs.VERSION }} \
+            /p:ArtifactStagingDirectory=$GITHUB_WORKSPACE/artifacts
+
       - name: Push NuGet packages
         run: dotnet nuget push "./nupkgs/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
 

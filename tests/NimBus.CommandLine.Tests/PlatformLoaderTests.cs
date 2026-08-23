@@ -8,6 +8,36 @@ namespace NimBus.CommandLine.Tests;
 // of the built-in sample. Mirrors AsyncApiProviderLoader's discovery and error style.
 public sealed class PlatformLoaderTests
 {
+    // CreateFactory backs `nb topology apply --assembly` (ADR-015): without an assembly
+    // the CLI can only provision the catalog compiled into it, which is nobody's catalog
+    // but ours.
+    [Fact]
+    public void CreateFactory_WithoutAssembly_UsesTheBuiltInPlatform()
+    {
+        var platform = PlatformLoader.CreateFactory(null)();
+
+        Assert.IsType<PlatformConfiguration>(platform);
+    }
+
+    [Fact]
+    public void CreateFactory_WithAssembly_LoadsThatCatalog()
+    {
+        var assemblyPath = typeof(PlatformLoaderTests).Assembly.Location;
+
+        var platform = PlatformLoader.CreateFactory(assemblyPath, nameof(PublicLoaderTestPlatform))();
+
+        Assert.IsType<PublicLoaderTestPlatform>(platform);
+    }
+
+    [Fact]
+    public void CreateFactory_DefersLoadingUntilInvoked()
+    {
+        // Option parsing must not fail on a bad path — the command reports it.
+        var factory = PlatformLoader.CreateFactory("does-not-exist.dll");
+
+        Assert.Throws<FileNotFoundException>(() => factory());
+    }
+
     [Fact]
     public void Resolve_ByTypeName_ReturnsPlatformInstance()
     {

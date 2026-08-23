@@ -8,14 +8,13 @@ internal sealed class AppDeploymentService
     private static readonly Version MinimumFlexConsumptionAzureCliVersion = new(2, 60, 0);
     private static readonly string[] AzureCliVersionArguments = ["version", "--output", "json"];
 
-    private readonly CommandContext _context;
     private readonly AzureCliRunner _az;
-    private readonly ProcessRunner _processRunner = new();
+    private readonly IDeploymentArtifactSource _artifacts;
 
-    public AppDeploymentService(CommandContext context, AzureCliRunner az)
+    public AppDeploymentService(AzureCliRunner az, IDeploymentArtifactSource artifacts)
     {
-        _context = context;
         _az = az;
+        _artifacts = artifacts;
     }
 
     public async Task DeployAsync(AppDeploymentOptions options, CancellationToken cancellationToken)
@@ -26,15 +25,10 @@ internal sealed class AppDeploymentService
 
         await _az.EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false);
 
-        var publishRoot = Path.Combine(Path.GetTempPath(), "nb", $"{names.SolutionId}-{names.Environment}", DateTime.UtcNow.ToString("yyyyMMddHHmmss"));
-
-        // Stamp the published assemblies with the latest git tag so the WebApp
-        // footer (and /api/app/stats platformVersion) reports a real version
-        // instead of the Directory.Build.props 0.0.0 placeholder.
-        var version = await ResolveVersionFromGitTagAsync(cancellationToken).ConfigureAwait(false);
+        var version = await _artifacts.GetVersionAsync(cancellationToken).ConfigureAwait(false);
         CliOutput.WriteLine(version != null
-            ? $"Stamping version {version} (latest git tag)."
-            : "No git tag found; publishing with the default version.");
+            ? $"Deploying NimBus {version}."
+            : "No version could be determined; deploying with the default version.");
 
         if (deployResolver)
         {
@@ -44,19 +38,13 @@ internal sealed class AppDeploymentService
                 await EnsureAzureCliSupportsFlexConsumptionAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            var resolverPublish = Path.Combine(publishRoot, "resolver");
-            Directory.CreateDirectory(resolverPublish);
-            await PublishAsync(_context.ResolverProjectPath, resolverPublish, options.Configuration, version, cancellationToken).ConfigureAwait(false);
-            var resolverZip = PackagePublishOutput(resolverPublish, "resolver.zip");
+            var resolverZip = await _artifacts.GetResolverZipAsync(cancellationToken).ConfigureAwait(false);
             await DeployResolverAsync(options, names, resolverZip, isFlexConsumption, cancellationToken).ConfigureAwait(false);
         }
 
         if (deployWebApp)
         {
-            var webAppPublish = Path.Combine(publishRoot, "webapp");
-            Directory.CreateDirectory(webAppPublish);
-            await PublishAsync(_context.WebAppProjectPath, webAppPublish, options.Configuration, version, cancellationToken).ConfigureAwait(false);
-            var webAppZip = PackagePublishOutput(webAppPublish, "webapp.zip");
+            var webAppZip = await _artifacts.GetWebAppZipAsync(cancellationToken).ConfigureAwait(false);
 
             await _az.EnsureSuccessAsync(
                 new[]
@@ -156,99 +144,5 @@ internal sealed class AppDeploymentService
             throw new CommandException(
                 $"Azure CLI {rawVersion} cannot deploy to Flex Consumption function apps; version {MinimumFlexConsumptionAzureCliVersion} or later is required. Upgrade with 'az upgrade' (or 'winget upgrade Microsoft.AzureCLI') and retry.");
         }
-    }
-
-    private async Task PublishAsync(string projectPath, string outputPath, string configuration, string? version, CancellationToken cancellationToken)
-    {
-        CliOutput.WriteLine($"Publishing '{projectPath}'...");
-        var arguments = new List<string>
-        {
-            "publish",
-            projectPath,
-            "--configuration", configuration,
-            "--output", outputPath,
-            "--nologo",
-        };
-        if (version != null)
-        {
-            arguments.Add($"-p:Version={version}");
-        }
-
-        var result = await _processRunner.RunAsync(
-            "dotnet",
-            arguments,
-            _context.RepositoryRoot,
-            cancellationToken).ConfigureAwait(false);
-
-        if (!result.Succeeded)
-        {
-            throw new CommandException($"dotnet publish failed for '{projectPath}'.{Environment.NewLine}{result.StandardError}");
-        }
-    }
-
-    private async Task<string?> ResolveVersionFromGitTagAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            // Latest reachable tag (e.g. "v1.2.0"); commits since the tag keep
-            // the same base version — the tag is the release marker.
-            var result = await _processRunner.RunAsync(
-                "git",
-                new[] { "describe", "--tags", "--abbrev=0" },
-                _context.RepositoryRoot,
-                echoStandardOutput: false,
-                cancellationToken).ConfigureAwait(false);
-
-            return result.Succeeded && TryNormalizeTagVersion(result.StandardOutput, out var version)
-                ? version
-                : null;
-        }
-        catch (CommandException)
-        {
-            // git not on PATH — version stamping is best-effort, never fatal.
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Normalizes a release tag ("v1.2.0", "1.2.0-rc.1") to an MSBuild Version
-    /// value. The numeric core must parse as a version; prerelease suffixes pass
-    /// through verbatim.
-    /// </summary>
-    internal static bool TryNormalizeTagVersion(string? tag, out string version)
-    {
-        version = string.Empty;
-        var value = tag?.Trim();
-        if (string.IsNullOrEmpty(value))
-        {
-            return false;
-        }
-
-        if (value.StartsWith('v') || value.StartsWith('V'))
-        {
-            value = value[1..];
-        }
-
-        var core = value.Split('-')[0];
-        if (!Version.TryParse(core, out _))
-        {
-            return false;
-        }
-
-        version = value;
-        return true;
-    }
-
-    private static string PackagePublishOutput(string publishDirectory, string zipFileName)
-    {
-        var zipPath = Path.Combine(Path.GetDirectoryName(publishDirectory)!, zipFileName);
-        if (File.Exists(zipPath))
-        {
-            File.Delete(zipPath);
-        }
-
-        ZipFile.CreateFromDirectory(publishDirectory, zipPath, CompressionLevel.Optimal, includeBaseDirectory: false);
-        CliOutput.WriteLine($"Created deployment package '{zipPath}'.");
-        return zipPath;
     }
 }

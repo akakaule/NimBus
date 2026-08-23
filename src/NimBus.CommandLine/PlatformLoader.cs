@@ -20,6 +20,17 @@ internal static class PlatformLoader
     /// Loads the assembly at <paramref name="assemblyPath"/> and resolves its platform,
     /// optionally selecting the type named <paramref name="platformTypeName"/>.
     /// </summary>
+    /// <summary>
+    /// Builds the platform factory the provisioners take: the catalog from
+    /// <paramref name="assemblyPath"/> when one is given, otherwise the built-in platform.
+    /// Loading is deferred to the factory call so an unreadable assembly fails during the
+    /// command rather than while options are being parsed.
+    /// </summary>
+    public static Func<IPlatform> CreateFactory(string? assemblyPath, string? platformTypeName = null) =>
+        string.IsNullOrWhiteSpace(assemblyPath)
+            ? () => new PlatformConfiguration()
+            : () => Load(assemblyPath, platformTypeName);
+
     public static IPlatform Load(string assemblyPath, string? platformTypeName = null)
     {
         if (string.IsNullOrWhiteSpace(assemblyPath))

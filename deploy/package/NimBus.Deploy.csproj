@@ -1,0 +1,53 @@
+<!--
+  Carries the prebuilt Resolver and WebApp for a release (ADR-015), so `nb deploy apps`
+  needs no repository clone, no .NET SDK and no Node.js on the deploying agent — and
+  deploys the exact bits the release was built and tested from.
+
+  This package holds no assemblies: it is a payload, downloaded by the CLI at deployment
+  time rather than referenced by a project. It cannot be a dependency of the CLI tool
+  package either, because `dotnet tool install` does not restore a tool's dependencies —
+  the tool has to be self-contained, and folding ~30-50 MB of application into it would
+  make every tool install pay for it.
+
+  Pack with the zips already staged:
+    dotnet pack deploy/package/NimBus.Deploy.csproj -p:Version=X.Y.Z -p:ArtifactStagingDirectory=<abs-path>
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <!-- Payload only: no compiler output, and nothing here is a build-time reference. -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <NoBuild>true</NoBuild>
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <!--
+      Directory.Build.props turns on snupkg symbols repo-wide. This package ships no
+      assemblies, so the symbol package would be empty and pack fails it with NU5017.
+    -->
+    <IncludeSymbols>false</IncludeSymbols>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <PackageId>Akaule.NimBus.Deploy</PackageId>
+    <Description>Prebuilt NimBus Resolver and management WebApp deployed by the nb CLI. Not a library — the nb CLI downloads this package at deployment time.</Description>
+    <ArtifactStagingDirectory Condition="'$(ArtifactStagingDirectory)' == ''">$(MSBuildThisFileDirectory)artifacts</ArtifactStagingDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(ArtifactStagingDirectory)/resolver.zip" Pack="true" PackagePath="content/" />
+    <None Include="$(ArtifactStagingDirectory)/webapp.zip" Pack="true" PackagePath="content/" />
+    <!-- Directory.Build.props sets PackageReadmeFile for every packable project. -->
+    <None Include="$(MSBuildThisFileDirectory)../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <!--
+    A package that silently ships without its payload would fail only at deployment time,
+    against a customer's Azure environment. Fail the pack instead.
+  -->
+  <Target Name="ValidateArtifactsPresent" BeforeTargets="GenerateNuspec">
+    <Error Condition="!Exists('$(ArtifactStagingDirectory)/resolver.zip')"
+           Text="resolver.zip not found in '$(ArtifactStagingDirectory)'. Publish and zip the applications before packing." />
+    <Error Condition="!Exists('$(ArtifactStagingDirectory)/webapp.zip')"
+           Text="webapp.zip not found in '$(ArtifactStagingDirectory)'. Publish and zip the applications before packing." />
+  </Target>
+
+</Project>

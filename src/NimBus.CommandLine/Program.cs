@@ -199,10 +199,17 @@ internal static class Program
                 var environment = applyCommand.Option("--environment <NAME>", "Environment name used in Azure resource names (required without --sb-connection-string).", CommandOptionType.SingleValue);
                 var resourceGroup = applyCommand.Option("--resource-group <NAME>", "Azure resource group containing the Service Bus namespace (required without --sb-connection-string).", CommandOptionType.SingleValue);
                 var storageProvider = applyCommand.Option("--storage-provider <PROVIDER>", "Storage provider for NimBus message persistence: cosmos | sqlserver. Controls whether the per-endpoint Cosmos containers are provisioned. Defaults to 'cosmos'.", CommandOptionType.SingleValue);
+                var topologyAssembly = applyCommand.Option("-a|--assembly <PATH>",
+                    "Host assembly exposing a public parameterless IPlatform; default is the built-in platform. Required to provision a catalog that is not compiled into this CLI.",
+                    CommandOptionType.SingleValue);
+                var topologyPlatform = applyCommand.Option("--platform <TYPE>",
+                    "IPlatform type name when the assembly exposes more than one",
+                    CommandOptionType.SingleValue);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
                     var az = new AzureCliRunner();
+                    var platformFactory = PlatformLoader.CreateFactory(topologyAssembly.Value(), topologyPlatform.Value());
                     var suppliedConnection = sbConnectionString.Value()
                         ?? Environment.GetEnvironmentVariable(CommandRunner.SbConnectionStringEnvName);
                     ServiceBusTopologyProvisioner provisioner;
@@ -210,7 +217,7 @@ internal static class Program
                     var runsAgainstResourceGroup = string.IsNullOrWhiteSpace(suppliedConnection);
                     if (!runsAgainstResourceGroup)
                     {
-                        provisioner = new ServiceBusTopologyProvisioner(az, suppliedConnection!);
+                        provisioner = new ServiceBusTopologyProvisioner(az, suppliedConnection!, platformFactory);
                         options = new TopologyOptions(string.Empty, string.Empty, string.Empty);
                     }
                     else
@@ -223,7 +230,7 @@ internal static class Program
                                 "Provide --sb-connection-string (or AzureServiceBus_ConnectionString), or all of --solution-id, --environment, and --resource-group.");
                         }
 
-                        provisioner = new ServiceBusTopologyProvisioner(az);
+                        provisioner = new ServiceBusTopologyProvisioner(az, platformFactory);
                         options = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!);
                     }
 
@@ -235,7 +242,7 @@ internal static class Program
                     // to target, and the SQL provider has no per-endpoint containers.
                     if (runsAgainstResourceGroup && ParseStorageProvider(storageProvider.Value()) == StorageProviderChoice.Cosmos)
                     {
-                        await new EndpointContainerProvisioner(az).ApplyAsync(options, cancellationToken).ConfigureAwait(false);
+                        await new EndpointContainerProvisioner(az, platformFactory).ApplyAsync(options, cancellationToken).ConfigureAwait(false);
                     }
 
                     return 0;
@@ -253,21 +260,28 @@ internal static class Program
 
             deployCommand.Command("apps", appsCommand =>
             {
-                appsCommand.Description = "Build the resolver and web app locally, package them, and deploy them to Azure.";
+                appsCommand.Description = "Deploy the resolver and web app to Azure from the published release artifacts (or from source with --from-source).";
                 appsCommand.HelpOption(inherited: true);
 
                 var solutionId = appsCommand.Option("--solution-id <ID>", "Solution identifier used in Azure resource names.", CommandOptionType.SingleValue).IsRequired();
                 var environment = appsCommand.Option("--environment <NAME>", "Environment name used in Azure resource names.", CommandOptionType.SingleValue).IsRequired();
                 var resourceGroup = appsCommand.Option("--resource-group <NAME>", "Azure resource group containing the target apps.", CommandOptionType.SingleValue).IsRequired();
-                var repoRoot = appsCommand.Option("--repo-root <PATH>", "Repository root. Defaults to the current directory or a parent directory containing deploy/ and src/.", CommandOptionType.SingleValue);
-                var configuration = appsCommand.Option("--configuration <NAME>", "Build configuration passed to dotnet publish.", CommandOptionType.SingleValue);
+                var repoRoot = appsCommand.Option("--repo-root <PATH>", "Repository root for a source build. Implies --from-source.", CommandOptionType.SingleValue);
+                var fromSource = appsCommand.Option("--from-source", "Build the applications from a repository clone instead of deploying the published release artifacts.", CommandOptionType.NoValue);
+                var configuration = appsCommand.Option("--configuration <NAME>", "Build configuration passed to dotnet publish. Source builds only.", CommandOptionType.SingleValue);
                 var only = appsCommand.Option("--only <APP>", "Deploy a single application: resolver | webapp. Defaults to both.", CommandOptionType.SingleValue);
 
                 appsCommand.OnExecuteAsync(async cancellationToken =>
                 {
                     var context = CommandContext.Create(repoRoot.Value());
                     var az = new AzureCliRunner();
-                    var deployer = new AppDeploymentService(context, az);
+                    var deployer = new AppDeploymentService(az, DeploymentArtifactSource.Create(
+                        context,
+                        fromSource.HasValue(),
+                        repoRoot.HasValue(),
+                        configuration.Value(),
+                        solutionId.Value()!,
+                        environment.Value()!));
                     var options = new AppDeploymentOptions(
                         solutionId.Value(),
                         environment.Value(),
@@ -292,7 +306,8 @@ internal static class Program
             var solutionId = setupCommand.Option("--solution-id <ID>", "Solution identifier used in Azure resource names.", CommandOptionType.SingleValue).IsRequired();
             var environment = setupCommand.Option("--environment <NAME>", "Environment name used in Azure resource names.", CommandOptionType.SingleValue).IsRequired();
             var resourceGroup = setupCommand.Option("--resource-group <NAME>", "Azure resource group name.", CommandOptionType.SingleValue).IsRequired();
-            var repoRoot = setupCommand.Option("--repo-root <PATH>", "Repository root. Defaults to the current directory or a parent directory containing deploy/ and src/.", CommandOptionType.SingleValue);
+            var repoRoot = setupCommand.Option("--repo-root <PATH>", "Repository root for a source build. Implies --from-source.", CommandOptionType.SingleValue);
+            var setupFromSource = setupCommand.Option("--from-source", "Build the applications from a repository clone instead of deploying the published release artifacts.", CommandOptionType.NoValue);
             var location = setupCommand.Option("--location <AZURE-REGION>", "Optional location override passed to the bicep templates.", CommandOptionType.SingleValue);
             var resourceNamePostfix = setupCommand.Option("--resource-name-postfix <VALUE>", "Reserved for compatibility with the legacy pipeline scripts.", CommandOptionType.SingleValue);
             var webAppVersion = setupCommand.Option("--webapp-version <VALUE>", "Version string stored in the web app settings.", CommandOptionType.SingleValue);
@@ -304,14 +319,26 @@ internal static class Program
             var setupSqlAdminLogin = setupCommand.Option("--sql-admin-login <VALUE>", "SQL admin login when --sql-mode is 'provision'.", CommandOptionType.SingleValue);
             var setupSqlServerName = setupCommand.Option("--sql-server-name <NAME>", "Override the SQL server name (default: 'sql-{solution-id}-{environment}'). Use this when the default DNS name is held in Azure's global namespace from a recent delete (24-72h cooldown).", CommandOptionType.SingleValue);
             var setupIdentityAdminEmail = setupCommand.Option("--identity-admin-email <EMAIL>", "When using --storage-provider sqlserver, enables username/password sign-in and seeds this email as the first admin on first boot.", CommandOptionType.SingleValue);
+            var setupAssembly = setupCommand.Option("-a|--assembly <PATH>",
+                "Host assembly exposing a public parameterless IPlatform; default is the built-in platform. Required to provision a catalog that is not compiled into this CLI.",
+                CommandOptionType.SingleValue);
+            var setupPlatform = setupCommand.Option("--platform <TYPE>",
+                "IPlatform type name when the assembly exposes more than one",
+                CommandOptionType.SingleValue);
 
             setupCommand.OnExecuteAsync(async cancellationToken =>
             {
                 var context = CommandContext.Create(repoRoot.Value());
                 var az = new AzureCliRunner();
                 var infra = new InfrastructureDeployer(context, az);
-                var topology = new ServiceBusTopologyProvisioner(az);
-                var apps = new AppDeploymentService(context, az);
+                var topology = new ServiceBusTopologyProvisioner(az, PlatformLoader.CreateFactory(setupAssembly.Value(), setupPlatform.Value()));
+                var apps = new AppDeploymentService(az, DeploymentArtifactSource.Create(
+                    context,
+                    setupFromSource.HasValue(),
+                    repoRoot.HasValue(),
+                    configuration.Value(),
+                    solutionId.Value()!,
+                    environment.Value()!));
 
                 var providerChoice = ParseStorageProvider(setupStorageProvider.Value());
                 var sqlProvisioningMode = ParseSqlMode(setupSqlMode.Value());
@@ -363,7 +390,7 @@ internal static class Program
                 // per-endpoint Cosmos containers lazily, so provision them here.
                 if (providerChoice == StorageProviderChoice.Cosmos)
                 {
-                    await new EndpointContainerProvisioner(az).ApplyAsync(topologyOptions, cancellationToken).ConfigureAwait(false);
+                    await new EndpointContainerProvisioner(az, PlatformLoader.CreateFactory(setupAssembly.Value(), setupPlatform.Value())).ApplyAsync(topologyOptions, cancellationToken).ConfigureAwait(false);
                 }
 
                 await apps.DeployAsync(appOptions, cancellationToken).ConfigureAwait(false);

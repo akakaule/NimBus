@@ -16,21 +16,26 @@ internal sealed class ServiceBusTopologyProvisioner
     private readonly Func<string, ServiceBusAdministrationClient> _clientFactory;
     private readonly Func<IPlatform> _platformFactory;
 
-    internal ServiceBusTopologyProvisioner(AzureCliRunner az)
+    /// <param name="platformFactory">
+    /// Catalog to provision. Null keeps the built-in platform; `nb topology apply --assembly`
+    /// supplies a customer's own catalog, which is the only way to provision endpoints that
+    /// are not compiled into this CLI.
+    /// </param>
+    internal ServiceBusTopologyProvisioner(AzureCliRunner az, Func<IPlatform>? platformFactory = null)
         : this(
             az,
             static (options, cancellationToken, runner) => ReadConnectionStringAsync(runner, options, cancellationToken),
             static connectionString => new ServiceBusAdministrationClient(connectionString),
-            static () => new PlatformConfiguration())
+            platformFactory ?? (static () => new PlatformConfiguration()))
     {
     }
 
-    internal ServiceBusTopologyProvisioner(AzureCliRunner az, string connectionString)
+    internal ServiceBusTopologyProvisioner(AzureCliRunner az, string connectionString, Func<IPlatform>? platformFactory = null)
         : this(
             az,
             (_, _, _) => Task.FromResult(connectionString),
             static value => new ServiceBusAdministrationClient(value),
-            static () => new PlatformConfiguration())
+            platformFactory ?? (static () => new PlatformConfiguration()))
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
     }

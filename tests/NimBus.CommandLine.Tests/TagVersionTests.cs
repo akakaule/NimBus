@@ -18,7 +18,7 @@ public class TagVersionTests
     [InlineData("v10.20.30.40", "10.20.30.40")]
     public void Valid_tags_normalize(string tag, string expected)
     {
-        Assert.True(AppDeploymentService.TryNormalizeTagVersion(tag, out var version));
+        Assert.True(SourceBuildArtifactSource.TryNormalizeTagVersion(tag, out var version));
         Assert.Equal(expected, version);
     }
 
@@ -32,6 +32,6 @@ public class TagVersionTests
     [InlineData("v1.x")]
     public void Invalid_tags_are_rejected(string? tag)
     {
-        Assert.False(AppDeploymentService.TryNormalizeTagVersion(tag, out _));
+        Assert.False(SourceBuildArtifactSource.TryNormalizeTagVersion(tag, out _));
     }
 }

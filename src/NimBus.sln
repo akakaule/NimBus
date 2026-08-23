@@ -176,6 +176,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.ServiceBusEmulator.A
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.ServiceBusEmulator.Tests", "..\tests\NimBus.ServiceBusEmulator.Tests\NimBus.ServiceBusEmulator.Tests.csproj", "{632FC224-56CC-4524-B0AA-C6733564C59F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NimBus.Manager", "NimBus.Manager\NimBus.Manager.csproj", "{5EBCFAB5-4F96-4D62-977B-D27091AF871C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -906,6 +908,18 @@ Global
 		{632FC224-56CC-4524-B0AA-C6733564C59F}.Release|x64.Build.0 = Release|Any CPU
 		{632FC224-56CC-4524-B0AA-C6733564C59F}.Release|x86.ActiveCfg = Release|Any CPU
 		{632FC224-56CC-4524-B0AA-C6733564C59F}.Release|x86.Build.0 = Release|Any CPU
+		{5EBCFAB5-4F96-4D62-977B-D27091AF871C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5EBCFAB5-4F96-4D62-977B-D27091AF871C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5EBCFAB5-4F96-4D62-977B-D27091AF871C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5EBCFAB5-4F96-4D62-977B-D27091AF871C}.Debug|x64.Build.0 = Debug|Any CPU
+		{5EBCFAB5-4F96-4D62-977B-D27091AF871C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{5EBCFAB5-4F96-4D62-977B-D27091AF871C}.Debug|x86.Build.0 = Debug|Any CPU
+		{5EBCFAB5-4F96-4D62-977B-D27091AF871C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5EBCFAB5-4F96-4D62-977B-D27091AF871C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5EBCFAB5-4F96-4D62-977B-D27091AF871C}.Release|x64.ActiveCfg = Release|Any CPU
+		{5EBCFAB5-4F96-4D62-977B-D27091AF871C}.Release|x64.Build.0 = Release|Any CPU
+		{5EBCFAB5-4F96-4D62-977B-D27091AF871C}.Release|x86.ActiveCfg = Release|Any CPU
+		{5EBCFAB5-4F96-4D62-977B-D27091AF871C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

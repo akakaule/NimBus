@@ -12,18 +12,18 @@ namespace NimBus.WebApp.Controllers.ApiContract
 {
     public class MessageImplementation : IMessageApiController
     {
-        private readonly INimBusMessageStore _cosmosClient;
+        private readonly IMessageTrackingStore _messageStore;
         private readonly ILogger<MessageImplementation> _logger;
         private readonly IEndpointAuthorizationService _authorizationService;
         private readonly PayloadRedaction _payloadRedaction;
 
         public MessageImplementation(
-            INimBusMessageStore cosmosClient,
+            IMessageTrackingStore messageStore,
             ILogger<MessageImplementation> logger,
             IEndpointAuthorizationService authorizationService,
             PayloadRedaction payloadRedaction)
         {
-            _cosmosClient = cosmosClient;
+            _messageStore = messageStore;
             _logger = logger;
             _authorizationService = authorizationService;
             _payloadRedaction = payloadRedaction;
@@ -40,7 +40,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             // unbounded scans against Cosmos / SQL when an external caller forgets a sensible value.
             var maxItems = body.MaxItemCount <= 0 ? 50 : Math.Min(body.MaxItemCount, 200);
 
-            var result = await _cosmosClient.SearchMessages(filter, body.ContinuationToken, maxItems);
+            var result = await _messageStore.SearchMessages(filter, body.ContinuationToken, maxItems);
 
             var messages = result.Messages.Select(Mapper.MessageFromMessageEntity).ToList();
             if (!await _authorizationService.CanReadPiiAsync())

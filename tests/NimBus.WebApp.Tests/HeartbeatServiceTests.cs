@@ -504,6 +504,7 @@ public class HeartbeatServiceTests
         => new(
             platform ?? new FakePlatform(WorkerA, WorkerB),
             store,
+            store,
             sender ?? new RecordingSender(),
             NullLogger<HeartbeatService>.Instance,
             hubContext,

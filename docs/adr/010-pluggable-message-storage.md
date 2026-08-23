@@ -120,8 +120,9 @@ suite against a `mcr.microsoft.com/mssql/server:2022-latest` service container.
   consumers — they must update their package reference and registration call
   (`AddMessageStore` → `AddCosmosDbMessageStore`). Namespaces are unchanged so
   `using` directives keep working.
-- Some WebApp services still take an `INimBusMessageStore` aggregate — splitting
-  by contract is a follow-up cleanup.
+- WebApp services and controllers depend on the narrow storage contract(s) they
+  use; the aggregate remains available for provider implementations and legacy
+  integrations.
 
 ## See also
 - ADR-008: Per-endpoint Cosmos containers — SQL provider does not replicate this

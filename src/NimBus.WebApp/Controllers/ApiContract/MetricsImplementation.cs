@@ -13,7 +13,7 @@ namespace NimBus.WebApp.Controllers.ApiContract;
 
 public class MetricsImplementation : IMetricsApiController
 {
-    private readonly INimBusMessageStore _cosmosClient;
+    private readonly IMetricsStore _metricsStore;
     private readonly IStoreResultCache _storeResultCache;
     private readonly IEndpointAuthorizationService _authorizationService;
 
@@ -23,11 +23,11 @@ public class MetricsImplementation : IMetricsApiController
     private static readonly TimeSpan MetricsTtl = TimeSpan.FromSeconds(30);
 
     public MetricsImplementation(
-        INimBusMessageStore cosmosClient,
+        IMetricsStore metricsStore,
         IStoreResultCache storeResultCache,
         IEndpointAuthorizationService authorizationService)
     {
-        _cosmosClient = cosmosClient;
+        _metricsStore = metricsStore;
         _storeResultCache = storeResultCache;
         _authorizationService = authorizationService;
     }
@@ -47,7 +47,7 @@ public class MetricsImplementation : IMetricsApiController
             () =>
             {
                 var from = DateTime.UtcNow - PeriodToTimeSpan(period);
-                return _cosmosClient.GetEndpointMetrics(from);
+                return _metricsStore.GetEndpointMetrics(from);
             });
 
         return new MetricsOverview
@@ -91,7 +91,7 @@ public class MetricsImplementation : IMetricsApiController
             () =>
             {
                 var from = DateTime.UtcNow - PeriodToTimeSpan(period);
-                return _cosmosClient.GetEndpointLatencyMetrics(from);
+                return _metricsStore.GetEndpointLatencyMetrics(from);
             });
 
         return new LatencyOverview
@@ -124,7 +124,7 @@ public class MetricsImplementation : IMetricsApiController
             return new ForbidResult();
 
         var from = DateTime.UtcNow - PeriodToTimeSpan(period);
-        var messages = await _cosmosClient.GetFailedMessageInsights(from);
+        var messages = await _metricsStore.GetFailedMessageInsights(from);
 
         var groups = messages
             .GroupBy(m => ExtractErrorCategory(m.ErrorText))
@@ -177,7 +177,7 @@ public class MetricsImplementation : IMetricsApiController
             {
                 var from = DateTime.UtcNow - PeriodToTimeSpan(period);
                 var (substringLength, bucketLabel) = PeriodToBucketConfig(period);
-                return _cosmosClient.GetTimeSeriesMetrics(from, substringLength, bucketLabel);
+                return _metricsStore.GetTimeSeriesMetrics(from, substringLength, bucketLabel);
             });
 
         return new TimeSeriesOverview
@@ -205,7 +205,7 @@ public class MetricsImplementation : IMetricsApiController
             {
                 var from = DateTime.UtcNow - PeriodToTimeSpan(period);
                 var (substringLength, bucketLabel) = PeriodToBucketConfig(period);
-                return _cosmosClient.GetEventTypeTimeSeriesMetrics(from, substringLength, bucketLabel);
+                return _metricsStore.GetEventTypeTimeSeriesMetrics(from, substringLength, bucketLabel);
             });
 
         return new EventTypeTimeSeriesOverview

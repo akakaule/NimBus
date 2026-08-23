@@ -20,13 +20,13 @@ public sealed class HandoffSettlementService : IHandoffSettlementService
 {
     private const string HandoffSubStatus = "Handoff";
 
-    private readonly INimBusMessageStore _store;
+    private readonly IMessageTrackingStore _store;
     private readonly IAuditLogService _audit;
     private readonly ILogger<HandoffSettlementService> _logger;
 
     /// <summary>Initialises the service with the message store, audit log, and logger.</summary>
     public HandoffSettlementService(
-        INimBusMessageStore store,
+        IMessageTrackingStore store,
         IAuditLogService audit,
         ILogger<HandoffSettlementService> logger)
     {

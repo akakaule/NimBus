@@ -35,7 +35,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
         private readonly IEventSchemaStore _schemas;
         private readonly IPlatform _platform;
         private readonly IAgentEventPublisher _publisher;
-        private readonly INimBusMessageStore _store;
+        private readonly IMessageTrackingStore _store;
         private readonly IHandoffClientFactory _handoffClients;
         private readonly IHandoffSettlementService _settlement;
         private readonly IAgentSubscriptionRegistry _subscriptions;
@@ -47,7 +47,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             IEventSchemaStore schemas,
             IPlatform platform,
             IAgentEventPublisher publisher,
-            INimBusMessageStore store,
+            IMessageTrackingStore store,
             IHandoffClientFactory handoffClients,
             IHandoffSettlementService settlement,
             IAgentSubscriptionRegistry subscriptions,

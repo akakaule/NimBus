@@ -21,13 +21,22 @@ namespace NimBus.WebApp.Services;
 
 public class SeedDataService
 {
-    private readonly INimBusMessageStore _cosmosClient;
+    private readonly IMessageTrackingStore _cosmosClient;
+    private readonly ISubscriptionStore _subscriptionStore;
+    private readonly IEndpointMetadataStore _metadataStore;
     private readonly ServiceBusClient _sbClient;
     private readonly IPlatform _platform;
 
-    public SeedDataService(INimBusMessageStore cosmosClient, ServiceBusClient sbClient, IPlatform platform)
+    public SeedDataService(
+        IMessageTrackingStore messageStore,
+        ISubscriptionStore subscriptionStore,
+        IEndpointMetadataStore metadataStore,
+        ServiceBusClient sbClient,
+        IPlatform platform)
     {
-        _cosmosClient = cosmosClient;
+        _cosmosClient = messageStore;
+        _subscriptionStore = subscriptionStore;
+        _metadataStore = metadataStore;
         _sbClient = sbClient;
         _platform = platform;
     }
@@ -41,7 +50,7 @@ public class SeedDataService
         // Create endpoint metadata
         foreach (var endpoint in PlatformEndpoints)
         {
-            await _cosmosClient.SetEndpointMetadata(new EndpointMetadata
+            await _metadataStore.SetEndpointMetadata(new EndpointMetadata
             {
                 EndpointId = endpoint.Id,
                 EndpointOwner = "EET Integration Team",
@@ -239,7 +248,7 @@ public class SeedDataService
         var endpoints = PlatformEndpoints.ToList();
         if (endpoints.Count == 0) return;
 
-        await _cosmosClient.SubscribeToEndpointNotification(
+        await _subscriptionStore.SubscribeToEndpointNotification(
             endpointId: endpoints[0].Id,
             mail: "alerts@eet.dk",
             type: "mail",
@@ -251,7 +260,7 @@ public class SeedDataService
 
         if (endpoints.Count > 1)
         {
-            await _cosmosClient.SubscribeToEndpointNotification(
+            await _subscriptionStore.SubscribeToEndpointNotification(
                 endpointId: endpoints[1].Id,
                 mail: "alerts@eet.dk",
                 type: "teams",

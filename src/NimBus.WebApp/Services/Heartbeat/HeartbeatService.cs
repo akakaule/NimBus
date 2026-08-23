@@ -41,7 +41,8 @@ public sealed partial class HeartbeatService : IHeartbeatService
     private const string ResolverProbeSessionId = "Heartbeat-Resolver";
 
     private readonly IPlatform _platform;
-    private readonly INimBusMessageStore _store;
+    private readonly IEndpointMetadataStore _store;
+    private readonly IServiceHealthStore _serviceHealthStore;
     private readonly IHeartbeatMessageSender _sender;
     private readonly ILogger<HeartbeatService> _logger;
     private readonly IHubContext<GridEventsHub>? _hubContext;
@@ -49,26 +50,30 @@ public sealed partial class HeartbeatService : IHeartbeatService
 
     /// <summary>Creates the heartbeat service.</summary>
     /// <param name="platform">The compile-time endpoint catalog that defines who gets probed.</param>
-    /// <param name="store">Heartbeat, settings and service-health storage.</param>
+    /// <param name="metadataStore">Heartbeat and endpoint metadata storage.</param>
+    /// <param name="serviceHealthStore">Service health storage.</param>
     /// <param name="sender">Transport seam for the probes.</param>
     /// <param name="logger">Diagnostics.</param>
     /// <param name="hubContext">SignalR hub for live operator updates; optional so the service is testable headless.</param>
     /// <param name="historyStore">Durable history capability; optional for backward-compatible third-party stores.</param>
     public HeartbeatService(
         IPlatform platform,
-        INimBusMessageStore store,
+        IEndpointMetadataStore metadataStore,
+        IServiceHealthStore serviceHealthStore,
         IHeartbeatMessageSender sender,
         ILogger<HeartbeatService> logger,
         IHubContext<GridEventsHub>? hubContext = null,
         IHeartbeatHistoryStore? historyStore = null)
     {
         ArgumentNullException.ThrowIfNull(platform);
-        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(metadataStore);
+        ArgumentNullException.ThrowIfNull(serviceHealthStore);
         ArgumentNullException.ThrowIfNull(sender);
         ArgumentNullException.ThrowIfNull(logger);
 
         _platform = platform;
-        _store = store;
+        _store = metadataStore;
+        _serviceHealthStore = serviceHealthStore;
         _sender = sender;
         _logger = logger;
         _hubContext = hubContext;
@@ -142,7 +147,7 @@ public sealed partial class HeartbeatService : IHeartbeatService
             await BroadcastHeartbeatUpdateAsync();
         }
 
-        var sweptServices = await _store.SweepTimedOutServiceProbes(cutoff);
+        var sweptServices = await _serviceHealthStore.SweepTimedOutServiceProbes(cutoff);
         if (sweptServices.Count > 0)
         {
             LogSweptServices(sweptServices.Count, string.Join(", ", sweptServices));
@@ -162,7 +167,7 @@ public sealed partial class HeartbeatService : IHeartbeatService
     /// <inheritdoc />
     public async Task<IReadOnlyList<ServiceHealth>> GetServiceHealthAsync()
     {
-        var rows = await _store.GetServiceHealth();
+        var rows = await _serviceHealthStore.GetServiceHealth();
         if (rows.Exists(row => CoreConstants.ResolverId.Equals(row.ServiceId, StringComparison.OrdinalIgnoreCase)))
         {
             return rows;
@@ -185,7 +190,7 @@ public sealed partial class HeartbeatService : IHeartbeatService
         var dueBefore = DateTime.UtcNow.AddSeconds(-intervalSeconds);
 
         var messageId = Guid.NewGuid().ToString("N");
-        if (!await _store.TryClaimServiceProbe(CoreConstants.ResolverId, dueBefore, messageId))
+        if (!await _serviceHealthStore.TryClaimServiceProbe(CoreConstants.ResolverId, dueBefore, messageId))
         {
             return false;
         }

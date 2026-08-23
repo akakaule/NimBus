@@ -83,6 +83,8 @@ public sealed class EndpointStatusAllTests
             new FakePlatform(endpointIds),
             configuration,
             store,
+            store,
+            store,
             serviceBusManagement: null,
             new AllowAllAuthorizationService(),
             NullLogger<EndpointImplementation>.Instance,

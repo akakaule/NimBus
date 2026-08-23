@@ -294,6 +294,7 @@ public sealed class AdminStatusSafetyTests
                         new NimBus.WebApp.Services.Heartbeat.HeartbeatService(
                             platform,
                             store,
+                            store,
                             new UnusedHeartbeatMessageSender(),
                             NullLogger<NimBus.WebApp.Services.Heartbeat.HeartbeatService>.Instance));
                     services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());

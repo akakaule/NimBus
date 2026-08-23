@@ -41,7 +41,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
         private readonly IPlatform platform;
         private readonly ILogger<EventImplementation> logger;
-        private readonly INimBusMessageStore cosmosClient;
+        private readonly IMessageTrackingStore cosmosClient;
         private readonly IManagerClient managerClient;
         private readonly IHandoffClientFactory handoffClients;
         private readonly IApplicationInsightsService applicationInsightsService;
@@ -60,7 +60,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             IManagerClient managerClient,
             IHandoffClientFactory handoffClientFactory,
             ILogger<EventImplementation> logger,
-            INimBusMessageStore cosmosClient,
+            IMessageTrackingStore cosmosClient,
             IEndpointAuthorizationService authorizationService,
             IAdminService adminService,
             ServiceBusClient serviceBusClient,

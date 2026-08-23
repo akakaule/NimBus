@@ -12,7 +12,7 @@ namespace NimBus.WebApp.Services;
 
 /// <summary>
 /// Default <see cref="IAuditLogService"/> implementation. Writes each audit row
-/// to the durable <see cref="INimBusMessageStore"/> and emits a structured
+/// to the durable <see cref="IMessageTrackingStore"/> and emits a structured
 /// "Webapp AuditEvent occurred" log event (captured by Application Insights via
 /// <see cref="ILogger"/> telemetry). Both writes are best-effort — failures
 /// are absorbed and logged as warnings so the user's privileged action proceeds.
@@ -26,11 +26,11 @@ public sealed class AuditLogService : IAuditLogService
     internal const string StructuredLogMessage = "Webapp AuditEvent occurred";
 
     private readonly ILogger<AuditLogService> _logger;
-    private readonly INimBusMessageStore _messageStore;
+    private readonly IMessageTrackingStore _messageStore;
 
     public AuditLogService(
         ILogger<AuditLogService> logger,
-        INimBusMessageStore messageStore)
+        IMessageTrackingStore messageStore)
     {
         _logger = logger;
         _messageStore = messageStore;

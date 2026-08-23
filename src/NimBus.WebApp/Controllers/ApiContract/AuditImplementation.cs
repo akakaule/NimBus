@@ -11,16 +11,16 @@ namespace NimBus.WebApp.Controllers.ApiContract
 {
     public class AuditImplementation : IAuditApiController
     {
-        private readonly INimBusMessageStore _cosmosClient;
+        private readonly IMessageTrackingStore _messageStore;
         private readonly ILogger<AuditImplementation> _logger;
         private readonly Services.IEndpointAuthorizationService _authorizationService;
 
         public AuditImplementation(
-            INimBusMessageStore cosmosClient,
+            IMessageTrackingStore messageStore,
             ILogger<AuditImplementation> logger,
             Services.IEndpointAuthorizationService authorizationService)
         {
-            _cosmosClient = cosmosClient;
+            _messageStore = messageStore;
             _logger = logger;
             _authorizationService = authorizationService;
         }
@@ -61,7 +61,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             // unbounded scans against Cosmos / SQL when an external caller forgets a sensible value.
             var maxItems = body.MaxItemCount <= 0 ? 50 : Math.Min(body.MaxItemCount, 200);
 
-            var result = await _cosmosClient.SearchAudits(filter, body.ContinuationToken, maxItems);
+            var result = await _messageStore.SearchAudits(filter, body.ContinuationToken, maxItems);
 
             // Fail-closed belt-and-braces: EndpointIdExact is an OPTIONAL store
             // capability — a provider that predates the flag silently applies

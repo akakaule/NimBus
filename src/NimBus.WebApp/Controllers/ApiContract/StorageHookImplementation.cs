@@ -38,7 +38,7 @@ namespace NimBus.WebApp.Controllers
 
         private readonly IHubContext<GridEventsHub> _hubContext;
         private readonly ILogger<StorageHookImplementation> _logger;
-        private readonly INimBusMessageStore _cosmosClient;
+        private readonly IMessageTrackingStore _messageStore;
         private readonly IPlatform _platform;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IHostEnvironment _hostEnvironment;
@@ -47,7 +47,7 @@ namespace NimBus.WebApp.Controllers
         public StorageHookImplementation(
             IHubContext<GridEventsHub> gridEventsHubContext,
             ILogger<StorageHookImplementation> logger,
-            INimBusMessageStore cosmosClient,
+            IMessageTrackingStore messageStore,
             IPlatform platform,
             IHttpContextAccessor httpContextAccessor,
             IHostEnvironment hostEnvironment,
@@ -55,7 +55,7 @@ namespace NimBus.WebApp.Controllers
         {
             _hubContext = gridEventsHubContext;
             _logger = logger;
-            _cosmosClient = cosmosClient;
+            _messageStore = messageStore;
             _platform = platform;
             _httpContextAccessor = httpContextAccessor;
             _hostEnvironment = hostEnvironment;
@@ -79,7 +79,7 @@ namespace NimBus.WebApp.Controllers
             var endpointIdValid = EndpointVerificationService.EndpointExists(_platform, endpointId);
             if (endpointIdValid)
             {
-                var state = await _cosmosClient.DownloadEndpointStateCount(endpointId);
+                var state = await _messageStore.DownloadEndpointStateCount(endpointId);
                 var endpointStatus = Mapper.EndpointStatusCountFromEndpointStateCount(state);
                 await _hubContext.Clients.All.SendAsync(Constants.EventSignalNames.EndpointUpdate, endpointStatus);
                 return new OkResult();

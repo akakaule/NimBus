@@ -144,6 +144,8 @@ public sealed class StoreResultCacheTests
             new FakePlatform(endpointIds),
             configuration,
             store,
+            store,
+            store,
             serviceBusManagement: null,
             new AllowAllAuthorizationService(),
             NullLogger<EndpointImplementation>.Instance,

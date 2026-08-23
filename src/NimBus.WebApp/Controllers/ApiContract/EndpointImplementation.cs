@@ -32,7 +32,9 @@ public class EndpointImplementation : IEndpointApiController
 {
     private readonly IPlatform platform;
     private readonly IConfiguration configuration;
-    private readonly INimBusMessageStore cosmosClient;
+    private readonly IMessageTrackingStore cosmosClient;
+    private readonly ISubscriptionStore _subscriptionStore;
+    private readonly IEndpointMetadataStore _metadataStore;
     private readonly IServiceBusManagement serviceBusManagement;
     private readonly IEndpointAuthorizationService _authorizationService;
     private readonly HttpContext _context;
@@ -53,7 +55,9 @@ public class EndpointImplementation : IEndpointApiController
         IHttpContextAccessor contextAccessor,
         IPlatform platform,
         IConfiguration configuration,
-        INimBusMessageStore cosmosClient,
+        IMessageTrackingStore cosmosClient,
+        ISubscriptionStore subscriptionStore,
+        IEndpointMetadataStore metadataStore,
         IServiceBusManagement serviceBusManagement,
         IEndpointAuthorizationService authorizationService,
         ILogger<EndpointImplementation> logger,
@@ -64,6 +68,8 @@ public class EndpointImplementation : IEndpointApiController
         this.platform = platform;
         this.configuration = configuration;
         this.cosmosClient = cosmosClient;
+        _subscriptionStore = subscriptionStore;
+        _metadataStore = metadataStore;
         this.serviceBusManagement = serviceBusManagement;
         this._authorizationService = authorizationService;
         _context = contextAccessor.HttpContext;
@@ -550,7 +556,7 @@ public class EndpointImplementation : IEndpointApiController
                 "The authenticated identity carries no name claim to record as the subscription owner.");
         }
 
-        var subscriptionStatus = await cosmosClient.SubscribeToEndpointNotification(endpointId, body.Mail,
+        var subscriptionStatus = await _subscriptionStore.SubscribeToEndpointNotification(endpointId, body.Mail,
             body.Type, author, body.Url, body.EventTypes, body.Payload, body.Frequency);
         return new OkObjectResult(subscriptionStatus);
     }
@@ -577,7 +583,7 @@ public class EndpointImplementation : IEndpointApiController
         // The store deletes by global subscription id, so first pin the id to
         // THIS endpoint — a manager of endpoint A must not be able to delete
         // endpoint B's subscriptions by guessing ids.
-        var subscriptions = await cosmosClient.GetSubscriptionsOnEndpoint(endpointId);
+        var subscriptions = await _subscriptionStore.GetSubscriptionsOnEndpoint(endpointId);
         var subscription = subscriptions.FirstOrDefault(s => string.Equals(s.Id, body.Id, StringComparison.Ordinal));
         if (subscription == null)
         {
@@ -602,7 +608,7 @@ public class EndpointImplementation : IEndpointApiController
             }
         }
 
-        var success = await cosmosClient.DeleteSubscription(subscription.Id);
+        var success = await _subscriptionStore.DeleteSubscription(subscription.Id);
 
         if (success)
             return new OkResult();
@@ -626,7 +632,7 @@ public class EndpointImplementation : IEndpointApiController
             return new ForbidResult();
         }
 
-        var subscriptions = await cosmosClient.GetSubscriptionsOnEndpoint(endpointId);
+        var subscriptions = await _subscriptionStore.GetSubscriptionsOnEndpoint(endpointId);
         var mapped = Mapper.SubscriptionsFromEndpointsubscriptions(subscriptions);
 
         // Subscription payload filters are payload fragments — visible only to
@@ -728,9 +734,9 @@ public class EndpointImplementation : IEndpointApiController
             case "enable":
                 {
                     await endpointManagement.EnableEndpoint(endpointId);
-                    var metadata = await cosmosClient.GetEndpointMetadata(endpointId);
+                    var metadata = await _metadataStore.GetEndpointMetadata(endpointId);
                     metadata.SubscriptionStatus = true;
-                    await cosmosClient.SetEndpointMetadata(metadata);
+                    await _metadataStore.SetEndpointMetadata(metadata);
                     await _auditLogService.LogAuditAsync(MessageAuditType.EnableEndpoint, _context,
                         endpointId: endpointId);
                     if (await endpointManagement.IsEndpointActive(endpointId))
@@ -740,9 +746,9 @@ public class EndpointImplementation : IEndpointApiController
             case "disable":
                 {
                     await endpointManagement.DisableEndpoint(endpointId);
-                    var metadata = await cosmosClient.GetEndpointMetadata(endpointId);
+                    var metadata = await _metadataStore.GetEndpointMetadata(endpointId);
                     metadata.SubscriptionStatus = false;
-                    await cosmosClient.SetEndpointMetadata(metadata);
+                    await _metadataStore.SetEndpointMetadata(metadata);
                     await _auditLogService.LogAuditAsync(MessageAuditType.DisableEndpoint, _context,
                         endpointId: endpointId);
                     if (!await endpointManagement.IsEndpointActive(endpointId))
@@ -865,7 +871,7 @@ public class EndpointImplementation : IEndpointApiController
         if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointId))
             return new ForbidResult();
 
-        var metadata = await cosmosClient.GetEndpointMetadata(endpointId);
+        var metadata = await _metadataStore.GetEndpointMetadata(endpointId);
         if (metadata == null)
             return new NotFoundObjectResult($"Metadata for {endpointId} not found");
         if (metadata.SubscriptionStatus == null)
@@ -890,7 +896,7 @@ public class EndpointImplementation : IEndpointApiController
                 endpointIds.Add(id);
         }
 
-        var metadataList = await cosmosClient.GetMetadatas(endpointIds) ?? endpointIds.Select(x => new EndpointMetadata { EndpointId = x }).ToList();
+        var metadataList = await _metadataStore.GetMetadatas(endpointIds) ?? endpointIds.Select(x => new EndpointMetadata { EndpointId = x }).ToList();
 
         foreach (var id in endpointIds)
         {
@@ -940,7 +946,7 @@ public class EndpointImplementation : IEndpointApiController
             { Name = technicalContact.Name, Email = technicalContact.Email }).ToList();
 
 
-        var metadataStatus = await cosmosClient.SetEndpointMetadata(
+        var metadataStatus = await _metadataStore.SetEndpointMetadata(
             new EndpointMetadata
             {
                 EndpointOwner = body.EndpointOwner,
@@ -984,7 +990,7 @@ public class EndpointImplementation : IEndpointApiController
         // upsert (the previous code wrote on every probe, including failures).
         if (metadata.SubscriptionStatus != null)
         {
-            await cosmosClient.SetEndpointMetadata(metadata);
+            await _metadataStore.SetEndpointMetadata(metadata);
         }
     }
 }

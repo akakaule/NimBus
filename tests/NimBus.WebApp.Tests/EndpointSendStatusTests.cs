@@ -139,6 +139,8 @@ public sealed class EndpointSendStatusTests
             new FakePlatform(endpointIds),
             configuration,
             cosmosClient: null!, // send status never touches the message store
+            subscriptionStore: null!,
+            metadataStore: null!,
             sb,
             new FakeAuthorizationService(canManage),
             NullLogger<EndpointImplementation>.Instance,

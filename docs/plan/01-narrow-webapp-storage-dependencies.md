@@ -49,7 +49,7 @@ The source inventory is complete:
 | `HeartbeatService` | `IEndpointMetadataStore`, `IServiceHealthStore`, and optional `IHeartbeatHistoryStore` |
 | `EndpointImplementation` | `IMessageTrackingStore`, `ISubscriptionStore`, and `IEndpointMetadataStore` |
 | `SeedDataService` | `IMessageTrackingStore`, `ISubscriptionStore`, and `IEndpointMetadataStore` |
-| `AdminService` | None; its constructor dependency is unused |
+| `AdminService` | `IMessageTrackingStore`; purge and resubmit partials use message-tracking operations |
 
 No WebApp class needs the aggregate after this migration.
 
@@ -76,7 +76,7 @@ Migrate one class per commit so constructor and test failures remain attributabl
 1. Migrate `HeartbeatService`, `EndpointImplementation`, and `SeedDataService` to the exact contract sets in the verified inventory.
 2. Add a failing constructor-shape assertion for each selected class.
 3. Inject the required narrow interfaces and update only tests whose construction changes.
-4. Delete the unused `INimBusMessageStore` field and constructor parameter from `AdminService`; do not replace it with an arbitrary narrow dependency. Update direct constructor calls explicitly because this is a source-shape change.
+4. Verify `AdminService`'s partials before changing its dependency. Narrow the live purge/resubmit operations to `IMessageTrackingStore` and update direct constructor calls explicitly because this is a source-shape change.
 5. Complete the assembly-wide guard: no WebApp class may inject `INimBusMessageStore`.
 
 `HeartbeatService` must continue to accept `IHeartbeatHistoryStore` as an optional capability, preserving third-party-provider compatibility from Spec 028.

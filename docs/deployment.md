@@ -6,7 +6,7 @@ How to stand up the NimBus platform (Service Bus, message store, resolver Functi
 
 | Path | Best for | What you run |
 |---|---|---|
-| [One command](#path-1-one-command-from-a-clone) | Trying NimBus, dev environments | `dnx Akaule.NimBus.CommandLine -- setup ...` from a repo clone |
+| [One command](#path-1-one-command) | Trying NimBus, dev environments | `dnx Akaule.NimBus.CommandLine -- setup ...` — no clone needed |
 | [GitHub Actions](#path-2-github-actions) | Teams on GitHub, OIDC (no stored secrets) | The included `Deploy NimBus` workflow |
 | [Azure DevOps](#path-3-azure-devops) | Enterprises on Azure DevOps | The included `pipelines/azure-pipelines-deploy.yml` |
 | [Raw Bicep](#path-4-raw-bicep-self-service) | Platform teams with their own IaC tooling | `az deployment group create` + the sample `.bicepparam` files |
@@ -15,9 +15,9 @@ How to stand up the NimBus platform (Service Bus, message store, resolver Functi
 
 Every path ultimately performs the same three layers, in order:
 
-1. **Azure resources** — `deploy/bicep/deploy.core.bicep` (Service Bus namespace, App Insights, Cosmos DB *or* Azure SQL, Functions storage, hosting plans, resolver Function App, RBAC) followed by `deploy/bicep/deploy.webapp.bicep` (management WebApp + RBAC). Pure Bicep; this layer is replaceable by your own tooling.
-2. **Service Bus topology** — `nb topology apply` creates the topics, session-enabled subscriptions, and SQL routing rules for every endpoint. The topology is *generated from the compiled `PlatformConfiguration`* — it cannot be expressed in Bicep, so this step always uses the `nb` CLI (or runs in-process, as the Aspire sample's provisioner does).
-3. **Application code** — `nb deploy apps` publishes `src/NimBus.Resolver` and `src/NimBus.WebApp` and zip-deploys them.
+1. **Azure resources** — `deploy/bicep/deploy.core.bicep` (Service Bus namespace, App Insights, Cosmos DB *or* Azure SQL, Functions storage, hosting plans, resolver Function App, RBAC) followed by `deploy/bicep/deploy.webapp.bicep` (management WebApp + RBAC). Pure Bicep; this layer is replaceable by your own tooling. The templates ship inside the CLI package, so no clone is needed to deploy them.
+2. **Service Bus topology** — `nb topology apply` creates the topics, session-enabled subscriptions, and SQL routing rules for every endpoint. The topology is *generated from the compiled `PlatformConfiguration`* — it cannot be expressed in Bicep, so this step always uses the `nb` CLI (or runs in-process, as the Aspire sample's provisioner does). Pass `--assembly` to provision a catalog other than the one compiled into the CLI.
+3. **Application code** — `nb deploy apps` zip-deploys the Resolver and WebApp published for the CLI's own version, or builds them from a clone with `--from-source`.
 
 `nb setup` chains all three. The CLI is defensive about existing environments: resources are pinned to their current region, hosting plans to their current plan type/SKU (see [docs/cli.md](cli.md) for the pinning rules).
 
@@ -29,7 +29,7 @@ Every path ultimately performs the same three layers, in order:
 
 - Azure CLI ≥ 2.60.0 **required** for Flex Consumption deploys ([Microsoft-documented minimum](https://learn.microsoft.com/azure/azure-functions/flex-consumption-how-to); `nb` checks this before publishing). ≥ 2.70 recommended; `.bicepparam` support needs ≥ 2.53
 - Bicep CLI ≥ 0.35.1 **required for every deployment path** because the templates use secure outputs. Check with `az bicep version` and update with `az bicep upgrade` ([secure-output requirement](https://learn.microsoft.com/azure/azure-resource-manager/bicep/outputs#secure-outputs))
-- .NET 10 SDK and Node.js 22 wherever the apps are built (pipelines set these up themselves)
+- .NET 10 SDK wherever `nb` runs. Node.js 22 is needed **only** for source builds (`nb deploy apps --from-source`); the released artifacts ship the WebApp SPA already built
 
 **RBAC for the deploying identity.** The Bicep creates role assignments (`Microsoft.Authorization/roleAssignments`: Azure Service Bus Data Owner and, on Flex Consumption, Storage Blob Data Owner), and plain **Contributor cannot write role assignments**. On the target resource group, grant the pipeline/service principal either:
 
@@ -48,14 +48,17 @@ done
 
 `Microsoft.EventGrid` backs only the optional storage-hook webhooks; `nb infra apply` tries to register it and warns-and-continues when the identity lacks permission.
 
-## Path 1: One command from a clone
+## Path 1: One command
 
 ```bash
-git clone https://github.com/akakaule/NimBus && cd NimBus
 dnx Akaule.NimBus.CommandLine -- setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
-`dnx` ships with the .NET 10 SDK and runs the published CLI without installing it (the `--` separator is required). Full option reference, including `--resolver-plan`, `--management-plan-sku`, and the SQL Server storage variants: [docs/cli.md](cli.md).
+No clone: the CLI carries the bicep templates and downloads the Resolver and WebApp built for its own version ([ADR-015](adr/015-customer-deployment-distribution.md)). `dnx` ships with the .NET 10 SDK and runs the published CLI without installing it (the `--` separator is required).
+
+Deploying your own event catalog rather than the built-in demo one means pointing the topology step at your compiled platform: add `--assembly ./path/to/YourContracts.dll`. Full option reference, including `--resolver-plan`, `--management-plan-sku`, and the SQL Server storage variants: [docs/cli.md](cli.md).
+
+To deploy unreleased changes from a working tree, add `--from-source --repo-root .` from a clone.
 
 ## Path 2: GitHub Actions
 

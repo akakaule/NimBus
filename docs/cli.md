@@ -26,17 +26,17 @@ dotnet run --project src/NimBus.CommandLine -- <command>
 
 ### One-command cloud install
 
-From a repository clone (the CLI needs the bicep templates and app sources), a single
-command provisions the infrastructure, applies the Service Bus topology, and deploys
-the resolver + management WebApp:
+A single command provisions the infrastructure, applies the Service Bus topology, and
+deploys the resolver + management WebApp. No repository clone: the CLI carries the bicep
+templates and downloads the applications built for its own version.
 
 ```bash
-git clone https://github.com/akakaule/NimBus && cd NimBus
 dnx Akaule.NimBus.CommandLine -- setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
-Prerequisites: .NET 10 SDK (provides `dnx`), Node.js 22 (the WebApp SPA builds during
-`dotnet publish`), and Azure CLI ≥ 2.60.0 logged in via `az login` (≥ 2.70 recommended).
+Prerequisites: .NET 10 SDK (provides `dnx`) and Azure CLI ≥ 2.60.0 logged in via
+`az login` (≥ 2.70 recommended). Node.js is only needed for `--from-source`, where the
+WebApp SPA builds during `dotnet publish`.
 2.60.0 is the Microsoft-documented minimum for Flex Consumption: older versions push to
 the legacy Kudu zipdeploy endpoint and fail with a misleading SSL/proxy error, so `nb`
 refuses to deploy to a Flex Consumption plan with an older az.
@@ -90,12 +90,16 @@ Deploy Azure infrastructure using bicep templates.
 nb infra apply --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
+The bicep templates ship inside the CLI package, so this command needs no repository
+clone. `--repo-root` remains as the developer override for testing template changes
+before they are released.
+
 | Option | Required | Description |
 |---|---|---|
 | `--solution-id` | Yes | Solution identifier used in resource names |
 | `--environment` | Yes | Environment name (dev, staging, prod) |
 | `--resource-group` | Yes | Azure resource group name |
-| `--repo-root` | No | Repository root (auto-detected) |
+| `--repo-root` | No | Developer override: use the bicep templates in a repository clone instead of the ones shipped in the CLI |
 | `--location` | No | Azure region override |
 | `--webapp-version` | No | Version string for web app settings |
 | `--storage-provider` | No | Storage backend: `cosmos` (default) or `sqlserver` |
@@ -155,6 +159,16 @@ nb topology apply --solution-id nimbus --environment dev --resource-group rg-nim
 | `--solution-id` | Yes | Solution identifier |
 | `--environment` | Yes | Environment name |
 | `--resource-group` | Yes | Resource group with the Service Bus namespace |
+| `-a`, `--assembly` | No | Host assembly exposing a public parameterless `IPlatform`. Required to provision **your own** catalog — without it the CLI provisions only the platform compiled into it. |
+| `--platform` | No | `IPlatform` type name when the assembly exposes more than one |
+
+The topology is generated from a compiled `PlatformConfiguration`, so point `--assembly`
+at the build output of the project that declares your endpoints and event types:
+
+```bash
+nb topology apply --solution-id acme --environment dev --resource-group rg-acme-dev \
+  --assembly ./src/Acme.Contracts/bin/Release/net10.0/Acme.Contracts.dll
+```
 
 Creates topics, subscriptions, and routing rules for each endpoint. Idempotent — only recreates entities if configuration has changed. Creates:
 - Main subscription (session-enabled) per endpoint
@@ -168,7 +182,7 @@ Creates topics, subscriptions, and routing rules for each endpoint. Idempotent �
 
 ### `nb deploy apps`
 
-Build and deploy the resolver and web app to Azure.
+Deploy the resolver and web app to Azure.
 
 ```bash
 nb deploy apps --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
@@ -179,11 +193,28 @@ nb deploy apps --solution-id nimbus --environment dev --resource-group rg-nimbus
 | `--solution-id` | Yes | Solution identifier |
 | `--environment` | Yes | Environment name |
 | `--resource-group` | Yes | Resource group with target apps |
-| `--repo-root` | No | Repository root (auto-detected) |
-| `--configuration` | No | Build configuration (default: `Release`) |
+| `--from-source` | No | Build the applications from a repository clone instead of deploying the released artifacts |
+| `--repo-root` | No | Repository root for a source build. Implies `--from-source`. |
+| `--configuration` | No | Build configuration (default: `Release`). Source builds only. |
 | `--only` | No | Deploy a single application: `resolver` \| `webapp`. Defaults to both. |
 
-Publishes the resolver (Azure Function) and web app, packages as ZIP, and deploys via Azure CLI. `--only webapp` skips the resolver build and deploy entirely (and vice versa) — useful for fast WebApp-only iterations. On a Flex Consumption resolver the zip is deployed directly (the app must stay running — the Azure CLI verifies host health after publishing); on Elastic Premium the app is stopped for the deployment and restarted afterwards.
+By default the CLI downloads the Resolver and WebApp built for **its own version** and
+zip-deploys them, so the deploying machine needs neither the .NET SDK nor Node.js, and
+the deployed bits are exactly the ones that release was tested with. Artifacts are cached
+per version under the user's local application data directory.
+
+| Environment variable | Purpose |
+|---|---|
+| `NIMBUS_ARTIFACT_FEED` | Base URL of the NuGet feed serving `Akaule.NimBus.Deploy` (default: `https://api.nuget.org`). Point this at a private mirror — for example Azure Artifacts — to deploy without reaching nuget.org. |
+| `NIMBUS_ARTIFACT_FEED_TOKEN` | Token for a feed that requires authentication; sent as the password half of Basic auth. |
+
+Running inside a repository clone does **not** change this — deploying a working tree has
+to be asked for with `--from-source` (or `--repo-root`), which restores the previous
+behaviour: `dotnet publish` both apps locally, stamping the version from the latest git
+tag. If no artifacts exist for the installed CLI version the command fails and says so;
+it never falls back to a source tree that could be a different revision.
+
+Deploys via the Azure CLI. `--only webapp` skips the resolver build and deploy entirely (and vice versa) — useful for fast WebApp-only iterations. On a Flex Consumption resolver the zip is deployed directly (the app must stay running — the Azure CLI verifies host health after publishing); on Elastic Premium the app is stopped for the deployment and restarted afterwards.
 
 ---
 
@@ -195,7 +226,11 @@ Run infrastructure, topology, and app deployment in sequence.
 nb setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
-Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resolver-plan`, and `--management-plan-sku`. SQL and bootstrap-admin secrets use the environment variables documented under `nb infra apply`.
+Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resolver-plan`, `--management-plan-sku`, `--assembly`, and `--from-source`. SQL and bootstrap-admin secrets use the environment variables documented under `nb infra apply`.
+
+Like the individual commands, this needs no repository clone. Deploying your own event
+catalog means passing `--assembly` so the topology step provisions your endpoints rather
+than the built-in ones.
 
 ---
 

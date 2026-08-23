@@ -1,7 +1,8 @@
 # ADR-015: Ship Customer Deployments as a Starter Repo, Then as Packaged Deployables
 
 ## Status
-Proposed (2026-08)
+Accepted (2026-08). Both phases are implemented in the CLI and the release workflow; the
+artifacts exist only from the first release tag cut after that change.
 
 ## Context
 

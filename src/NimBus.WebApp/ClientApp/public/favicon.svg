@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" role="img" aria-label="NimBus">
+  <!--
+    Tab icon: the sidebar LogoMark (design system §01) on its brand square.
+    The header draws the cloud as a cream outline because it sits on the dark
+    sidebar; a bare copy of that would vanish against a light tab strip, so the
+    mark keeps its #1A1814 ground here and the cloud is filled rather than
+    stroked - a 2.5px stroke on a 36 viewBox renders under 1.2px at 16 and
+    greys out. Same silhouette, legible at tab size.
+  -->
+  <rect width="36" height="36" rx="8" fill="#1A1814"/>
+  <path
+    d="M5 22c0-3.5 2.8-6.3 6.3-6.3.7 0 1.4.1 2 .3.8-3.7 4.1-6.5 8-6.5 4.2 0 7.6 3.2 8.1 7.2 2.7.4 4.8 2.7 4.8 5.5 0 3.1-2.5 5.5-5.5 5.5H11.3C7.8 27.7 5 25 5 22z"
+    fill="#F4F2EA"/>
+  <circle cx="29" cy="11" r="3" fill="#E8743C"/>
+</svg>

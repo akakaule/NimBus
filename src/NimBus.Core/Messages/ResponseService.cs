@@ -123,7 +123,11 @@ namespace NimBus.Core.Messages
             var assembly = typeof(ResponseService).Assembly;
             var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
             if (!string.IsNullOrWhiteSpace(informational))
-                return informational;
+            {
+                // Strip the '+<sha>' source-revision suffix the .NET SDK appends to the
+                // informational version; the release identity is the bare package version.
+                return informational.Split('+')[0];
+            }
 
             return assembly.GetName().Version?.ToString() ?? "unknown";
         }

@@ -16,6 +16,12 @@ call to `AddCosmosDbMessageStore(...)`. Type namespaces are unchanged.
 Exactly one provider must be registered per running application instance. The
 NimBus builder validates this at `Build()` time and fails fast otherwise.
 
+Each provider keeps a single public aggregate facade for `INimBusMessageStore`
+and `IHeartbeatHistoryStore`. The facade delegates to provider-internal stores
+for message tracking, subscriptions, endpoint metadata, heartbeat history, and
+service health; this keeps registration and public construction compatibility
+while allowing each persistence concern to evolve independently.
+
 ## Cosmos DB
 
 Add the package and register:

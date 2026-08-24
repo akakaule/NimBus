@@ -397,15 +397,17 @@ Core architectural role:
 
 This is the main library consumers would integrate with when building publishers or subscribers on NimBus.
 
-### NimBus.MessageStore
+### NimBus.MessageStore.CosmosDb and NimBus.MessageStore.SqlServer
 
 Purpose:
 
-- durable operational state and history store backed by Cosmos DB
+- durable operational state and history stores backed by Cosmos DB or SQL Server
 
 Important types:
 
-- `CosmosDbClient.cs`
+- `CosmosDbClient.cs` and `SqlServerMessageStore.cs` are the public aggregate facades
+- provider-internal concern stores split message tracking, subscriptions, endpoint metadata,
+  heartbeat history, and service health while preserving the aggregate contracts
 - `MessageEntity.cs`
 - `MessageAuditEntity.cs`
 - `States/*`
@@ -756,7 +758,7 @@ This is a useful signal that the architecture is intentionally centered on a reu
 
 - the web app is broad in scope: UI host, API host, SignalR hub, control plane, and telemetry aggregator
 - build/publish complexity is higher because the web app couples SPA, NSwag generation, and server publish steps
-- Cosmos client logic is concentrated in a large `CosmosDbClient`, which makes the persistence layer powerful but dense
+- provider facades retain the public aggregate API while delegating persistence concerns to focused internal stores
 - Azure Service Bus is the single supported transport; the architecture is intentionally Azure-centric and does not currently abstract across transports
 
 ## Recommended reading order
@@ -767,7 +769,7 @@ For a new engineer, the shortest path to understanding the system is:
 2. `src/NimBus.Core/Messages/StrictMessageHandler.cs`
 3. `src/NimBus.ServiceBus/ServiceBusAdapter.cs`
 4. `src/NimBus.Resolver/Services/ResolverService.cs`
-5. `src/NimBus.MessageStore/CosmosDbClient.cs`
+5. `src/NimBus.MessageStore.CosmosDb/CosmosDbClient.cs` or `src/NimBus.MessageStore.SqlServer/SqlServerMessageStore.cs`
 6. `src/NimBus.WebApp/Startup.cs`
 7. `src/NimBus.CommandLine/Program.cs`
 

@@ -25,12 +25,15 @@ public sealed class SqlServerMessageStoreRegistrationTests
 
         using var provider = services.BuildServiceProvider();
 
-        Assert.IsNotNull(provider.GetRequiredService<INimBusMessageStore>());
+        var aggregate = provider.GetRequiredService<INimBusMessageStore>();
         Assert.IsNotNull(provider.GetRequiredService<IMessageTrackingStore>());
-        Assert.IsNotNull(provider.GetRequiredService<ISubscriptionStore>());
-        Assert.IsNotNull(provider.GetRequiredService<IEndpointMetadataStore>());
-        Assert.IsNotNull(provider.GetRequiredService<IMetricsStore>());
-        Assert.IsNotNull(provider.GetRequiredService<IServiceHealthStore>());
-        Assert.IsNotNull(provider.GetRequiredService<IHeartbeatHistoryStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<ISubscriptionStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IEndpointMetadataStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IMetricsStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IEventSchemaStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IAccessControlStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IServiceHealthStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IHeartbeatHistoryStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<INimBusMessageStore>());
     }
 }

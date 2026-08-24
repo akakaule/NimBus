@@ -62,7 +62,17 @@ public sealed class CosmosDbMessageStoreRegistrationTests
     {
         using var provider = BuildProvider(config: null);
 
-        Assert.IsNotNull(provider.GetRequiredService<INimBusMessageStore>());
+        var aggregate = provider.GetRequiredService<INimBusMessageStore>();
+        Assert.IsNotNull(provider.GetRequiredService<IMessageTrackingStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<ISubscriptionStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IEndpointMetadataStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IMetricsStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IEventSchemaStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IAccessControlStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IServiceHealthStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IHeartbeatHistoryStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<INimBusMessageStore>());
+        Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<INimBusMessageStore>());
         Assert.AreEqual(-1, provider.GetRequiredService<IOptions<CosmosDbMessageStoreOptions>>().Value.UnresolvedRetentionDays);
     }
 

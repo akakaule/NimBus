@@ -6,6 +6,7 @@ export { Badge, type BadgeProps, type BadgeVariant } from "./badge";
 export { Input, type InputProps } from "./input";
 export { Select, type SelectProps } from "./select";
 export { Checkbox, type CheckboxProps } from "./checkbox";
+export { Toggle, type ToggleProps } from "./toggle";
 export { RadioGroup, Radio, type RadioGroupProps, type RadioProps } from "./radio-group";
 export { Textarea, type TextareaProps } from "./textarea";
 export { Label, type LabelProps } from "./label";
@@ -26,6 +27,13 @@ export {
 } from "./toast";
 export { Spinner, type SpinnerProps } from "./spinner";
 export { Tooltip, type TooltipProps } from "./tooltip";
+export {
+  DropdownMenu,
+  DropdownItem,
+  DropdownSeparator,
+  type DropdownMenuProps,
+  type DropdownItemProps,
+} from "./dropdown-menu";
 
 // Layout components
 export {

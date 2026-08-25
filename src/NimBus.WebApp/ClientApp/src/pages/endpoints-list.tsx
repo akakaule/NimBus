@@ -4,63 +4,13 @@ import * as api from "api-client";
 import {
   EndpointStatus,
   getEndpointStatus,
-  mapStatusToColor,
 } from "functions/endpoint.functions";
 import DataTable, { ITableRow, ITableHeadCell } from "components/data-table";
 import Page from "components/page";
 import { getApplicationStatus } from "hooks/app-status";
+import EndpointRowActions from "components/endpoint-list/endpoint-row-actions";
+import EndpointStatusIcon from "components/endpoint-list/endpoint-status-icon";
 import Cookies from "js-cookie";
-
-// Status icons
-const CheckCircleIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="currentColor" viewBox="0 0 24 24">
-    <path
-      fillRule="evenodd"
-      d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm13.36-1.814a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z"
-      clipRule="evenodd"
-    />
-  </svg>
-);
-
-const NotAllowedIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="currentColor" viewBox="0 0 24 24">
-    <path
-      fillRule="evenodd"
-      d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zm-1.72 6.97a.75.75 0 10-1.06 1.06L10.94 12l-1.72 1.72a.75.75 0 101.06 1.06L12 13.06l1.72 1.72a.75.75 0 101.06-1.06L13.06 12l1.72-1.72a.75.75 0 10-1.06-1.06L12 10.94l-1.72-1.72z"
-      clipRule="evenodd"
-    />
-  </svg>
-);
-
-const TimeIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="currentColor" viewBox="0 0 24 24">
-    <path
-      fillRule="evenodd"
-      d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 6a.75.75 0 00-1.5 0v6c0 .414.336.75.75.75h4.5a.75.75 0 000-1.5h-3.75V6z"
-      clipRule="evenodd"
-    />
-  </svg>
-);
-
-const WarningIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="currentColor" viewBox="0 0 24 24">
-    <path
-      fillRule="evenodd"
-      d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003zM12 8.25a.75.75 0 01.75.75v3.75a.75.75 0 01-1.5 0V9a.75.75 0 01.75-.75zm0 8.25a.75.75 0 100-1.5.75.75 0 000 1.5z"
-      clipRule="evenodd"
-    />
-  </svg>
-);
-
-const WarningTwoIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="currentColor" viewBox="0 0 24 24">
-    <path
-      fillRule="evenodd"
-      d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zM12 8.25a.75.75 0 01.75.75v3.75a.75.75 0 01-1.5 0V9a.75.75 0 01.75-.75zm0 8.25a.75.75 0 100-1.5.75.75 0 000 1.5z"
-      clipRule="evenodd"
-    />
-  </svg>
-);
 
 type EndpointProps = {
   endpointIds?: string[];
@@ -258,6 +208,7 @@ export default class EndpointsList extends React.Component<
       { id: ITableData.pending, label: "Pending", numeric: true },
       { id: ITableData.lastUpdated, label: "Last updated", numeric: false },
       { id: ITableData.status, label: "Status", numeric: false },
+      { id: ITableData.actions, label: "Actions", numeric: false, width: "15%" },
     ];
 
     return (
@@ -335,39 +286,33 @@ export default class EndpointsList extends React.Component<
             searchValue: endpointStatusValue.toString(),
           },
         ],
+        [
+          ITableData.actions,
+          {
+            value: (
+              <EndpointRowActions
+                endpointId={endpointId}
+                subscriptionStatus={endpointStatus.subscriptionStatus}
+                failed={failedEventsCount}
+                deferred={deferredEventsCount}
+                pending={pendingEventsCount}
+                storageAvailable={endpointStatus.storageStatus !== "unavailable"}
+                env={this.env}
+                refreshEndpoint={this.refreshEndpoint}
+                startLoading={this.startLoading}
+                stopLoading={this.stopLoading}
+              />
+            ),
+            searchValue: "Actions",
+          },
+        ],
       ]),
     };
   }
 
-  mapStatusToIcon = (status: EndpointStatus): React.JSX.Element => {
-    const colorClass = mapStatusToColor(status);
-    let IconComponent: React.FC<{ className?: string }> = CheckCircleIcon;
-    let colorTailwind = "text-green-500";
-
-    if (status === EndpointStatus.Failed) {
-      IconComponent = NotAllowedIcon;
-      colorTailwind = "text-red-500";
-    } else if (status === EndpointStatus.Impacted) {
-      IconComponent = WarningTwoIcon;
-      colorTailwind = "text-orange-500";
-    } else if (status === EndpointStatus.Pending) {
-      IconComponent = TimeIcon;
-      colorTailwind = "text-yellow-500";
-    } else if (status === EndpointStatus.Healthy) {
-      IconComponent = CheckCircleIcon;
-      colorTailwind = "text-green-500";
-    } else if (status === EndpointStatus.Disabled) {
-      IconComponent = WarningIcon;
-      colorTailwind = "text-gray-500";
-    } else if (status === EndpointStatus.MissingSubscription) {
-      IconComponent = WarningIcon;
-      colorTailwind = "text-slate-500";
-    }
-
-    return (
-      <Tooltip content={status} position="top">
-        <IconComponent className={`w-5 h-5 ${colorTailwind}`} />
-      </Tooltip>
-    );
-  };
+  mapStatusToIcon = (status: EndpointStatus): React.JSX.Element => (
+    <Tooltip content={status} position="top">
+      <EndpointStatusIcon status={status} />
+    </Tooltip>
+  );
 }

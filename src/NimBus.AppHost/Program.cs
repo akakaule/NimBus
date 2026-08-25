@@ -79,18 +79,22 @@ if (serviceBusEmulatorProject is not null)
     provisioner.WaitFor(serviceBusEmulatorProject);
 }
 
-// Resolver Function App
-var resolver = builder.AddProject<Projects.NimBus_Resolver>("resolver")
+// Resolver Function App. AddAzureFunctionsProject (not AddProject) so Aspire
+// allocates the Functions host port and passes it through: as a plain project
+// the host falls back to its hardcoded 7071 and refuses to start whenever
+// anything else on the machine already holds it — a second AppHost, or a
+// previous run's resolver that has not exited yet. Matches CrmErpDemo.AppHost.
+var resolver = builder.AddAzureFunctionsProject<Projects.NimBus_Resolver>("resolver")
     .WithReference(servicebus)
     .WithEnvironment("ResolverId", "Resolver")
     .WithEnvironment("AzureWebJobsServiceBus", servicebus.Resource.ConnectionStringExpression)
-    .WaitFor(provisioner);
+    .WaitForCompletion(provisioner);
 
 // WebApp (Management UI)
 var webapp = builder.AddProject<Projects.NimBus_WebApp>("webapp")
     .WithReference(servicebus)
     .WithExternalHttpEndpoints()
-    .WaitFor(provisioner);
+    .WaitForCompletion(provisioner);
 
 // Live Flow / Monitor realtime push (spec 020). Point the Resolver's
 // write-path notifier at the WebApp's storage-hook webhook so endpointupdate
@@ -151,11 +155,11 @@ if (identityEnabled)
 var publisher = builder.AddProject<Projects.AspirePubSub_Publisher>("publisher")
     .WithReference(servicebus)
     .WithExternalHttpEndpoints()
-    .WaitFor(provisioner);
+    .WaitForCompletion(provisioner);
 
 // Sample Subscriber (handles events + separated DeferredProcessor)
 var subscriber = builder.AddProject<Projects.AspirePubSub_Subscriber>("subscriber")
     .WithReference(servicebus)
-    .WaitFor(provisioner);
+    .WaitForCompletion(provisioner);
 
 builder.Build().Run();

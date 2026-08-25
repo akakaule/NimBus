@@ -75,25 +75,27 @@ public sealed class EndpointStatusCountSubscriptionStatusTests
     }
 
     [TestMethod]
-    public async Task Endpoints_without_stored_metadata_report_their_subscription_as_missing()
+    public async Task An_unknown_subscription_status_is_reported_as_unknown_not_as_missing()
     {
-        // No metadata row and no reachable Service Bus to probe: the endpoint's
-        // subscription is unknown, which the list renders as Subscription Missing
-        // rather than silently as enabled.
+        // No stored flag and no reachable Service Bus to probe. The metadata model
+        // cannot tell a failed probe from a genuinely absent subscription — both
+        // land as null — so the count says nothing rather than asserting the
+        // subscription is missing, which would show a healthy endpoint as
+        // Subscription Missing and dead its enable/disable switch.
         var sut = CreateSut(new InMemoryMessageStore(), "ep-unknown");
 
         var result = await sut.PostApiEndpointStatusCountAsync(["ep-unknown"]);
 
-        Assert.AreEqual("not-found", CountsOf(result)["ep-unknown"]);
+        Assert.IsNull(CountsOf(result)["ep-unknown"]);
     }
 
-    private static Dictionary<string, string> CountsOf(
+    private static Dictionary<string, string?> CountsOf(
         ActionResult<IEnumerable<EndpointStatusCount>> result)
     {
         var ok = result.Result as OkObjectResult;
         Assert.IsNotNull(ok, $"Expected 200 OK, got {result.Result?.GetType().Name}");
         return ((IEnumerable<EndpointStatusCount>)ok.Value!)
-            .ToDictionary(c => c.EndpointId!, c => c.SubscriptionStatus!);
+            .ToDictionary(c => c.EndpointId!, c => c.SubscriptionStatus);
     }
 
     private static EndpointImplementation CreateSut(InMemoryMessageStore store, params string[] endpointIds)

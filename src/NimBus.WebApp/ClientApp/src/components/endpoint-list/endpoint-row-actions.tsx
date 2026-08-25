@@ -63,10 +63,16 @@ export default function EndpointRowActions(props: IEndpointRowActionsProps) {
   // endpoint (site Owners hold it implicitly), so mirror that rule rather than
   // offering controls that would come back 403.
   const isSiteOwner = isOwnerRole(access?.siteRole);
+  // Endpoint ids are matched case-insensitively everywhere server side (the ACL
+  // snapshot is an OrdinalIgnoreCase dictionary, as is the platform lookup), so
+  // compare the same way — otherwise a grant stored as "billing" authorizes the
+  // request but hides every control for endpoint "Billing".
   const canManage =
     isSiteOwner ||
     (access?.endpointRoles ?? []).some(
-      (role) => role.endpointId === endpointId && isOwnerRole(role.role),
+      (role) =>
+        role.endpointId?.toLowerCase() === endpointId.toLowerCase() &&
+        isOwnerRole(role.role),
     );
   // Purge is refused in prod/stag unless the caller is a site Owner — the same
   // rule PostEndpointPurgeAsync applies.
@@ -76,12 +82,30 @@ export default function EndpointRowActions(props: IEndpointRowActionsProps) {
   const fmt = (n: number) => (storageAvailable ? n.toLocaleString() : "—");
   const totalMessages = props.failed + props.deferred + props.pending;
 
+  // The mutation has already landed by the time this runs, so a failed read-back
+  // is only a stale row — but it must still clear the spinner. Left unawaited the
+  // rejection escapes the chain, stopLoading never runs, and the table sits in its
+  // loading state for good.
+  const refreshRow = async () => {
+    try {
+      await Promise.resolve(props.refreshEndpoint(endpointId));
+    } catch {
+      props.stopLoading();
+      addToast({
+        variant: "error",
+        title: `${endpointId} was updated, but the list could not be refreshed.`,
+        description: "Reload the page to see its current state.",
+        duration: 6000,
+      });
+    }
+  };
+
   const setSubscriptionStatus = (action: "enable" | "disable") => {
     props.startLoading();
     return client
       .postEndpointSubscriptionstatus(endpointId, action)
-      .then(() => {
-        props.refreshEndpoint(endpointId);
+      .then(async () => {
+        await refreshRow();
         return true;
       })
       .catch(() => {
@@ -135,8 +159,8 @@ export default function EndpointRowActions(props: IEndpointRowActionsProps) {
     props.startLoading();
     client
       .postEndpointPurge(endpointId)
-      .then(() => {
-        props.refreshEndpoint(endpointId);
+      .then(async () => {
+        await refreshRow();
         addToast({
           variant: "warning",
           title: `Purged all data from ${endpointId}.`,

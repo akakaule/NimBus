@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import * as api from "api-client";
@@ -106,6 +106,59 @@ describe("EndpointRowActions", () => {
     expect(
       screen.getByRole("switch", { name: /disable alice/i }).hasAttribute("disabled"),
     ).toBe(false);
+  });
+
+  it("recognises an owner grant whose endpoint id differs only by case", async () => {
+    // Endpoint ids are matched case-insensitively server side, so a grant stored
+    // as "alice" authorizes requests against "Alice" — the row must not hide the
+    // controls the server would honour.
+    access.current = {
+      siteRole: "Reader",
+      endpointRoles: [{ endpointId: "alice", role: "Owner" }],
+    };
+    renderActions();
+    await openMenu();
+
+    expect(screen.getByRole("menuitem", { name: /manage access/i })).toBeTruthy();
+    expect(
+      screen.getByRole("switch", { name: /disable alice/i }).hasAttribute("disabled"),
+    ).toBe(false);
+  });
+
+  it("stops loading and reports when the row cannot be refreshed", async () => {
+    // The disable already landed; only the read-back failed. Leaving that
+    // rejection unhandled would strand the table in its loading state.
+    const stopLoading = vi.fn();
+    render(
+      <MemoryRouter>
+        <ToastProvider>
+          <EndpointRowActions
+            endpointId="Alice"
+            subscriptionStatus="active"
+            failed={0}
+            deferred={0}
+            pending={0}
+            storageAvailable
+            env="dev"
+            refreshEndpoint={() => Promise.reject(new Error("boom"))}
+            startLoading={vi.fn()}
+            stopLoading={stopLoading}
+          />
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(screen.getByRole("switch", { name: /disable alice/i }));
+    await userEvent.click(screen.getByRole("button", { name: /disable endpoint/i }));
+
+    expect(apiMocks.postEndpointSubscriptionstatus).toHaveBeenCalledWith(
+      "Alice",
+      "disable",
+    );
+    await waitFor(() => expect(stopLoading).toHaveBeenCalled());
+    expect(
+      await screen.findByText(/could not be refreshed/i),
+    ).toBeTruthy();
   });
 
   it("hides every mutating action from a reader and locks the switch", async () => {

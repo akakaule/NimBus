@@ -3,13 +3,15 @@ using Aspire.Hosting.ApplicationModel;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
-// Storage provider selection. NIMBUS_STORAGE_PROVIDER=sqlserver (or
-// --NIMBUS_STORAGE_PROVIDER sqlserver) spins up an Aspire-managed SQL Server
-// container instead of expecting a Cosmos connection string. Default 'cosmos'
-// preserves the existing local-dev experience.
+// Storage provider selection for local Aspire runs only — deployed environments
+// pick their provider through `nb setup` and the bicep templates, not from here.
+// Default 'sqlserver' spins up an Aspire-managed SQL Server container, so the
+// stack runs entirely locally with nothing to provision first. Cosmos is still
+// one switch away: NIMBUS_STORAGE_PROVIDER=cosmos (or --NIMBUS_STORAGE_PROVIDER
+// cosmos), which expects a Cosmos connection string in the 'cosmos' parameter.
 var storageProvider = (Environment.GetEnvironmentVariable("NIMBUS_STORAGE_PROVIDER")
     ?? builder.Configuration["NIMBUS_STORAGE_PROVIDER"]
-    ?? "cosmos").ToLowerInvariant();
+    ?? "sqlserver").ToLowerInvariant();
 
 // Optional: enable NimBus.Extensions.Identity (username/password sign-in) for the
 // management WebApp. Off by default — set NIMBUS_IDENTITY=true (or pass
@@ -103,18 +105,24 @@ if (storageProvider == "sqlserver")
     // ConnectionStrings:sqlserver / SqlConnection / SqlServerConnection.
     // Bridge nimbusDb's ConnectionStringExpression onto those keys so the
     // runtime picks up the Aspire-managed container without further config.
+    // NimBus__StorageProvider must be set explicitly, not just the connection string:
+    // Startup.AddStorage only auto-detects SQL when NO Cosmos config is present, and a
+    // developer's user secrets usually still carry a CosmosConnection. Without this the
+    // stack would run on the SQL container's connection string yet still select Cosmos.
     resolver.WithReference(nimbusDb!)
+            .WithEnvironment("NimBus__StorageProvider", "sqlserver")
             .WithEnvironment("ConnectionStrings__sqlserver", nimbusDb!.Resource.ConnectionStringExpression)
             .WaitFor(nimbusDb);
     webapp.WithReference(nimbusDb!)
+          .WithEnvironment("NimBus__StorageProvider", "sqlserver")
           .WithEnvironment("ConnectionStrings__sqlserver", nimbusDb!.Resource.ConnectionStringExpression)
           .WaitFor(nimbusDb);
 }
 else
 {
     var cosmos = builder.AddConnectionString("cosmos");
-    resolver.WithReference(cosmos);
-    webapp.WithReference(cosmos);
+    resolver.WithReference(cosmos).WithEnvironment("NimBus__StorageProvider", "cosmos");
+    webapp.WithReference(cosmos).WithEnvironment("NimBus__StorageProvider", "cosmos");
 }
 
 if (identityEnabled)

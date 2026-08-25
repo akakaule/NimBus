@@ -466,7 +466,7 @@ public static class Mapper
         };
     }
 
-    private static string SubscriptionStatusFromMetadata(EndpointMetadata metadata)
+    internal static string SubscriptionStatusFromMetadata(EndpointMetadata metadata)
     {
         if (!metadata.SubscriptionStatus.HasValue)
         {

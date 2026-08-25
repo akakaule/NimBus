@@ -266,7 +266,9 @@ public class EndpointImplementation : IEndpointApiController
             result.Add(await DownloadStatusOrStubAsync(endpointId));
         });
 
-        return new OkObjectResult(result.ToList());
+        var counts = result.ToList();
+        await StampSubscriptionStatusAsync(counts);
+        return new OkObjectResult(counts);
     }
 
     public async Task<ActionResult<IEnumerable<EndpointStatusCount>>> PostApiEndpointStatusCountAsync(IEnumerable<string> body)
@@ -289,7 +291,9 @@ public class EndpointImplementation : IEndpointApiController
             result.Add(await DownloadStatusOrStubAsync(endpointId));
         });
 
-        return new OkObjectResult(result.ToList());
+        var counts = result.ToList();
+        await StampSubscriptionStatusAsync(counts);
+        return new OkObjectResult(counts);
     }
 
     private async Task<EndpointStatusCount> DownloadStatusOrStubAsync(string endpointId)
@@ -402,6 +406,7 @@ public class EndpointImplementation : IEndpointApiController
             {
                 var state = await cosmosClient.DownloadEndpointStateCount(endpointName);
                 var result = Mapper.EndpointStatusCountFromEndpointStateCount(state);
+                await StampSubscriptionStatusAsync([result]);
 
                 return new OkObjectResult(result);
             }
@@ -896,8 +901,6 @@ public class EndpointImplementation : IEndpointApiController
                 endpointIds.Add(id);
         }
 
-        var metadataList = await _metadataStore.GetMetadatas(endpointIds) ?? endpointIds.Select(x => new EndpointMetadata { EndpointId = x }).ToList();
-
         foreach (var id in endpointIds)
         {
             if (!EndpointVerificationService.EndpointExists(platform, id))
@@ -905,6 +908,21 @@ public class EndpointImplementation : IEndpointApiController
                 return new NotFoundObjectResult(String.Format("Endpoint with id {0} not found",id));
             }
         }
+
+        var metadataList = await ResolveMetadataWithSubscriptionStatusAsync(endpointIds);
+
+        return new OkObjectResult(Mapper.MetadataShortFromList(metadataList));
+    }
+
+    /// <summary>
+    /// Endpoint metadata for the given ids, with every unknown SubscriptionStatus
+    /// probed and persisted. Endpoints with no stored metadata get a blank record
+    /// so the caller always gets one entry per requested id.
+    /// </summary>
+    private async Task<List<EndpointMetadata>> ResolveMetadataWithSubscriptionStatusAsync(List<string> endpointIds)
+    {
+        var metadataList = await _metadataStore.GetMetadatas(endpointIds)
+            ?? endpointIds.Select(x => new EndpointMetadata { EndpointId = x }).ToList();
 
         foreach (var s in endpointIds.Where(s => !metadataList.Exists(m => m.EndpointId.Equals(s, StringComparison.OrdinalIgnoreCase))))
         {
@@ -922,7 +940,40 @@ public class EndpointImplementation : IEndpointApiController
             await SetSubscriptionStatusMetadata(endpointMetadata);
         });
 
-        return new OkObjectResult(Mapper.MetadataShortFromList(metadataList));
+        return metadataList;
+    }
+
+    /// <summary>
+    /// Stamps EndpointStatusCount.SubscriptionStatus onto freshly built counts.
+    /// The receive-enabled flag lives on endpoint metadata, not on the state-count
+    /// aggregate, so every count path has to join it in — without this the field
+    /// is always null on the wire and the endpoints list can never show an
+    /// endpoint as Disabled or its subscription as missing. Resolved outside the
+    /// state-count cache so flipping receive is visible on the next refresh
+    /// rather than whenever that TTL happens to lapse.
+    /// </summary>
+    private async Task StampSubscriptionStatusAsync(IReadOnlyCollection<EndpointStatusCount> counts)
+    {
+        var endpointIds = counts
+            .Select(c => c.EndpointId)
+            .Where(id => !string.IsNullOrEmpty(id))
+            .ToList();
+
+        if (endpointIds.Count == 0)
+        {
+            return;
+        }
+
+        var metadataList = await ResolveMetadataWithSubscriptionStatusAsync(endpointIds);
+        foreach (var count in counts)
+        {
+            var metadata = metadataList.Find(m =>
+                m.EndpointId != null && m.EndpointId.Equals(count.EndpointId, StringComparison.OrdinalIgnoreCase));
+            if (metadata != null)
+            {
+                count.SubscriptionStatus = Mapper.SubscriptionStatusFromMetadata(metadata);
+            }
+        }
     }
 
 

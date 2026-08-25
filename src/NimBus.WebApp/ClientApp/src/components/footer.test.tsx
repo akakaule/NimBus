@@ -34,8 +34,12 @@ describe("Footer", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(screen.getByText(`NimBus ${FULL_STATUS.nimbusVersion}`)).toBeTruthy();
+    // Labelled: the catalog can carry the same name and version as the product
+    // itself, so the label is what tells the two chips apart.
     expect(
-      screen.getByText(`${FULL_STATUS.platformName} ${FULL_STATUS.platformVersion}`),
+      screen.getByText(
+        new RegExp(`config:\\s*${FULL_STATUS.platformName} ${FULL_STATUS.platformVersion}`),
+      ),
     ).toBeTruthy();
     expect(screen.getByText(/store:\s*Cosmos DB/)).toBeTruthy();
   });

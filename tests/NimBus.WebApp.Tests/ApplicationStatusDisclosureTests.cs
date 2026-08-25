@@ -19,6 +19,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Core;
 using NimBus.MessageStore.Abstractions;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.ManagementApi;
@@ -70,6 +71,7 @@ public class ApplicationStatusDisclosureTests
 
                     services.AddHttpContextAccessor();
                     services.AddSingleton<IStorageProviderRegistration>(new StubStorageProvider());
+                    services.AddSingleton<IPlatform>(new PlatformConfiguration());
                     services.AddSingleton<IEndpointAuthorizationService>(new StubAuthorizationService());
                     services.AddTransient<IApplicationApiController, ApplicationImplementation>();
 
@@ -118,7 +120,7 @@ public class ApplicationStatusDisclosureTests
         var body = await response.Content.ReadAsStringAsync();
         var json = JsonNode.Parse(body)!.AsObject();
 
-        foreach (var field in new[] { "env", "platformVersion", "storageProvider", "ticketLinkTemplate" })
+        foreach (var field in new[] { "env", "nimbusVersion", "platformName", "platformVersion", "storageProvider", "ticketLinkTemplate" })
         {
             Assert.IsTrue(
                 !json.TryGetPropertyValue(field, out var value) || value is null,
@@ -153,6 +155,15 @@ public class ApplicationStatusDisclosureTests
         Assert.IsFalse(
             string.IsNullOrWhiteSpace((string?)json["platformVersion"]),
             "Authenticated /api/app/stats must still report the platform version.");
+        Assert.IsFalse(
+            string.IsNullOrWhiteSpace((string?)json["nimbusVersion"]),
+            "Authenticated /api/app/stats must report the NimBus version.");
+        // The bundled sample catalog lives in the NimBus assembly; a customer
+        // package (e.g. EET.Platform) reports its own assembly name here.
+        Assert.AreEqual(typeof(PlatformConfiguration).Assembly.GetName().Name, (string?)json["platformName"]);
+        Assert.IsFalse(
+            ((string?)json["platformVersion"] ?? string.Empty).Contains('+'),
+            "platformVersion must not carry the '+<sha>' build suffix.");
     }
 
     [TestMethod]
@@ -168,6 +179,8 @@ public class ApplicationStatusDisclosureTests
         var status = ApplicationStatus.FromJson(body);
 
         Assert.IsNull(status.Env);
+        Assert.IsNull(status.NimbusVersion);
+        Assert.IsNull(status.PlatformName);
         Assert.IsNull(status.PlatformVersion);
         Assert.IsNull(status.StorageProvider);
         Assert.IsNull(status.TicketLinkTemplate);

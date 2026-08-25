@@ -4892,7 +4892,7 @@ export class Client extends ApiClientBase {
 
     /**
      * Get fleet heartbeat history and current liveness
-     * @param windowDays (optional)
+     * @param windowDays (optional) 
      * @return Fleet heartbeat page
      */
     getHeartbeatPage(windowDays?: number | undefined): Promise<HeartbeatPage> {
@@ -6596,7 +6596,11 @@ export interface IEventTypeGrouping {
 export class ApplicationStatus implements IApplicationStatus {
     /** Configured environment name (e.g. "Production"). Populated only for authenticated callers; null or absent for anonymous callers. */
     env?: string | undefined;
-    /** NimBus platform product version. Populated only for authenticated callers; null or absent for anonymous callers. */
+    /** NimBus product version the WebApp runs on (e.g. "3.2.1"). Populated only for authenticated callers; null or absent for anonymous callers. */
+    nimbusVersion?: string | undefined;
+    /** Name of the platform catalog package that defines the endpoints and event types (the assembly name of the loaded IPlatform, e.g. "EET.Platform"; "NimBus" for the bundled sample catalog). Populated only for authenticated callers; null or absent for anonymous callers. */
+    platformName?: string | undefined;
+    /** Version of the platform catalog package named by platformName (e.g. "1.0.1"), without any "+<sha>" build suffix. Populated only for authenticated callers; null or absent for anonymous callers. */
     platformVersion?: string | undefined;
     /** Human-readable name of the active NimBus message-store provider (e.g. "Cosmos DB", "SQL Server", "InMemory"). Populated only for authenticated callers; null or absent for anonymous callers. */
     storageProvider?: string | undefined;
@@ -6621,6 +6625,8 @@ export class ApplicationStatus implements IApplicationStatus {
                     this[property] = _data[property];
             }
             this.env = _data["env"];
+            this.nimbusVersion = _data["nimbusVersion"];
+            this.platformName = _data["platformName"];
             this.platformVersion = _data["platformVersion"];
             this.storageProvider = _data["storageProvider"];
             this.ticketLinkTemplate = _data["ticketLinkTemplate"];
@@ -6641,6 +6647,8 @@ export class ApplicationStatus implements IApplicationStatus {
                 data[property] = this[property];
         }
         data["env"] = this.env;
+        data["nimbusVersion"] = this.nimbusVersion;
+        data["platformName"] = this.platformName;
         data["platformVersion"] = this.platformVersion;
         data["storageProvider"] = this.storageProvider;
         data["ticketLinkTemplate"] = this.ticketLinkTemplate;
@@ -6659,7 +6667,11 @@ export class ApplicationStatus implements IApplicationStatus {
 export interface IApplicationStatus {
     /** Configured environment name (e.g. "Production"). Populated only for authenticated callers; null or absent for anonymous callers. */
     env?: string | undefined;
-    /** NimBus platform product version. Populated only for authenticated callers; null or absent for anonymous callers. */
+    /** NimBus product version the WebApp runs on (e.g. "3.2.1"). Populated only for authenticated callers; null or absent for anonymous callers. */
+    nimbusVersion?: string | undefined;
+    /** Name of the platform catalog package that defines the endpoints and event types (the assembly name of the loaded IPlatform, e.g. "EET.Platform"; "NimBus" for the bundled sample catalog). Populated only for authenticated callers; null or absent for anonymous callers. */
+    platformName?: string | undefined;
+    /** Version of the platform catalog package named by platformName (e.g. "1.0.1"), without any "+<sha>" build suffix. Populated only for authenticated callers; null or absent for anonymous callers. */
     platformVersion?: string | undefined;
     /** Human-readable name of the active NimBus message-store provider (e.g. "Cosmos DB", "SQL Server", "InMemory"). Populated only for authenticated callers; null or absent for anonymous callers. */
     storageProvider?: string | undefined;

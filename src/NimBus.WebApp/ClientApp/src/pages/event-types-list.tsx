@@ -9,6 +9,7 @@ import { EmptyState } from "components/ui/empty-state";
 import DataTable, { ITableRow, ITableHeadCell } from "components/data-table";
 import EventTypeSearchToolbar from "components/event-types/event-type-search-toolbar";
 import { useUrlFilters } from "hooks/use-url-filters";
+import { usePlatformPackage } from "hooks/app-status";
 
 enum TableColumns {
   name = "name",
@@ -179,6 +180,8 @@ const EventTypesList: React.FC = () => {
 
   const eventTypeCount = eventTypes.length;
   const namespaceCount = namespaces.length;
+  // The catalog package these contracts come from (e.g. "EET.Platform 1.0.1").
+  const platformPackage = usePlatformPackage();
 
   if (loading) {
     return (
@@ -204,7 +207,8 @@ const EventTypesList: React.FC = () => {
     searchTerm.length > 0 ||
     selectedNamespace.length > 0 ||
     selectedEndpoint.length > 0;
-  const subtitle = `${eventTypeCount} contract${eventTypeCount === 1 ? "" : "s"} across ${namespaceCount} namespace${namespaceCount === 1 ? "" : "s"}`;
+  const counts = `${eventTypeCount} contract${eventTypeCount === 1 ? "" : "s"} across ${namespaceCount} namespace${namespaceCount === 1 ? "" : "s"}`;
+  const subtitle = platformPackage ? `${counts} · ${platformPackage}` : counts;
 
   return (
     <Page title="Event Types" subtitle={subtitle}>

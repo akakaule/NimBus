@@ -78,6 +78,42 @@ export const usePlatformVersion = () => {
   return result;
 };
 
+export const useNimBusVersion = () => {
+  const [result, setResult] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const fetchData = async () => {
+      const data = await getApplicationStatus();
+      setResult(data?.nimbusVersion ?? undefined);
+    };
+    fetchData().catch(console.error);
+  }, []);
+  return result;
+};
+
+/**
+ * The platform catalog package that defines the endpoints and event types, as
+ * "<name> <version>" (e.g. "EET.Platform 1.0.1"); undefined until the status has
+ * loaded or for an anonymous caller.
+ */
+export const usePlatformPackage = () => {
+  const [result, setResult] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const fetchData = async () => {
+      const data = await getApplicationStatus();
+      setResult(formatPlatformPackage(data));
+    };
+    fetchData().catch(console.error);
+  }, []);
+  return result;
+};
+
+export const formatPlatformPackage = (
+  status: api.ApplicationStatus | null | undefined,
+): string | undefined => {
+  if (!status?.platformName || !status?.platformVersion) return undefined;
+  return `${status.platformName} ${status.platformVersion}`;
+};
+
 export const useStorageProvider = () => {
   const [result, setResult] = useState<string | undefined>(undefined);
   useEffect(() => {

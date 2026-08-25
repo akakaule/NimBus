@@ -1,4 +1,5 @@
-﻿using NimBus.MessageStore.Abstractions;
+using NimBus.Core;
+using NimBus.MessageStore.Abstractions;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
 using Microsoft.AspNetCore.Http;
@@ -27,17 +28,20 @@ namespace NimBus.WebApp.Controllers.ApiContract
         private readonly IEndpointAuthorizationService _authService;
         private readonly IStorageProviderRegistration _storageProvider;
         private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly IPlatform _platform;
 
         public ApplicationImplementation(
             IConfiguration config,
             IEndpointAuthorizationService authService,
             IStorageProviderRegistration storageProvider,
-            IHttpContextAccessor httpContextAccessor)
+            IHttpContextAccessor httpContextAccessor,
+            IPlatform platform)
         {
             _config = config;
             _authService = authService;
             _storageProvider = storageProvider;
             _httpContextAccessor = httpContextAccessor;
+            _platform = platform;
         }
 
         public async Task<ActionResult<ApplicationStatus>> GetApiAppStatsAsync()
@@ -52,19 +56,18 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 return new OkObjectResult(new ApplicationStatus());
             }
 
-            var platformVersion = "TBD";
-            var bhAssembly = Assembly.GetAssembly(typeof(PlatformConfiguration));
-            if (bhAssembly != null)
-            {
-                var fileVersionInfo = FileVersionInfo.GetVersionInfo(bhAssembly.Location);
-                var productVersion = fileVersionInfo.ProductVersion;
-                platformVersion = productVersion?.Split("+")[0];
-            }
+            // The catalog package is whatever assembly the injected IPlatform came from:
+            // the customer's package shipped by `nb deploy apps --platform-package`
+            // (e.g. EET.Platform 1.0.1), or NimBus's own bundled sample catalog.
+            var platformAssembly = _platform.GetType().Assembly;
+            var nimbusAssembly = typeof(IPlatform).Assembly;
 
             var statusResponse = new ApplicationStatus()
             {
                 Env = _config.GetValue<string>("Environment"),
-                PlatformVersion = platformVersion,
+                NimbusVersion = GetPackageVersion(nimbusAssembly),
+                PlatformName = platformAssembly.GetName().Name,
+                PlatformVersion = GetPackageVersion(platformAssembly),
                 StorageProvider = _storageProvider.ProviderName,
                 // "{ticket}" placeholder URL template for reported-event deep
                 // links; null/empty disables the link (plain badge).
@@ -72,6 +75,20 @@ namespace NimBus.WebApp.Controllers.ApiContract
             };
 
             return new OkObjectResult(statusResponse);
+        }
+
+        /// <summary>
+        /// The package version an assembly was built as: its informational version
+        /// without the "+&lt;sha&gt;" source-revision suffix the .NET SDK appends, falling
+        /// back to the assembly version.
+        /// </summary>
+        internal static string GetPackageVersion(Assembly assembly)
+        {
+            var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+            if (!string.IsNullOrWhiteSpace(informational))
+                return informational.Split('+')[0];
+
+            return assembly.GetName().Version?.ToString() ?? "unknown";
         }
 
         public Task<ActionResult<UserInfo>> GetMeAsync()

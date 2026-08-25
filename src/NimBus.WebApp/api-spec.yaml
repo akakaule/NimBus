@@ -2851,12 +2851,27 @@ components:
           description: >-
             Configured environment name (e.g. "Production"). Populated only for
             authenticated callers; null or absent for anonymous callers.
+        nimbusVersion:
+          type: string
+          nullable: true
+          description: >-
+            NimBus product version the WebApp runs on (e.g. "3.2.1"). Populated
+            only for authenticated callers; null or absent for anonymous callers.
+        platformName:
+          type: string
+          nullable: true
+          description: >-
+            Name of the platform catalog package that defines the endpoints and
+            event types (the assembly name of the loaded IPlatform, e.g.
+            "EET.Platform"; "NimBus" for the bundled sample catalog). Populated
+            only for authenticated callers; null or absent for anonymous callers.
         platformVersion:
           type: string
           nullable: true
           description: >-
-            NimBus platform product version. Populated only for authenticated
-            callers; null or absent for anonymous callers.
+            Version of the platform catalog package named by platformName (e.g.
+            "1.0.1"), without any "+<sha>" build suffix. Populated only for
+            authenticated callers; null or absent for anonymous callers.
         storageProvider:
           type: string
           nullable: true

@@ -10,6 +10,8 @@ import { vi } from "vitest";
 /** An authenticated /api/app/stats body: every field populated. */
 export const FULL_STATUS = {
   env: "ProdCanary",
+  nimbusVersion: "3.2.1",
+  platformName: "EET.Platform",
   platformVersion: "1.4.2",
   storageProvider: "Cosmos DB",
   ticketLinkTemplate: "https://tickets.example.com/{ticket}",
@@ -22,6 +24,8 @@ export const FULL_STATUS = {
  */
 export const EMPTY_STATUS = {
   env: null,
+  nimbusVersion: null,
+  platformName: null,
   platformVersion: null,
   storageProvider: null,
   ticketLinkTemplate: null,

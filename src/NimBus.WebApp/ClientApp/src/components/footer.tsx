@@ -1,14 +1,24 @@
 import { Badge } from "components/ui/badge";
-import { usePlatformVersion, useStorageProvider } from "hooks/app-status";
+import {
+  useNimBusVersion,
+  usePlatformPackage,
+  useStorageProvider,
+} from "hooks/app-status";
 
 const Footer = () => {
-  const platformVersion = usePlatformVersion();
+  const nimbusVersion = useNimBusVersion();
+  const platformPackage = usePlatformPackage();
   const storageProvider = useStorageProvider();
 
   return (
     <div className="flex flex-row justify-between flex-nowrap px-7 py-3 border-t border-border text-xs font-mono text-muted-foreground uppercase tracking-wider">
       <div className="flex gap-3">
-        {platformVersion && <span>{platformVersion}</span>}
+        {nimbusVersion && <span title="NimBus version">NimBus {nimbusVersion}</span>}
+        {platformPackage && (
+          <span title="Platform catalog package (endpoints and event types)">
+            {platformPackage}
+          </span>
+        )}
         {storageProvider && (
           <Badge
             variant="secondary"

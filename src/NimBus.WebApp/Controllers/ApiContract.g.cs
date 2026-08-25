@@ -4193,6 +4193,8 @@ namespace NimBus.WebApp.ManagementApi
     public partial class ApplicationStatus : System.ComponentModel.INotifyPropertyChanged
     {
         private string _env;
+        private string _nimbusVersion;
+        private string _platformName;
         private string _platformVersion;
         private string _storageProvider;
         private string _ticketLinkTemplate;
@@ -4214,7 +4216,39 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// NimBus platform product version. Populated only for authenticated callers; null or absent for anonymous callers.
+        /// NimBus product version the WebApp runs on (e.g. "3.2.1"). Populated only for authenticated callers; null or absent for anonymous callers.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("nimbusVersion", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string NimbusVersion    {
+            get { return _nimbusVersion; }
+            set
+            {
+                if (_nimbusVersion != value)
+                {
+                    _nimbusVersion = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Name of the platform catalog package that defines the endpoints and event types (the assembly name of the loaded IPlatform, e.g. "EET.Platform"; "NimBus" for the bundled sample catalog). Populated only for authenticated callers; null or absent for anonymous callers.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("platformName", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string PlatformName    {
+            get { return _platformName; }
+            set
+            {
+                if (_platformName != value)
+                {
+                    _platformName = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Version of the platform catalog package named by platformName (e.g. "1.0.1"), without any "+&lt;sha&gt;" build suffix. Populated only for authenticated callers; null or absent for anonymous callers.
         /// </summary>
         [Newtonsoft.Json.JsonProperty("platformVersion", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
         public string PlatformVersion    {

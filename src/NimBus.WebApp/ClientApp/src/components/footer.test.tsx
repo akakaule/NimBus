@@ -33,7 +33,10 @@ describe("Footer", () => {
     await settleAppStatus(hooks);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(screen.getByText(FULL_STATUS.platformVersion)).toBeTruthy();
+    expect(screen.getByText(`NimBus ${FULL_STATUS.nimbusVersion}`)).toBeTruthy();
+    expect(
+      screen.getByText(`${FULL_STATUS.platformName} ${FULL_STATUS.platformVersion}`),
+    ).toBeTruthy();
     expect(screen.getByText(/store:\s*Cosmos DB/)).toBeTruthy();
   });
 
@@ -46,7 +49,8 @@ describe("Footer", () => {
     await settleAppStatus(hooks);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText(FULL_STATUS.platformVersion)).toBeNull();
+    expect(screen.queryByText(new RegExp(FULL_STATUS.nimbusVersion))).toBeNull();
+    expect(screen.queryByText(new RegExp(FULL_STATUS.platformVersion))).toBeNull();
     expect(screen.queryByText(/store:/)).toBeNull();
     // The static half still renders — proof the component did not blow up.
     expect(screen.getByText(/NimBus/)).toBeTruthy();

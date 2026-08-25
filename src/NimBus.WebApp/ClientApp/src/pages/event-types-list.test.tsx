@@ -11,6 +11,7 @@ import * as api from "api-client";
 
 const mocks = vi.hoisted(() => ({
   getEventTypes: vi.fn(),
+  getApiAppStats: vi.fn(),
 }));
 
 vi.mock("api-client", async () => {
@@ -19,6 +20,7 @@ vi.mock("api-client", async () => {
 
   class FakeClient {
     getEventTypes = mocks.getEventTypes;
+    getApiAppStats = mocks.getApiAppStats;
   }
 
   return {
@@ -29,6 +31,14 @@ vi.mock("api-client", async () => {
 });
 
 beforeEach(() => {
+  mocks.getApiAppStats.mockReset().mockResolvedValue(
+    Object.assign(new api.ApplicationStatus(), {
+      env: "dev",
+      nimbusVersion: "3.2.1",
+      platformName: "EET.Platform",
+      platformVersion: "1.0.1",
+    }),
+  );
   mocks.getEventTypes.mockReset().mockResolvedValue([
     Object.assign(new api.EventType(), {
       id: "orders.created",
@@ -69,5 +79,21 @@ describe("EventTypesList", () => {
     expect(within(table).getByText("WarehouseEndpoint")).toBeDefined();
     expect(screen.queryByRole("button", { name: "Card view" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Table view" })).toBeNull();
+  });
+
+  it("names the platform catalog package in the subtitle once the status has loaded", async () => {
+    const { default: EventTypesList } = await import("./event-types-list");
+
+    render(
+      <MemoryRouter initialEntries={["/EventTypes"]}>
+        <EventTypesList />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("1 contract across 1 namespace · EET.Platform 1.0.1"),
+      ).toBeDefined(),
+    );
   });
 });

@@ -11,6 +11,7 @@ import {
 import { Select } from "components/ui/select";
 import { Textarea } from "components/ui/textarea";
 import { CodeBlock } from "components/ui/code-block";
+import { CopyButton } from "components/common/copy-button";
 import { TimingBar } from "components/ui/timing-bar";
 import {
   PropertyList,
@@ -1093,6 +1094,10 @@ export default function MessageListing(props: IMessageListingProps) {
           <CodeBlock
             title="Payload"
             subtitle="application/json"
+            // Copies what is rendered, which is the server-masked payload for a
+            // caller without the PII Reader role — the button never reaches past
+            // redaction to the raw event content.
+            actions={<CopyButton text={formattedPayload} describes="Payload" />}
             linkifyGuid={(_guid) =>
               // Clicking a GUID in the payload jumps to the Messages search
               // pre-filtered to that ID — IDs become first-class navigation

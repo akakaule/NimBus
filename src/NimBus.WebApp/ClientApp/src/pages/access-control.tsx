@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "api-client";
 import Page from "components/page";
 import { RoleCard } from "components/access-control/role-card";
-import { useAccess, invalidateAccess } from "hooks/use-access";
+import { useAccess, invalidateAccess, isOwnerRole } from "hooks/use-access";
 import { useToast } from "components/ui/toast";
 
 type SiteRole = "reader" | "contributor" | "owner" | "piiReader";
@@ -65,7 +65,7 @@ export default function AccessControl() {
   const ownedEndpoints = useMemo(
     () =>
       (access?.endpointRoles ?? [])
-        .filter((r) => r.role === api.EndpointRoleInfoRole.Owner)
+        .filter((r) => isOwnerRole(r.role))
         .map((r) => r.endpointId ?? "")
         .filter(Boolean),
     [access],

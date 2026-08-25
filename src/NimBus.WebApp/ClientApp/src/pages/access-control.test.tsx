@@ -45,7 +45,10 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("hooks/use-access", () => ({
+vi.mock("hooks/use-access", async (importOriginal) => ({
+  // Only the network-backed hook is stubbed; isOwnerRole stays real so the page
+  // resolves endpoint ownership the same way it does against a live server.
+  ...(await importOriginal<typeof import("hooks/use-access")>()),
   useAccess: () => ({ access: mocks.access }),
   invalidateAccess: mocks.invalidateAccess,
 }));

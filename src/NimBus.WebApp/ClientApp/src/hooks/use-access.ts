@@ -30,6 +30,18 @@ const fetchAccess = (): Promise<api.CurrentUserAccessInfo | null> => {
   return pendingRequest;
 };
 
+/**
+ * True when a role value means Owner.
+ *
+ * The API spec declares these enums lowercase ("owner") and the generated
+ * client mirrors that, but the server sends the CLR name ("Owner"):
+ * System.Text.Json's JsonStringEnumConverter ignores the [EnumMember] values
+ * NSwag puts on the generated enums. Compare case-insensitively so the check
+ * holds whichever side of that mismatch is corrected first.
+ */
+export const isOwnerRole = (role?: string): boolean =>
+  (role ?? "").toLowerCase() === "owner";
+
 /** The current user's resolved access, or null while loading / on error. */
 export const useAccess = (): { access: api.CurrentUserAccessInfo | null } => {
   const [access, setAccess] = useState<api.CurrentUserAccessInfo | null>(

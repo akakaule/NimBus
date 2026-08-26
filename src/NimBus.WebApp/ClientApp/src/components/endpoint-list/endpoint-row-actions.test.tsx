@@ -100,7 +100,6 @@ describe("EndpointRowActions", () => {
     await openMenu();
 
     expect(screen.getByRole("menuitem", { name: /configure alerts/i })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: /open endpoint/i })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /manage access/i })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /purge data/i })).toBeTruthy();
     expect(
@@ -161,15 +160,15 @@ describe("EndpointRowActions", () => {
     ).toBeTruthy();
   });
 
-  it("hides every mutating action from a reader and locks the switch", async () => {
+  it("gives a reader no menu at all and locks the switch", async () => {
     asReader();
     renderActions();
-    await openMenu();
 
-    expect(screen.getByRole("menuitem", { name: /open endpoint/i })).toBeTruthy();
-    expect(screen.queryByRole("menuitem", { name: /configure alerts/i })).toBeNull();
-    expect(screen.queryByRole("menuitem", { name: /manage access/i })).toBeNull();
-    expect(screen.queryByRole("menuitem", { name: /purge data/i })).toBeNull();
+    // Every item is Owner-only, so the trigger goes rather than opening an
+    // empty menu. The row remains clickable for opening the endpoint.
+    expect(
+      screen.queryByRole("button", { name: /more actions for alice/i }),
+    ).toBeNull();
     expect(
       screen.getByRole("switch", { name: /disable alice/i }).hasAttribute("disabled"),
     ).toBe(true);

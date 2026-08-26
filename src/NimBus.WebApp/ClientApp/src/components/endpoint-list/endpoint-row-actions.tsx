@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import * as api from "api-client";
 import {
   Button,
@@ -18,7 +17,6 @@ import EndpointAlertsModal from "./endpoint-alerts-modal";
 import EndpointAccessModal from "./endpoint-access-modal";
 import {
   BellIcon,
-  ExternalLinkIcon,
   MoreHorizontalIcon,
   PowerIcon,
   ShieldCheckIcon,
@@ -41,11 +39,10 @@ interface IEndpointRowActionsProps {
 }
 
 // Per-row endpoint controls: an enable/disable switch plus the overflow menu
-// (alerts, open, access, purge). Every mutation here is Owner-gated server
-// side, so the menu only offers what the current user may actually do.
+// (alerts, access, purge). Every action here is Owner-gated server side, so the
+// row only offers what the current user may actually do.
 export default function EndpointRowActions(props: IEndpointRowActionsProps) {
   const [client] = useState(() => new api.Client(api.CookieAuth()));
-  const navigate = useNavigate();
   const { addToast } = useToast();
   const { access } = useAccess();
 
@@ -200,44 +197,39 @@ export default function EndpointRowActions(props: IEndpointRowActionsProps) {
         aria-label={`${enabled ? "Disable" : "Enable"} ${endpointId}`}
       />
 
-      <DropdownMenu
-        trigger={<MoreHorizontalIcon className="h-4 w-4" />}
-        triggerLabel={`More actions for ${endpointId}`}
-      >
-        {canManage && (
+      {/* Every item here is Owner-only, so a reader gets no menu at all rather
+          than an empty one. Opening the endpoint isn't offered — the row itself
+          is the link. */}
+      {canManage && (
+        <DropdownMenu
+          trigger={<MoreHorizontalIcon className="h-4 w-4" />}
+          triggerLabel={`More actions for ${endpointId}`}
+        >
           <DropdownItem icon={<BellIcon />} onSelect={() => setAlertsOpen(true)}>
             Configure alerts…
           </DropdownItem>
-        )}
-        <DropdownItem
-          icon={<ExternalLinkIcon />}
-          onSelect={() => navigate(`/Endpoints/Details/${endpointId}`)}
-        >
-          Open endpoint
-        </DropdownItem>
-        {canManage && <DropdownSeparator />}
-        {canManage && (
           <DropdownItem
             icon={<ShieldCheckIcon />}
             onSelect={() => setAccessOpen(true)}
           >
             Manage access…
           </DropdownItem>
-        )}
-        {purgeAllowed && (
-          <DropdownItem
-            destructive
-            icon={<TrashIcon />}
-            trailing={envIsProtected ? undefined : "dev only"}
-            onSelect={() => {
-              setPurgeConfirmText("");
-              setPurgeOpen(true);
-            }}
-          >
-            Purge data…
-          </DropdownItem>
-        )}
-      </DropdownMenu>
+          {purgeAllowed && <DropdownSeparator />}
+          {purgeAllowed && (
+            <DropdownItem
+              destructive
+              icon={<TrashIcon />}
+              trailing={envIsProtected ? undefined : "dev only"}
+              onSelect={() => {
+                setPurgeConfirmText("");
+                setPurgeOpen(true);
+              }}
+            >
+              Purge data…
+            </DropdownItem>
+          )}
+        </DropdownMenu>
+      )}
 
       {/* Disable confirmation */}
       <Modal isOpen={disableOpen} onClose={() => setDisableOpen(false)}>

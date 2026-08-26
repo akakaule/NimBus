@@ -1,0 +1,18 @@
+<Project>
+  <!-- Inherit the repo-wide settings, then layer test-only ones on top. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <!-- MSTEST0032 flags an assertion whose condition the compiler can already
+         prove true for the current build, and MSTest 4 raises it to an error.
+         That is the wrong call for a contract pin: asserting that a const still
+         equals its literal ("NimBus.Platform.Heartbeat", -1, "Failed") is exactly
+         how these tests catch someone changing a value the wire format depends on.
+         The assertion is a tautology only until the product changes, which is the
+         moment it is supposed to fail. Deleting them to satisfy the analyzer would
+         throw away the guard — one of them documents the incident it exists for.
+         Genuine tautologies (Assert.IsTrue(true)) are still worth removing; they
+         just have to be found by reading rather than by this rule. -->
+    <NoWarn>$(NoWarn);MSTEST0032</NoWarn>
+  </PropertyGroup>
+</Project>

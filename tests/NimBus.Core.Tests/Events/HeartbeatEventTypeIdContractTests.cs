@@ -40,6 +40,6 @@ public class HeartbeatEventTypeIdContractTests
         // the Resolver would divert it from the audit trail. The dot makes the id
         // unspellable as an unqualified type name, so the collision is impossible.
         StringAssert.Contains(Heartbeat.EventTypeId, ".");
-        Assert.AreNotEqual(typeof(Heartbeat).Name, Heartbeat.EventTypeId);
+        Assert.AreNotEqual(Heartbeat.EventTypeId, typeof(Heartbeat).Name);
     }
 }

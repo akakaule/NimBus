@@ -125,10 +125,9 @@ public class IdentityInitializerHostedServiceTests
 
         await RunInitializerAsync(scope); // must not throw
 
-        // The schema was bad, so the tables weren't created and the user
-        // store is unreachable. Don't probe UserManager — just assert that
-        // we reached this line.
-        Assert.IsTrue(true, "StartAsync should swallow and log, not throw");
+        // The schema was bad, so the tables weren't created and the user store is
+        // unreachable. There is nothing to probe: reaching this line at all is the
+        // assertion, since RunInitializerAsync would have propagated a throw.
     }
 
     private static async Task RunInitializerAsync(IdentityTestScope scope)

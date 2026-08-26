@@ -12,9 +12,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- AMQPNetLite.Core 2.5.1 is pinned after reviewing its MIT license and
-         2.5.x changelog. Upgrade only with the SDK conformance suite green. -->
-    <PackageReference Include="AMQPNetLite.Core" Version="2.5.1" />
+    <!-- AMQPNetLite.Core is pinned after reviewing its MIT license and 2.5.x
+         changelog. Upgrade only with the SDK conformance suite green: the broker
+         binds five private/internal members of this library (ListenerLink.Credit,
+         Session.SendFlow, SendMessageInternal, an internal constructor, and the
+         private deliveryCount field), all resolved at RUNTIME by UnsafeAccessor
+         and reflection. A rename in the dependency is therefore a green build and
+         a broken broker, which only the tests catch. -->
+    <PackageReference Include="AMQPNetLite.Core" Version="2.5.3" />
   </ItemGroup>
 
 </Project>

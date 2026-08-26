@@ -294,6 +294,10 @@ namespace NimBus.WebApp
                 options.ModelBinderProviders.Insert(0, new EnumMemberModelBinderProvider());
             }).AddJsonOptions(opts =>
             {
+                // Ordered: the EnumMember factory claims every contract enum first,
+                // so those serialize as api-spec.yaml declares them. JsonStringEnumConverter
+                // still covers enums carrying no EnumMember values.
+                opts.JsonSerializerOptions.Converters.Add(new EnumMemberJsonConverterFactory());
                 opts.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
                 // Normalise every outbound DateTime to UTC with a `Z` suffix so the
                 // SPA's moment.js parses it as UTC (then renders in browser-local).

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { formatMessageType } from "functions/message-type.functions";
 import * as api from "api-client";
 import { Badge } from "components/ui/badge";
 import { Button } from "components/ui/button";
@@ -13,7 +14,7 @@ function LogEntry({ l }: { l: api.EventLogEntry }) {
   const handleToggle = () => setShow(!show);
   return (
     <div className="border rounded-lg p-4 mb-4">
-      <Badge>{l.messageType}</Badge> {formatMoment(l?.timeStamp)} by{" "}
+      <Badge>{formatMessageType(l.messageType)}</Badge> {formatMoment(l?.timeStamp)} by{" "}
       <b>{l.from}</b>
       <p>{l.text}</p>
       <br />
@@ -74,7 +75,7 @@ function LogEntry({ l }: { l: api.EventLogEntry }) {
               <td className="py-2 pr-4">
                 <b>MessageType</b>
               </td>
-              <td className="py-2">{l.messageType}</td>
+              <td className="py-2">{formatMessageType(l.messageType)}</td>
             </tr>
             <tr className="hover:bg-accent">
               <td className="py-2 pr-4">

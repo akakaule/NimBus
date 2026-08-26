@@ -29,21 +29,21 @@ const headCells: ITableHeadCell[] = [
   { id: Column.endpointId, label: "Endpoint", numeric: false },
 ];
 
+// Audit types arrive as the values api-spec.yaml declares — camelCase. They were
+// PascalCase on the wire for as long as the server serialized CLR names instead of
+// the contract, so both spellings are accepted: an audit trail is history, and rows
+// written before the server was corrected still carry the old spelling.
+const AUDIT_TYPE_LABELS: Record<string, string> = {
+  resubmit: "Resubmit",
+  resubmitWithChanges: "Resubmit with changes",
+  skip: "Skip",
+  retry: "Retry",
+  comment: "Comment",
+};
+
 function formatAuditType(type: string | undefined): string {
-  switch (type) {
-    case "Resubmit":
-      return "Resubmit";
-    case "ResubmitWithChanges":
-      return "Resubmit with changes";
-    case "Skip":
-      return "Skip";
-    case "Retry":
-      return "Retry";
-    case "Comment":
-      return "Comment";
-    default:
-      return type ?? "-";
-  }
+  if (!type) return "-";
+  return AUDIT_TYPE_LABELS[type[0].toLowerCase() + type.slice(1)] ?? type;
 }
 
 function mapAuditToRow(entry: api.AuditEntry): ITableRow {

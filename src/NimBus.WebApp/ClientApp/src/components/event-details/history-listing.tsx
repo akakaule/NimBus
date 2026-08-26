@@ -1,4 +1,5 @@
 import * as React from "react";
+import { formatMessageType } from "functions/message-type.functions";
 import * as api from "api-client";
 import { formatMoment } from "functions/endpoint.functions";
 
@@ -13,7 +14,7 @@ export default function HistoryListings(props: IHistoryListingProps) {
         {props.histories.map((h, index) => {
           return (
             <div key={index} className="border rounded-lg mb-4 p-4">
-              <h4 className="text-lg font-semibold">{h.messageType}</h4>
+              <h4 className="text-lg font-semibold">{formatMessageType(h.messageType)}</h4>
               <p>{formatMoment(h.enqueuedTimeUtc)}</p>
               <br />
               <p>

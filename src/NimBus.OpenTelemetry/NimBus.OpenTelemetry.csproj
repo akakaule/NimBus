@@ -16,8 +16,8 @@
          gives us the MeterProviderBuilder / TracerProviderBuilder abstractions
          without dragging the SDK in transitively (unlike
          OpenTelemetry.Extensions.Hosting). -->
-    <PackageReference Include="OpenTelemetry.Api" Version="1.15.3" />
-    <PackageReference Include="OpenTelemetry.Api.ProviderBuilderExtensions" Version="1.15.3" />
+    <PackageReference Include="OpenTelemetry.Api" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Api.ProviderBuilderExtensions" Version="1.18.0" />
     <!-- Microsoft.Extensions.* abstractions for DI options binding + the gauge
          BackgroundService. These were previously pulled in transitively via
          OpenTelemetry.Extensions.Hosting; they are unrelated to the OTel SDK. -->

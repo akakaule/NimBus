@@ -38,6 +38,50 @@ public class HeartbeatServiceTests
     private const string WorkerB = "WorkerBEndpoint";
 
     [TestMethod]
+    public async Task SendHeartbeatsAsync_SkipsEndpointsThatConsumeNothing()
+    {
+        // Only a subscriber can answer a probe, and an endpoint that consumes
+        // nothing runs none. Probing one records a miss every interval and reports
+        // a permanent outage against an endpoint that was never reachable by
+        // design — so the fan-out leaves producers alone.
+        var store = new RecordingStore();
+        await store.SetHeartbeatSettings(new HeartbeatSettings { Enabled = true, IntervalSeconds = 300, TimeoutSeconds = 60 });
+        var sender = new RecordingSender();
+        var platform = new FakePlatform(
+            new FakeEndpoint(WorkerA),
+            new FakeEndpoint("PublisherOnlyEndpoint", consumes: false));
+        var service = CreateService(store, sender, platform: platform);
+
+        var count = await service.SendHeartbeatsAsync();
+
+        Assert.AreEqual(1, count);
+        Assert.AreEqual(WorkerA, sender.Sent.Single().Topic);
+        // Never written to at all: the store only knows endpoints something has
+        // stored against. A pending row here would be settled to missing by the
+        // next sweep, which is the outage the skip exists to avoid.
+        await Assert.ThrowsExactlyAsync<EndpointNotFoundException>(
+            () => store.GetEndpointMetadata("PublisherOnlyEndpoint"));
+    }
+
+    [TestMethod]
+    public async Task GetOverviewAsync_OmitsEndpointsThatConsumeNothing()
+    {
+        // Listing an endpoint the fan-out never probes would strand it at Unknown
+        // forever and count it against fleet reachability.
+        var store = new RecordingStore();
+        var platform = new FakePlatform(
+            new FakeEndpoint(WorkerA),
+            new FakeEndpoint("PublisherOnlyEndpoint", consumes: false));
+        var service = CreateService(store, platform: platform);
+
+        var overview = await service.GetOverviewAsync();
+
+        CollectionAssert.AreEqual(
+            new[] { WorkerA },
+            overview.Select(row => row.EndpointId).ToArray());
+    }
+
+    [TestMethod]
     public async Task SendHeartbeatsAsync_WritesPendingAndSendsOnlyEndpointsNotOptedOut()
     {
         var store = new RecordingStore();
@@ -669,8 +713,14 @@ public class HeartbeatServiceTests
     {
         private readonly List<IEndpoint> _endpoints;
 
+        // Endpoints consume by default: only consumers run a subscriber, and only
+        // a subscriber can answer a probe, so a consumer is what the fan-out is
+        // about. Producer-only endpoints are built explicitly by the tests that
+        // need one.
         public FakePlatform(params string[] endpointIds)
             => _endpoints = endpointIds.Select(id => (IEndpoint)new FakeEndpoint(id)).ToList();
+
+        public FakePlatform(params IEndpoint[] endpoints) => _endpoints = endpoints.ToList();
 
         public IEnumerable<IEndpoint> Endpoints => _endpoints;
         public IEnumerable<IEventType> EventTypes => Enumerable.Empty<IEventType>();
@@ -680,7 +730,13 @@ public class HeartbeatServiceTests
 
     private sealed class FakeEndpoint : IEndpoint
     {
-        public FakeEndpoint(string id) => Id = id;
+        private readonly bool _consumes;
+
+        public FakeEndpoint(string id, bool consumes = true)
+        {
+            Id = id;
+            _consumes = consumes;
+        }
 
         public string Id { get; }
         public string Name => Id;
@@ -689,7 +745,22 @@ public class HeartbeatServiceTests
         public string SecurityGroupName => string.Empty;
         public ISystem System => null!;
         public IEnumerable<IEventType> EventTypesProduced => Enumerable.Empty<IEventType>();
-        public IEnumerable<IEventType> EventTypesConsumed => Enumerable.Empty<IEventType>();
+
+        public IEnumerable<IEventType> EventTypesConsumed => _consumes
+            ? new IEventType[] { new FakeEventType() }
+            : Enumerable.Empty<IEventType>();
+
         public IEnumerable<IRoleAssignment> RoleAssignments => Enumerable.Empty<IRoleAssignment>();
+    }
+
+    private sealed class FakeEventType : IEventType
+    {
+        public string Id => "FakeEvent";
+        public string Name => "FakeEvent";
+        public string Description => string.Empty;
+        public string Namespace => string.Empty;
+        public IEnumerable<IProperty> Properties => Enumerable.Empty<IProperty>();
+        public Type GetEventClassType() => typeof(object);
+        public IEvent GetEventExample() => null!;
     }
 }

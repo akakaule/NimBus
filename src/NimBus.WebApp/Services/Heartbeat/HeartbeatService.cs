@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using NimBus.Core;
 using NimBus.Core.Diagnostics;
+using NimBus.Core.Endpoints;
 using NimBus.Core.Messages;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
@@ -99,6 +100,14 @@ public sealed partial class HeartbeatService : IHeartbeatService
         return await _store.GetHeartbeatSettings();
     }
 
+    // A probe is answered by the endpoint's running subscriber, so only endpoints
+    // that consume something can answer one. Probing a producer-only endpoint —
+    // which by design runs no subscriber — records a miss every interval, reports
+    // it as an outage and drags fleet uptime down over an endpoint that was never
+    // reachable in the first place. Producers stay visible everywhere else; they
+    // are simply not part of the reachability fleet.
+    private static bool IsProbeable(IEndpoint endpoint) => endpoint.EventTypesConsumed.Any();
+
     /// <inheritdoc />
     public async Task<IReadOnlyList<HeartbeatOverviewItem>> GetOverviewAsync()
     {
@@ -114,6 +123,7 @@ public sealed partial class HeartbeatService : IHeartbeatService
             "heartbeat overview");
 
         return _platform.Endpoints
+            .Where(IsProbeable)
             .OrderBy(endpoint => endpoint.Id, StringComparer.OrdinalIgnoreCase)
             .Select(endpoint =>
             {
@@ -220,7 +230,8 @@ public sealed partial class HeartbeatService : IHeartbeatService
         // an explicit IsHeartbeatEnabled == false. Driving it from the store's
         // opted-in query instead would silently skip every endpoint an operator
         // never touched — which, out of the box, is all of them.
-        var endpointIds = _platform.Endpoints.Select(endpoint => endpoint.Id).ToList();
+        var probeable = _platform.Endpoints.Where(IsProbeable).ToList();
+        var endpointIds = probeable.Select(endpoint => endpoint.Id).ToList();
         var metadataList = await _store.GetMetadatas(endpointIds) ?? new List<EndpointMetadata>();
         // An explicit opt-out wins over a duplicate that does not carry one: losing
         // it would start probing an endpoint an operator deliberately excluded.
@@ -231,7 +242,7 @@ public sealed partial class HeartbeatService : IHeartbeatService
             "endpoint metadata");
 
         var sent = 0;
-        foreach (var endpoint in _platform.Endpoints.OrderBy(endpoint => endpoint.Id, StringComparer.OrdinalIgnoreCase))
+        foreach (var endpoint in probeable.OrderBy(endpoint => endpoint.Id, StringComparer.OrdinalIgnoreCase))
         {
             if (metadataByEndpoint.TryGetValue(endpoint.Id, out var metadata) && metadata.IsHeartbeatEnabled == false)
             {

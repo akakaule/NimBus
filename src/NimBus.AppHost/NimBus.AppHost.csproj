@@ -27,6 +27,7 @@
     <ProjectReference Include="..\..\samples\AspirePubSub\AspirePubSub.Provisioner\AspirePubSub.Provisioner.csproj" />
     <ProjectReference Include="..\..\samples\AspirePubSub\AspirePubSub.Publisher\AspirePubSub.Publisher.csproj" />
     <ProjectReference Include="..\..\samples\AspirePubSub\AspirePubSub.Subscriber\AspirePubSub.Subscriber.csproj" />
+    <ProjectReference Include="..\..\samples\AspirePubSub\AspirePubSub.WarehouseSubscriber\AspirePubSub.WarehouseSubscriber.csproj" />
   </ItemGroup>
 
 </Project>

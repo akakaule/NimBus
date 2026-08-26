@@ -162,4 +162,13 @@ var subscriber = builder.AddProject<Projects.AspirePubSub_Subscriber>("subscribe
     .WithReference(servicebus)
     .WaitForCompletion(provisioner);
 
+// Warehouse adapter — its own process because a container hosts one subscriber
+// endpoint. Deliberately fails ~30% of what it handles, so the sample always has
+// failures to retry, resubmit and group next to a healthy Billing endpoint. It
+// also keeps WarehouseEndpoint answering heartbeat probes, which only a running
+// subscriber can do.
+var warehouseSubscriber = builder.AddProject<Projects.AspirePubSub_WarehouseSubscriber>("warehouse-subscriber")
+    .WithReference(servicebus)
+    .WaitForCompletion(provisioner);
+
 builder.Build().Run();

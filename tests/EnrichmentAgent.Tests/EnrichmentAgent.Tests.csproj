@@ -16,7 +16,7 @@
     <PackageReference Include="MSTest.TestFramework" Version="3.11.1" />
     <!-- Same JSON Schema validator the WebApp uses (AgentImplementation.PostAgentPublishAsync)
          so the in-memory smoke validates the agent's published payload exactly as production does. -->
-    <PackageReference Include="NJsonSchema" Version="11.5.2" />
+    <PackageReference Include="NJsonSchema" Version="11.6.1" />
   </ItemGroup>
 
   <ItemGroup>

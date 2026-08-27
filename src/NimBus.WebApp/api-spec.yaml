@@ -2770,6 +2770,13 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/EventTypeProperty'
+        examplePayload:
+          type: string
+          nullable: true
+          description: >-
+            The example authored on the event class (its static Example field),
+            serialized as indented JSON. Null when the class declares none; the
+            client then falls back to a shape-only placeholder.
         producerCount:
           type: integer
         consumerCount:

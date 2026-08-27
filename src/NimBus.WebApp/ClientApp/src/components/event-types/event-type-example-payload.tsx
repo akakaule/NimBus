@@ -65,8 +65,8 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const { addToast } = useToast();
 
-  // Generate example JSON from properties
-  const generateExampleJson = (): string => {
+  // Shape-only placeholder, used only when the event class authors no Example.
+  const generatePlaceholderJson = (): string => {
     const obj: Record<string, string> = {};
     eventType.properties?.forEach((prop) => {
       if (prop.name && prop.name !== "MessageMetadata") {
@@ -76,7 +76,8 @@ const EventTypeExamplePayload: React.FC<IEventTypeExamplePayloadProps> = ({
     return JSON.stringify(obj, null, 2);
   };
 
-  const exampleJson = generateExampleJson();
+  // The authored static Example, serialized server-side, is the real example payload.
+  const exampleJson = eventType.examplePayload || generatePlaceholderJson();
   const [editedJson, setEditedJson] = useState(exampleJson);
   const [responseMessage, setResponseMessage] = useState<{
     hasError: boolean;

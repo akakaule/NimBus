@@ -62,6 +62,40 @@ async function openModalAndClickGenerate() {
   return user;
 }
 
+describe("EventTypeExamplePayload — example payload source", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("renders the authored example payload when the API provides one", () => {
+    const authored = '{\n  "CustomerId": "9c1a6f2e-4c31-4f0e-9a1c-2f7d5b3e8a10"\n}';
+    render(
+      <EventTypeExamplePayload eventType={buildEventType({ examplePayload: authored })} />,
+    );
+
+    expect(screen.getByText(/9c1a6f2e-4c31-4f0e-9a1c-2f7d5b3e8a10/)).toBeTruthy();
+    expect(screen.queryByText(/"Guid"/)).toBeNull();
+  });
+
+  it("falls back to a type-name placeholder when no example is authored", () => {
+    render(<EventTypeExamplePayload eventType={buildEventType({ examplePayload: null })} />);
+
+    expect(screen.getByText(/"Guid"/)).toBeTruthy();
+  });
+
+  it("seeds the Compose textarea from the authored example", async () => {
+    const authored = '{\n  "CustomerId": "9c1a6f2e-4c31-4f0e-9a1c-2f7d5b3e8a10"\n}';
+    render(
+      <EventTypeExamplePayload eventType={buildEventType({ examplePayload: authored })} />,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Compose Event/ }));
+
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(textarea.value).toBe(authored);
+  });
+});
+
 describe("EventTypeExamplePayload — Generate fake data wiring", () => {
   beforeEach(() => {
     addToast.mockClear();

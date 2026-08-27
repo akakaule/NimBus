@@ -131,8 +131,29 @@ public static class Mapper
             Namespace = eventType.Namespace,
             Properties = (eventType.Properties ?? Enumerable.Empty<IProperty>())
                 .Select(x => EventPropertyFromEventTypeProperty(x))
-                .ToList()
+                .ToList(),
+            ExamplePayload = ExamplePayloadFromIEventType(eventType),
         };
+    }
+
+    /// <summary>
+    /// The authored <c>static Example</c> on the event class as indented JSON, or null when
+    /// the class declares none. A class whose example cannot be read or serialized is treated
+    /// as having none: the catalog page must still render, and the client has a placeholder.
+    /// </summary>
+    public static string? ExamplePayloadFromIEventType(IEventType eventType)
+    {
+        try
+        {
+            var example = eventType.GetEventExample();
+            return example is null
+                ? null
+                : Newtonsoft.Json.JsonConvert.SerializeObject(example, Newtonsoft.Json.Formatting.Indented);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     public static ManagementApi.EventType EventTypeFromIEventType(
@@ -151,6 +172,7 @@ public static class Mapper
             Properties = (eventType.Properties ?? Enumerable.Empty<IProperty>())
                 .Select(x => EventPropertyFromEventTypeProperty(x))
                 .ToList(),
+            ExamplePayload = ExamplePayloadFromIEventType(eventType),
             ProducerCount = producerCount,
             ConsumerCount = consumerCount,
             Producers = (producers ?? Enumerable.Empty<string>()).ToList(),

@@ -6207,6 +6207,8 @@ export class EventType implements IEventType {
     description?: string;
     namespace?: string;
     properties?: EventTypeProperty[];
+    /** The example authored on the event class (its static Example field), serialized as indented JSON. Null when the class declares none; the client then falls back to a shape-only placeholder. */
+    examplePayload?: string | undefined;
     producerCount?: number;
     consumerCount?: number;
     producers?: string[];
@@ -6238,6 +6240,7 @@ export class EventType implements IEventType {
                 for (let item of _data["properties"])
                     this.properties!.push(EventTypeProperty.fromJS(item));
             }
+            this.examplePayload = _data["examplePayload"];
             this.producerCount = _data["producerCount"];
             this.consumerCount = _data["consumerCount"];
             if (Array.isArray(_data["producers"])) {
@@ -6275,6 +6278,7 @@ export class EventType implements IEventType {
             for (let item of this.properties)
                 data["properties"].push(item ? item.toJSON() : undefined as any);
         }
+        data["examplePayload"] = this.examplePayload;
         data["producerCount"] = this.producerCount;
         data["consumerCount"] = this.consumerCount;
         if (Array.isArray(this.producers)) {
@@ -6304,6 +6308,8 @@ export interface IEventType {
     description?: string;
     namespace?: string;
     properties?: EventTypeProperty[];
+    /** The example authored on the event class (its static Example field), serialized as indented JSON. Null when the class declares none; the client then falls back to a shape-only placeholder. */
+    examplePayload?: string | undefined;
     producerCount?: number;
     consumerCount?: number;
     producers?: string[];

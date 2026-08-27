@@ -3705,6 +3705,7 @@ namespace NimBus.WebApp.ManagementApi
         private string _description;
         private string _namespace;
         private System.Collections.Generic.List<EventTypeProperty> _properties;
+        private string _examplePayload;
         private int _producerCount;
         private int _consumerCount;
         private System.Collections.Generic.List<string> _producers;
@@ -3771,6 +3772,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_properties != value)
                 {
                     _properties = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The example authored on the event class (its static Example field), serialized as indented JSON. Null when the class declares none; the client then falls back to a shape-only placeholder.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("examplePayload", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ExamplePayload    {
+            get { return _examplePayload; }
+            set
+            {
+                if (_examplePayload != value)
+                {
+                    _examplePayload = value;
                     RaisePropertyChanged();
                 }
             }

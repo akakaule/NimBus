@@ -114,10 +114,13 @@ public class StrictMessageHandlerHeartbeatTests
     {
         // Probes are not business traffic: they carry a fresh id every interval and must
         // never be deduplicated away, so the short-circuit precedes the inbox pre-check.
+        var trace = new List<string>();
         var ctx = CreateHeartbeatContext();
-        var response = new CountingResponseService();
+        ctx.Trace = trace;
+        ctx.BlockedByEventId = "other-event";
+        var response = new CountingResponseService(trace);
         var sut = new StrictMessageHandler(
-            new FakeEventContextHandler(),
+            new FakeEventContextHandler(trace),
             response,
             NullLogger.Instance,
             retryPolicyProvider: null,
@@ -125,13 +128,18 @@ public class StrictMessageHandlerHeartbeatTests
             lifecycleNotifier: null,
             permanentFailureClassifier: null,
             failureDispositionClassifier: null,
-            inboxDuplicateDetector: new InboxDuplicateDetector(new AlwaysProcessedInboxStore()));
+            inboxDuplicateDetector: new InboxDuplicateDetector(new AlwaysProcessedInboxStore(trace)));
 
         await sut.Handle(ctx);
 
         Assert.AreEqual(1, response.HeartbeatCalls);
         Assert.AreEqual(0, response.DuplicateCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
+        List<string> expectedTrace = ["response-heartbeat", "complete"];
+        CollectionAssert.AreEqual(
+            expectedTrace,
+            trace,
+            "Heartbeat handling must bypass the inbox check, session guard, block/defer operations, and user handler.");
     }
 
     [TestMethod]
@@ -211,11 +219,19 @@ public class StrictMessageHandlerHeartbeatTests
 
     private sealed class FakeEventContextHandler : IEventContextHandler
     {
+        private readonly List<string>? _trace;
+
+        public FakeEventContextHandler(List<string>? trace = null)
+        {
+            _trace = trace;
+        }
+
         public int HandleCalls { get; private set; }
         public Exception ThrowOnHandle { get; set; }
 
         public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
         {
+            _trace?.Add("handler");
             HandleCalls++;
             if (ThrowOnHandle != null)
                 throw ThrowOnHandle;
@@ -225,8 +241,18 @@ public class StrictMessageHandlerHeartbeatTests
 
     private sealed class AlwaysProcessedInboxStore : IInboxStore
     {
-        public Task<bool> HasProcessedAsync(string endpointId, string messageId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(true);
+        private readonly List<string>? _trace;
+
+        public AlwaysProcessedInboxStore(List<string>? trace = null)
+        {
+            _trace = trace;
+        }
+
+        public Task<bool> HasProcessedAsync(string endpointId, string messageId, CancellationToken cancellationToken = default)
+        {
+            _trace?.Add("inbox-check");
+            return Task.FromResult(true);
+        }
 
         public Task RecordProcessedAsync(string endpointId, string messageId, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
@@ -237,6 +263,13 @@ public class StrictMessageHandlerHeartbeatTests
 
     private sealed class CountingResponseService : IResponseService
     {
+        private readonly List<string>? _trace;
+
+        public CountingResponseService(List<string>? trace = null)
+        {
+            _trace = trace;
+        }
+
         public int HeartbeatCalls { get; private set; }
         public int ResolutionCalls { get; private set; }
         public int UnsupportedCalls { get; private set; }
@@ -244,23 +277,24 @@ public class StrictMessageHandlerHeartbeatTests
         public int DeferralCalls { get; private set; }
         public int SendToDeferredSubscriptionCalls { get; private set; }
 
-        public Task SendHeartbeatResolutionResponse(IMessageContext mc, CancellationToken ct = default) { HeartbeatCalls++; return Task.CompletedTask; }
+        public Task SendHeartbeatResolutionResponse(IMessageContext mc, CancellationToken ct = default) { _trace?.Add("response-heartbeat"); HeartbeatCalls++; return Task.CompletedTask; }
         public Task SendResolutionResponse(IMessageContext mc, CancellationToken ct = default) { ResolutionCalls++; return Task.CompletedTask; }
         public Task SendSkipResponse(IMessageContext mc, CancellationToken ct = default) => Task.CompletedTask;
-        public Task SendDuplicateResponse(IMessageContext mc, CancellationToken ct = default) { DuplicateCalls++; return Task.CompletedTask; }
+        public Task SendDuplicateResponse(IMessageContext mc, CancellationToken ct = default) { _trace?.Add("response-duplicate"); DuplicateCalls++; return Task.CompletedTask; }
         public Task SendErrorResponse(IMessageContext mc, Exception ex, CancellationToken ct = default) => Task.CompletedTask;
         public Task SendDeadLetterResponse(IMessageContext mc, string reason, Exception ex, CancellationToken ct = default) => Task.CompletedTask;
-        public Task SendDeferralResponse(IMessageContext mc, SessionBlockedException ex, CancellationToken ct = default) { DeferralCalls++; return Task.CompletedTask; }
+        public Task SendDeferralResponse(IMessageContext mc, SessionBlockedException ex, CancellationToken ct = default) { _trace?.Add("response-deferral"); DeferralCalls++; return Task.CompletedTask; }
         public Task SendRetryResponse(IMessageContext mc, int delay, CancellationToken ct = default) => Task.CompletedTask;
         public Task SendUnsupportedResponse(IMessageContext mc, CancellationToken ct = default) { UnsupportedCalls++; return Task.CompletedTask; }
         public Task SendContinuationRequestToSelf(IMessageContext mc, CancellationToken ct = default) => Task.CompletedTask;
-        public Task SendToDeferredSubscription(IMessageContext mc, int seq, CancellationToken ct = default) { SendToDeferredSubscriptionCalls++; return Task.CompletedTask; }
+        public Task SendToDeferredSubscription(IMessageContext mc, int seq, CancellationToken ct = default) { _trace?.Add("response-deferred-forward"); SendToDeferredSubscriptionCalls++; return Task.CompletedTask; }
         public Task SendProcessDeferredRequest(IMessageContext mc, CancellationToken ct = default) => Task.CompletedTask;
         public Task SendPendingHandoffResponse(IMessageContext mc, HandoffMetadata handoff, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private sealed class FakeMessageContext : IMessageContext
     {
+        public List<string>? Trace { get; set; }
         public string EventId { get; set; } = string.Empty;
         public string To { get; set; } = string.Empty;
         public string SessionId { get; set; } = string.Empty;
@@ -297,22 +331,22 @@ public class StrictMessageHandlerHeartbeatTests
         public int BlockSessionCalls { get; private set; }
         public int UnblockSessionCalls { get; private set; }
 
-        public Task Complete(CancellationToken ct = default) { CompletedCalls++; return Task.CompletedTask; }
+        public Task Complete(CancellationToken ct = default) { Trace?.Add("complete"); CompletedCalls++; return Task.CompletedTask; }
         public Task Abandon(TransientException ex) { AbandonCalls++; return Task.CompletedTask; }
         public Task DeadLetter(string reason, Exception ex = null, CancellationToken ct = default) { DeadLetterCalls++; return Task.CompletedTask; }
-        public Task Defer(CancellationToken ct = default) => Task.CompletedTask;
-        public Task DeferOnly(CancellationToken ct = default) => Task.CompletedTask;
+        public Task Defer(CancellationToken ct = default) { Trace?.Add("defer"); return Task.CompletedTask; }
+        public Task DeferOnly(CancellationToken ct = default) { Trace?.Add("defer-only"); return Task.CompletedTask; }
         public Task<IMessageContext> ReceiveNextDeferred(CancellationToken ct = default) => Task.FromResult<IMessageContext>(null);
         public Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken ct = default) => Task.FromResult<IMessageContext>(null);
         public Task RestoreNextDeferred(IMessageContext deferredMessage, CancellationToken ct = default) => Task.CompletedTask;
-        public Task BlockSession(CancellationToken ct = default) { BlockSessionCalls++; return Task.CompletedTask; }
-        public Task UnblockSession(CancellationToken ct = default) { UnblockSessionCalls++; return Task.CompletedTask; }
+        public Task BlockSession(CancellationToken ct = default) { Trace?.Add("block"); BlockSessionCalls++; return Task.CompletedTask; }
+        public Task UnblockSession(CancellationToken ct = default) { Trace?.Add("unblock"); UnblockSessionCalls++; return Task.CompletedTask; }
         public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));
-        public Task<bool> IsSessionBlockedByThis(CancellationToken ct = default) => Task.FromResult(false);
+        public Task<bool> IsSessionBlockedByThis(CancellationToken ct = default) { Trace?.Add("verify-owner"); return Task.FromResult(false); }
         public Task<bool> IsSessionBlockedByEventId(CancellationToken ct = default) => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));
-        public Task<string> GetBlockedByEventId(CancellationToken ct = default) => Task.FromResult(BlockedByEventId);
+        public Task<string> GetBlockedByEventId(CancellationToken ct = default) { Trace?.Add("session-guard"); return Task.FromResult(BlockedByEventId); }
         public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken ct = default) => Task.FromResult(0);
-        public Task IncrementDeferredCount(CancellationToken ct = default) => Task.CompletedTask;
+        public Task IncrementDeferredCount(CancellationToken ct = default) { Trace?.Add("deferred-count-increment"); return Task.CompletedTask; }
         public Task DecrementDeferredCount(CancellationToken ct = default) => Task.CompletedTask;
         public Task<int> GetDeferredCount(CancellationToken ct = default) => Task.FromResult(0);
         public Task<bool> HasDeferredMessages(CancellationToken ct = default) => Task.FromResult(false);

@@ -10,11 +10,11 @@ This directory coordinates five independently executable refactoring plans. Each
 2. [Decompose storage-provider implementations](02-decompose-storage-provider-implementations.md)
 3. [Decompose WebApp event components](03-decompose-webapp-event-components.md)
 4. [Modularize CLI composition](04-modularize-cli-composition.md)
-5. [Decompose `StrictMessageHandler`](05-decompose-strict-message-handler.md)
+5. [Harden `StrictMessageHandler` lifecycle ordering](05-decompose-strict-message-handler.md)
 
 ## Recommended sequence
 
-Plan 1 must precede Plan 2 so consumers narrow their dependencies before provider internals move. Plans 3 and 4 are independent of the storage work and may run in parallel in separate worktrees. Plan 5 Phases 1–3 are also independent; its optional processor extraction requires the explicit decision gate defined in that plan rather than completion of the other refactors.
+Plan 1 must precede Plan 2 so consumers narrow their dependencies before provider internals move. Plans 3 and 4 are independent of the storage work and may run in parallel in separate worktrees. Plan 5's ordering-test work is also independent. Its optional deferred-sequence extraction requires the explicit trigger and decision gate defined in that plan rather than completion of the other refactors.
 
 ## Delivery rules
 

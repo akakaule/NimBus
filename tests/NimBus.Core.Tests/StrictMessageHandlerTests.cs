@@ -17,9 +17,11 @@ public class StrictMessageHandlerTests
     [TestMethod]
     public async Task HandleEventRequest_NormalEvent_HandlesAndCompletes()
     {
+        var trace = new OperationTrace();
         var ctx = CreateContext(messageType: MessageType.EventRequest, eventTypeId: "OrderPlaced");
-        var handler = new FakeEventContextHandler();
-        var response = new FakeResponseService();
+        ctx.Trace = trace;
+        var handler = new FakeEventContextHandler(trace);
+        var response = new FakeResponseService(trace);
         var sut = CreateHandler(handler, response);
 
         await sut.Handle(ctx);
@@ -27,6 +29,7 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, handler.HandleCalls);
         Assert.AreEqual(1, response.ResolutionCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
+        trace.AssertInOrder("event-1.handler", "event-1.response-resolution", "event-1.complete");
     }
 
     [TestMethod]
@@ -67,10 +70,12 @@ public class StrictMessageHandlerTests
     [TestMethod]
     public async Task HandleEventRequest_SessionBlocked_SendsDeferralAndDefersToSubscription()
     {
+        var trace = new OperationTrace();
         var ctx = CreateContext(messageType: MessageType.EventRequest);
+        ctx.Trace = trace;
         ctx.BlockedByEventId = "other-event";
-        var handler = new FakeEventContextHandler();
-        var response = new FakeResponseService();
+        var handler = new FakeEventContextHandler(trace);
+        var response = new FakeResponseService(trace);
         var sut = CreateHandler(handler, response);
 
         // SessionBlockedException is caught by base MessageHandler (swallowed)
@@ -80,14 +85,22 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, response.SendToDeferredSubscriptionCalls);
         Assert.AreEqual(1, ctx.IncrementDeferredCountCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
+        trace.AssertInOrder(
+            "event-1.response-deferral",
+            "event-1.response-deferred-forward",
+            "event-1.deferred-count-increment",
+            "event-1.complete");
+        trace.AssertAbsent("event-1.handler", "event-1.response-resolution");
     }
 
     [TestMethod]
     public async Task HandleEventRequest_HandlerThrows_SendsErrorBlocksSessionAndCompletes()
     {
+        var trace = new OperationTrace();
         var ctx = CreateContext(messageType: MessageType.EventRequest);
-        var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
-        var response = new FakeResponseService();
+        ctx.Trace = trace;
+        var handler = new FakeEventContextHandler(trace) { ThrowOnHandle = new InvalidOperationException("boom") };
+        var response = new FakeResponseService(trace);
         var sut = CreateHandler(handler, response);
 
         // EventContextHandlerException is caught by base MessageHandler (swallowed)
@@ -96,6 +109,8 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, response.ErrorCalls);
         Assert.AreEqual(1, ctx.BlockSessionCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
+        trace.AssertInOrder("event-1.handler", "event-1.response-error", "event-1.block", "event-1.complete");
+        trace.AssertAbsent("event-1.unblock", "event-1.response-resolution");
     }
 
     [TestMethod]
@@ -258,14 +273,16 @@ public class StrictMessageHandlerTests
     [TestMethod]
     public async Task HandleRetryRequest_Discard_UnblocksSessionAndContinuesDeferredMessages()
     {
+        var trace = new OperationTrace();
         var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.Trace = trace;
         ctx.IsSessionBlockedByThisResult = true;
         ctx.DeferredCountResult = 1;
-        var handler = new FakeEventContextHandler
+        var handler = new FakeEventContextHandler(trace)
         {
             ThrowOnHandle = new InvalidOperationException("discard retry"),
         };
-        var response = new FakeResponseService();
+        var response = new FakeResponseService(trace);
         var sut = new StrictMessageHandler(
             handler,
             response,
@@ -284,6 +301,13 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, ctx.CompletedCalls);
         Assert.AreEqual(0, response.ResolutionCalls);
         Assert.AreEqual(0, ctx.DeadLetterCalls);
+        trace.AssertInOrder(
+            "event-1.handler",
+            "event-1.unblock",
+            "event-1.deferred-receive",
+            "event-1.response-process-deferred",
+            "event-1.response-discard",
+            "event-1.complete");
     }
 
     [TestMethod]
@@ -324,9 +348,11 @@ public class StrictMessageHandlerTests
     [TestMethod]
     public async Task HandleEventRequest_HandlerSignalsPendingHandoff_SendsHandoffResponseAndBlocksSession()
     {
+        var trace = new OperationTrace();
         var ctx = CreateContext(messageType: MessageType.EventRequest);
+        ctx.Trace = trace;
         var metadata = new HandoffMetadata("DMF import in flight", "JOB-42", TimeSpan.FromMinutes(5));
-        var handler = new FakeEventContextHandler
+        var handler = new FakeEventContextHandler(trace)
         {
             OnHandle = c =>
             {
@@ -334,7 +360,7 @@ public class StrictMessageHandlerTests
                 c.HandoffMetadata = metadata;
             },
         };
-        var response = new FakeResponseService();
+        var response = new FakeResponseService(trace);
         var sut = CreateHandler(handler, response);
 
         await sut.Handle(ctx);
@@ -345,6 +371,12 @@ public class StrictMessageHandlerTests
         Assert.AreSame(metadata, response.LastPendingHandoffMetadata);
         Assert.AreEqual(1, ctx.BlockSessionCalls, "Session must be blocked so siblings defer");
         Assert.AreEqual(1, ctx.CompletedCalls);
+        trace.AssertInOrder(
+            "event-1.handler",
+            "event-1.response-pending-handoff",
+            "event-1.block",
+            "event-1.complete");
+        trace.AssertAbsent("event-1.response-resolution", "event-1.unblock");
     }
 
     [TestMethod]
@@ -457,10 +489,12 @@ public class StrictMessageHandlerTests
         // not overwrite BlockedByEventId (that would strand B's settlement and
         // deferred work). The row still goes Pending+Handoff — the external
         // work is genuinely in flight — but the block is left alone.
+        var trace = new OperationTrace();
         var ctx = CreateContext(messageType: MessageType.ResubmissionRequest, from: "Manager", eventId: "event-a");
+        ctx.Trace = trace;
         ctx.BlockedByEventId = "event-b";
         ctx.IsSessionBlockedByThisResult = false;
-        var handler = new FakeEventContextHandler
+        var handler = new FakeEventContextHandler(trace)
         {
             OnHandle = c =>
             {
@@ -468,7 +502,7 @@ public class StrictMessageHandlerTests
                 c.HandoffMetadata = new HandoffMetadata("r", null, null);
             },
         };
-        var response = new FakeResponseService();
+        var response = new FakeResponseService(trace);
         var sut = CreateHandler(handler, response);
 
         await sut.Handle(ctx);
@@ -478,6 +512,13 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(0, ctx.UnblockSessionCalls);
         Assert.AreEqual(0, response.ResolutionCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
+        trace.AssertInOrder("event-a.response-pending-handoff", "event-a.complete");
+        trace.AssertAbsent(
+            "event-a.block",
+            "event-a.unblock",
+            "event-a.deferred-receive",
+            "event-a.response-process-deferred",
+            "event-a.response-resolution");
     }
 
     [TestMethod]
@@ -515,10 +556,12 @@ public class StrictMessageHandlerTests
     [TestMethod]
     public async Task HandleHandoffCompletedRequest_AuthorizedAndBlockedByThis_UnblocksAndSendsResolution()
     {
+        var trace = new OperationTrace();
         var ctx = CreateContext(messageType: MessageType.HandoffCompletedRequest, from: "Manager");
+        ctx.Trace = trace;
         ctx.IsSessionBlockedByThisResult = true;
-        var handler = new FakeEventContextHandler();
-        var response = new FakeResponseService();
+        var handler = new FakeEventContextHandler(trace);
+        var response = new FakeResponseService(trace);
         var sut = CreateHandler(handler, response);
 
         await sut.Handle(ctx);
@@ -526,6 +569,13 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, ctx.UnblockSessionCalls);
         Assert.AreEqual(1, response.ResolutionCalls, "Resolver-bound ResolutionResponse flips Pending → Completed");
         Assert.AreEqual(1, ctx.CompletedCalls);
+        trace.AssertInOrder(
+            "event-1.verify-owner",
+            "event-1.unblock",
+            "event-1.deferred-receive",
+            "event-1.response-resolution",
+            "event-1.complete");
+        trace.AssertAbsent("event-1.handler", "event-1.response-error");
     }
 
     [TestMethod]
@@ -588,7 +638,9 @@ public class StrictMessageHandlerTests
     [TestMethod]
     public async Task HandleHandoffFailedRequest_AuthorizedAndBlockedByThis_SendsErrorAndKeepsSessionBlocked()
     {
+        var trace = new OperationTrace();
         var ctx = CreateContext(messageType: MessageType.HandoffFailedRequest, from: "Manager");
+        ctx.Trace = trace;
         ctx.IsSessionBlockedByThisResult = true;
         ctx.MessageContent = new MessageContent
         {
@@ -599,8 +651,8 @@ public class StrictMessageHandlerTests
                 ErrorType = "DmfValidationError",
             },
         };
-        var handler = new FakeEventContextHandler();
-        var response = new FakeResponseService();
+        var handler = new FakeEventContextHandler(trace);
+        var response = new FakeResponseService(trace);
         var sut = CreateHandler(handler, response);
 
         await sut.Handle(ctx);
@@ -611,6 +663,13 @@ public class StrictMessageHandlerTests
         Assert.IsNotNull(response.LastErrorException);
         var errorMessage = response.LastErrorException.InnerException?.Message ?? response.LastErrorException.Message;
         StringAssert.Contains(errorMessage, "DMF rejected: invalid postal code", "Operator-supplied errorText must be preserved verbatim");
+        trace.AssertInOrder("event-1.verify-owner", "event-1.response-error", "event-1.complete");
+        trace.AssertAbsent(
+            "event-1.handler",
+            "event-1.unblock",
+            "event-1.deferred-receive",
+            "event-1.response-process-deferred",
+            "event-1.response-resolution");
     }
 
     [TestMethod]
@@ -762,9 +821,11 @@ public class StrictMessageHandlerTests
     [TestMethod]
     public async Task HandleEventRequest_LegacyResponseService_RoundsPrecisePolicyDelay()
     {
+        var trace = new OperationTrace();
         var ctx = CreateContext(messageType: MessageType.EventRequest, eventTypeId: "OrderPlaced");
-        var handler = new FakeEventContextHandler { ThrowOnHandle = new InvalidOperationException("boom") };
-        var response = new FakeResponseService();
+        ctx.Trace = trace;
+        var handler = new FakeEventContextHandler(trace) { ThrowOnHandle = new InvalidOperationException("boom") };
+        var response = new FakeResponseService(trace);
         var retryProvider = new FakeRetryPolicyProvider
         {
             PolicyToReturn = new RetryPolicy
@@ -779,6 +840,12 @@ public class StrictMessageHandlerTests
 
         Assert.AreEqual(1, response.RetryCalls);
         Assert.AreEqual(2, response.LastRetryDelayMinutes);
+        trace.AssertInOrder(
+            "event-1.handler",
+            "event-1.response-error",
+            "event-1.block",
+            "event-1.complete",
+            "event-1.response-retry");
     }
 
     [TestMethod]
@@ -807,10 +874,12 @@ public class StrictMessageHandlerTests
     [TestMethod]
     public async Task HandleRetryRequest_BlockedByThis_HandlesUnblocksAndCompletes()
     {
+        var trace = new OperationTrace();
         var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.Trace = trace;
         ctx.IsSessionBlockedByThisResult = true;
-        var handler = new FakeEventContextHandler();
-        var response = new FakeResponseService();
+        var handler = new FakeEventContextHandler(trace);
+        var response = new FakeResponseService(trace);
         var sut = CreateHandler(handler, response);
 
         await sut.Handle(ctx);
@@ -819,6 +888,13 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, ctx.UnblockSessionCalls);
         Assert.AreEqual(1, response.ResolutionCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
+        trace.AssertInOrder(
+            "event-1.verify-owner",
+            "event-1.handler",
+            "event-1.unblock",
+            "event-1.deferred-receive",
+            "event-1.response-resolution",
+            "event-1.complete");
     }
 
     [TestMethod]
@@ -1019,10 +1095,12 @@ public class StrictMessageHandlerTests
     [TestMethod]
     public async Task HandleSkipRequest_FromManager_BlockedByThis_UnblocksAndSendsSkip()
     {
+        var trace = new OperationTrace();
         var ctx = CreateContext(messageType: MessageType.SkipRequest, from: "Manager");
+        ctx.Trace = trace;
         ctx.IsSessionBlockedByThisResult = true;
-        var handler = new FakeEventContextHandler();
-        var response = new FakeResponseService();
+        var handler = new FakeEventContextHandler(trace);
+        var response = new FakeResponseService(trace);
         var sut = CreateHandler(handler, response);
 
         await sut.Handle(ctx);
@@ -1030,6 +1108,12 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, ctx.UnblockSessionCalls);
         Assert.AreEqual(1, response.SkipCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
+        trace.AssertInOrder(
+            "event-1.verify-owner",
+            "event-1.unblock",
+            "event-1.deferred-receive",
+            "event-1.response-skip",
+            "event-1.complete");
     }
 
     [TestMethod]
@@ -1168,15 +1252,20 @@ public class StrictMessageHandlerTests
         // The sequence was popped before the nested dispatch; a store outage during the
         // inbox pre-check must put it back, or the deferred message stays broker-deferred
         // with no remaining reference and redelivery of the continuation cannot recover it.
+        var trace = new OperationTrace();
         var deferredCtx = CreateContext(messageType: MessageType.EventRequest, eventId: "event-1");
         var ctx = CreateContext(messageType: MessageType.ContinuationRequest, from: "Continuation", eventId: "event-1");
+        deferredCtx.Trace = trace;
+        deferredCtx.TraceName = "deferred";
+        ctx.Trace = trace;
+        ctx.TraceName = "continuation";
         ctx.NextDeferredWithPopResult = deferredCtx;
-        var handler = new FakeEventContextHandler();
-        var response = new FakeResponseService();
+        var handler = new FakeEventContextHandler(trace);
+        var response = new FakeResponseService(trace);
         var sut = CreateHandler(
             handler,
             response,
-            inboxStore: new FakeInboxStore { CheckException = new InvalidOperationException("provider details") });
+            inboxStore: new FakeInboxStore(trace) { CheckException = new InvalidOperationException("provider details") });
 
         await sut.Handle(ctx);
 
@@ -1187,6 +1276,12 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, ctx.AbandonCalls, "Continuation must abandon for redelivery");
         Assert.AreEqual(0, ctx.CompletedCalls);
         Assert.AreEqual(0, ctx.DeadLetterCalls);
+        trace.AssertInOrder(
+            "continuation.deferred-pop",
+            "inbox.check",
+            "continuation.deferred-restore",
+            "continuation.abandon");
+        trace.AssertAbsent("deferred.handler", "deferred.complete", "continuation.complete");
     }
 
     [TestMethod]
@@ -1229,11 +1324,16 @@ public class StrictMessageHandlerTests
     [TestMethod]
     public async Task HandleContinuationRequest_TransientHandlerFailure_RestoresDeferredAndAbandons()
     {
+        var trace = new OperationTrace();
         var deferredCtx = CreateContext(messageType: MessageType.EventRequest, eventId: "event-1");
         var ctx = CreateContext(messageType: MessageType.ContinuationRequest, from: "Continuation", eventId: "event-1");
+        deferredCtx.Trace = trace;
+        deferredCtx.TraceName = "deferred";
+        ctx.Trace = trace;
+        ctx.TraceName = "continuation";
         ctx.NextDeferredWithPopResult = deferredCtx;
-        var handler = new FakeEventContextHandler { ThrowOnHandle = new TransientException("transient") };
-        var response = new FakeResponseService();
+        var handler = new FakeEventContextHandler(trace) { ThrowOnHandle = new TransientException("transient") };
+        var response = new FakeResponseService(trace);
         var sut = CreateHandler(handler, response);
 
         await sut.Handle(ctx);
@@ -1243,6 +1343,12 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, ctx.RestoreNextDeferredCalls, "Popped sequence must be restored for redelivery");
         Assert.AreEqual(1, ctx.AbandonCalls);
         Assert.AreEqual(0, ctx.CompletedCalls);
+        trace.AssertInOrder(
+            "continuation.deferred-pop",
+            "deferred.handler",
+            "continuation.deferred-restore",
+            "continuation.abandon");
+        trace.AssertAbsent("deferred.complete", "continuation.complete");
     }
 
     [TestMethod]
@@ -1252,11 +1358,16 @@ public class StrictMessageHandlerTests
         // unsettled. If the restore reuses the caller's already-cancelled token, the
         // session-state write cancels immediately, the best-effort catch swallows it, and
         // the deferred message is orphaned — exactly the loss the restore exists to prevent.
+        var trace = new OperationTrace();
         var deferredCtx = CreateContext(messageType: MessageType.EventRequest, eventId: "event-1");
         var ctx = CreateContext(messageType: MessageType.ContinuationRequest, from: "Continuation", eventId: "event-1");
+        deferredCtx.Trace = trace;
+        deferredCtx.TraceName = "deferred";
+        ctx.Trace = trace;
+        ctx.TraceName = "continuation";
         ctx.NextDeferredWithPopResult = deferredCtx;
         using var cancellation = new CancellationTokenSource();
-        var handler = new FakeEventContextHandler
+        var handler = new FakeEventContextHandler(trace)
         {
             OnHandle = _ =>
             {
@@ -1264,7 +1375,7 @@ public class StrictMessageHandlerTests
                 throw new OperationCanceledException(cancellation.Token);
             },
         };
-        var sut = CreateHandler(handler, new FakeResponseService());
+        var sut = CreateHandler(handler, new FakeResponseService(trace));
 
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(
             () => sut.Handle(ctx, cancellation.Token));
@@ -1273,6 +1384,15 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, ctx.RestoreNextDeferredCalls, "Restore must still run when the caller token is already cancelled");
         Assert.IsFalse(ctx.LastRestoreToken.IsCancellationRequested, "Restore must run under a fresh bounded token, not the cancelled caller token");
         Assert.AreEqual(0, ctx.CompletedCalls, "Cancellation must propagate to the transport without settling");
+        trace.AssertInOrder("continuation.deferred-pop", "deferred.handler", "continuation.deferred-restore");
+        trace.AssertAbsent(
+            "deferred.response-resolution",
+            "deferred.response-error",
+            "deferred.complete",
+            "continuation.response-retry",
+            "continuation.complete",
+            "continuation.abandon",
+            "continuation.dead-letter");
     }
 
     // HandleProcessDeferredRequest tests removed — deferred processing
@@ -1342,11 +1462,13 @@ public class StrictMessageHandlerTests
         // Crash window: the first attempt recorded the inbox entry but crashed before
         // unblocking. The duplicate path must still release the session and drain deferred
         // siblings, or the session would stay blocked forever.
+        var trace = new OperationTrace();
         var ctx = CreateContext(messageType: MessageType.RetryRequest);
+        ctx.Trace = trace;
         ctx.IsSessionBlockedByThisResult = true;
-        var handler = new FakeEventContextHandler();
-        var response = new FakeResponseService();
-        var sut = CreateHandler(handler, response, inboxStore: new FakeInboxStore { HasProcessed = true });
+        var handler = new FakeEventContextHandler(trace);
+        var response = new FakeResponseService(trace);
+        var sut = CreateHandler(handler, response, inboxStore: new FakeInboxStore(trace) { HasProcessed = true });
 
         await sut.Handle(ctx);
 
@@ -1354,6 +1476,14 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, ctx.UnblockSessionCalls);
         Assert.AreEqual(1, response.DuplicateCalls);
         Assert.AreEqual(1, ctx.CompletedCalls);
+        trace.AssertInOrder(
+            "inbox.check",
+            "event-1.verify-owner",
+            "event-1.unblock",
+            "event-1.deferred-receive",
+            "event-1.response-duplicate",
+            "event-1.complete");
+        trace.AssertAbsent("event-1.handler", "event-1.response-resolution");
     }
 
     [TestMethod]
@@ -1522,6 +1652,13 @@ public class StrictMessageHandlerTests
 
     private sealed class FakeInboxStore : NimBus.Core.Inbox.IInboxStore
     {
+        private readonly OperationTrace? _trace;
+
+        public FakeInboxStore(OperationTrace? trace = null)
+        {
+            _trace = trace;
+        }
+
         public bool HasProcessed { get; set; }
         public Exception CheckException { get; set; }
         public Exception RecordException { get; set; }
@@ -1531,6 +1668,7 @@ public class StrictMessageHandlerTests
             string messageId,
             CancellationToken cancellationToken = default)
         {
+            _trace?.Record("inbox.check");
             if (CheckException != null)
                 throw CheckException;
             return Task.FromResult(HasProcessed);
@@ -1541,6 +1679,7 @@ public class StrictMessageHandlerTests
             string messageId,
             CancellationToken cancellationToken = default)
         {
+            _trace?.Record("inbox.record");
             if (RecordException != null)
                 throw RecordException;
             return Task.CompletedTask;
@@ -1579,20 +1718,63 @@ public class StrictMessageHandlerTests
                 },
             },
             EventTypeId = eventTypeId,
+            TraceName = eventId,
             EnqueuedTimeUtc = new DateTime(2026, 3, 9, 12, 0, 0, DateTimeKind.Utc),
         };
     }
 
     // ── Fakes ────────────────────────────────────────────────────────────
 
+    private sealed class OperationTrace
+    {
+        private readonly List<string> _entries = [];
+
+        public void Record(string operation) => _entries.Add(operation);
+
+        public void AssertInOrder(params string[] expected)
+        {
+            var searchIndex = 0;
+            foreach (var operation in expected)
+            {
+                var index = _entries.FindIndex(searchIndex, entry => entry == operation);
+                Assert.IsTrue(
+                    index >= 0,
+                    $"Expected '{operation}' after trace index {searchIndex - 1}. Actual trace: {string.Join(" -> ", _entries)}");
+                searchIndex = index + 1;
+            }
+        }
+
+        public void AssertAbsent(params string[] unexpected)
+        {
+            foreach (var operation in unexpected)
+            {
+                CollectionAssert.DoesNotContain(
+                    _entries,
+                    operation,
+                    $"Did not expect '{operation}'. Actual trace: {string.Join(" -> ", _entries)}");
+            }
+        }
+    }
+
+    private static string GetTraceName(IMessageContext context) =>
+        context is FakeMessageContext fake ? fake.TraceName : context.EventId;
+
     private sealed class FakeEventContextHandler : IEventContextHandler
     {
+        private readonly OperationTrace? _trace;
+
+        public FakeEventContextHandler(OperationTrace? trace = null)
+        {
+            _trace = trace;
+        }
+
         public int HandleCalls { get; private set; }
         public Exception ThrowOnHandle { get; set; }
         public Action<IMessageContext> OnHandle { get; set; }
 
         public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
         {
+            _trace?.Record($"{GetTraceName(context)}.handler");
             HandleCalls++;
             OnHandle?.Invoke(context);
             if (ThrowOnHandle != null)
@@ -1603,6 +1785,13 @@ public class StrictMessageHandlerTests
 
     private sealed class FakeResponseService : IResponseService
     {
+        private readonly OperationTrace? _trace;
+
+        public FakeResponseService(OperationTrace? trace = null)
+        {
+            _trace = trace;
+        }
+
         public int ResolutionCalls { get; private set; }
         public int ErrorCalls { get; private set; }
         public int DeferralCalls { get; private set; }
@@ -1624,32 +1813,35 @@ public class StrictMessageHandlerTests
         public string LastDiscardClassifierName { get; private set; }
         public int? LastRetryDelayMinutes { get; private set; }
 
-        public Task SendResolutionResponse(IMessageContext mc, CancellationToken ct = default) { ResolutionCalls++; return Task.CompletedTask; }
-        public Task SendSkipResponse(IMessageContext mc, CancellationToken ct = default) { SkipCalls++; return Task.CompletedTask; }
-        public Task SendDuplicateResponse(IMessageContext mc, CancellationToken ct = default) { DuplicateCalls++; return Task.CompletedTask; }
+        public Task SendResolutionResponse(IMessageContext mc, CancellationToken ct = default) { _trace?.Record($"{GetTraceName(mc)}.response-resolution"); ResolutionCalls++; return Task.CompletedTask; }
+        public Task SendSkipResponse(IMessageContext mc, CancellationToken ct = default) { _trace?.Record($"{GetTraceName(mc)}.response-skip"); SkipCalls++; return Task.CompletedTask; }
+        public Task SendDuplicateResponse(IMessageContext mc, CancellationToken ct = default) { _trace?.Record($"{GetTraceName(mc)}.response-duplicate"); DuplicateCalls++; return Task.CompletedTask; }
         public Task SendDiscardResponse(IMessageContext mc, Exception ex, string classifierName, CancellationToken ct = default)
         {
+            _trace?.Record($"{GetTraceName(mc)}.response-discard");
             DiscardCalls++;
             LastDiscardException = ex;
             LastDiscardClassifierName = classifierName;
             return Task.CompletedTask;
         }
-        public Task SendErrorResponse(IMessageContext mc, Exception ex, CancellationToken ct = default) { ErrorCalls++; LastErrorException = ex; return Task.CompletedTask; }
+        public Task SendErrorResponse(IMessageContext mc, Exception ex, CancellationToken ct = default) { _trace?.Record($"{GetTraceName(mc)}.response-error"); ErrorCalls++; LastErrorException = ex; return Task.CompletedTask; }
         public Task SendDeadLetterResponse(IMessageContext mc, string reason, Exception ex, CancellationToken ct = default)
         {
+            _trace?.Record($"{GetTraceName(mc)}.response-dead-letter");
             DeadLetterCalls++;
             LastDeadLetterReason = reason;
             LastDeadLetterException = ex;
             return Task.CompletedTask;
         }
-        public Task SendDeferralResponse(IMessageContext mc, SessionBlockedException ex, CancellationToken ct = default) { DeferralCalls++; return Task.CompletedTask; }
-        public Task SendRetryResponse(IMessageContext mc, int delay, CancellationToken ct = default) { RetryCalls++; LastRetryDelayMinutes = delay; return Task.CompletedTask; }
-        public Task SendUnsupportedResponse(IMessageContext mc, CancellationToken ct = default) { UnsupportedCalls++; return Task.CompletedTask; }
-        public Task SendContinuationRequestToSelf(IMessageContext mc, CancellationToken ct = default) { ContinuationCalls++; return Task.CompletedTask; }
-        public Task SendToDeferredSubscription(IMessageContext mc, int seq, CancellationToken ct = default) { SendToDeferredSubscriptionCalls++; return Task.CompletedTask; }
-        public Task SendProcessDeferredRequest(IMessageContext mc, CancellationToken ct = default) { ProcessDeferredCalls++; return Task.CompletedTask; }
+        public Task SendDeferralResponse(IMessageContext mc, SessionBlockedException ex, CancellationToken ct = default) { _trace?.Record($"{GetTraceName(mc)}.response-deferral"); DeferralCalls++; return Task.CompletedTask; }
+        public Task SendRetryResponse(IMessageContext mc, int delay, CancellationToken ct = default) { _trace?.Record($"{GetTraceName(mc)}.response-retry"); RetryCalls++; LastRetryDelayMinutes = delay; return Task.CompletedTask; }
+        public Task SendUnsupportedResponse(IMessageContext mc, CancellationToken ct = default) { _trace?.Record($"{GetTraceName(mc)}.response-unsupported"); UnsupportedCalls++; return Task.CompletedTask; }
+        public Task SendContinuationRequestToSelf(IMessageContext mc, CancellationToken ct = default) { _trace?.Record($"{GetTraceName(mc)}.response-continuation"); ContinuationCalls++; return Task.CompletedTask; }
+        public Task SendToDeferredSubscription(IMessageContext mc, int seq, CancellationToken ct = default) { _trace?.Record($"{GetTraceName(mc)}.response-deferred-forward"); SendToDeferredSubscriptionCalls++; return Task.CompletedTask; }
+        public Task SendProcessDeferredRequest(IMessageContext mc, CancellationToken ct = default) { _trace?.Record($"{GetTraceName(mc)}.response-process-deferred"); ProcessDeferredCalls++; return Task.CompletedTask; }
         public Task SendPendingHandoffResponse(IMessageContext mc, HandoffMetadata handoff, CancellationToken ct = default)
         {
+            _trace?.Record($"{GetTraceName(mc)}.response-pending-handoff");
             PendingHandoffCalls++;
             LastPendingHandoffMetadata = handoff;
             return Task.CompletedTask;
@@ -1741,6 +1933,8 @@ public class StrictMessageHandlerTests
 
     private sealed class FakeMessageContext : IMessageContext
     {
+        public OperationTrace? Trace { get; set; }
+        public string TraceName { get; set; } = string.Empty;
         public string EventId { get; set; } = string.Empty;
         public string To { get; set; } = string.Empty;
         public string SessionId { get; set; } = string.Empty;
@@ -1789,33 +1983,34 @@ public class StrictMessageHandlerTests
         public IMessageContext LastRestoredDeferred { get; private set; }
         public CancellationToken LastRestoreToken { get; private set; }
 
-        public Task Complete(CancellationToken ct = default) { CompletedCalls++; return Task.CompletedTask; }
-        public Task Abandon(TransientException ex) { AbandonCalls++; return Task.CompletedTask; }
-        public Task DeadLetter(string reason, Exception ex = null, CancellationToken ct = default) { DeadLetterCalls++; return Task.CompletedTask; }
+        public Task Complete(CancellationToken ct = default) { Trace?.Record($"{TraceName}.complete"); CompletedCalls++; return Task.CompletedTask; }
+        public Task Abandon(TransientException ex) { Trace?.Record($"{TraceName}.abandon"); AbandonCalls++; return Task.CompletedTask; }
+        public Task DeadLetter(string reason, Exception ex = null, CancellationToken ct = default) { Trace?.Record($"{TraceName}.dead-letter"); DeadLetterCalls++; return Task.CompletedTask; }
         public Task Defer(CancellationToken ct = default) => Task.CompletedTask;
         public Task DeferOnly(CancellationToken ct = default) => Task.CompletedTask;
-        public Task<IMessageContext> ReceiveNextDeferred(CancellationToken ct = default) => Task.FromResult(NextDeferredResult);
-        public Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken ct = default) => Task.FromResult(NextDeferredWithPopResult);
+        public Task<IMessageContext> ReceiveNextDeferred(CancellationToken ct = default) { Trace?.Record($"{TraceName}.deferred-receive"); return Task.FromResult(NextDeferredResult); }
+        public Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken ct = default) { Trace?.Record($"{TraceName}.deferred-pop"); return Task.FromResult(NextDeferredWithPopResult); }
         public Task RestoreNextDeferred(IMessageContext deferredMessage, CancellationToken ct = default)
         {
             // Mirror the real transport contexts: restoring writes session state, and that
             // I/O observes the token before doing anything.
             ct.ThrowIfCancellationRequested();
+            Trace?.Record($"{TraceName}.deferred-restore");
             RestoreNextDeferredCalls++;
             LastRestoredDeferred = deferredMessage;
             LastRestoreToken = ct;
             return Task.CompletedTask;
         }
-        public Task BlockSession(CancellationToken ct = default) { BlockSessionCalls++; return Task.CompletedTask; }
-        public Task UnblockSession(CancellationToken ct = default) { UnblockSessionCalls++; return Task.CompletedTask; }
+        public Task BlockSession(CancellationToken ct = default) { Trace?.Record($"{TraceName}.block"); BlockSessionCalls++; return Task.CompletedTask; }
+        public Task UnblockSession(CancellationToken ct = default) { Trace?.Record($"{TraceName}.unblock"); UnblockSessionCalls++; return Task.CompletedTask; }
         public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));
-        public Task<bool> IsSessionBlockedByThis(CancellationToken ct = default) => Task.FromResult(IsSessionBlockedByThisResult);
+        public Task<bool> IsSessionBlockedByThis(CancellationToken ct = default) { Trace?.Record($"{TraceName}.verify-owner"); return Task.FromResult(IsSessionBlockedByThisResult); }
         public Task<bool> IsSessionBlockedByEventId(CancellationToken ct = default) => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));
-        public Task<string> GetBlockedByEventId(CancellationToken ct = default) => Task.FromResult(BlockedByEventId);
-        public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken ct = default) => Task.FromResult(0);
-        public Task IncrementDeferredCount(CancellationToken ct = default) { IncrementDeferredCountCalls++; return Task.CompletedTask; }
+        public Task<string> GetBlockedByEventId(CancellationToken ct = default) { Trace?.Record($"{TraceName}.session-guard"); return Task.FromResult(BlockedByEventId); }
+        public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken ct = default) { Trace?.Record($"{TraceName}.deferral-sequence"); return Task.FromResult(0); }
+        public Task IncrementDeferredCount(CancellationToken ct = default) { Trace?.Record($"{TraceName}.deferred-count-increment"); IncrementDeferredCountCalls++; return Task.CompletedTask; }
         public Task DecrementDeferredCount(CancellationToken ct = default) => Task.CompletedTask;
-        public Task<int> GetDeferredCount(CancellationToken ct = default) => Task.FromResult(DeferredCountResult);
+        public Task<int> GetDeferredCount(CancellationToken ct = default) { Trace?.Record($"{TraceName}.deferred-count-read"); return Task.FromResult(DeferredCountResult); }
         public Task<bool> HasDeferredMessages(CancellationToken ct = default) => Task.FromResult(NextDeferredResult != null || DeferredCountResult > 0);
         public Task ResetDeferredCount(CancellationToken ct = default) { ResetDeferredCountCalls++; return Task.CompletedTask; }
         public Task ScheduleRedelivery(TimeSpan delay, int throttleRetryCount, CancellationToken ct = default) => Task.CompletedTask;

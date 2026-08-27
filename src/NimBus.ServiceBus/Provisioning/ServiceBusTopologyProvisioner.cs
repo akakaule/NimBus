@@ -1,4 +1,5 @@
-﻿using Azure.Messaging.ServiceBus.Administration;
+﻿using Azure.Messaging.ServiceBus;
+using Azure.Messaging.ServiceBus.Administration;
 using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Messages;
@@ -269,7 +270,7 @@ public sealed class ServiceBusTopologyProvisioner
 
         if (existing is not null)
         {
-            await client.DeleteRuleAsync(topicName, subscriptionName, ruleName, cancellationToken).ConfigureAwait(false);
+            await DeleteRuleToleratingMissingAsync(client, topicName, subscriptionName, ruleName, cancellationToken).ConfigureAwait(false);
         }
 
         var createRule = new CreateRuleOptions
@@ -330,7 +331,7 @@ public sealed class ServiceBusTopologyProvisioner
             var response = await client.GetSubscriptionAsync(topicName, subscriptionName, cancellationToken).ConfigureAwait(false);
             return response.Value;
         }
-        catch (Azure.RequestFailedException exception) when (exception.Status == 404)
+        catch (Exception exception) when (IsEntityNotFound(exception))
         {
             return null;
         }
@@ -372,7 +373,53 @@ public sealed class ServiceBusTopologyProvisioner
         var existing = await TryGetRuleAsync(client, topicName, subscriptionName, ruleName, cancellationToken).ConfigureAwait(false);
         if (existing is not null)
         {
-            await client.DeleteRuleAsync(topicName, subscriptionName, ruleName, cancellationToken).ConfigureAwait(false);
+            await DeleteRuleToleratingMissingAsync(client, topicName, subscriptionName, ruleName, cancellationToken).ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// Deletes a rule, treating "already gone" as success.
+    /// </summary>
+    /// <remarks>
+    /// Reading a rule and then deleting it is check-then-act against a remote broker:
+    /// the rule can be seen by the read and be absent by the time the delete lands.
+    /// The postcondition is the same either way — the rule is not there — so a 404
+    /// is the outcome this method wanted, not a failure. Without this, provisioning
+    /// aborts partway through on a race it should simply absorb, which showed up as
+    /// an intermittent MessagingEntityNotFound for '$Default' on the Deferred
+    /// subscription, roughly one run in ten against the emulator.
+    /// </remarks>
+    private static async Task DeleteRuleToleratingMissingAsync(
+        ServiceBusAdministrationClient client,
+        string topicName,
+        string subscriptionName,
+        string ruleName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await client.DeleteRuleAsync(topicName, subscriptionName, ruleName, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (IsEntityNotFound(exception))
+        {
+        }
+    }
+
+    /// <summary>
+    /// True when a failure means the entity is not there.
+    /// </summary>
+    /// <remarks>
+    /// The administration client reports this two ways: a bare
+    /// <see cref="Azure.RequestFailedException"/> with status 404, and a
+    /// <see cref="ServiceBusException"/> whose Reason is MessagingEntityNotFound and
+    /// which carries the RequestFailedException as its inner exception. Catching only
+    /// the former silently misses the delete path, which throws the latter.
+    /// </remarks>
+    private static bool IsEntityNotFound(Exception exception) => exception switch
+    {
+        ServiceBusException serviceBusException =>
+            serviceBusException.Reason == ServiceBusFailureReason.MessagingEntityNotFound,
+        Azure.RequestFailedException requestFailed => requestFailed.Status == 404,
+        _ => false,
+    };
 }

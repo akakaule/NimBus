@@ -361,7 +361,7 @@ public sealed class AdminStatusSafetyTests
     private static AdminService CreateAdminService(InMemoryMessageStore store) =>
         new(
             platform: null!,
-            cosmosClient: store,
+            messageStore: store,
             capabilities: null!,
             sbAdmin: null!,
             sbClient: null!,

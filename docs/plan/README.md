@@ -6,11 +6,11 @@ This directory coordinates five independently executable refactoring plans. Each
 
 ## Plans
 
-1. [Narrow WebApp storage dependencies](01-narrow-webapp-storage-dependencies.md)
-2. [Decompose storage-provider implementations](02-decompose-storage-provider-implementations.md)
+1. [Narrow WebApp storage dependencies](01-narrow-webapp-storage-dependencies.md) — complete
+2. [Decompose storage-provider implementations](02-decompose-storage-provider-implementations.md) — complete
 3. [Decompose WebApp event components](03-decompose-webapp-event-components.md)
 4. [Modularize CLI composition](04-modularize-cli-composition.md)
-5. [Harden `StrictMessageHandler` lifecycle ordering](05-decompose-strict-message-handler.md)
+5. [Harden `StrictMessageHandler` lifecycle ordering](05-decompose-strict-message-handler.md) — complete
 
 ## Recommended sequence
 

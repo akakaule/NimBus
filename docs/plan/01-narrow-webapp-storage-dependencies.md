@@ -1,5 +1,9 @@
 # Plan 1: Narrow WebApp storage dependencies
 
+## Outcome
+
+Implemented. Commit `49bc2a0` migrated all WebApp controllers and services to narrow storage contracts and added provider-registration and architecture tests. The final cleanup removed stale Cosmos-specific field names and lifetime comments, strengthened the architecture guard, and updated ADR-010. The published aggregate remains available for provider facades and external compatibility.
+
 ## Goal
 
 Replace unnecessary `INimBusMessageStore` dependencies in the WebApp with the smallest provider-neutral storage contracts each consumer actually uses. This completes the follow-up recorded in ADR-010 and makes provider boundaries visible without changing runtime behavior.

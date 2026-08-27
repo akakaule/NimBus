@@ -138,7 +138,7 @@ public sealed class EndpointSendStatusTests
             new HttpContextAccessor { HttpContext = new DefaultHttpContext() },
             new FakePlatform(endpointIds),
             configuration,
-            cosmosClient: null!, // send status never touches the message store
+            messageStore: null!, // send status never touches the message store
             subscriptionStore: null!,
             metadataStore: null!,
             sb,

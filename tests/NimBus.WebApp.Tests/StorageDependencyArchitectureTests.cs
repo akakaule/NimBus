@@ -17,6 +17,15 @@ namespace NimBus.WebApp.Tests;
 public sealed class StorageDependencyArchitectureTests
 {
     private static readonly Type AggregateStoreType = typeof(INimBusMessageStore);
+    private static readonly HashSet<Type> NarrowStoreTypes =
+    [
+        typeof(IMessageTrackingStore),
+        typeof(ISubscriptionStore),
+        typeof(IEndpointMetadataStore),
+        typeof(IMetricsStore),
+        typeof(IServiceHealthStore),
+        typeof(IHeartbeatHistoryStore),
+    ];
 
     [TestMethod]
     public void WebApp_controllers_and_services_do_not_inject_aggregate_store()
@@ -86,6 +95,27 @@ public sealed class StorageDependencyArchitectureTests
                 constructorParameterTypes,
                 $"{consumer.Name} must declare its narrow storage contracts.");
         }
+    }
+
+    [TestMethod]
+    public void Provider_neutral_storage_fields_do_not_use_cosmos_specific_names()
+    {
+        var assembly = typeof(MetricsImplementation).Assembly;
+        var offenders = assembly
+            .GetTypes()
+            .Where(IsWebAppControllerOrService)
+            .SelectMany(type => type
+                .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                .Where(field => NarrowStoreTypes.Contains(field.FieldType))
+                .Where(field => field.Name.Contains("cosmos", StringComparison.OrdinalIgnoreCase))
+                .Select(field => $"{type.FullName}.{field.Name}"))
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.IsEmpty(
+            offenders,
+            "Provider-neutral storage contracts must use provider-neutral field names: " +
+            string.Join(", ", offenders));
     }
 
     private static bool IsWebAppControllerOrService(Type type)

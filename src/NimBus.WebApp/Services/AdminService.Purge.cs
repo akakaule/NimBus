@@ -19,7 +19,7 @@ public partial class AdminService
 {
     public async Task<SessionPurgePreview> PreviewSessionPurgeAsync(string endpointId, string sessionId)
     {
-        var sessionState = await _cosmosClient.DownloadEndpointSessionStateCount(endpointId, sessionId);
+        var sessionState = await _messageStore.DownloadEndpointSessionStateCount(endpointId, sessionId);
 
         // Count Cosmos events for the session
         int cosmosEventCount = 0;
@@ -27,7 +27,7 @@ public partial class AdminService
 
         do
         {
-            var response = await _cosmosClient.GetEventsByFilter(
+            var response = await _messageStore.GetEventsByFilter(
                 new MessageStore.EventFilter { EndPointId = endpointId, SessionId = sessionId },
                 continuationToken, PageSize);
 
@@ -221,7 +221,7 @@ public partial class AdminService
 
             do
             {
-                var response = await _cosmosClient.GetEventsByFilter(
+                var response = await _messageStore.GetEventsByFilter(
                     new MessageStore.EventFilter { EndPointId = endpointId, SessionId = sessionId },
                     continuationToken, PageSize);
 
@@ -229,7 +229,7 @@ public partial class AdminService
                 {
                     try
                     {
-                        await _cosmosClient.RemoveMessage(ev.EventId, sessionId, endpointId);
+                        await _messageStore.RemoveMessage(ev.EventId, sessionId, endpointId);
                         cosmosRemoved++;
                     }
                     catch (Exception ex)
@@ -256,11 +256,11 @@ public partial class AdminService
 
     public async Task<bool> DeleteEventAsync(string endpointId, string eventId)
     {
-        var ev = await _cosmosClient.GetEvent(endpointId, eventId);
+        var ev = await _messageStore.GetEvent(endpointId, eventId);
         if (ev == null)
             return false;
 
-        return await _cosmosClient.RemoveMessage(ev.EventId, ev.SessionId, endpointId);
+        return await _messageStore.RemoveMessage(ev.EventId, ev.SessionId, endpointId);
     }
 
     public async Task<PurgePreview> PurgeSubscriptionPreviewAsync(string endpointId, string subscription, List<string> states, DateTime? before)
@@ -463,7 +463,7 @@ public partial class AdminService
 
         do
         {
-            var response = await _cosmosClient.GetEventsByFilter(
+            var response = await _messageStore.GetEventsByFilter(
                 new MessageStore.EventFilter { EndPointId = endpointId, ResolutionStatus = statuses },
                 continuationToken, PageSize);
 
@@ -485,7 +485,7 @@ public partial class AdminService
 
         do
         {
-            var response = await _cosmosClient.GetEventsByFilter(
+            var response = await _messageStore.GetEventsByFilter(
                 new MessageStore.EventFilter { EndPointId = endpointId, ResolutionStatus = statuses },
                 continuationToken, PageSize);
 
@@ -493,7 +493,7 @@ public partial class AdminService
             {
                 try
                 {
-                    bool removed = await _cosmosClient.RemoveMessage(ev.EventId, ev.SessionId, endpointId);
+                    bool removed = await _messageStore.RemoveMessage(ev.EventId, ev.SessionId, endpointId);
                     if (removed) succeeded++;
                     else { failed++; errors.Add($"{ev.EventId}: remove returned false"); }
                 }
@@ -519,7 +519,7 @@ public partial class AdminService
 
         do
         {
-            var response = await _cosmosClient.GetEventsByFilter(
+            var response = await _messageStore.GetEventsByFilter(
                 new MessageStore.EventFilter { EndPointId = endpointId, ResolutionStatus = statuses },
                 continuationToken, PageSize);
 
@@ -546,7 +546,7 @@ public partial class AdminService
 
         do
         {
-            var response = await _cosmosClient.GetEventsByFilter(
+            var response = await _messageStore.GetEventsByFilter(
                 new MessageStore.EventFilter { EndPointId = endpointId, ResolutionStatus = statuses },
                 continuationToken, PageSize);
 
@@ -557,7 +557,7 @@ public partial class AdminService
 
                 try
                 {
-                    bool updated = await _cosmosClient.UploadSkippedMessage(ev.EventId, ev.SessionId, endpointId, ev);
+                    bool updated = await _messageStore.UploadSkippedMessage(ev.EventId, ev.SessionId, endpointId, ev);
                     if (updated) succeeded++;
                     else { failed++; errors.Add($"{ev.EventId}: update returned false"); }
                 }
@@ -582,7 +582,7 @@ public partial class AdminService
 
         try
         {
-            success = await _cosmosClient.PurgeMessages(endpointId);
+            success = await _messageStore.PurgeMessages(endpointId);
         }
         catch (Exception ex)
         {

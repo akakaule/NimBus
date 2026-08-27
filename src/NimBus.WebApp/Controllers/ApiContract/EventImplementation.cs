@@ -41,7 +41,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
         private readonly IPlatform platform;
         private readonly ILogger<EventImplementation> logger;
-        private readonly IMessageTrackingStore cosmosClient;
+        private readonly IMessageTrackingStore messageStore;
         private readonly IManagerClient managerClient;
         private readonly IHandoffClientFactory handoffClients;
         private readonly IApplicationInsightsService applicationInsightsService;
@@ -60,7 +60,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             IManagerClient managerClient,
             IHandoffClientFactory handoffClientFactory,
             ILogger<EventImplementation> logger,
-            IMessageTrackingStore cosmosClient,
+            IMessageTrackingStore messageStore,
             IEndpointAuthorizationService authorizationService,
             IAdminService adminService,
             ServiceBusClient serviceBusClient,
@@ -74,7 +74,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             this.masker = masker ?? NullEventJsonMasker.Instance;
             this.platform = platform;
             this.logger = logger;
-            this.cosmosClient = cosmosClient;
+            this.messageStore = messageStore;
             this.managerClient = managerClient;
             this.handoffClients = handoffClientFactory;
             this.applicationInsightsService = applicationInsightsService;
@@ -94,7 +94,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             try
             {
-                var messageEntity = await cosmosClient.GetMessage(eventId, messageId);
+                var messageEntity = await messageStore.GetMessage(eventId, messageId);
                 if (messageEntity != null)
                 {
                     var message = Mapper.MessageFromMessageEntity(messageEntity);
@@ -124,7 +124,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             try
             {
-                var unresolvedEvent = await cosmosClient.GetFailedEvent(endpointId, eventId, sessionId);
+                var unresolvedEvent = await messageStore.GetFailedEvent(endpointId, eventId, sessionId);
                 var result = Mapper.EventFromMessageStoreEvent(unresolvedEvent);
                 if (!await authorizationService.CanReadPiiAsync())
                     payloadRedaction.Redact(result);
@@ -142,7 +142,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             if (!await authorizationService.HasRoleAsync(AccessRole.Reader))
                 return new ForbidResult();
 
-            var audits = await cosmosClient.GetMessageAudits(eventId);
+            var audits = await messageStore.GetMessageAudits(eventId);
             if (audits != null)
             {
                 return audits.Reverse().Select(Mapper.MessageAuditFromMessageAuditEntity).ToList();
@@ -160,7 +160,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             try
             {
                 var audit = Mapper.MessageAuditEntityFromMessageAudit(body);
-                await cosmosClient.StoreMessageAudit(eventId, audit);
+                await messageStore.StoreMessageAudit(eventId, audit);
                 return new OkResult();
             }
             catch (Exception e)
@@ -192,7 +192,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             // back to the resolved message so non-hand-off resubmits are
             // unchanged. Same source as the frontend's resubmit prefill and the
             // resubmit-with-changes event-type resolution below.
-            var history = await cosmosClient.GetEventHistory(eventId);
+            var history = await messageStore.GetEventHistory(eventId);
             MessageEntity? latestRequest = LatestRequestMessageWithPayload(history);
             MessageEntity requestMessage = latestRequest ?? errorResponse;
 
@@ -230,7 +230,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             // fails, the event must remain visible in the failed list. Running
             // these concurrently would archive events whose resubmit never left.
             await managerClient.Resubmit(errorResponse, endpoint, eventTypeId, eventJson);
-            await cosmosClient.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
+            await messageStore.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
             await auditLogService.LogAuditAsync(MessageAuditType.Resubmit, httpContextAccessor.HttpContext,
                 eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
             return new OkResult();
@@ -275,7 +275,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             await managerClient.Skip(errorResponse, endpoint, eventTypeId);
             await auditLogService.LogAuditAsync(MessageAuditType.Skip, httpContextAccessor.HttpContext,
                 eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
-            await cosmosClient.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
+            await messageStore.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
 
             return new OkResult();
         }
@@ -346,7 +346,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             }
 
             var reportedBy = authorizationService.GetCurrentUserName() ?? "anonymous";
-            await cosmosClient.SetEventReport(endpointId, eventId, reported, reportedBy, ticketId);
+            await messageStore.SetEventReport(endpointId, eventId, reported, reportedBy, ticketId);
             await auditLogService.LogAuditAsync(MessageAuditType.ReportEvent, httpContextAccessor.HttpContext,
                 eventId: eventId, endpointId: endpointId,
                 data: JsonConvert.SerializeObject(new { reported, ticketId }));
@@ -420,7 +420,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             try
             {
-                var unresolvedEvent = await cosmosClient.GetEvent(endpoint, id);
+                var unresolvedEvent = await messageStore.GetEvent(endpoint, id);
                 if (unresolvedEvent == null) return new BadRequestResult();
                 var result = Mapper.EventFromMessageStoreEvent(unresolvedEvent);
 
@@ -474,13 +474,13 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             try
             {
-                var failedMessage = await cosmosClient.GetFailedMessage(id, endpoint);
+                var failedMessage = await messageStore.GetFailedMessage(id, endpoint);
                 if (failedMessage != null)
                 {
                     logger.LogInformation("Failed message found. EventId: {EventId}, MessageId: {MessageId}, Endpoint: {Endpoint}, MessageType: {MessageType}", failedMessage.EventId, failedMessage.MessageId, endpoint, failedMessage.MessageType);
                     eventDetails.FailedMessage = Mapper.MessageFromMessageEntity(failedMessage);
 
-                    var downloadedMsg = await cosmosClient.GetMessage(eventDetails.FailedMessage.EventId,
+                    var downloadedMsg = await messageStore.GetMessage(eventDetails.FailedMessage.EventId,
                         eventDetails.FailedMessage.OriginatingMessageId);
                     if (downloadedMsg != null)
                     {
@@ -490,7 +490,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                     return await RedactDetailsForNonPiiReadersAsync(eventDetails);
                 }
 
-                var deadletteredMessage = await cosmosClient.GetDeadletteredMessage(id, endpoint);
+                var deadletteredMessage = await messageStore.GetDeadletteredMessage(id, endpoint);
 
 
                 if (deadletteredMessage != null)
@@ -498,7 +498,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                     logger.LogInformation("Message found in deadletter. EventId: {EventId}, MessageId: {MessageId}, Endpoint: {Endpoint}, MessageType: {MessageType}", deadletteredMessage.EventId, deadletteredMessage.MessageId, endpoint, deadletteredMessage.MessageType);
                     if (deadletteredMessage.MessageType == Core.Messages.MessageType.ResolutionResponse)
                     {
-                        var completedMsg = await cosmosClient.GetMessage(deadletteredMessage.EventId, deadletteredMessage.OriginatingMessageId);
+                        var completedMsg = await messageStore.GetMessage(deadletteredMessage.EventId, deadletteredMessage.OriginatingMessageId);
                         if (completedMsg != null)
                         {
                             eventDetails.FailedMessage = Mapper.MessageFromMessageEntity(completedMsg);
@@ -572,7 +572,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             var histories = new List<Message>();
             try
             {
-                histories = (await cosmosClient.GetEventHistory(id))
+                histories = (await messageStore.GetEventHistory(id))
                     .Where(x => x.EndpointId.Equals(endpointId, StringComparison.OrdinalIgnoreCase))
                     .OrderByDescending(a => a.EnqueuedTimeUtc)
                     .Select(Mapper.MessageFromMessageEntity)
@@ -729,7 +729,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             // soft-deletes the event (deleted=true + 30d TTL); if the publish
             // fails, the event must remain visible in the failed list.
             await managerClient.Resubmit(errorResponse, endpoint, eventTypeId, forwardedContent);
-            await cosmosClient.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
+            await messageStore.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
             await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext,
                 data: JsonConvert.SerializeObject(body),
                 eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
@@ -749,7 +749,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             if (!string.IsNullOrEmpty(errorResponse.EventTypeId))
                 return errorResponse.EventTypeId;
 
-            var history = await cosmosClient.GetEventHistory(eventId);
+            var history = await messageStore.GetEventHistory(eventId);
             MessageEntity requestMessage = LatestRequestMessageWithPayload(history)
                 ?? await GetMessageWithFallback(eventId, errorResponse.OriginatingMessageId)
                 ?? errorResponse;
@@ -777,7 +777,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             try
             {
-                var page = await cosmosClient.GetBlockedEventsOnSession(endpointId, sessionId, safeSkip, safeTake);
+                var page = await messageStore.GetBlockedEventsOnSession(endpointId, sessionId, safeSkip, safeTake);
 
                 return new BlockedEventsPage
                 {
@@ -808,7 +808,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             try
             {
-                var events = (await cosmosClient.GetPendingEventsOnSession(endpointId))
+                var events = (await messageStore.GetPendingEventsOnSession(endpointId))
                     .Select(Mapper.EventFromMessageStoreEvent)
                     .ToList();
 
@@ -840,7 +840,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             try
             {
-                var result = await cosmosClient.RemoveMessage(eventId, sessionId, endpointId);
+                var result = await messageStore.RemoveMessage(eventId, sessionId, endpointId);
                 return result
                     ? new OkResult()
                     : new NotFoundObjectResult($"Event '{eventId}' not found or could not be deleted");
@@ -869,7 +869,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             try
             {
-                var result = await cosmosClient.GetUnsupportedEvent(endpointId, eventId, sessionId);
+                var result = await messageStore.GetUnsupportedEvent(endpointId, eventId, sessionId);
                 var mapped = Mapper.EventFromMessageStoreEvent(result);
                 if (!await authorizationService.CanReadPiiAsync())
                     payloadRedaction.Redact(mapped);
@@ -898,7 +898,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             try
             {
-                var result = await cosmosClient.GetDeadletteredEvent(endpointId, eventId, sessionId);
+                var result = await messageStore.GetDeadletteredEvent(endpointId, eventId, sessionId);
                 var mapped = Mapper.EventFromMessageStoreEvent(result);
                 if (!await authorizationService.CanReadPiiAsync())
                     payloadRedaction.Redact(mapped);
@@ -959,7 +959,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 var filter = Mapper.MapFilter(body.EventFilter);
                 filter.EndPointId = endpointId;  // Use validated URL parameter instead of body value
-                var reponse = await cosmosClient.GetEventsByFilter(filter, body.ContinuationToken, body.MaxSearchItemsCount);
+                var reponse = await messageStore.GetEventsByFilter(filter, body.ContinuationToken, body.MaxSearchItemsCount);
                 await auditLogService.LogAuditAsync(MessageAuditType.SearchEvents, httpContextAccessor.HttpContext,
                     data: searchDataJson, endpointId: endpointId);
                 var events = reponse.Events
@@ -1001,7 +1001,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             try
             {
-                var counts = await cosmosClient.GetResubmitCounts(endpointId, eventIds);
+                var counts = await messageStore.GetResubmitCounts(endpointId, eventIds);
                 foreach (var ev in events)
                 {
                     if (ev.EventId != null && counts.TryGetValue(ev.EventId, out var count))
@@ -1028,7 +1028,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             try
             {
-                var reports = await cosmosClient.GetEventReports(endpointId, eventIds);
+                var reports = await messageStore.GetEventReports(endpointId, eventIds);
                 foreach (var ev in events)
                 {
                     if (ev.EventId != null && reports.TryGetValue(ev.EventId, out var report))
@@ -1058,7 +1058,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
                 // Server-side TOP 1 (single-partition on the messages container)
                 // instead of pulling the whole message history and filtering in
                 // memory on every event-detail load.
-                var request = await cosmosClient.GetLatestEventRequestMessage(eventId);
+                var request = await messageStore.GetLatestEventRequestMessage(eventId);
                 return request?.MessageContent?.EventContent?.EventJson;
             }
             catch (Exception e)
@@ -1083,7 +1083,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
         private async Task<MessageEntity> GetMessageWithFallback(string eventId, string messageId)
         {
-            var message = await cosmosClient.GetMessage(eventId, messageId);
+            var message = await messageStore.GetMessage(eventId, messageId);
             if (message != null) return message;
 
             // Fallback: the message wasn't in the shared messages container, so probe
@@ -1095,7 +1095,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 try
                 {
-                    return (ep.Id, Event: await cosmosClient.GetEvent(ep.Id, eventId));
+                    return (ep.Id, Event: await messageStore.GetEvent(ep.Id, eventId));
                 }
                 catch (Exception ex)
                 {

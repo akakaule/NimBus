@@ -610,9 +610,9 @@ namespace NimBus.WebApp
             // hit); the authorization service memoizes one resolution per request.
             services.AddSingleton<IAccessControlSnapshotProvider, AccessControlSnapshotProvider>();
             services.AddScoped<IEndpointAuthorizationService, EndpointAuthorizationService>();
-            // Spec 008: centralized audit-write contract. Scoped so the captured
-            // INimBusMessageStore lifetime matches the request, consistent with
-            // every other message-store consumer in this file.
+            // Spec 008: centralized audit-write contract. Scoped to the request's
+            // audit workflow; its narrow store dependency resolves to the selected
+            // provider singleton.
             services.AddScoped<IAuditLogService, AuditLogService>();
             // Shared hand-off settlement core used by both the operator (EventImplementation)
             // and agent (AgentImplementation) settle endpoints so neither can skip the audit row.
@@ -651,9 +651,9 @@ namespace NimBus.WebApp
             services.AddSingleton<IAgentSubscriptionRegistry, AgentSubscriptionRegistry>();
             services.AddScoped<SeedDataService>();
 
-            // Platform heartbeat. Scoped to match INimBusMessageStore; the sender is
-            // a singleton because it wraps the singleton ServiceBusClient. The
-            // scheduler resolves the service through a scope on each tick.
+            // Platform heartbeat. Scoped for its narrow storage dependencies; the
+            // sender is a singleton because it wraps the singleton ServiceBusClient.
+            // The scheduler resolves the service through a scope on each tick.
             services.AddSingleton<IHeartbeatMessageSender, ServiceBusHeartbeatMessageSender>();
             services.AddScoped<IHeartbeatService, HeartbeatService>();
             services.AddHostedService<HeartbeatBackgroundService>();

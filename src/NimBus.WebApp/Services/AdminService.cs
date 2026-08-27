@@ -30,7 +30,7 @@ namespace NimBus.WebApp.Services;
 public partial class AdminService : IAdminService
 {
     private readonly IPlatform _platform;
-    private readonly IMessageTrackingStore _cosmosClient;
+    private readonly IMessageTrackingStore _messageStore;
     // Cosmos-only: cross-account copy + bulk-delete-by-recipient operations use the raw
     // Cosmos client directly. Null when the active provider is not Cosmos.
     private readonly CosmosClient? _rawCosmosClient;
@@ -47,7 +47,7 @@ public partial class AdminService : IAdminService
 
     public AdminService(
         IPlatform platform,
-        IMessageTrackingStore cosmosClient,
+        IMessageTrackingStore messageStore,
         IStorageProviderCapabilities capabilities,
         ServiceBusAdministrationClient sbAdmin,
         ServiceBusClient sbClient,
@@ -56,7 +56,7 @@ public partial class AdminService : IAdminService
         CosmosClient? rawCosmosClient = null)
     {
         _platform = platform;
-        _cosmosClient = cosmosClient;
+        _messageStore = messageStore;
         _capabilities = capabilities;
         _rawCosmosClient = rawCosmosClient;
         _sbAdmin = sbAdmin;

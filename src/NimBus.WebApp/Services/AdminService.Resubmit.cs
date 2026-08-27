@@ -24,7 +24,7 @@ public partial class AdminService
 
         do
         {
-            var response = await _cosmosClient.GetEventsByFilter(
+            var response = await _messageStore.GetEventsByFilter(
                 new MessageStore.EventFilter
                 {
                     EndPointId = endpointId,
@@ -69,7 +69,7 @@ public partial class AdminService
 
         do
         {
-            var response = await _cosmosClient.GetEventsByFilter(
+            var response = await _messageStore.GetEventsByFilter(
                 new MessageStore.EventFilter
                 {
                     EndPointId = endpointId,
@@ -85,7 +85,7 @@ public partial class AdminService
                 await gate.WaitAsync();
                 try
                 {
-                    var failedMessage = await _cosmosClient.GetFailedMessage(ev.EventId, endpointId);
+                    var failedMessage = await _messageStore.GetFailedMessage(ev.EventId, endpointId);
                     if (failedMessage == null)
                     {
                         LogFailedMessageNotFound(ev.EventId, endpointId);
@@ -106,7 +106,7 @@ public partial class AdminService
                     }
 
                     await _managerClient.Resubmit(failedMessage, endpointId, eventTypeId, eventJson);
-                    await _cosmosClient.ArchiveFailedEvent(ev.EventId, ev.SessionId, endpointId);
+                    await _messageStore.ArchiveFailedEvent(ev.EventId, ev.SessionId, endpointId);
                     Interlocked.Increment(ref succeeded);
                 }
                 catch (Exception ex)
@@ -136,7 +136,7 @@ public partial class AdminService
 
     public async Task<int> GetDeadLetteredCountAsync(string endpointId)
     {
-        var stateCount = await _cosmosClient.DownloadEndpointStateCount(endpointId);
+        var stateCount = await _messageStore.DownloadEndpointStateCount(endpointId);
         return stateCount.DeadletterCount;
     }
 
@@ -150,7 +150,7 @@ public partial class AdminService
 
         do
         {
-            var response = await _cosmosClient.GetEventsByFilter(
+            var response = await _messageStore.GetEventsByFilter(
                 new MessageStore.EventFilter
                 {
                     EndPointId = endpointId,
@@ -164,7 +164,7 @@ public partial class AdminService
 
                 try
                 {
-                    bool removed = await _cosmosClient.RemoveMessage(ev.EventId, ev.SessionId, endpointId);
+                    bool removed = await _messageStore.RemoveMessage(ev.EventId, ev.SessionId, endpointId);
                     if (removed)
                         succeeded++;
                     else

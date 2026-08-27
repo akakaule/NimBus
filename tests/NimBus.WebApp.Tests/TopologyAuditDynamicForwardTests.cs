@@ -98,7 +98,7 @@ public sealed class TopologyAuditDynamicForwardTests
     private static AdminService BuildAdminService(IPlatform platform, ServiceBusAdministrationClient admin) =>
         new AdminService(
             platform,
-            cosmosClient: null!,
+            messageStore: null!,
             capabilities: null!,
             sbAdmin: admin,
             sbClient: null!,

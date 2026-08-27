@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -32,7 +32,7 @@ public class EndpointImplementation : IEndpointApiController
 {
     private readonly IPlatform platform;
     private readonly IConfiguration configuration;
-    private readonly IMessageTrackingStore cosmosClient;
+    private readonly IMessageTrackingStore messageStore;
     private readonly ISubscriptionStore _subscriptionStore;
     private readonly IEndpointMetadataStore _metadataStore;
     private readonly IServiceBusManagement serviceBusManagement;
@@ -55,7 +55,7 @@ public class EndpointImplementation : IEndpointApiController
         IHttpContextAccessor contextAccessor,
         IPlatform platform,
         IConfiguration configuration,
-        IMessageTrackingStore cosmosClient,
+        IMessageTrackingStore messageStore,
         ISubscriptionStore subscriptionStore,
         IEndpointMetadataStore metadataStore,
         IServiceBusManagement serviceBusManagement,
@@ -67,7 +67,7 @@ public class EndpointImplementation : IEndpointApiController
     {
         this.platform = platform;
         this.configuration = configuration;
-        this.cosmosClient = cosmosClient;
+        this.messageStore = messageStore;
         _subscriptionStore = subscriptionStore;
         _metadataStore = metadataStore;
         this.serviceBusManagement = serviceBusManagement;
@@ -116,7 +116,7 @@ public class EndpointImplementation : IEndpointApiController
             var countOptions = new ParallelOptions { MaxDegreeOfParallelism = Math.Min(System.Environment.ProcessorCount, 4) };
             await Parallel.ForEachAsync(Enumerable.Range(0, endpointIds.Count), countOptions, async (i, _) =>
             {
-                endpointStateCounts[i] = await cosmosClient.DownloadEndpointStateCount(endpointIds[i]);
+                endpointStateCounts[i] = await messageStore.DownloadEndpointStateCount(endpointIds[i]);
             });
         }
         catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
@@ -144,7 +144,7 @@ public class EndpointImplementation : IEndpointApiController
 
         try
         {
-            var endpointState = await cosmosClient.DownloadEndpointStatePaging(endpointName, InitialEvents, "");
+            var endpointState = await messageStore.DownloadEndpointStatePaging(endpointName, InitialEvents, "");
             if (endpointState == null)
             {
                 return new NotFoundObjectResult("Endpoint not found");
@@ -156,7 +156,7 @@ public class EndpointImplementation : IEndpointApiController
                 .Distinct()
                 .ToList();
 
-            var events = await cosmosClient.GetEventsByIds(endpointName, eventIds);
+            var events = await messageStore.GetEventsByIds(endpointName, eventIds);
             var res = events.ToDictionary(e => e.EventId, Mapper.EventFromMessageStoreEvent);
 
             if (!await _authorizationService.CanReadPiiAsync())
@@ -185,7 +185,7 @@ public class EndpointImplementation : IEndpointApiController
             if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointName))
                 return new ForbidResult();
 
-            var endpoint = await cosmosClient.DownloadEndpointStatePaging(endpointName, InitialEvents, "");
+            var endpoint = await messageStore.DownloadEndpointStatePaging(endpointName, InitialEvents, "");
             var status = Mapper.EndpointStatusFromEndpointState(endpoint);
             if (!await _authorizationService.CanReadPiiAsync())
                 _payloadRedaction.Redact(status);
@@ -205,7 +205,7 @@ public class EndpointImplementation : IEndpointApiController
 
             try
             {
-                var sessionState = await cosmosClient.DownloadEndpointSessionStateCount(endpointId, sessionId);
+                var sessionState = await messageStore.DownloadEndpointSessionStateCount(endpointId, sessionId);
                 return new OkObjectResult(Mapper.SessionStatusFromSessionState(sessionState));
             }
             catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
@@ -229,7 +229,7 @@ public class EndpointImplementation : IEndpointApiController
             if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointName))
                 return new ForbidResult();
 
-            var endpoint = await cosmosClient.DownloadEndpointStatePaging(endpointName, PagingEvents, body.Token);
+            var endpoint = await messageStore.DownloadEndpointStatePaging(endpointName, PagingEvents, body.Token);
             var status = Mapper.EndpointStatusFromEndpointState(endpoint);
             if (!await _authorizationService.CanReadPiiAsync())
                 _payloadRedaction.Redact(status);
@@ -307,7 +307,7 @@ public class EndpointImplementation : IEndpointApiController
             var endpointStateCount = await _storeResultCache.GetOrCreateAsync(
                 $"endpoint-state-count:{endpointId}",
                 StatusCountTtl,
-                () => cosmosClient.DownloadEndpointStateCount(endpointId));
+                () => messageStore.DownloadEndpointStateCount(endpointId));
             return Mapper.EndpointStatusCountFromEndpointStateCount(endpointStateCount);
         }
         catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
@@ -347,7 +347,7 @@ public class EndpointImplementation : IEndpointApiController
 
         try
         {
-            var endpointState = await cosmosClient.DownloadEndpointStatePaging(endpointName, InitialEvents, "");
+            var endpointState = await messageStore.DownloadEndpointStatePaging(endpointName, InitialEvents, "");
             if (endpointState == null)
             {
                 return new NotFoundObjectResult("Endpoint not found");
@@ -359,7 +359,7 @@ public class EndpointImplementation : IEndpointApiController
                 .Distinct()
                 .ToList();
 
-            var events = await cosmosClient.GetEventsByIds(endpointName, eventIds);
+            var events = await messageStore.GetEventsByIds(endpointName, eventIds);
             var res = events.ToDictionary(e => e.EventId, Mapper.EventFromMessageStoreEvent);
 
             if (!await _authorizationService.CanReadPiiAsync())
@@ -404,7 +404,7 @@ public class EndpointImplementation : IEndpointApiController
 
             try
             {
-                var state = await cosmosClient.DownloadEndpointStateCount(endpointName);
+                var state = await messageStore.DownloadEndpointStateCount(endpointName);
                 var result = Mapper.EndpointStatusCountFromEndpointStateCount(state);
                 await StampSubscriptionStatusAsync([result]);
 
@@ -431,7 +431,7 @@ public class EndpointImplementation : IEndpointApiController
             if (!await _authorizationService.HasRoleAsync(AccessRole.Reader, endpointName))
                 return new ForbidResult();
 
-            var endpoint = await cosmosClient.DownloadEndpointStatePaging(endpointName, PagingEvents, body.Token);
+            var endpoint = await messageStore.DownloadEndpointStatePaging(endpointName, PagingEvents, body.Token);
             var status = Mapper.EndpointStatusFromEndpointState(endpoint);
             if (!await _authorizationService.CanReadPiiAsync())
                 _payloadRedaction.Redact(status);
@@ -450,7 +450,7 @@ public class EndpointImplementation : IEndpointApiController
 
             try
             {
-                var sessionState = await cosmosClient.DownloadEndpointSessionStateCount(endpointId, sessionId);
+                var sessionState = await messageStore.DownloadEndpointSessionStateCount(endpointId, sessionId);
                 return new OkObjectResult(Mapper.SessionStatusFromSessionState(sessionState));
             }
             catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
@@ -478,7 +478,7 @@ public class EndpointImplementation : IEndpointApiController
 
         try
         {
-            var sessionStates = await cosmosClient.DownloadEndpointSessionStateCountBatch(endpointId, body);
+            var sessionStates = await messageStore.DownloadEndpointSessionStateCountBatch(endpointId, body);
             var result = sessionStates.Select(Mapper.SessionStatusFromSessionState).ToList();
             return new OkObjectResult(result);
         }
@@ -523,7 +523,7 @@ public class EndpointImplementation : IEndpointApiController
         }
 
         // Purge endpoint
-        var isPurged = await cosmosClient.PurgeMessages(endpointName);
+        var isPurged = await messageStore.PurgeMessages(endpointName);
 
         var endpointManagement = new EndpointManagement(serviceBusManagement);
         await endpointManagement.ClearEndpoint(endpointName);

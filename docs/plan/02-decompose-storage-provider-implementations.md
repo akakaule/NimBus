@@ -1,5 +1,9 @@
 # Plan 2: Decompose storage-provider implementations
 
+## Outcome
+
+Implemented in commit `8c13de9`. The Cosmos DB and SQL Server aggregate facades now delegate to concern-specific internal stores while retaining the published aggregate, singleton registration identity, and provider conformance behavior.
+
 ## Goal
 
 Continue the established metrics/ACL/schema extraction pattern until `CosmosDbClient` and `SqlServerMessageStore` are compatibility facades over cohesive internal stores. Reduce file size and change collision without changing public types, storage schemas, provider behavior, or dependency-injection semantics.

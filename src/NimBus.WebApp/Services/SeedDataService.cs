@@ -21,7 +21,7 @@ namespace NimBus.WebApp.Services;
 
 public class SeedDataService
 {
-    private readonly IMessageTrackingStore _cosmosClient;
+    private readonly IMessageTrackingStore _messageStore;
     private readonly ISubscriptionStore _subscriptionStore;
     private readonly IEndpointMetadataStore _metadataStore;
     private readonly ServiceBusClient _sbClient;
@@ -34,7 +34,7 @@ public class SeedDataService
         ServiceBusClient sbClient,
         IPlatform platform)
     {
-        _cosmosClient = messageStore;
+        _messageStore = messageStore;
         _subscriptionStore = subscriptionStore;
         _metadataStore = metadataStore;
         _sbClient = sbClient;
@@ -116,9 +116,9 @@ public class SeedDataService
             var evt = CreateUnresolvedEvent(eventId, pendingSessionId, endpointId,
                 ResolutionStatus.Pending, eventTypeId, timestamp);
             evt.MessageContent = content;
-            await _cosmosClient.UploadPendingMessage(eventId, pendingSessionId, endpointId, evt);
+            await _messageStore.UploadPendingMessage(eventId, pendingSessionId, endpointId, evt);
 
-            await _cosmosClient.StoreMessage(CreateMessageEntity(
+            await _messageStore.StoreMessage(CreateMessageEntity(
                 eventId, messageId, endpointId, EndpointRole.Subscriber,
                 MessageType.EventRequest, eventTypeId, timestamp, pendingSessionId, content));
 
@@ -157,9 +157,9 @@ public class SeedDataService
             evt.RetryCount = 3 + i;
             evt.RetryLimit = 5 + i;
             evt.MessageContent = content;
-            await _cosmosClient.UploadFailedMessage(eventId, failedSessionId, endpointId, evt);
+            await _messageStore.UploadFailedMessage(eventId, failedSessionId, endpointId, evt);
 
-            await _cosmosClient.StoreMessage(CreateMessageEntity(
+            await _messageStore.StoreMessage(CreateMessageEntity(
                 eventId, messageId, endpointId, EndpointRole.Subscriber,
                 MessageType.ErrorResponse, eventTypeId, timestamp, failedSessionId, content));
 
@@ -188,9 +188,9 @@ public class SeedDataService
                         ResolutionStatus.Deferred, deferredEventTypeId, deferredTimestamp);
                     deferredEvt.Reason = $"Blocked by {eventId}";
                     deferredEvt.MessageContent = deferredContent;
-                    await _cosmosClient.UploadDeferredMessage(deferredEventId, failedSessionId, endpointId, deferredEvt);
+                    await _messageStore.UploadDeferredMessage(deferredEventId, failedSessionId, endpointId, deferredEvt);
 
-                    await _cosmosClient.StoreMessage(CreateMessageEntity(
+                    await _messageStore.StoreMessage(CreateMessageEntity(
                         deferredEventId, deferredMessageId, endpointId, EndpointRole.Subscriber,
                         MessageType.EventRequest, deferredEventTypeId, deferredTimestamp, failedSessionId, deferredContent));
 
@@ -232,9 +232,9 @@ public class SeedDataService
             evt.DeadLetterReason = "MaxDeliveryCountExceeded";
             evt.DeadLetterErrorDescription = "Max delivery count of 10 exceeded";
             evt.MessageContent = content;
-            await _cosmosClient.UploadDeadletteredMessage(eventId, dlSessionId, endpointId, evt);
+            await _messageStore.UploadDeadletteredMessage(eventId, dlSessionId, endpointId, evt);
 
-            await _cosmosClient.StoreMessage(CreateMessageEntity(
+            await _messageStore.StoreMessage(CreateMessageEntity(
                 eventId, messageId, endpointId, EndpointRole.Subscriber,
                 MessageType.ErrorResponse, eventTypeId, timestamp, dlSessionId, content));
 
@@ -345,7 +345,7 @@ public class SeedDataService
                 };
             }
 
-            await _cosmosClient.StoreMessage(new MessageEntity
+            await _messageStore.StoreMessage(new MessageEntity
             {
                 EventId = eventId,
                 MessageId = messageId,
@@ -378,8 +378,8 @@ public class SeedDataService
             {
                 var eventId = $"seed-pending-{endpointId}-{i}";
                 var messageId = $"seed-msg-pending-{endpointId}-{i}";
-                try { await _cosmosClient.RemoveMessage(eventId, pendingSessionId, endpointId); } catch { }
-                try { await _cosmosClient.RemoveStoredMessage(eventId, messageId); } catch { }
+                try { await _messageStore.RemoveMessage(eventId, pendingSessionId, endpointId); } catch { }
+                try { await _messageStore.RemoveStoredMessage(eventId, messageId); } catch { }
             }
 
             // Failed events — per-failure session; deferred events on first failure's session
@@ -388,8 +388,8 @@ public class SeedDataService
                 var failedSessionId = $"session-{endpointId}-fail-{i}";
                 var eventId = $"seed-failed-{endpointId}-{i}";
                 var messageId = $"seed-msg-failed-{endpointId}-{i}";
-                try { await _cosmosClient.RemoveMessage(eventId, failedSessionId, endpointId); } catch { }
-                try { await _cosmosClient.RemoveStoredMessage(eventId, messageId); } catch { }
+                try { await _messageStore.RemoveMessage(eventId, failedSessionId, endpointId); } catch { }
+                try { await _messageStore.RemoveStoredMessage(eventId, messageId); } catch { }
 
                 if (i == 0)
                 {
@@ -397,8 +397,8 @@ public class SeedDataService
                     {
                         var deferredEventId = $"seed-deferred-{endpointId}-{d}";
                         var deferredMessageId = $"seed-msg-deferred-{endpointId}-{d}";
-                        try { await _cosmosClient.RemoveMessage(deferredEventId, failedSessionId, endpointId); } catch { }
-                        try { await _cosmosClient.RemoveStoredMessage(deferredEventId, deferredMessageId); } catch { }
+                        try { await _messageStore.RemoveMessage(deferredEventId, failedSessionId, endpointId); } catch { }
+                        try { await _messageStore.RemoveStoredMessage(deferredEventId, deferredMessageId); } catch { }
                     }
                 }
             }
@@ -409,8 +409,8 @@ public class SeedDataService
                 var dlSessionId = $"session-{endpointId}-dl-{i}";
                 var eventId = $"seed-deadletter-{endpointId}-{i}";
                 var messageId = $"seed-msg-deadletter-{endpointId}-{i}";
-                try { await _cosmosClient.RemoveMessage(eventId, dlSessionId, endpointId); } catch { }
-                try { await _cosmosClient.RemoveStoredMessage(eventId, messageId); } catch { }
+                try { await _messageStore.RemoveMessage(eventId, dlSessionId, endpointId); } catch { }
+                try { await _messageStore.RemoveStoredMessage(eventId, messageId); } catch { }
             }
 
             // Also clean up legacy single-session seed data (from previous seed format)
@@ -424,8 +424,8 @@ public class SeedDataService
                     var eventId = $"{legacyPrefixes[p]}{endpointId}-{i}";
                     var msgPrefix = legacyPrefixes[p].Replace("seed-", "seed-msg-");
                     var messageId = $"{msgPrefix}{endpointId}-{i}";
-                    try { await _cosmosClient.RemoveMessage(eventId, legacySessionId, endpointId); } catch { }
-                    try { await _cosmosClient.RemoveStoredMessage(eventId, messageId); } catch { }
+                    try { await _messageStore.RemoveMessage(eventId, legacySessionId, endpointId); } catch { }
+                    try { await _messageStore.RemoveStoredMessage(eventId, messageId); } catch { }
                 }
             }
         }
@@ -436,7 +436,7 @@ public class SeedDataService
         {
             try
             {
-                await _cosmosClient.RemoveStoredMessage($"seed-metrics-{i}", $"seed-metrics-msg-{i}");
+                await _messageStore.RemoveStoredMessage($"seed-metrics-{i}", $"seed-metrics-msg-{i}");
             }
             catch
             {
@@ -469,25 +469,25 @@ public class SeedDataService
         switch (resolutionStatus)
         {
             case ResolutionStatus.Pending:
-                await _cosmosClient.UploadPendingMessage(eventId, sessionId, endpointId, evt);
+                await _messageStore.UploadPendingMessage(eventId, sessionId, endpointId, evt);
                 break;
             case ResolutionStatus.Failed:
                 evt.RetryCount = 1;
                 evt.RetryLimit = 5;
-                await _cosmosClient.UploadFailedMessage(eventId, sessionId, endpointId, evt);
+                await _messageStore.UploadFailedMessage(eventId, sessionId, endpointId, evt);
                 break;
             case ResolutionStatus.Deferred:
-                await _cosmosClient.UploadDeferredMessage(eventId, sessionId, endpointId, evt);
+                await _messageStore.UploadDeferredMessage(eventId, sessionId, endpointId, evt);
                 break;
             case ResolutionStatus.DeadLettered:
                 evt.DeadLetterReason = "ManuallyCreated";
-                await _cosmosClient.UploadDeadletteredMessage(eventId, sessionId, endpointId, evt);
+                await _messageStore.UploadDeadletteredMessage(eventId, sessionId, endpointId, evt);
                 break;
             case ResolutionStatus.Unsupported:
-                await _cosmosClient.UploadUnsupportedMessage(eventId, sessionId, endpointId, evt);
+                await _messageStore.UploadUnsupportedMessage(eventId, sessionId, endpointId, evt);
                 break;
             default:
-                await _cosmosClient.UploadPendingMessage(eventId, sessionId, endpointId, evt);
+                await _messageStore.UploadPendingMessage(eventId, sessionId, endpointId, evt);
                 break;
         }
     }

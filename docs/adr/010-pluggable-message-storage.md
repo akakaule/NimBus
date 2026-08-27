@@ -34,9 +34,11 @@ was added with the platform heartbeat):
   kept out of `IEndpointMetadataStore` because Cosmos embeds heartbeats in the
   endpoint document, where a `"Resolver"` row would read as a phantom endpoint
 
-A convenience `INimBusMessageStore` aggregate combines them all for consumers
-(like the WebApp) that touch every concern. Each provider package implements
-every contract; mixing providers per contract is out of scope for v1.
+A convenience `INimBusMessageStore` aggregate remains a published compatibility
+surface for provider facades and third-party or legacy integrations. First-party
+WebApp consumers inject only the narrow contract or contracts they use. Each
+provider package implements every contract; mixing providers per contract is out
+of scope for v1.
 
 ### Provider validation at builder time
 `NimBusBuilder.Build()` (`src/NimBus.Core/Extensions/NimBusBuilder.cs`)

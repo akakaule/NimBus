@@ -84,6 +84,27 @@ public sealed class EnumMemberJsonConverterTests
     }
 
     [TestMethod]
+    public void Malformed_input_raises_JsonException_rather_than_a_server_fault()
+    {
+        // Utf8JsonReader.GetString() throws InvalidOperationException for any token
+        // that is not a string, and ASP.NET reports that as a 500. Bad request bodies
+        // must reach the caller as a 400, which is what JsonException produces.
+        foreach (var json in new[] { "true", "{}", "[]", "1e400", "99999999999999999999" })
+        {
+            Assert.ThrowsExactly<JsonException>(
+                () => JsonSerializer.Deserialize<RoleEntryRole>(json, Options()),
+                $"Expected JsonException for {json}.");
+        }
+    }
+
+    [TestMethod]
+    public void An_ordinal_still_deserializes()
+    {
+        // Payloads written before the contract settled carry the numeric value.
+        Assert.AreEqual(RoleEntryRole.Owner, JsonSerializer.Deserialize<RoleEntryRole>("2", Options()));
+    }
+
+    [TestMethod]
     public void A_nullable_contract_enum_uses_the_declared_value_too()
     {
         CurrentUserAccessInfoSiteRole? role = CurrentUserAccessInfoSiteRole.Reader;

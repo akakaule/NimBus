@@ -546,7 +546,18 @@ namespace NimBus.WebApp
                 }
             });
 
-            services.AddApplicationInsightsTelemetry();
+            // Telemetry is optional and always has been: the app runs locally and in
+            // any environment that simply doesn't configure it. Application Insights
+            // 3.x turned a missing connection string from "collect nothing" into a
+            // throw from AddApplicationInsightsTelemetry, which takes the whole host
+            // down at startup. Gate on the same variable ServiceDefaults uses for
+            // Azure Monitor, and that deploy.core.bicep sets, so a configured
+            // environment is unaffected and an unconfigured one still boots.
+            if (!string.IsNullOrWhiteSpace(Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"])
+                || !string.IsNullOrWhiteSpace(Configuration["ApplicationInsights:ConnectionString"]))
+            {
+                services.AddApplicationInsightsTelemetry();
+            }
 
             services.AddNimBusInstrumentation();
             services.AddOpenTelemetry()

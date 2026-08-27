@@ -12,6 +12,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Transitive from the OpenTelemetry/Azure stack at 2.55.0. Http.Resilience
+         applies AddStandardResilienceHandler globally through ServiceDefaults, and
+         Microsoft documents 2.63 and earlier as incompatible with it. Nothing here
+         registers a gRPC client today, so this is a floor against the day something
+         does, and it silences a warning that was firing eight times a build. -->
+    <PackageReference Include="Grpc.Net.ClientFactory" Version="2.64.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="3.1.2" />
     <PackageReference Include="Microsoft.Identity.Web" Version="3.8.2" />

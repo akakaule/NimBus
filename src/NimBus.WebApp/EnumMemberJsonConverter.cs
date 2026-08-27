@@ -59,10 +59,27 @@ internal sealed class EnumMemberJsonConverter<T> : JsonConverter<T>
 
     public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var numeric))
+        if (reader.TokenType == JsonTokenType.Number)
         {
-            // Ordinals appear in payloads written before the contract settled.
-            return (T)Enum.ToObject(typeof(T), numeric);
+            // Ordinals appear in payloads written before the contract settled. A
+            // number too large for the underlying type is bad input, not a server
+            // fault, so it takes the JsonException path like everything else.
+            if (reader.TryGetInt32(out var numeric))
+            {
+                return (T)Enum.ToObject(typeof(T), numeric);
+            }
+
+            throw new JsonException($"Value is out of range for {typeof(T).Name}.");
+        }
+
+        // Anything that is not a string — true, an object, an array — would make
+        // GetString() throw InvalidOperationException, which ASP.NET surfaces as a
+        // 500. A malformed body is the caller's error, and JsonException is what the
+        // input formatter turns into a 400.
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException(
+                $"Cannot convert {reader.TokenType} to {typeof(T).Name}; a string value is expected.");
         }
 
         var value = reader.GetString();

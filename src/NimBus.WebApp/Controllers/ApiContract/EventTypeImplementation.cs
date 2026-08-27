@@ -110,7 +110,8 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             var eventTypeDetails = new EventTypeDetails
             {
-                EventType = Mapper.EventTypeFromIEventType(eventType),
+                // The details page is the one consumer of the example payload.
+                EventType = Mapper.EventTypeFromIEventType(eventType, includeExamplePayload: true),
                 CodeRepoLink = codeRepoService.GetSearchUrl(eventType.Name, eventType.Namespace),
                 Producers = platform.GetProducers(eventType).Select(x => x.Name).ToList(),
                 Consumers = platform.GetConsumers(eventType).Select(x => x.Name).ToList(),

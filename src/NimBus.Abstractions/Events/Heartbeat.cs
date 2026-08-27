@@ -12,10 +12,14 @@ namespace NimBus.Core.Events
     public class Heartbeat : Event
     {
         /// <summary>
-        /// A sample instance for catalog/documentation rendering. Declared before
-        /// <see cref="EventTypeId"/> because <c>EventType.GetEventExample()</c> reads the
-        /// first public field of the type, and the const would otherwise be returned.
+        /// A sample instance for catalog/documentation rendering.
         /// </summary>
+        /// <remarks>
+        /// Its position no longer matters. This used to have to sit above
+        /// <see cref="EventTypeId"/> because <c>EventType.GetEventExample()</c> took the
+        /// first public field of the type and would have returned the const instead;
+        /// the lookup now resolves by name and type.
+        /// </remarks>
         public static readonly Heartbeat Example = new Heartbeat
         {
             ForwardSendTime = new DateTime(2026, 8, 12, 9, 0, 0, DateTimeKind.Utc),

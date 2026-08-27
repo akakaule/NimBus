@@ -121,7 +121,16 @@ public static class Mapper
         return message;
     }
 
-    public static ManagementApi.EventType EventTypeFromIEventType(IEventType eventType)
+    /// <param name="includeExamplePayload">
+    /// Serialize the authored example into the response. Off by default: only the
+    /// single event-type details page reads it, while the same mapper feeds the
+    /// catalog list, the per-endpoint grouping, topology and the command palette —
+    /// responses that would otherwise carry every event's full example, repeatedly,
+    /// for nothing.
+    /// </param>
+    public static ManagementApi.EventType EventTypeFromIEventType(
+        IEventType eventType,
+        bool includeExamplePayload = false)
     {
         return new ManagementApi.EventType()
         {
@@ -132,7 +141,7 @@ public static class Mapper
             Properties = (eventType.Properties ?? Enumerable.Empty<IProperty>())
                 .Select(x => EventPropertyFromEventTypeProperty(x))
                 .ToList(),
-            ExamplePayload = ExamplePayloadFromIEventType(eventType),
+            ExamplePayload = includeExamplePayload ? ExamplePayloadFromIEventType(eventType) : null,
         };
     }
 
@@ -156,12 +165,14 @@ public static class Mapper
         }
     }
 
+    /// <inheritdoc cref="EventTypeFromIEventType(IEventType, bool)" path="/param[@name='includeExamplePayload']"/>
     public static ManagementApi.EventType EventTypeFromIEventType(
         IEventType eventType,
         int producerCount,
         int consumerCount,
         IEnumerable<string>? producers = null,
-        IEnumerable<string>? consumers = null)
+        IEnumerable<string>? consumers = null,
+        bool includeExamplePayload = false)
     {
         return new ManagementApi.EventType()
         {
@@ -172,7 +183,7 @@ public static class Mapper
             Properties = (eventType.Properties ?? Enumerable.Empty<IProperty>())
                 .Select(x => EventPropertyFromEventTypeProperty(x))
                 .ToList(),
-            ExamplePayload = ExamplePayloadFromIEventType(eventType),
+            ExamplePayload = includeExamplePayload ? ExamplePayloadFromIEventType(eventType) : null,
             ProducerCount = producerCount,
             ConsumerCount = consumerCount,
             Producers = (producers ?? Enumerable.Empty<string>()).ToList(),

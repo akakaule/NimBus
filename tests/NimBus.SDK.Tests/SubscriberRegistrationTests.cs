@@ -6,6 +6,8 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -17,6 +19,7 @@ using NimBus.Core.Outbox;
 using NimBus.SDK;
 using NimBus.SDK.EventHandlers;
 using NimBus.SDK.Extensions;
+using NimBus.SDK.Hosting;
 
 namespace NimBus.SDK.Tests;
 
@@ -61,6 +64,57 @@ public class SubscriberRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         Assert.IsNull(provider.GetService<IEndpointCircuitBreaker>());
+    }
+
+    [TestMethod]
+    public void WithCircuitBreaker_with_preregistered_subscriber_client_fails_before_sidecars()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new ServiceBusClient(FakeConnection));
+        services.AddSingleton<ISubscriberClient>(new FakeSubscriberClient());
+
+        var exception = Assert.ThrowsExactly<InvalidOperationException>(() =>
+            services.AddNimBusSubscriber("Billing", builder => builder.WithCircuitBreaker(_ => { })));
+
+        StringAssert.Contains(exception.Message, "WithCircuitBreaker");
+        Assert.IsNull(services.FirstOrDefault(descriptor => descriptor.ServiceType == typeof(IEndpointCircuitBreaker)));
+    }
+
+    [TestMethod]
+    public async Task Subscriber_client_registered_after_WithCircuitBreaker_fails_startup_validation()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddSingleton(new ServiceBusClient(FakeConnection));
+        services.AddNimBusSubscriber("Billing", builder => builder.WithCircuitBreaker(_ => { }));
+        services.AddSingleton<ISubscriberClient>(new FakeSubscriberClient());
+
+        using var provider = services.BuildServiceProvider();
+        var validator = provider.GetServices<IHostedService>()
+            .OfType<CircuitBreakerSubscriberStartupValidator>()
+            .Single();
+
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => validator.StartAsync(CancellationToken.None));
+        StringAssert.Contains(exception.Message, "WithCircuitBreaker");
+    }
+
+    [TestMethod]
+    public async Task Circuit_breaker_startup_validation_accepts_the_NimBus_composed_subscriber()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddSingleton(new ServiceBusClient(FakeConnection));
+        services.AddNimBusSubscriber("Billing", builder => builder.WithCircuitBreaker(_ => { }));
+
+        using var provider = services.BuildServiceProvider();
+        var validator = provider.GetServices<IHostedService>()
+            .OfType<CircuitBreakerSubscriberStartupValidator>()
+            .Single();
+
+        await validator.StartAsync(CancellationToken.None);
     }
 
     [TestMethod]
@@ -248,5 +302,14 @@ public class SubscriberRegistrationTests
             Task.FromResult<IReadOnlyList<OutboxMessage>>(Array.Empty<OutboxMessage>());
         public Task MarkAsDispatchedAsync(string id, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task MarkAsDispatchedAsync(IEnumerable<string> ids, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class FakeSubscriberClient : ISubscriberClient
+    {
+        public void RegisterHandler<TEvent>(Func<IEventHandler<TEvent>> eventHandlerFactory) where TEvent : IEvent { }
+        public Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task Handle(ServiceBusReceivedMessage message, ServiceBusMessageActions messageActions, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionReceiver sessionReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task Handle(ProcessSessionMessageEventArgs args, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

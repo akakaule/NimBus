@@ -203,6 +203,22 @@ namespace NimBus.SDK.Extensions
                 }
             }
 
+            if (isFirstSubscriberRegistration && builder.CircuitBreakerConfiguration != null)
+            {
+                foreach (var descriptor in services)
+                {
+                    if (descriptor.ServiceType == typeof(ISubscriberClient))
+                    {
+                        throw new InvalidOperationException(
+                            $"WithCircuitBreaker cannot take effect because an {nameof(ISubscriberClient)} is already " +
+                            "registered: the NimBus subscriber factory uses TryAddSingleton, so the custom registration " +
+                            "wins and handler outcomes would never reach the circuit recorder. Remove the custom " +
+                            $"{nameof(ISubscriberClient)} registration, or drop WithCircuitBreaker and integrate " +
+                            "IEndpointCircuitBreaker into the custom subscriber composition.");
+                    }
+                }
+            }
+
             if (isFirstSubscriberRegistration)
                 services.AddSingleton(new SubscriberEndpointMarker(options.Endpoint));
 
@@ -327,6 +343,10 @@ namespace NimBus.SDK.Extensions
                     // exact instance to prove the inbox-decorated composition is the one in use.
                     sp.GetRequiredService<InboxSubscriberComposition>().ComposedClient = subscriberClient;
                 }
+                if (builder.CircuitBreakerConfiguration != null)
+                {
+                    sp.GetRequiredService<CircuitBreakerSubscriberComposition>().ComposedClient = subscriberClient;
+                }
 
                 return subscriberClient;
             });
@@ -401,6 +421,11 @@ namespace NimBus.SDK.Extensions
             services.TryAddSingleton<MessageLifecycleNotifier>();
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<IHostedService, CircuitBreakerLifecycleHostedService>());
+            services.AddSingleton<CircuitBreakerSubscriberComposition>();
+            services.AddSingleton<IHostedService>(serviceProvider =>
+                new CircuitBreakerSubscriberStartupValidator(
+                    serviceProvider,
+                    serviceProvider.GetRequiredService<CircuitBreakerSubscriberComposition>()));
         }
 
         /// <summary>

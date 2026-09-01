@@ -79,4 +79,3 @@ Lifecycle observers receive `OnCircuitStateChanged`. The Notifications extension
 ## Azure Functions limitation
 
 An Azure Functions `[ServiceBusTrigger]` owns its receive loop, so NimBus cannot stop or reduce its concurrency. The recorder, in-process state, metrics, lifecycle callbacks, and notifications still work, but the function trigger continues receiving. Use a hosted `NimBusReceiverHostedService` when receiver pausing is required.
-

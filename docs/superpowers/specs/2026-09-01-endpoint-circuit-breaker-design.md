@@ -35,4 +35,3 @@ Transition metrics are emitted by the state machine. The OpenTelemetry gauge rea
 ## Compatibility
 
 No circuit-related service is resolved unless `WithCircuitBreaker(...)` is called. Existing subscriber and receiver constructors remain source-compatible through optional parameters. Existing global pipeline behaviors retain their registration order, with the circuit recorder appended innermost so it observes the terminal handler result.
-

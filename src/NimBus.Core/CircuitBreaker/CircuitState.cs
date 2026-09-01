@@ -18,4 +18,3 @@ public sealed record CircuitStateChange(
     CircuitState To,
     string Reason,
     DateTimeOffset Timestamp);
-

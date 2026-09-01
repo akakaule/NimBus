@@ -25,4 +25,3 @@ Issue: [#114](https://github.com/akakaule/NimBus/issues/114)
 - Run targeted Release tests after each slice.
 - Run `dotnet build src/NimBus.sln -c Release` and `dotnet test src/NimBus.sln -c Release --no-build`.
 - If local Service Bus dependencies are available, run the adapter smoke scenario; otherwise document the exact environmental limitation and rely on processor-loop integration tests.
-

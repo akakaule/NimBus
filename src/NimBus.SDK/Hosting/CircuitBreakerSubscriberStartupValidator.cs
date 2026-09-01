@@ -41,4 +41,3 @@ internal sealed class CircuitBreakerSubscriberStartupValidator : IHostedService
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
-

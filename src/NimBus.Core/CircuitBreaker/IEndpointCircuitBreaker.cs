@@ -16,4 +16,3 @@ public interface IEndpointCircuitBreaker
     /// <summary>Waits for the next transition observed after this call begins.</summary>
     Task<CircuitStateChange> WaitForStateChangeAsync(CancellationToken cancellationToken);
 }
-

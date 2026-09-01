@@ -43,4 +43,3 @@ public sealed class CircuitBreakerNotificationTests
         Assert.AreEqual(0, channel.Received.Count);
     }
 }
-

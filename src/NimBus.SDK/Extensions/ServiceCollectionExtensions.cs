@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.Core.Diagnostics;
+using NimBus.Core.CircuitBreaker;
 using NimBus.Core.Events;
 using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
@@ -217,6 +218,7 @@ namespace NimBus.SDK.Extensions
             if (isFirstSubscriberRegistration)
             {
                 InboxRegistration.AddServices(services, options.Endpoint, builder.InboxConfiguration);
+                RegisterCircuitBreaker(services, options.Endpoint, builder.CircuitBreakerConfiguration);
 
                 // The registration-time guard above only sees a custom ISubscriberClient added
                 // BEFORE this call. One added afterwards wins DI's last-registration rule and
@@ -366,11 +368,37 @@ namespace NimBus.SDK.Extensions
                 var client = sp.GetRequiredService<ServiceBusClient>();
                 var subscriber = sp.GetRequiredService<ISubscriberClient>();
                 var logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<NimBusReceiverHostedService>>();
+                var circuitBreaker = sp.GetService<IEndpointCircuitBreaker>();
 
-                return new NimBusReceiverHostedService(client, subscriber, options, logger);
+                return new NimBusReceiverHostedService(client, subscriber, options, logger, circuitBreaker);
             });
 
             return services;
+        }
+
+        private static void RegisterCircuitBreaker(
+            IServiceCollection services,
+            string endpoint,
+            CircuitBreakerOptions? options)
+        {
+            if (options is null)
+                return;
+
+            services.TryAddSingleton(options);
+            services.TryAddSingleton(TimeProvider.System);
+            services.TryAddSingleton<IEndpointCircuitBreaker>(serviceProvider =>
+                new EndpointCircuitBreaker(
+                    endpoint,
+                    serviceProvider.GetRequiredService<CircuitBreakerOptions>(),
+                    serviceProvider.GetRequiredService<TimeProvider>()));
+            services.TryAddSingleton<CircuitBreakerRecorderBehavior>();
+
+            // Circuit breaking is a subscriber opt-in and must not require a separate
+            // AddNimBus call. Existing AddNimBus registrations win; otherwise install
+            // the minimal empty registry/pipeline/notifier infrastructure.
+            services.TryAddSingleton(new PipelineBehaviorRegistry([]));
+            services.TryAddSingleton<MessagePipeline>();
+            services.TryAddSingleton<MessageLifecycleNotifier>();
         }
 
         /// <summary>

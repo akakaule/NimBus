@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using NimBus.Core.Events;
+using NimBus.Core.CircuitBreaker;
 using NimBus.Core.Inbox;
 using NimBus.Core.Messages;
 using NimBus.SDK.EventHandlers;
@@ -19,6 +20,7 @@ namespace NimBus.SDK.Extensions
         internal readonly List<HandlerRegistration> HandlerRegistrations = new();
         internal Action<DefaultRetryPolicyProvider> RetryPolicyConfigurator;
         internal InboxOptions? InboxConfiguration { get; private set; }
+        internal CircuitBreakerOptions? CircuitBreakerConfiguration { get; private set; }
 
         public NimBusSubscriberBuilder(IServiceCollection services)
         {
@@ -300,6 +302,22 @@ namespace NimBus.SDK.Extensions
         public NimBusSubscriberBuilder ConfigureRetryPolicies(Action<DefaultRetryPolicyProvider> configure)
         {
             RetryPolicyConfigurator = configure ?? throw new ArgumentNullException(nameof(configure));
+            return this;
+        }
+
+        /// <summary>Enables the endpoint circuit breaker for this subscriber.</summary>
+        /// <param name="configure">Configures failure sampling, pause duration, and probes.</param>
+        /// <returns>This builder for chaining.</returns>
+        public NimBusSubscriberBuilder WithCircuitBreaker(Action<CircuitBreakerOptions> configure)
+        {
+            if (CircuitBreakerConfiguration is not null)
+                throw new InvalidOperationException("A circuit breaker is already configured for this subscriber.");
+
+            ArgumentNullException.ThrowIfNull(configure);
+            var options = new CircuitBreakerOptions();
+            configure(options);
+            options.Validate();
+            CircuitBreakerConfiguration = options;
             return this;
         }
 

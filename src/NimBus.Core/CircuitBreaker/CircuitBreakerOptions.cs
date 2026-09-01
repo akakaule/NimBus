@@ -41,7 +41,8 @@ public sealed class CircuitBreakerOptions
         return this;
     }
 
-    internal void Validate()
+    /// <summary>Validates all option values.</summary>
+    public void Validate()
     {
         if (MinimumThroughput <= 0)
             throw new ArgumentOutOfRangeException(nameof(MinimumThroughput), "MinimumThroughput must be greater than zero.");
@@ -92,4 +93,3 @@ public sealed class CircuitBreakerOptions
         return false;
     }
 }
-

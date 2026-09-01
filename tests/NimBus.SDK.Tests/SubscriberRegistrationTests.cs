@@ -9,6 +9,8 @@ using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Core.CircuitBreaker;
+using NimBus.Core.Extensions;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using NimBus.Core.Outbox;
@@ -31,6 +33,35 @@ public class SubscriberRegistrationTests
 {
     private const string FakeConnection =
         "Endpoint=sb://fake.servicebus.windows.net/;SharedAccessKeyName=k;SharedAccessKey=AAA=";
+
+    [TestMethod]
+    public void WithCircuitBreaker_registers_endpoint_singleton_and_pipeline_without_AddNimBus()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new ServiceBusClient(FakeConnection));
+        services.AddNimBusSubscriber("Billing", builder =>
+            builder.WithCircuitBreaker(options => options.MinimumThroughput = 7));
+
+        using var provider = services.BuildServiceProvider();
+        var breaker = provider.GetRequiredService<IEndpointCircuitBreaker>();
+        var pipeline = provider.GetRequiredService<MessagePipeline>();
+
+        Assert.AreEqual("Billing", breaker.Endpoint);
+        Assert.AreSame(breaker, provider.GetRequiredService<IEndpointCircuitBreaker>());
+        Assert.IsTrue(pipeline.HasBehaviors);
+    }
+
+    [TestMethod]
+    public void Subscriber_without_WithCircuitBreaker_registers_no_breaker()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new ServiceBusClient(FakeConnection));
+        services.AddNimBusSubscriber("Billing", _ => { });
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.IsNull(provider.GetService<IEndpointCircuitBreaker>());
+    }
 
     [TestMethod]
     public void Second_AddNimBusSubscriber_with_different_endpoint_throws()

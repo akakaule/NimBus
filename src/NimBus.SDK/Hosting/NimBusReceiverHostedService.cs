@@ -1,6 +1,7 @@
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using NimBus.Core.CircuitBreaker;
 using NimBus.ServiceBus;
 using System;
 using System.IO;
@@ -22,6 +23,7 @@ namespace NimBus.SDK.Hosting
         private readonly IServiceBusAdapter _adapter;
         private readonly NimBusReceiverOptions _options;
         private readonly ILogger<NimBusReceiverHostedService> _logger;
+        private readonly IEndpointCircuitBreaker? _circuitBreaker;
         private readonly object _errorGate = new object();
         private ServiceBusSessionProcessor? _processor;
         private readonly TaskCompletionSource<bool> _startupCompletion =
@@ -35,12 +37,14 @@ namespace NimBus.SDK.Hosting
             ServiceBusClient client,
             IServiceBusAdapter adapter,
             NimBusReceiverOptions options,
-            ILogger<NimBusReceiverHostedService> logger)
+            ILogger<NimBusReceiverHostedService> logger,
+            IEndpointCircuitBreaker? circuitBreaker = null)
         {
             _client = client ?? throw new ArgumentNullException(nameof(client));
             _adapter = adapter ?? throw new ArgumentNullException(nameof(adapter));
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _circuitBreaker = circuitBreaker;
             ValidateOptions(_options);
         }
 
@@ -59,30 +63,80 @@ namespace NimBus.SDK.Hosting
 
             while (!stoppingToken.IsCancellationRequested)
             {
+                var circuitState = _circuitBreaker?.State ?? CircuitState.Closed;
+                if (circuitState == CircuitState.Open)
+                {
+                    _startupCompletion.TrySetResult(true);
+                    try
+                    {
+                        await _circuitBreaker!.WaitForStateChangeAsync(stoppingToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    continue;
+                }
+
                 ResetRecoverableErrors();
                 ResetRecoverySignal();
 
-                _processor = CreateProcessor();
+                var maxConcurrentSessions = circuitState == CircuitState.HalfOpen
+                    ? 1
+                    : _options.MaxConcurrentSessions;
+                _processor = CreateProcessor(maxConcurrentSessions);
+                using var circuitWaitCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                var circuitStateChanged = _circuitBreaker?.WaitForStateChangeAsync(circuitWaitCancellation.Token);
+                var infrastructureRestart = false;
 
                 try
                 {
                     _logger.LogInformation(
                         "Starting NimBus receiver for {Topic}/{Subscription} (MaxConcurrentSessions={MaxSessions}, PrefetchCount={PrefetchCount})",
-                        _options.TopicName, _options.SubscriptionName, _options.MaxConcurrentSessions, _options.PrefetchCount);
+                        _options.TopicName, _options.SubscriptionName, maxConcurrentSessions, _options.PrefetchCount);
 
                     await _processor.StartProcessingAsync(stoppingToken).ConfigureAwait(false);
                     _startupCompletion.TrySetResult(true);
 
-                    var completed = await Task.WhenAny(
-                        _processorRecoveryRequested.Task,
-                        Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken)).ConfigureAwait(false);
+                    var stopping = Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
+                    var completed = circuitStateChanged is null
+                        ? await Task.WhenAny(_processorRecoveryRequested.Task, stopping).ConfigureAwait(false)
+                        : await Task.WhenAny(_processorRecoveryRequested.Task, circuitStateChanged, stopping).ConfigureAwait(false);
 
-                    if (completed != _processorRecoveryRequested.Task)
+                    if (completed == stopping)
                     {
                         break;
                     }
 
+                    if (circuitStateChanged is not null && completed == circuitStateChanged)
+                    {
+                        var change = await circuitStateChanged.ConfigureAwait(false);
+                        if (change.To == CircuitState.Open)
+                        {
+                            _logger.LogWarning(
+                                "Pausing NimBus receiver for {Topic}/{Subscription}; endpoint circuit {Endpoint} opened. Reason: {Reason}",
+                                _options.TopicName,
+                                _options.SubscriptionName,
+                                change.Endpoint,
+                                change.Reason);
+                        }
+                        else
+                        {
+                            _logger.LogInformation(
+                                "Reconfiguring NimBus receiver for {Topic}/{Subscription}; endpoint circuit {Endpoint} changed from {FromState} to {ToState}",
+                                _options.TopicName,
+                                _options.SubscriptionName,
+                                change.Endpoint,
+                                change.From,
+                                change.To);
+                        }
+
+                        continue;
+                    }
+
                     var recovery = await _processorRecoveryRequested.Task.ConfigureAwait(false);
+                    infrastructureRestart = true;
                     restartCount++;
 
                     _logger.LogWarning(
@@ -106,10 +160,13 @@ namespace NimBus.SDK.Hosting
                 }
                 finally
                 {
+                    await circuitWaitCancellation.CancelAsync().ConfigureAwait(false);
                     await StopAndDisposeProcessorForLoopAsync(stoppingToken).ConfigureAwait(false);
                 }
 
-                if (!stoppingToken.IsCancellationRequested && _options.ProcessorRestartDelay > TimeSpan.Zero)
+                if (infrastructureRestart
+                    && !stoppingToken.IsCancellationRequested
+                    && _options.ProcessorRestartDelay > TimeSpan.Zero)
                 {
                     await Task.Delay(_options.ProcessorRestartDelay, stoppingToken).ConfigureAwait(false);
                 }
@@ -125,11 +182,11 @@ namespace NimBus.SDK.Hosting
             await StopAndDisposeProcessorAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        private ServiceBusSessionProcessor CreateProcessor()
+        private ServiceBusSessionProcessor CreateProcessor(int maxConcurrentSessions)
         {
             var processorOptions = new ServiceBusSessionProcessorOptions
             {
-                MaxConcurrentSessions = _options.MaxConcurrentSessions,
+                MaxConcurrentSessions = maxConcurrentSessions,
                 MaxAutoLockRenewalDuration = _options.MaxAutoLockRenewalDuration,
                 SessionIdleTimeout = _options.SessionIdleTimeout,
                 PrefetchCount = _options.PrefetchCount,

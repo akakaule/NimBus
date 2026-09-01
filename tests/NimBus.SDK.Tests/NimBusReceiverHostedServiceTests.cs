@@ -8,6 +8,7 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Core.CircuitBreaker;
 using NimBus.SDK.Hosting;
 using NimBus.ServiceBus;
 
@@ -16,6 +17,71 @@ namespace NimBus.SDK.Tests
     [TestClass]
     public class NimBusReceiverHostedServiceTests
     {
+        [TestMethod]
+        public async Task Open_pauses_then_half_open_and_closed_recreate_at_expected_concurrency()
+        {
+            var client = new RecordingServiceBusClient();
+            var breaker = new ManualCircuitBreaker("orders");
+            var service = new TestableNimBusReceiverHostedService(
+                client,
+                new NoopServiceBusAdapter(),
+                new NimBusReceiverOptions
+                {
+                    TopicName = "orders",
+                    SubscriptionName = "orders",
+                    MaxConcurrentSessions = 8,
+                    ProcessorRestartDelay = TimeSpan.Zero,
+                },
+                NullLogger<NimBusReceiverHostedService>.Instance,
+                breaker);
+
+            using var cts = new CancellationTokenSource();
+            var runTask = service.RunProcessorLoopAsync(cts.Token);
+            try
+            {
+                await WaitUntilAsync(() => client.Processors.Count == 1, () => $"ProcessorCount={client.Processors.Count}");
+                Assert.AreEqual(8, client.ProcessorOptions[0].MaxConcurrentSessions);
+
+                breaker.TransitionTo(CircuitState.Open);
+                await WaitUntilAsync(() => client.Processors[0].StopCalls == 1, () => $"StopCalls={client.Processors[0].StopCalls}");
+                await Task.Delay(50);
+                Assert.AreEqual(1, client.Processors.Count, "No processor may be recreated while the circuit is open.");
+
+                breaker.TransitionTo(CircuitState.HalfOpen);
+                await WaitUntilAsync(() => client.Processors.Count == 2, () => $"ProcessorCount={client.Processors.Count}");
+                Assert.AreEqual(1, client.ProcessorOptions[1].MaxConcurrentSessions);
+
+                breaker.TransitionTo(CircuitState.Closed);
+                await WaitUntilAsync(() => client.Processors.Count == 3, () => $"ProcessorCount={client.Processors.Count}");
+                Assert.AreEqual(8, client.ProcessorOptions[2].MaxConcurrentSessions);
+            }
+            finally
+            {
+                await StopServiceAsync(cts, runTask);
+            }
+        }
+
+        [TestMethod]
+        public async Task Shutdown_while_circuit_is_open_does_not_hang()
+        {
+            var client = new RecordingServiceBusClient();
+            var breaker = new ManualCircuitBreaker("orders");
+            var service = new TestableNimBusReceiverHostedService(
+                client,
+                new NoopServiceBusAdapter(),
+                new NimBusReceiverOptions { TopicName = "orders", SubscriptionName = "orders" },
+                NullLogger<NimBusReceiverHostedService>.Instance,
+                breaker);
+
+            using var cts = new CancellationTokenSource();
+            var runTask = service.RunProcessorLoopAsync(cts.Token);
+            await WaitUntilAsync(() => client.Processors.Count == 1, () => $"ProcessorCount={client.Processors.Count}");
+            breaker.TransitionTo(CircuitState.Open);
+            await WaitUntilAsync(() => client.Processors[0].StopCalls == 1, () => $"StopCalls={client.Processors[0].StopCalls}");
+
+            await StopServiceAsync(cts, runTask);
+        }
+
         [TestMethod]
         public async Task RecoverableProcessorErrors_RestartSessionProcessor()
         {
@@ -529,6 +595,7 @@ namespace NimBus.SDK.Tests
             }
 
             public List<RecordingServiceBusSessionProcessor> Processors { get; } = new List<RecordingServiceBusSessionProcessor>();
+            public List<ServiceBusSessionProcessorOptions> ProcessorOptions { get; } = new List<ServiceBusSessionProcessorOptions>();
             public string TopicName { get; private set; } = string.Empty;
             public string SubscriptionName { get; private set; } = string.Empty;
             public ServiceBusSessionProcessorOptions Options { get; private set; } = new ServiceBusSessionProcessorOptions();
@@ -541,6 +608,7 @@ namespace NimBus.SDK.Tests
                 TopicName = topicName;
                 SubscriptionName = subscriptionName;
                 Options = options;
+                ProcessorOptions.Add(options);
 
                 var processor = new RecordingServiceBusSessionProcessor(this, topicName, subscriptionName, options);
                 Processors.Add(processor);
@@ -581,8 +649,9 @@ namespace NimBus.SDK.Tests
                 ServiceBusClient client,
                 IServiceBusAdapter adapter,
                 NimBusReceiverOptions options,
-                ILogger<NimBusReceiverHostedService> logger)
-                : base(client, adapter, options, logger)
+                ILogger<NimBusReceiverHostedService> logger,
+                IEndpointCircuitBreaker? circuitBreaker = null)
+                : base(client, adapter, options, logger, circuitBreaker)
             {
             }
 
@@ -616,6 +685,33 @@ namespace NimBus.SDK.Tests
                     ? default
                     : new ValueTask(_disposeCompletion.Task);
             }
+        }
+
+        private sealed class ManualCircuitBreaker(string endpoint) : IEndpointCircuitBreaker
+        {
+            private TaskCompletionSource<CircuitStateChange> _signal = CreateSignal();
+
+            public event Action<CircuitStateChange>? StateChanged;
+            public string Endpoint { get; } = endpoint;
+            public CircuitState State { get; private set; }
+            public void RecordSuccess() { }
+            public void RecordFailure(Exception exception) { }
+
+            public Task<CircuitStateChange> WaitForStateChangeAsync(CancellationToken cancellationToken) =>
+                _signal.Task.WaitAsync(cancellationToken);
+
+            public void TransitionTo(CircuitState state)
+            {
+                var change = new CircuitStateChange(Endpoint, State, state, "test", DateTimeOffset.UtcNow);
+                State = state;
+                var signal = _signal;
+                _signal = CreateSignal();
+                signal.TrySetResult(change);
+                StateChanged?.Invoke(change);
+            }
+
+            private static TaskCompletionSource<CircuitStateChange> CreateSignal() =>
+                new(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
         private sealed class RecordingLogger : ILogger<NimBusReceiverHostedService>

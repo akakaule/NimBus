@@ -1,4 +1,5 @@
 using NimBus.Core.Messages;
+using NimBus.Core.CircuitBreaker;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,14 +16,20 @@ namespace NimBus.Core.Extensions
     {
         private readonly IReadOnlyList<IMessagePipelineBehavior> _behaviors;
 
-        public MessagePipeline(PipelineBehaviorRegistry registry, IServiceProvider serviceProvider)
+        public MessagePipeline(
+            PipelineBehaviorRegistry registry,
+            IServiceProvider serviceProvider,
+            IEnumerable<CircuitBreakerRecorderBehavior>? appendedBehaviors = null)
         {
             if (registry == null) throw new ArgumentNullException(nameof(registry));
             if (serviceProvider == null) throw new ArgumentNullException(nameof(serviceProvider));
 
-            _behaviors = registry.BehaviorTypes
+            var configuredBehaviors = registry.BehaviorTypes
                 .Select(t => (IMessagePipelineBehavior)serviceProvider.GetService(t))
-                .Where(b => b != null)
+                .Where(b => b != null);
+
+            _behaviors = configuredBehaviors
+                .Concat(appendedBehaviors ?? [])
                 .ToList()
                 .AsReadOnly();
         }

@@ -17,65 +17,7 @@ Once an issue is opened, delete the corresponding section from this file (or rep
 
 ### 1. Circuit Breaker Middleware
 
-**Title:** `[Backlog] Circuit Breaker Middleware`
-**Labels:** `backlog`, `P2`, `phase-3`, `feature`, `middleware`, `help wanted`
-
-**Use case:**
-When a downstream dependency (database, external API, internal service) starts failing systematically, every in-flight message burns its retry budget hitting the same broken target. The result: a flood of dead-lettered messages, exhausted retry quotas, and an avalanche of recovery work in the WebApp once the dependency comes back. A circuit breaker pauses processing when failures cross a threshold, abandons messages back to the queue (so they redeliver later), and tests the dependency periodically before resuming. This protects the dependency from the herd, protects the retry budget, and keeps the DLQ clean.
-
-**Proposed API:**
-```csharp
-// Registration
-services.AddNimBus(b => {
-    b.AddPipelineBehavior<CircuitBreakerMiddleware>(opts => {
-        opts.FailureThreshold = 5;          // failures before opening
-        opts.BreakDuration = TimeSpan.FromMinutes(2);
-        opts.HalfOpenTestCount = 1;          // probes during half-open
-        opts.SamplingDuration = TimeSpan.FromMinutes(1);
-    });
-});
-
-// Or per-endpoint / per-event-type
-services.AddNimBusSubscriber("billing", b => {
-    b.AddPipelineBehavior<CircuitBreakerMiddleware>();
-    b.ConfigureCircuitBreaker<PaymentRequested>(opts => { opts.FailureThreshold = 3; });
-});
-
-public sealed class CircuitBreakerMiddleware : IMessagePipelineBehavior
-{
-    public Task Handle(IMessageContext ctx, MessagePipelineDelegate next, CancellationToken ct);
-}
-```
-
-**Integration points:**
-- `src/NimBus.Core/Pipeline/CircuitBreakerMiddleware.cs` (new)
-- Wires through existing `IMessagePipelineBehavior` and `MessagePipeline` infrastructure
-- Uses Polly V8 `ResiliencePipeline` for the circuit primitive
-- When circuit is open: middleware throws `CircuitBreakerOpenException`, caught by `StrictMessageHandler` and translated to `Abandon` rather than `DeadLetter`
-- Per-endpoint configuration via `NimBusSubscriberBuilder`
-
-**Acceptance criteria:**
-- [ ] `CircuitBreakerMiddleware` implementing `IMessagePipelineBehavior`
-- [ ] Three states (Closed, Open, Half-Open) with configurable thresholds
-- [ ] Open state abandons messages (returns to queue) — does NOT dead-letter
-- [ ] Per-endpoint and per-event-type configuration
-- [ ] Metrics: `nimbus.circuit_breaker.state` (gauge), `nimbus.circuit_breaker.transitions_total` (counter)
-- [ ] Unit tests for state transitions, threshold, half-open probing
-- [ ] Integration test in `tests/NimBus.EndToEnd.Tests/` proving messages redeliver after circuit closes
-- [ ] Documentation in `docs/pipeline-middleware.md`
-- [ ] Sample in `samples/AspirePubSub/` showing configuration
-
-**Reference implementations:**
-- Wolverine: per-endpoint circuit breaker — https://wolverinefx.net/guide/runtime/circuit-breaker.html
-- Brighter: `[UseResiliencePipeline]` attribute over Polly
-- Polly V8 `ResiliencePipelineBuilder.AddCircuitBreaker`
-
-**Open questions:**
-- Should the circuit be per-handler-type, per-endpoint, or both?
-- How do we distinguish "downstream broken" failures from validation failures? (Likely interplay with [Poison Message Classification](#poison-message-classification) — only count transient failures toward the threshold.)
-- Should circuit state be observable in the WebApp?
-
-**Estimated effort:** Small–Medium (3–5 days)
+→ [#114](https://github.com/akakaule/NimBus/issues/114)
 
 ---
 

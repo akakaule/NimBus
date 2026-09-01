@@ -41,6 +41,10 @@ Behaviors execute in registration order — first registered is outermost (execu
 
 ## Built-in Middleware
 
+### Endpoint circuit breaker
+
+`WithCircuitBreaker(...)` appends a recorder around terminal handler dispatch. It records retry/transient outcomes without changing exception or settlement semantics. When the configured rate opens the circuit, the SDK stops the endpoint's hosted receivers instead of abandoning messages. See [`circuit-breaker.md`](circuit-breaker.md) for configuration, counting rules, half-open concurrency, telemetry, and the Azure Functions limitation.
+
 ### LoggingMiddleware
 
 Logs message processing with timing, event metadata, and outcome via `Microsoft.Extensions.Logging`.
@@ -241,7 +245,7 @@ builder.Services.AddNimBus(nimbus =>
 });
 ```
 
-Observers fire automatically — `OnMessageReceived` before the pipeline, `OnMessageCompleted`/`OnMessageFailed` after, and `OnMessageDeadLettered` when a message is moved to the dead-letter queue.
+Observers fire automatically — `OnMessageReceived` before the pipeline, `OnMessageCompleted`/`OnMessageFailed` after, `OnMessageDeadLettered` when a message is moved to the dead-letter queue, and `OnCircuitStateChanged` for endpoint breaker transitions.
 
 ## IMessageContext — Available Data
 

@@ -11,6 +11,7 @@ This document is a concise catalog of the current NimBus feature set, grouped in
 | Developer API | Typed publisher/subscriber API | DI registrations for publishers, subscribers, handlers, and receiver hosting. | `NimBus.SDK` |
 | Event modeling | SessionKey + metadata attributes | `[SessionKey]`, validation, and description attributes for ordering and schema/documentation. | `NimBus.Core` |
 | Reliability | Retry policies with backoff | Per-event and exception-pattern retry policies with fixed/linear/exponential strategies. | `NimBus.Core` |
+| Reliability | Endpoint circuit breaker | Opt-in failure-rate breaker pauses hosted receivers, probes at concurrency one, and restores processing without consuming delivery attempts while open. | `NimBus.Core`, `NimBus.SDK` |
 | Reliability | Permanent failure classification | Classify unrecoverable exceptions and dead-letter immediately without retry budget use. | `NimBus.Core` |
 | Reliability | Session blocking + deferral | When a message fails, later messages in the same session are deferred to preserve order. | `NimBus.Core`, `NimBus.ServiceBus` |
 | Recovery | Deferred replay | Deferred messages are re-published in FIFO order after resubmit/retry/skip unblocks the session. | `NimBus.ServiceBus` |

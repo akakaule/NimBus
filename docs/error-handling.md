@@ -313,6 +313,8 @@ when many sessions are likely to fail together.
 Without a retry policy, handler failures stay in `Failed` until an operator
 resubmits or skips them — there is no implicit retry.
 
+For widespread downstream outages, an opt-in endpoint circuit breaker can stop hosted receivers before every session consumes its retry budget. It counts retry/transient handler outcomes but never changes their exception or settlement behavior; an open circuit leaves messages untouched on the subscription. See [`circuit-breaker.md`](circuit-breaker.md).
+
 ### Custom middleware that needs to dead-letter
 
 If you implement middleware that should reject a message outright (rather
@@ -332,6 +334,7 @@ For passive observation (alerting, metrics) without altering the flow:
 | `OnMessageCompleted` | success and discard paths — pipeline returns without throwing |
 | `OnMessageFailed` | every catch branch in `MessageHandler.Handle` (transient, permanent, validation-rejected, unexpected) |
 | `OnMessageDeadLettered` | only when the message ends up in DLQ — fires *after* the SB DeadLetter call |
+| `OnCircuitStateChanged` | endpoint circuit transitions (Closed, Open, HalfOpen) |
 
 Use the lifecycle observer for fan-out to channels like Slack/PagerDuty;
 don't use it to gate processing — register a pipeline behavior for that.

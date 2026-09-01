@@ -45,6 +45,9 @@ public static class NimBusMeters
     public static readonly Counter<long> InboxOperationFailed = Consumer.CreateCounter<long>(
         "nimbus.inbox.operation.failed", "{operations}", "Inbox store operations that failed.");
 
+    public static readonly Counter<long> CircuitBreakerTransitions = Consumer.CreateCounter<long>(
+        "nimbus.circuit_breaker.transitions_total", "{transitions}", "Endpoint circuit breaker state transitions.");
+
     public static readonly Meter Outbox = new(NimBusInstrumentation.OutboxMeterName);
 
     public static readonly Counter<long> OutboxEnqueued = Outbox.CreateCounter<long>(

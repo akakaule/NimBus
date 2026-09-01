@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Diagnostics;
+using NimBus.Core.CircuitBreaker;
 using NimBus.Core.Outbox;
 using NimBus.OpenTelemetry.Instrumentation;
 using OpenTelemetry;
@@ -15,6 +16,24 @@ namespace NimBus.OpenTelemetry.Tests;
 [TestClass]
 public sealed class GaugeBackgroundServiceTests
 {
+    [TestMethod]
+    public void Circuit_breaker_state_gauge_reports_numeric_state_per_endpoint()
+    {
+        var metrics = new List<Metric>();
+        using var meterProvider = Sdk.CreateMeterProviderBuilder()
+            .AddNimBusInstrumentation()
+            .AddInMemoryExporter(metrics)
+            .Build()!;
+        var breaker = new StubCircuitBreaker("gauge-billing", CircuitState.Open);
+
+        using var sut = new NimBusGaugeBackgroundService(
+            new TestOptionsMonitor(new NimBusOpenTelemetryOptions()),
+            circuitBreaker: breaker);
+        meterProvider.ForceFlush();
+
+        var gauge = metrics.Single(metric => metric.Name == "nimbus.circuit_breaker.state");
+        Assert.AreEqual(1, ReadLongForTag(gauge, MessagingAttributes.NimBusEndpoint, "gauge-billing"));
+    }
     [TestMethod]
     public async Task Outbox_pending_gauge_reports_cached_value()
     {
@@ -193,6 +212,18 @@ public sealed class GaugeBackgroundServiceTests
         }
         return null;
     }
+}
+
+internal sealed class StubCircuitBreaker(string endpoint, CircuitState state) : IEndpointCircuitBreaker
+{
+    public event Action<CircuitStateChange>? StateChanged { add { } remove { } }
+    public string Endpoint { get; } = endpoint;
+    public CircuitState State { get; } = state;
+    public void RecordSuccess() { }
+    public void RecordFailure(Exception exception) { }
+    public Task<CircuitStateChange> WaitForStateChangeAsync(CancellationToken cancellationToken) =>
+        Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken)
+            .ContinueWith<CircuitStateChange>(_ => throw new InvalidOperationException(), cancellationToken);
 }
 
 internal sealed class FakeOutboxMetricsQuery : IOutboxMetricsQuery

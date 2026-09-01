@@ -1,4 +1,5 @@
 using NimBus.Core.Messages;
+using NimBus.Core.CircuitBreaker;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -82,6 +83,17 @@ namespace NimBus.Core.Extensions
             foreach (var observer in _observers)
             {
                 await observer.OnDuplicateDetected(lifecycleContext, cancellationToken);
+            }
+        }
+
+        /// <summary>Notifies observers that an endpoint circuit changed state.</summary>
+        public async Task NotifyCircuitStateChanged(CircuitStateChange change, CancellationToken cancellationToken = default)
+        {
+            if (!HasObservers) return;
+            var lifecycleContext = CircuitStateChangeContext.FromStateChange(change);
+            foreach (var observer in _observers)
+            {
+                await observer.OnCircuitStateChanged(lifecycleContext, cancellationToken);
             }
         }
     }

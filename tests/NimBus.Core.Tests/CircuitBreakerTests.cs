@@ -174,6 +174,17 @@ public sealed class CircuitBreakerTests
             new EndpointCircuitBreaker("billing", options, TimeProvider.System));
     }
 
+    [TestMethod]
+    public void Transition_observer_failure_never_escapes_into_message_processing()
+    {
+        var breaker = CreateBreaker();
+        breaker.StateChanged += _ => throw new InvalidOperationException("observer failed");
+
+        breaker.RecordFailure(new TransientException("down"));
+
+        Assert.AreEqual(CircuitState.Open, breaker.State);
+    }
+
     private static EndpointCircuitBreaker CreateBreaker(
         int minimumThroughput = 1,
         double failurePercentage = 100,

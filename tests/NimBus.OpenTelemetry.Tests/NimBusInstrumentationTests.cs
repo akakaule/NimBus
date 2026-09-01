@@ -4,6 +4,8 @@ using System.Diagnostics.Metrics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Diagnostics;
+using NimBus.Core.CircuitBreaker;
+using NimBus.Core.Messages.Exceptions;
 using NimBus.Core.Messages;
 using NimBus.OpenTelemetry;
 using OpenTelemetry;
@@ -15,6 +17,40 @@ namespace NimBus.OpenTelemetry.Tests;
 [TestClass]
 public class AddNimBusInstrumentationTests
 {
+    [TestMethod]
+    public void Circuit_transition_counter_has_only_endpoint_and_state_tags()
+    {
+        var metrics = new List<Metric>();
+        using var provider = Sdk.CreateMeterProviderBuilder()
+            .AddNimBusInstrumentation()
+            .AddInMemoryExporter(metrics)
+            .Build()!;
+        var breaker = new EndpointCircuitBreaker(
+            "metrics-billing",
+            new CircuitBreakerOptions { MinimumThroughput = 1, FailurePercentageThreshold = 100 });
+
+        breaker.RecordFailure(new TransientException("down"));
+        provider.ForceFlush();
+
+        var metric = metrics.Single(item => item.Name == "nimbus.circuit_breaker.transitions_total");
+        Dictionary<string, string?>? tags = null;
+        foreach (ref readonly var point in metric.GetMetricPoints())
+        {
+            tags = [];
+            foreach (var tag in point.Tags)
+            {
+                tags[tag.Key] = tag.Value?.ToString();
+            }
+            break;
+        }
+
+        Assert.IsNotNull(tags);
+        Assert.AreEqual("metrics-billing", tags[MessagingAttributes.NimBusEndpoint]);
+        Assert.AreEqual("Closed", tags["nimbus.circuit_breaker.from"]);
+        Assert.AreEqual("Open", tags["nimbus.circuit_breaker.to"]);
+        CollectionAssert.DoesNotContain(tags.Keys.ToList(), MessagingAttributes.MessageId);
+        CollectionAssert.DoesNotContain(tags.Keys.ToList(), MessagingAttributes.NimBusSessionKey);
+    }
     [TestMethod]
     public void Services_AddNimBusInstrumentation_is_idempotent()
     {

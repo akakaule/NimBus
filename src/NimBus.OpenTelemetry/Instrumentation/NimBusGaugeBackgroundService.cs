@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NimBus.Core.Diagnostics;
+using NimBus.Core.CircuitBreaker;
 using NimBus.Core.Outbox;
 
 namespace NimBus.OpenTelemetry.Instrumentation;
@@ -32,6 +33,7 @@ internal sealed class NimBusGaugeBackgroundService : BackgroundService
     private readonly IDeferredMessageMetricsQuery? _deferredQuery;
     private readonly IOptionsMonitor<NimBusOpenTelemetryOptions> _options;
     private readonly ILogger<NimBusGaugeBackgroundService> _logger;
+    private readonly IEndpointCircuitBreaker? _circuitBreaker;
     private readonly ConcurrentDictionary<string, long> _outboxCache = new();
     private readonly ConcurrentDictionary<(string Endpoint, string Metric), long> _deferredCache = new();
     private bool _outboxSkipLogged;
@@ -46,12 +48,14 @@ internal sealed class NimBusGaugeBackgroundService : BackgroundService
         IOptionsMonitor<NimBusOpenTelemetryOptions> options,
         IOutboxMetricsQuery? outboxQuery = null,
         IDeferredMessageMetricsQuery? deferredQuery = null,
-        ILogger<NimBusGaugeBackgroundService>? logger = null)
+        ILogger<NimBusGaugeBackgroundService>? logger = null,
+        IEndpointCircuitBreaker? circuitBreaker = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _outboxQuery = outboxQuery;
         _deferredQuery = deferredQuery;
         _logger = logger ?? NullLogger<NimBusGaugeBackgroundService>.Instance;
+        _circuitBreaker = circuitBreaker;
 
         RegisterGauges();
     }
@@ -83,6 +87,11 @@ internal sealed class NimBusGaugeBackgroundService : BackgroundService
             ObserveBlockedSessions,
             unit: "{sessions}",
             description: "Distinct sessions currently blocked.");
+
+        NimBusMeters.Consumer.CreateObservableGauge(
+            "nimbus.circuit_breaker.state",
+            ObserveCircuitBreakerState,
+            description: "Endpoint circuit state: Closed=0, Open=1, HalfOpen=2.");
     }
 
     private IEnumerable<Measurement<long>> ObserveOutboxPending() =>
@@ -100,6 +109,19 @@ internal sealed class NimBusGaugeBackgroundService : BackgroundService
 
     private IEnumerable<Measurement<long>> ObserveBlockedSessions() =>
         EmitDeferred("blocked_sessions");
+
+    private IEnumerable<Measurement<int>> ObserveCircuitBreakerState()
+    {
+        if (_stopped || _circuitBreaker is null)
+            return Array.Empty<Measurement<int>>();
+
+        return
+        [
+            new Measurement<int>(
+                (int)_circuitBreaker.State,
+                new KeyValuePair<string, object?>(MessagingAttributes.NimBusEndpoint, _circuitBreaker.Endpoint)),
+        ];
+    }
 
     private IEnumerable<Measurement<long>> EmitDeferred(string metric)
     {

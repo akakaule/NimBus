@@ -163,5 +163,6 @@ public class NotificationRegistrationTests
 
         Assert.IsInstanceOfType(sp.GetServices<INotificationChannel>().Single(), typeof(FakeNotificationChannel));
         Assert.IsTrue(sp.GetRequiredService<NotificationOptions>().NotifyOnReceived);
+        Assert.IsTrue(sp.GetRequiredService<NotificationOptions>().NotifyOnCircuitOpen);
     }
 }

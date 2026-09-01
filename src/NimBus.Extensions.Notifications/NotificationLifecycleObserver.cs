@@ -1,4 +1,5 @@
 using NimBus.Core.Extensions;
+using NimBus.Core.CircuitBreaker;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -123,6 +124,29 @@ namespace NimBus.Extensions.Notifications
                 EventTypeId = context.EventTypeId,
                 MessageId = context.MessageId,
                 CorrelationId = context.CorrelationId,
+            };
+
+            await Dispatch(notification, cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public async Task OnCircuitStateChanged(CircuitStateChangeContext context, CancellationToken cancellationToken = default)
+        {
+            if (!_options.NotifyOnCircuitOpen
+                || (context.To != CircuitState.Open && context.To != CircuitState.Closed))
+            {
+                return;
+            }
+
+            var opened = context.To == CircuitState.Open;
+            var notification = new Notification
+            {
+                Severity = opened ? NotificationSeverity.Critical : NotificationSeverity.Information,
+                Title = opened
+                    ? $"Circuit opened: {context.Endpoint}"
+                    : $"Circuit recovered: {context.Endpoint}",
+                Message = $"Endpoint {context.Endpoint} circuit changed from {context.From} to {context.To}. {context.Reason}",
+                EventId = $"circuit:{context.Endpoint}:{context.To}",
             };
 
             await Dispatch(notification, cancellationToken);

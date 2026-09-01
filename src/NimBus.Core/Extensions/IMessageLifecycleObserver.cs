@@ -1,4 +1,5 @@
 using NimBus.Core.Messages;
+using NimBus.Core.CircuitBreaker;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -47,6 +48,26 @@ namespace NimBus.Core.Extensions
         /// </summary>
         Task OnDuplicateDetected(MessageLifecycleContext context, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+
+        /// <summary>Called when an endpoint circuit changes state.</summary>
+        Task OnCircuitStateChanged(CircuitStateChangeContext context, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
+
+    /// <summary>Context information for an endpoint circuit state transition.</summary>
+    public sealed record CircuitStateChangeContext(
+        string Endpoint,
+        CircuitState From,
+        CircuitState To,
+        string Reason,
+        DateTimeOffset Timestamp)
+    {
+        /// <summary>Creates a lifecycle context from a circuit transition.</summary>
+        public static CircuitStateChangeContext FromStateChange(CircuitStateChange change)
+        {
+            ArgumentNullException.ThrowIfNull(change);
+            return new(change.Endpoint, change.From, change.To, change.Reason, change.Timestamp);
+        }
     }
 
     /// <summary>

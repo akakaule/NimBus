@@ -204,7 +204,21 @@ public sealed class EndpointCircuitBreaker : IEndpointCircuitBreaker
             { "nimbus.circuit_breaker.to", change.To.ToString() },
         };
         NimBusMeters.CircuitBreakerTransitions.Add(1, tags);
-        StateChanged?.Invoke(change);
+        var handlers = StateChanged;
+        if (handlers is null)
+            return;
+
+        foreach (Action<CircuitStateChange> handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                handler(change);
+            }
+            catch
+            {
+                // State observers are diagnostic sidecars and must never alter message handling.
+            }
+        }
     }
 
     private static TaskCompletionSource<CircuitStateChange> CreateSignal() =>
@@ -212,4 +226,3 @@ public sealed class EndpointCircuitBreaker : IEndpointCircuitBreaker
 
     private readonly record struct Outcome(DateTimeOffset Timestamp, bool Failed);
 }
-

@@ -399,6 +399,8 @@ namespace NimBus.SDK.Extensions
             services.TryAddSingleton(new PipelineBehaviorRegistry([]));
             services.TryAddSingleton<MessagePipeline>();
             services.TryAddSingleton<MessageLifecycleNotifier>();
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<IHostedService, CircuitBreakerLifecycleHostedService>());
         }
 
         /// <summary>

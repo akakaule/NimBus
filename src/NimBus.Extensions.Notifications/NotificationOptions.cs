@@ -33,5 +33,8 @@ namespace NimBus.Extensions.Notifications
         /// alert on session blocks out of the box.
         /// </summary>
         public bool NotifyOnSessionBlock { get; set; } = false;
+
+        /// <summary>Whether to notify when an endpoint circuit opens or recovers. Default: true.</summary>
+        public bool NotifyOnCircuitOpen { get; set; } = true;
     }
 }

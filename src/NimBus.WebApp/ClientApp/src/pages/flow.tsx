@@ -13,6 +13,7 @@ import { TOP_N_DEFAULT } from "components/flow/types";
 import type { ConnectionMode } from "components/flow/types";
 import type { TopologyNode } from "components/topology/types";
 import { useFlowData } from "hooks/use-flow-data";
+import { useUrlFilters } from "hooks/use-url-filters";
 
 // Flow page — the event-type spine (design 1b: publisher → event type →
 // subscriber). The spec-020 animated dots canvas was removed in favor of the
@@ -90,7 +91,14 @@ export default function Flow() {
   const [selection, setSelection] = useState<string[] | null | undefined>(
     () => loadPrefs().endpointIds,
   );
-  const [eventType, setEventType] = useState("");
+  // The event-type filter rides the URL (?eventType=…) so an incident view is
+  // shareable by copy/paste — the same pattern as the Topology page's filters.
+  const { applied: urlFilters, setFiltersWithoutHistory } = useUrlFilters<{
+    eventType: string;
+  }>({ eventType: "" });
+  const eventType = urlFilters.eventType;
+  const setEventType = (next: string): void =>
+    setFiltersWithoutHistory({ eventType: next });
 
   const { topology, topologyLoading, topologyError, mode, snapshots } =
     useFlowData({ period, paused: false, onActivity: NOOP_ACTIVITY });

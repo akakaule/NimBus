@@ -81,7 +81,7 @@ export function buildFlowLayout(
     eventType === undefined || handlesType.has(id);
 
   // An endpoint with both roles appears in BOTH columns (the convention
-  // proven by topology-flow.tsx), so the two populations are derived
+  // the bipartite ribbons used), so the two populations are derived
   // independently rather than partitioning the catalog. Sort by the
   // role-relevant traffic so the busiest endpoints surface at the top where
   // the operator's eye lands first; ties fall back to name for stability.
@@ -314,7 +314,7 @@ function makeRoute(
 
 /**
  * Cubic bezier from the from-node's right-center anchor to the to-node's
- * left-center anchor — same shape language as topology-flow.tsx ribbons.
+ * left-center anchor — same shape language as the Lanes view beziers.
  * dx clamps the control-point pull to [40, 120]: enough curve for short hops
  * to read as flow, without long routes ballooning. Coordinates round to one
  * decimal so path strings stay byte-stable across runs and engines.

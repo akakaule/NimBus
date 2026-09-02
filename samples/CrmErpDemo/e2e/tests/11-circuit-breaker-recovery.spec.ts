@@ -61,12 +61,16 @@ test.describe("Circuit breaker opens on CRM outage and recovers", () => {
     }
 
     // ── 4. The circuit opens: crm-adapter pushes the transition to crm-api. ───
+    // Dedicated budget: each failure rides CRM → erp-adapter → erp-api →
+    // outbox dispatcher → ErpCustomerCreated → crm-adapter before it counts,
+    // and the window needs 5 of them — 45s (failedMessageMs) proved too tight
+    // when other suites' trailing traffic shares the sampling window.
     const open = await waitFor(
       async () => {
         const state = await crm.getCircuitState();
         return state.state === "Open" ? state : null;
       },
-      { timeoutMs: Timeouts.failedMessageMs, description: "CrmEndpoint circuit Open after sustained failures" },
+      { timeoutMs: 90_000, description: "CrmEndpoint circuit Open after sustained failures" },
     );
     expect(open.endpoint).toBe("CrmEndpoint");
 

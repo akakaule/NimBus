@@ -2,7 +2,9 @@
 
 NimBus can pause a subscriber when retry-eligible handler failures indicate that a downstream dependency is distressed. The feature is opt-in and scoped to the process's single subscriber endpoint.
 
-Unlike a message-level circuit breaker, an open NimBus circuit does not throw or abandon messages. Every `NimBusReceiverHostedService` observing the endpoint stops and disposes its `ServiceBusSessionProcessor`. Messages remain untouched on the subscription, session ordering is preserved, and no delivery attempts are consumed during the pause.
+Unlike a message-level circuit breaker, an open NimBus circuit does not throw or abandon messages. Every `NimBusReceiverHostedService` observing the endpoint stops and disposes its `ServiceBusSessionProcessor`. Messages remain untouched on the subscription and session ordering is preserved.
+
+> **Prefetch caveat.** "No delivery attempts consumed" holds only for the default `PrefetchCount = 0`. With prefetch enabled, messages already sitting in the processor's prefetch buffer at open time have been received under peek-lock — their `DeliveryCount` is already incremented, and stopping the processor abandons them (or lets their locks expire). An outage that opens the circuit repeatedly burns one delivery attempt per open cycle for prefetched messages, which can dead-letter them via `MaxDeliveryCount` without any handler ever failing them. If you combine the breaker with the prefetch values recommended in [throughput tuning](throughput-tuning.md), budget `MaxDeliveryCount` accordingly or keep prefetch at 0 on breaker-protected endpoints.
 
 ## Configure
 

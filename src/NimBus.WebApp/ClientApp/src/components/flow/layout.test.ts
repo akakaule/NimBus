@@ -51,6 +51,7 @@ function topo(nodes: TopologyNode[], flowEdges: FlowEdge[] = []): TopologyData {
     edges: [],
     pills: [],
     flowEdges,
+    spine: { types: [], links: [] },
     summary: {
       endpoints: nodes.length,
       eventTypes: 0,

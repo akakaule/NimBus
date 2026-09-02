@@ -44,6 +44,18 @@ export interface CreditCheckResult {
   checkedAt: string;
 }
 
+export interface ModeState {
+  enabled: boolean;
+  changedAt: string;
+}
+
+export interface CircuitStateSnapshot {
+  endpoint: string;
+  state: 'Closed' | 'Open' | 'HalfOpen' | string;
+  reason: string;
+  changedAt: string;
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -104,4 +116,15 @@ export const api = {
     }).then((res) => {
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     }),
+
+  // Circuit-breaker showcase: the CRM API outage toggle + the live circuit
+  // state the adapter pushes into crm-api.
+  getErrorMode: () => fetch('/api/admin/error-mode').then(json<ModeState>),
+  setErrorMode: (enabled: boolean) =>
+    fetch('/api/admin/error-mode', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    }).then(json<ModeState>),
+  getCircuitState: () => fetch('/api/admin/circuit-state').then(json<CircuitStateSnapshot>),
 };

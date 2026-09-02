@@ -4,6 +4,7 @@ import AccountForm from './pages/AccountForm';
 import ContactsList from './pages/ContactsList';
 import ContactForm from './pages/ContactForm';
 import { simulator, useSimulator } from './simulator';
+import CircuitBreakerPanel from './components/admin/circuit-breaker-panel';
 
 const tabClass = ({ isActive }: { isActive: boolean }) =>
   `px-4 py-2 rounded-md text-sm font-medium ${
@@ -37,7 +38,8 @@ export default function App() {
           <span className="text-xs text-slate-400">NimBus · CRM + ERP demo</span>
         </div>
       </header>
-      <main className="max-w-5xl mx-auto px-6 py-8">
+      <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">
+        <CircuitBreakerPanel />
         <Routes>
           <Route path="/" element={<AccountsList />} />
           <Route path="/accounts" element={<AccountsList />} />

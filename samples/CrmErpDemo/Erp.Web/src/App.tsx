@@ -7,6 +7,7 @@ import ContactForm from './pages/ContactForm';
 import HandoffModePanel from './components/admin/handoff-mode-panel';
 import ProcessingDelayPanel from './components/admin/processing-delay-panel';
 import AlertsPanel from './components/admin/alerts-panel';
+import DataResetPanel from './components/admin/data-reset-panel';
 import { api } from './api';
 
 const tabClass = ({ isActive }: { isActive: boolean }) =>
@@ -37,6 +38,7 @@ export default function App() {
         <HandoffModePanel />
         <ProcessingDelayPanel />
         <AlertsPanel />
+        <DataResetPanel />
         <Routes>
           <Route path="/" element={<CustomersList />} />
           <Route path="/customers" element={<CustomersList />} />

@@ -10,6 +10,7 @@ import {
   useSimulator,
 } from './simulator';
 import CircuitBreakerPanel from './components/admin/circuit-breaker-panel';
+import DataResetPanel from './components/admin/data-reset-panel';
 
 const tabClass = ({ isActive }: { isActive: boolean }) =>
   `px-4 py-2 rounded-md text-sm font-medium ${
@@ -61,6 +62,7 @@ export default function App() {
       </header>
       <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">
         <CircuitBreakerPanel />
+        <DataResetPanel />
         <Routes>
           <Route path="/" element={<AccountsList />} />
           <Route path="/accounts" element={<AccountsList />} />

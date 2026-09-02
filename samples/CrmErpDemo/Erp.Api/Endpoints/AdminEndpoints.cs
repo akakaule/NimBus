@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 namespace Erp.Api.Endpoints;
 
 public static class AdminEndpoints
@@ -49,6 +51,20 @@ public static class AdminEndpoints
             var (enabled, delayMs, changedAt) = state.Set(request.Enabled, request.DelayMs);
             return Results.Ok(new ProcessingDelayResponse(enabled, delayMs, changedAt));
         });
+
+        // Demo reset: wipes every ERP business row plus the NimBus outbox rows
+        // living in this database — pending outbox rows would otherwise publish
+        // ghost events about entities that no longer exist. Publishes NO delete
+        // events; NimBus message history is untouched.
+        group.MapDelete("/data", async (ErpDbContext db) =>
+        {
+            var contacts = await db.Contacts.ExecuteDeleteAsync();
+            var customers = await db.Customers.ExecuteDeleteAsync();
+            var audits = await db.Audits.ExecuteDeleteAsync();
+            var outboxRows = await db.Database.ExecuteSqlRawAsync(
+                "IF OBJECT_ID(N'[nimbus].[OutboxMessages]') IS NOT NULL DELETE FROM [nimbus].[OutboxMessages];");
+            return Results.Ok(new DataResetResponse(customers, contacts, audits, outboxRows));
+        });
     }
 }
 
@@ -58,3 +74,4 @@ public record ErrorModeRequest(bool Enabled);
 public record ErrorModeResponse(bool Enabled, DateTimeOffset ChangedAt);
 public record ProcessingDelayRequest(bool Enabled, int DelayMs);
 public record ProcessingDelayResponse(bool Enabled, int DelayMs, DateTimeOffset ChangedAt);
+public record DataResetResponse(int Customers, int Contacts, int Audits, int OutboxRows);

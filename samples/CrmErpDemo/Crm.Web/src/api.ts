@@ -127,4 +127,15 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }).then(json<ModeState>),
   getCircuitState: () => fetch('/api/admin/circuit-state').then(json<CircuitStateSnapshot>),
+
+  // Demo reset: wipes all CRM business data (no delete events published).
+  deleteAllData: () =>
+    fetch('/api/admin/data', { method: 'DELETE' }).then(json<DataResetResult>),
 };
+
+export interface DataResetResult {
+  accounts: number;
+  contacts: number;
+  audits: number;
+  nimbusRows: number;
+}

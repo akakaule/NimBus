@@ -80,6 +80,13 @@ export interface HandoffJob {
   registeredAt: string;
 }
 
+export interface DataResetResult {
+  customers: number;
+  contacts: number;
+  audits: number;
+  outboxRows: number;
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -144,6 +151,11 @@ export const api = {
   clearAlerts: () => fetch('/api/admin/alerts', { method: 'DELETE' }).then((res) => {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   }),
+
+  // Demo reset: wipes all ERP business data + pending outbox rows (no delete
+  // events published).
+  deleteAllData: () =>
+    fetch('/api/admin/data', { method: 'DELETE' }).then(json<DataResetResult>),
 
   listContacts: () => fetch('/api/contacts').then(json<Contact[]>),
   getContact: (id: string) => fetch(`/api/contacts/${id}`).then(json<Contact>),

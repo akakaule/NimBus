@@ -219,6 +219,19 @@ namespace NimBus.SDK.Extensions
                 }
             }
 
+            // Same-endpoint re-registration is benign for handlers (TryAdd keeps
+            // the first composition), but a breaker configured only on a later
+            // call would be validated and then silently discarded — the operator
+            // would believe protection is active while nothing ever pauses.
+            if (!isFirstSubscriberRegistration && builder.CircuitBreakerConfiguration != null)
+            {
+                throw new InvalidOperationException(
+                    "WithCircuitBreaker must be configured on the first AddNimBusSubscriber call for endpoint " +
+                    $"'{options.Endpoint}': a later same-endpoint registration reuses the already-composed " +
+                    "subscriber, so this call's circuit-breaker configuration would be silently discarded. " +
+                    "Move WithCircuitBreaker to the first registration.");
+            }
+
             if (isFirstSubscriberRegistration)
                 services.AddSingleton(new SubscriberEndpointMarker(options.Endpoint));
 
@@ -404,6 +417,30 @@ namespace NimBus.SDK.Extensions
             if (options is null)
                 return;
 
+            RegisterCircuitBreakerCore(services, endpoint, options);
+            services.AddSingleton<CircuitBreakerSubscriberComposition>();
+            services.AddSingleton<IHostedService>(serviceProvider =>
+                new CircuitBreakerSubscriberStartupValidator(
+                    serviceProvider,
+                    serviceProvider.GetRequiredService<CircuitBreakerSubscriberComposition>()));
+        }
+
+        /// <summary>
+        /// Shared circuit-breaker composition (options, breaker, recorder, pipeline
+        /// infrastructure, lifecycle pump) used by both the Service Bus subscriber and
+        /// the in-memory test transport — the latter must honor WithCircuitBreaker
+        /// rather than silently discarding it, so tests exercise the same middleware
+        /// composition as production. The ISubscriberClient startup validator stays
+        /// SDK-only: the test transport composes IMessageHandler directly.
+        /// </summary>
+        internal static void RegisterCircuitBreakerCore(
+            IServiceCollection services,
+            string endpoint,
+            CircuitBreakerOptions? options)
+        {
+            if (options is null)
+                return;
+
             services.TryAddSingleton(options);
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<IEndpointCircuitBreaker>(serviceProvider =>
@@ -421,11 +458,6 @@ namespace NimBus.SDK.Extensions
             services.TryAddSingleton<MessageLifecycleNotifier>();
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<IHostedService, CircuitBreakerLifecycleHostedService>());
-            services.AddSingleton<CircuitBreakerSubscriberComposition>();
-            services.AddSingleton<IHostedService>(serviceProvider =>
-                new CircuitBreakerSubscriberStartupValidator(
-                    serviceProvider,
-                    serviceProvider.GetRequiredService<CircuitBreakerSubscriberComposition>()));
         }
 
         /// <summary>

@@ -42,6 +42,14 @@ public static class ServiceCollectionExtensions
         configureBuilder(builder);
         InboxRegistration.AddServices(services, endpoint, builder.InboxConfiguration);
 
+        // WithCircuitBreaker must take effect on the in-memory path too — a test
+        // suite silently exercising a different middleware composition than
+        // production is worse than failing. The SDK's ISubscriberClient startup
+        // validator is intentionally omitted: this path composes IMessageHandler
+        // directly.
+        NimBus.SDK.Extensions.ServiceCollectionExtensions.RegisterCircuitBreakerCore(
+            services, endpoint, builder.CircuitBreakerConfiguration);
+
         services.TryAddSingleton<IMessageHandler>(sp =>
         {
             var eventHandlerProvider = new EventHandlerProvider(

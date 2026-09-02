@@ -55,6 +55,22 @@ public class SubscriberRegistrationTests
     }
 
     [TestMethod]
+    public void WithCircuitBreaker_on_second_same_endpoint_registration_throws()
+    {
+        // Same-endpoint re-registration is benign for handlers, but a breaker
+        // configured only on the later call would be silently discarded — the
+        // operator would believe protection is active while nothing pauses.
+        var services = new ServiceCollection();
+        services.AddSingleton(new ServiceBusClient(FakeConnection));
+        services.AddNimBusSubscriber("Billing", _ => { });
+
+        var exception = Assert.ThrowsExactly<InvalidOperationException>(() =>
+            services.AddNimBusSubscriber("Billing", builder => builder.WithCircuitBreaker(_ => { })));
+
+        StringAssert.Contains(exception.Message, "first AddNimBusSubscriber");
+    }
+
+    [TestMethod]
     public void Subscriber_without_WithCircuitBreaker_registers_no_breaker()
     {
         var services = new ServiceCollection();

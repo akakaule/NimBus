@@ -61,15 +61,30 @@ namespace NimBus.SDK.Hosting
         {
             var restartCount = 0;
 
+            // One long-lived stopping sentinel for the whole loop. A
+            // per-iteration Task.Delay leaked one CancellationTokenRegistration
+            // per circuit transition / infrastructure restart for the host's
+            // lifetime — routine traffic once circuit-driven iterations exist.
+            var stopping = Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
+
             while (!stoppingToken.IsCancellationRequested)
             {
+                // Arm the state-change wait BEFORE sampling State: the wait
+                // snapshots the current signal under the breaker's lock, so a
+                // transition firing between these two statements completes the
+                // armed task instead of being lost — unobserved, a missed
+                // Closed->Open ran the processor at full concurrency through
+                // the entire break, and a missed HalfOpen->Closed stranded the
+                // receiver at probe concurrency until the next open.
+                using var circuitWaitCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                var circuitStateChanged = _circuitBreaker?.WaitForStateChangeAsync(circuitWaitCancellation.Token);
                 var circuitState = _circuitBreaker?.State ?? CircuitState.Closed;
                 if (circuitState == CircuitState.Open)
                 {
                     _startupCompletion.TrySetResult(true);
                     try
                     {
-                        await _circuitBreaker!.WaitForStateChangeAsync(stoppingToken).ConfigureAwait(false);
+                        await circuitStateChanged!.ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                     {
@@ -86,8 +101,6 @@ namespace NimBus.SDK.Hosting
                     ? 1
                     : _options.MaxConcurrentSessions;
                 _processor = CreateProcessor(maxConcurrentSessions);
-                using var circuitWaitCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-                var circuitStateChanged = _circuitBreaker?.WaitForStateChangeAsync(circuitWaitCancellation.Token);
                 var infrastructureRestart = false;
 
                 try
@@ -99,7 +112,6 @@ namespace NimBus.SDK.Hosting
                     await _processor.StartProcessingAsync(stoppingToken).ConfigureAwait(false);
                     _startupCompletion.TrySetResult(true);
 
-                    var stopping = Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
                     var completed = circuitStateChanged is null
                         ? await Task.WhenAny(_processorRecoveryRequested.Task, stopping).ConfigureAwait(false)
                         : await Task.WhenAny(_processorRecoveryRequested.Task, circuitStateChanged, stopping).ConfigureAwait(false);

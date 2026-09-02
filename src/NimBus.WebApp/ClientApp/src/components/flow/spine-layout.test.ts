@@ -143,6 +143,52 @@ describe("buildSpineModel", () => {
   });
 });
 
+describe("type truncation (maxTypes)", () => {
+  // A busy (1000), B a low-rate failing trickle (10, 5 failed), C mid (500),
+  // D idle. Selection ranks by traffic; display keeps the given (namespace-
+  // grouped) order; failing types always survive the cut.
+  const CATALOG = topo({
+    types: [
+      { id: "A", label: "A", namespace: "N1", producers: 1, consumers: 0, published: 1000, handled: 0, failed: 0 },
+      { id: "B", label: "B", namespace: "N1", producers: 1, consumers: 1, published: 10, handled: 10, failed: 5 },
+      { id: "C", label: "C", namespace: "N2", producers: 1, consumers: 0, published: 500, handled: 0, failed: 0 },
+      { id: "D", label: "D", namespace: "N2", producers: 1, consumers: 0, published: 0, handled: 0, failed: 0 },
+    ],
+    links: [
+      { id: "pub::P::A", kind: "pub", endpointId: "P", eventTypeId: "A", messages: 1000, failures: 0 },
+      { id: "pub::P::B", kind: "pub", endpointId: "P", eventTypeId: "B", messages: 10, failures: 0 },
+      { id: "pub::P::C", kind: "pub", endpointId: "P", eventTypeId: "C", messages: 500, failures: 0 },
+      { id: "pub::P::D", kind: "pub", endpointId: "P", eventTypeId: "D", messages: 0, failures: 0 },
+      { id: "sub::S::B", kind: "sub", endpointId: "S", eventTypeId: "B", messages: 10, failures: 5 },
+    ],
+  });
+
+  it("keeps the busiest types plus every failing type, drops idle, preserves order", () => {
+    const model = buildSpineModel(CATALOG, { periodMinutes: 60, maxTypes: 2 });
+    // Top-2 by traffic = A, C; B rides the failure override; D is idle.
+    expect(model.types.map((t) => t.eventTypeId)).toEqual(["A", "B", "C"]);
+    expect(model.totalTypeCount).toBe(4);
+    // Lanes for the dropped type disappear with it.
+    expect(model.lanes.some((l) => l.key === "pub::P::D")).toBe(false);
+  });
+
+  it("shows everything, idle included, without a cap", () => {
+    const model = buildSpineModel(CATALOG, { periodMinutes: 60 });
+    expect(model.types.map((t) => t.eventTypeId)).toEqual(["A", "B", "C", "D"]);
+    expect(model.totalTypeCount).toBe(4);
+  });
+
+  it("an explicit event-type filter bypasses the cap", () => {
+    const model = buildSpineModel(CATALOG, {
+      periodMinutes: 60,
+      maxTypes: 2,
+      eventType: "D",
+    });
+    expect(model.types.map((t) => t.eventTypeId)).toEqual(["D"]);
+    expect(model.totalTypeCount).toBe(1);
+  });
+});
+
 describe("edge math", () => {
   const RECTS: Record<string, SpineRect> = {
     "p:a": { x: 0, y: 0, w: 100, h: 60 },

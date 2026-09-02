@@ -74,7 +74,12 @@ export interface SpineModel {
   labelByKey: Record<string, string>;
   /** Publish-side messages per minute across every visible type. */
   totalRate: number;
+  /** Eligible type count before truncation — the header's "top N of M". */
+  totalTypeCount: number;
 }
+
+/** Default resting-view cap on the type column — mirrors TOP_N_DEFAULT for endpoints. */
+export const DEFAULT_TYPE_LIMIT = 12;
 
 export interface SpineModelOptions {
   /** Endpoints to render; undefined = all (same contract as buildFlowLayout). */
@@ -83,6 +88,13 @@ export interface SpineModelOptions {
   eventType?: string;
   /** Window length backing the metrics counts, for per-minute rates. */
   periodMinutes: number;
+  /**
+   * Caps the type column for large catalogs: idle types drop, the busiest
+   * keep their seats, and any failing type is always shown — truncation must
+   * never hide a failure. Undefined shows everything (idle included); an
+   * explicit eventType filter bypasses the cap entirely.
+   */
+  maxTypes?: number;
 }
 
 /**
@@ -110,11 +122,38 @@ export function buildSpineModel(
       (eventType === undefined || l.eventTypeId === eventType),
   );
   const linkedTypeIds = new Set(links.map((l) => l.eventTypeId));
-  const types = data.spine.types.filter(
+  const eligibleTypes = data.spine.types.filter(
     (t) =>
       linkedTypeIds.has(t.id) &&
       (eventType === undefined || t.id === eventType),
   );
+  const totalTypeCount = eligibleTypes.length;
+
+  // Resting-view truncation for large catalogs. Selection ranks by traffic;
+  // DISPLAY keeps the data layer's namespace-grouped order. Failing types are
+  // always kept regardless of rank — that one rule makes truncation safe.
+  let types = eligibleTypes;
+  const limit = eventType === undefined ? opts.maxTypes : undefined;
+  if (limit !== undefined) {
+    const active = eligibleTypes.filter(
+      (t) => t.published > 0 || t.handled > 0 || t.failed > 0,
+    );
+    const keep = new Set(
+      [...active]
+        .sort(
+          (a, b) =>
+            b.published + b.handled - (a.published + a.handled) ||
+            compare(a.id, b.id),
+        )
+        .slice(0, Math.max(0, limit))
+        .map((t) => t.id),
+    );
+    for (const t of active) {
+      if (t.failed > 0) keep.add(t.id);
+    }
+    types = eligibleTypes.filter((t) => keep.has(t.id));
+  }
+
   const typeIds = new Set(types.map((t) => t.id));
   const keptLinks = links.filter((l) => typeIds.has(l.eventTypeId));
 
@@ -212,6 +251,7 @@ export function buildSpineModel(
     lanes,
     labelByKey,
     totalRate,
+    totalTypeCount,
   };
 }
 

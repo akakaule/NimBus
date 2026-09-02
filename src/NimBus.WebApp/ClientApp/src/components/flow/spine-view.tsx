@@ -12,6 +12,7 @@ import type { StatusSnapshot } from "components/flow/types";
 import {
   buildSpineModel,
   computeSpineEdges,
+  DEFAULT_TYPE_LIMIT,
   formatRate,
   spineFocusLine,
 } from "components/flow/spine-layout";
@@ -58,14 +59,20 @@ export const SpineView = ({
       window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
 
+  // Resting view caps the type column (busiest first, failing always shown);
+  // "Show all" lifts the cap for this visit. An explicit event-type filter
+  // bypasses it inside the model.
+  const [showAllTypes, setShowAllTypes] = useState(false);
+
   const model = useMemo(
     () =>
       buildSpineModel(topology, {
         visibleEndpointIds,
         eventType: eventType || undefined,
         periodMinutes,
+        maxTypes: showAllTypes ? undefined : DEFAULT_TYPE_LIMIT,
       }),
-    [topology, visibleEndpointIds, eventType, periodMinutes],
+    [topology, visibleEndpointIds, eventType, periodMinutes, showAllTypes],
   );
 
   // Card rects, relative to the lanes container. Measured after every commit
@@ -139,12 +146,23 @@ export const SpineView = ({
       `}</style>
       <div className="flex items-center justify-between gap-4 px-4 py-3 border-b border-border">
         <span className="font-mono text-[10px] font-semibold tracking-[0.12em] uppercase text-muted-foreground">
-          Event-type spine · {model.types.length} type
-          {model.types.length === 1 ? "" : "s"} carrying{" "}
-          {formatRate(model.totalRate)}/min
+          Event-type spine ·{" "}
+          {model.types.length < model.totalTypeCount
+            ? `top ${model.types.length} of ${model.totalTypeCount} types`
+            : `${model.types.length} type${model.types.length === 1 ? "" : "s"}`}{" "}
+          carrying {formatRate(model.totalRate)}/min
         </span>
-        <span className="font-mono text-[11px] text-muted-foreground">
+        <span className="flex items-center gap-3 font-mono text-[11px] text-muted-foreground">
           grouped by namespace · avg over {periodLabel}
+          {(showAllTypes || model.types.length < model.totalTypeCount) && (
+            <button
+              type="button"
+              onClick={() => setShowAllTypes((v) => !v)}
+              className="px-2 py-0.5 rounded-nb-sm border border-border-strong text-foreground hover:text-primary transition-colors"
+            >
+              {showAllTypes ? `Top ${DEFAULT_TYPE_LIMIT}` : "Show all"}
+            </button>
+          )}
         </span>
       </div>
 

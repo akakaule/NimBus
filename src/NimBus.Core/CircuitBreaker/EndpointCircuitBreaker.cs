@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using NimBus.Core.Diagnostics;
 
@@ -7,6 +8,8 @@ namespace NimBus.Core.CircuitBreaker;
 public sealed class EndpointCircuitBreaker : IEndpointCircuitBreaker
 {
     private readonly object _gate = new();
+    private readonly object _publishGate = new();
+    private readonly ConcurrentQueue<CircuitStateChange> _pendingPublications = new();
     private readonly CircuitBreakerOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly Queue<Outcome> _outcomes = [];
@@ -146,6 +149,16 @@ public sealed class EndpointCircuitBreaker : IEndpointCircuitBreaker
             }
 
             await delay.ConfigureAwait(false);
+
+            // The delay elapsing and a concurrent reader (e.g. the metrics
+            // gauge) advancing Open->HalfOpen are synchronized by construction
+            // at openedAt + BreakDuration. If that racer won, the captured
+            // signal already holds the transition — return it instead of
+            // re-binding the fresh signal, which would drop the change and
+            // strand the caller until the next transition (with no processor
+            // running, none would ever come).
+            if (signal.IsCompleted)
+                return await signal.ConfigureAwait(false);
         }
     }
 
@@ -179,6 +192,9 @@ public sealed class EndpointCircuitBreaker : IEndpointCircuitBreaker
     {
         var change = new CircuitStateChange(Endpoint, _state, next, reason, now);
         _state = next;
+        // Enqueued under _gate so publication order matches transition order;
+        // the drain outside the lock preserves it (see Publish).
+        _pendingPublications.Enqueue(change);
         var previousSignal = _stateChangeSignal;
         _stateChangeSignal = CreateSignal();
         previousSignal.TrySetResult(change);
@@ -192,11 +208,29 @@ public sealed class EndpointCircuitBreaker : IEndpointCircuitBreaker
             _outcomes.Dequeue();
     }
 
+    /// <remarks>
+    /// Two threads can leave <c>_gate</c> in transition order yet reach the
+    /// observers inverted (a Closed->Open published before the HalfOpen->Closed
+    /// that preceded it would tell operators "recovered" during an active
+    /// outage). Transitions are therefore enqueued under <c>_gate</c> and
+    /// drained FIFO under a dedicated publish gate: whichever thread drains
+    /// first emits every pending change in order, and the loser finds an empty
+    /// queue.
+    /// </remarks>
     private void Publish(CircuitStateChange? change)
     {
         if (change is null)
             return;
 
+        lock (_publishGate)
+        {
+            while (_pendingPublications.TryDequeue(out var pending))
+                Emit(pending);
+        }
+    }
+
+    private void Emit(CircuitStateChange change)
+    {
         var tags = new TagList
         {
             { MessagingAttributes.NimBusEndpoint, change.Endpoint },

@@ -59,7 +59,14 @@ public sealed class CircuitBreakerOptions
     internal bool ShouldCount(Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
-        if (Contains<OperationCanceledException>(exception)
+
+        // Cancellation is excluded only when it IS the thrown exception (host
+        // shutdown propagating through the pipeline). A cancellation nested in
+        // the inner chain is a downstream timeout — an HttpClient timeout
+        // surfaces as TaskCanceledException wrapped in the retry-classified
+        // EventContextHandlerException, the most common outage signature — and
+        // MUST count toward opening the circuit.
+        if (exception is OperationCanceledException
             || Contains<SessionBlockedException>(exception)
             || IsExcluded(exception))
         {

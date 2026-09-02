@@ -1,10 +1,14 @@
 #pragma warning disable CA1707, CA2007
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.CircuitBreaker;
 using NimBus.Core.Events;
+using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
+using NimBus.SDK.EventHandlers;
 using NimBus.Testing;
+using NimBus.Testing.Extensions;
 
 namespace NimBus.Core.Tests;
 
@@ -255,4 +259,181 @@ public sealed class CircuitBreakerTests
     }
 
     private sealed class ExpectedDependencyException : Exception;
+
+    // ----- regression tests for the PR #116 review findings -------------------
+
+    [TestMethod]
+    public void Wrapped_downstream_timeout_counts_toward_opening()
+    {
+        // An HttpClient timeout surfaces as TaskCanceledException wrapped in the
+        // retry-classified handler exception — the most common outage signature.
+        var breaker = CreateBreaker(minimumThroughput: 1, failurePercentage: 100);
+
+        breaker.RecordFailure(new EventContextHandlerException(new TaskCanceledException("HTTP timeout")));
+
+        Assert.AreEqual(CircuitState.Open, breaker.State);
+    }
+
+    [TestMethod]
+    public void Top_level_cancellation_does_not_count()
+    {
+        var breaker = CreateBreaker(minimumThroughput: 1, failurePercentage: 100);
+
+        breaker.RecordFailure(new OperationCanceledException());
+
+        Assert.AreEqual(CircuitState.Closed, breaker.State);
+    }
+
+    [TestMethod]
+    public async Task Waiter_observes_transition_racing_the_break_expiry()
+    {
+        // The internal break delay elapsing and a concurrent reader (the metrics
+        // gauge) advancing Open->HalfOpen are synchronized by construction at
+        // openedAt + BreakDuration. The waiter must return the transition even
+        // when its delay wins that race, instead of re-binding the fresh signal
+        // and stranding the endpoint paused in HalfOpen.
+        var clock = new ManualTimerProvider(Start);
+        var options = CreateOptions();
+        options.BreakDuration = TimeSpan.FromMinutes(1);
+        var breaker = new EndpointCircuitBreaker("billing", options, clock);
+        breaker.RecordFailure(new EventContextHandlerException(new InvalidOperationException("down")));
+        Assert.AreEqual(CircuitState.Open, breaker.State);
+
+        var wait = breaker.WaitForStateChangeAsync(CancellationToken.None);
+        await Task.Delay(50); // let the waiter arm its internal delay
+        clock.Advance(TimeSpan.FromMinutes(1)); // completes the delay task
+        _ = breaker.State; // gauge-style read performs the Open->HalfOpen advance
+
+        var change = await wait.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.AreEqual(CircuitState.Open, change.From);
+        Assert.AreEqual(CircuitState.HalfOpen, change.To);
+    }
+
+    [TestMethod]
+    public async Task Recorder_registered_both_ways_records_each_outcome_once()
+    {
+        // A user following the AddPipelineBehavior<T> docs may register the
+        // recorder manually alongside WithCircuitBreaker; the pipeline must
+        // dedup it or every outcome double-counts and the effective thresholds
+        // silently halve.
+        var breaker = CreateBreaker(minimumThroughput: 2, failurePercentage: 100);
+        var recorder = new CircuitBreakerRecorderBehavior(breaker);
+        using var provider = new ServiceCollection()
+            .AddSingleton(recorder)
+            .BuildServiceProvider();
+        var pipeline = new MessagePipeline(
+            new PipelineBehaviorRegistry([typeof(CircuitBreakerRecorderBehavior)]),
+            provider,
+            [recorder]);
+
+        await Assert.ThrowsExactlyAsync<TransientException>(() =>
+            pipeline.Execute(CreateContext("OrderPlaced"), (_, _) => throw new TransientException("down")));
+
+        // One failure recorded, below MinimumThroughput=2 — a double-recording
+        // pipeline would have opened the circuit here.
+        Assert.AreEqual(CircuitState.Closed, breaker.State);
+
+        await Assert.ThrowsExactlyAsync<TransientException>(() =>
+            pipeline.Execute(CreateContext("OrderPlaced"), (_, _) => throw new TransientException("down")));
+
+        Assert.AreEqual(CircuitState.Open, breaker.State);
+    }
+
+    [TestMethod]
+    public async Task Test_transport_honors_WithCircuitBreaker()
+    {
+        // The in-memory path must exercise the same middleware composition as
+        // production — WithCircuitBreaker used to be validated and then
+        // silently discarded here.
+        var services = new ServiceCollection();
+        services.AddNimBusTestTransport(builder =>
+        {
+            // TransientException: counted by the breaker and rethrown verbatim
+            // through the pipeline. A generic exception would route through the
+            // error-response path, which needs more message metadata than this
+            // minimal fixture carries.
+            builder.AddDynamicHandler(
+                "OrderPlaced",
+                () => new DelegateEventJsonHandler((_, _) => throw new TransientException("down")));
+            builder.WithCircuitBreaker(options =>
+            {
+                options.MinimumThroughput = 2;
+                options.FailurePercentageThreshold = 100;
+            });
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var messageHandler = provider.GetRequiredService<IMessageHandler>();
+        var breaker = provider.GetRequiredService<IEndpointCircuitBreaker>();
+
+        await messageHandler.Handle(CreateContext("OrderPlaced"));
+        Assert.AreEqual(CircuitState.Closed, breaker.State);
+
+        await messageHandler.Handle(CreateContext("OrderPlaced"));
+        Assert.AreEqual(CircuitState.Open, breaker.State);
+    }
+
+    /// <summary>
+    /// TimeProvider whose timers fire only when the test advances the clock —
+    /// the base TimeProvider.CreateTimer runs on real time, which cannot pin
+    /// the break-expiry race deterministically.
+    /// </summary>
+    private sealed class ManualTimerProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        private readonly object _lock = new();
+        private readonly List<PendingTimer> _pending = [];
+        private DateTimeOffset _utcNow = utcNow;
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            lock (_lock)
+            {
+                return _utcNow;
+            }
+        }
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            lock (_lock)
+            {
+                var timer = new PendingTimer(callback, state, _utcNow + dueTime);
+                _pending.Add(timer);
+                return timer;
+            }
+        }
+
+        public void Advance(TimeSpan delta)
+        {
+            PendingTimer[] due;
+            lock (_lock)
+            {
+                _utcNow += delta;
+                due = _pending.Where(timer => timer.Due <= _utcNow && !timer.Fired).ToArray();
+            }
+
+            foreach (var timer in due)
+                timer.Fire();
+        }
+
+        private sealed class PendingTimer(TimerCallback callback, object? state, DateTimeOffset due) : ITimer
+        {
+            public DateTimeOffset Due { get; } = due;
+
+            public bool Fired { get; private set; }
+
+            public void Fire()
+            {
+                Fired = true;
+                callback(state);
+            }
+
+            public bool Change(TimeSpan dueTime, TimeSpan period) => false;
+
+            public void Dispose()
+            {
+            }
+
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
 }

@@ -28,8 +28,14 @@ namespace NimBus.Core.Extensions
                 .Select(t => (IMessagePipelineBehavior)serviceProvider.GetService(t))
                 .Where(b => b != null);
 
+            // Distinct (reference equality — behaviors are DI singletons):
+            // a user following the AddPipelineBehavior<T> docs may register the
+            // circuit recorder manually alongside WithCircuitBreaker; running
+            // the same recorder twice double-counts every outcome and silently
+            // halves the breaker's effective thresholds.
             _behaviors = configuredBehaviors
                 .Concat(appendedBehaviors ?? [])
+                .Distinct()
                 .ToList()
                 .AsReadOnly();
         }

@@ -28,17 +28,16 @@ var identityEnabled = string.Equals(
     "true",
     StringComparison.OrdinalIgnoreCase);
 
-// Service Bus source. Default is a real Azure namespace via AddConnectionString
-// (connection string supplied by the AppHost's user-secrets). Setting
-// `UseEmulator=true` (CLI flag) or `NIMBUS_SB_EMULATOR=true` (env var) instead
-// runs the in-process NimBus Service Bus emulator (spec 027) under Aspire — no
-// Azure dependency and no container required for local/CI demos. The emulator
-// multiplexes AMQP and the ATOM admin API on one port, so the regular runtime
-// provisioner works against it — no pre-declared UserConfig needed.
+// Service Bus source. The in-process NimBus Service Bus emulator (spec 027) is
+// the default, so local/CI demos need neither Azure nor another container. Set
+// `UseEmulator=false` (CLI flag) or `NIMBUS_SB_EMULATOR=false` (env var) to use
+// a real Azure namespace via the connection string in the AppHost's user-secrets.
+// The emulator multiplexes AMQP and the ATOM admin API on one port, so the
+// regular runtime provisioner works against it without pre-declared UserConfig.
 var useEmulator = string.Equals(
-    builder.Configuration["UseEmulator"]
-        ?? Environment.GetEnvironmentVariable("NIMBUS_SB_EMULATOR")
-        ?? "false",
+    Environment.GetEnvironmentVariable("NIMBUS_SB_EMULATOR")
+        ?? builder.Configuration["UseEmulator"]
+        ?? "true",
     "true",
     StringComparison.OrdinalIgnoreCase);
 

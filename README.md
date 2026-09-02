@@ -179,17 +179,17 @@ What it demonstrates:
 ### Run it
 
 ```powershell
-# 1. This demo still uses a real namespace pending its emulator migration.
-#    The main src/NimBus.AppHost already supports NIMBUS_SB_EMULATOR=true.
-dotnet user-secrets --project samples/CrmErpDemo/CrmErpDemo.AppHost set ConnectionStrings:servicebus "Endpoint=sb://..."
-
-# 2. SPA dependencies (first run only)
+# 1. SPA dependencies (first run only)
 cd samples/CrmErpDemo/Crm.Web; npm install; cd ../../..
 cd samples/CrmErpDemo/Erp.Web; npm install; cd ../../..
 
-# 3. Launch the demo (SQL Server storage by default)
-dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost
+# 2. Launch the demo. NimBus Service Bus emulator and SQL Server storage are the defaults.
+cd samples/CrmErpDemo/CrmErpDemo.AppHost
+aspire run
 ```
+
+To use a real Azure Service Bus namespace instead, set `NIMBUS_SB_EMULATOR=false`
+and store `ConnectionStrings:servicebus` in the AppHost's user-secrets.
 
 Wait for `provisioner` to complete in the Aspire dashboard, then create an account in **crm-web** and watch it round-trip through `crm-adapter` → Service Bus → `erp-adapter` Function → `erp-api` → back to `crm-api` to populate the ERP customer id. Stop `erp-api` mid-flow to see the failure / blocked-session / resubmit path in **nimbus-ops**.
 

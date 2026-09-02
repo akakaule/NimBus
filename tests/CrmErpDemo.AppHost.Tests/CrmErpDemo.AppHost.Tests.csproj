@@ -21,4 +21,10 @@
     <ProjectReference Include="..\..\samples\CrmErpDemo\PartnerPortal\PartnerPortal.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="..\..\samples\CrmErpDemo\CrmErpDemo.AppHost\Properties\launchSettings.json"
+             Link="AppHost.launchSettings.json"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

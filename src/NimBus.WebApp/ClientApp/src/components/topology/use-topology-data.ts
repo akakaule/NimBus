@@ -6,6 +6,8 @@ import type {
   FlowEdge,
   FlowEdgeHealth,
   NodeHealth,
+  SpineLink,
+  SpineType,
   TopologyData,
   TopologyEdge,
   TopologyNode,
@@ -336,6 +338,12 @@ function buildTopology(
     return f;
   };
 
+  // Spine (Lanes view) accumulators — the event-type hub column plus both hop
+  // sets. Every hop is an exact (endpoint, eventType) metrics row, so unlike
+  // flowAccum there is no producer-share estimate anywhere on the spine.
+  const spineTypes: SpineType[] = [];
+  const spineLinks: SpineLink[] = [];
+
   for (const et of relevantTypes) {
     if (!et.id) continue;
 
@@ -412,6 +420,52 @@ function buildTopology(
         }
       }
     }
+
+    // Spine side --------------------------------------------------------------
+    // publisher → event type → subscriber (Lanes view). Each hop reads its own
+    // metrics row: publish hops use the producer's published count, subscribe
+    // hops the consumer's handled/failed counts.
+    if (allowedProducers.length > 0 || allowedConsumers.length > 0) {
+      let typePublished = 0;
+      let typeHandled = 0;
+      let typeFailed = 0;
+      for (const producer of allowedProducers) {
+        const msgs = published[`${producer}::${et.id}`] ?? 0;
+        typePublished += msgs;
+        spineLinks.push({
+          id: `pub::${producer}::${et.id}`,
+          kind: "pub",
+          endpointId: producer,
+          eventTypeId: et.id,
+          messages: msgs,
+          failures: failed[`${producer}::${et.id}`] ?? 0,
+        });
+      }
+      for (const consumer of allowedConsumers) {
+        const msgs = handled[`${consumer}::${et.id}`] ?? 0;
+        const fails = failed[`${consumer}::${et.id}`] ?? 0;
+        typeHandled += msgs;
+        typeFailed += fails;
+        spineLinks.push({
+          id: `sub::${consumer}::${et.id}`,
+          kind: "sub",
+          endpointId: consumer,
+          eventTypeId: et.id,
+          messages: msgs,
+          failures: fails,
+        });
+      }
+      spineTypes.push({
+        id: et.id,
+        label: et.name || et.id,
+        namespace: et.namespace ?? "",
+        producers: allowedProducers.length,
+        consumers: allowedConsumers.length,
+        published: typePublished,
+        handled: typeHandled,
+        failed: typeFailed,
+      });
+    }
   }
 
   // 4. Materialise nodes with derived health.
@@ -479,6 +533,26 @@ function buildTopology(
     ? allFlowEdges.filter((f) => f.health !== "idle")
     : allFlowEdges;
 
+  // 5d. Spine for the Lanes view. Same idle-filter semantics as the ribbons:
+  //     hiding idle edges drops zero-traffic hops and any event type left
+  //     with no hops at all. Sorted for deterministic output regardless of
+  //     catalog array order (same contract the layout engine relies on).
+  const keptSpineLinks = hideIdleEdges
+    ? spineLinks.filter((l) => l.messages > 0 || l.failures > 0)
+    : spineLinks;
+  const keptTypeIds = new Set(keptSpineLinks.map((l) => l.eventTypeId));
+  const keptSpineTypes = hideIdleEdges
+    ? spineTypes.filter((t) => keptTypeIds.has(t.id))
+    : spineTypes;
+  keptSpineTypes.sort(
+    (a, b) =>
+      compareCodeUnits(a.namespace, b.namespace) ||
+      compareCodeUnits(a.label, b.label) ||
+      compareCodeUnits(a.id, b.id),
+  );
+  keptSpineLinks.sort((a, b) => compareCodeUnits(a.id, b.id));
+  const spine = { types: keptSpineTypes, links: keptSpineLinks };
+
   // 6. Pick the top event pills by traffic (skipping idle edges).
   const pills: EventPill[] = pillCandidates
     .filter((c) => c.messages > 0)
@@ -521,7 +595,12 @@ function buildTopology(
     consumingEndpoints: consumingEndpoints.size,
   };
 
-  return { nodes, edges, pills, flowEdges, summary };
+  return { nodes, edges, pills, flowEdges, spine, summary };
+}
+
+/** Code-unit comparison — layout identity must not depend on collation tables. */
+function compareCodeUnits(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function buildFlowTooltip(

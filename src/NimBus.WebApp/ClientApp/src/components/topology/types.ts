@@ -87,12 +87,57 @@ export interface FlowEdge {
   tooltip: string;
 }
 
+/**
+ * One event type on the spine — the middle column of the Flow page's Lanes
+ * view (design exploration 1b: "route through the event types"). Carries its
+ * own aggregate traffic so the hub card can answer "what is moving" without
+ * consulting the links.
+ */
+export interface SpineType {
+  /** Event-type id (deep-link target). */
+  id: string;
+  /** Display label — unqualified name; falls back to id. */
+  label: string;
+  /** Namespace for the purple pill; empty string when the catalog has none. */
+  namespace: string;
+  /** Producing endpoints linked to this type (distinct, after filters). */
+  producers: number;
+  /** Consuming endpoints linked to this type (distinct, after filters). */
+  consumers: number;
+  /** Sum of publish-side counts over the selected window. */
+  published: number;
+  /** Sum of handled counts over the selected window. */
+  handled: number;
+  /** Sum of consumer-side failed counts over the selected window. */
+  failed: number;
+}
+
+/**
+ * One hop of the spine: publisher → event type (`kind: "pub"`, exact
+ * publish-side counts) or event type → subscriber (`kind: "sub"`, exact
+ * handled/failed counts). Unlike `FlowEdge` there is NO producer-share
+ * approximation — every count is a real (endpoint, eventType) metrics row.
+ */
+export interface SpineLink {
+  /** Stable composite key — `${kind}::${endpointId}::${eventTypeId}`. */
+  id: string;
+  kind: "pub" | "sub";
+  endpointId: string;
+  eventTypeId: string;
+  /** Window total for this hop (published for pub, handled for sub). */
+  messages: number;
+  /** Window failures attributed to this hop's endpoint for this type. */
+  failures: number;
+}
+
 export interface TopologyData {
   nodes: TopologyNode[];
   edges: TopologyEdge[];
   pills: EventPill[];
   /** Producer→Consumer routes for the Flow view. Independent of `edges`. */
   flowEdges: FlowEdge[];
+  /** Event-type hub column + both hop sets for the Flow page's Lanes view. */
+  spine: { types: SpineType[]; links: SpineLink[] };
   /** Aggregate counts for the summary strip; cheap to compute alongside the rest. */
   summary: {
     endpoints: number;

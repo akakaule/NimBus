@@ -21,6 +21,7 @@ import type {
   StatusSnapshot,
 } from "components/flow/types";
 import type { TopologyNode } from "components/topology/types";
+import { SpineView } from "components/flow/spine-view";
 import { FLOW_KIND_VERB, useFlowData } from "hooks/use-flow-data";
 
 // Live Flow page (spec 020, Phase 1). React owns the static scene — nodes,
@@ -36,6 +37,17 @@ const PERIODS: Array<{ label: string; value: api.Period }> = [
   { label: "1d", value: api.Period._1d },
   { label: "7d", value: api.Period._7d },
 ];
+
+/** Window length in minutes per period — the Lanes view shows per-minute rates. */
+const PERIOD_MINUTES: Partial<Record<api.Period, number>> = {
+  [api.Period._1h]: 60,
+  [api.Period._12h]: 720,
+  [api.Period._1d]: 1440,
+  [api.Period._7d]: 10080,
+};
+
+/** The two canvases: the spec-020 animated dots and the 1b event-type lanes. */
+type FlowView = "dots" | "lanes";
 
 // ---------------------------------------------------------------------------
 // Persisted preferences (OQ-2 resolution: persist filter + speed)
@@ -53,6 +65,8 @@ interface FlowPrefs {
    *                (top TOP_N_DEFAULT by traffic when the catalog is bigger)
    */
   endpointIds?: string[] | null;
+  /** Selected canvas; absent = the Lanes default. */
+  view?: FlowView;
 }
 
 function loadPrefs(): FlowPrefs {
@@ -73,7 +87,11 @@ function loadPrefs(): FlowPrefs {
       : parsed.endpointIds === null
         ? null
         : undefined;
-    return { speed, endpointIds };
+    const view =
+      parsed.view === "dots" || parsed.view === "lanes"
+        ? parsed.view
+        : undefined;
+    return { speed, endpointIds, view };
   } catch {
     return { speed: 1 };
   }
@@ -100,6 +118,9 @@ export default function Flow() {
     () => loadPrefs().endpointIds,
   );
   const [eventType, setEventType] = useState("");
+  // Lanes (design 1b) is the chosen default; the dots canvas stays one click
+  // away and the choice persists with the other prefs.
+  const [view, setView] = useState<FlowView>(() => loadPrefs().view ?? "lanes");
 
   // The animator and the layout index are read from a STABLE callback (the
   // hook holds onActivity for the lifetime of the subscription), so both live
@@ -186,7 +207,7 @@ export default function Flow() {
   // Animator lifecycle — created once the canvas exists, torn down with the
   // page. Keyed on a boolean so layout-to-layout changes (filters) reuse the
   // same instance; invalidatePaths below handles re-rendered paths.
-  const canvasReady = layout !== undefined;
+  const canvasReady = layout !== undefined && view === "dots";
   useEffect(() => {
     if (!canvasReady) return;
     const dotLayer = dotLayerRef.current;
@@ -221,8 +242,8 @@ export default function Flow() {
   }, [layout]);
 
   useEffect(() => {
-    savePrefs({ speed, endpointIds: selection });
-  }, [speed, selection]);
+    savePrefs({ speed, endpointIds: selection, view });
+  }, [speed, selection, view]);
 
   // Coarse clock for the activity log's relative timestamps — 30 s keeps
   // them honest without re-rendering the static SVG every second.
@@ -247,6 +268,22 @@ export default function Flow() {
         <>
           <ModeBadge mode={mode} />
           <div className="inline-flex items-center bg-card border border-border rounded-nb-md p-[3px] gap-[2px]">
+            {(["lanes", "dots"] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={cn(
+                  "px-3 py-1.5 rounded-md text-xs font-semibold transition-colors",
+                  view === v
+                    ? "bg-primary text-white"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {v === "lanes" ? "Lanes" : "Dots"}
+              </button>
+            ))}
+          </div>
+          <div className="inline-flex items-center bg-card border border-border rounded-nb-md p-[3px] gap-[2px]">
             {PERIODS.map((p) => (
               <button
                 key={p.value}
@@ -269,30 +306,36 @@ export default function Flow() {
         {layout !== undefined && topology !== undefined ? (
           <>
             <div className="flex flex-wrap items-center gap-2.5">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setPaused((p) => !p)}
-                title={paused ? "Resume the animation" : "Freeze dots in place"}
-              >
-                {paused ? "▶ Resume" : "❚❚ Pause"}
-              </Button>
-              <label className="inline-flex items-center gap-2 h-8 px-3 bg-card border border-border-strong rounded-nb-md text-xs text-muted-foreground">
-                Speed
-                <input
-                  type="range"
-                  min={0.25}
-                  max={4}
-                  step={0.25}
-                  value={speed}
-                  onChange={(e) => setSpeed(Number(e.target.value))}
-                  className="w-28 accent-primary"
-                  aria-label="Animation speed"
-                />
-                <span className="font-mono text-[11px] w-10 text-right text-foreground">
-                  {formatSpeed(speed)}×
-                </span>
-              </label>
+              {view === "dots" && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setPaused((p) => !p)}
+                    title={
+                      paused ? "Resume the animation" : "Freeze dots in place"
+                    }
+                  >
+                    {paused ? "▶ Resume" : "❚❚ Pause"}
+                  </Button>
+                  <label className="inline-flex items-center gap-2 h-8 px-3 bg-card border border-border-strong rounded-nb-md text-xs text-muted-foreground">
+                    Speed
+                    <input
+                      type="range"
+                      min={0.25}
+                      max={4}
+                      step={0.25}
+                      value={speed}
+                      onChange={(e) => setSpeed(Number(e.target.value))}
+                      className="w-28 accent-primary"
+                      aria-label="Animation speed"
+                    />
+                    <span className="font-mono text-[11px] w-10 text-right text-foreground">
+                      {formatSpeed(speed)}×
+                    </span>
+                  </label>
+                </>
+              )}
               <EndpointFilterMenu
                 nodes={topology.nodes}
                 selection={effectiveSelection}
@@ -318,6 +361,18 @@ export default function Flow() {
               </Select>
             </div>
 
+            {view === "lanes" ? (
+              <SpineView
+                topology={topology}
+                visibleEndpointIds={visibleSet}
+                eventType={eventType}
+                periodMinutes={PERIOD_MINUTES[period] ?? 60}
+                periodLabel={
+                  PERIODS.find((p) => p.value === period)?.label ?? ""
+                }
+                snapshots={snapshots}
+              />
+            ) : (
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 items-start">
               <div className="bg-card border border-border rounded-nb-lg p-4 overflow-x-auto min-w-0 text-foreground">
                 <FlowStyles />
@@ -453,6 +508,7 @@ export default function Flow() {
                 <ActivityLog log={log} now={now} />
               </aside>
             </div>
+            )}
           </>
         ) : topologyLoading ? (
           <div className="flex items-center justify-center h-[400px] w-full">

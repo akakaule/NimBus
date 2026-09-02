@@ -1,5 +1,7 @@
 using Crm.Adapter.Clients;
 using Crm.Adapter.Handlers;
+using Crm.Adapter.Observability;
+using Microsoft.Extensions.Configuration;
 using NimBus.Core.CloudEvents;
 using NimBus.Core.Extensions;
 using NimBus.Core.Inbox;
@@ -17,7 +19,28 @@ var crmApiBaseUrl = builder.Configuration["services:crm-api:https:0"]
     ?? builder.Configuration["Crm:ApiBaseUrl"]
     ?? throw new InvalidOperationException("Crm API base URL is required (service discovery or Crm:ApiBaseUrl).");
 
-builder.Services.AddHttpClient<ICrmApiClient, CrmApiClient>(c => c.BaseAddress = new Uri(crmApiBaseUrl));
+// Circuit-breaker showcase: the outage flag is read fail-open on a dedicated
+// short-timeout client (never surfaces TaskCanceledException into the handler
+// path), and the simulation handler injects synthetic 503s BELOW the handlers
+// so failures take the authentic CrmApiClient path — the circuit recorder is
+// the innermost pipeline wrapper and only counts failures thrown inside
+// handler execution.
+builder.Services.AddHttpClient<IErrorModeClient, ErrorModeClient>(c =>
+{
+    c.BaseAddress = new Uri(crmApiBaseUrl);
+    c.Timeout = TimeSpan.FromSeconds(2);
+});
+builder.Services.AddTransient<CrmOutageSimulationHandler>();
+builder.Services.AddHttpClient<ICrmApiClient, CrmApiClient>(c => c.BaseAddress = new Uri(crmApiBaseUrl))
+    .AddHttpMessageHandler<CrmOutageSimulationHandler>();
+
+// Pushes circuit transitions to crm-api so the SPA can show a live indicator
+// (the adapter is a worker with no HTTP listener — state flows adapter → api → web).
+builder.Services.AddHttpClient<CircuitStateReporterClient>(c =>
+{
+    c.BaseAddress = new Uri(crmApiBaseUrl);
+    c.Timeout = TimeSpan.FromSeconds(2);
+});
 
 // Inbox deduplication store (showcase): the crm business database doubles as the
 // dedup store — [nimbus].[InboxMessages] mirrors the erp database's outbox table.
@@ -34,6 +57,10 @@ builder.Services.AddNimBus(n =>
 {
     n.AddPipelineBehavior<LoggingMiddleware>();
     n.AddPipelineBehavior<ValidationMiddleware>();
+    // Circuit-breaker showcase: report every transition to crm-api so the SPA
+    // shows Closed / Open / HalfOpen live. Also an SDK extensibility example —
+    // OnCircuitStateChanged is a default-implemented lifecycle hook.
+    n.AddLifecycleObserver<CircuitStateReporter>();
 });
 
 // Subscriber + receiver for CrmEndpoint. Also publishes acks/errors back through CrmEndpoint sender.
@@ -59,6 +86,22 @@ builder.Services.AddNimBusSubscriber(
             options.DeduplicationStore = InboxStore.SqlServer;
             options.RetentionPeriod = TimeSpan.FromDays(2);
             options.CleanupInterval = TimeSpan.FromMinutes(15);
+        });
+
+        // Circuit-breaker showcase (docs/circuit-breaker.md): demo-tuned
+        // thresholds so the circuit trips within ~15-30s of flipping the CRM
+        // outage toggle at simulator traffic (~1 event/s) and the full
+        // open -> half-open probe -> closed loop completes inside a minute.
+        // Overridable via the Crm:CircuitBreaker section
+        // (Crm__CircuitBreaker__* environment variables).
+        var circuitSection = builder.Configuration.GetSection("Crm:CircuitBreaker");
+        sub.WithCircuitBreaker(circuit =>
+        {
+            circuit.MinimumThroughput = circuitSection.GetValue("MinimumThroughput", 5);
+            circuit.FailurePercentageThreshold = circuitSection.GetValue("FailurePercentageThreshold", 50d);
+            circuit.SamplingWindow = TimeSpan.FromSeconds(circuitSection.GetValue("SamplingWindowSeconds", 60));
+            circuit.BreakDuration = TimeSpan.FromSeconds(circuitSection.GetValue("BreakDurationSeconds", 20));
+            circuit.HalfOpenProbeCount = circuitSection.GetValue("HalfOpenProbeCount", 2);
         });
     });
 builder.Services.AddNimBusReceiver(opts =>

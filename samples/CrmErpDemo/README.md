@@ -452,6 +452,52 @@ erp-web (Error mode / Service mode toggle)
    Flipping **Service mode** ON instead produces **Error** alerts as inbound messages are rejected.
 5. Turn the toggles OFF to stop new alerts; click **Clear** to empty the panel.
 
+## Showcase: Circuit breaker (outage → pause → probe → recover)
+
+NimBus's [endpoint circuit breaker](../../docs/circuit-breaker.md) pauses a subscriber's
+receivers when retry-eligible failures indicate a distressed downstream dependency — messages
+wait untouched on the subscription instead of burning retry budgets into the dead-letter queue.
+This demo wires it onto **crm-adapter** (the SDK-hosted worker; Functions hosts cannot pause)
+with demo-tuned thresholds so the whole loop runs inside a minute.
+
+The loop is fully local:
+
+```
+crm-web ("CRM API outage" toggle)
+   └─▶ crm-adapter's HTTP client returns synthetic 503s  →  every CrmEndpoint handler fails
+        └─▶ failure rate ≥ 50% over 5+ outcomes  →  circuit OPENS  →  both receivers pause
+             └─▶ 20s break  →  HALF-OPEN probes at 1 session  →  2 successes  →  CLOSED
+                  └─▶ CircuitStateReporter POSTs each transition  →  crm-api  /api/webhooks/circuit-state
+                       └─▶ crm-web "Circuit breaker" panel polls /api/admin/circuit-state every 3s
+```
+
+- **Fail** — `Crm.Api/ErrorModeState.cs` + `/api/admin/error-mode` (mirrors the ERP toggles);
+  `Crm.Adapter/Clients/CrmOutageSimulationHandler.cs` injects the 503s *below* the handlers, so
+  failures take the authentic `CrmApiClient` path and count toward the breaker.
+- **Break** — `Crm.Adapter/Program.cs` opts in with `WithCircuitBreaker(...)`, thresholds from the
+  `Crm:CircuitBreaker` appsettings section (5 outcomes / 50% / 60s window / 20s break / 2 probes).
+  One breaker pauses both receivers — CrmEndpoint *and* the PartnerInbound ingress.
+- **Display** — `Crm.Adapter/Observability/CircuitStateReporter.cs` (a default-implemented
+  `IMessageLifecycleObserver`) pushes transitions to `Crm.Api/CircuitStateStore.cs`;
+  `Crm.Web/src/components/admin/circuit-breaker-panel.tsx` shows Closed / Open / Half-open live.
+  The `nimbus.circuit_breaker.state` gauge also lands in the Aspire dashboard's Metrics tab.
+
+### Manual smoke flow
+
+1. AppHost up → open **crm-web** → the Circuit breaker panel reads **Closed**.
+2. Click **Simulate** (or create accounts by hand) to drive steady CRM → ERP → CRM traffic.
+3. Flip **CRM API outage: ON**. Handlers fail; within ~15–30 s the panel flips to **Open** —
+   crm-adapter's log shows "Pausing NimBus receiver …", and **nimbus-ops** shows the few failed
+   sessions from before the pause (no flood: the receiver stopped consuming).
+4. Flip the outage **OFF**. After the 20 s break the panel shows **Half-open** (probing at one
+   session), then **Closed**; traffic completes normally again in nimbus-ops.
+
+### Automated coverage
+
+- [`e2e/tests/11-circuit-breaker-recovery.spec.ts`](e2e/tests/11-circuit-breaker-recovery.spec.ts) —
+  outage on → 6 failing sessions open the circuit (asserted via `/api/admin/circuit-state`) →
+  outage off → probe traffic closes it → a fresh event completes on CrmEndpoint.
+
 ## Showcase: CloudEvents partner interop (external system, zero NimBus)
 
 NimBus's [CloudEvents 1.0 interoperability](../../docs/cloudevents.md) ([ADR-013](../../docs/adr/013-cloudevents-interoperability.md)) is demonstrated in both directions by **PartnerPortal** — a simulated external third-party system that deliberately references only `Azure.Messaging.ServiceBus` (zero NimBus packages). A visual guide with sequence diagrams and wire-format examples is in [docs/partner-interop.md](docs/partner-interop.md):

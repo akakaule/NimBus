@@ -14,6 +14,7 @@ NimBus management WebApp UI to resubmit, and asserts on cross-system state.
 | `04-pending-handoff-success.spec.ts` | Handoff mode ON: create handed off, sibling updates defer behind the in-flight handoff, `HandoffJobBackgroundService` settles via `IHandoffClient.CompleteAsync`, all rows reach Completed. |
 | `05-pending-handoff-failure.spec.ts` | Handoff mode at failureRate=1.0: `IHandoffClient.FailAsync` carries DMF error text → audit row Failed → operator Skip via NimBus REST → Skipped. |
 | `06-pending-handoff-resubmit.spec.ts` | Same trigger as 05, but operator clicks Resubmit in the NimBus.WebApp UI (handoff mode disabled first); audit row leaves Failed and the ERP customer materialises. |
+| `11-circuit-breaker-recovery.spec.ts` | CRM outage mode fails 6 sessions on CrmEndpoint → circuit opens (asserted via crm-api `/api/admin/circuit-state`) → outage off → probe traffic closes it → a fresh event completes end to end. |
 
 Setup and teardown go through REST APIs; the WebApp browser is used for the
 operator action being demonstrated. Specs 02, 03 and 06 drive the WebApp

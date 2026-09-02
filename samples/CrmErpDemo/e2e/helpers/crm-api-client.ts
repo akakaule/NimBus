@@ -119,12 +119,50 @@ export class CrmApiClient {
     if (!res.ok()) throw new Error(`CRM POST credit-hold → ${res.status()} ${await res.text()}`);
   }
 
+  // ─── Failure-mode toggles (circuit-breaker showcase) ──────────
+
+  async getErrorMode(): Promise<CrmModeState> {
+    const res = await this.api.get("/api/admin/error-mode");
+    if (!res.ok()) throw new Error(`CRM GET error-mode → ${res.status()}`);
+    return (await res.json()) as CrmModeState;
+  }
+
+  async setErrorMode(enabled: boolean): Promise<CrmModeState> {
+    const res = await this.api.put("/api/admin/error-mode", { data: { enabled } });
+    if (!res.ok()) throw new Error(`CRM PUT error-mode → ${res.status()}`);
+    return (await res.json()) as CrmModeState;
+  }
+
+  /** Live CrmEndpoint circuit state, pushed by crm-adapter's CircuitStateReporter. */
+  async getCircuitState(): Promise<CircuitStateSnapshot> {
+    const res = await this.api.get("/api/admin/circuit-state");
+    if (!res.ok()) throw new Error(`CRM GET circuit-state → ${res.status()}`);
+    return (await res.json()) as CircuitStateSnapshot;
+  }
+
+  /** Restore the outage toggle to off; safe to call from before/after hooks. */
+  async resetFailureModes(): Promise<void> {
+    await this.setErrorMode(false);
+  }
+
   /** Audit rows for one entity — used to prove inbox-skipped duplicates ran no handler. */
   async getAuditLog(entityType: "Account" | "Contact", entityId: string): Promise<unknown[]> {
     const res = await this.api.get(`/api/audit/${entityType}/${entityId}`);
     if (!res.ok()) throw new Error(`CRM GET audit → ${res.status()}`);
     return (await res.json()) as unknown[];
   }
+}
+
+export interface CrmModeState {
+  enabled: boolean;
+  changedAt: string;
+}
+
+export interface CircuitStateSnapshot {
+  endpoint: string;
+  state: "Closed" | "Open" | "HalfOpen" | string;
+  reason: string;
+  changedAt: string;
 }
 
 export interface CreditCheckResult {

@@ -238,3 +238,11 @@ Notes for whoever uploads it:
 - The Playwright specs in `../e2e/tests/` (01, 03, 04, 05, 09, 10) are the regression
   equivalents of Acts 1–4 — if a shot stops working, the matching spec tells you
   whether the demo or the platform broke.
+
+## Possible future act: circuit breaker
+
+The circuit-breaker showcase (README → "Showcase: Circuit breaker") is filmable as its own
+act: crm-web's outage toggle flips ON, the panel goes Open ("Receiver paused") within ~20
+seconds, nimbus-ops shows no DLQ flood, and after the toggle flips OFF the panel walks
+Half-open → Closed inside a minute. Regression equivalent: `../e2e/tests/11-circuit-breaker-recovery.spec.ts`.
+Between takes, reset: CRM API outage OFF (crm-web header panel).

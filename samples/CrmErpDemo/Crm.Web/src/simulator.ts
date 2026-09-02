@@ -2,20 +2,27 @@
 // working in the CRM by performing randomized create/update/delete activity on
 // accounts and contacts through the same /api calls the UI uses — which publish
 // CrmAccount*/CrmContact* events to the Service Bus. Up to MAX_WORKERS actions
-// run in parallel, with a random 500ms–2s gap between each worker's actions.
+// run in parallel, paced to the configured target rate (messages per minute,
+// header slider) with ±30% jitter so the traffic keeps a human rhythm. The
+// rate is a target: each action is a real HTTP round-trip, so very high
+// settings top out at whatever the API sustains.
 
 import { useSyncExternalStore } from 'react';
 import { api } from './api';
 import { randomCompany, randomPerson, randomPick } from './fakeData';
 
-const MIN_DELAY = 500;
-const MAX_DELAY = 2000;
 const MAX_WORKERS = 2;
+
+export const MIN_RATE_PER_MINUTE = 10;
+export const MAX_RATE_PER_MINUTE = 300;
+export const DEFAULT_RATE_PER_MINUTE = 60;
 
 export interface SimStats {
   running: boolean;
   actions: number;
   lastAction: string | null;
+  /** Target actions per minute across all workers. */
+  ratePerMinute: number;
 }
 
 type ActionKind =
@@ -58,11 +65,17 @@ class Simulator {
   private running = false;
   private actions = 0;
   private lastAction: string | null = null;
+  private ratePerMinute = DEFAULT_RATE_PER_MINUTE;
   // Bumped on every start() so workers from a previous run exit instead of
   // doubling up if the toggle is flipped off then on again quickly.
   private generation = 0;
   private listeners = new Set<() => void>();
-  private snapshot: SimStats = { running: false, actions: 0, lastAction: null };
+  private snapshot: SimStats = {
+    running: false,
+    actions: 0,
+    lastAction: null,
+    ratePerMinute: DEFAULT_RATE_PER_MINUTE,
+  };
 
   // Stable identities required by useSyncExternalStore.
   subscribe = (cb: () => void): (() => void) => {
@@ -94,8 +107,24 @@ class Simulator {
     this.emit();
   }
 
+  /** Sets the target rate; workers read it live, so a running sim adapts on its next beat. */
+  setRate(perMinute: number): void {
+    const clamped = Math.min(
+      MAX_RATE_PER_MINUTE,
+      Math.max(MIN_RATE_PER_MINUTE, Math.round(perMinute)),
+    );
+    if (clamped === this.ratePerMinute) return;
+    this.ratePerMinute = clamped;
+    this.emit();
+  }
+
   private emit(): void {
-    this.snapshot = { running: this.running, actions: this.actions, lastAction: this.lastAction };
+    this.snapshot = {
+      running: this.running,
+      actions: this.actions,
+      lastAction: this.lastAction,
+      ratePerMinute: this.ratePerMinute,
+    };
     this.listeners.forEach(l => l());
   }
 
@@ -109,7 +138,10 @@ class Simulator {
         // Swallow transient failures (e.g. two workers racing to delete the
         // same row → 404) so the loop keeps simulating.
       }
-      await sleep(MIN_DELAY + Math.random() * (MAX_DELAY - MIN_DELAY));
+      // Target rate spread across the workers, ±30% jitter for a human rhythm.
+      // Read per beat so slider changes apply without restarting the sim.
+      const baseMs = (60_000 / this.ratePerMinute) * MAX_WORKERS;
+      await sleep(baseMs * (0.7 + Math.random() * 0.6));
     }
   }
 

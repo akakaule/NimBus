@@ -3,7 +3,12 @@ import AccountsList from './pages/AccountsList';
 import AccountForm from './pages/AccountForm';
 import ContactsList from './pages/ContactsList';
 import ContactForm from './pages/ContactForm';
-import { simulator, useSimulator } from './simulator';
+import {
+  MAX_RATE_PER_MINUTE,
+  MIN_RATE_PER_MINUTE,
+  simulator,
+  useSimulator,
+} from './simulator';
 import CircuitBreakerPanel from './components/admin/circuit-breaker-panel';
 
 const tabClass = ({ isActive }: { isActive: boolean }) =>
@@ -22,11 +27,27 @@ export default function App() {
             <NavLink to="/accounts" className={tabClass}>Accounts</NavLink>
             <NavLink to="/contacts" className={tabClass}>Contacts</NavLink>
           </nav>
+          <label
+            className="ml-auto inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-slate-200 bg-slate-100 text-xs text-slate-600"
+            title="Target simulated actions per minute — applies live while simulating"
+          >
+            <input
+              type="range"
+              min={MIN_RATE_PER_MINUTE}
+              max={MAX_RATE_PER_MINUTE}
+              step={10}
+              value={sim.ratePerMinute}
+              onChange={(e) => simulator.setRate(Number(e.target.value))}
+              className="w-24 accent-amber-500"
+              aria-label="Simulated messages per minute"
+            />
+            <span className="font-mono tabular-nums w-16 text-right">{sim.ratePerMinute}/min</span>
+          </label>
           <button
             type="button"
             onClick={() => simulator.toggle()}
             title="Auto-generate account & contact activity to drive Service Bus traffic"
-            className={`ml-auto inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
               sim.running
                 ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-300'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'

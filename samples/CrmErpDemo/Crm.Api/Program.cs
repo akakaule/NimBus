@@ -37,6 +37,11 @@ else
     builder.Services.AddSingleton<IPublisherClient, NoopPublisherClient>();
 }
 
+// Circuit-breaker showcase: the outage toggle the operator flips and the last
+// circuit state pushed by the CRM adapter (see Endpoints/AdminEndpoints.cs).
+builder.Services.AddSingleton<ErrorModeState>();
+builder.Services.AddSingleton<CircuitStateStore>();
+
 // CORS for the Vite SPA.
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
@@ -113,5 +118,6 @@ app.MapAccountEndpoints();
 app.MapContactEndpoints();
 app.MapAuditEndpoints();
 app.MapErpIntegrationEndpoints();
+app.MapAdminEndpoints();
 
 app.Run();

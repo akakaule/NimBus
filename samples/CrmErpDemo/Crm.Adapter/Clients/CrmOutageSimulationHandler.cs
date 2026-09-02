@@ -1,0 +1,33 @@
+using System.Net;
+
+namespace Crm.Adapter.Clients;
+
+/// <summary>
+/// Circuit-breaker showcase: when the crm-api error-mode flag is on, every
+/// ICrmApiClient call short-circuits to a synthetic 503 before leaving the
+/// process. All CRM handlers then fail through the authentic
+/// CrmApiClient.EnsureSuccessOrThrowAsync path — a sustained, retry-classified
+/// failure spike with zero handler edits, exactly what opens the circuit.
+/// Sits below the handler (not in the NimBus pipeline) because the circuit
+/// recorder is the innermost pipeline wrapper: only failures thrown inside
+/// handler execution count toward the breaker.
+/// </summary>
+public sealed class CrmOutageSimulationHandler(IErrorModeClient errorMode) : DelegatingHandler
+{
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        if (await errorMode.IsErrorModeEnabledAsync(cancellationToken))
+        {
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                RequestMessage = request,
+                ReasonPhrase = "CRM outage simulation (error mode) is enabled",
+                Content = new StringContent("Simulated crm-api outage: error mode is enabled via /api/admin/error-mode."),
+            };
+        }
+
+        return await base.SendAsync(request, cancellationToken);
+    }
+}

@@ -11,7 +11,11 @@ import {
 } from "components/ui/card";
 import { subscribeServiceHealthUpdates } from "lib/grid-events-connection";
 import { formatMoment } from "functions/endpoint.functions";
-import { normalizeStatus, statusHints, statusVariants } from "./heartbeat-status";
+import {
+  normalizeStatus,
+  statusHints,
+  statusVariants,
+} from "./heartbeat-status";
 
 /** Fallback poll cadence while the hub is down — mirrors the Flow page's
  *  degraded-mode posture: live updates when connected, polling otherwise. */
@@ -22,6 +26,35 @@ const serviceDescriptions: Record<string, string> = {
   Resolver:
     "Persists every message outcome. While it is down, endpoint heartbeats and event state stop updating.",
 };
+
+const servicesIcon = (
+  <svg
+    aria-hidden="true"
+    viewBox="0 0 24 24"
+    className="h-5 w-5"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+  >
+    <rect x="3" y="4" width="18" height="6" rx="1.5" />
+    <rect x="3" y="14" width="18" height="6" rx="1.5" />
+    <path d="M7 7h.01M7 17h.01" strokeLinecap="round" />
+  </svg>
+);
+
+const refreshIcon = (
+  <svg
+    aria-hidden="true"
+    viewBox="0 0 24 24"
+    className="h-4 w-4"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+  >
+    <path d="M20 11a8 8 0 1 0-2.3 5.7" strokeLinecap="round" />
+    <path d="M20 4v7h-7" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
 
 /**
  * Admin → Health, top card. Liveness of NimBus's own services, measured by a
@@ -77,38 +110,39 @@ export default function PlatformServicesCard() {
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <CardTitle>Platform services</CardTitle>
-            <CardDescription>
-              Liveness of NimBus's own services, measured by a round-trip probe
-              over Service Bus — a service only answers if it is running and
-              draining its subscription. Probed on the heartbeat interval,
-              independent of the endpoint heartbeat switch below.
-            </CardDescription>
+      <CardHeader className="px-5 py-4">
+        <div className="flex items-center gap-2">
+          {servicesIcon}
+          <CardTitle className="text-xl">Platform services</CardTitle>
+        </div>
+        <CardDescription>
+          Liveness of NimBus's own services, measured by a round-trip probe over
+          Service Bus — a service only answers if it is running and draining its
+          subscription.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 p-5">
+        {error && (
+          <div
+            role="alert"
+            className="bg-status-danger-50 border border-status-danger/30 dark:bg-red-950/30 dark:border-red-900/60 rounded-nb-md p-4 text-status-danger-ink dark:text-red-200"
+          >
+            {error}
           </div>
+        )}
+        <div className="flex justify-end">
           <Button
             variant="ghost"
             colorScheme="gray"
             size="sm"
+            leftIcon={refreshIcon}
             onClick={() => void load()}
             disabled={loading}
           >
             Refresh
           </Button>
         </div>
-      </CardHeader>
-      <CardContent className="p-0">
-        {error && (
-          <div
-            role="alert"
-            className="m-4 bg-status-danger-50 border border-status-danger/30 dark:bg-red-950/30 dark:border-red-900/60 rounded-nb-md p-4 text-status-danger-ink dark:text-red-200"
-          >
-            {error}
-          </div>
-        )}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-nb-md border border-border">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted">
@@ -129,7 +163,9 @@ export default function PlatformServicesCard() {
                     className="border-b border-border/50 last:border-b-0 align-top"
                   >
                     <td className="p-3">
-                      <span className="font-medium">{row.serviceId}</span>
+                      <span className="font-mono text-sm font-medium">
+                        {row.serviceId}
+                      </span>
                       {row.serviceId && serviceDescriptions[row.serviceId] && (
                         <p className="mt-0.5 text-xs text-muted-foreground">
                           {serviceDescriptions[row.serviceId]}
@@ -183,9 +219,10 @@ export default function PlatformServicesCard() {
             </tbody>
           </table>
         </div>
-        <p className="p-3 text-xs text-muted-foreground">
-          <span className="font-semibold">Unknown</span> means no probe has
-          settled yet — allow one heartbeat interval after startup.
+        <p className="text-sm text-muted-foreground">
+          Probed on the heartbeat interval, independent of the endpoint
+          heartbeat switch below. <span className="font-semibold">Unknown</span>{" "}
+          means no probe has settled yet — allow one interval after startup.
         </p>
       </CardContent>
     </Card>

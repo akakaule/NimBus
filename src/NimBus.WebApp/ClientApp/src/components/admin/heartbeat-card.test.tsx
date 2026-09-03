@@ -91,16 +91,19 @@ describe("HeartbeatCard", () => {
     const timeout = screen.getByLabelText(
       "Timeout seconds",
     ) as HTMLInputElement;
-    const toggle = screen.getByLabelText(
-      "Scheduled heartbeat enabled",
-    ) as HTMLInputElement;
+    const toggle = screen.getByRole("switch", {
+      name: "Scheduled heartbeat enabled",
+    });
 
     await waitFor(() => expect(interval.value).toBe("300"));
     expect(timeout.value).toBe("60");
-    expect(toggle.checked).toBe(true);
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
     expect(interval.min).toBe("30");
     expect(timeout.min).toBe("5");
-    expect(screen.getByText(/minimum of 30 seconds/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Heartbeat" })).toBeTruthy();
+    expect(
+      screen.getByText("Endpoint health, round-trip latency, and SDK version."),
+    ).toBeTruthy();
   });
 
   it("saves the values as typed — the server owns the clamping", async () => {
@@ -115,7 +118,9 @@ describe("HeartbeatCard", () => {
     fireEvent.change(screen.getByLabelText("Timeout seconds"), {
       target: { value: "10" },
     });
-    fireEvent.click(screen.getByLabelText("Scheduled heartbeat enabled"));
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Scheduled heartbeat enabled" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -132,9 +137,7 @@ describe("HeartbeatCard", () => {
   it("sends a heartbeat now and reports how many endpoints it reached", async () => {
     renderCard();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Send heartbeat now" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "Send now" }));
 
     await waitFor(() =>
       expect(mocks.postAdminHeartbeatSend).toHaveBeenCalledTimes(1),
@@ -154,7 +157,11 @@ describe("HeartbeatCard", () => {
   it("opts an endpoint out of the fan-out", async () => {
     renderCard();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Exclude" }));
+    fireEvent.click(
+      await screen.findByRole("switch", {
+        name: "Include crm in heartbeat probes",
+      }),
+    );
 
     await waitFor(() =>
       expect(mocks.putAdminHeartbeatEndpointEnabled).toHaveBeenCalledWith(
@@ -170,7 +177,11 @@ describe("HeartbeatCard", () => {
     ]);
     renderCard();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Include" }));
+    fireEvent.click(
+      await screen.findByRole("switch", {
+        name: "Include crm in heartbeat probes",
+      }),
+    );
 
     await waitFor(() =>
       expect(mocks.putAdminHeartbeatEndpointEnabled).toHaveBeenCalledWith(
@@ -187,5 +198,20 @@ describe("HeartbeatCard", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("boom");
     await waitFor(() => expect(screen.queryByText("No endpoints.")).toBeNull());
+  });
+
+  it("filters endpoints by heartbeat inclusion", async () => {
+    mocks.getAdminHeartbeatOverview.mockResolvedValue([
+      overviewRow({ endpointId: "included", isHeartbeatEnabled: true }),
+      overviewRow({ endpointId: "excluded", isHeartbeatEnabled: false }),
+    ]);
+    renderCard();
+
+    const filter = await screen.findByLabelText("Filter endpoints");
+    await screen.findByText("included");
+    fireEvent.change(filter, { target: { value: "excluded" } });
+
+    expect(screen.queryByText("included")).toBeNull();
+    expect(screen.getByText("excluded")).toBeTruthy();
   });
 });

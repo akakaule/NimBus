@@ -12,7 +12,7 @@ export default function Admin() {
   return (
     <Page
       title="Admin"
-      subtitle="Topology, bulk operations, and developer tools. Some actions are irreversible."
+      subtitle="Topology and bulk operations. Some actions are irreversible."
     >
       <Tabs defaultIndex={0} isLazy={true} className="w-full">
         <TabList>

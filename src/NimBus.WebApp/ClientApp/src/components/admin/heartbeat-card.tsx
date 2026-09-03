@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import * as api from "api-client";
 import { Button } from "components/ui/button";
-import { Checkbox } from "components/ui/checkbox";
 import { Input } from "components/ui/input";
+import { Select } from "components/ui/select";
+import { Toggle } from "components/ui/toggle";
 import {
   Card,
   CardContent,
@@ -19,6 +20,70 @@ const POLL_MS = 30_000;
 
 const DEFAULT_INTERVAL_SECONDS = 300;
 const DEFAULT_TIMEOUT_SECONDS = 60;
+type InclusionFilter = "all" | "included" | "excluded";
+
+const activityIcon = (
+  <svg
+    aria-hidden="true"
+    viewBox="0 0 24 24"
+    className="h-5 w-5"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+  >
+    <path
+      d="M3 12h4l2-7 4 14 2-7h6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const refreshIcon = (
+  <svg
+    aria-hidden="true"
+    viewBox="0 0 24 24"
+    className="h-4 w-4"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+  >
+    <path d="M20 11a8 8 0 1 0-2.3 5.7" strokeLinecap="round" />
+    <path d="M20 4v7h-7" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const saveIcon = (
+  <svg
+    aria-hidden="true"
+    viewBox="0 0 24 24"
+    className="h-4 w-4"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+  >
+    <path d="M5 4h12l2 2v14H5z" strokeLinejoin="round" />
+    <path d="M8 4v6h8V4M8 20v-6h8v6" strokeLinejoin="round" />
+  </svg>
+);
+
+const sendIcon = (
+  <svg
+    aria-hidden="true"
+    viewBox="0 0 24 24"
+    className="h-4 w-4"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+  >
+    <path
+      d="m21 3-7.5 18-3.7-7.8L2 9.5z"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path d="m9.8 13.2 4.4-4.4" strokeLinecap="round" />
+  </svg>
+);
 
 /**
  * Admin → Health, second card. The scheduled endpoint fan-out: its schedule,
@@ -36,6 +101,8 @@ export default function HeartbeatCard() {
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState(false);
+  const [inclusionFilter, setInclusionFilter] =
+    useState<InclusionFilter>("all");
 
   const client = useMemo(() => new api.Client(api.CookieAuth()), []);
 
@@ -148,62 +215,51 @@ export default function HeartbeatCard() {
   }
 
   const enabled = settings?.enabled ?? false;
+  const filteredOverview = overview.filter((row) => {
+    if (inclusionFilter === "all") return true;
+    const included = row.isHeartbeatEnabled !== false;
+    return inclusionFilter === "included" ? included : !included;
+  });
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <CardTitle>Endpoint heartbeat</CardTitle>
-            <CardDescription>
-              Configure the endpoint probe schedule and inclusion list. Current
-              liveness, uptime, SDK versions, and gaps are on the{" "}
-              <Link className="text-primary hover:underline" to="/Heartbeat">
-                Heartbeat page
-              </Link>
-              .
-            </CardDescription>
-          </div>
-          <Button
-            variant="ghost"
-            colorScheme="gray"
-            size="sm"
-            onClick={() => void loadAll()}
-            disabled={loading}
-          >
-            Refresh
-          </Button>
+      <CardHeader className="px-5 py-4">
+        <div className="flex items-center gap-2">
+          {activityIcon}
+          <CardTitle className="text-xl">Heartbeat</CardTitle>
         </div>
+        <CardDescription>
+          Endpoint health, round-trip latency, and SDK version.
+        </CardDescription>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className="space-y-5 p-5">
         {error && (
           <div
             role="alert"
-            className="m-4 bg-status-danger-50 border border-status-danger/30 dark:bg-red-950/30 dark:border-red-900/60 rounded-nb-md p-4 text-status-danger-ink dark:text-red-200"
+            className="bg-status-danger-50 border border-status-danger/30 dark:bg-red-950/30 dark:border-red-900/60 rounded-nb-md p-4 text-status-danger-ink dark:text-red-200"
           >
             {error}
           </div>
         )}
 
-        <div className="p-4 space-y-3 border-b border-border">
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="pb-2">
-              <Checkbox
+        <div className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-[minmax(15rem,1fr)_13rem_13rem_auto_auto] lg:items-end">
+            <div className="flex h-12 items-center gap-3 rounded-nb-md border border-border bg-muted/30 px-4">
+              <Toggle
                 checked={enabled}
                 disabled={loading || saving}
-                onChange={(event) =>
-                  patchSettings({ enabled: event.currentTarget.checked })
-                }
-                label="Scheduled heartbeat enabled"
+                onChange={(next) => patchSettings({ enabled: next })}
+                aria-label="Scheduled heartbeat enabled"
               />
+              <span className="font-semibold">Enabled</span>
             </div>
 
-            <label className="text-xs font-medium text-muted-foreground">
+            <label className="text-sm font-medium text-foreground">
               Interval seconds
               <Input
                 type="number"
                 min={30}
-                className="mt-1 w-40"
+                className="mt-1 h-12 w-full"
                 value={settings?.intervalSeconds ?? DEFAULT_INTERVAL_SECONDS}
                 disabled={loading || saving}
                 onChange={(event) =>
@@ -214,12 +270,12 @@ export default function HeartbeatCard() {
               />
             </label>
 
-            <label className="text-xs font-medium text-muted-foreground">
+            <label className="text-sm font-medium text-foreground">
               Timeout seconds
               <Input
                 type="number"
                 min={5}
-                className="mt-1 w-40"
+                className="mt-1 h-12 w-full"
                 value={settings?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS}
                 disabled={loading || saving}
                 onChange={(event) =>
@@ -232,7 +288,9 @@ export default function HeartbeatCard() {
 
             <Button
               variant="outline"
-              colorScheme="primary"
+              colorScheme="gray"
+              size="lg"
+              leftIcon={saveIcon}
               onClick={() => void saveSettings()}
               disabled={!settings || saving}
               isLoading={saving}
@@ -242,21 +300,22 @@ export default function HeartbeatCard() {
 
             <Button
               colorScheme="primary"
+              size="lg"
+              leftIcon={sendIcon}
               onClick={() => void sendNow()}
               disabled={sending}
               isLoading={sending}
             >
-              Send heartbeat now
+              Send now
             </Button>
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            Interval is clamped to a minimum of 30 seconds and timeout to a
-            minimum of 5 seconds (and never above the interval). Last scheduled
-            send:{" "}
-            {settings?.lastSentAtUtc
-              ? formatMoment(settings.lastSentAtUtc)
-              : "never"}
+          <p className="text-sm text-muted-foreground">
+            Choose which endpoints are probed. Live status, uptime and gaps are
+            on the{" "}
+            <Link className="text-primary hover:underline" to="/Heartbeat">
+              Heartbeat page
+            </Link>
             .
           </p>
 
@@ -267,16 +326,50 @@ export default function HeartbeatCard() {
           )}
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            Last scheduled send:{" "}
+            {settings?.lastSentAtUtc
+              ? formatMoment(settings.lastSentAtUtc)
+              : "never"}
+          </p>
+          <div className="flex items-center gap-3">
+            <Select
+              aria-label="Filter endpoints"
+              className="h-10 w-44"
+              value={inclusionFilter}
+              onChange={(event) =>
+                setInclusionFilter(event.currentTarget.value as InclusionFilter)
+              }
+              options={[
+                { value: "all", label: "All endpoints" },
+                { value: "included", label: "Included" },
+                { value: "excluded", label: "Excluded" },
+              ]}
+            />
+            <Button
+              variant="ghost"
+              colorScheme="gray"
+              size="sm"
+              leftIcon={refreshIcon}
+              onClick={() => void loadAll()}
+              disabled={loading}
+            >
+              Refresh
+            </Button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto rounded-nb-md border border-border">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted">
-                <th className="text-left p-3 font-medium">Endpoint</th>
-                <th className="text-left p-3 font-medium">Included</th>
+                <th className="text-left p-3 font-medium">Endpoint ↑</th>
+                <th className="p-3 text-right font-medium">Included</th>
               </tr>
             </thead>
             <tbody>
-              {overview.map((row) => {
+              {filteredOverview.map((row) => {
                 // Null means "never configured either way", which is included.
                 const included = row.isHeartbeatEnabled !== false;
                 const endpointId = row.endpointId ?? "";
@@ -286,25 +379,21 @@ export default function HeartbeatCard() {
                     key={endpointId}
                     className="border-b border-border/50 last:border-b-0"
                   >
-                    <td className="p-3 font-medium">{endpointId}</td>
-                    <td className="p-3">
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        colorScheme={included ? "gray" : "green"}
-                        isLoading={isBusy}
-                        disabled={endpointId === ""}
-                        onClick={() =>
-                          void setEndpointEnabled(endpointId, !included)
+                    <td className="p-3 font-mono text-sm">{endpointId}</td>
+                    <td className="p-3 text-right">
+                      <Toggle
+                        checked={included}
+                        onChange={(next) =>
+                          void setEndpointEnabled(endpointId, next)
                         }
-                      >
-                        {included ? "Exclude" : "Include"}
-                      </Button>
+                        aria-label={`Include ${endpointId} in heartbeat probes`}
+                        disabled={endpointId === "" || isBusy}
+                      />
                     </td>
                   </tr>
                 );
               })}
-              {overview.length === 0 && (
+              {filteredOverview.length === 0 && (
                 <tr>
                   <td
                     colSpan={2}
@@ -312,7 +401,13 @@ export default function HeartbeatCard() {
                   >
                     {/* Never claim "no endpoints" when the load failed — the
                         banner above already says what actually happened. */}
-                    {loading ? "Loading…" : error ? "—" : "No endpoints."}
+                    {loading
+                      ? "Loading…"
+                      : error
+                        ? "—"
+                        : overview.length === 0
+                          ? "No endpoints."
+                          : "No matching endpoints."}
                   </td>
                 </tr>
               )}

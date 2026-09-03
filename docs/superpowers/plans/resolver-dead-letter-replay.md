@@ -6,12 +6,24 @@ Give a site `Owner` a safe workflow on the existing Admin → Subscriptions scre
 
 The implementation must preserve current subscription-administration behavior, scheduled throttle redelivery, transfer-DLQ separation, and all non-Cosmos transient handling.
 
+## Review decisions
+
+This revision incorporates the actionable findings from `docs/spec/2026-09-03-resolver-dead-letter-replay-review.md`:
+
+- Add a real-Azure feasibility gate before committing to the cross-entity transaction design.
+- Bound each inspect/replay snapshot and the request wall-clock budget, bound held locks, reject overlapping in-process replay, inventory every max-delivery literal, correct emulator/current-code claims, and describe the existing heartbeat dead-letter behavior accurately.
+- Keep the reason Cosmos-specific. SQL throttling codes do not become `CosmosDbThrottled`; SQL-backed installations can still inspect/replay every reason actually present in their Resolver DLQ.
+- Keep atomic replay. The source handoff explicitly requires it, and the existing non-atomic scheduled-redelivery path is not precedent for operator replay: replay deliberately assigns a fresh ID, so send-before-complete failure guarantees a processable duplicate rather than one duplicate-detectable retry.
+- Keep the `subscriptionName` route parameter and full server-side guard rails because they are part of the handoff contract and protect future declared terminal Resolver subscriptions, even though today only `Resolver/Resolver` qualifies.
+- Keep the plan in `docs/superpowers/plans/` as required by the repository instructions supplied for this task.
+
 ## Preconditions and branch
 
 1. Start a dedicated branch such as `feat/resolver-dead-letter-replay` from the latest `origin/master`; do not stack this work on `feat/114-endpoint-circuit-breaker`.
 2. Keep the existing untracked `.agents/skills/*` directories out of every commit.
 3. Use RED–GREEN–REFACTOR within each phase and keep the commits below independently buildable.
 4. Run backend tests in `Release`, because that is where the repository treats warnings as errors.
+5. Complete Phase 0 against a disposable Azure Service Bus Standard or Premium namespace before starting product or emulator implementation. If the exact DLQ transaction cannot be proven, stop and revise the feature contract; do not silently substitute non-atomic replay.
 
 ## NimBus-specific design decisions
 
@@ -31,6 +43,8 @@ logicalAttempt = ThrottleRetryCount + DeliveryCount
 
 For example, ten successful scheduled deliveries have `(0+1), (1+1), …, (9+1)` and dead-letter on attempt 10. If scheduling falls back to lock expiry, `(0+1), (0+2), …` reaches the same limit.
 
+On the lock-expiry fallback, delivery 10 is still delivered under PeekLock; Resolver explicitly dead-letters while that lock is held. A host crash before settlement can still let the broker apply `MaxDeliveryCountExceeded`. That crash race exists for every explicit final-attempt settlement and cannot be eliminated by dead-lettering on attempt 9 without reducing the configured delivery budget.
+
 Put the existing value `10` in `NimBus.Core.Messages.Constants.ServiceBusMaxDeliveryCount`, and use it from Resolver, both subscription-creation paths, and AsyncAPI output. Do not add delivery count to `IMessageContext`; add `IMessageDeliveryContext` and implement it only on the Service Bus context.
 
 ### Central Cosmos throttle settlement
@@ -45,14 +59,18 @@ Log the full exception, event/session identity, logical attempt, and broker deli
 
 Use sequence numbers only as identities for one operation, never as a replacement for Service Bus ordering:
 
-1. Peek the regular DLQ in batches of 100 from sequence `0`, advancing to `last.SequenceNumber + 1` until empty.
+1. Peek the regular DLQ in batches of 100 from sequence `0`, advancing to `last.SequenceNumber + 1` until empty or `MaxReplaySnapshotMessages` is reached. Peek one extra record to set `isTruncated` without retaining it.
 2. Retain only `(SequenceNumber, DeadLetterReason)` in the snapshot.
 3. Select all snapshot sequence numbers or exact ordinal reason matches, including `null`, and record the greatest selected sequence as the boundary.
-4. Receive the regular DLQ in PeekLock batches. Hold and renew locks for non-selected messages and arrivals beyond the boundary; abandon all held messages in `finally`.
+4. Receive the regular DLQ in PeekLock batches. Hold and renew locks for non-selected messages and arrivals beyond the boundary; abandon all held messages in `finally`. Because the replay boundary is inside the capped snapshot, the held set is bounded by the snapshot cap plus one receive batch.
 5. For a selected message, construct the replacement, then complete the DLQ message first and send second inside an async `TransactionScope`. Count success only after scope commit.
 6. Report selected snapshot entries not observed during receive as failed. Do not substitute concurrent arrivals.
 
-The replay client owns a dedicated `ServiceBusClient` created with `EnableCrossEntityTransactions = true`. The normal WebApp client remains unchanged and cannot share this transactional connection.
+Set `MaxReplaySnapshotMessages = 500` and a 180-second server-side operation budget. The inspect response includes `isTruncated` and `snapshotLimit`; the UI must state that only the first snapshot batch is represented and that the operator can repeat the operation. This keeps one request below App Service's 230-second front-end timeout, caps selected messages and held locks, and still preserves exact reason grouping within each operation snapshot. If the 180-second budget expires first, stop receiving, release held locks, count the unprocessed selected entries as failed, return the partial result, and write the audit row.
+
+Allow only one replay per Resolver subscription within a WebApp process using a non-blocking singleton gate; a second request receives `409 Conflict` and does not inspect or settle messages. The shipped App Service plan has one instance by default. Document that operators must not scale the management WebApp out while a replay is running; adding a provider-neutral distributed lease is a separate prerequisite before replay is supported on a scaled-out WebApp.
+
+The replay client owns a dedicated `ServiceBusClient` created with `EnableCrossEntityTransactions = true`. The normal WebApp client remains unchanged and cannot share this transactional connection. On that dedicated client, create/use the DLQ receiver before the sender, receive outside the transaction, then make `CompleteMessageAsync` the first operation inside each `TransactionScope` and `SendMessageAsync` the second. Phase 0 must prove this exact ordering against Azure.
 
 ### API, target guard rails, and audit
 
@@ -67,13 +85,30 @@ Return 404 only when the actual subscription is missing. Return 400 for an undec
 
 Reuse `MessageAuditType.ManageSubscription`. Inspection follows the existing read policy and is not audited. Replay writes one audit row for denied access and one result row for an allowed call. Result data contains only action, topic, subscription, scope, selected reason, processed/succeeded/failed counts, and overall success. For the nullable-reason selection, record `reason: null`; never add body, broker error text, dead-letter description, or returned error strings.
 
-### Default emulator compatibility is part of completeness
+### CrmErpDemo emulator compatibility is part of completeness
 
-The repository’s default Aspire path now uses `NimBus.ServiceBusEmulator`. Its spec currently lists DLQ browsing as P2 and AMQP transactions as a permanent non-goal because NimBus had no callers. This feature introduces both callers. Implement the narrow stock-SDK surface used here and update Spec 027; do not add queues, transfer-DLQ browsing, general transaction APIs, or a non-atomic emulator fallback.
+The main `src/NimBus.AppHost` still targets Azure Service Bus by default. The `samples/CrmErpDemo` AppHost now defaults to `NimBus.ServiceBusEmulator`, and its Admin UI must not expose a replay workflow that always fails. The emulator spec currently lists DLQ browsing as P2 and AMQP transactions as a permanent non-goal because NimBus had no callers. Once Phase 0 proves the Azure shape, implement the narrow stock-SDK surface used here and update Spec 027; do not add queues, transfer-DLQ browsing, general transaction APIs, or a non-atomic emulator fallback.
 
-The emulator transaction needs only one operation shape: complete one locked regular-DLQ message and publish one message to a topic on the same client/session, then commit or roll back both. Preserve the broker’s single-writer invariant by applying the validated remove-and-publish pair as one broker operation rather than independently mutating two stores.
+The emulator transaction needs only one operation shape: complete one locked regular-DLQ message and publish one message to a topic on the same client/session, then commit or roll back both. `BrokerNamespace` currently serializes mutation with one namespace-wide `_gate` monitor; it has no implemented actor/mailbox boundary. Stage protocol state across declare/operations/discharge, then apply the validated remove-and-publish pair under that existing gate as one broker operation.
 
 Production Bicep already grants the WebApp managed identity `Azure Service Bus Data Owner` on the namespace, which covers receive, settlement, and send. Keep that assignment and pin it with a regression test/documentation assertion rather than adding duplicate roles.
+
+### Provider scope
+
+`RequestLimitException` is intentionally Cosmos-specific. SQL Server maps resource-governance errors to the broader `StorageProviderTransientException`, so they retain the current generic delayed-retry behavior and will not be mislabeled as Cosmos failures. The replay transport and UI are provider-neutral: SQL-backed deployments can inspect and replay any regular-DLQ reasons they have, including a nullable reason. A future stable SQL throttle reason requires its own named contract and is out of scope.
+
+## Phase 0 — Prove the Azure transaction shape
+
+Before changing product code, create a disposable, ignored spike test or small console harness using the repository's pinned `Azure.Messaging.ServiceBus` 7.20.2 against a real Standard namespace:
+
+1. Create a session-enabled topic subscription, dead-letter one message, and receive it through a normal receiver with `SubQueue.DeadLetter`.
+2. Construct a dedicated client with `EnableCrossEntityTransactions = true`.
+3. Create/use the DLQ receiver first, receive outside the transaction, then run complete-first/send-second inside `TransactionScope(TransactionScopeAsyncFlowOption.Enabled)`.
+4. Prove commit removes the DLQ source and publishes exactly one replacement to the topic.
+5. Force the send to fail after completion is enlisted and prove abort leaves the original DLQ message and publishes no replacement.
+6. Repeat on the minimum production SKU (Standard); Premium-only success is insufficient because `deploy/bicep/templates/servicebusNamespace.bicep` provisions Standard.
+
+Record the SDK version, SKU, exact entity paths/order, and results in the implementation PR. Do not commit credentials or a permanently credential-dependent test. If either commit or rollback fails, mark the implementation blocked and revise the feature design before Phase 1; send-then-complete is not an authorized fallback.
 
 ## Phase 1 — Characterize and centralize the delivery budget
 
@@ -90,8 +125,9 @@ Cover:
 
 1. `MessageContext` exposes its wrapped Service Bus `DeliveryCount` through `IMessageDeliveryContext`.
 2. A non-Service-Bus `IMessageContext` remains source-compatible and does not need a new member.
-3. Every newly provisioned subscription receives the shared max-delivery value.
-4. AsyncAPI’s subscription delivery metadata uses the same value.
+3. Every newly provisioned subscription receives the shared max-delivery value through both `ServiceBusTopologyProvisioner` and `ServiceBusManagement.CreateSubscription`/Clear Endpoint paths.
+4. Both AsyncAPI subscription shapes, including the spec-022 dynamic-event map, use the same value.
+5. The emulator round-trips an explicitly configured shared value. Its two internal fallback `10` values remain Azure-emulation defaults, but are centralized under one emulator-local default and pinned equal to the current Azure/NimBus default so drift is visible.
 
 ### Implementation
 
@@ -101,13 +137,19 @@ Cover:
 - Replace literals in:
   - `src/NimBus.ServiceBus/Provisioning/ServiceBusTopologyProvisioner.cs`
   - `src/NimBus.Management.ServiceBus/ServiceBusManagement.cs`
-  - `src/NimBus.ServiceBus/AsyncApi/AsyncApiExporter.cs`
+  - both `maxDeliveryCount` mappings in `src/NimBus.ServiceBus/AsyncApi/AsyncApiExporter.cs`
+- Sweep the entire repository for `MaxDeliveryCount`/`maxDeliveryCount` and classify every remaining `10`. Consolidate the Azure-emulator protocol defaults in:
+  - `src/NimBus.ServiceBusEmulator/Admin/AdminXml.cs`
+  - `src/NimBus.ServiceBusEmulator/Broker/BrokerModels.cs`
+  under one emulator-local default rather than coupling the standalone broker to `NimBus.Core` for a product constant.
+- Add a test-time invariant comparing that emulator default with `Constants.ServiceBusMaxDeliveryCount`; if NimBus intentionally changes its provisioned limit later, the test forces an explicit decision about whether the Azure-compatible emulator fallback should remain 10.
 
 ### Verification
 
 ```powershell
 dotnet test tests/NimBus.ServiceBus.Tests/NimBus.ServiceBus.Tests.csproj -c Release
 dotnet test tests/NimBus.CommandLine.Tests/NimBus.CommandLine.Tests.csproj -c Release
+dotnet test tests/NimBus.ServiceBusEmulator.Tests/NimBus.ServiceBusEmulator.Tests.csproj -c Release
 ```
 
 Commit: `refactor(servicebus): centralize delivery attempt limit`
@@ -139,7 +181,8 @@ Make the Resolver fake context implement `IMessageDeliveryContext` and independe
 - Catch `RequestLimitException` first and route it to one `HandleCosmosThrottle` method.
 - Calculate the logical attempt as described above and preserve the existing exponential/provider-hinted scheduling logic below the limit.
 - In heartbeat and self-probe persistence, rethrow `RequestLimitException` and retain the existing catch for other storage transients.
-- Update the relevant Resolver comments and structured logs.
+- Update the heartbeat remarks to describe reality: generic transient failures are left unsettled and may eventually be broker-dead-lettered as `MaxDeliveryCountExceeded`; Cosmos throttling is now explicitly settled with the stable reason on the final logical attempt.
+- Note in code review that replacing the private `MaxThrottleRetries = 10` with the shared constant is numerically neutral; the behavior change comes from combining scheduled/broker counts and the Cosmos-specific final settlement.
 
 ### Verification
 
@@ -149,7 +192,9 @@ dotnet test tests/NimBus.Resolver.Tests/NimBus.Resolver.Tests.csproj -c Release
 
 Commit: `fix(resolver): identify exhausted cosmos throttling`
 
-## Phase 3 — Add regular-DLQ and transactional fidelity to the NimBus emulator
+## Phase 3 — Add the proven regular-DLQ transaction shape to the NimBus emulator
+
+Start this phase only after Phase 0 succeeds on Azure Standard. Mirror the observed SDK frames and ordering; do not design an independent transaction dialect from the documentation alone.
 
 ### Tests first
 
@@ -166,9 +211,9 @@ Add stock Azure SDK smoke tests to `tests/NimBus.ServiceBusEmulator.Tests/SdkSmo
 
 - Update `docs/specs/027-service-bus-emulator/spec.md` so regular-DLQ browsing and the single complete-plus-send transaction are required NimBus surface; retain broader AMQP transactions as out of scope.
 - Extend `src/NimBus.ServiceBusEmulator/Protocol/AmqpFrontend.cs` to register regular-DLQ management nodes and a transaction coordinator.
-- Extend `ManagementRequestProcessor.cs` and `BrokerLinkProcessor.cs` to parse the `/$DeadLetterQueue` suffix, use the regular-DLQ store, and preserve transfer-DLQ exclusion.
+- Extend `src/NimBus.ServiceBusEmulator/Protocol/ManagementRequestProcessor.cs` and `src/NimBus.ServiceBusEmulator/Protocol/BrokerLinkProcessor.cs` to parse the `/$DeadLetterQueue` suffix, use the regular-DLQ store, and preserve transfer-DLQ exclusion.
 - Add a narrowly scoped transaction registry/coordinator under `src/NimBus.ServiceBusEmulator/Protocol/` for SDK `declare`, transactional transfer/disposition state, `discharge` commit, and rollback-on-close/abort.
-- Extend `BrokerNamespace.cs` and `BrokerModels.cs` with explicit subqueue selection and one atomic validated `complete DLQ + publish topic` command. Do not expose the mutable stores to protocol code or bypass the existing actor/single-writer boundary.
+- Extend `src/NimBus.ServiceBusEmulator/Broker/BrokerNamespace.cs` and `src/NimBus.ServiceBusEmulator/Broker/BrokerModels.cs` with explicit subqueue selection and one atomic validated `complete DLQ + publish topic` command. Keep staged network state outside `_gate`; acquire the existing namespace-wide monitor only to validate and commit the pair, and never hold it across a network await.
 - Release locks and discard staged publishes when a transaction is aborted, disconnected, or times out.
 
 ### Verification
@@ -197,6 +242,9 @@ Cover every transport invariant:
 8. A complete/send/commit failure produces a stable per-sequence error, logs the exception, abandons or leaves the original unsettled, and increments failed.
 9. A selected sequence missing from receive is counted failed and no concurrent message replaces it.
 10. Receivers and sender are disposed on success, failure, and cancellation.
+11. Snapshot retention stops at 500, peeks one extra item to report truncation, and never holds more than the cap plus one receive batch.
+12. The 180-second operation budget returns an audited partial result after releasing held locks instead of relying on the App Service request timeout.
+13. A simultaneous replay in the same WebApp process receives the stable in-progress failure and performs no broker operation.
 
 Add one integration test using the Phase 3 emulator to prove the real Azure SDK transaction path, not only call ordering in fakes.
 
@@ -214,9 +262,13 @@ Important implementation details:
 - Create receivers with `ReceiveMode = PeekLock` and `SubQueue = DeadLetter`; do not use `ServiceBusSessionReceiverOptions`.
 - Use ordinal equality and ordering explicitly.
 - Keep held messages in a dictionary keyed by sequence number to prevent duplicate abandon/renew attempts.
+- Enforce `MaxReplaySnapshotMessages = 500`, retain at most one additional peek record to detect truncation, and stop receiving immediately after the selected boundary while preserving only the remainder of that bounded receive batch.
+- Use a monotonic 180-second budget linked with caller cancellation. Budget expiry produces a partial `BulkOperationResult`; caller cancellation still propagates after cleanup.
+- Put a non-blocking per-subscription `SemaphoreSlim` in the singleton replay client and translate contention to the typed 409 response at the controller boundary.
 - On per-message failure, add the original to the held set only when it is still settleable; let the final abandon be best-effort and log failures.
 - Use cancellation tokens throughout. Cancellation stops scanning, releases held locks in `finally`, then propagates rather than returning a misleading partial success.
 - Public errors are fixed templates containing at most a sequence number/subscription target; broker exceptions remain in logs.
+- Create/use the receiver before constructing the sender. Inside each async transaction, complete first and send second exactly as proven in Phase 0.
 
 Refactor `src/NimBus.WebApp/Startup.cs` so connection-string and FQNS/credential construction can create:
 
@@ -249,6 +301,8 @@ Extend `tests/NimBus.WebApp.Tests/SubscriptionAdminServiceTests.cs` with a recor
 7. Allowed replay writes `ManageSubscription` with the stable action, target, selection, counts, and success only.
 8. Denied replay writes an access-denied `ManageSubscription` audit without request payload or exception data.
 9. Transport failures return stable, generic responses and retain details only in captured server logs.
+10. A replay already running for the subscription returns 409 and writes no second result audit.
+11. A truncated snapshot exposes its cap explicitly; result/audit counts refer only to that bounded operation snapshot.
 
 Update the existing `ThrowingSubscriptionAdminService` in `AdminStatusSafetyTests.cs` when the interface grows.
 
@@ -258,11 +312,11 @@ Update `src/NimBus.WebApp/api-spec.yaml` with:
 
 - `GET /api/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters`;
 - `POST /api/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters/resubmit`;
-- `DeadLetterOverview` (`totalMessageCount: int64`);
+- `DeadLetterOverview` (`totalMessageCount: int64`, `isTruncated: boolean`, `snapshotLimit: int32`);
 - `DeadLetterReasonCount` (`reason` nullable, `count: int64`);
 - `DeadLetterResubmitRequest` with generated `all`/`reason` enum values and nullable reason;
 - existing `BulkOperationResult` as the replay response;
-- explicit 400/403/404 responses.
+- explicit 400/403/404/409 responses.
 
 Run the existing NSwag target and commit both generated outputs:
 
@@ -276,7 +330,7 @@ Do not hand-edit either generated file.
 - Extend `ISubscriptionAdminService.cs` and `SubscriptionAdminService.cs` with Resolver DLQ overview/resubmit methods and the shared target validator.
 - Inject `IResolverDeadLetterClient`; keep the existing ordinary client for purge behavior.
 - Add a typed unsupported-target exception next to the existing subscription admin exceptions; continue using `SubscriptionNotFoundException` for 404.
-- Implement the generated controller methods in `AdminImplementation.cs`, applying `AccessRole.Owner`, input validation, typed status mapping, and sanitized `ManageSubscription` audit data.
+- Implement the generated controller methods in `src/NimBus.WebApp/Controllers/ApiContract/AdminImplementation.cs`, applying `AccessRole.Owner`, input validation, typed status mapping, and sanitized `ManageSubscription` audit data.
 - Register the new client/service dependencies in `Startup.cs`.
 - Add a Bicep regression assertion in `tests/NimBus.CommandLine.Tests/BicepTemplateProviderTests.cs` that the WebApp path retains namespace-scoped Service Bus Data Owner. No Bicep role change is expected.
 
@@ -309,6 +363,8 @@ Extend `src/NimBus.WebApp/ClientApp/src/components/admin/subscription-manager.te
 8. Success says `Resubmitted X of N message(s).`; partial failure states how many remain dead-lettered.
 9. After replay, both the dialog snapshot and topic/subscription counters refresh.
 10. If replay commits but either refresh fails, the success remains visible and a separate refresh warning is shown.
+11. A truncated overview says that counts cover the first 500-message snapshot batch, changes the all label to `All messages in this snapshot (N)`, and tells the operator the operation can be repeated.
+12. A 409 response reports that another replay is already running without replacing prior success feedback.
 
 ### Implementation
 
@@ -317,6 +373,7 @@ Extend `src/NimBus.WebApp/ClientApp/src/components/admin/subscription-manager.te
 - Reuse the existing modal, radio, button, spinner, feedback, count formatting, and row busy-state patterns.
 - In `subscription-manager.tsx`, gate the action on exact Resolver topic identity plus `requiresSession`, empty `forwardTo`, and `deadLetterMessageCount > 0`; do not use combined regular+transfer count.
 - Let replay completion call the existing refresh path for topics/subscriptions and a dialog callback for its snapshot.
+- Preserve the handoff's `All dead letters (N)` wording only for a complete snapshot; use the explicit bounded-snapshot wording when `isTruncated` is true.
 
 ### Verification
 
@@ -337,7 +394,9 @@ Update `docs/service-bus-subscription-admin.md` with:
 - snapshot and exact-reason behavior;
 - new message IDs, provenance properties, and ordering caveat;
 - atomic transaction guarantee and required namespace support;
+- 500-message snapshot/180-second request bounds, repeat workflow, and the single-management-instance concurrency requirement;
 - stable `CosmosDbThrottled` interpretation;
+- Cosmos-only naming and SQL-backed replay availability for other reasons;
 - production identity permission and default emulator support.
 
 Update `docs/message-flows.md` where it currently describes generic Resolver transient/dead-letter behavior, and link the operator guide from the relevant section. Do not add a new monitoring page or advertise arbitrary subscription replay.
@@ -367,12 +426,13 @@ Run the scenario first against the default Aspire emulator and then against an A
 2. Observe delayed retries below the shared logical attempt limit.
 3. Observe final-attempt regular DLQ placement with exact reason `CosmosDbThrottled`.
 4. Confirm topic/subscription counters keep regular and transfer dead letters separate.
-5. Inspect the Resolver DLQ and verify exact reason counts, including one different reason.
+5. Inspect the Resolver DLQ and verify exact reason counts, including one different reason; with more than 500 messages, verify explicit truncation and bounded held locks.
 6. Replay only `CosmosDbThrottled`.
 7. Confirm matching messages are re-enqueued and processed, the other reason remains in the DLQ, and concurrent arrivals were not selected.
 8. Confirm every replay has a new ID plus original ID/reason provenance in trusted telemetry.
 9. Induce a send failure and confirm transaction rollback leaves the source message in the DLQ.
-10. Confirm the audit contains target, selection, counts, and success only.
+10. Start an overlapping replay and confirm it is rejected rather than reporting locked snapshot messages as failed.
+11. Confirm the audit contains target, selection, counts, and success only, including partial results caused by the operation budget.
 
 Capture the emulator and Azure results in the implementation PR. If the Azure namespace SKU/configuration rejects cross-entity transactions, treat that as a deployment blocker; do not weaken atomicity or add send-then-complete fallback behavior.
 
@@ -386,4 +446,5 @@ Capture the emulator and Azure results in the implementation PR. If the Azure na
 - Inferring Cosmos throttling from `MaxDeliveryCountExceeded`.
 - Adding a second admin page or changing existing purge/recreate semantics.
 - General-purpose AMQP transactions in the emulator beyond this one complete-plus-send shape.
-
+- Relabeling Azure SQL resource-governance errors as `CosmosDbThrottled`; a future provider-neutral stable throttle taxonomy is separate work.
+- Distributed replay leasing for a scaled-out management WebApp; until that exists, replay requires the shipped single-instance deployment shape.

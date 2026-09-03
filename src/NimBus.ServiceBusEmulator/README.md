@@ -33,6 +33,6 @@ Messages, locks, and session state are in memory and are lost on restart. Topolo
 
 The broker memory budget defaults to 512 MiB and can be set with `NIMBUS_SBEMULATOR_MAX_STORED_BYTES`. The per-message limit defaults to 256 KiB and can be raised, up to 1 MiB, with `NIMBUS_SBEMULATOR_MAX_MESSAGE_SIZE`. Invalid or incompatible topology journals are renamed with a `.corrupt-{timestamp}` suffix and the broker starts empty so the provisioner can recover it.
 
-The emulator supports the NimBus topic/subscription surface: SQL rules and SET actions, sessions and session state, peek, scheduling/cancellation, settlement, delivery limits, TTL, runtime properties, and auto-forwarding. Queues, transactions, WebSockets, Entra ID, duplicate-detection enforcement, and Service Bus message deferral are intentionally unsupported.
+The emulator supports the NimBus topic/subscription surface: SQL rules and SET actions, sessions and session state, peek, scheduling/cancellation, settlement, delivery limits, TTL, runtime properties, auto-forwarding, regular dead-letter browsing, and the narrow cross-entity transaction used to complete and replay one dead-lettered Resolver message. Queues, general-purpose transactions, transfer dead-letter browsing, WebSockets, Entra ID, duplicate-detection enforcement, and Service Bus message deferral are intentionally unsupported.
 
 NimBus detects `UseDevelopmentEmulator=true`, so local `Deferred` subscriptions retain the existing one-hour development TTL profile even though the emulator itself does not impose Azure's emulator TTL cap.

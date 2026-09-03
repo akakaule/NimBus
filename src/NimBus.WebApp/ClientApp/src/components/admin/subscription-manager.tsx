@@ -13,6 +13,7 @@ import { Spinner } from "components/ui/spinner";
 import { Checkbox } from "components/ui/checkbox";
 import { Tooltip } from "components/ui/tooltip";
 import ConfirmDestructiveAction from "./confirm-destructive-action";
+import ResolverDeadLetterDialog from "./resolver-dead-letter-dialog";
 import { cn } from "lib/utils";
 
 const AUTO_REFRESH_MS = 10_000;
@@ -163,6 +164,7 @@ export default function SubscriptionManager() {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [acknowledgeUnknown, setAcknowledgeUnknown] = useState(false);
+  const [replaySubscription, setReplaySubscription] = useState<string | null>(null);
 
   const loadTopics = useCallback(async () => {
     try {
@@ -425,8 +427,10 @@ export default function SubscriptionManager() {
               readOnly={activeTopic?.isKnownToPlatform === false}
               busyRow={busyRow}
               feedback={feedback}
+              topicName={selectedTopic}
               onTogglePause={togglePause}
               onRestoreRules={restoreRules}
+              onInspectDeadLetters={(sub) => setReplaySubscription(sub.name ?? null)}
               onRequest={(action) => {
                 setAcknowledgeUnknown(false);
                 setPending(action);
@@ -446,6 +450,15 @@ export default function SubscriptionManager() {
         confirmLabel={pendingConfirmLabel(pending)}
         isLoading={busyRow !== null}
       />
+
+      {replaySubscription && (
+        <ResolverDeadLetterDialog
+          client={client}
+          subscriptionName={replaySubscription}
+          onClose={() => setReplaySubscription(null)}
+          onReplayed={refresh}
+        />
+      )}
 
       {/* A subscription the platform can't describe has no safe rebuild path, so
           deleting it needs a deliberate second acknowledgement on top of the
@@ -802,19 +815,23 @@ function TopicTable({
 
 function SubscriptionTable({
   subscriptions,
+  topicName,
   readOnly,
   busyRow,
   feedback,
   onTogglePause,
   onRestoreRules,
+  onInspectDeadLetters,
   onRequest,
 }: {
   subscriptions: api.ServiceBusSubscriptionInfo[];
+  topicName: string;
   readOnly: boolean;
   busyRow: string | null;
   feedback: Record<string, RowFeedback>;
   onTogglePause: (sub: api.ServiceBusSubscriptionInfo) => void;
   onRestoreRules: (sub: api.ServiceBusSubscriptionInfo) => void;
+  onInspectDeadLetters: (sub: api.ServiceBusSubscriptionInfo) => void;
   onRequest: (action: PendingAction) => void;
 }) {
   return (
@@ -842,6 +859,11 @@ function SubscriptionTable({
               (sub.activeMessageCount ?? 0) + (sub.transferMessageCount ?? 0);
             const row = feedback[name];
             const missing = sub.missingRuleNames ?? [];
+            const canInspectDeadLetters =
+              topicName === "Resolver" &&
+              sub.requiresSession === true &&
+              !sub.forwardTo &&
+              (sub.deadLetterMessageCount ?? 0) > 0;
 
             return (
               <Fragment key={name}>
@@ -932,6 +954,16 @@ function SubscriptionTable({
                     {/* min-w keeps the column from being squeezed to a single
                         button per line by a wide Rules cell next to it. */}
                     <div className="flex flex-wrap gap-1.5 items-center min-w-[200px]">
+                      {canInspectDeadLetters && (
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          disabled={busyRow !== null || readOnly}
+                          onClick={() => onInspectDeadLetters(sub)}
+                        >
+                          Inspect dead letters
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         size="xs"

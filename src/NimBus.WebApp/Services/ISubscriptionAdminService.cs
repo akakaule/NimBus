@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Threading;
 using NimBus.WebApp.ManagementApi;
 
 namespace NimBus.WebApp.Services;
@@ -24,6 +25,16 @@ public interface ISubscriptionAdminService
 
     /// <summary>Counters, settings and rules for every subscription on a topic.</summary>
     Task<IEnumerable<ServiceBusSubscriptionInfo>> GetSubscriptionsAsync(string topicName);
+
+    Task<DeadLetterOverview> GetResolverDeadLettersAsync(
+        string subscriptionName,
+        CancellationToken cancellationToken = default);
+
+    Task<BulkOperationResult> ResubmitResolverDeadLettersAsync(
+        string subscriptionName,
+        bool all,
+        string? reason,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Pause (<c>ReceiveDisabled</c>) or resume delivery on one subscription. Reversible;

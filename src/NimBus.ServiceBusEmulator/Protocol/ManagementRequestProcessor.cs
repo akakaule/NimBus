@@ -65,14 +65,21 @@ internal sealed class ManagementRequestProcessor(
             return CancelScheduled(entityPath, body);
         }
 
+        const string deadLetterSuffix = "/$DeadLetterQueue";
+        var isDeadLetter = entityPath.EndsWith(deadLetterSuffix, StringComparison.OrdinalIgnoreCase);
+        if (isDeadLetter)
+        {
+            entityPath = entityPath[..^deadLetterSuffix.Length];
+        }
+
         ParseSubscriptionPath(entityPath, out var topicName, out var subscriptionName);
         return operation switch
         {
-            "renew-lock" => RenewLocks(topicName, subscriptionName, body),
+            "renew-lock" => RenewLocks(topicName, subscriptionName, body, isDeadLetter),
             "renew-session-lock" => RenewSession(topicName, subscriptionName, body, owner!),
             "get-session-state" => GetSessionState(topicName, subscriptionName, body, owner!),
             "set-session-state" => SetSessionState(topicName, subscriptionName, body, owner!),
-            "peek-message" => Peek(topicName, subscriptionName, body),
+            "peek-message" => Peek(topicName, subscriptionName, body, isDeadLetter),
             "update-disposition" => UpdateDisposition(topicName, subscriptionName, body),
             "receive-by-sequence-number" => throw new NotSupportedException("Service Bus deferral is outside Spec 027 section 3."),
             _ => throw new NotSupportedException($"Management operation '{operation}' is outside Spec 027."),
@@ -116,7 +123,7 @@ internal sealed class ManagementRequestProcessor(
         return new Map();
     }
 
-    private Map RenewLocks(string topicName, string subscriptionName, Map body)
+    private Map RenewLocks(string topicName, string subscriptionName, Map body, bool isDeadLetter)
     {
         var values = GetValue(body, "lock-tokens") as Array
             ?? throw new FormatException("renew-lock requires lock-tokens.");
@@ -129,7 +136,9 @@ internal sealed class ManagementRequestProcessor(
                 byte[] bytes when bytes.Length == 16 => new Guid(bytes),
                 var value => Guid.Parse(value?.ToString() ?? string.Empty),
             };
-            expirations[index] = broker.RenewLock(topicName, subscriptionName, token).UtcDateTime;
+            expirations[index] = (isDeadLetter
+                ? broker.RenewDeadLetterLock(topicName, subscriptionName, token)
+                : broker.RenewLock(topicName, subscriptionName, token)).UtcDateTime;
         }
 
         return new Map { ["expirations"] = expirations };
@@ -155,12 +164,14 @@ internal sealed class ManagementRequestProcessor(
         return new Map();
     }
 
-    private Map Peek(string topicName, string subscriptionName, Map body)
+    private Map Peek(string topicName, string subscriptionName, Map body, bool isDeadLetter)
     {
         var from = Convert.ToInt64(GetValue(body, "from-sequence-number") ?? 0, System.Globalization.CultureInfo.InvariantCulture);
         var count = Convert.ToInt32(GetValue(body, "message-count") ?? 1, System.Globalization.CultureInfo.InvariantCulture);
         var sessionId = GetValue(body, "session-id")?.ToString();
-        var messages = broker.Peek(topicName, subscriptionName, from, count, sessionId)
+        var messages = (isDeadLetter
+                ? broker.PeekDeadLetter(topicName, subscriptionName, from, count)
+                : broker.Peek(topicName, subscriptionName, from, count, sessionId))
             .Select(message =>
             {
                 var encoded = AmqpMessageConverter.ToAmqp(message).Encode();

@@ -39,7 +39,7 @@ if (!await adminClient.SubscriptionExistsAsync(partnerInboundTopic, partnerInbou
         new CreateSubscriptionOptions(partnerInboundTopic, partnerInboundSubscription)
         {
             RequiresSession = true,
-            MaxDeliveryCount = 10,
+            MaxDeliveryCount = NimBus.Core.Messages.Constants.ServiceBusMaxDeliveryCount,
         });
     Console.WriteLine($"Created session subscription '{partnerInboundSubscription}' on topic '{partnerInboundTopic}'.");
 }

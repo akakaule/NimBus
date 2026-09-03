@@ -11,6 +11,7 @@
          a transitive build of the WebApp. Tests reflect over types directly
          and exercise the API/HTTP pipeline; they don't need the SPA bundle. -->
     <SkipSpaBuild>true</SkipSpaBuild>
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
   </PropertyGroup>
 
   <ItemGroup>

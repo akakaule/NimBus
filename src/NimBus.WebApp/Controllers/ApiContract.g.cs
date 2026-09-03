@@ -1313,6 +1313,24 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<ServiceBusSubscriptionInfo>>> GetAdminServicebusSubscriptionsAsync(string topicName);
 
         /// <summary>
+        /// Inspect regular dead letters on a terminal Resolver subscription
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<DeadLetterOverview>> GetAdminServicebusResolverDeadlettersAsync(string subscriptionName);
+
+        /// <summary>
+        /// Atomically replay regular dead letters from a terminal Resolver subscription
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminServicebusResolverDeadlettersResubmitAsync(DeadLetterResubmitRequest body, string subscriptionName);
+
+        /// <summary>
         /// Pause or resume delivery on a single subscription
         /// </summary>
 
@@ -1673,6 +1691,28 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.GetAdminServicebusSubscriptionsAsync(topicName);
+        }
+
+        /// <summary>
+        /// Inspect regular dead letters on a terminal Resolver subscription
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<DeadLetterOverview>> GetAdminServicebusResolverDeadletters(string subscriptionName)
+        {
+
+            return _implementation.GetAdminServicebusResolverDeadlettersAsync(subscriptionName);
+        }
+
+        /// <summary>
+        /// Atomically replay regular dead letters from a terminal Resolver subscription
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters/resubmit")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminServicebusResolverDeadlettersResubmit([Microsoft.AspNetCore.Mvc.FromBody] DeadLetterResubmitRequest body, string subscriptionName)
+        {
+
+            return _implementation.PostAdminServicebusResolverDeadlettersResubmitAsync(body, subscriptionName);
         }
 
         /// <summary>
@@ -8643,6 +8683,225 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DeadLetterOverview : System.ComponentModel.INotifyPropertyChanged
+    {
+        private long _totalMessageCount;
+        private bool _isTruncated;
+        private int _snapshotLimit;
+        private System.Collections.Generic.List<DeadLetterReasonCount> _reasons;
+
+        [Newtonsoft.Json.JsonProperty("totalMessageCount", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long TotalMessageCount    {
+            get { return _totalMessageCount; }
+            set
+            {
+                if (_totalMessageCount != value)
+                {
+                    _totalMessageCount = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("isTruncated", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool IsTruncated    {
+            get { return _isTruncated; }
+            set
+            {
+                if (_isTruncated != value)
+                {
+                    _isTruncated = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("snapshotLimit", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int SnapshotLimit    {
+            get { return _snapshotLimit; }
+            set
+            {
+                if (_snapshotLimit != value)
+                {
+                    _snapshotLimit = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("reasons", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<DeadLetterReasonCount> Reasons    {
+            get { return _reasons; }
+            set
+            {
+                if (_reasons != value)
+                {
+                    _reasons = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static DeadLetterOverview FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<DeadLetterOverview>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DeadLetterReasonCount : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _reason;
+        private long _count;
+
+        [Newtonsoft.Json.JsonProperty("reason", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Reason    {
+            get { return _reason; }
+            set
+            {
+                if (_reason != value)
+                {
+                    _reason = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("count", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public long Count    {
+            get { return _count; }
+            set
+            {
+                if (_count != value)
+                {
+                    _count = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static DeadLetterReasonCount FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<DeadLetterReasonCount>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DeadLetterResubmitRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private DeadLetterResubmitRequestScope _scope;
+        private string _reason;
+
+        [Newtonsoft.Json.JsonProperty("scope", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public DeadLetterResubmitRequestScope Scope    {
+            get { return _scope; }
+            set
+            {
+                if (_scope != value)
+                {
+                    _scope = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("reason", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Reason    {
+            get { return _reason; }
+            set
+            {
+                if (_reason != value)
+                {
+                    _reason = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static DeadLetterResubmitRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<DeadLetterResubmitRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class SessionPurgePreview : System.ComponentModel.INotifyPropertyChanged
     {
         private string _sessionId;
@@ -13676,6 +13935,18 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"disable")]
         Disable = 1,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum DeadLetterResubmitRequestScope
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"all")]
+        All = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"reason")]
+        Reason = 1,
 
     }
 

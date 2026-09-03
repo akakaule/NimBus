@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => ({
   postAdminServicebusSubscriptionRestoreRules: vi.fn(),
   deleteAdminServicebusSubscription: vi.fn(),
   deleteAdminServicebusSubscriptionRule: vi.fn(),
+  getAdminServicebusResolverDeadletters: vi.fn(),
+  postAdminServicebusResolverDeadlettersResubmit: vi.fn(),
 }));
 
 vi.mock("api-client", async () => {
@@ -31,6 +33,8 @@ vi.mock("api-client", async () => {
     postAdminServicebusSubscriptionRestoreRules = mocks.postAdminServicebusSubscriptionRestoreRules;
     deleteAdminServicebusSubscription = mocks.deleteAdminServicebusSubscription;
     deleteAdminServicebusSubscriptionRule = mocks.deleteAdminServicebusSubscriptionRule;
+    getAdminServicebusResolverDeadletters = mocks.getAdminServicebusResolverDeadletters;
+    postAdminServicebusResolverDeadlettersResubmit = mocks.postAdminServicebusResolverDeadlettersResubmit;
   }
   return { ...actual, Client: FakeClient, CookieAuth: () => ({}) };
 });
@@ -84,6 +88,18 @@ beforeEach(() => {
   mocks.postAdminServicebusSubscriptionRestoreRules.mockReset().mockResolvedValue({});
   mocks.deleteAdminServicebusSubscription.mockReset().mockResolvedValue({});
   mocks.deleteAdminServicebusSubscriptionRule.mockReset().mockResolvedValue({});
+  mocks.getAdminServicebusResolverDeadletters.mockReset().mockResolvedValue({
+    totalMessageCount: 1,
+    isTruncated: false,
+    snapshotLimit: 500,
+    reasons: [{ reason: "CosmosDbThrottled", count: 1 }],
+  });
+  mocks.postAdminServicebusResolverDeadlettersResubmit.mockReset().mockResolvedValue({
+    processed: 1,
+    succeeded: 1,
+    failed: 0,
+    errors: [],
+  });
 });
 
 afterEach(() => cleanup());
@@ -294,5 +310,41 @@ describe("SubscriptionManager", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Active/ }));
     expect(names()).toEqual(["bravo", "alpha"]);
+  });
+
+  it("offers Resolver dead-letter inspection only on the terminal session subscription", async () => {
+    mocks.getAdminServicebusTopics.mockResolvedValue([topic("Resolver")]);
+    mocks.getAdminServicebusSubscriptions.mockResolvedValue([
+      subscription("Resolver", {
+        topicName: "Resolver",
+        requiresSession: true,
+        forwardTo: null,
+        deadLetterMessageCount: 2,
+      }),
+    ]);
+
+    render(<SubscriptionManager />);
+    fireEvent.click(await screen.findByRole("button", { name: "Resolver" }));
+
+    expect(await screen.findByRole("button", { name: "Inspect dead letters" })).toBeDefined();
+  });
+
+  it("does not offer replay for transfer-only dead letters", async () => {
+    mocks.getAdminServicebusTopics.mockResolvedValue([topic("Resolver")]);
+    mocks.getAdminServicebusSubscriptions.mockResolvedValue([
+      subscription("Resolver", {
+        topicName: "Resolver",
+        requiresSession: true,
+        forwardTo: null,
+        deadLetterMessageCount: 0,
+        transferDeadLetterMessageCount: 2,
+      }),
+    ]);
+
+    render(<SubscriptionManager />);
+    fireEvent.click(await screen.findByRole("button", { name: "Resolver" }));
+    await screen.findByText("Resolver", { selector: "td *" });
+
+    expect(screen.queryByRole("button", { name: "Inspect dead letters" })).toBeNull();
   });
 });

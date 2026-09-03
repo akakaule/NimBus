@@ -2,6 +2,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Broker.Services;
 using NimBus.Core.Messages;
+using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using CoreHeartbeat = NimBus.Core.Events.Heartbeat;
@@ -86,6 +87,25 @@ public class ResolverLivenessProbeTests
         Assert.AreEqual(0, message.CompletedCalls, "The session must redeliver the probe.");
         Assert.AreEqual(0, message.ScheduleRedeliveryCalls);
         Assert.AreEqual(0, message.DeadLetterCalls);
+    }
+
+    [TestMethod]
+    public async Task Handle_SelfProbe_FinalCosmosThrottle_UsesStableDeadLetterReason()
+    {
+        var store = new FakeCosmosDbClient
+        {
+            SetServiceHealthException = new RequestLimitException(TimeSpan.FromSeconds(1)),
+        };
+        var service = CreateService(store);
+        var message = CreateProbeContext(Constants.ResolverId, DateTime.UtcNow);
+        message.ThrottleRetryCount = 9;
+
+        await service.Handle(message);
+
+        Assert.AreEqual(0, message.CompletedCalls);
+        Assert.AreEqual(0, message.ScheduleRedeliveryCalls);
+        Assert.AreEqual(1, message.DeadLetterCalls);
+        Assert.AreEqual("CosmosDbThrottled", message.LastDeadLetterReason);
     }
 
     [TestMethod]

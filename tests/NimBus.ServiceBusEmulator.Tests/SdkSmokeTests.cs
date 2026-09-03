@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using System.Transactions;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using NimBus.Core;
@@ -445,6 +446,110 @@ public sealed class SdkSmokeTests
         Assert.AreEqual(1, runtime.DeadLetterMessageCount);
         Assert.AreEqual(1, runtime.TotalMessageCount);
         await admin.DeleteTopicAsync(entityName);
+    }
+
+    [TestMethod]
+    [TestCategory("CommonFidelity")]
+    [Timeout(60_000)]
+    public async Task Resolver_dead_letter_can_be_peeked_and_atomically_replayed()
+    {
+        await using var emulator = await EmulatorProcess.StartAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var topic = $"resolver-replay-{Guid.NewGuid():N}";
+        const string subscription = "Resolver";
+        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+        await admin.CreateTopicAsync(topic, timeout.Token);
+        await admin.CreateSubscriptionAsync(
+            new CreateSubscriptionOptions(topic, subscription) { RequiresSession = true },
+            timeout.Token);
+
+        await using (var setup = new ServiceBusClient(emulator.ConnectionString))
+        {
+            await setup.CreateSender(topic).SendMessageAsync(
+                new ServiceBusMessage("source")
+                {
+                    MessageId = "original",
+                    SessionId = "session",
+                },
+                timeout.Token);
+            await using var session = await setup.AcceptSessionAsync(
+                topic, subscription, "session", cancellationToken: timeout.Token);
+            var source = await session.ReceiveMessageAsync(TimeSpan.FromSeconds(5), timeout.Token);
+            Assert.IsNotNull(source);
+            await session.DeadLetterMessageAsync(source, "CosmosDbThrottled", cancellationToken: timeout.Token);
+        }
+
+        await using var client = new ServiceBusClient(
+            emulator.ConnectionString,
+            new ServiceBusClientOptions { EnableCrossEntityTransactions = true });
+        await using var receiver = client.CreateReceiver(
+            topic,
+            subscription,
+            new ServiceBusReceiverOptions { SubQueue = SubQueue.DeadLetter });
+        var peeked = await receiver.PeekMessageAsync(cancellationToken: timeout.Token);
+        Assert.IsNotNull(peeked);
+        Assert.AreEqual("CosmosDbThrottled", peeked.DeadLetterReason);
+
+        var deadLetter = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(5), timeout.Token);
+        Assert.IsNotNull(deadLetter);
+        await using var sender = client.CreateSender(topic);
+        using (var transaction = new TransactionScope(
+                   TransactionScopeOption.Required,
+                   TransactionScopeAsyncFlowOption.Enabled))
+        {
+            await receiver.CompleteMessageAsync(deadLetter, timeout.Token);
+            await sender.SendMessageAsync(
+                new ServiceBusMessage(deadLetter) { MessageId = "replayed" },
+                timeout.Token);
+            transaction.Complete();
+        }
+
+        await using var verificationClient = new ServiceBusClient(emulator.ConnectionString);
+        await using var replaySession = await verificationClient.AcceptSessionAsync(
+            topic, subscription, "session", cancellationToken: timeout.Token);
+        var replay = await replaySession.ReceiveMessageAsync(TimeSpan.FromSeconds(5), timeout.Token);
+        Assert.IsNotNull(replay);
+        Assert.AreEqual("replayed", replay.MessageId);
+        await replaySession.CompleteMessageAsync(replay, timeout.Token);
+        Assert.IsNull(await receiver.ReceiveMessageAsync(TimeSpan.FromMilliseconds(250), timeout.Token));
+
+        await sender.SendMessageAsync(
+            new ServiceBusMessage("rollback-source")
+            {
+                MessageId = "rollback-original",
+                SessionId = "rollback-session",
+            },
+            timeout.Token);
+        await using (var rollbackSession = await verificationClient.AcceptSessionAsync(
+                         topic, subscription, "rollback-session", cancellationToken: timeout.Token))
+        {
+            var rollbackSource = await rollbackSession.ReceiveMessageAsync(TimeSpan.FromSeconds(5), timeout.Token);
+            Assert.IsNotNull(rollbackSource);
+            await rollbackSession.DeadLetterMessageAsync(
+                rollbackSource,
+                "CosmosDbThrottled",
+                cancellationToken: timeout.Token);
+        }
+
+        var rollbackDeadLetter = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(5), timeout.Token);
+        Assert.IsNotNull(rollbackDeadLetter);
+        using (new TransactionScope(TransactionScopeOption.Required, TransactionScopeAsyncFlowOption.Enabled))
+        {
+            await receiver.CompleteMessageAsync(rollbackDeadLetter, timeout.Token);
+            await sender.SendMessageAsync(
+                new ServiceBusMessage(rollbackDeadLetter) { MessageId = "must-not-publish" },
+                timeout.Token);
+        }
+
+        SubscriptionRuntimeProperties afterRollback =
+            (await admin.GetSubscriptionRuntimePropertiesAsync(topic, subscription, timeout.Token)).Value;
+        Assert.AreEqual(0, afterRollback.ActiveMessageCount);
+        Assert.AreEqual(1, afterRollback.DeadLetterMessageCount);
+        var retained = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(5), timeout.Token);
+        Assert.IsNotNull(retained);
+        Assert.AreEqual("rollback-original", retained.MessageId);
+        await receiver.CompleteMessageAsync(retained, timeout.Token);
+        await admin.DeleteTopicAsync(topic, timeout.Token);
     }
 
     private sealed class EmulatorProcess : IAsyncDisposable

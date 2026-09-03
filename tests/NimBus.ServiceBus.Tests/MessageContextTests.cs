@@ -48,6 +48,16 @@ public class MessageContextTests
         Assert.IsFalse(ctx.IsDeferred);
     }
 
+    [TestMethod]
+    public void DeliveryContext_ExposesWrappedBrokerDeliveryCount()
+    {
+        var message = new FakeServiceBusMessage { DeliveryCount = 7 };
+        IMessageContext context = new MessageContext(message, new FakeServiceBusSession());
+
+        Assert.IsInstanceOfType<IMessageDeliveryContext>(context);
+        Assert.AreEqual(7, ((IMessageDeliveryContext)context).DeliveryCount);
+    }
+
     // ── Property access ─────────────────────────────────────────────────
 
     [TestMethod]

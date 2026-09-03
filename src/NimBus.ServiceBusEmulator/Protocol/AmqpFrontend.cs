@@ -18,6 +18,13 @@ internal sealed class AmqpFrontend : IDisposable
         listener.HandlerFactory = static _ => new GuidDeliveryTagHandler();
         _host.AddressResolver = static (_, attach) =>
         {
+            if (!attach.Role && attach.Target is Amqp.Transactions.Coordinator)
+            {
+                // ContainerHost otherwise casts the coordinator terminus to a
+                // normal Target before it reaches the custom link processor.
+                return "$coordinator";
+            }
+
             var address = attach.Role
                 ? (attach.Source as Amqp.Framing.Source)?.Address
                 : (attach.Target as Amqp.Framing.Target)?.Address;
@@ -38,8 +45,12 @@ internal sealed class AmqpFrontend : IDisposable
 
         void RegisterTopicManagement(string topicName) => RegisterManagementNode(topicName);
 
-        void RegisterSubscriptionManagement(string topicName, string subscriptionName) =>
-            RegisterManagementNode($"{topicName}/Subscriptions/{subscriptionName}");
+        void RegisterSubscriptionManagement(string topicName, string subscriptionName)
+        {
+            var entityPath = $"{topicName}/Subscriptions/{subscriptionName}";
+            RegisterManagementNode(entityPath);
+            RegisterManagementNode($"{entityPath}/$DeadLetterQueue");
+        }
 
         void RegisterManagementNode(string entityPath)
         {

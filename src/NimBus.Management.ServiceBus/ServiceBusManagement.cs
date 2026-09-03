@@ -1,5 +1,6 @@
 using Azure.Messaging.ServiceBus.Administration;
 using Microsoft.Extensions.Logging;
+using NimBus.Core.Messages;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -101,7 +102,7 @@ public class ServiceBusManagement : IServiceBusManagement
         {
             var subscriptionProperties = new CreateSubscriptionOptions(topicName, subscriptionName)
             {
-                MaxDeliveryCount = 10,
+                MaxDeliveryCount = Constants.ServiceBusMaxDeliveryCount,
                 LockDuration = TimeSpan.FromSeconds(30),
                 EnableBatchedOperations = true,
                 EnableDeadLetteringOnFilterEvaluationExceptions = true,

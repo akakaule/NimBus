@@ -84,4 +84,18 @@ public class BicepTemplateProviderTests
         Assert.DoesNotContain('+', version);
         Assert.False(string.IsNullOrWhiteSpace(version));
     }
+
+    [Fact]
+    public void WebApp_identity_retains_Service_Bus_Data_Owner()
+    {
+        var context = new CommandContext(null);
+        var roleAssignments = Path.Combine(
+            Path.GetDirectoryName(context.WebAppBicepPath)!,
+            "templates",
+            "roleAssignments.bicep");
+        var template = File.ReadAllText(roleAssignments);
+
+        Assert.Contains("090c5cfd-751d-490a-894a-3ce6f1109419", template, StringComparison.Ordinal);
+        Assert.Contains("serviceBusDataOwnerRoleId", template, StringComparison.Ordinal);
+    }
 }

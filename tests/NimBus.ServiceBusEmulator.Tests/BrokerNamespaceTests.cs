@@ -8,6 +8,14 @@ namespace NimBus.ServiceBusEmulator.Tests;
 public sealed class BrokerNamespaceTests
 {
     [TestMethod]
+    public void Emulator_default_delivery_limit_matches_NimBus_provisioning_default()
+    {
+        Assert.AreEqual(
+            NimBus.Core.Messages.Constants.ServiceBusMaxDeliveryCount,
+            BrokerDefaults.MaxDeliveryCount);
+    }
+
+    [TestMethod]
     public void Publish_rejects_before_exceeding_the_broker_memory_budget()
     {
         var broker = new BrokerNamespace(new BrokerOptions { MaxStoredBytes = 3 });
@@ -74,6 +82,75 @@ public sealed class BrokerNamespaceTests
         var properties = broker.GetSubscriptionRuntimeProperties("events", "consumer");
         Assert.AreEqual(0L, properties.ActiveMessageCount);
         Assert.AreEqual(1L, properties.DeadLetterMessageCount);
+    }
+
+    [TestMethod]
+    public void Dead_letter_peek_paginates_and_preserves_missing_reason()
+    {
+        var broker = new BrokerNamespace(new BrokerOptions());
+        broker.CreateTopic(new TopicDefinition("events"));
+        broker.CreateSubscription("events", new SubscriptionDefinition("consumer"));
+        broker.Publish("events", NewMessage("message-1"));
+        broker.Publish("events", NewMessage("message-2"));
+
+        var first = broker.TryAcquire("events", "consumer", null, "receiver-1")!;
+        broker.DeadLetter("events", "consumer", first.LockToken, "receiver-1", null, null);
+        var second = broker.TryAcquire("events", "consumer", null, "receiver-1")!;
+        broker.DeadLetter("events", "consumer", second.LockToken, "receiver-1", "CosmosDbThrottled", null);
+
+        var firstPage = broker.PeekDeadLetter("events", "consumer", 0, 1);
+        var secondPage = broker.PeekDeadLetter("events", "consumer", firstPage[0].SequenceNumber + 1, 1);
+
+        Assert.AreEqual(1, firstPage.Count);
+        Assert.IsFalse(firstPage[0].ApplicationProperties.ContainsKey("DeadLetterReason"));
+        Assert.AreEqual(1, secondPage.Count);
+        Assert.AreEqual("CosmosDbThrottled", secondPage[0].ApplicationProperties["DeadLetterReason"]);
+    }
+
+    [TestMethod]
+    public void Dead_letter_lock_can_be_renewed()
+    {
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 9, 3, 12, 0, 0, TimeSpan.Zero));
+        var broker = new BrokerNamespace(new BrokerOptions { TimeProvider = clock });
+        broker.CreateTopic(new TopicDefinition("events"));
+        broker.CreateSubscription(
+            "events",
+            new SubscriptionDefinition("consumer") { LockDuration = TimeSpan.FromSeconds(30) });
+        broker.Publish("events", NewMessage("message-1"));
+        var source = broker.TryAcquire("events", "consumer", null, "receiver-1")!;
+        broker.DeadLetter("events", "consumer", source.LockToken, "receiver-1", null, null);
+        var deadLetter = broker.TryAcquireDeadLetter("events", "consumer", "dlq-receiver")!;
+
+        clock.Advance(TimeSpan.FromSeconds(20));
+        broker.RenewDeadLetterLock("events", "consumer", deadLetter.LockToken);
+        clock.Advance(TimeSpan.FromSeconds(15));
+
+        broker.CompleteDeadLetter("events", "consumer", deadLetter.LockToken, "dlq-receiver");
+        Assert.AreEqual(0L, broker.GetSubscriptionRuntimeProperties("events", "consumer").DeadLetterMessageCount);
+    }
+
+    [TestMethod]
+    public void Dead_letter_replay_commit_is_atomic_when_destination_is_invalid()
+    {
+        var broker = new BrokerNamespace(new BrokerOptions());
+        broker.CreateTopic(new TopicDefinition("events"));
+        broker.CreateSubscription("events", new SubscriptionDefinition("consumer"));
+        broker.Publish("events", NewMessage("message-1"));
+        var source = broker.TryAcquire("events", "consumer", null, "receiver-1")!;
+        broker.DeadLetter("events", "consumer", source.LockToken, "receiver-1", null, null);
+        var deadLetter = broker.TryAcquireDeadLetter("events", "consumer", "dlq-receiver")!;
+
+        Assert.ThrowsExactly<KeyNotFoundException>(() => broker.CommitDeadLetterReplay(
+            "events",
+            "consumer",
+            deadLetter.LockToken,
+            "dlq-receiver",
+            "missing-topic",
+            NewMessage("replacement")));
+
+        Assert.AreEqual(1L, broker.GetSubscriptionRuntimeProperties("events", "consumer").DeadLetterMessageCount);
+        broker.ReleaseDeadLetter("events", "consumer", deadLetter.LockToken, "dlq-receiver");
+        Assert.IsNotNull(broker.TryAcquireDeadLetter("events", "consumer", "verification"));
     }
 
     [TestMethod]

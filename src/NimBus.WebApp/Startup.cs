@@ -457,11 +457,23 @@ namespace NimBus.WebApp
                 var credential = new DefaultAzureCredential();
                 services.AddSingleton(new ServiceBusAdministrationClient(serviceBusFqns, credential));
                 services.AddSingleton(new ServiceBusClient(serviceBusFqns, credential));
+                services.AddSingleton<IResolverDeadLetterClient>(sp => new ResolverDeadLetterClient(
+                    new ServiceBusClient(serviceBusFqns, credential, new ServiceBusClientOptions
+                    {
+                        EnableCrossEntityTransactions = true,
+                    }),
+                    sp.GetRequiredService<ILogger<ResolverDeadLetterClient>>()));
             }
             else
             {
                 services.AddSingleton(new ServiceBusAdministrationClient(serviceBusConnection));
                 services.AddSingleton(new ServiceBusClient(serviceBusConnection));
+                services.AddSingleton<IResolverDeadLetterClient>(sp => new ResolverDeadLetterClient(
+                    new ServiceBusClient(serviceBusConnection, new ServiceBusClientOptions
+                    {
+                        EnableCrossEntityTransactions = true,
+                    }),
+                    sp.GetRequiredService<ILogger<ResolverDeadLetterClient>>()));
             }
         }
 
@@ -639,7 +651,8 @@ namespace NimBus.WebApp
                 sp.GetRequiredService<ITopologyRebuilder>(),
                 sp.GetRequiredService<ServiceBusClient>(),
                 sp.GetRequiredService<ILogger<SubscriptionAdminService>>(),
-                isEmulator));
+                isEmulator,
+                sp.GetRequiredService<IResolverDeadLetterClient>()));
             services.AddTransient<IAdminApiController, AdminImplementation>();
             services.AddTransient<IMetricsApiController, MetricsImplementation>();
             services.AddTransient<IHeartbeatApiController, HeartbeatImplementation>();

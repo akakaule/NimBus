@@ -658,11 +658,9 @@ namespace NimBus.WebApp
             services.AddTransient<IHeartbeatApiController, HeartbeatImplementation>();
             services.AddTransient<IAuditApiController, AuditImplementation>();
             services.AddTransient<IAccessControlApiController, AccessControlImplementation>();
-            services.AddTransient<IDevApiController, DevImplementation>();
             services.AddTransient<IAgentApiController, AgentImplementation>();
             services.AddSingleton<IAgentEventPublisher, AgentEventPublisher>();
             services.AddSingleton<IAgentSubscriptionRegistry, AgentSubscriptionRegistry>();
-            services.AddScoped<SeedDataService>();
 
             // Platform heartbeat. Scoped for its narrow storage dependencies; the
             // sender is a singleton because it wraps the singleton ServiceBusClient.

@@ -2166,80 +2166,6 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/AuditSearchRequest'
-  /api/dev/status:
-    get:
-      summary: Whether the developer tools are available (Development environment only)
-      operationId: get-dev-status
-      tags:
-        - Dev
-      responses:
-        '200':
-          description: Developer tools are available
-        '404':
-          description: Not available (non-development environment)
-  /api/dev/seed:
-    post:
-      summary: Seed sample data across all containers
-      operationId: post-dev-seed
-      tags:
-        - Dev
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SeedResult'
-        '404':
-          description: Not available (non-development environment)
-    delete:
-      summary: Clear all seeded sample data
-      operationId: delete-dev-seed
-      tags:
-        - Dev
-      responses:
-        '200':
-          description: OK
-        '404':
-          description: Not available (non-development environment)
-  '/api/dev/endpoint/{endpointId}/events':
-    parameters:
-      - schema:
-          type: string
-        name: endpointId
-        in: path
-        required: true
-    post:
-      summary: Create a single event record in an endpoint container
-      operationId: post-dev-create-event
-      tags:
-        - Dev
-      responses:
-        '200':
-          description: OK
-        '404':
-          description: Not available (non-development environment)
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateEventRequest'
-  /api/dev/messages:
-    post:
-      summary: Store a message record in the messages container
-      operationId: post-dev-send-message
-      tags:
-        - Dev
-      responses:
-        '200':
-          description: OK
-        '404':
-          description: Not available (non-development environment)
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SendMessageRequest'
   /api/metrics/overview:
     get:
       summary: Get metrics overview for all endpoints
@@ -3414,50 +3340,6 @@ components:
         endpointId:
           type: string
         subscriptionStatus:
-          type: string
-    SeedResult:
-      title: SeedResult
-      type: object
-      properties:
-        message:
-          type: string
-        endpointsCreated:
-          type: integer
-        eventsCreated:
-          type: integer
-        messagesCreated:
-          type: integer
-        auditsCreated:
-          type: integer
-    CreateEventRequest:
-      title: CreateEventRequest
-      type: object
-      properties:
-        eventTypeId:
-          type: string
-        sessionId:
-          type: string
-        status:
-          type: string
-          enum:
-            - Pending
-            - Failed
-            - Deferred
-            - DeadLettered
-            - Unsupported
-        messageContent:
-          type: string
-    SendMessageRequest:
-      title: SendMessageRequest
-      type: object
-      properties:
-        endpointId:
-          type: string
-        eventTypeId:
-          type: string
-        sessionId:
-          type: string
-        messageContent:
           type: string
     MessageSearchRequest:
       title: MessageSearchRequest
@@ -4704,6 +4586,5 @@ tags:
   - name: Admin
   - name: Metrics
   - name: Audit
-  - name: Dev
   - name: Metrics
   - name: Agent

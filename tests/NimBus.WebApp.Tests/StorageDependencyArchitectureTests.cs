@@ -73,12 +73,6 @@ public sealed class StorageDependencyArchitectureTests
                 typeof(ISubscriptionStore),
                 typeof(IEndpointMetadataStore),
             ],
-            [typeof(SeedDataService)] =
-            [
-                typeof(IMessageTrackingStore),
-                typeof(ISubscriptionStore),
-                typeof(IEndpointMetadataStore),
-            ],
             [typeof(AdminService)] = [typeof(IMessageTrackingStore)],
         };
 

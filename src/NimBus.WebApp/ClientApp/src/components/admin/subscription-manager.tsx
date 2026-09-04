@@ -11,8 +11,10 @@ import { Button } from "components/ui/button";
 import { Badge } from "components/ui/badge";
 import { Spinner } from "components/ui/spinner";
 import { Checkbox } from "components/ui/checkbox";
+import { Select } from "components/ui/select";
 import { Tooltip } from "components/ui/tooltip";
 import ConfirmDestructiveAction from "./confirm-destructive-action";
+import ResolverDeadLetterDialog from "./resolver-dead-letter-dialog";
 import { cn } from "lib/utils";
 
 const AUTO_REFRESH_MS = 10_000;
@@ -61,6 +63,7 @@ type PendingAction =
     };
 
 type RowFeedback = { tone: "ok" | "error"; message: string };
+type TopicPlatformFilter = "all" | "platform" | "external";
 
 const nf = new Intl.NumberFormat();
 
@@ -161,8 +164,10 @@ export default function SubscriptionManager() {
   const [feedback, setFeedback] = useState<Record<string, RowFeedback>>({});
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [topicFilter, setTopicFilter] = useState<TopicPlatformFilter>("all");
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [acknowledgeUnknown, setAcknowledgeUnknown] = useState(false);
+  const [replaySubscription, setReplaySubscription] = useState<string | null>(null);
 
   const loadTopics = useCallback(async () => {
     try {
@@ -342,6 +347,15 @@ export default function SubscriptionManager() {
   }
 
   const activeTopic = topics.find((t) => t.name === selectedTopic);
+  const visibleTopics = useMemo(
+    () =>
+      topics.filter((topic) => {
+        if (topicFilter === "all") return true;
+        const isInPlatform = topic.isKnownToPlatform === true;
+        return topicFilter === "platform" ? isInPlatform : !isInPlatform;
+      }),
+    [topics, topicFilter],
+  );
 
   return (
     <div className="space-y-6 w-full">
@@ -356,6 +370,20 @@ export default function SubscriptionManager() {
           Purge if you want the subscription itself left alone.
         </p>
         <div className="flex items-center gap-3">
+          {selectedTopic === null && (
+            <Select
+              value={topicFilter}
+              onChange={(event) =>
+                setTopicFilter(event.target.value as TopicPlatformFilter)
+              }
+              aria-label="Filter topics by platform membership"
+              className="h-8 w-[170px] py-1 text-xs"
+            >
+              <option value="all">All topics</option>
+              <option value="platform">In platform</option>
+              <option value="external">Not in platform</option>
+            </Select>
+          )}
           <Checkbox
             checked={autoRefresh}
             onChange={(e) => setAutoRefresh(e.target.checked)}
@@ -381,7 +409,16 @@ export default function SubscriptionManager() {
       )}
 
       {selectedTopic === null ? (
-        <TopicTable topics={topics} loading={loadingTopics} onOpen={openTopic} />
+        <TopicTable
+          topics={visibleTopics}
+          loading={loadingTopics}
+          emptyMessage={
+            topics.length === 0
+              ? "No topics found in the namespace."
+              : "No topics match this filter."
+          }
+          onOpen={openTopic}
+        />
       ) : (
         <div className="space-y-4">
           <div className="flex items-center gap-3 flex-wrap">
@@ -425,8 +462,10 @@ export default function SubscriptionManager() {
               readOnly={activeTopic?.isKnownToPlatform === false}
               busyRow={busyRow}
               feedback={feedback}
+              topicName={selectedTopic}
               onTogglePause={togglePause}
               onRestoreRules={restoreRules}
+              onInspectDeadLetters={(sub) => setReplaySubscription(sub.name ?? null)}
               onRequest={(action) => {
                 setAcknowledgeUnknown(false);
                 setPending(action);
@@ -446,6 +485,15 @@ export default function SubscriptionManager() {
         confirmLabel={pendingConfirmLabel(pending)}
         isLoading={busyRow !== null}
       />
+
+      {replaySubscription && (
+        <ResolverDeadLetterDialog
+          client={client}
+          subscriptionName={replaySubscription}
+          onClose={() => setReplaySubscription(null)}
+          onReplayed={refresh}
+        />
+      )}
 
       {/* A subscription the platform can't describe has no safe rebuild path, so
           deleting it needs a deliberate second acknowledgement on top of the
@@ -628,10 +676,12 @@ const TOPIC_COLUMNS: {
 function TopicTable({
   topics,
   loading,
+  emptyMessage,
   onOpen,
 }: {
   topics: api.ServiceBusTopicOverview[];
   loading: boolean;
+  emptyMessage: string;
   onOpen: (topicName: string) => void;
 }) {
   // Alphabetical by default: the namespace has dozens of topics and an operator
@@ -788,7 +838,7 @@ function TopicTable({
                 colSpan={8}
                 className="px-3 py-6 text-center text-muted-foreground"
               >
-                No topics found in the namespace.
+                {emptyMessage}
               </td>
             </tr>
           )}
@@ -802,19 +852,23 @@ function TopicTable({
 
 function SubscriptionTable({
   subscriptions,
+  topicName,
   readOnly,
   busyRow,
   feedback,
   onTogglePause,
   onRestoreRules,
+  onInspectDeadLetters,
   onRequest,
 }: {
   subscriptions: api.ServiceBusSubscriptionInfo[];
+  topicName: string;
   readOnly: boolean;
   busyRow: string | null;
   feedback: Record<string, RowFeedback>;
   onTogglePause: (sub: api.ServiceBusSubscriptionInfo) => void;
   onRestoreRules: (sub: api.ServiceBusSubscriptionInfo) => void;
+  onInspectDeadLetters: (sub: api.ServiceBusSubscriptionInfo) => void;
   onRequest: (action: PendingAction) => void;
 }) {
   return (
@@ -842,6 +896,11 @@ function SubscriptionTable({
               (sub.activeMessageCount ?? 0) + (sub.transferMessageCount ?? 0);
             const row = feedback[name];
             const missing = sub.missingRuleNames ?? [];
+            const canInspectDeadLetters =
+              topicName === "Resolver" &&
+              sub.requiresSession === true &&
+              !sub.forwardTo &&
+              (sub.deadLetterMessageCount ?? 0) > 0;
 
             return (
               <Fragment key={name}>
@@ -932,6 +991,16 @@ function SubscriptionTable({
                     {/* min-w keeps the column from being squeezed to a single
                         button per line by a wide Rules cell next to it. */}
                     <div className="flex flex-wrap gap-1.5 items-center min-w-[200px]">
+                      {canInspectDeadLetters && (
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          disabled={busyRow !== null || readOnly}
+                          onClick={() => onInspectDeadLetters(sub)}
+                        >
+                          Inspect dead letters
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         size="xs"

@@ -41,7 +41,7 @@ internal sealed record SubscriptionDefinition(string Name)
 {
     public bool RequiresSession { get; init; }
 
-    public int MaxDeliveryCount { get; init; } = 10;
+    public int MaxDeliveryCount { get; init; } = BrokerDefaults.MaxDeliveryCount;
 
     public TimeSpan LockDuration { get; init; } = TimeSpan.FromSeconds(30);
 

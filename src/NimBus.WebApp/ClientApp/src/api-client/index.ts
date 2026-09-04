@@ -3189,6 +3189,132 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Inspect regular dead letters on a terminal Resolver subscription
+     * @return OK
+     */
+    getAdminServicebusResolverDeadletters(subscriptionName: string): Promise<DeadLetterOverview> {
+        let url_ = this.baseUrl + "/api/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters";
+        if (subscriptionName === undefined || subscriptionName === null)
+            throw new globalThis.Error("The parameter 'subscriptionName' must be defined.");
+        url_ = url_.replace("{subscriptionName}", encodeURIComponent("" + subscriptionName));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminServicebusResolverDeadletters(_response);
+        });
+    }
+
+    protected processGetAdminServicebusResolverDeadletters(response: Response): Promise<DeadLetterOverview> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = DeadLetterOverview.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Unsupported Resolver subscription target", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Subscription not found", status, _responseText, _headers);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            return throwException("Service Bus operation unavailable", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<DeadLetterOverview>(null as any);
+    }
+
+    /**
+     * Atomically replay regular dead letters from a terminal Resolver subscription
+     * @return OK
+     */
+    postAdminServicebusResolverDeadlettersResubmit(body: DeadLetterResubmitRequest, subscriptionName: string): Promise<BulkOperationResult> {
+        let url_ = this.baseUrl + "/api/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters/resubmit";
+        if (subscriptionName === undefined || subscriptionName === null)
+            throw new globalThis.Error("The parameter 'subscriptionName' must be defined.");
+        url_ = url_.replace("{subscriptionName}", encodeURIComponent("" + subscriptionName));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminServicebusResolverDeadlettersResubmit(_response);
+        });
+    }
+
+    protected processPostAdminServicebusResolverDeadlettersResubmit(response: Response): Promise<BulkOperationResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = BulkOperationResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Invalid selection or unsupported Resolver subscription target", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Subscription not found", status, _responseText, _headers);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            return throwException("A replay is already running for this subscription", status, _responseText, _headers);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            return throwException("Service Bus operation unavailable", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<BulkOperationResult>(null as any);
+    }
+
+    /**
      * Pause or resume delivery on a single subscription
      * @param body (optional) 
      * @return OK
@@ -9775,6 +9901,199 @@ export interface IBulkOperationResult {
     [key: string]: any;
 }
 
+export class DeadLetterOverview implements IDeadLetterOverview {
+    totalMessageCount?: number;
+    isTruncated?: boolean;
+    snapshotLimit?: number;
+    reasons?: DeadLetterReasonCount[];
+
+    [key: string]: any;
+
+    constructor(data?: IDeadLetterOverview) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.totalMessageCount = _data["totalMessageCount"];
+            this.isTruncated = _data["isTruncated"];
+            this.snapshotLimit = _data["snapshotLimit"];
+            if (Array.isArray(_data["reasons"])) {
+                this.reasons = [] as any;
+                for (let item of _data["reasons"])
+                    this.reasons!.push(DeadLetterReasonCount.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): DeadLetterOverview {
+        data = typeof data === 'object' ? data : {};
+        let result = new DeadLetterOverview();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["totalMessageCount"] = this.totalMessageCount;
+        data["isTruncated"] = this.isTruncated;
+        data["snapshotLimit"] = this.snapshotLimit;
+        if (Array.isArray(this.reasons)) {
+            data["reasons"] = [];
+            for (let item of this.reasons)
+                data["reasons"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): DeadLetterOverview {
+        const json = this.toJSON();
+        let result = new DeadLetterOverview();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDeadLetterOverview {
+    totalMessageCount?: number;
+    isTruncated?: boolean;
+    snapshotLimit?: number;
+    reasons?: DeadLetterReasonCount[];
+
+    [key: string]: any;
+}
+
+export class DeadLetterReasonCount implements IDeadLetterReasonCount {
+    reason?: string | undefined;
+    count?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IDeadLetterReasonCount) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.reason = _data["reason"];
+            this.count = _data["count"];
+        }
+    }
+
+    static fromJS(data: any): DeadLetterReasonCount {
+        data = typeof data === 'object' ? data : {};
+        let result = new DeadLetterReasonCount();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["reason"] = this.reason;
+        data["count"] = this.count;
+        return data;
+    }
+
+    clone(): DeadLetterReasonCount {
+        const json = this.toJSON();
+        let result = new DeadLetterReasonCount();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDeadLetterReasonCount {
+    reason?: string | undefined;
+    count?: number;
+
+    [key: string]: any;
+}
+
+export class DeadLetterResubmitRequest implements IDeadLetterResubmitRequest {
+    scope!: DeadLetterResubmitRequestScope;
+    reason?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IDeadLetterResubmitRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.scope = _data["scope"];
+            this.reason = _data["reason"];
+        }
+    }
+
+    static fromJS(data: any): DeadLetterResubmitRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new DeadLetterResubmitRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["scope"] = this.scope;
+        data["reason"] = this.reason;
+        return data;
+    }
+
+    clone(): DeadLetterResubmitRequest {
+        const json = this.toJSON();
+        let result = new DeadLetterResubmitRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDeadLetterResubmitRequest {
+    scope: DeadLetterResubmitRequestScope;
+    reason?: string | undefined;
+
+    [key: string]: any;
+}
+
 export class SessionPurgePreview implements ISessionPurgePreview {
     sessionId?: string;
     pendingCount?: number;
@@ -13670,6 +13989,11 @@ export enum MessageSearchFilterMessageType {
 export enum SubscriptionStatusRequestAction {
     Enable = "enable",
     Disable = "disable",
+}
+
+export enum DeadLetterResubmitRequestScope {
+    All = "all",
+    Reason = "reason",
 }
 
 export enum AuditSearchFilterAuditType {

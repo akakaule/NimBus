@@ -48,7 +48,7 @@ internal static class AdminXml
             RequiresSession = Boolean(description, "RequiresSession"),
             DefaultMessageTimeToLive = Duration(description, "DefaultMessageTimeToLive"),
             DeadLetterOnFilterEvaluationExceptions = Boolean(description, "DeadLetteringOnFilterEvaluationExceptions", true),
-            MaxDeliveryCount = checked((int)(Long(description, "MaxDeliveryCount") ?? 10)),
+            MaxDeliveryCount = checked((int)(Long(description, "MaxDeliveryCount") ?? BrokerDefaults.MaxDeliveryCount)),
             ForwardTo = NormalizeForwardTo(Value(description, "ForwardTo")),
             Status = Status(description),
         };

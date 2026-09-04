@@ -498,6 +498,100 @@ internal sealed class BrokerNamespace
         }
     }
 
+    public IReadOnlyList<BrokerMessage> PeekDeadLetter(
+        string topicName,
+        string subscriptionName,
+        long fromSequenceNumber,
+        int count)
+    {
+        lock (_gate)
+        {
+            ProcessDueWorkCore();
+            return GetSubscription(topicName, subscriptionName).DeadLetter
+                .Where(message => message.State == MessageState.DeadLetter && message.Message.SequenceNumber >= fromSequenceNumber)
+                .OrderBy(message => message.Message.SequenceNumber)
+                .Take(count)
+                .Select(message => message.Message.CloneForDelivery())
+                .ToArray();
+        }
+    }
+
+    public BrokerDelivery? TryAcquireDeadLetter(string topicName, string subscriptionName, string owner)
+    {
+        lock (_gate)
+        {
+            ProcessDueWorkCore();
+            var stored = GetSubscription(topicName, subscriptionName).DeadLetter
+                .FirstOrDefault(candidate => candidate.State == MessageState.DeadLetter);
+            if (stored is null)
+            {
+                return null;
+            }
+
+            stored.State = MessageState.Locked;
+            stored.Owner = owner;
+            stored.LockToken = Guid.NewGuid();
+            stored.LockedUntil = _options.TimeProvider.GetUtcNow().Add(GetSubscription(topicName, subscriptionName).Definition.LockDuration);
+            stored.Message.DeliveryCount = stored.PriorFailedAttempts + 1;
+            stored.Message.LockToken = stored.LockToken;
+            stored.Message.LockedUntil = stored.LockedUntil;
+            return new BrokerDelivery(stored.Message.CloneForDelivery(), stored.LockToken);
+        }
+    }
+
+    public void CompleteDeadLetter(string topicName, string subscriptionName, Guid lockToken, string owner)
+    {
+        lock (_gate)
+        {
+            var subscription = GetSubscription(topicName, subscriptionName);
+            subscription.DeadLetter.Remove(FindLockedIn(subscription.DeadLetter, lockToken, owner));
+        }
+    }
+
+    public void ReleaseDeadLetter(string topicName, string subscriptionName, Guid lockToken, string owner)
+    {
+        lock (_gate)
+        {
+            var stored = FindLockedIn(GetSubscription(topicName, subscriptionName).DeadLetter, lockToken, owner);
+            stored.ReleaseWithoutFailure();
+            stored.State = MessageState.DeadLetter;
+        }
+    }
+
+    public DateTimeOffset RenewDeadLetterLock(string topicName, string subscriptionName, Guid lockToken)
+    {
+        lock (_gate)
+        {
+            ProcessDueWorkCore();
+            var subscription = GetSubscription(topicName, subscriptionName);
+            var stored = subscription.DeadLetter.FirstOrDefault(message =>
+                message.State == MessageState.Locked && message.LockToken == lockToken)
+                ?? throw new KeyNotFoundException($"Lock token '{lockToken}' is not active.");
+            stored.LockedUntil = _options.TimeProvider.GetUtcNow().Add(subscription.Definition.LockDuration);
+            stored.Message.LockedUntil = stored.LockedUntil;
+            return stored.LockedUntil;
+        }
+    }
+
+    public void CommitDeadLetterReplay(
+        string sourceTopic,
+        string sourceSubscription,
+        Guid lockToken,
+        string owner,
+        string destinationTopic,
+        BrokerMessage message)
+    {
+        lock (_gate)
+        {
+            var subscription = GetSubscription(sourceTopic, sourceSubscription);
+            var source = FindLockedIn(subscription.DeadLetter, lockToken, owner);
+            var topic = GetTopic(destinationTopic);
+            EnsureCapacityForPublish(topic, message);
+            subscription.DeadLetter.Remove(source);
+            Enqueue(topic, message, _options.TimeProvider.GetUtcNow());
+        }
+    }
+
     public void Complete(string topicName, string subscriptionName, Guid lockToken, string owner)
     {
         lock (_gate)
@@ -784,6 +878,13 @@ internal sealed class BrokerNamespace
             {
                 FailDelivery(subscription, message, "MaxDeliveryCountExceeded", null);
             }
+
+            foreach (var message in subscription.DeadLetter.Where(message =>
+                         message.State == MessageState.Locked && message.LockedUntil <= now).ToArray())
+            {
+                message.ReleaseWithoutFailure();
+                message.State = MessageState.DeadLetter;
+            }
         }
     }
 
@@ -841,6 +942,16 @@ internal sealed class BrokerNamespace
                    message.State == MessageState.Locked && message.LockToken == lockToken)
                ?? throw new KeyNotFoundException($"Lock token '{lockToken}' is not active.");
     }
+
+    private static StoredMessage FindLockedIn(
+        IEnumerable<StoredMessage> messages,
+        Guid lockToken,
+        string owner) =>
+        messages.FirstOrDefault(message =>
+            message.State == MessageState.Locked
+            && message.LockToken == lockToken
+            && string.Equals(message.Owner, owner, StringComparison.Ordinal))
+        ?? throw new KeyNotFoundException($"Lock token '{lockToken}' is not owned by this receiver.");
 
     private static SessionLock FindOwnedSession(SubscriptionState subscription, string sessionId, string owner)
     {

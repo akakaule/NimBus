@@ -25,7 +25,7 @@ namespace NimBus.Broker.Services
         private readonly IEndpointMetadataStore _metadataStore;
         private readonly IServiceHealthStore _serviceHealthStore;
 
-        private const int MaxThrottleRetries = 10;
+        private const string CosmosThrottleDeadLetterReason = "CosmosDbThrottled";
         private const int BaseDelaySeconds = 5;
         private const int MaxDelaySeconds = 300; // 5 minutes
 
@@ -128,6 +128,10 @@ namespace NimBus.Broker.Services
                 // so the transport can stop cooperatively and redeliver it later.
                 throw;
             }
+            catch (RequestLimitException ex)
+            {
+                await HandleCosmosThrottle(messageContext, ex, cancellationToken);
+            }
             catch (StorageProviderTransientException ex)
             {
                 await HandleThrottling(messageContext, ex.RetryAfter, cancellationToken);
@@ -144,14 +148,47 @@ namespace NimBus.Broker.Services
             }
         }
 
+        private async Task HandleCosmosThrottle(
+            IMessageContext messageContext,
+            RequestLimitException exception,
+            CancellationToken cancellationToken)
+        {
+            var deliveryCount = messageContext is IMessageDeliveryContext deliveryContext
+                ? Math.Max(1, deliveryContext.DeliveryCount)
+                : 1;
+            var logicalAttempt = messageContext.ThrottleRetryCount + deliveryCount;
+
+            _logger?.LogWarning(
+                exception,
+                "Resolver: Cosmos DB throttled. EventId:{EventId}, SessionId:{SessionId}, LogicalAttempt:{LogicalAttempt}/{MaxAttempts}, DeliveryCount:{DeliveryCount}",
+                messageContext.EventId,
+                messageContext.SessionId,
+                logicalAttempt,
+                Constants.ServiceBusMaxDeliveryCount,
+                deliveryCount);
+
+            if (logicalAttempt >= Constants.ServiceBusMaxDeliveryCount)
+            {
+                _logger?.LogError(
+                    "Resolver: Cosmos DB throttling exhausted the delivery budget ({MaxAttempts}). Dead-lettering. EventId:{EventId}, SessionId:{SessionId}",
+                    Constants.ServiceBusMaxDeliveryCount,
+                    messageContext.EventId,
+                    messageContext.SessionId);
+                await messageContext.DeadLetter(CosmosThrottleDeadLetterReason, null, cancellationToken);
+                return;
+            }
+
+            await ScheduleStorageRedelivery(messageContext, exception.RetryAfter, logicalAttempt, cancellationToken);
+        }
+
         private async Task HandleThrottling(IMessageContext messageContext, TimeSpan? retryAfter, CancellationToken cancellationToken)
         {
             var retryCount = messageContext.ThrottleRetryCount;
 
-            if (retryCount >= MaxThrottleRetries)
+            if (retryCount >= Constants.ServiceBusMaxDeliveryCount)
             {
                 _logger?.LogError("Resolver: Max throttle retries ({MaxRetries}) exceeded. DeadLettering. EventId:{EventId}, SessionId:{SessionId}",
-                    MaxThrottleRetries, messageContext.EventId, messageContext.SessionId);
+                    Constants.ServiceBusMaxDeliveryCount, messageContext.EventId, messageContext.SessionId);
                 await messageContext.DeadLetter("Max throttle retries exceeded", null, cancellationToken);
                 return;
             }
@@ -175,7 +212,7 @@ namespace NimBus.Broker.Services
 
             _logger?.LogInformation(
                 "Resolver: Storage provider temporarily unavailable. Scheduling redelivery in {DelaySeconds}s. EventId:{EventId}, SessionId:{SessionId}, RetryCount:{RetryCount}/{MaxRetries}",
-                delay.TotalSeconds, messageContext.EventId, messageContext.SessionId, retryCount + 1, MaxThrottleRetries);
+                delay.TotalSeconds, messageContext.EventId, messageContext.SessionId, retryCount + 1, Constants.ServiceBusMaxDeliveryCount);
 
             try
             {
@@ -189,15 +226,46 @@ namespace NimBus.Broker.Services
             }
         }
 
+        private async Task ScheduleStorageRedelivery(
+            IMessageContext messageContext,
+            TimeSpan? retryAfter,
+            int logicalAttempt,
+            CancellationToken cancellationToken)
+        {
+            var calculatedDelay = TimeSpan.FromSeconds(
+                Math.Min(BaseDelaySeconds * Math.Pow(2, logicalAttempt - 1), MaxDelaySeconds));
+            var useProviderRetryAfter = retryAfter.HasValue && retryAfter.Value > calculatedDelay;
+            var delay = useProviderRetryAfter ? retryAfter.Value : calculatedDelay;
+
+            _logger?.LogInformation(
+                "Resolver: Cosmos DB throttled. Scheduling redelivery in {DelaySeconds}s. EventId:{EventId}, SessionId:{SessionId}, LogicalAttempt:{LogicalAttempt}/{MaxAttempts}",
+                delay.TotalSeconds,
+                messageContext.EventId,
+                messageContext.SessionId,
+                logicalAttempt,
+                Constants.ServiceBusMaxDeliveryCount);
+
+            try
+            {
+                await messageContext.ScheduleRedelivery(delay, logicalAttempt, cancellationToken);
+            }
+            catch (TransientException ex)
+            {
+                _logger?.LogInformation(ex, "Resolver: Failed to schedule Cosmos DB throttle redelivery. Abandoning for retry. EventId:{EventId}, SessionId:{SessionId}",
+                    messageContext.EventId, messageContext.SessionId);
+                await messageContext.Abandon(ex);
+            }
+        }
+
         /// <summary>
         /// Routes one heartbeat message. Endpoint answers update the heartbeat store; the
         /// Resolver's own liveness probe settles itself; the copies of endpoint requests
         /// that the Resolver's subscription also receives are dropped.
         /// </summary>
         /// <remarks>
-        /// Heartbeat traffic is never dead-lettered — a monitoring probe must not be able
-        /// to fill an operator's dead-letter queue. Transient storage failures leave the
-        /// message unsettled so the session redelivers it; everything else completes.
+        /// Generic transient storage failures remain unsettled and may eventually be
+        /// broker-dead-lettered as MaxDeliveryCountExceeded. Cosmos DB throttling uses
+        /// the shared logical delivery budget and the stable CosmosDbThrottled reason.
         /// </remarks>
         private async Task HandleHeartbeatMessage(IMessageContext messageContext, CancellationToken cancellationToken)
         {
@@ -240,6 +308,10 @@ namespace NimBus.Broker.Services
             try
             {
                 await _metadataStore.SetHeartbeat(heartbeat, endpointId);
+            }
+            catch (RequestLimitException)
+            {
+                throw;
             }
             catch (StorageProviderTransientException ex)
             {
@@ -294,6 +366,10 @@ namespace NimBus.Broker.Services
             try
             {
                 await _serviceHealthStore.SetServiceHealth(health);
+            }
+            catch (RequestLimitException)
+            {
+                throw;
             }
             catch (StorageProviderTransientException ex)
             {

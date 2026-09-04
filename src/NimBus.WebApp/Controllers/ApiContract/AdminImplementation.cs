@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
 using NimBus.Core;
 using NimBus.MessageStore;
@@ -28,6 +30,7 @@ public class AdminImplementation : IAdminApiController
     private readonly IAuditLogService _auditLogService;
     private readonly IEndpointAuthorizationService _authorizationService;
     private readonly IHeartbeatService _heartbeatService;
+    private readonly ILogger<AdminImplementation> _logger;
 
     public AdminImplementation(
         IHttpContextAccessor contextAccessor,
@@ -37,7 +40,8 @@ public class AdminImplementation : IAdminApiController
         IConfiguration configuration,
         IAuditLogService auditLogService,
         IEndpointAuthorizationService authorizationService,
-        IHeartbeatService heartbeatService)
+        IHeartbeatService heartbeatService,
+        ILogger<AdminImplementation>? logger = null)
     {
         _adminService = adminService;
         _subscriptionAdminService = subscriptionAdminService;
@@ -47,6 +51,7 @@ public class AdminImplementation : IAdminApiController
         _auditLogService = auditLogService;
         _authorizationService = authorizationService;
         _heartbeatService = heartbeatService;
+        _logger = logger ?? NullLogger<AdminImplementation>.Instance;
     }
 
     public async Task<ActionResult<PlatformConfig>> GetAdminPlatformConfigAsync()
@@ -245,6 +250,130 @@ public class AdminImplementation : IAdminApiController
         var result = await _subscriptionAdminService.GetSubscriptionsAsync(topicName);
         return new OkObjectResult(result);
     }
+
+    public async Task<ActionResult<DeadLetterOverview>> GetAdminServicebusResolverDeadlettersAsync(string subscriptionName)
+    {
+        if (!await IsSiteOwnerAsync())
+            return new ForbidResult();
+
+        try
+        {
+            var result = await _subscriptionAdminService.GetResolverDeadLettersAsync(
+                subscriptionName,
+                _context.RequestAborted);
+            return new OkObjectResult(result);
+        }
+        catch (SubscriptionNotFoundException exception)
+        {
+            return new NotFoundObjectResult(exception.Message);
+        }
+        catch (ResolverDeadLetterTargetNotSupportedException exception)
+        {
+            return new BadRequestObjectResult(exception.Message);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogError(exception,
+                "Could not inspect Resolver dead letters for subscription {SubscriptionName}",
+                subscriptionName);
+            return new ObjectResult("Resolver dead letters could not be inspected.")
+            {
+                StatusCode = StatusCodes.Status503ServiceUnavailable,
+            };
+        }
+    }
+
+    public async Task<ActionResult<BulkOperationResult>> PostAdminServicebusResolverDeadlettersResubmitAsync(
+        DeadLetterResubmitRequest body,
+        string subscriptionName)
+    {
+        const string action = "resubmit-resolver-deadletters";
+        if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(
+                MessageAuditType.ManageSubscription,
+                _context,
+                accessDenied: true,
+                data: JsonConvert.SerializeObject(new
+                {
+                    action,
+                    topicName = NimBus.Core.Messages.Constants.ResolverId,
+                    subscriptionName,
+                }));
+            return new ForbidResult();
+        }
+
+        if (body is null
+            || (body.Scope != DeadLetterResubmitRequestScope.All && body.Scope != DeadLetterResubmitRequestScope.Reason)
+            || (body.Scope == DeadLetterResubmitRequestScope.All && body.Reason is not null))
+        {
+            return new BadRequestObjectResult("The dead-letter replay selection is invalid.");
+        }
+
+        try
+        {
+            var all = body.Scope == DeadLetterResubmitRequestScope.All;
+            var result = await _subscriptionAdminService.ResubmitResolverDeadLettersAsync(
+                subscriptionName,
+                all,
+                body.Reason,
+                _context.RequestAborted);
+            await LogResolverReplayResultAsync(action, subscriptionName, all, body.Reason, result);
+            return new OkObjectResult(result);
+        }
+        catch (SubscriptionNotFoundException exception)
+        {
+            return new NotFoundObjectResult(exception.Message);
+        }
+        catch (ResolverDeadLetterTargetNotSupportedException exception)
+        {
+            return new BadRequestObjectResult(exception.Message);
+        }
+        catch (ResolverReplayInProgressException exception)
+        {
+            return new ConflictObjectResult(exception.Message);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogError(exception,
+                "Could not replay Resolver dead letters for subscription {SubscriptionName}",
+                subscriptionName);
+            await LogResolverReplayResultAsync(
+                action,
+                subscriptionName,
+                body.Scope == DeadLetterResubmitRequestScope.All,
+                body.Reason,
+                new BulkOperationResult { Processed = 0, Succeeded = 0, Failed = 0 },
+                overallSuccess: false);
+            return new ObjectResult("Resolver dead letters could not be replayed.")
+            {
+                StatusCode = StatusCodes.Status503ServiceUnavailable,
+            };
+        }
+    }
+
+    private Task LogResolverReplayResultAsync(
+        string action,
+        string subscriptionName,
+        bool all,
+        string? reason,
+        BulkOperationResult result,
+        bool? overallSuccess = null) =>
+        _auditLogService.LogAuditAsync(
+            MessageAuditType.ManageSubscription,
+            _context,
+            data: JsonConvert.SerializeObject(new
+            {
+                action,
+                topicName = NimBus.Core.Messages.Constants.ResolverId,
+                subscriptionName,
+                scope = all ? "all" : "reason",
+                reason = all ? null : reason,
+                result.Processed,
+                result.Succeeded,
+                result.Failed,
+                success = overallSuccess ?? result.Failed == 0,
+            }));
 
     public Task<ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionStatusAsync(
         SubscriptionStatusRequest body, string topicName, string subscriptionName) =>

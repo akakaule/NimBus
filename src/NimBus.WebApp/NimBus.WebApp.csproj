@@ -110,11 +110,11 @@
     <Copy SourceFiles="@(OAS3)" DestinationFolder="$(ProjectDir)/wwwroot" />
   </Target>
 
-  <Target Name="NSwag" BeforeTargets="PreBuildEvent">
+  <Target Name="NSwag" BeforeTargets="PreBuildEvent" Condition="'$(SkipSpaBuild)' != 'true'">
 	  <Exec WorkingDirectory="$(ProjectDir)" EnvironmentVariables="ASPNETCORE_ENVIRONMENT=Development" Command="$(NSwagExe_Net100) run api-gen.nswag" />
   </Target>
 
-  <Target Name="NpmInstall" BeforeTargets="Build">
+  <Target Name="NpmInstall" BeforeTargets="Build" Condition="'$(SkipSpaBuild)' != 'true'">
     <!-- Ensure Node.js is installed -->
     <Exec Command="node --version" ContinueOnError="true">
       <Output TaskParameter="ExitCode" PropertyName="ErrorCode" />
@@ -128,7 +128,7 @@
     <Exec WorkingDirectory="$(SpaRoot)" Command="npm run gen-postman" />
   </Target>
 
-  <Target Name="RebuildClientAssets" BeforeTargets="build">
+  <Target Name="RebuildClientAssets" BeforeTargets="build" Condition="'$(SkipSpaBuild)' != 'true'">
     <Exec WorkingDirectory="$(SpaRoot)" Command="npm run build" />
   </Target>
 

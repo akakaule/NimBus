@@ -300,7 +300,7 @@ public sealed class ServiceBusTopologyProvisioner
     {
         var options = new CreateSubscriptionOptions(topicName, expected.Name)
         {
-            MaxDeliveryCount = 10,
+            MaxDeliveryCount = Constants.ServiceBusMaxDeliveryCount,
             LockDuration = TimeSpan.FromSeconds(30),
             EnableBatchedOperations = true,
             EnableDeadLetteringOnFilterEvaluationExceptions = true,

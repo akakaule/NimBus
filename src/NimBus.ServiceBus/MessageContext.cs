@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace NimBus.ServiceBus
 {
-    public class MessageContext : IMessageContext
+    public class MessageContext : IMessageContext, IMessageDeliveryContext
     {
         private readonly IServiceBusMessage _sbMessage;
         private readonly IServiceBusSession _sbSession;
@@ -43,6 +43,8 @@ namespace NimBus.ServiceBus
         }
 
         public string From => GetUserProperty(UserPropertyName.From);
+
+        public int DeliveryCount => _sbMessage.DeliveryCount;
 
         public string OriginatingFrom
         {

@@ -4,6 +4,8 @@ import { formatMoment } from "functions/endpoint.functions";
 import DataTable, { ITableRow, ITableHeadCell } from "components/data-table";
 import Page from "components/page";
 import TruncatedGuid from "components/common/truncated-guid";
+import { Badge } from "components/ui/badge";
+import { notifyInfo } from "functions/notifications.functions";
 import AuditFilterBar, {
   EMPTY_AUDIT_FILTER,
   type AuditFilterValues,
@@ -18,6 +20,8 @@ enum Column {
   eventId = "eventId",
   eventTypeId = "eventTypeId",
   endpointId = "endpointId",
+  data = "data",
+  accessDenied = "accessDenied",
 }
 
 const headCells: ITableHeadCell[] = [
@@ -27,23 +31,41 @@ const headCells: ITableHeadCell[] = [
   { id: Column.eventId, label: "Event ID", numeric: false },
   { id: Column.eventTypeId, label: "Event Type", numeric: false },
   { id: Column.endpointId, label: "Endpoint", numeric: false },
+  {
+    id: Column.data,
+    label: "Detail",
+    numeric: false,
+    info: "Structured context recorded with the action (click to copy)",
+  },
+  { id: Column.accessDenied, label: "Access Denied", numeric: false },
 ];
 
 // Audit types arrive as the values api-spec.yaml declares — camelCase. They were
 // PascalCase on the wire for as long as the server serialized CLR names instead of
 // the contract, so both spellings are accepted: an audit trail is history, and rows
 // written before the server was corrected still carry the old spelling.
-const AUDIT_TYPE_LABELS: Record<string, string> = {
-  resubmit: "Resubmit",
-  resubmitWithChanges: "Resubmit with changes",
-  skip: "Skip",
-  retry: "Retry",
-  comment: "Comment",
-};
-
+//
+// Derived rather than enumerated: a hand-kept map silently leaks raw camelCase for
+// every audit type nobody remembered to add — which is how `manageSubscription`
+// reached the Action column verbatim.
 function formatAuditType(type: string | undefined): string {
   if (!type) return "-";
-  return AUDIT_TYPE_LABELS[type[0].toLowerCase() + type.slice(1)] ?? type;
+  const camel = type[0].toLowerCase() + type.slice(1);
+  const words = camel.replace(/([A-Z])/g, " $1").toLowerCase().trim();
+  return words[0].toUpperCase() + words.slice(1);
+}
+
+// The audit row records *which* operation ran inside `data` (subscription admin
+// writes `{ topicName, subscriptionName, action }`). Without it every operator
+// action on the log reads as a bare category — a purge is indistinguishable from
+// a detached rule.
+function copyAuditData(data: string) {
+  navigator.clipboard
+    ?.writeText(data)
+    .then(() => notifyInfo("Audit detail copied to clipboard"))
+    .catch(() => {
+      /* clipboard unavailable — ignore */
+    });
 }
 
 function mapAuditToRow(entry: api.AuditEntry): ITableRow {
@@ -101,6 +123,42 @@ function mapAuditToRow(entry: api.AuditEntry): ITableRow {
         {
           value: endpointId || "-",
           searchValue: endpointId,
+        },
+      ],
+      [
+        Column.data,
+        {
+          value: entry.data ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                copyAuditData(entry.data!);
+              }}
+              title={entry.data}
+              className="max-w-[280px] truncate text-left font-mono text-[11.5px] text-muted-foreground hover:text-foreground"
+            >
+              {entry.data}
+            </button>
+          ) : (
+            "-"
+          ),
+          searchValue: entry.data ?? "",
+        },
+      ],
+      [
+        Column.accessDenied,
+        {
+          // A denied attempt records the same action data as a completed one —
+          // without this the Detail column reads as though the action ran.
+          value: entry.accessDenied ? (
+            <Badge variant="failed" size="sm" withDot={false}>
+              Denied
+            </Badge>
+          ) : (
+            ""
+          ),
+          searchValue: entry.accessDenied ? "denied" : "",
         },
       ],
     ]),

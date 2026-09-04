@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Threading;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
     private readonly ServiceBusClient _sbClient;
     private readonly ILogger<SubscriptionAdminService> _logger;
     private readonly bool _isEmulator;
+    private readonly IResolverDeadLetterClient? _resolverDeadLetterClient;
 
     /// <summary>
     /// Receive batch size and idle wait used when draining a subscription. The short wait
@@ -35,7 +37,8 @@ public class SubscriptionAdminService : ISubscriptionAdminService
         ITopologyRebuilder rebuilder,
         ServiceBusClient sbClient,
         ILogger<SubscriptionAdminService> logger,
-        bool isEmulator = false)
+        bool isEmulator = false,
+        IResolverDeadLetterClient? resolverDeadLetterClient = null)
     {
         _platform = platform;
         _sbManagement = sbManagement;
@@ -43,6 +46,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
         _sbClient = sbClient;
         _logger = logger;
         _isEmulator = isEmulator;
+        _resolverDeadLetterClient = resolverDeadLetterClient;
     }
 
     // ───────────────────────── Read ─────────────────────────
@@ -161,6 +165,52 @@ public class SubscriptionAdminService : ISubscriptionAdminService
     }
 
     // ───────────────────────── Pause / resume ─────────────────────────
+
+    public async Task<DeadLetterOverview> GetResolverDeadLettersAsync(
+        string subscriptionName,
+        CancellationToken cancellationToken = default)
+    {
+        await ValidateResolverDeadLetterTargetAsync(subscriptionName);
+        return await ResolverDeadLetterClient.GetOverviewAsync(
+            NimBus.Core.Messages.Constants.ResolverId,
+            subscriptionName,
+            cancellationToken);
+    }
+
+    public async Task<BulkOperationResult> ResubmitResolverDeadLettersAsync(
+        string subscriptionName,
+        bool all,
+        string? reason,
+        CancellationToken cancellationToken = default)
+    {
+        await ValidateResolverDeadLetterTargetAsync(subscriptionName);
+        return await ResolverDeadLetterClient.ResubmitAsync(
+            NimBus.Core.Messages.Constants.ResolverId,
+            subscriptionName,
+            all,
+            reason,
+            cancellationToken);
+    }
+
+    private IResolverDeadLetterClient ResolverDeadLetterClient =>
+        _resolverDeadLetterClient ?? throw new InvalidOperationException("Resolver dead-letter administration is not configured.");
+
+    private async Task ValidateResolverDeadLetterTargetAsync(string subscriptionName)
+    {
+        const string topicName = NimBus.Core.Messages.Constants.ResolverId;
+        var expected = FindExpected(topicName, subscriptionName);
+        if (expected is null || !expected.RequiresSession || !string.IsNullOrEmpty(expected.ForwardTo))
+        {
+            throw new ResolverDeadLetterTargetNotSupportedException(subscriptionName);
+        }
+
+        var actual = await _sbManagement.GetSubscription(topicName, subscriptionName)
+            ?? throw new SubscriptionNotFoundException(topicName, subscriptionName);
+        if (!actual.RequiresSession || !string.IsNullOrEmpty(actual.ForwardTo))
+        {
+            throw new ResolverDeadLetterTargetNotSupportedException(subscriptionName);
+        }
+    }
 
     /// <summary>
     /// Pause / resume, handling auto-forwarding subscriptions explicitly.
@@ -619,6 +669,14 @@ public class SubscriptionAdminService : ISubscriptionAdminService
 }
 
 /// <summary>Thrown when the named subscription doesn't exist on the topic.</summary>
+public class ResolverDeadLetterTargetNotSupportedException : Exception
+{
+    public ResolverDeadLetterTargetNotSupportedException(string subscriptionName)
+        : base($"Subscription '{subscriptionName}' is not a terminal, session-enabled Resolver subscription.")
+    {
+    }
+}
+
 public class SubscriptionNotFoundException : Exception
 {
     public SubscriptionNotFoundException(string topicName, string subscriptionName)

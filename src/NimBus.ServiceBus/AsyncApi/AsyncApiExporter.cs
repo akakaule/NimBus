@@ -388,7 +388,7 @@ public static class AsyncApiExporter
             ["requiresSession"] = true,
             ["messageIdConvention"] = "{EventTypeId}-{deterministicHash(payload)}",
             ["correlationIdConvention"] = "new GUID per publish unless supplied by the caller",
-            ["maxDeliveryCount"] = 10,
+            ["maxDeliveryCount"] = Constants.ServiceBusMaxDeliveryCount,
             ["deadLetterOnFilterEvaluationExceptions"] = true,
         };
 
@@ -495,7 +495,7 @@ public static class AsyncApiExporter
         {
             ["contentType"] = "application/json",
             ["requiresSession"] = true,
-            ["maxDeliveryCount"] = 10,
+            ["maxDeliveryCount"] = Constants.ServiceBusMaxDeliveryCount,
             ["deadLetterOnFilterEvaluationExceptions"] = true,
         },
     };

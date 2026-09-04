@@ -57,6 +57,40 @@ subscription on `CrmEndpoint` *and* the `Resolver` subscription on `CrmEndpoint`
 | Empty an auto-forwarding subscription | **Delete & recreate** | Service Bus refuses receive on a forwarding entity, so it can't be drained. Delete + re-provision discards the backlog in one management call. Alternatively **Pause** first (which detaches forwarding) and then **Purge**, if you'd rather not delete the entity. |
 | Remove something that shouldn't exist | **Delete** | No rebuild. |
 
+## Replaying Resolver dead letters
+
+The terminal, session-enabled `Resolver/Resolver` subscription has an additional
+**Inspect dead letters** action when its regular dead-letter queue is non-empty.
+This action is Owner-only. It does not apply to endpoint-topic `Resolver`
+forwarders, transfer dead letters, forwarding subscriptions, or non-session
+subscriptions.
+
+Inspection groups the first 500 regular-DLQ messages by exact, case-sensitive
+dead-letter reason. A missing reason and an empty-string reason are separate
+choices. If more messages exist, the dialog marks the snapshot as truncated;
+replay the snapshot and repeat the operation for the next batch. Each request has
+a 180-second server budget.
+
+Replay creates a new message ID and preserves the body, session, correlation,
+reply, content and ordinary application metadata. It removes the broker
+dead-letter fields and adds `DeadLetterOriginalMessageId` and
+`DeadLetterOriginalReason` for provenance. For each message, removing the source
+from the DLQ and publishing the replacement to the Resolver topic are one Service
+Bus transaction: both commit or neither does. This preserves per-session broker
+ordering, but replaying an older message naturally places the replacement behind
+messages already queued for that session.
+
+`CosmosDbThrottled` means Resolver exhausted its shared ten-attempt budget while
+Cosmos DB continued returning 429. The stable name is Cosmos-specific. SQL-backed
+deployments can use the same replay workflow for their regular dead letters, but
+generic SQL storage transients are not relabelled with this reason.
+
+The management identity needs namespace-scoped Azure Service Bus Data Owner (the
+production templates already grant it). Keep the management WebApp at one instance
+while a replay runs: the per-subscription concurrency gate is process-local. The
+NimBus emulator used by CrmErpDemo supports this narrow regular-DLQ transaction
+shape as well as Azure Standard/Premium namespaces.
+
 ### Why "Delete & recreate" is safe
 
 The subscription is rebuilt from `TopologyDescriptor` — the same declarative
@@ -83,6 +117,7 @@ point; outside one, prefer Pause.
 - **Dead-letter counts don't clear themselves.** If auto-forwarding failed
   because a destination was disabled or full, Service Bus dead-letters on the
   *source* — those messages need explicit handling, and Purge won't touch them.
+  Transfer dead letters are deliberately not eligible for Resolver replay.
 - **Topics the platform doesn't own are read-only.** They're listed so a stray
   topic sitting on a backlog is visible, but every action is disabled — manage
   those in the Azure portal.

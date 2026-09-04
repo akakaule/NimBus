@@ -541,6 +541,10 @@ public class RateLimitEnforcementTests
 
         public Task<ActionResult<IEnumerable<ServiceBusSubscriptionInfo>>> GetAdminServicebusSubscriptionsAsync(string topicName) => Ok<IEnumerable<ServiceBusSubscriptionInfo>>();
 
+        public Task<ActionResult<DeadLetterOverview>> GetAdminServicebusResolverDeadlettersAsync(string subscriptionName) => Ok<DeadLetterOverview>();
+
+        public Task<ActionResult<BulkOperationResult>> PostAdminServicebusResolverDeadlettersResubmitAsync(DeadLetterResubmitRequest body, string subscriptionName) => Ok<BulkOperationResult>();
+
         public Task<ActionResult<SubscriptionActionResult>> PostAdminServicebusSubscriptionStatusAsync(SubscriptionStatusRequest body, string topicName, string subscriptionName) => Ok<SubscriptionActionResult>();
 
         public Task<ActionResult<BulkOperationResult>> PostAdminServicebusSubscriptionPurgeAsync(string topicName, string subscriptionName) => Ok<BulkOperationResult>();

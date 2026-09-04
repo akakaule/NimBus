@@ -12,6 +12,7 @@ namespace NimBus.Core.Messages
         public const string RetryId = "Retry";
         public const string DeferredProcessorId = "DeferredProcessor";
         public const string DeferredSubscriptionName = "Deferred";
+        public const int ServiceBusMaxDeliveryCount = 10;
 
         /// <summary>
         /// Safe JSON serializer settings that explicitly disable type name handling.

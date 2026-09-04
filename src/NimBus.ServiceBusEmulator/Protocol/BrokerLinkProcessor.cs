@@ -1,7 +1,9 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using Amqp;
 using Amqp.Framing;
 using Amqp.Listener;
+using Amqp.Transactions;
 using Amqp.Types;
 using NimBus.ServiceBusEmulator.Broker;
 
@@ -15,10 +17,17 @@ internal sealed class BrokerLinkProcessor(
     private static readonly Symbol SessionFilter = new("com.microsoft:session-filter");
     private static readonly Symbol LockedUntilUtc = new("com.microsoft:locked-until-utc");
     private static readonly Symbol TimeoutProperty = new("com.microsoft:timeout");
+    private readonly TransactionRegistry _transactions = new(broker);
 
     public void Process(AttachContext context)
     {
         context.Attach.MaxMessageSize = (ulong)maxMessageSize;
+        if (!context.Attach.Role && context.Attach.Target is Coordinator)
+        {
+            context.Complete(new TransactionCoordinatorEndpoint(_transactions), 100);
+            return;
+        }
+
         var rawAddress = context.Attach.Role
             ? (context.Attach.Source as Source)?.Address
             : (context.Attach.Target as Target)?.Address;
@@ -53,12 +62,12 @@ internal sealed class BrokerLinkProcessor(
             return;
         }
 
-        context.Complete(new TargetLinkEndpoint(new TopicMessageProcessor(broker, topicName, maxMessageSize), context.Link), 100);
+        context.Complete(new TargetLinkEndpoint(new TopicMessageProcessor(broker, _transactions, topicName, maxMessageSize), context.Link), 100);
     }
 
     private async Task AttachReceiverAsync(AttachContext context, string address)
     {
-        if (!TryParseSubscription(address, out var topicName, out var subscriptionName) ||
+        if (!TryParseSubscription(address, out var topicName, out var subscriptionName, out var isDeadLetter) ||
             !broker.SubscriptionExists(topicName, subscriptionName))
         {
             context.Complete(NotFound($"Subscription '{address}' does not exist."));
@@ -133,10 +142,12 @@ internal sealed class BrokerLinkProcessor(
         var messageSource = new SubscriptionMessageSource(
             broker,
             sessionLinks,
+            _transactions,
             context.Link.Session.Connection,
             context.Attach.LinkName,
             topicName,
             subscriptionName,
+            isDeadLetter,
             sessionId,
             owner);
         context.Complete(new ResilientSourceLinkEndpoint(messageSource, context.Link), 0);
@@ -161,7 +172,11 @@ internal sealed class BrokerLinkProcessor(
 
     private static Error NotAllowed(string description) => new("amqp:not-allowed") { Description = description };
 
-    private static bool TryParseSubscription(string address, out string topicName, out string subscriptionName)
+    private static bool TryParseSubscription(
+        string address,
+        out string topicName,
+        out string subscriptionName,
+        out bool isDeadLetter)
     {
         const string separator = "/Subscriptions/";
         var index = address.IndexOf(separator, StringComparison.OrdinalIgnoreCase);
@@ -169,15 +184,26 @@ internal sealed class BrokerLinkProcessor(
         {
             topicName = string.Empty;
             subscriptionName = string.Empty;
+            isDeadLetter = false;
             return false;
         }
 
         topicName = address[..index];
         subscriptionName = address[(index + separator.Length)..];
+        const string deadLetterSuffix = "/$DeadLetterQueue";
+        isDeadLetter = subscriptionName.EndsWith(deadLetterSuffix, StringComparison.OrdinalIgnoreCase);
+        if (isDeadLetter)
+        {
+            subscriptionName = subscriptionName[..^deadLetterSuffix.Length];
+        }
         return true;
     }
 
-    private sealed class TopicMessageProcessor(BrokerNamespace broker, string topicName, int maxMessageSize) : IMessageProcessor
+    private sealed class TopicMessageProcessor(
+        BrokerNamespace broker,
+        TransactionRegistry transactions,
+        string topicName,
+        int maxMessageSize) : IMessageProcessor
     {
         public int Credit => 100;
 
@@ -198,9 +224,16 @@ internal sealed class BrokerLinkProcessor(
 
                 foreach (var brokerMessage in messages)
                 {
-                    broker.Publish(topicName, brokerMessage);
+                    if (messageContext.DeliveryState is TransactionalState transaction)
+                    {
+                        transactions.StageSend(transaction.TxnId, topicName, brokerMessage);
+                    }
+                    else
+                    {
+                        broker.Publish(topicName, brokerMessage);
+                    }
                 }
-                messageContext.Complete();
+                Complete(messageContext);
             }
             catch (BrokerQuotaExceededException exception)
             {
@@ -211,15 +244,33 @@ internal sealed class BrokerLinkProcessor(
                 messageContext.Complete(new Error("amqp:not-allowed") { Description = exception.Message });
             }
         }
+
+        private void Complete(MessageContext context)
+        {
+            if (context.DeliveryState is TransactionalState transaction)
+            {
+                context.Link.DisposeMessage(context.Message, new TransactionalState
+                {
+                    TxnId = transaction.TxnId,
+                    Outcome = new Accepted(),
+                }, true);
+                context.Message.Dispose();
+                return;
+            }
+
+            context.Complete();
+        }
     }
 
     private sealed class SubscriptionMessageSource(
         BrokerNamespace broker,
         SessionLinkRegistry sessionLinks,
+        TransactionRegistry transactions,
         Connection connection,
         string linkName,
         string topicName,
         string subscriptionName,
+        bool isDeadLetter,
         string? sessionId,
         string owner) : IMessageSource
     {
@@ -235,7 +286,9 @@ internal sealed class BrokerLinkProcessor(
                 // for session subscriptions, until the session lock itself lapses.
                 if (GetCredit(link) > 0)
                 {
-                    var delivery = broker.TryAcquire(topicName, subscriptionName, sessionId, owner);
+                    var delivery = isDeadLetter
+                        ? broker.TryAcquireDeadLetter(topicName, subscriptionName, owner)
+                        : broker.TryAcquire(topicName, subscriptionName, sessionId, owner);
                     if (delivery is not null)
                     {
                         // Test hook: widen the acquire-to-send window to make the
@@ -262,7 +315,10 @@ internal sealed class BrokerLinkProcessor(
                     // then wait forever. An echo flow obliges the client to
                     // publish its flow state, re-syncing the credit windows.
                     lastEcho = Environment.TickCount64;
-                    if (broker.Peek(topicName, subscriptionName, 0, 1, sessionId).Count > 0)
+                    var hasMessages = isDeadLetter
+                        ? broker.PeekDeadLetter(topicName, subscriptionName, 0, 1).Count > 0
+                        : broker.Peek(topicName, subscriptionName, 0, 1, sessionId).Count > 0;
+                    if (hasMessages)
                     {
                         EmulatorDiagnostics.Write("Echo flow", $"{topicName}/{subscriptionName} session={sessionId}");
                         SendEchoFlow(link);
@@ -317,20 +373,51 @@ internal sealed class BrokerLinkProcessor(
             {
                 switch (dispositionContext.DeliveryState)
                 {
+                    case TransactionalState { Outcome: Accepted } transaction:
+                        if (!isDeadLetter)
+                        {
+                            throw new NotSupportedException("Only regular dead-letter completion is transactional.");
+                        }
+
+                        transactions.StageComplete(
+                            transaction.TxnId,
+                            topicName,
+                            subscriptionName,
+                            lockToken,
+                            owner);
+                        break;
                     case Accepted:
-                        broker.Complete(topicName, subscriptionName, lockToken, owner);
+                        if (isDeadLetter)
+                            broker.CompleteDeadLetter(topicName, subscriptionName, lockToken, owner);
+                        else
+                            broker.Complete(topicName, subscriptionName, lockToken, owner);
                         break;
                     case Released:
-                        broker.Release(topicName, subscriptionName, lockToken, owner);
+                        if (isDeadLetter)
+                            broker.ReleaseDeadLetter(topicName, subscriptionName, lockToken, owner);
+                        else
+                            broker.Release(topicName, subscriptionName, lockToken, owner);
                         break;
                     case Modified modified when modified.DeliveryFailed:
-                        broker.Abandon(topicName, subscriptionName, lockToken, owner);
+                        if (isDeadLetter)
+                            broker.ReleaseDeadLetter(topicName, subscriptionName, lockToken, owner);
+                        else
+                            broker.Abandon(topicName, subscriptionName, lockToken, owner);
                         break;
                     case Rejected rejected:
-                        broker.DeadLetter(topicName, subscriptionName, lockToken, owner, rejected.Error?.Condition, rejected.Error?.Description);
+                        broker.DeadLetter(
+                            topicName,
+                            subscriptionName,
+                            lockToken,
+                            owner,
+                            ErrorInfo(rejected.Error, "DeadLetterReason") ?? rejected.Error?.Condition,
+                            ErrorInfo(rejected.Error, "DeadLetterErrorDescription") ?? rejected.Error?.Description);
                         break;
                     default:
-                        broker.Abandon(topicName, subscriptionName, lockToken, owner);
+                        if (isDeadLetter)
+                            broker.ReleaseDeadLetter(topicName, subscriptionName, lockToken, owner);
+                        else
+                            broker.Abandon(topicName, subscriptionName, lockToken, owner);
                         break;
                 }
 
@@ -354,6 +441,226 @@ internal sealed class BrokerLinkProcessor(
                 broker.ReleaseSession(topicName, subscriptionName, sessionId, owner);
             }
         }
+
+        private static string? ErrorInfo(Error? error, string key) =>
+            error?.Info?.TryGetValue(new Symbol(key), out var value) == true
+                ? value?.ToString()
+                : null;
+    }
+
+    private sealed class TransactionCoordinatorEndpoint(TransactionRegistry transactions) : LinkEndpoint
+    {
+        private readonly ConcurrentDictionary<string, byte[]> _declared = new(StringComparer.Ordinal);
+
+        public override void OnFlow(FlowContext flowContext)
+        {
+        }
+
+        public override void OnDisposition(DispositionContext dispositionContext)
+        {
+        }
+
+        public override void OnMessage(MessageContext context)
+        {
+            try
+            {
+                switch (context.Message.Body)
+                {
+                    case Declare:
+                        EmulatorDiagnostics.Write("Transaction", "declare");
+                        var transactionId = transactions.Declare();
+                        _declared.TryAdd(Convert.ToHexString(transactionId), transactionId);
+                        Complete(context, new Declared { TxnId = transactionId });
+                        break;
+                    case Discharge discharge:
+                        EmulatorDiagnostics.Write("Transaction", discharge.Fail ? "rollback" : "commit");
+                        try
+                        {
+                            transactions.Discharge(discharge.TxnId, discharge.Fail);
+                            Complete(context, new Accepted());
+                        }
+                        finally
+                        {
+                            _declared.TryRemove(Convert.ToHexString(discharge.TxnId), out _);
+                        }
+                        break;
+                    default:
+                        Complete(context, new Rejected
+                        {
+                            Error = new Error("amqp:not-implemented")
+                            {
+                                Description = "Only local declare and discharge are supported.",
+                            },
+                        });
+                        break;
+                }
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or KeyNotFoundException)
+            {
+                Complete(context, new Rejected
+                {
+                    Error = new Error("amqp:transaction:rollback") { Description = exception.Message },
+                });
+            }
+        }
+
+        public override void OnLinkClosed(ListenerLink closedLink, Error error)
+        {
+            foreach (var transaction in _declared.Values)
+            {
+                try
+                {
+                    transactions.Discharge(transaction, fail: true);
+                }
+                catch (KeyNotFoundException)
+                {
+                    // A concurrent discharge already removed it.
+                }
+            }
+
+            _declared.Clear();
+            base.OnLinkClosed(closedLink, error);
+        }
+
+        private static void Complete(MessageContext context, DeliveryState outcome)
+        {
+            context.Link.DisposeMessage(context.Message, outcome, true);
+            context.Message.Dispose();
+        }
+    }
+
+    private sealed class TransactionRegistry(BrokerNamespace broker)
+    {
+        private readonly object _gate = new();
+        private readonly Dictionary<string, PendingTransaction> _pending = new(StringComparer.Ordinal);
+
+        public byte[] Declare()
+        {
+            var id = Guid.NewGuid().ToByteArray();
+            lock (_gate)
+            {
+                _pending.Add(Convert.ToHexString(id), new PendingTransaction());
+            }
+
+            return id;
+        }
+
+        public void StageComplete(
+            byte[] transactionId,
+            string topicName,
+            string subscriptionName,
+            Guid lockToken,
+            string owner)
+        {
+            lock (_gate)
+            {
+                var transaction = Get(transactionId);
+                if (transaction.Complete is not null)
+                {
+                    throw new InvalidOperationException("The emulator supports one completion per transaction.");
+                }
+
+                transaction.Complete = new PendingComplete(topicName, subscriptionName, lockToken, owner);
+                EmulatorDiagnostics.Write("Transaction", $"stage complete {topicName}/{subscriptionName}");
+            }
+        }
+
+        public void StageSend(byte[] transactionId, string topicName, BrokerMessage message)
+        {
+            lock (_gate)
+            {
+                var transaction = Get(transactionId);
+                if (transaction.Send is not null)
+                {
+                    throw new InvalidOperationException("The emulator supports one send per transaction.");
+                }
+
+                transaction.Send = new PendingSend(topicName, message);
+                EmulatorDiagnostics.Write("Transaction", $"stage send {topicName}");
+            }
+        }
+
+        public void Discharge(byte[] transactionId, bool fail)
+        {
+            PendingTransaction transaction;
+            lock (_gate)
+            {
+                var key = Convert.ToHexString(transactionId);
+                if (!_pending.Remove(key, out transaction!))
+                {
+                    throw new KeyNotFoundException("The transaction is unknown.");
+                }
+            }
+
+            if (fail)
+            {
+                ReleaseStagedCompletion(transaction);
+                return;
+            }
+
+            if (transaction.Complete is not { } complete || transaction.Send is not { } send)
+            {
+                ReleaseStagedCompletion(transaction);
+                throw new InvalidOperationException("A replay transaction requires one completion and one send.");
+            }
+
+            try
+            {
+                broker.CommitDeadLetterReplay(
+                    complete.TopicName,
+                    complete.SubscriptionName,
+                    complete.LockToken,
+                    complete.Owner,
+                    send.TopicName,
+                    send.Message);
+            }
+            catch
+            {
+                ReleaseStagedCompletion(transaction);
+                throw;
+            }
+        }
+
+        private void ReleaseStagedCompletion(PendingTransaction transaction)
+        {
+            if (transaction.Complete is not { } complete)
+            {
+                return;
+            }
+
+            try
+            {
+                broker.ReleaseDeadLetter(
+                    complete.TopicName,
+                    complete.SubscriptionName,
+                    complete.LockToken,
+                    complete.Owner);
+            }
+            catch (KeyNotFoundException)
+            {
+                // Lock expiry also restores the message to the regular dead-letter queue.
+            }
+        }
+
+        private PendingTransaction Get(byte[] transactionId) =>
+            _pending.TryGetValue(Convert.ToHexString(transactionId), out var transaction)
+                ? transaction
+                : throw new KeyNotFoundException("The transaction is unknown.");
+
+        private sealed class PendingTransaction
+        {
+            public PendingComplete? Complete { get; set; }
+
+            public PendingSend? Send { get; set; }
+        }
+
+        private sealed record PendingComplete(
+            string TopicName,
+            string SubscriptionName,
+            Guid LockToken,
+            string Owner);
+
+        private sealed record PendingSend(string TopicName, BrokerMessage Message);
     }
 
     // ListenerLink.Credit is internal in AMQPNetLite.Core 2.5.1.

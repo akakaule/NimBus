@@ -1480,6 +1480,68 @@ paths:
           description: Forbidden
         '404':
           description: Topic not found
+  '/api/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters':
+    parameters:
+      - schema:
+          type: string
+        name: subscriptionName
+        in: path
+        required: true
+    get:
+      summary: Inspect regular dead letters on a terminal Resolver subscription
+      operationId: get-admin-servicebus-resolver-deadletters
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeadLetterOverview'
+        '400':
+          description: Unsupported Resolver subscription target
+        '403':
+          description: Forbidden
+        '404':
+          description: Subscription not found
+        '503':
+          description: Service Bus operation unavailable
+  '/api/admin/servicebus/resolver/subscriptions/{subscriptionName}/deadletters/resubmit':
+    parameters:
+      - schema:
+          type: string
+        name: subscriptionName
+        in: path
+        required: true
+    post:
+      summary: Atomically replay regular dead letters from a terminal Resolver subscription
+      operationId: post-admin-servicebus-resolver-deadletters-resubmit
+      tags:
+        - Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeadLetterResubmitRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkOperationResult'
+        '400':
+          description: Invalid selection or unsupported Resolver subscription target
+        '403':
+          description: Forbidden
+        '404':
+          description: Subscription not found
+        '409':
+          description: A replay is already running for this subscription
+        '503':
+          description: Service Bus operation unavailable
   '/api/admin/servicebus/topics/{topicName}/subscriptions/{subscriptionName}/status':
     parameters:
       - schema:
@@ -3725,6 +3787,46 @@ components:
           type: array
           items:
             type: string
+    DeadLetterOverview:
+      title: DeadLetterOverview
+      type: object
+      properties:
+        totalMessageCount:
+          type: integer
+          format: int64
+        isTruncated:
+          type: boolean
+        snapshotLimit:
+          type: integer
+          format: int32
+        reasons:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeadLetterReasonCount'
+    DeadLetterReasonCount:
+      title: DeadLetterReasonCount
+      type: object
+      properties:
+        reason:
+          type: string
+          nullable: true
+        count:
+          type: integer
+          format: int64
+    DeadLetterResubmitRequest:
+      title: DeadLetterResubmitRequest
+      type: object
+      required:
+        - scope
+      properties:
+        scope:
+          type: string
+          enum:
+            - all
+            - reason
+        reason:
+          type: string
+          nullable: true
     SessionPurgePreview:
       title: SessionPurgePreview
       type: object

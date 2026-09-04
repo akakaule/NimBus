@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json;
 using NimBus.Broker.Services;
 using NimBus.Core.Messages;
+using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using CoreHeartbeat = NimBus.Core.Events.Heartbeat;
@@ -198,6 +199,28 @@ public class ResolverHeartbeatTests
         Assert.AreEqual(0, message.ScheduleRedeliveryCalls, "Heartbeats skip the scheduled-redelivery path.");
         Assert.AreEqual(0, message.DeadLetterCalls);
         Assert.AreEqual(0, message.AbandonCalls);
+    }
+
+    [TestMethod]
+    public async Task Handle_HeartbeatResponse_FinalCosmosThrottle_UsesStableDeadLetterReason()
+    {
+        var store = new FakeCosmosDbClient
+        {
+            SetHeartbeatException = new RequestLimitException(TimeSpan.FromSeconds(1)),
+        };
+        var message = CreateHeartbeatContext(
+            MessageType.ResolutionResponse,
+            to: Constants.ResolverId,
+            from: "BillingEndpoint");
+        message.ThrottleRetryCount = 9;
+        var service = CreateService(store);
+
+        await service.Handle(message);
+
+        Assert.AreEqual(0, message.CompletedCalls);
+        Assert.AreEqual(0, message.ScheduleRedeliveryCalls);
+        Assert.AreEqual(1, message.DeadLetterCalls);
+        Assert.AreEqual("CosmosDbThrottled", message.LastDeadLetterReason);
     }
 
     [TestMethod]

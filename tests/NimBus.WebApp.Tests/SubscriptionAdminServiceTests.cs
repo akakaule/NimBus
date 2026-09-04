@@ -11,6 +11,8 @@ using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.ManagementApi;
+using System.Threading;
 
 namespace NimBus.WebApp.Tests;
 
@@ -278,14 +280,64 @@ public sealed class SubscriptionAdminServiceTests
         Assert.IsFalse(overview.IsSystemTopic);
     }
 
+    [TestMethod]
+    public async Task ResolverDeadLetters_ValidatesTerminalSessionTargetBeforeDelegating()
+    {
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription("Resolver", "Resolver", requiresSession: true);
+        var replay = new RecordingResolverDeadLetterClient();
+        var service = CreateService(management, replayClient: replay);
+
+        await service.GetResolverDeadLettersAsync("Resolver");
+        await service.ResubmitResolverDeadLettersAsync("Resolver", all: false, reason: "CosmosDbThrottled");
+
+        CollectionAssert.AreEqual(
+            new[] { "inspect:Resolver/Resolver", "replay:Resolver/Resolver:False:CosmosDbThrottled" },
+            replay.Calls);
+    }
+
+    [TestMethod]
+    public async Task ResolverDeadLetters_RejectsForwardingOrNonSessionTargetsWithoutDataPlaneCall()
+    {
+        var management = new FakeServiceBusManagement();
+        management.SeedSubscription("Resolver", "Resolver", requiresSession: false, forwardTo: "elsewhere");
+        var replay = new RecordingResolverDeadLetterClient();
+        var service = CreateService(management, replayClient: replay);
+
+        await Assert.ThrowsExactlyAsync<ResolverDeadLetterTargetNotSupportedException>(
+            () => service.GetResolverDeadLettersAsync("Resolver"));
+
+        Assert.AreEqual(0, replay.Calls.Count);
+    }
+
     private static SubscriptionAdminService CreateService(
-        FakeServiceBusManagement management, FakeTopologyRebuilder rebuilder = null) =>
+        FakeServiceBusManagement management,
+        FakeTopologyRebuilder rebuilder = null,
+        IResolverDeadLetterClient? replayClient = null) =>
         new(
             new TestPlatform(new TestEndpoint(Topic)),
             management,
             rebuilder ?? new FakeTopologyRebuilder(),
             sbClient: null,
-            NullLogger<SubscriptionAdminService>.Instance);
+            NullLogger<SubscriptionAdminService>.Instance,
+            resolverDeadLetterClient: replayClient);
+
+    private sealed class RecordingResolverDeadLetterClient : IResolverDeadLetterClient
+    {
+        public List<string> Calls { get; } = [];
+
+        public Task<DeadLetterOverview> GetOverviewAsync(string topicName, string subscriptionName, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"inspect:{topicName}/{subscriptionName}");
+            return Task.FromResult(new DeadLetterOverview());
+        }
+
+        public Task<BulkOperationResult> ResubmitAsync(string topicName, string subscriptionName, bool all, string? reason, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"replay:{topicName}/{subscriptionName}:{all}:{reason}");
+            return Task.FromResult(new BulkOperationResult());
+        }
+    }
 
     private sealed class TestPlatform : Platform
     {

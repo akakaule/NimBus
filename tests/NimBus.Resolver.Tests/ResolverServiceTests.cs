@@ -246,14 +246,54 @@ public class ResolverServiceTests
         {
             StoreMessageException = new RequestLimitException(TimeSpan.FromSeconds(1)),
         };
-        var message = CreateMessageContext(messageType: MessageType.EventRequest, throttleRetryCount: 10);
+        var message = CreateMessageContext(messageType: MessageType.EventRequest, throttleRetryCount: 9);
         var service = CreateService(cosmos);
 
         await service.Handle(message);
 
         Assert.AreEqual(0, message.ScheduleRedeliveryCalls);
         Assert.AreEqual(1, message.DeadLetterCalls);
-        Assert.AreEqual("Max throttle retries exceeded", message.LastDeadLetterReason);
+        Assert.AreEqual("CosmosDbThrottled", message.LastDeadLetterReason);
+    }
+
+    [TestMethod]
+    public async Task Handle_RequestLimitException_CombinesScheduledAndBrokerDeliveryAttempts()
+    {
+        var cosmos = new FakeCosmosDbClient
+        {
+            StoreMessageException = new RequestLimitException(TimeSpan.FromSeconds(1)),
+        };
+        var message = CreateMessageContext(
+            messageType: MessageType.EventRequest,
+            throttleRetryCount: 3,
+            deliveryCount: 2);
+        var service = CreateService(cosmos);
+
+        await service.Handle(message);
+
+        Assert.AreEqual(1, message.ScheduleRedeliveryCalls);
+        Assert.AreEqual(5, message.LastScheduledRetryCount);
+        Assert.AreEqual(0, message.DeadLetterCalls);
+    }
+
+    [TestMethod]
+    public async Task Handle_RequestLimitExceptionDuringEndpointProjection_UsesStableFinalReason()
+    {
+        var cosmos = new FakeCosmosDbClient
+        {
+            UploadException = new RequestLimitException(TimeSpan.FromSeconds(1)),
+        };
+        var message = CreateMessageContext(
+            messageType: MessageType.EventRequest,
+            throttleRetryCount: 8,
+            deliveryCount: 2);
+        var service = CreateService(cosmos);
+
+        await service.Handle(message);
+
+        Assert.AreEqual(0, message.ScheduleRedeliveryCalls);
+        Assert.AreEqual(1, message.DeadLetterCalls);
+        Assert.AreEqual("CosmosDbThrottled", message.LastDeadLetterReason);
     }
 
     [TestMethod]
@@ -465,6 +505,7 @@ public class ResolverServiceTests
         string to = "AnalyticsEndpoint",
         string from = "StorefrontEndpoint",
         int throttleRetryCount = 0,
+        int deliveryCount = 1,
         string eventTypeId = "OrderPlaced")
     {
         return new FakeMessageContext
@@ -490,10 +531,11 @@ public class ResolverServiceTests
             EventTypeId = eventTypeId,
             EnqueuedTimeUtc = new DateTime(2026, 03, 06, 12, 00, 00, DateTimeKind.Utc),
             ThrottleRetryCount = throttleRetryCount,
+            DeliveryCount = deliveryCount,
         };
     }
 
-    internal sealed class FakeMessageContext : IMessageContext
+    internal sealed class FakeMessageContext : IMessageContext, IMessageDeliveryContext
     {
         public string EventId { get; set; } = string.Empty;
         public string To { get; set; } = string.Empty;
@@ -518,6 +560,7 @@ public class ResolverServiceTests
         public DateTime? ExpectedBy { get; set; }
         public bool IsDeferred { get; set; }
         public int ThrottleRetryCount { get; set; }
+        public int DeliveryCount { get; set; } = 1;
         public long? QueueTimeMs { get; set; }
         public long? ProcessingTimeMs { get; set; }
         public DateTime? HandlerStartedAtUtc { get; set; }

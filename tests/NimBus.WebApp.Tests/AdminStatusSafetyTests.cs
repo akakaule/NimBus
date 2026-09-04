@@ -385,6 +385,8 @@ public sealed class AdminStatusSafetyTests
 
         public Task<IEnumerable<ServiceBusTopicOverview>> GetTopicOverviewAsync() => Unexpected<IEnumerable<ServiceBusTopicOverview>>();
         public Task<IEnumerable<ServiceBusSubscriptionInfo>> GetSubscriptionsAsync(string topicName) => Unexpected<IEnumerable<ServiceBusSubscriptionInfo>>();
+        public Task<DeadLetterOverview> GetResolverDeadLettersAsync(string subscriptionName, System.Threading.CancellationToken cancellationToken = default) => Unexpected<DeadLetterOverview>();
+        public Task<BulkOperationResult> ResubmitResolverDeadLettersAsync(string subscriptionName, bool all, string? reason, System.Threading.CancellationToken cancellationToken = default) => Unexpected<BulkOperationResult>();
         public Task<SubscriptionActionResult> SetSubscriptionStatusAsync(string topicName, string subscriptionName, bool enable) => Unexpected<SubscriptionActionResult>();
         public Task<BulkOperationResult> PurgeSubscriptionAsync(string topicName, string subscriptionName) => Unexpected<BulkOperationResult>();
         public Task<SubscriptionActionResult> RecreateSubscriptionAsync(string topicName, string subscriptionName) => Unexpected<SubscriptionActionResult>();

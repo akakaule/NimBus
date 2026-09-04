@@ -307,6 +307,14 @@ sequenceDiagram
 
 When the handler throws `TransientException` (network blip, throttling, deadlock — anything recoverable), NimBus **does not** call SB Abandon explicitly — `MessageContext.Abandon` is a deliberate no-op. The peek-lock simply expires after ~30 seconds and Service Bus redelivers the same message. No notification is sent to the Resolver, so audit visibility is intentionally minimal for this path.
 
+Resolver treats Cosmos DB 429s more deliberately. Scheduled replacements and
+broker redeliveries consume one shared ten-attempt budget
+(`ThrottleRetryCount + DeliveryCount`). On the final attempt Resolver explicitly
+dead-letters with the stable reason `CosmosDbThrottled`; generic storage
+transients retain the existing redelivery behavior. Owners can inspect and
+atomically replay these regular Resolver dead letters from Admin → Subscriptions;
+see [the subscription incident-response guide](service-bus-subscription-admin.md#replaying-resolver-dead-letters).
+
 ```mermaid
 sequenceDiagram
     participant Pub as Publisher

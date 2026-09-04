@@ -312,6 +312,35 @@ describe("SubscriptionManager", () => {
     expect(names()).toEqual(["bravo", "alpha"]);
   });
 
+  it("filters topics by platform membership", async () => {
+    mocks.getAdminServicebusTopics.mockResolvedValue([
+      topic("platform-topic"),
+      topic("external-topic", { isKnownToPlatform: false }),
+    ]);
+
+    render(<SubscriptionManager />);
+    await screen.findByRole("button", { name: "platform-topic" });
+
+    const filter = screen.getByRole("combobox", {
+      name: "Filter topics by platform membership",
+    });
+
+    expect(screen.getByRole("button", { name: "platform-topic" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "external-topic" })).toBeTruthy();
+
+    fireEvent.change(filter, { target: { value: "platform" } });
+    expect(screen.getByRole("button", { name: "platform-topic" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "external-topic" })).toBeNull();
+
+    fireEvent.change(filter, { target: { value: "external" } });
+    expect(screen.queryByRole("button", { name: "platform-topic" })).toBeNull();
+    expect(screen.getByRole("button", { name: "external-topic" })).toBeTruthy();
+
+    fireEvent.change(filter, { target: { value: "all" } });
+    expect(screen.getByRole("button", { name: "platform-topic" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "external-topic" })).toBeTruthy();
+  });
+
   it("offers Resolver dead-letter inspection only on the terminal session subscription", async () => {
     mocks.getAdminServicebusTopics.mockResolvedValue([topic("Resolver")]);
     mocks.getAdminServicebusSubscriptions.mockResolvedValue([

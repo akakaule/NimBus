@@ -360,7 +360,7 @@ export default function SubscriptionManager() {
   return (
     <div className="space-y-6 w-full">
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <p className="text-[13px] text-muted-foreground m-0 max-w-3xl">
+        <p className="text-[13px] text-muted-foreground m-0 flex-1 basis-[48rem]">
           Live message counts straight from Service Bus. Use this to find where a
           backlog actually sits and clear just that subscription. An
           auto-forwarding subscription (such as each endpoint&apos;s{" "}

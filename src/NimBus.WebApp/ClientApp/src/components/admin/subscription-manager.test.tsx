@@ -105,6 +105,18 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("SubscriptionManager", () => {
+  it("lets the subscription guidance use the available horizontal space", () => {
+    render(<SubscriptionManager />);
+
+    const guidance = screen.getByText(
+      /Live message counts straight from Service Bus/,
+    );
+
+    expect(guidance.classList.contains("flex-1")).toBe(true);
+    expect(guidance.classList.contains("basis-[48rem]")).toBe(true);
+    expect(guidance.classList.contains("max-w-3xl")).toBe(false);
+  });
+
   it("shows only the newest subscription response, whatever order they land in", async () => {
     // Resolver, Deferred and DeferredProcessor exist on every topic, so a stale
     // response paints a table that looks entirely valid while the operator is

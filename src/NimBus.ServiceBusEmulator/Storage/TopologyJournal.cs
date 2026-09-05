@@ -26,11 +26,11 @@ internal sealed class TopologyJournal(string path) : IDisposable
             return;
         }
 
-        TopologySnapshot snapshot;
+        VersionedTopologySnapshot snapshot;
         try
         {
             await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.Asynchronous);
-            snapshot = await JsonSerializer.DeserializeAsync<TopologySnapshot>(stream, SerializerOptions, cancellationToken).ConfigureAwait(false)
+            snapshot = await JsonSerializer.DeserializeAsync<VersionedTopologySnapshot>(stream, SerializerOptions, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidDataException($"Topology journal '{path}' is empty or invalid.");
             if (snapshot.Version != CurrentVersion)
             {
@@ -65,14 +65,14 @@ internal sealed class TopologyJournal(string path) : IDisposable
 
     public async Task SaveAsync(BrokerNamespace broker, CancellationToken cancellationToken)
     {
+        await SaveAsync(broker.GetTopologySnapshot(), cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task SaveAsync(TopologySnapshot snapshot, CancellationToken cancellationToken)
+    {
         await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var snapshot = new TopologySnapshot(CurrentVersion, broker.GetTopics().Select(topic =>
-                new JournalTopic(
-                    topic,
-                    broker.GetSubscriptions(topic.Name).Select(subscription =>
-                        new JournalSubscription(subscription, broker.GetRules(topic.Name, subscription.Name))).ToArray())).ToArray());
             var directory = Path.GetDirectoryName(path) ?? throw new InvalidOperationException("The topology journal path has no directory.");
             Directory.CreateDirectory(directory);
             var temporaryPath = path + ".tmp-" + Guid.NewGuid().ToString("N");
@@ -86,7 +86,11 @@ internal sealed class TopologyJournal(string path) : IDisposable
                                  4096,
                                  FileOptions.Asynchronous | FileOptions.WriteThrough))
                 {
-                    await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
+                    await JsonSerializer.SerializeAsync(
+                        stream,
+                        new VersionedTopologySnapshot(CurrentVersion, snapshot.Topics),
+                        SerializerOptions,
+                        cancellationToken).ConfigureAwait(false);
                     await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
                 }
 
@@ -115,9 +119,5 @@ internal sealed class TopologyJournal(string path) : IDisposable
         return string.IsNullOrWhiteSpace(sanitized) ? "default" : sanitized;
     }
 
-    private sealed record TopologySnapshot(int Version, IReadOnlyList<JournalTopic> Topics);
-
-    private sealed record JournalTopic(TopicDefinition Definition, IReadOnlyList<JournalSubscription> Subscriptions);
-
-    private sealed record JournalSubscription(SubscriptionDefinition Definition, IReadOnlyList<RuleDefinition> Rules);
+    private sealed record VersionedTopologySnapshot(int Version, IReadOnlyList<TopologyTopic> Topics);
 }

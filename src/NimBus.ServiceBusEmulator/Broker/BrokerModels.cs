@@ -136,3 +136,15 @@ internal sealed record TopicRuntimeProperties(
     DateTimeOffset AccessedAt);
 
 internal sealed record AdminOperation(string Verb, string EntityPath, string Kind, DateTimeOffset Timestamp);
+
+internal sealed record TopologySnapshot(IReadOnlyList<TopologyTopic> Topics);
+
+internal sealed record TopologyTopic(
+    TopicDefinition Definition,
+    IReadOnlyList<TopologySubscription> Subscriptions);
+
+internal sealed record TopologySubscription(
+    SubscriptionDefinition Definition,
+    IReadOnlyList<RuleDefinition> Rules);
+
+internal sealed record PreparedTopologyMutation(TopologySnapshot Snapshot, Action Apply);

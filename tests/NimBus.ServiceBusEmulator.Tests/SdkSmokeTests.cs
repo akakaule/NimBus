@@ -21,6 +21,24 @@ public sealed class SdkSmokeTests
     [TestMethod]
     [TestCategory("CommonFidelity")]
     [Timeout(60_000)]
+    public async Task Stock_sdk_can_enumerate_an_empty_namespace()
+    {
+        await using var emulator = await EmulatorProcess.StartAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+        var topics = new List<TopicProperties>();
+
+        await foreach (var topic in admin.GetTopicsAsync(timeout.Token))
+        {
+            topics.Add(topic);
+        }
+
+        Assert.HasCount(0, topics);
+    }
+
+    [TestMethod]
+    [TestCategory("CommonFidelity")]
+    [Timeout(60_000)]
     public async Task Stock_sdk_admin_and_data_planes_share_one_port()
     {
         await using var emulator = await EmulatorProcess.StartAsync();
@@ -121,6 +139,112 @@ public sealed class SdkSmokeTests
                 $"FIFO test failed; emulator protocol trace:{System.Environment.NewLine}{emulator.DumpOutput()}",
                 exception);
         }
+    }
+
+    [TestMethod]
+    [TestCategory("CommonFidelity")]
+    [Timeout(60_000)]
+    public async Task Stock_sdk_can_lock_an_explicit_empty_session()
+    {
+        await using var emulator = await EmulatorProcess.StartAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var entityName = $"empty-session-{Guid.NewGuid():N}";
+        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+        await admin.CreateTopicAsync(entityName, timeout.Token);
+        await admin.CreateSubscriptionAsync(
+            new CreateSubscriptionOptions(entityName, "consumer") { RequiresSession = true },
+            timeout.Token);
+        await using var client = new ServiceBusClient(
+            emulator.ConnectionString,
+            new ServiceBusClientOptions
+            {
+                RetryOptions = new ServiceBusRetryOptions
+                {
+                    MaxRetries = 0,
+                    TryTimeout = TimeSpan.FromSeconds(2),
+                },
+            });
+
+        await using (ServiceBusSessionReceiver receiver = await client.AcceptSessionAsync(
+                         entityName,
+                         "consumer",
+                         "empty",
+                         cancellationToken: timeout.Token))
+        {
+            Assert.AreEqual("empty", receiver.SessionId);
+        }
+
+        await admin.DeleteTopicAsync(entityName, timeout.Token);
+    }
+
+    [TestMethod]
+    [TestCategory("CommonFidelity")]
+    [Timeout(60_000)]
+    public async Task Stock_sdk_can_relock_a_materialized_session_after_it_becomes_empty()
+    {
+        await using var emulator = await EmulatorProcess.StartAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var entityName = $"empty-materialized-session-{Guid.NewGuid():N}";
+        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+        await admin.CreateTopicAsync(entityName, timeout.Token);
+        await admin.CreateSubscriptionAsync(
+            new CreateSubscriptionOptions(entityName, "consumer") { RequiresSession = true },
+            timeout.Token);
+        await using var client = new ServiceBusClient(emulator.ConnectionString);
+        await client.CreateSender(entityName).SendMessageAsync(
+            new ServiceBusMessage("message") { SessionId = "materialized" },
+            timeout.Token);
+        await using (var first = await client.AcceptSessionAsync(
+                         entityName,
+                         "consumer",
+                         "materialized",
+                         cancellationToken: timeout.Token))
+        {
+            var message = await first.ReceiveMessageAsync(TimeSpan.FromSeconds(5), timeout.Token);
+            Assert.IsNotNull(message);
+            await first.CompleteMessageAsync(message, timeout.Token);
+        }
+
+        await using (var second = await client.AcceptSessionAsync(
+                         entityName,
+                         "consumer",
+                         "materialized",
+                         cancellationToken: timeout.Token))
+        {
+            Assert.AreEqual("materialized", second.SessionId);
+        }
+
+        await admin.DeleteTopicAsync(entityName, timeout.Token);
+    }
+
+    [TestMethod]
+    [TestCategory("EmulatorOnly")]
+    [Timeout(60_000)]
+    public async Task Stock_sdk_rejects_session_receiver_for_non_session_subscription_without_hanging()
+    {
+        await using var emulator = await EmulatorProcess.StartAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var entityName = $"non-session-{Guid.NewGuid():N}";
+        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+        await admin.CreateTopicAsync(entityName, timeout.Token);
+        await admin.CreateSubscriptionAsync(entityName, "consumer", timeout.Token);
+        await using var client = new ServiceBusClient(
+            emulator.ConnectionString,
+            new ServiceBusClientOptions
+            {
+                RetryOptions = new ServiceBusRetryOptions
+                {
+                    MaxRetries = 0,
+                    TryTimeout = TimeSpan.FromSeconds(2),
+                },
+            });
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(async () =>
+            await client.AcceptSessionAsync(
+                entityName,
+                "consumer",
+                "invalid",
+                cancellationToken: timeout.Token).WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     [TestMethod]
@@ -550,6 +674,54 @@ public sealed class SdkSmokeTests
         Assert.AreEqual("rollback-original", retained.MessageId);
         await receiver.CompleteMessageAsync(retained, timeout.Token);
         await admin.DeleteTopicAsync(topic, timeout.Token);
+    }
+
+    [TestMethod]
+    [TestCategory("EmulatorOnly")]
+    [Timeout(60_000)]
+    public async Task Transactional_complete_on_regular_subscription_fails_without_hanging()
+    {
+        await using var emulator = await EmulatorProcess.StartAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var topic = $"transaction-{Guid.NewGuid():N}";
+        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+        await admin.CreateTopicAsync(topic, timeout.Token);
+        await admin.CreateSubscriptionAsync(topic, "consumer", timeout.Token);
+        await using var client = new ServiceBusClient(
+            emulator.ConnectionString,
+            new ServiceBusClientOptions { EnableCrossEntityTransactions = true });
+        await client.CreateSender(topic).SendMessageAsync(new ServiceBusMessage("message"), timeout.Token);
+        await using var receiver = client.CreateReceiver(topic, "consumer");
+        var message = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(5), timeout.Token);
+        Assert.IsNotNull(message);
+
+        using var transaction = new TransactionScope(
+            TransactionScopeOption.Required,
+            TransactionScopeAsyncFlowOption.Enabled);
+        var exception = await Assert.ThrowsExactlyAsync<NotSupportedException>(async () =>
+            await receiver.CompleteMessageAsync(message, timeout.Token).WaitAsync(TimeSpan.FromSeconds(5)));
+
+        StringAssert.Contains(exception.Message, "transactional", StringComparison.OrdinalIgnoreCase);
+    }
+
+    [TestMethod]
+    [TestCategory("EmulatorOnly")]
+    [Timeout(60_000)]
+    public async Task Failed_topology_journal_save_rolls_back_admin_mutation()
+    {
+        var temporaryRoot = Path.Combine(Path.GetTempPath(), $"nimbus-sbemulator-invalid-journal-{Guid.NewGuid():N}");
+        var journalPath = Path.Combine(temporaryRoot, "topology.json");
+        Directory.CreateDirectory(journalPath);
+        await using var emulator = await EmulatorProcess.StartAsync(journalPath);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var topic = $"not-durable-{Guid.NewGuid():N}";
+        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+
+        var exception = await Assert.ThrowsExactlyAsync<ServiceBusException>(() =>
+            admin.CreateTopicAsync(topic, timeout.Token));
+
+        Assert.AreEqual(ServiceBusFailureReason.GeneralError, exception.Reason);
+        Assert.IsFalse(await admin.TopicExistsAsync(topic, timeout.Token));
     }
 
     private sealed class EmulatorProcess : IAsyncDisposable

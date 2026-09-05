@@ -1,12 +1,16 @@
 #pragma warning disable CA1707, CA2007
 
 using NimBus.ServiceBusEmulator.Broker;
+using NimBus.ServiceBusEmulator.Protocol;
 
 namespace NimBus.ServiceBusEmulator.Tests;
 
 [TestClass]
 public sealed class BrokerNamespaceTests
 {
+    private static readonly string[] ScheduledMessageIds = ["first", "second", "third"];
+    private static readonly long[] ScheduledSequenceNumbers = [1, 2, 3];
+
     [TestMethod]
     public void Emulator_default_delivery_limit_matches_NimBus_provisioning_default()
     {
@@ -181,6 +185,21 @@ public sealed class BrokerNamespaceTests
     }
 
     [TestMethod]
+    public void Explicit_empty_session_can_be_locked()
+    {
+        var broker = new BrokerNamespace(new BrokerOptions());
+        broker.CreateTopic(new TopicDefinition("events"));
+        broker.CreateSubscription(
+            "events",
+            new SubscriptionDefinition("consumer") { RequiresSession = true });
+
+        var session = broker.TryAcceptSession("events", "consumer", "empty-session", "receiver-1");
+
+        Assert.IsNotNull(session);
+        Assert.AreEqual("empty-session", session.SessionId);
+    }
+
+    [TestMethod]
     [DataRow("complete")]
     [DataRow("abandon")]
     [DataRow("dead-letter")]
@@ -291,6 +310,80 @@ public sealed class BrokerNamespaceTests
         var delivery = broker.TryAcquire("events", "consumer", null, "receiver-1");
         Assert.IsNotNull(delivery);
         Assert.AreEqual(clock.GetUtcNow(), delivery.Message.EnqueuedTime);
+    }
+
+    [TestMethod]
+    public void Scheduled_messages_due_together_preserve_publish_order()
+    {
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 8, 10, 12, 0, 0, TimeSpan.Zero));
+        var broker = new BrokerNamespace(new BrokerOptions { TimeProvider = clock });
+        broker.CreateTopic(new TopicDefinition("events"));
+        broker.CreateSubscription(
+            "events",
+            new SubscriptionDefinition("consumer") { RequiresSession = true });
+        var due = clock.GetUtcNow().AddMinutes(1);
+
+        foreach (var messageId in ScheduledMessageIds)
+        {
+            broker.Publish("events", NewMessage(messageId, "session-1") with { ScheduledEnqueueTime = due });
+        }
+
+        clock.Advance(TimeSpan.FromMinutes(1));
+        broker.ProcessDueWork();
+        Assert.IsNotNull(broker.TryAcceptSession("events", "consumer", "session-1", "receiver-1"));
+
+        var deliveries = Enumerable.Range(0, 3)
+            .Select(_ => broker.TryAcquire("events", "consumer", "session-1", "receiver-1"))
+            .ToArray();
+        Assert.IsTrue(deliveries.All(delivery => delivery is not null));
+        CollectionAssert.AreEqual(
+            ScheduledMessageIds,
+            deliveries.Select(delivery => delivery!.Message.MessageId).ToArray());
+        CollectionAssert.AreEqual(
+            ScheduledSequenceNumbers,
+            deliveries.Select(delivery => delivery!.Message.SequenceNumber).ToArray());
+    }
+
+    [TestMethod]
+    public void Receive_pump_restarts_when_flow_arrives_while_it_is_finishing()
+    {
+        var gate = new ReceivePumpGate();
+
+        Assert.IsTrue(gate.TryStart(hasCredit: true));
+        Assert.IsFalse(gate.TryStart(hasCredit: true));
+
+        Assert.IsTrue(gate.Complete(linkOpen: true, static () => true));
+    }
+
+    [TestMethod]
+    public void Receive_pump_restart_intent_wins_over_stale_credit_sample()
+    {
+        var gate = new ReceivePumpGate();
+
+        Assert.IsTrue(gate.TryStart(hasCredit: true));
+        const bool creditSampledBeforeFlow = false;
+        Assert.IsFalse(gate.TryStart(hasCredit: true));
+
+        Assert.IsTrue(gate.Complete(linkOpen: true, () => creditSampledBeforeFlow));
+    }
+
+    [TestMethod]
+    public void Discarded_topology_candidate_does_not_rewind_acknowledged_data_plane_changes()
+    {
+        var broker = new BrokerNamespace(new BrokerOptions());
+        broker.CreateTopic(new TopicDefinition("events"));
+        broker.CreateSubscription("events", new SubscriptionDefinition("consumer"));
+        broker.Publish("events", NewMessage("completed-during-save"));
+        var delivery = broker.TryAcquire("events", "consumer", null, "receiver-1");
+        Assert.IsNotNull(delivery);
+        var mutation = broker.PrepareCreateTopic(new TopicDefinition("candidate"));
+
+        broker.Complete("events", "consumer", delivery.LockToken, "receiver-1");
+        broker.Publish("events", NewMessage("published-during-save"));
+
+        Assert.AreEqual(1, broker.GetSubscriptionRuntimeProperties("events", "consumer").TotalMessageCount);
+        Assert.IsFalse(broker.TopicExists("candidate"));
+        Assert.AreEqual(2, mutation.Snapshot.Topics.Count);
     }
 
     private static BrokerMessage NewMessage(string messageId, string? sessionId = null) => new()

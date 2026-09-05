@@ -84,7 +84,11 @@ internal static class AdminXml
     public static XDocument RuleEntry(RuleDefinition definition) => Entry(definition.Name, RuleDescription(definition));
 
     public static XDocument Feed(IEnumerable<XDocument> entries) =>
-        new(new XElement(Atom + "feed", entries.Select(entry => entry.Root)));
+        // The Azure SDK rejects a self-closing <feed /> as "not found". Azure
+        // Service Bus feeds contain metadata even when there are no entries.
+        new(new XElement(Atom + "feed",
+            new XElement(Atom + "title", "Service Bus entities"),
+            entries.Select(entry => entry.Root)));
 
     public static XDocument Error(string code, string detail) =>
         new(new XElement(ServiceBus + "Error",

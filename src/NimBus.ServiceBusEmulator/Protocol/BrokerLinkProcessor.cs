@@ -83,6 +83,12 @@ internal sealed class BrokerLinkProcessor(
         var owner = Guid.NewGuid().ToString("N");
         object? filterValue = null;
         var isSessionReceiver = source.FilterSet?.TryGetValue(SessionFilter, out filterValue) == true;
+        if (isSessionReceiver && !broker.GetSubscriptionDefinition(topicName, subscriptionName).RequiresSession)
+        {
+            context.Complete(NotAllowed($"Subscription '{address}' does not require sessions."));
+            return;
+        }
+
         string? sessionId = null;
         if (isSessionReceiver)
         {
@@ -431,6 +437,11 @@ internal sealed class BrokerLinkProcessor(
                     : "com.microsoft:session-lock-lost";
                 dispositionContext.Complete(new Error(condition) { Description = exception.Message });
             }
+            catch (NotSupportedException exception)
+            {
+                EmulatorDiagnostics.Write("Disposition rejected", $"lock={lockToken} {exception.Message}");
+                dispositionContext.Complete(new Error("amqp:not-implemented") { Description = exception.Message });
+            }
         }
 
         public void ReleaseSession()
@@ -699,20 +710,14 @@ internal sealed class BrokerLinkProcessor(
         [UnsafeAccessor(UnsafeAccessorKind.Constructor)]
         private static extern DispositionContext NewDispositionContext(ListenerLink link, Message message, DeliveryState state, bool settled);
 
-        private readonly object _gate = new();
-        private bool _receiving;
+        private readonly ReceivePumpGate _pumpGate = new();
 
         public override void OnFlow(FlowContext flowContext)
         {
             EmulatorDiagnostics.Write("Flow", $"messages={flowContext.Messages} credit={GetCredit(link)}");
-            lock (_gate)
+            if (!_pumpGate.TryStart(GetCredit(link) > 0))
             {
-                if (_receiving || GetCredit(link) == 0)
-                {
-                    return;
-                }
-
-                _receiving = true;
+                return;
             }
 
             PumpAsync().Observe();
@@ -741,14 +746,14 @@ internal sealed class BrokerLinkProcessor(
                 ReceiveContext? context = await source.GetMessageAsync(link).ConfigureAwait(false);
                 if (context is null)
                 {
-                    lock (_gate)
-                    {
-                        _receiving = false;
-                    }
-
                     if (link.IsDraining)
                     {
                         link.CompleteDrain();
+                    }
+
+                    if (_pumpGate.Complete(!link.IsClosed, () => GetCredit(link) > 0))
+                    {
+                        PumpAsync().Observe();
                     }
 
                     return;
@@ -765,19 +770,62 @@ internal sealed class BrokerLinkProcessor(
                 {
                     EmulatorDiagnostics.Write("Send failed", exception.Message);
                     source.DisposeMessage(context, NewDispositionContext(link, context.Message, new Released(), true));
-                    lock (_gate)
+                    if (_pumpGate.Complete(!link.IsClosed, () => GetCredit(link) > 0))
                     {
-                        _receiving = false;
+                        PumpAsync().Observe();
                     }
 
                     return;
                 }
             }
 
-            lock (_gate)
+            _pumpGate.Complete(linkOpen: false, static () => false);
+        }
+    }
+}
+
+internal sealed class ReceivePumpGate
+{
+    private readonly object _gate = new();
+    private bool _receiving;
+    private bool _restartRequested;
+
+    public bool TryStart(bool hasCredit)
+    {
+        lock (_gate)
+        {
+            if (_receiving)
             {
-                _receiving = false;
+                _restartRequested |= hasCredit;
+                return false;
             }
+
+            if (!hasCredit)
+            {
+                return false;
+            }
+
+            _receiving = true;
+            _restartRequested = false;
+            return true;
+        }
+    }
+
+    public bool Complete(bool linkOpen, Func<bool> hasCredit)
+    {
+        ArgumentNullException.ThrowIfNull(hasCredit);
+        lock (_gate)
+        {
+            _receiving = false;
+            if (!linkOpen || (!_restartRequested && !hasCredit()))
+            {
+                _restartRequested = false;
+                return false;
+            }
+
+            _receiving = true;
+            _restartRequested = false;
+            return true;
         }
     }
 }

@@ -18,6 +18,150 @@ internal sealed class BrokerNamespace
 
     public event Action<string, string>? SubscriptionCreated;
 
+    public TopologySnapshot GetTopologySnapshot()
+    {
+        lock (_gate)
+        {
+            return GetTopologySnapshotCore();
+        }
+    }
+
+    public PreparedTopologyMutation PrepareCreateTopic(TopicDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        lock (_gate)
+        {
+            if (_topics.ContainsKey(definition.Name))
+            {
+                throw new InvalidOperationException($"Topic '{definition.Name}' already exists.");
+            }
+
+            var state = new TopicState(definition, _options.TimeProvider.GetUtcNow());
+            var snapshot = GetTopologySnapshotCore();
+            var candidate = snapshot with { Topics = [.. snapshot.Topics, new TopologyTopic(definition, [])] };
+            return new PreparedTopologyMutation(candidate, () => ApplyCreateTopic(definition.Name, state));
+        }
+    }
+
+    public PreparedTopologyMutation PrepareUpdateTopic(TopicDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        lock (_gate)
+        {
+            var state = GetTopic(definition.Name);
+            var candidate = ReplaceTopicDefinition(GetTopologySnapshotCore(), definition);
+            return new PreparedTopologyMutation(candidate, () => ApplyUpdateTopic(state, definition));
+        }
+    }
+
+    public PreparedTopologyMutation PrepareDeleteTopic(string topicName)
+    {
+        lock (_gate)
+        {
+            GetTopic(topicName);
+            var snapshot = GetTopologySnapshotCore();
+            var candidate = snapshot with
+            {
+                Topics = snapshot.Topics.Where(topic => !NamesEqual(topic.Definition.Name, topicName)).ToArray(),
+            };
+            return new PreparedTopologyMutation(candidate, () => DeleteTopic(topicName));
+        }
+    }
+
+    public PreparedTopologyMutation PrepareCreateSubscription(string topicName, SubscriptionDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        lock (_gate)
+        {
+            var topic = GetTopic(topicName);
+            if (topic.Subscriptions.ContainsKey(definition.Name))
+            {
+                throw new InvalidOperationException($"Subscription '{topicName}/{definition.Name}' already exists.");
+            }
+
+            var state = new SubscriptionState(definition, _options.TimeProvider.GetUtcNow());
+            var candidate = ReplaceTopicSubscriptions(
+                GetTopologySnapshotCore(),
+                topicName,
+                subscriptions => [.. subscriptions, ToTopologySubscription(state)]);
+            return new PreparedTopologyMutation(candidate, () => ApplyCreateSubscription(topicName, state));
+        }
+    }
+
+    public PreparedTopologyMutation PrepareUpdateSubscription(string topicName, SubscriptionDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        lock (_gate)
+        {
+            var state = GetSubscription(topicName, definition.Name);
+            var candidate = ReplaceTopicSubscriptions(
+                GetTopologySnapshotCore(),
+                topicName,
+                subscriptions => subscriptions.Select(subscription =>
+                    NamesEqual(subscription.Definition.Name, definition.Name)
+                        ? subscription with { Definition = definition }
+                        : subscription).ToArray());
+            return new PreparedTopologyMutation(candidate, () => ApplyUpdateSubscription(topicName, state, definition));
+        }
+    }
+
+    public PreparedTopologyMutation PrepareDeleteSubscription(string topicName, string subscriptionName)
+    {
+        lock (_gate)
+        {
+            GetSubscription(topicName, subscriptionName);
+            var candidate = ReplaceTopicSubscriptions(
+                GetTopologySnapshotCore(),
+                topicName,
+                subscriptions => subscriptions.Where(subscription =>
+                    !NamesEqual(subscription.Definition.Name, subscriptionName)).ToArray());
+            return new PreparedTopologyMutation(candidate, () => DeleteSubscription(topicName, subscriptionName));
+        }
+    }
+
+    public PreparedTopologyMutation PrepareCreateRule(
+        string topicName,
+        string subscriptionName,
+        RuleDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        lock (_gate)
+        {
+            var subscription = GetSubscription(topicName, subscriptionName);
+            if (subscription.Rules.Any(rule => NamesEqual(rule.Definition.Name, definition.Name)))
+            {
+                throw new InvalidOperationException($"Rule '{topicName}/{subscriptionName}/{definition.Name}' already exists.");
+            }
+
+            var state = new RuleState(definition);
+            var candidate = ReplaceSubscriptionRules(
+                GetTopologySnapshotCore(),
+                topicName,
+                subscriptionName,
+                rules => [.. rules, definition]);
+            return new PreparedTopologyMutation(candidate, () => ApplyCreateRule(topicName, subscription, state));
+        }
+    }
+
+    public PreparedTopologyMutation PrepareDeleteRule(string topicName, string subscriptionName, string ruleName)
+    {
+        lock (_gate)
+        {
+            var subscription = GetSubscription(topicName, subscriptionName);
+            if (!subscription.Rules.Any(rule => NamesEqual(rule.Definition.Name, ruleName)))
+            {
+                throw new KeyNotFoundException($"Rule '{topicName}/{subscriptionName}/{ruleName}' does not exist.");
+            }
+
+            var candidate = ReplaceSubscriptionRules(
+                GetTopologySnapshotCore(),
+                topicName,
+                subscriptionName,
+                rules => rules.Where(rule => !NamesEqual(rule.Name, ruleName)).ToArray());
+            return new PreparedTopologyMutation(candidate, () => DeleteRule(topicName, subscriptionName, ruleName));
+        }
+    }
+
     public void CreateTopic(TopicDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);
@@ -333,15 +477,6 @@ internal sealed class BrokerNamespace
             ProcessDueWorkCore();
             var subscription = GetSubscription(topicName, subscriptionName);
             if (!subscription.Definition.RequiresSession)
-            {
-                return null;
-            }
-
-            var materialized = subscription.Messages.Any(message =>
-                message.State is MessageState.Active or MessageState.Locked &&
-                string.Equals(message.Message.SessionId, sessionId, StringComparison.Ordinal)) ||
-                subscription.SessionState.ContainsKey(sessionId);
-            if (!materialized)
             {
                 return null;
             }
@@ -843,6 +978,7 @@ internal sealed class BrokerNamespace
     private void ProcessDueWorkCore()
     {
         var now = _options.TimeProvider.GetUtcNow();
+        var dueMessages = new List<ScheduledMessage>();
         for (var index = _scheduled.Count - 1; index >= 0; index--)
         {
             var scheduled = _scheduled[index];
@@ -852,6 +988,12 @@ internal sealed class BrokerNamespace
             }
 
             _scheduled.RemoveAt(index);
+            dueMessages.Add(scheduled);
+        }
+
+        for (var index = dueMessages.Count - 1; index >= 0; index--)
+        {
+            var scheduled = dueMessages[index];
             Enqueue(GetTopic(scheduled.TopicName), scheduled.Message, now);
         }
 
@@ -982,6 +1124,109 @@ internal sealed class BrokerNamespace
         var present = values.Where(value => value.HasValue).Select(value => value!.Value).ToArray();
         return present.Length == 0 ? null : present.Min();
     }
+
+    private TopologySnapshot GetTopologySnapshotCore() => new(
+        _topics.Values.Select(topic => new TopologyTopic(
+            topic.Definition,
+            topic.Subscriptions.Values.Select(ToTopologySubscription).ToArray())).ToArray());
+
+    private static TopologySubscription ToTopologySubscription(SubscriptionState subscription) => new(
+        subscription.Definition,
+        subscription.Rules.Select(rule => rule.Definition).ToArray());
+
+    private static TopologySnapshot ReplaceTopicDefinition(
+        TopologySnapshot snapshot,
+        TopicDefinition definition) => snapshot with
+    {
+        Topics = snapshot.Topics.Select(topic =>
+            NamesEqual(topic.Definition.Name, definition.Name)
+                ? topic with { Definition = definition }
+                : topic).ToArray(),
+    };
+
+    private static TopologySnapshot ReplaceTopicSubscriptions(
+        TopologySnapshot snapshot,
+        string topicName,
+        Func<IReadOnlyList<TopologySubscription>, IReadOnlyList<TopologySubscription>> replace) => snapshot with
+    {
+        Topics = snapshot.Topics.Select(topic =>
+            NamesEqual(topic.Definition.Name, topicName)
+                ? topic with { Subscriptions = replace(topic.Subscriptions) }
+                : topic).ToArray(),
+    };
+
+    private static TopologySnapshot ReplaceSubscriptionRules(
+        TopologySnapshot snapshot,
+        string topicName,
+        string subscriptionName,
+        Func<IReadOnlyList<RuleDefinition>, IReadOnlyList<RuleDefinition>> replace) =>
+        ReplaceTopicSubscriptions(
+            snapshot,
+            topicName,
+            subscriptions => subscriptions.Select(subscription =>
+                NamesEqual(subscription.Definition.Name, subscriptionName)
+                    ? subscription with { Rules = replace(subscription.Rules) }
+                    : subscription).ToArray());
+
+    private void ApplyCreateTopic(string topicName, TopicState state)
+    {
+        lock (_gate)
+        {
+            _topics.Add(topicName, state);
+            Log("PUT", topicName, "Create");
+            TopicCreated?.Invoke(topicName);
+        }
+    }
+
+    private void ApplyUpdateTopic(TopicState state, TopicDefinition definition)
+    {
+        lock (_gate)
+        {
+            state.Definition = definition;
+            state.UpdatedAt = _options.TimeProvider.GetUtcNow();
+            Log("PUT", definition.Name, "Update");
+        }
+    }
+
+    private void ApplyCreateSubscription(string topicName, SubscriptionState state)
+    {
+        lock (_gate)
+        {
+            GetTopic(topicName).Subscriptions.Add(state.Definition.Name, state);
+            Log("PUT", $"{topicName}/Subscriptions/{state.Definition.Name}", "Create");
+            SubscriptionCreated?.Invoke(topicName, state.Definition.Name);
+        }
+    }
+
+    private void ApplyUpdateSubscription(
+        string topicName,
+        SubscriptionState state,
+        SubscriptionDefinition definition)
+    {
+        lock (_gate)
+        {
+            state.Definition = definition;
+            state.UpdatedAt = _options.TimeProvider.GetUtcNow();
+            if (definition.Status == BrokerEntityStatus.Active && !string.IsNullOrEmpty(definition.ForwardTo))
+            {
+                ForwardPending(state);
+            }
+
+            Log("PUT", $"{topicName}/Subscriptions/{definition.Name}", "Update");
+        }
+    }
+
+    private void ApplyCreateRule(string topicName, SubscriptionState subscription, RuleState state)
+    {
+        lock (_gate)
+        {
+            subscription.Rules.Add(state);
+            Log("PUT", $"{topicName}/Subscriptions/{subscription.Definition.Name}/Rules/{state.Definition.Name}", "Create");
+        }
+    }
+
+    private static bool NamesEqual(string left, string right) =>
+        string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
 
     private sealed class TopicState(TopicDefinition definition, DateTimeOffset createdAt)
     {

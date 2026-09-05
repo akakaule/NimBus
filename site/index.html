@@ -1,1156 +1,219 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NimBus - The Operational Platform for Azure Service Bus</title>
-    <meta name="description" content="Session-ordered messaging with full lifecycle visibility, error recovery, and a management UI for Azure Service Bus.">
-    <style>
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        :root {
-            --bg-dark: #1E1E1E;
-            --bg-darker: #181818;
-            --bg-light: #F8FAFC;
-            --bg-white: #FFFFFF;
-            --blue: #0078D4;
-            --blue-light: #2B9AFF;
-            --blue-dark: #005A9E;
-            --text-primary: #1A1A2E;
-            --text-secondary: #4A5568;
-            --text-light: #E2E8F0;
-            --text-muted: #94A3B8;
-            --code-bg: #282C34;
-            --border: #E2E8F0;
-            --border-dark: #333;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.6;
-            color: var(--text-primary);
-            background: var(--bg-white);
-        }
-
-        .container { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
-
-        .sr-only {
-            position: absolute; width: 1px; height: 1px;
-            padding: 0; margin: -1px; overflow: hidden;
-            clip: rect(0,0,0,0); white-space: nowrap; border: 0;
-        }
-
-        /* ── Hero ── */
-        .hero {
-            background: var(--bg-dark);
-            color: var(--text-light);
-            padding: 80px 0 90px;
-            text-align: center;
-        }
-
-        .hero-banner {
-            max-width: 500px;
-            width: 100%;
-            height: auto;
-            margin-bottom: 28px;
-        }
-
-        .hero-subtitle {
-            font-size: 1.15rem;
-            color: var(--text-muted);
-            max-width: 680px;
-            margin: 0 auto 36px;
-            line-height: 1.7;
-        }
-
-        .hero-buttons { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
-
-        .btn {
-            display: inline-block;
-            padding: 13px 32px;
-            border-radius: 6px;
-            font-size: 1rem;
-            font-weight: 600;
-            text-decoration: none;
-            transition: all 0.2s;
-        }
-
-        .btn-primary {
-            background: var(--blue);
-            color: white;
-        }
-        .btn-primary:hover, .btn-primary:focus-visible { background: var(--blue-light); }
-
-        .btn-outline {
-            border: 1.5px solid var(--text-muted);
-            color: var(--text-light);
-        }
-        .btn-outline:hover, .btn-outline:focus-visible { border-color: var(--blue-light); color: var(--blue-light); }
-
-        :focus-visible { outline: 2px solid var(--blue-light); outline-offset: 2px; }
-
-        /* ── Sections ── */
-        .section { padding: 80px 0; }
-        .section-dark { background: var(--bg-dark); color: var(--text-light); }
-        .section-light { background: var(--bg-light); }
-        .section-white { background: var(--bg-white); }
-
-        .section-title {
-            font-size: 2rem;
-            font-weight: 700;
-            text-align: center;
-            margin-bottom: 16px;
-        }
-
-        .section-subtitle {
-            text-align: center;
-            color: var(--text-secondary);
-            max-width: 640px;
-            margin: 0 auto 48px;
-            font-size: 1.1rem;
-        }
-
-        .section-dark .section-subtitle { color: var(--text-muted); }
-
-        /* ── Demo video ── */
-        .video-frame {
-            position: relative;
-            max-width: 900px;
-            margin: 0 auto;
-            aspect-ratio: 16 / 9;
-            border-radius: 10px;
-            overflow: hidden;
-            background: #000;
-            border: 1px solid var(--border-dark);
-            box-shadow: 0 8px 40px rgba(0,0,0,0.35);
-        }
-
-        .video-frame iframe {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            border: 0;
-        }
-
-        .chapters {
-            max-width: 900px;
-            margin: 28px auto 0;
-            padding: 0;
-            list-style: none;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 4px 24px;
-        }
-
-        .chapters a {
-            display: flex;
-            gap: 12px;
-            align-items: baseline;
-            padding: 7px 10px;
-            border-radius: 6px;
-            color: var(--text-muted);
-            text-decoration: none;
-            font-size: 0.92rem;
-            transition: background 0.2s, color 0.2s;
-        }
-
-        .chapters a:hover, .chapters a:focus-visible {
-            background: rgba(255,255,255,0.05);
-            color: var(--text-light);
-        }
-
-        .chapters time {
-            flex: none;
-            color: var(--blue-light);
-            font-weight: 600;
-            font-variant-numeric: tabular-nums;
-        }
-
-        /* ── Problem ── */
-        .problem-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 24px;
-        }
-
-        .problem-card {
-            background: var(--bg-white);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 28px;
-        }
-
-        .problem-card h3 {
-            font-size: 1.05rem;
-            margin-bottom: 8px;
-            color: var(--text-primary);
-        }
-
-        .problem-card p {
-            color: var(--text-secondary);
-            font-size: 0.95rem;
-        }
-
-        .problem-icon {
-            font-size: 1.6rem;
-            margin-bottom: 12px;
-            display: block;
-        }
-
-        /* ── Pillars ── */
-        .pillar-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 32px;
-        }
-
-        .pillar-card {
-            background: var(--bg-darker);
-            border: 1px solid var(--border-dark);
-            border-radius: 12px;
-            padding: 36px;
-        }
-
-        .pillar-label {
-            font-size: 0.8rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            color: var(--blue);
-            margin-bottom: 12px;
-        }
-
-        .pillar-card h3 {
-            font-size: 1.3rem;
-            margin-bottom: 12px;
-            color: var(--text-light);
-        }
-
-        .pillar-card p {
-            color: var(--text-muted);
-            font-size: 0.95rem;
-            line-height: 1.7;
-        }
-
-        .pillar-list {
-            list-style: none;
-            margin-top: 16px;
-        }
-
-        .pillar-list li {
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            padding: 4px 0;
-        }
-
-        .pillar-list li::before {
-            content: "\2713";
-            color: var(--blue);
-            margin-right: 8px;
-            font-weight: 700;
-        }
-
-        /* ── Code ── */
-        .code-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 24px;
-        }
-
-        .code-block {
-            background: var(--code-bg);
-            border-radius: 10px;
-            overflow: hidden;
-        }
-
-        .code-header {
-            background: #21252B;
-            padding: 10px 16px;
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            font-weight: 600;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-            border-bottom: 1px solid #333;
-        }
-
-        .code-block pre {
-            padding: 20px;
-            overflow-x: auto;
-            font-size: 0.85rem;
-            line-height: 1.6;
-        }
-
-        .code-block code {
-            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-            color: #ABB2BF;
-        }
-
-        .kw { color: #C678DD; }
-        .ty { color: #E5C07B; }
-        .str { color: #98C379; }
-        .cm { color: #5C6370; font-style: italic; }
-        .fn { color: #61AFEF; }
-        .num { color: #D19A66; }
-        .at { color: #E06C75; }
-
-        /* ── Session Ordering ── */
-        .ordering-content {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 48px;
-            align-items: center;
-        }
-
-        .ordering-text h3 {
-            font-size: 1.3rem;
-            margin-bottom: 12px;
-        }
-
-        .ordering-text p {
-            color: var(--text-secondary);
-            margin-bottom: 16px;
-            line-height: 1.7;
-        }
-
-        .ordering-diagram {
-            background: var(--code-bg);
-            border-radius: 10px;
-            padding: 28px;
-            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-            font-size: 0.82rem;
-            line-height: 1.7;
-            color: #ABB2BF;
-            overflow-x: auto;
-        }
-
-        .ordering-diagram .label { color: var(--blue-light); font-weight: 700; }
-        .ordering-diagram .ok { color: #98C379; }
-        .ordering-diagram .err { color: #E06C75; }
-        .ordering-diagram .def { color: #E5C07B; }
-        .ordering-diagram .arrow { color: #5C6370; }
-
-        /* ── Screenshots ── */
-        .screenshot-item {
-            margin-bottom: 48px;
-        }
-
-        .screenshot-item:last-child { margin-bottom: 0; }
-
-        .screenshot-img {
-            width: 100%;
-            border-radius: 10px;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.15);
-            border: 1px solid var(--border);
-        }
-
-        .screenshot-caption {
-            margin-top: 16px;
-            display: flex;
-            gap: 16px;
-            align-items: flex-start;
-        }
-
-        .screenshot-number {
-            background: var(--blue);
-            color: white;
-            font-size: 0.8rem;
-            font-weight: 700;
-            min-width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-            margin-top: 2px;
-        }
-
-        .screenshot-text h3 {
-            font-size: 1.1rem;
-            margin-bottom: 4px;
-            color: var(--text-primary);
-        }
-
-        .screenshot-text p {
-            color: var(--text-secondary);
-            font-size: 0.95rem;
-            line-height: 1.6;
-        }
-
-        /* ── Architecture ── */
-        .arch-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            max-width: 900px;
-            margin: 0 auto;
-        }
-
-        .arch-item h4 {
-            color: var(--blue-light);
-            font-size: 0.95rem;
-            margin-bottom: 6px;
-        }
-
-        .arch-item p {
-            color: var(--text-muted);
-            font-size: 0.85rem;
-            line-height: 1.6;
-        }
-
-        /* ── Comparison ── */
-        .comparison-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.9rem;
-            margin: 0 auto;
-            background: var(--bg-white);
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-        }
-
-        .comparison-table th {
-            background: var(--bg-dark);
-            color: var(--text-light);
-            padding: 14px 16px;
-            text-align: left;
-            font-weight: 600;
-        }
-
-        .comparison-table th.highlight { color: var(--blue-light); }
-
-        .comparison-table td {
-            padding: 12px 16px;
-            border-bottom: 1px solid var(--border);
-            color: var(--text-secondary);
-        }
-
-        .comparison-table tr:last-child td { border-bottom: none; }
-        .comparison-table td:first-child { font-weight: 600; color: var(--text-primary); }
-        .comparison-table td.yes { color: var(--blue); font-weight: 600; }
-        .comparison-table td.no { color: var(--text-muted); }
-        .comparison-table td.partial { color: #D97706; }
-
-        /* ── Production ── */
-        .production-content { text-align: center; }
-
-        .production-stats {
-            display: flex;
-            justify-content: center;
-            gap: 48px;
-            flex-wrap: wrap;
-            margin-bottom: 40px;
-        }
-
-        .stat { text-align: center; }
-
-        .stat-number {
-            font-size: 2.4rem;
-            font-weight: 800;
-            background: linear-gradient(90deg, var(--blue), var(--blue-light));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .stat-label {
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            margin-top: 4px;
-        }
-
-        .badge-row {
-            display: flex;
-            gap: 12px;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin-top: 32px;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            border: 1px solid var(--border-dark);
-            color: var(--text-muted);
-        }
-
-        /* ── Footer ── */
-        .footer {
-            background: var(--bg-darker);
-            color: var(--text-muted);
-            padding: 48px 0 32px;
-            border-top: 1px solid var(--border-dark);
-        }
-
-        .footer-grid {
-            display: grid;
-            grid-template-columns: 2fr 1fr 1fr;
-            gap: 40px;
-        }
-
-        .footer h4 {
-            color: var(--text-light);
-            font-size: 0.9rem;
-            margin-bottom: 16px;
-        }
-
-        .footer p { font-size: 0.85rem; line-height: 1.7; }
-
-        .footer a {
-            color: var(--text-muted);
-            text-decoration: none;
-            font-size: 0.85rem;
-            display: block;
-            padding: 3px 0;
-            transition: color 0.2s;
-        }
-
-        .footer a:hover { color: var(--blue-light); }
-
-        .footer-bottom {
-            margin-top: 36px;
-            padding-top: 24px;
-            border-top: 1px solid var(--border-dark);
-            text-align: center;
-            font-size: 0.8rem;
-        }
-
-        /* ── Responsive ── */
-        @media (max-width: 960px) {
-            .code-grid { grid-template-columns: 1fr; }
-        }
-        @media (max-width: 768px) {
-            .hero { padding: 48px 0 56px; }
-            .hero-banner { max-width: 320px; }
-            .hero-subtitle { font-size: 1rem; }
-            .section { padding: 56px 0; }
-            .section-title { font-size: 1.6rem; }
-            .pillar-grid { grid-template-columns: 1fr; }
-            .ordering-content { grid-template-columns: 1fr; }
-            .footer-grid { grid-template-columns: 1fr; gap: 28px; }
-            .production-stats { gap: 28px; }
-            .code-grid { grid-template-columns: 1fr; }
-        }
-    </style>
-</head>
-<body>
-
-<!-- ── Hero ── -->
-<section class="hero">
-    <div class="container">
-        <h1 class="sr-only">NimBus — The Operational Platform for Azure Service Bus</h1>
-        <img src="banner.png" alt="NimBus" class="hero-banner">
-        <p class="hero-subtitle">
-            The operational platform for Azure Service Bus &mdash; session-ordered messaging
-            with full lifecycle visibility, error recovery, and a management UI.
-        </p>
-        <div class="hero-buttons">
-            <a href="getting-started.html" class="btn btn-primary">Get Started</a>
-            <a href="platform.html" class="btn btn-outline">How It Works</a>
-            <a href="features.html" class="btn btn-outline">Features</a>
-            <a href="#demo-video" class="btn btn-outline">▶ Watch the Demo</a>
-            <a href="https://github.com/akakaule/NimBus" class="btn btn-outline">View on GitHub</a>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NimBus — Ordered integrations. Visible recovery.</title>
+    <meta
+      name="description"
+      content="Connect business systems with Azure Service Bus, ordered processing, message history, and an operator console for recovery."
+    />
+    <link rel="stylesheet" href="overview.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <nav aria-label="Main navigation">
+      <div class="wrap">
+        <a class="brand" href="./">NimBus</a>
+        <div class="links">
+          <a href="platform.html">How it works</a
+          ><a href="features.html">Features</a
+          ><a href="getting-started.html">Try locally</a
+          ><a href="https://github.com/akakaule/NimBus">GitHub</a>
         </div>
-    </div>
-</section>
-
-<!-- ── Demo video ── -->
-<section class="section section-dark" id="demo-video" style="background: var(--bg-darker); padding-top: 56px;">
-    <div class="container">
-        <h2 class="section-title" style="color: var(--text-light);">Watch it work</h2>
-        <p class="section-subtitle">
-            <em>The life of one customer account</em> &mdash; eight minutes, one live system, no slides.
-            A CRM and an ERP round-trip an account, the ERP falls over, an operator repairs it from a
-            browser, and a sixty-second external import keeps its session in order while it waits.
-        </p>
-        <div class="video-frame">
-            <iframe src="https://www.youtube-nocookie.com/embed/jZ99gbYZLqU"
-                    title="NimBus demo — the life of one customer account"
-                    loading="lazy"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowfullscreen></iframe>
+      </div>
+    </nav>
+    <main id="main">
+      <header>
+        <div class="wrap">
+          <div class="eyebrow">Open-source .NET integration platform</div>
+          <h1>Keep integrations in order.<br />Recover when they fail.</h1>
+          <p>
+            NimBus connects business systems on Azure Service Bus, tracks
+            message processing, and gives operators a web console to investigate
+            failures and resume blocked work.
+          </p>
+          <p>
+            For teams integrating CRM, ERP, billing, and other systems where the
+            next message depends on the last.
+          </p>
+          <div class="actions">
+            <a class="button" href="getting-started.html">Try locally</a
+            ><a class="button secondary" href="#demo-video">Watch the demo</a>
+          </div>
         </div>
-        <ul class="chapters">
-            <li><a href="https://www.youtube.com/watch?v=jZ99gbYZLqU&amp;t=0s" target="_blank" rel="noopener"><time>0:00</time><span>What NimBus is, and what follows</span></a></li>
-            <li><a href="https://www.youtube.com/watch?v=jZ99gbYZLqU&amp;t=68s" target="_blank" rel="noopener"><time>1:08</time><span>Two systems, one bus &mdash; the happy path</span></a></li>
-            <li><a href="https://www.youtube.com/watch?v=jZ99gbYZLqU&amp;t=153s" target="_blank" rel="noopener"><time>2:33</time><span>Failed head, deferred siblings, one-click resubmit</span></a></li>
-            <li><a href="https://www.youtube.com/watch?v=jZ99gbYZLqU&amp;t=260s" target="_blank" rel="noopener"><time>4:20</time><span>A slow external system: pending handoff</span></a></li>
-            <li><a href="https://www.youtube.com/watch?v=jZ99gbYZLqU&amp;t=370s" target="_blank" rel="noopener"><time>6:10</time><span>Beyond fire-and-forget: request/reply and commands</span></a></li>
-            <li><a href="https://www.youtube.com/watch?v=jZ99gbYZLqU&amp;t=436s" target="_blank" rel="noopener"><time>7:16</time><span>A partner with zero NimBus code</span></a></li>
-        </ul>
-    </div>
-</section>
-
-<!-- ── Problem ── -->
-<section class="section section-light">
-    <div class="container">
-        <h2 class="section-title">You chose Azure Service Bus. Now what?</h2>
-        <p class="section-subtitle">
-            Service Bus gives you the transport. NimBus gives you everything else.
-        </p>
-        <div class="problem-grid">
-            <div class="problem-card">
-                <span class="problem-icon">?</span>
-                <h3>No message visibility</h3>
-                <p>Messages go in, maybe come out. No audit trail, no lifecycle tracking, no way to see what happened to a specific message without digging through logs.</p>
-            </div>
-            <div class="problem-card">
-                <span class="problem-icon">!</span>
-                <h3>Manual error recovery</h3>
-                <p>Dead-lettered messages pile up. Reprocessing means writing scripts, peeking at queues, and hoping you don't make it worse. There's no "resubmit" button.</p>
-            </div>
-            <div class="problem-card">
-                <span class="problem-icon">#</span>
-                <h3>No ordering guarantees</h3>
-                <p>Service Bus sessions exist, but implementing FIFO ordering with failure recovery, deferral, and replay is months of custom engineering.</p>
-            </div>
-            <div class="problem-card">
-                <span class="problem-icon">&gt;</span>
-                <h3>Building from scratch</h3>
-                <p>Every team writes their own SDK, retry logic, health checks, and monitoring. The same problems solved differently across every project.</p>
-            </div>
+      </header>
+      <section>
+        <div class="wrap">
+          <h2>A failed payment shouldn’t let shipping run ahead.</h2>
+          <p class="intro">
+            With a shared order session at the receiving endpoint, NimBus
+            coordinates what happens after a processing failure.
+          </p>
+          <ol class="steps">
+            <li>
+              <h3>Keep later work waiting</h3>
+              <p>
+                If payment processing blocks the session, later messages in that
+                session are deferred. Other sessions can continue.
+              </p>
+            </li>
+            <li>
+              <h3>Find and resolve the cause</h3>
+              <p>
+                Inspect the failed message and its processing history in the
+                WebApp. Repair the underlying problem, then resubmit, or
+                deliberately skip the failed work.
+              </p>
+            </li>
+            <li>
+              <h3>Resume in order</h3>
+              <p>
+                Once recovery unblocks the session, its deferred messages replay
+                in sequence.
+              </p>
+            </li>
+          </ol>
+          <figure>
+            <img
+              src="screenshots/event%20details.png"
+              alt="NimBus event details showing message information and operator recovery actions"
+              loading="lazy"
+            />
+            <figcaption>
+              Inspect the message, understand its failure, and recover from the
+              same operator console.
+            </figcaption>
+          </figure>
         </div>
-    </div>
-</section>
-
-<!-- ── Three Pillars ── -->
-<section class="section section-dark">
-    <div class="container">
-        <h2 class="section-title" style="color: var(--text-light);">Three pillars. One platform.</h2>
-        <p class="section-subtitle">NimBus wraps Azure Service Bus with a complete operational model.</p>
-        <div class="pillar-grid">
-            <div class="pillar-card">
-                <div class="pillar-label">Simplified</div>
-                <h3>Ship events, not infrastructure</h3>
-                <p>A clean SDK that handles the hard parts so your team focuses on business logic.</p>
-                <ul class="pillar-list">
-                    <li>Publish in 3 lines of code</li>
-                    <li>Standard DI integration</li>
-                    <li>Middleware pipeline (Logging, Metrics, Validation)</li>
-                    <li>Configurable retry policies</li>
-                    <li>Transactional outbox for reliable delivery</li>
-                    <li>In-memory transport for testing</li>
-                </ul>
-            </div>
-            <div class="pillar-card">
-                <div class="pillar-label">Observed</div>
-                <h3>See every message's journey</h3>
-                <p>Full lifecycle visibility from publish to completion, failure, or dead-letter.</p>
-                <ul class="pillar-list">
-                    <li>OpenTelemetry distributed tracing</li>
-                    <li>Metrics dashboard with KPIs</li>
-                    <li>Message flow timeline visualization</li>
-                    <li>Failed message insights with error patterns</li>
-                    <li>Centralized Resolver with Cosmos DB audit trail</li>
-                    <li>Health checks for Service Bus, Cosmos, Resolver</li>
-                </ul>
-            </div>
-            <div class="pillar-card">
-                <div class="pillar-label">Controlled</div>
-                <h3>Operate without fear</h3>
-                <p>A management UI and CLI that let your ops team act, not just observe.</p>
-                <ul class="pillar-list">
-                    <li>WebApp with resubmit, skip, and dead-letter management</li>
-                    <li>Session blocking with automatic deferral and replay</li>
-                    <li>Bulk operations (purge, reprocess, delete)</li>
-                    <li>CLI for topology provisioning and deployment</li>
-                    <li>Audit log with comments per event</li>
-                    <li>AsyncAPI and EventCatalog export</li>
-                </ul>
-            </div>
+      </section>
+      <section class="soft">
+        <div class="wrap">
+          <h2>What NimBus adds to Azure Service Bus</h2>
+          <p class="intro">
+            Service Bus provides transport and sessions. NimBus brings
+            application processing, recovery, and operations together.
+          </p>
+          <div class="grid">
+            <article class="card">
+              <h3>Ordered recovery</h3>
+              <p>
+                Session blocking, deferral, configured retries, and
+                operator-driven replay coordinate the failure path.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Message history</h3>
+              <p>
+                The Resolver records processing outcomes so operators can
+                investigate failures across endpoints.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Tools for your team</h3>
+              <p>
+                A typed .NET SDK, declarative topology, deployment CLI, and
+                management WebApp support developers and operators.
+              </p>
+            </article>
+          </div>
+          <p style="margin-top: 24px">
+            <a href="features.html">Explore the feature catalog →</a>
+          </p>
         </div>
-    </div>
-</section>
-
-<!-- ── Code Examples ── -->
-<section class="section section-white">
-    <div class="container">
-        <h2 class="section-title">Developer experience that stays out of your way</h2>
-        <p class="section-subtitle">
-            Define events as clean DTOs. Publish with one line. Handle with standard DI.
-        </p>
-        <div class="code-grid">
-            <div class="code-block">
-                <div class="code-header">Define an Event</div>
-                <pre><code>[<span class="fn">Description</span>(<span class="str">"Customer places a new order."</span>)]
-[<span class="fn">SessionKey</span>(<span class="kw">nameof</span>(OrderId))]
-<span class="kw">public class</span> <span class="ty">OrderPlaced</span> : <span class="ty">Event</span>
-{
-    [<span class="fn">Required</span>]
-    <span class="kw">public</span> <span class="ty">Guid</span> OrderId { <span class="kw">get</span>; <span class="kw">set</span>; }
-
-    [<span class="fn">Required</span>]
-    <span class="kw">public</span> <span class="ty">Guid</span> CustomerId { <span class="kw">get</span>; <span class="kw">set</span>; }
-
-    <span class="kw">public</span> <span class="ty">decimal</span> TotalAmount { <span class="kw">get</span>; <span class="kw">set</span>; }
-}</code></pre>
-            </div>
-            <div class="code-block">
-                <div class="code-header">Write a Handler</div>
-                <pre><code><span class="kw">public class</span> <span class="ty">OrderPlacedHandler</span>
-    : <span class="ty">IEventHandler</span>&lt;<span class="ty">OrderPlaced</span>&gt;
-{
-    <span class="kw">public</span> <span class="ty">Task</span> <span class="fn">Handle</span>(
-        <span class="ty">OrderPlaced</span> message,
-        <span class="ty">IEventHandlerContext</span> context,
-        <span class="ty">CancellationToken</span> ct)
-    {
-        <span class="cm">// Your business logic here.</span>
-        <span class="cm">// NimBus handles retries, tracing,</span>
-        <span class="cm">// dead-lettering, and session ordering.</span>
-        <span class="kw">return</span> <span class="ty">Task</span>.CompletedTask;
-    }
-}</code></pre>
-            </div>
-            <div class="code-block">
-                <div class="code-header">Publish</div>
-                <pre><code><span class="cm">// Two lines. That's it.</span>
-<span class="kw">var</span> order = <span class="kw">new</span> <span class="ty">OrderPlaced</span>
-{
-    OrderId = <span class="ty">Guid</span>.<span class="fn">NewGuid</span>(),
-    CustomerId = customerId,
-    TotalAmount = <span class="num">249.95m</span>
-};
-
-<span class="kw">await</span> publisher.<span class="fn">Publish</span>(order);</code></pre>
-            </div>
-            <div class="code-block">
-                <div class="code-header">Wire Up with DI</div>
-                <pre><code><span class="cm">// Publisher</span>
-services.<span class="fn">AddNimBusPublisher</span>(<span class="str">"StorefrontEndpoint"</span>);
-
-<span class="cm">// Subscriber with middleware</span>
-services.<span class="fn">AddNimBus</span>(nimbus => {
-    nimbus.<span class="fn">AddPipelineBehavior</span>&lt;<span class="ty">LoggingMiddleware</span>&gt;();
-    nimbus.<span class="fn">AddPipelineBehavior</span>&lt;<span class="ty">MetricsMiddleware</span>&gt;();
-});
-
-services.<span class="fn">AddNimBusSubscriber</span>(<span class="str">"BillingEndpoint"</span>, sub => {
-    sub.<span class="fn">AddHandler</span>&lt;<span class="ty">OrderPlaced</span>, <span class="ty">OrderPlacedHandler</span>&gt;();
-});</code></pre>
-            </div>
+      </section>
+      <section id="demo-video">
+        <div class="wrap">
+          <h2>Watch a CRM and ERP fail—and recover.</h2>
+          <p class="intro">
+            An eight-minute walkthrough follows one customer account between two
+            systems, through a failure, and back to processing after operator
+            recovery.
+          </p>
+          <div class="video">
+            <iframe
+              src="https://www.youtube-nocookie.com/embed/jZ99gbYZLqU"
+              title="NimBus demo: the life of one customer account"
+              loading="lazy"
+              allow="
+                accelerometer;
+                autoplay;
+                clipboard-write;
+                encrypted-media;
+                gyroscope;
+                picture-in-picture;
+                web-share;
+              "
+              allowfullscreen
+            ></iframe>
+          </div>
+          <p style="margin-top: 20px">
+            <a href="https://www.youtube.com/watch?v=jZ99gbYZLqU&amp;t=153s"
+              >Jump to failure and recovery (2:33)</a
+            >
+            · <a href="demo/">Explore the interactive simulation</a>
+          </p>
         </div>
-    </div>
-</section>
-
-<!-- ── Session Ordering ── -->
-<section class="section section-light">
-    <div class="container">
-        <h2 class="section-title">Session-ordered messaging, done for you</h2>
-        <p class="section-subtitle">
-            FIFO ordering per entity with automatic failure recovery. The hardest problem in messaging, solved.
-        </p>
-        <div class="ordering-content">
-            <div class="ordering-text">
-                <h3>How it works</h3>
-                <p>
-                    Every event declares its ordering key via <code>[SessionKey]</code>.
-                    Messages with the same session ID are processed strictly in order.
-                </p>
-                <p>
-                    When a handler fails, NimBus <strong>blocks the session</strong> &mdash;
-                    subsequent messages are automatically deferred. No messages are lost, no ordering is violated.
-                </p>
-                <p>
-                    After recovery (resubmit or skip via the WebApp), deferred messages
-                    are <strong>replayed in the original FIFO order</strong>. Other sessions
-                    continue processing in parallel, unaffected.
-                </p>
-                <h3 style="margin-top: 24px;">Why this matters</h3>
-                <p>
-                    Without session ordering, a payment confirmation can be processed before the order creation.
-                    A retry can execute while the original is still being handled. NimBus prevents these
-                    ordering violations at the platform level &mdash; your handlers don't need to worry about it.
-                </p>
-            </div>
-            <div class="ordering-diagram">
-<span class="label">Session: Order-42</span>
-
-<span class="arrow">1.</span> <span class="ok">OrderPlaced</span>       <span class="arrow">&rarr;</span> <span class="ok">Handled</span>
-<span class="arrow">2.</span> <span class="err">PaymentCaptured</span>  <span class="arrow">&rarr;</span> <span class="err">Failed!</span>
-   <span class="arrow">&boxur;&mdash;</span> <span class="err">Session BLOCKED</span>
-
-<span class="arrow">3.</span> <span class="def">ShipmentDispatched</span> <span class="arrow">&rarr;</span> <span class="def">Deferred</span>
-<span class="arrow">4.</span> <span class="def">CustomerNotified</span>  <span class="arrow">&rarr;</span> <span class="def">Deferred</span>
-
-   <span class="arrow">&boxur;&mdash;</span> <span class="ok">Ops: Resubmit via WebApp</span>
-
-<span class="arrow">2.</span> <span class="ok">PaymentCaptured</span>  <span class="arrow">&rarr;</span> <span class="ok">Handled</span>
-   <span class="arrow">&boxur;&mdash;</span> <span class="ok">Session UNBLOCKED</span>
-
-<span class="arrow">3.</span> <span class="ok">ShipmentDispatched</span> <span class="arrow">&rarr;</span> <span class="ok">Replayed</span>
-<span class="arrow">4.</span> <span class="ok">CustomerNotified</span>  <span class="arrow">&rarr;</span> <span class="ok">Replayed</span>
-
-<span class="label">Other sessions: unaffected, processing in parallel</span>
-            </div>
+      </section>
+      <section class="soft">
+        <div class="wrap">
+          <h2>Your adapters. Your environment.</h2>
+          <p class="intro">
+            Write adapters that publish business events and handle incoming
+            events. Deploy NimBus alongside your applications in your own
+            environment.
+          </p>
+          <div
+            class="flow"
+            aria-label="Publishers send through Azure Service Bus to receiving adapters"
+          >
+            <span>Publishing adapters</span><b aria-hidden="true">→</b
+            ><span>Azure Service Bus</span><b aria-hidden="true">→</b
+            ><span>Receiving adapters</span>
+          </div>
+          <p>
+            The Resolver records processing outcomes in SQL Server or Cosmos DB.
+            The WebApp reads that history and provides recovery actions. Workers
+            and Azure Functions can host your handlers; the CLI provisions
+            topology and deploys platform services.
+          </p>
+          <p class="intro">
+            Ordering is scoped to a session at a receiving endpoint.
+            Applications should keep handlers idempotent; optional outbox and
+            inbox features address specific delivery and redelivery risks.
+          </p>
+          <a href="platform.html">How the platform works →</a>
         </div>
-    </div>
-</section>
-
-<!-- ── Screenshots ── -->
-<section class="section section-dark">
-    <div class="container">
-        <h2 class="section-title" style="color: var(--text-light);">See it in action</h2>
-        <p class="section-subtitle">The NimBus Management WebApp gives your operations team full control.</p>
-
-        <div class="screenshot-item">
-            <img src="screenshots/endpoints.png" alt="Endpoints overview" class="screenshot-img" loading="lazy">
-            <div class="screenshot-caption">
-                <span class="screenshot-number">1</span>
-                <div class="screenshot-text">
-                    <h3 style="color: var(--text-light);">Endpoints Overview</h3>
-                    <p style="color: var(--text-muted);">Every endpoint on one row with live counts of failed, deferred, and pending messages, plus a status dot that turns green or red so you know which ones need attention without reading a number.</p>
-                </div>
-            </div>
+      </section>
+      <section>
+        <div class="wrap">
+          <h2>Try the full workflow locally.</h2>
+          <p class="intro">
+            The CRM/ERP sample runs with the NimBus Service Bus emulator and SQL
+            Server. No Azure account is needed for the default configuration.
+            NimBus is MIT-licensed; production infrastructure runs in your own
+            environment.
+          </p>
+          <div class="actions">
+            <a class="button" href="getting-started.html"
+              >Run the local sample</a
+            >
+          </div>
         </div>
-
-        <div class="screenshot-item">
-            <img src="screenshots/endpoint details.png" alt="Endpoint details with KPI stat tiles, filter row, and badge status column" class="screenshot-img" loading="lazy">
-            <div class="screenshot-caption">
-                <span class="screenshot-number">2</span>
-                <div class="screenshot-text">
-                    <h3 style="color: var(--text-light);">Endpoint Details</h3>
-                    <p style="color: var(--text-muted);">KPI tiles at the top summarise Completed / Deferred / Failed / Pending for the result set, so you start with the operator's first question — "how is this endpoint doing?" — before scanning rows. Filter by status, event type, event ID, or session ID; the status column uses coloured dot-badges so green/amber/red is pre-attentive. Resubmit, skip, or reprocess each row inline.</p>
-                </div>
-            </div>
+      </section>
+    </main>
+    <footer>
+      <div class="wrap">
+        <span>NimBus · Open-source .NET integration on Azure Service Bus</span>
+        <div>
+          <a
+            href="https://github.com/akakaule/NimBus/blob/master/docs/deployment.md"
+            >Deploy to Azure</a
+          ><a href="https://github.com/akakaule/NimBus/blob/master/LICENSE"
+            >MIT License</a
+          >
         </div>
-
-        <div class="screenshot-item">
-            <img src="screenshots/event details.png" alt="Event details with a timing bar, property list, and syntax-highlighted payload" class="screenshot-img" loading="lazy">
-            <div class="screenshot-caption">
-                <span class="screenshot-number">3</span>
-                <div class="screenshot-text">
-                    <h3 style="color: var(--text-light);">Event Details &amp; Error Recovery</h3>
-                    <p style="color: var(--text-muted);">A one-line timing bar breaks down queue · processing · ack so slow events are obvious without reading three rows. The property list pairs every identifier and field with click-to-copy values, the failure callout surfaces the exception verbatim, and the syntax-highlighted JSON payload makes GUID values clickable jumps to other pages. Resubmit, resubmit with changes, skip, or delete from the same toolbar.</p>
-                </div>
-            </div>
-        </div>
-
-        <div class="screenshot-item">
-            <img src="screenshots/metrics.png" alt="Metrics dashboard with KPI tiles, stacked area chart, and per-endpoint bars" class="screenshot-img" loading="lazy">
-            <div class="screenshot-caption">
-                <span class="screenshot-number">4</span>
-                <div class="screenshot-text">
-                    <h3 style="color: var(--text-light);">Metrics Dashboard</h3>
-                    <p style="color: var(--text-muted);">Total messages, total failed, and failure-rate tiles tint themselves green / amber / red depending on what they're showing. The activity-over-time area chart layers Failed under Handled under Published on a shared axis, so spikes correlate at a glance. Per-endpoint stacked bars decompose throughput by event type below.</p>
-                </div>
-            </div>
-        </div>
-
-        <div class="screenshot-item">
-            <img src="screenshots/admin operations.png" alt="Admin operations grouped by blast radius — Recovery, Cleanup, Infrastructure, Danger Zone" class="screenshot-img" loading="lazy">
-            <div class="screenshot-caption">
-                <span class="screenshot-number">5</span>
-                <div class="screenshot-text">
-                    <h3 style="color: var(--text-light);">Admin Operations</h3>
-                    <p style="color: var(--text-muted);">Bulk and per-session operations grouped by blast radius — Recovery (safe, reversible) · Cleanup (changes state) · Infrastructure (topology / subscriptions) · Danger Zone (irreversible, audit-logged) — each marked with a colour rail and a one-line caption. Destructive operations require typing the endpoint name to confirm, so a misclick can't purge a session.</p>
-                </div>
-            </div>
-        </div>
-
-        <div class="screenshot-item">
-            <img src="screenshots/failed message insights.png" alt="Failed message insights with error-pattern bar chart and grouped error categories" class="screenshot-img" loading="lazy">
-            <div class="screenshot-caption">
-                <span class="screenshot-number">6</span>
-                <div class="screenshot-text">
-                    <h3 style="color: var(--text-light);">Failed Message Insights</h3>
-                    <p style="color: var(--text-muted);">Failures are normalised into error patterns and ranked by frequency. Each category lists the endpoints and event types it affects, the most recent occurrence, and an example error — so systemic problems (a downstream in error mode) read differently from one-off flakes.</p>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- ── Architecture ── -->
-<section class="section section-dark">
-    <div class="container">
-        <h2 class="section-title" style="color: var(--text-light);">Platform architecture</h2>
-        <p class="section-subtitle">Six components. One coherent platform.</p>
-        <div style="text-align: center; margin-bottom: 40px;">
-        <svg viewBox="0 0 700 520" xmlns="http://www.w3.org/2000/svg" style="max-width: 700px; width: 100%; height: auto;">
-            <defs>
-                <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#5C6370"/>
-                </marker>
-            </defs>
-
-            <!-- Publishers -->
-            <rect x="120" y="20" width="160" height="52" rx="8" fill="none" stroke="#0078D4" stroke-width="1.5"/>
-            <text x="200" y="42" text-anchor="middle" fill="#E2E8F0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="600">Storefront</text>
-            <text x="200" y="58" text-anchor="middle" fill="#94A3B8" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="10">Publisher</text>
-
-            <rect x="420" y="20" width="160" height="52" rx="8" fill="none" stroke="#0078D4" stroke-width="1.5"/>
-            <text x="500" y="42" text-anchor="middle" fill="#E2E8F0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="600">Payments</text>
-            <text x="500" y="58" text-anchor="middle" fill="#94A3B8" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="10">Publisher</text>
-
-            <!-- Arrows: Publishers -> Service Bus -->
-            <line x1="200" y1="72" x2="200" y2="120" stroke="#5C6370" stroke-width="1.5" marker-end="url(#arrow)"/>
-            <line x1="500" y1="72" x2="500" y2="120" stroke="#5C6370" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-            <!-- Service Bus -->
-            <rect x="100" y="125" width="500" height="60" rx="10" fill="#E5C07B" fill-opacity="0.12" stroke="#E5C07B" stroke-width="1.5"/>
-            <text x="350" y="152" text-anchor="middle" fill="#E5C07B" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="14" font-weight="700">Azure Service Bus</text>
-            <text x="350" y="172" text-anchor="middle" fill="#94A3B8" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="10">Topics &amp; Subscriptions</text>
-
-            <!-- Arrows: Service Bus -> Subscribers -->
-            <line x1="175" y1="185" x2="175" y2="235" stroke="#5C6370" stroke-width="1.5" marker-end="url(#arrow)"/>
-            <line x1="350" y1="185" x2="350" y2="235" stroke="#5C6370" stroke-width="1.5" marker-end="url(#arrow)"/>
-            <line x1="525" y1="185" x2="525" y2="235" stroke="#5C6370" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-            <!-- Subscribers -->
-            <rect x="105" y="240" width="140" height="52" rx="8" fill="none" stroke="#61AFEF" stroke-width="1.5"/>
-            <text x="175" y="262" text-anchor="middle" fill="#E2E8F0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="600">Billing</text>
-            <text x="175" y="278" text-anchor="middle" fill="#94A3B8" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="10">Subscriber</text>
-
-            <rect x="280" y="240" width="140" height="52" rx="8" fill="none" stroke="#61AFEF" stroke-width="1.5"/>
-            <text x="350" y="262" text-anchor="middle" fill="#E2E8F0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="600">Inventory</text>
-            <text x="350" y="278" text-anchor="middle" fill="#94A3B8" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="10">Subscriber</text>
-
-            <rect x="455" y="240" width="140" height="52" rx="8" fill="none" stroke="#61AFEF" stroke-width="1.5"/>
-            <text x="525" y="262" text-anchor="middle" fill="#E2E8F0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="600">Shipping</text>
-            <text x="525" y="278" text-anchor="middle" fill="#94A3B8" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="10">Subscriber</text>
-
-            <!-- Arrows: Subscribers -> Resolver -->
-            <line x1="175" y1="292" x2="175" y2="320" stroke="#5C6370" stroke-width="1"/>
-            <line x1="350" y1="292" x2="350" y2="320" stroke="#5C6370" stroke-width="1"/>
-            <line x1="525" y1="292" x2="525" y2="320" stroke="#5C6370" stroke-width="1"/>
-            <line x1="175" y1="320" x2="525" y2="320" stroke="#5C6370" stroke-width="1"/>
-            <line x1="350" y1="320" x2="350" y2="350" stroke="#5C6370" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-            <!-- Resolver -->
-            <rect x="260" y="355" width="180" height="48" rx="8" fill="none" stroke="#C678DD" stroke-width="1.5"/>
-            <text x="350" y="376" text-anchor="middle" fill="#C678DD" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="12" font-weight="600">Resolver</text>
-            <text x="350" y="392" text-anchor="middle" fill="#94A3B8" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="10">Azure Functions</text>
-
-            <!-- Arrow: Resolver -> Cosmos DB -->
-            <line x1="350" y1="403" x2="350" y2="430" stroke="#5C6370" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-            <!-- Cosmos DB -->
-            <rect x="260" y="435" width="180" height="48" rx="8" fill="none" stroke="#E5C07B" stroke-width="1.5"/>
-            <text x="350" y="456" text-anchor="middle" fill="#E5C07B" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="12" font-weight="600">Cosmos DB</text>
-            <text x="350" y="472" text-anchor="middle" fill="#94A3B8" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="10">Message Store</text>
-
-            <!-- Arrow: Cosmos DB -> WebApp -->
-            <line x1="440" y1="459" x2="500" y2="459" stroke="#5C6370" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-            <!-- WebApp -->
-            <rect x="505" y="435" width="170" height="48" rx="8" fill="none" stroke="#98C379" stroke-width="1.5"/>
-            <text x="590" y="456" text-anchor="middle" fill="#98C379" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="12" font-weight="600">Management WebApp</text>
-            <text x="590" y="472" text-anchor="middle" fill="#94A3B8" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="10">Resubmit / Skip / Audit</text>
-
-            <!-- Arrow: Service Bus -> Resolver (direct) -->
-            <line x1="600" y1="155" x2="640" y2="155" stroke="#5C6370" stroke-width="1" stroke-dasharray="4 3"/>
-            <line x1="640" y1="155" x2="640" y2="379" stroke="#5C6370" stroke-width="1" stroke-dasharray="4 3"/>
-            <line x1="640" y1="379" x2="444" y2="379" stroke="#5C6370" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
-            <text x="654" y="270" fill="#5C6370" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="9" transform="rotate(90 654 270)" text-anchor="middle">audit trail</text>
-        </svg>
-        </div>
-        <div class="arch-grid">
-            <div class="arch-item">
-                <h4>NimBus.SDK</h4>
-                <p>Publisher and subscriber clients with DI, middleware pipeline, retry policies, and transactional outbox.</p>
-            </div>
-            <div class="arch-item">
-                <h4>Service Bus</h4>
-                <p>Session-enabled topics and subscriptions with forwarding rules, dead-letter queues, and scheduled delivery.</p>
-            </div>
-            <div class="arch-item">
-                <h4>Resolver</h4>
-                <p>Azure Functions service that tracks every message outcome and writes audit state to Cosmos DB.</p>
-            </div>
-            <div class="arch-item">
-                <h4>Cosmos DB</h4>
-                <p>Persistent storage for message state, audit trails, endpoint metadata, and metrics aggregation.</p>
-            </div>
-            <div class="arch-item">
-                <h4>Management WebApp</h4>
-                <p>React SPA with REST API and SignalR. Resubmit, skip, inspect, and manage messages across all endpoints.</p>
-            </div>
-            <div class="arch-item">
-                <h4>nb CLI</h4>
-                <p>Command-line tool for Azure infrastructure provisioning, Service Bus topology management, and deployment.</p>
-            </div>
-        </div>
-        <p style="text-align: center; margin-top: 40px;">
-            <a href="platform.html" class="btn btn-outline" style="border-color: var(--text-muted); color: var(--text-light);">See how a message travels through NimBus &rarr;</a>
-        </p>
-    </div>
-</section>
-
-<!-- ── Comparison ── -->
-<section class="section section-white">
-    <div class="container">
-        <h2 class="section-title">How NimBus compares</h2>
-        <p class="section-subtitle">
-            NimBus isn't competing on features. It's competing on the operational model that Service Bus doesn't give you.
-        </p>
-        <div style="overflow-x: auto;">
-        <table class="comparison-table">
-            <thead>
-                <tr>
-                    <th>Capability</th>
-                    <th>Raw Service Bus</th>
-                    <th class="highlight">NimBus</th>
-                    <th>MassTransit</th>
-                    <th>NServiceBus</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>Publisher/subscriber SDK</td>
-                    <td class="no">Build your own</td>
-                    <td class="yes">Included</td>
-                    <td class="yes">Included</td>
-                    <td class="yes">Included</td>
-                </tr>
-                <tr>
-                    <td>Session-based FIFO ordering</td>
-                    <td class="partial">Manual implementation</td>
-                    <td class="yes">Automatic with deferral and replay</td>
-                    <td class="no">Limited</td>
-                    <td class="no">Limited</td>
-                </tr>
-                <tr>
-                    <td>Management UI</td>
-                    <td class="no">Azure Portal only</td>
-                    <td class="yes">Full WebApp with resubmit/skip</td>
-                    <td class="no">None built-in</td>
-                    <td class="yes">ServicePulse (paid)</td>
-                </tr>
-                <tr>
-                    <td>Message audit trail</td>
-                    <td class="no">None</td>
-                    <td class="yes">Centralized Resolver + Cosmos DB</td>
-                    <td class="no">None built-in</td>
-                    <td class="yes">ServiceControl (paid)</td>
-                </tr>
-                <tr>
-                    <td>Error recovery workflow</td>
-                    <td class="no">Manual DLQ scripts</td>
-                    <td class="yes">One-click resubmit/skip in WebApp</td>
-                    <td class="partial">Manual</td>
-                    <td class="yes">ServicePulse (paid)</td>
-                </tr>
-                <tr>
-                    <td>Topology provisioning</td>
-                    <td class="no">Manual or Bicep/Terraform</td>
-                    <td class="yes">Declarative via CLI</td>
-                    <td class="yes">Auto-provisioning</td>
-                    <td class="yes">Installers</td>
-                </tr>
-                <tr>
-                    <td>Transactional outbox</td>
-                    <td class="no">Build your own</td>
-                    <td class="yes">SQL Server, transparent</td>
-                    <td class="yes">Multiple stores</td>
-                    <td class="yes">Multiple stores</td>
-                </tr>
-                <tr>
-                    <td>OpenTelemetry tracing</td>
-                    <td class="partial">Basic SDK telemetry</td>
-                    <td class="yes">Full W3C TraceContext propagation</td>
-                    <td class="yes">Included</td>
-                    <td class="yes">Included</td>
-                </tr>
-                <tr>
-                    <td>Azure-native depth</td>
-                    <td class="yes">It is Azure</td>
-                    <td class="yes">Sessions, DLQ, scheduling, forwarding</td>
-                    <td class="partial">Transport abstraction</td>
-                    <td class="partial">Transport abstraction</td>
-                </tr>
-                <tr>
-                    <td>License</td>
-                    <td class="yes">N/A</td>
-                    <td class="yes">MIT (free)</td>
-                    <td class="yes">Apache 2.0 (free)</td>
-                    <td class="partial">Commercial (paid)</td>
-                </tr>
-            </tbody>
-        </table>
-        </div>
-    </div>
-</section>
-
-<!-- ── Production Ready ── -->
-<section class="section section-dark">
-    <div class="container">
-        <div class="production-content">
-            <h2 class="section-title" style="color: var(--text-light);">Production proven</h2>
-            <p class="section-subtitle">Running in enterprise environments since 2019.</p>
-            <div class="production-stats">
-                <div class="stat">
-                    <div class="stat-number">5+</div>
-                    <div class="stat-label">Enterprise customers</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-number">6+</div>
-                    <div class="stat-label">Years in production</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-number">5</div>
-                    <div class="stat-label">NuGet packages</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-number">8</div>
-                    <div class="stat-label">Architecture Decision Records</div>
-                </div>
-            </div>
-            <div class="badge-row">
-                <span class="badge">.NET 10</span>
-                <span class="badge">Azure Service Bus</span>
-                <span class="badge">Cosmos DB</span>
-                <span class="badge">.NET Aspire</span>
-                <span class="badge">Azure Functions</span>
-                <span class="badge">OpenTelemetry</span>
-                <span class="badge">MIT License</span>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- ── Footer ── -->
-<footer class="footer">
-    <div class="container">
-        <div class="footer-grid">
-            <div>
-                <h4>NimBus</h4>
-                <p>
-                    The operational platform for Azure Service Bus.
-                    Built by consultants who run it in production.
-                    Open-sourced for the community.
-                </p>
-            </div>
-            <div>
-                <h4>Documentation</h4>
-                <a href="#demo-video">Demo Video</a>
-                <a href="platform.html">How It Works</a>
-                <a href="features.html">Features</a>
-                <a href="https://github.com/akakaule/NimBus/blob/master/docs/getting-started.md">Getting Started</a>
-                <a href="https://github.com/akakaule/NimBus/blob/master/docs/architecture.md">Architecture</a>
-                <a href="https://github.com/akakaule/NimBus/blob/master/docs/sdk-api-reference.md">SDK API Reference</a>
-                <a href="https://github.com/akakaule/NimBus/blob/master/docs/pipeline-middleware.md">Middleware Pipeline</a>
-                <a href="https://github.com/akakaule/NimBus/blob/master/docs/message-flows.md">Message Flows</a>
-                <a href="https://github.com/akakaule/NimBus/blob/master/docs/cli.md">CLI Reference</a>
-            </div>
-            <div>
-                <h4>Project</h4>
-                <a href="https://github.com/akakaule/NimBus">GitHub Repository</a>
-                <a href="https://github.com/akakaule/NimBus/tree/master/docs/adr">Decision Records</a>
-                <a href="https://github.com/akakaule/NimBus/blob/master/LICENSE">MIT License</a>
-            </div>
-        </div>
-        <div class="footer-bottom">
-            NimBus &mdash; Azure Service Bus. Simplified. Observed. Controlled.
-        </div>
-    </div>
-</footer>
-
-</body>
+      </div>
+    </footer>
+  </body>
 </html>

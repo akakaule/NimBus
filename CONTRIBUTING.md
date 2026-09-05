@@ -23,17 +23,18 @@ NimBus is MIT-licensed. By submitting a contribution you agree to license it und
 Requirements: **.NET 10 SDK** and **Node.js 22** (for the WebApp client).
 
 ```bash
-# Build the whole solution
+# From the repository root: build the whole solution
 dotnet build src/NimBus.sln
 
 # Run all tests
 dotnet test src/NimBus.sln
 
 # WebApp client
-cd src/NimBus.WebApp/ClientApp && npm install && npm run build
+npm --prefix src/NimBus.WebApp/ClientApp install
+npm --prefix src/NimBus.WebApp/ClientApp run build
 
 # Local end-to-end via Aspire
-dotnet run --project src/NimBus.AppHost
+dotnet run --project src/NimBus.AppHost -- --UseEmulator true
 ```
 
 CI (`.github/workflows/dotnet.yml`) runs `restore` → `build --configuration Release` → `test` on every PR to `master`, including the SQL Server message-store conformance suite in a service container. **Reproduce failures locally by building Release**, since that's where analyzer warnings become errors:
@@ -41,6 +42,19 @@ CI (`.github/workflows/dotnet.yml`) runs `restore` → `build --configuration Re
 ```bash
 dotnet build src/NimBus.sln --configuration Release
 ```
+
+The local AppHost uses SQL Server in a container and can use the NimBus Service Bus emulator. A running Docker-compatible container runtime is required. See [Getting Started](docs/getting-started.md) for Azure and Cosmos alternatives. The WebApp builds its frontend during the .NET build; NSwag runs from its NuGet package without a local tool manifest.
+
+## Package publishing (maintainers)
+
+Packages use the `Akaule.NimBus.*` prefix; assemblies and namespaces remain `NimBus.*`. Push a version tag to trigger the [NuGet publish workflow](.github/workflows/nuget-publish.yml):
+
+```shell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Use the intended new release version; prerelease tags such as `v1.0.0-preview.1` are supported.
 
 ## Branching & commits
 

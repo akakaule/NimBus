@@ -226,7 +226,7 @@
             <a href="index.html#demo-video">Demo video</a>
             <a href="platform.html" class="active">How it works</a>
             <a href="features.html">Features</a>
-            <a href="getting-started.html">Get Started</a>
+            <a href="getting-started.html">Try locally</a>
             <a href="https://github.com/akakaule/NimBus">GitHub</a>
         </div>
     </div>
@@ -235,13 +235,13 @@
 <header class="p-hero">
     <div class="container">
         <div class="eyebrow">Platform Overview</div>
-        <h1>A message bus that remembers every message.</h1>
-        <p>NimBus runs event-driven integrations on Azure Service Bus and Cosmos DB — with strict per-key ordering, a complete audit trail, and an operator console for when a message goes wrong. It builds on Azure's strengths instead of hiding them.</p>
+        <h1>Ordered integrations with a history you can act on.</h1>
+        <p>NimBus is a .NET integration platform on Azure Service Bus, with session ordering at each receiving endpoint, processing history in SQL Server or Cosmos DB, and an operator console for recovery. Deploy it in your own environment and connect applications through adapters.</p>
         <div class="facts">
             <span class="fact"><span class="fd" style="background:var(--blue-light)"></span>Azure Service Bus transport</span>
             <span class="fact"><span class="fd" style="background:var(--purple)"></span>Cosmos DB or SQL Server store</span>
             <span class="fact"><span class="fd" style="background:var(--amber)"></span>Session-ordered</span>
-            <span class="fact"><span class="fd" style="background:var(--green)"></span>Every outcome audited</span>
+            <span class="fact"><span class="fd" style="background:var(--green)"></span>Processing history</span>
         </div>
     </div>
 </header>
@@ -294,7 +294,7 @@
             <div class="diff">
                 <div class="dn">02</div>
                 <h3>The Resolver</h3>
-                <p>One centralized record of every message's outcome, start to finish. Nothing disappears silently; the whole trail is queryable.</p>
+                <p>One centralized record of every message's outcome, start to finish. The recorded processing history is queryable from the operator console.</p>
             </div>
             <div class="diff">
                 <div class="dn">03</div>
@@ -353,14 +353,14 @@
         <div class="section-lead">
             <div class="section-eyebrow">The pieces</div>
             <h2 class="section-title" style="color:var(--text-light)">The anatomy of a NimBus app</h2>
-            <p>Everything is behind an interface, registered with one DI call. You bring the events and handlers; NimBus brings ordering, routing, storage, and recovery.</p>
+            <p>Configure the SDK, storage, pipeline, and receiver hosting through dependency injection. You bring the events and handlers; NimBus brings ordering, routing, storage, and recovery.</p>
         </div>
         <div class="blocks">
             <div class="block"><div class="bh"><span class="ic">E</span><span class="bn">Events</span></div><p>Plain classes. A <span class="tk">[SessionKey]</span> attribute sets the ordering scope for that event.</p></div>
             <div class="block"><div class="bh"><span class="ic">P</span><span class="bn">Endpoints &amp; Platform</span></div><p>Declare what each endpoint produces and consumes; the Platform is the single source of topology truth.</p></div>
             <div class="block"><div class="bh"><span class="ic">S</span><span class="bn">Pluggable storage</span></div><p>Cosmos DB or SQL Server behind one contract — with a conformance suite keeping them honest.</p></div>
             <div class="block"><div class="bh"><span class="ic">M</span><span class="bn">Pipeline middleware</span></div><p>Logging, metrics, validation — plus circuit-breaker, rate-limiting, and PII masking as opt-ins.</p></div>
-            <div class="block"><div class="bh"><span class="ic">O</span><span class="bn">Transactional outbox</span></div><p>Publish only after your database commit — no lost or phantom events.</p></div>
+            <div class="block"><div class="bh"><span class="ic">O</span><span class="bn">Transactional outbox</span></div><p>Record outgoing messages in your SQL business transaction; dispatch them after commit. Handlers should remain idempotent.</p></div>
             <div class="block"><div class="bh"><span class="ic">H</span><span class="bn">Hosting &amp; SDK</span></div><p>Run as a Worker or Azure Function.</p><p class="tk">AddNimBusPublisher / AddNimBusSubscriber</p></div>
             <div class="block"><div class="bh"><span class="ic">A</span><span class="bn">Agent-ready</span></div><p>A schema registry with REST and MCP surfaces so AI agents can join the bus as first-class participants.</p></div>
             <div class="block"><div class="bh"><span class="ic">N</span><span class="bn">Notifications</span></div><p>Failures, dead-letters, and session blocks fan out to webhook or email channels.</p></div>
@@ -396,7 +396,7 @@
 <section class="section section-white">
     <div class="container cta">
         <h2 class="section-title" style="margin-bottom:24px">Ready to try it?</h2>
-        <a href="getting-started.html" class="btn btn-primary">Get Started</a>
+        <a href="getting-started.html" class="btn btn-primary">Try locally</a>
         <a href="index.html" class="btn btn-outline" style="margin-left:12px">Back to Home</a>
     </div>
 </section>

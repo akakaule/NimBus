@@ -5,9 +5,11 @@ This guide walks you through creating your first publisher and subscriber, runni
 ## Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- An Azure Service Bus namespace (Standard or Premium)
-- An Azure Cosmos DB account
-- Docker Desktop (for Aspire dashboard)
+- Node.js 22+ for the management frontend
+- A running Docker-compatible container runtime for SQL Server and local storage resources
+- Optional: an Azure Service Bus namespace (Standard or Premium) instead of the local emulator; Cosmos DB instead of SQL Server
+
+For a ready-to-run integration, start with the [CRM/ERP sample](../samples/CrmErpDemo/README.md#running-locally--sql-server-default).
 
 ## 1. Define an Event
 
@@ -201,24 +203,20 @@ With Aspire, the provisioner runs automatically as part of the AppHost.
 
 ## 7. Run with Aspire
 
-### Set connection strings as user secrets
+### Start locally with the emulator and SQL Server
+
+From the repository root, enable the emulator (the main AppHost requires this opt-in; the CRM/ERP sample enables it by default):
 
 ```bash
-cd src/NimBus.AppHost
-dotnet user-secrets set "ConnectionStrings:servicebus" "Endpoint=sb://your-namespace.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=your-key"
-dotnet user-secrets set "ConnectionStrings:cosmos" "AccountEndpoint=https://your-account.documents.azure.com:443/;AccountKey=your-key"
+dotnet run --project src/NimBus.AppHost -- --UseEmulator true
 ```
 
-### Start the AppHost
-
-```bash
-dotnet run --project src/NimBus.AppHost
-```
+SQL Server runs in a local container by default. To use Azure Service Bus instead, omit `--UseEmulator true` and set `ConnectionStrings:servicebus` with `dotnet user-secrets --project src/NimBus.AppHost set`. To select Cosmos DB, configure `ConnectionStrings:cosmos` and pass `--NIMBUS_STORAGE_PROVIDER cosmos`. Environment variables of the same names take precedence over arguments.
 
 This launches:
 - **Aspire Dashboard** — Logs, traces, metrics at `https://localhost:17xxx`
 - **provisioner** — Creates Service Bus topology (runs once)
-- **resolver** — Tracks message state in Cosmos DB
+- **resolver** — Tracks message state in the selected store (SQL Server by default)
 - **webapp** — Management UI
 - **publisher** — Sample HTTP API
 - **subscriber** — Sample event handler with middleware

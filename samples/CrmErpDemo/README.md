@@ -312,16 +312,15 @@ samples/CrmErpDemo/
 
 ## Prerequisites
 
-- .NET 10 SDK (preview)
+- .NET 10 SDK
 - Node.js 22+ (for the SPAs)
 - Docker (for the Aspire-managed SQL Server container)
-- Azure Service Bus connection string for this sample. NimBus now includes a local emulator in
-  `src/NimBus.ServiceBusEmulator`; migrating CrmErpDemo to it is a follow-up after its compatibility suite.
+- The NimBus Service Bus emulator is enabled by default; no Azure account is required. For a real namespace, set `NIMBUS_SB_EMULATOR=false` and supply `ConnectionStrings:servicebus` in this AppHost's user secrets.
 - Azure Cosmos DB connection string only when running with `--StorageProvider cosmos` (default is SQL Server, no Cosmos required)
 
 ## Storage provider
 
-NimBus's message store (audit trail, resolver state, blocked sessions, metrics) runs against **SQL Server by default**, in a database named `nimbus` on the same Aspire-managed SQL Server container that already hosts `crm` and `erp`. No extra setup beyond the Service Bus secret.
+NimBus's message store (audit trail, resolver state, blocked sessions, metrics) runs against **SQL Server by default**, in a database named `nimbus` on the same Aspire-managed SQL Server container that already hosts `crm` and `erp`. No Azure connection strings are needed with the default emulator.
 
 Cosmos is an alternative — supply `ConnectionStrings:cosmos` as a user secret and pass `--StorageProvider cosmos` to the AppHost. The AppHost reads the flag at `samples/CrmErpDemo/CrmErpDemo.AppHost/Program.cs:7-11`; the same value is bridged to the Resolver and `nimbus-ops` WebApp via `NimBus__StorageProvider` so they call the matching `AddSqlServerMessageStore()` / `AddCosmosDbMessageStore()` registration.
 
@@ -330,14 +329,12 @@ The CRM and ERP business databases are always SQL Server regardless of the messa
 ## Running locally — SQL Server (default)
 
 ```bash
-# 1. Configure the Service Bus secret (one-time)
-dotnet user-secrets --project samples/CrmErpDemo/CrmErpDemo.AppHost set ConnectionStrings:servicebus "Endpoint=sb://..."
+# From the repository root; requires a running container runtime.
+# Install SPA dependencies (first run only)
+npm --prefix samples/CrmErpDemo/Crm.Web install
+npm --prefix samples/CrmErpDemo/Erp.Web install
 
-# 2. Install SPA dependencies (first run only)
-(cd samples/CrmErpDemo/Crm.Web && npm install)
-(cd samples/CrmErpDemo/Erp.Web && npm install)
-
-# 3. Run the demo (SQL Server is the default storage provider)
+# Run the demo (emulator and SQL Server are the defaults)
 dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost
 ```
 
@@ -352,7 +349,7 @@ dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost -- --StorageProvider 
 ## Running locally — Cosmos DB
 
 ```bash
-# Add the Cosmos secret in addition to ConnectionStrings:servicebus
+# Add the Cosmos secret; Service Bus still uses the emulator by default
 dotnet user-secrets --project samples/CrmErpDemo/CrmErpDemo.AppHost set ConnectionStrings:cosmos "AccountEndpoint=https://...;AccountKey=..."
 
 # Run with the cosmos flag

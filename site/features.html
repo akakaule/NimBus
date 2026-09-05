@@ -143,7 +143,7 @@
             <a href="index.html#demo-video">Demo video</a>
             <a href="platform.html">How it works</a>
             <a href="features.html" class="active">Features</a>
-            <a href="getting-started.html">Get Started</a>
+            <a href="getting-started.html">Try locally</a>
             <a href="https://github.com/akakaule/NimBus">GitHub</a>
         </div>
     </div>
@@ -212,7 +212,7 @@
         <div class="section-lead">
             <div class="section-eyebrow">Reliability &amp; recovery</div>
             <h2 class="section-title" style="color:var(--text-light)">Every failure has a defined path</h2>
-            <p>Retries, dead-lettering, session blocking, and operator-driven recovery — nothing is left ambiguous, and nothing disappears.</p>
+            <p>Retries, dead-lettering, session blocking, and operator-driven recovery with recorded outcomes for operators to investigate.</p>
         </div>
         <div class="feats">
             <div class="feat">
@@ -227,7 +227,7 @@
             </div>
             <div class="feat">
                 <h3>Session blocking &amp; deferral</h3>
-                <p>When a message fails, later messages in the same session are deferred automatically so ordering is never violated.</p>
+                <p>When a message fails, later messages in the same session are deferred automatically until that session is unblocked at the receiving endpoint.</p>
                 <div class="pkgs"><span class="pkg">NimBus.Core</span><span class="pkg">NimBus.ServiceBus</span></div>
             </div>
             <div class="feat">
@@ -242,7 +242,7 @@
             </div>
             <div class="feat">
                 <h3>Transactional outbox</h3>
-                <p>Persist outgoing messages in a SQL Server outbox inside your business transaction; a dispatcher publishes them afterwards. No lost or phantom events.</p>
+                <p>Persist outgoing messages in a SQL Server outbox inside your business transaction; a dispatcher publishes them afterwards. The outbox ties the intent to publish to the database commit; consumers should remain idempotent.</p>
                 <div class="pkgs"><span class="pkg">NimBus.Outbox.SqlServer</span></div>
             </div>
         </div>
@@ -254,14 +254,14 @@
     <div class="container">
         <div class="section-lead">
             <div class="section-eyebrow">Operations &amp; observability</div>
-            <h2 class="section-title">See everything, fix anything</h2>
+            <h2 class="section-title">Inspect failures and recover work</h2>
             <p>The operational layer that raw Service Bus doesn't give you: a queryable audit of every message, a console to act on it, and automation for the rest.</p>
         </div>
         <div class="feats">
             <div class="feat">
                 <h3>Resolver state tracking</h3>
                 <p>A central Resolver records every message's outcome — Pending, Completed, Failed, Deferred — as one queryable audit trail.</p>
-                <div class="pkgs"><span class="pkg">NimBus.Resolver</span><span class="pkg">NimBus.MessageStore</span></div>
+                <div class="pkgs"><span class="pkg">NimBus.Resolver</span><span class="pkg">NimBus.MessageStore.Abstractions</span></div>
             </div>
             <div class="feat">
                 <h3>Management WebApp</h3>
@@ -276,11 +276,11 @@
             <div class="feat">
                 <h3>Health checks</h3>
                 <p>Health probes for Service Bus and the message store, plus resolver-lag checks that flag a Resolver falling behind.</p>
-                <div class="pkgs"><span class="pkg">NimBus.ServiceBus</span><span class="pkg">NimBus.MessageStore</span></div>
+                <div class="pkgs"><span class="pkg">NimBus.ServiceBus</span><span class="pkg">NimBus.MessageStore.Abstractions</span></div>
             </div>
             <div class="feat">
                 <h3>Built-in middleware</h3>
-                <p>Logging, OpenTelemetry metrics, and message validation ship as pipeline behaviors — on by default, replaceable when you need more.</p>
+                <p>Logging, OpenTelemetry metrics, and message validation ship as pipeline behaviors — register the behaviors your application needs.</p>
                 <div class="pkgs"><span class="pkg">NimBus.Core</span><span class="pkg">NimBus.OpenTelemetry</span></div>
             </div>
             <div class="feat">
@@ -297,13 +297,13 @@
     <div class="container">
         <div class="section-lead">
             <div class="section-eyebrow">Developer experience</div>
-            <h2 class="section-title">Plain classes, one DI call, testable end to end</h2>
+            <h2 class="section-title">Typed handlers, explicit configuration, local testing</h2>
             <p>You bring events and handlers; NimBus brings the hosting, pipeline, and a full local development story.</p>
         </div>
         <div class="feats">
             <div class="feat">
                 <h3>Typed publisher / subscriber API</h3>
-                <p>One DI registration wires up publishers, subscribers, handlers, and receiver hosting — as a Worker Service or an Azure Function.</p>
+                <p>Register publishers and subscribers through DI, then configure receiver hosting with AddNimBusReceiver for Workers or Service Bus triggers for Azure Functions.</p>
                 <div class="pkgs"><span class="pkg">AddNimBusPublisher</span><span class="pkg">AddNimBusSubscriber</span></div>
             </div>
             <div class="feat">
@@ -328,7 +328,7 @@
             </div>
             <div class="feat">
                 <h3>Aspire local orchestration</h3>
-                <p>A .NET Aspire AppHost runs the provisioner, Resolver, WebApp, and your apps together for F5-style local development.</p>
+                <p>The CRM/ERP Aspire sample runs the provisioner, Resolver, WebApp, and adapters with a local Service Bus emulator and SQL Server by default.</p>
                 <div class="pkgs"><span class="pkg">NimBus.AppHost</span><span class="pkg">NimBus.ServiceDefaults</span></div>
             </div>
             <div class="feat">
@@ -372,7 +372,7 @@
 <section class="section section-white">
     <div class="container cta">
         <h2 class="section-title" style="margin-bottom:24px">See it in action</h2>
-        <a href="getting-started.html" class="btn btn-primary">Get Started</a>
+        <a href="getting-started.html" class="btn btn-primary">Try locally</a>
         <a href="platform.html" class="btn btn-outline" style="margin-left:12px">How It Works</a>
     </div>
 </section>

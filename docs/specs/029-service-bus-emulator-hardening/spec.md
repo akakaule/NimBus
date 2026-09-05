@@ -1,9 +1,11 @@
 # Spec 029 — Service Bus Emulator fidelity hardening
 
-Status: proposed
+Status: implemented locally
 Depends on: Spec 027 (NimBus Service Bus Emulator)
 Port baseline: DIS commit `98895809` (`fix: harden service bus emulator fidelity`) in `C:\Git\KL\DIS`
-Review status: revised after re-review; T0 implements the required DIS corrections and verifies the session contract through the existing Azure compatibility harness.
+Review status: implementation and local verification complete; protected
+real-Azure CommonFidelity verification remains pending because
+`NIMBUS_SBEMULATOR_TEST_CS` was unavailable during implementation.
 
 ## 1. Context
 
@@ -209,11 +211,13 @@ sequenceDiagram
 
 ### T0 — implement DIS corrections and verify the Azure contract
 
-- Owner: the implementer executing this plan. In `C:\Git\KL\DIS`, use this
-  document as the design for correcting §§4.2–4.3. Add the deterministic failure
-  and concurrency tests specified in T1/T3, observe behavioral RED against
-  `98895809`, implement the fixes, then run the emulator suite. Record the exact
-  local correction commits and failing/passing evidence before the B/C port.
+- Completed in DIS commits
+  `7dfa2df7676f098f6d6682fa2c736504334960b9` (durable candidate topology and
+  atomic pump restart) and
+  `9edc52c63ee1ecac437e8f2dbc8fcb1bf33d32e4` (prompt invalid-session attach
+  rejection and explicit-attach cleanup). The rollback and stale-credit tests
+  were observed RED against `98895809`; the corrected DIS Release suite passes
+  all 55 tests.
 - Resolve SES-4 through the existing NimBus compatibility harness. Port
   `Stock_sdk_can_lock_an_explicit_empty_session` into `SdkSmokeTests.cs` now,
   retaining `[TestCategory("CommonFidelity")]`; T1 retains this test rather than
@@ -229,6 +233,9 @@ sequenceDiagram
   external setting is present without printing it, and record the SDK version,
   bounded timeout/cancellation, test results, and actual Azure execution.
   A green run alone does not prove which target was used.
+  This local Azure step was unavailable because `NIMBUS_SBEMULATOR_TEST_CS` was
+  absent; the cases remain tagged and the protected workflow is the outstanding
+  fidelity gate.
 - Keep the cases tagged for `.github/workflows/servicebus-emulator-compat.yml`,
   which runs CommonFidelity on master pushes and manual dispatch on master using
   `NIMBUS_SBEMULATOR_COMPAT_CS`. Reuse this workflow for continuing verification;
@@ -422,6 +429,27 @@ Commit: `docs(emulator): record fidelity invariants from the hardening pass`
   This verifies AppHost wiring and the local emulator, not real Azure semantics.
 - Confirm SES-4, TST-2, M2, the new fidelity invariants, and the README describe
   one contract. Include T0's Azure probe evidence before claiming CommonFidelity.
+
+### 6.1 Implementation record
+
+- NimBus implementation commit:
+  `c0ae474bd61122f7b3be04885fd861b2f26fede4`.
+- `dotnet build src/NimBus.sln -c Release`: passed with no errors. The existing
+  solution-wide analyzer warnings remain; this change introduced no build error.
+- `dotnet test src/NimBus.sln -c Release --no-build --verbosity minimal`: passed.
+  Optional live-provider tests were skipped by their existing environment guards.
+- `dotnet test tests/NimBus.ServiceBusEmulator.Tests -c Release`: 56 passed;
+  the two cleanup-adjusted explicit-session probes were rerun and passed after
+  the implementation commit was finalized.
+- Aspire isolated smoke: emulator and WebApp reached `Healthy`, the provisioner
+  reached `Finished`, and the two stock-SDK empty-session probes passed against
+  the AppHost-generated connection (2/2). The connection string was not logged;
+  the isolated AppHost was stopped after the probe.
+- Corrected cross-repo production comparison: all six changed production files
+  match the two recorded DIS correction commits after normalizing namespaces and
+  the repository-specific journal temporary-path prefix.
+- Real Azure was not claimed: `NIMBUS_SBEMULATOR_TEST_CS` was absent. The
+  `CommonFidelity` cases remain wired to the protected compatibility workflow.
 
 ## 7. Risks
 

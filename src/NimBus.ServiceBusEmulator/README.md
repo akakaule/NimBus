@@ -35,4 +35,6 @@ The broker memory budget defaults to 512 MiB and can be set with `NIMBUS_SBEMULA
 
 The emulator supports the NimBus topic/subscription surface: SQL rules and SET actions, sessions and session state, peek, scheduling/cancellation, settlement, delivery limits, TTL, runtime properties, auto-forwarding, regular dead-letter browsing, and the narrow cross-entity transaction used to complete and replay one dead-lettered Resolver message. Queues, general-purpose transactions, transfer dead-letter browsing, WebSockets, Entra ID, duplicate-detection enforcement, and Service Bus message deferral are intentionally unsupported.
 
+Explicit receivers can lock an empty session id immediately. Transactional completion outside the supported dead-letter replay path is rejected with `amqp:not-implemented` instead of leaving the SDK waiting for settlement.
+
 NimBus detects `UseDevelopmentEmulator=true`, so local `Deferred` subscriptions retain the existing one-hour development TTL profile even though the emulator itself does not impose Azure's emulator TTL cap.

@@ -77,8 +77,6 @@ interface EventsPanelProps {
 
 interface SessionState {
   deferredCount: number;
-  pendingCount: number;
-  failedCount: number;
 }
 
 const ACTIONABLE_STATUSES = [
@@ -159,9 +157,20 @@ export const DEFAULT_ENDPOINT_FILTER_PARAMS: EndpointFilterParams = {
 export type EventColumn = ITableHeadCell & { locked?: boolean };
 
 export const EVENT_COLUMNS: EventColumn[] = [
-  { id: "eventId", label: "Event Id", numeric: false, width: "10%", locked: true },
-  { id: "pendingCount", label: "Pending", numeric: true, width: "6%" },
-  { id: "deferredCount", label: "Deferred", numeric: true, width: "7%" },
+  {
+    id: "eventId",
+    label: "Event Id",
+    numeric: false,
+    width: "10%",
+    locked: true,
+  },
+  {
+    id: "deferredCount",
+    label: "Deferred",
+    numeric: true,
+    width: "7%",
+    info: "Messages deferred behind this failed message in its session",
+  },
   { id: "status", label: "Status", numeric: false, width: "8%" },
   { id: "sessionId", label: "Session Id", numeric: false, width: "10%" },
   { id: "eventTypeId", label: "Event Type", numeric: false, width: "15%" },
@@ -236,9 +245,12 @@ function buildEventFilterFromParams(
   // "Updated" → UpdatedAt (note the contract's misspelled `updateAtFrom`);
   // "Added" → EnqueuedTimeUtc — the same fields the old accordion sub-filters
   // wrote to the FilterContext draft.
-  if (params.updatedFrom) filter.updateAtFrom = parseLocalDateTime(params.updatedFrom);
-  if (params.updatedTo) filter.updatedAtTo = parseLocalDateTime(params.updatedTo);
-  if (params.addedFrom) filter.enqueuedAtFrom = parseLocalDateTime(params.addedFrom);
+  if (params.updatedFrom)
+    filter.updateAtFrom = parseLocalDateTime(params.updatedFrom);
+  if (params.updatedTo)
+    filter.updatedAtTo = parseLocalDateTime(params.updatedTo);
+  if (params.addedFrom)
+    filter.enqueuedAtFrom = parseLocalDateTime(params.addedFrom);
   if (params.addedTo) filter.enqueuedAtTo = parseLocalDateTime(params.addedTo);
   if (params.payload) filter.payload = params.payload;
   return filter;
@@ -392,6 +404,13 @@ const EventsPanel = (props: EventsPanelProps) => {
     return ACTIONABLE_STATUSES.includes(status as api.ResolutionStatus);
   };
 
+  // Only a failed message blocks its session, so only failed rows show how
+  // many deferred messages are queued behind them.
+  const isFailedStatus = (status: string | undefined): boolean => {
+    if (!status) return false;
+    return FAILED_STATUS_SET.includes(status as api.ResolutionStatus);
+  };
+
   // Pending+Handoff entries are healthy in-flight messages but operators retain
   // manual override (FR-042) — they should expose the same Resubmit/Skip
   // actions as the standard actionable statuses.
@@ -400,7 +419,6 @@ const EventsPanel = (props: EventsPanelProps) => {
 
   const getSessions = (
     deferredEvents: string[],
-    pendingEvents: string[],
   ): Record<string, SessionState> => {
     const tempSessions: Record<string, SessionState> = {};
 
@@ -410,25 +428,7 @@ const EventsPanel = (props: EventsPanelProps) => {
       if (tempSessions[sessionId] !== undefined) {
         tempSessions[sessionId].deferredCount += 1;
       } else {
-        tempSessions[sessionId] = {
-          deferredCount: 1,
-          pendingCount: 0,
-          failedCount: 0,
-        };
-      }
-    });
-
-    pendingEvents.forEach((event) => {
-      const eventSessionSplit = event.split("_");
-      const sessionId = eventSessionSplit[1];
-      if (tempSessions[sessionId] !== undefined) {
-        tempSessions[sessionId].pendingCount += 1;
-      } else {
-        tempSessions[sessionId] = {
-          deferredCount: 0,
-          pendingCount: 1,
-          failedCount: 0,
-        };
+        tempSessions[sessionId] = { deferredCount: 1 };
       }
     });
 
@@ -436,14 +436,12 @@ const EventsPanel = (props: EventsPanelProps) => {
   };
 
   const fetchSessionStatus = async (
-    actionableEvents: api.Event[],
+    failedEvents: api.Event[],
     ticket: number,
   ): Promise<void> => {
     const uniqueSessionIds = [
       ...new Set(
-        actionableEvents
-          .map((e) => e.sessionId)
-          .filter((id): id is string => !!id),
+        failedEvents.map((e) => e.sessionId).filter((id): id is string => !!id),
       ),
     ];
 
@@ -459,11 +457,7 @@ const EventsPanel = (props: EventsPanelProps) => {
         .map((status) => status.deferredEvents ?? [])
         .reduce((pre, cur) => pre.concat(cur), []);
 
-      const pendingEvents = sessionStatuses
-        .map((status) => status.pendingEvents ?? [])
-        .reduce((pre, cur) => pre.concat(cur), []);
-
-      const tempSessions = getSessions(deferredEvents, pendingEvents);
+      const tempSessions = getSessions(deferredEvents);
       if (ticket === fetchTicket.current) {
         setSessions((prev) => ({ ...prev, ...tempSessions }));
       }
@@ -497,18 +491,18 @@ const EventsPanel = (props: EventsPanelProps) => {
         tokenGeneration.current = ticket;
       }
 
-      // Hydrate the per-session count columns in the background so the table
-      // paints immediately. The session batch only fills the Pending/Deferred
-      // counts, so blocking the whole table (and its extra round trip) on it is
+      // Hydrate the per-session Deferred column in the background so the table
+      // paints immediately. The session batch only fills that count, so
+      // blocking the whole table (and its extra round trip) on it is
       // needless — fire it un-awaited and let the counts fill in when it
       // returns. Its commit is ticket-guarded too, so a stale batch can't
       // overwrite fresher counts. fetchSessionStatus owns its own error handling.
-      const actionableEvents = fetchedEvents.filter((e) =>
-        isActionableStatus(e.resolutionStatus),
+      const failedEvents = fetchedEvents.filter((e) =>
+        isFailedStatus(e.resolutionStatus),
       );
 
-      if (actionableEvents.length > 0) {
-        void fetchSessionStatus(actionableEvents, ticket);
+      if (failedEvents.length > 0) {
+        void fetchSessionStatus(failedEvents, ticket);
       }
     } catch (error) {
       if (ticket === fetchTicket.current) {
@@ -556,13 +550,13 @@ const EventsPanel = (props: EventsPanelProps) => {
         setContinuationToken(response.continuationToken);
       }
 
-      // Fetch session status for new actionable events
-      const actionableEvents = newEvents.filter((e) =>
-        isActionableStatus(e.resolutionStatus),
+      // Fetch session status for new failed events
+      const failedEvents = newEvents.filter((e) =>
+        isFailedStatus(e.resolutionStatus),
       );
 
-      if (actionableEvents.length > 0) {
-        await fetchSessionStatus(actionableEvents, ticket);
+      if (failedEvents.length > 0) {
+        await fetchSessionStatus(failedEvents, ticket);
       }
 
       if (ticket === fetchTicket.current) {
@@ -591,7 +585,9 @@ const EventsPanel = (props: EventsPanelProps) => {
     client.postResubmitEventIds(event.eventId!, event.lastMessageId!);
   };
 
-  const reprocessDeferredBySession = async (event: api.Event): Promise<void> => {
+  const reprocessDeferredBySession = async (
+    event: api.Event,
+  ): Promise<void> => {
     const sessionId = event.sessionId;
     if (!sessionId) return;
     try {
@@ -599,11 +595,18 @@ const EventsPanel = (props: EventsPanelProps) => {
       setEvents((prev) =>
         prev.filter(
           (e) =>
-            !(e.sessionId === sessionId && e.resolutionStatus === api.ResolutionStatus.Deferred),
+            !(
+              e.sessionId === sessionId &&
+              e.resolutionStatus === api.ResolutionStatus.Deferred
+            ),
         ),
       );
     } catch (err) {
-      console.error("Failed to reprocess deferred messages for session", sessionId, err);
+      console.error(
+        "Failed to reprocess deferred messages for session",
+        sessionId,
+        err,
+      );
     }
   };
 
@@ -817,7 +820,7 @@ const EventsPanel = (props: EventsPanelProps) => {
 
   const mapEvents = (): ITableRow[] => {
     return visibleEvents.map((item) => {
-      const hasSessionData = isActionableStatus(item.resolutionStatus);
+      const hasSessionData = isFailedStatus(item.resolutionStatus);
       const sessionData = sessions[item.sessionId!];
 
       const row: ITableRow = {
@@ -829,17 +832,13 @@ const EventsPanel = (props: EventsPanelProps) => {
           [
             "eventId",
             {
-              value: <TruncatedGuid guid={item.eventId} />,
+              value: (
+                <TruncatedGuid
+                  guid={item.eventId}
+                  onClick={(g) => handleFilterById("eventId", g)}
+                />
+              ),
               searchValue: item.eventId!,
-            },
-          ],
-          [
-            "pendingCount",
-            {
-              value: hasSessionData ? (sessionData?.pendingCount ?? 0) : "-",
-              searchValue: hasSessionData
-                ? (sessionData?.pendingCount ?? 0)
-                : 0,
             },
           ],
           [
@@ -878,7 +877,12 @@ const EventsPanel = (props: EventsPanelProps) => {
           [
             "sessionId",
             {
-              value: <TruncatedGuid guid={item?.sessionId} />,
+              value: (
+                <TruncatedGuid
+                  guid={item?.sessionId}
+                  onClick={(g) => handleFilterById("sessionId", g)}
+                />
+              ),
               searchValue: item?.sessionId || "",
             },
           ],
@@ -907,9 +911,7 @@ const EventsPanel = (props: EventsPanelProps) => {
             "reported",
             {
               value: renderReportedCell(item),
-              searchValue: item.isReported
-                ? (item.ticketId ?? "reported")
-                : "",
+              searchValue: item.isReported ? (item.ticketId ?? "reported") : "",
             },
           ],
           [
@@ -981,8 +983,19 @@ const EventsPanel = (props: EventsPanelProps) => {
   // exact filter the user had selected, not the page's defaults. Removing the
   // last chip is treated as "All statuses" (sentinel) for the same reason.
   const handleStatusChange = (next: api.ResolutionStatus[]): void => {
-    const nextStatus = next.length === 0 ? [STATUS_ALL_SENTINEL] : (next as string[]);
+    const nextStatus =
+      next.length === 0 ? [STATUS_ALL_SENTINEL] : (next as string[]);
     applyFilters({ ...applied, status: nextStatus });
+  };
+
+  // Clicking an Event Id / Session Id cell narrows the list to that value.
+  // Any prior status/type filter is kept so the click refines rather than
+  // replaces the operator's view. The copy icon next to the value still copies.
+  const handleFilterById = (
+    key: "eventId" | "sessionId",
+    value: string,
+  ): void => {
+    applyFilters({ ...applied, [key]: value });
   };
 
   const setMaxResults = (next: number): void => {
@@ -1139,7 +1152,11 @@ const EventsPanel = (props: EventsPanelProps) => {
             value={isLoading ? "—" : counts.deferred.toLocaleString()}
             tone={counts.deferred > 0 ? "warning" : "muted"}
             delta={
-              isLoading ? "…" : counts.deferred === 0 ? "none" : "awaiting retry"
+              isLoading
+                ? "…"
+                : counts.deferred === 0
+                  ? "none"
+                  : "awaiting retry"
             }
           />
           <StatTile

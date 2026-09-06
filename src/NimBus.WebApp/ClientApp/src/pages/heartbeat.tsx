@@ -25,12 +25,23 @@ import { cn } from "lib/utils";
 
 const WINDOWS = [7, 30, 90] as const;
 
+// Colours the daily strip and the legend above it. Kept in one place so the
+// legend says exactly what the cells mean.
 const dayTone = {
-  none: "bg-muted border-border",
-  full: "bg-status-success/70 border-status-success",
-  partial: "bg-status-warning/70 border-status-warning",
-  gap: "bg-status-danger/80 border-status-danger",
+  none: "bg-muted border border-border",
+  full: "bg-status-success",
+  partial: "bg-status-warning",
+  gap: "bg-status-danger",
 } as const;
+
+function LegendKey({ tone, label }: { tone: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <i className={cn("inline-block h-2 w-2 rounded-full", tone)} />
+      {label}
+    </span>
+  );
+}
 
 function percent(value?: number): string {
   return value == null ? "—" : `${(value * 100).toFixed(1)}%`;
@@ -146,7 +157,16 @@ export default function Heartbeat() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Adapter status</CardTitle>
+                <div className="flex flex-wrap items-baseline justify-between gap-4">
+                  <CardTitle>Adapter status</CardTitle>
+                  <div className="flex flex-wrap items-center gap-3.5 font-mono text-[10.5px] text-muted-foreground">
+                    <LegendKey tone={dayTone.full} label="Full day" />
+                    <LegendKey tone={dayTone.partial} label="Missed beats" />
+                    <LegendKey tone={dayTone.gap} label="Gap ≥ 1h" />
+                    <LegendKey tone={dayTone.none} label="No data" />
+                    <span>strip = last {windowDays} days, today rightmost</span>
+                  </div>
+                </div>
                 <CardDescription>
                   Daily cells are UTC calendar days. Green requires at least 90%
                   observation coverage; amber can mean misses or incomplete
@@ -167,7 +187,9 @@ export default function Heartbeat() {
                         <th className="p-3 text-left">Status</th>
                         <th className="p-3 text-left">Uptime</th>
                         <th className="p-3 text-left">SDK</th>
-                        <th className="p-3 text-left">Daily history</th>
+                        <th className="p-3 text-left" style={{ width: "34%" }}>
+                          Daily history
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -200,7 +222,11 @@ export default function Heartbeat() {
                                   : "unknown")}
                             </td>
                             <td className="p-3">
-                              <div className="flex gap-1">
+                              <div
+                                role="img"
+                                aria-label={`Daily heartbeat history, ${adapter.days?.length ?? 0} days, most recent on the right`}
+                                className="flex h-4 items-stretch gap-[2px]"
+                              >
                                 {(adapter.days ?? []).map((day) => {
                                   const state = normalizeDayState(day.state);
                                   const label =
@@ -212,7 +238,7 @@ export default function Heartbeat() {
                                       aria-label={`${label}: ${state}`}
                                       title={`${label}: ${state}; ${Math.round((day.coverage ?? 0) * 24)}h observed; ${day.missed ?? 0} missed`}
                                       className={cn(
-                                        "h-5 w-2.5 shrink-0 rounded-sm border",
+                                        "min-w-[3px] flex-1 rounded-[2px]",
                                         dayTone[state],
                                       )}
                                     />

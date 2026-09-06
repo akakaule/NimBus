@@ -13,8 +13,8 @@ import * as api from "api-client";
 // Shared mock handles. `getByFilterMock` resolves the events immediately;
 // `postSessionsBatchMock` returns a promise we resolve by hand so the test can
 // observe the table BEFORE the session-status batch settles.
-const { sessionsDeferreds, postSessionsBatchMock, getByFilterMock } = vi.hoisted(
-  () => {
+const { sessionsDeferreds, postSessionsBatchMock, getByFilterMock } =
+  vi.hoisted(() => {
     const sessionsDeferreds: Array<(value: unknown) => void> = [];
     const postSessionsBatchMock = vi.fn(
       () =>
@@ -24,8 +24,7 @@ const { sessionsDeferreds, postSessionsBatchMock, getByFilterMock } = vi.hoisted
     );
     const getByFilterMock = vi.fn();
     return { sessionsDeferreds, postSessionsBatchMock, getByFilterMock };
-  },
-);
+  });
 
 // DataTable reads the toast provider for action feedback; no-op it.
 vi.mock("components/ui/toast", () => ({
@@ -82,14 +81,52 @@ describe("EventsPanel paints before the session-status batch resolves", () => {
     expect(postSessionsBatchMock).toHaveBeenCalledTimes(1);
     expect(sessionsDeferreds.length).toBe(1); // batch is still in flight
 
-    // Resolving the batch hydrates the per-session Pending count into the row.
+    // Resolving the batch hydrates the per-session Deferred count into the row.
     await act(async () => {
       sessionsDeferreds[0]([
-        { deferredEvents: [], pendingEvents: ["a_sess-1", "b_sess-1", "c_sess-1"] },
+        {
+          deferredEvents: ["a_sess-1", "b_sess-1", "c_sess-1"],
+          pendingEvents: [],
+        },
       ]);
     });
 
     await waitFor(() => expect(screen.getByText("3")).toBeTruthy());
+  });
+});
+
+describe("EventsPanel id cells filter on click", () => {
+  it("clicking a Session Id re-queries with that session instead of copying", async () => {
+    const event = Object.assign(new api.Event(), {
+      eventId: "evt-1",
+      sessionId: "sess-filter-me",
+      eventTypeId: "ClickFilterEvent",
+      lastMessageId: "msg-1",
+      resolutionStatus: api.ResolutionStatus.Completed,
+    });
+    getByFilterMock.mockResolvedValue({
+      events: [event],
+      continuationToken: undefined,
+    });
+
+    const { default: EventsPanel } = await import("./events-panel");
+    render(
+      <MemoryRouter>
+        <EventsPanel endpointId="ep-1" />
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(screen.getByText("ClickFilterEvent")).toBeTruthy(),
+    );
+    const initialCalls = getByFilterMock.mock.calls.length;
+
+    fireEvent.click(screen.getByRole("button", { name: "sess-fil…" }));
+
+    await waitFor(() =>
+      expect(getByFilterMock.mock.calls.length).toBeGreaterThan(initialCalls),
+    );
+    const lastRequest = getByFilterMock.mock.lastCall?.[1] as api.SearchRequest;
+    expect(lastRequest.eventFilter?.sessionId).toBe("sess-filter-me");
   });
 });
 

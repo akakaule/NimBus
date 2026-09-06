@@ -412,7 +412,7 @@ constraints Phase 1 must characterize, and the easiest to break when
 
 ### C.1 The plans live in a third location
 
-`docs/plan/` is new. The repo already has `docs/specs/` (027, 028), and the
+`docs/plan/` is new. The repo already has `docs/spec/` (027, 028), and the
 standing convention for spec and plan documents is `docs/spec/`. Three
 directories for one class of document. Pick one and move these — the roadmap will
 be referenced from PR descriptions for weeks, so the path should be the one

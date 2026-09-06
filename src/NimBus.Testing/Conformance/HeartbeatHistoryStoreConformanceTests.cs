@@ -50,6 +50,27 @@ public abstract class HeartbeatHistoryStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task Fractional_second_gap_keys_round_trip_and_update_without_duplicates()
+    {
+        var store = CreateStore();
+        var from = DateTime.UtcNow.Date.AddDays(-2).AddTicks(2_533_333);
+        var gap = Gap("fractional", from, null);
+        Assert.IsTrue(await store.UpsertHeartbeatGaps([gap]));
+
+        var stored = (await store.GetHeartbeatGaps(from.Date)).Single(row => row.EndpointId == gap.EndpointId);
+        Assert.AreEqual(from, stored.FromUtc, "The timestamp key must retain all seven fractional digits.");
+        stored.ToUtc = from.AddSeconds(60).AddTicks(1234);
+        stored.SdkVersionAfter = "2.0.0";
+        Assert.IsTrue(await store.UpsertHeartbeatGaps([stored]));
+        Assert.IsTrue(await store.UpsertHeartbeatGaps([stored]));
+
+        var rows = (await store.GetHeartbeatGaps(from.Date)).Where(row => row.EndpointId == gap.EndpointId).ToList();
+        Assert.HasCount(1, rows);
+        Assert.AreEqual(stored.ToUtc, rows[0].ToUtc);
+        Assert.AreEqual("2.0.0", rows[0].SdkVersionAfter);
+    }
+
+    [TestMethod]
     public async Task Empty_upserts_succeed_without_rows()
     {
         var store = CreateStore();

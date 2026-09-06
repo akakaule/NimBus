@@ -37,7 +37,6 @@ describe("EVENT_COLUMNS", () => {
   it("matches the events table's canonical column set", () => {
     expect(ALL_IDS).toEqual([
       "eventId",
-      "deferredCount",
       "status",
       "sessionId",
       "eventTypeId",
@@ -58,7 +57,6 @@ describe("getVisibleColumns", () => {
     const visible = getVisibleColumns(new Set(["status", "added"]));
     expect(visible.map((c) => c.id)).toEqual([
       "eventId",
-      "deferredCount",
       "sessionId",
       "eventTypeId",
       "resubmitCount",

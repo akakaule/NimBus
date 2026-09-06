@@ -165,21 +165,23 @@ export const EVENT_COLUMNS: EventColumn[] = [
     locked: true,
   },
   {
-    id: "deferredCount",
-    label: "Deferred",
-    numeric: true,
-    width: "7%",
-    info: "Messages deferred behind this failed message in its session",
+    id: "status",
+    label: "Status",
+    numeric: false,
+    // Wide enough for the status badge plus the "Awaiting external" /
+    // "N blocked" chips that sit beside it.
+    width: "15%",
+    info: "A failed message shows how many deferred messages are blocked behind it in its session",
   },
-  { id: "status", label: "Status", numeric: false, width: "8%" },
   { id: "sessionId", label: "Session Id", numeric: false, width: "10%" },
-  { id: "eventTypeId", label: "Event Type", numeric: false, width: "15%" },
-  { id: "resubmitCount", label: "Resubmits", numeric: true, width: "7%" },
+  { id: "eventTypeId", label: "Event Type", numeric: false, width: "19%" },
+  // A small count — fixed narrow width, just enough for the header label.
+  { id: "resubmitCount", label: "Resubmits", numeric: true, width: 110 },
   {
     id: "reported",
     label: "Reported",
     numeric: false,
-    width: 140,
+    width: 130,
     info: "Whether this event has been reported, with an optional ticket reference",
   },
   { id: "updated", label: "Updated", numeric: false, width: "12%" },
@@ -738,16 +740,20 @@ const EventsPanel = (props: EventsPanelProps) => {
       );
     }
 
+    // Not yet reported: a bare flag keeps the column quiet; the label lives in
+    // the accessible name and tooltip.
     return (
       <button
         type="button"
+        aria-label="Report"
+        title="Report this event"
         onClick={(e) => {
           e.stopPropagation();
           setReportTarget({ event: item, anchor: e.currentTarget });
         }}
-        className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-card px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:border-primary hover:bg-primary/10 hover:text-primary-600"
+        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border-strong bg-card text-sm text-muted-foreground hover:border-primary hover:bg-primary/10 hover:text-primary-600"
       >
-        ⚑ Report
+        ⚑
       </button>
     );
   };
@@ -762,6 +768,7 @@ const EventsPanel = (props: EventsPanelProps) => {
     if (event.resolutionStatus === api.ResolutionStatus.Deferred) {
       actions.push({
         name: "Reprocess",
+        description: "Retry the deferred messages in this session",
         onClick: () => {
           reprocessDeferredBySession(event);
           return false;
@@ -771,6 +778,7 @@ const EventsPanel = (props: EventsPanelProps) => {
       actions.push(
         {
           name: "Resubmit",
+          description: "Send the message to the endpoint again",
           onClick: () => {
             resubmitSingleEvent(event);
             return false;
@@ -778,6 +786,7 @@ const EventsPanel = (props: EventsPanelProps) => {
         },
         {
           name: "Skip",
+          description: "Mark the message as skipped and unblock its session",
           onClick: () => {
             skipSingleEvent(event);
             return false;
@@ -820,8 +829,12 @@ const EventsPanel = (props: EventsPanelProps) => {
 
   const mapEvents = (): ITableRow[] => {
     return visibleEvents.map((item) => {
-      const hasSessionData = isFailedStatus(item.resolutionStatus);
-      const sessionData = sessions[item.sessionId!];
+      // A failed message blocks its session; surface how many deferred
+      // messages wait behind it as a chip on the status badge rather than a
+      // column that is empty for every other row.
+      const blockedCount = isFailedStatus(item.resolutionStatus)
+        ? (sessions[item.sessionId!]?.deferredCount ?? 0)
+        : 0;
 
       const row: ITableRow = {
         id: item.eventId!,
@@ -839,15 +852,6 @@ const EventsPanel = (props: EventsPanelProps) => {
                 />
               ),
               searchValue: item.eventId!,
-            },
-          ],
-          [
-            "deferredCount",
-            {
-              value: hasSessionData ? (sessionData?.deferredCount ?? 0) : "-",
-              searchValue: hasSessionData
-                ? (sessionData?.deferredCount ?? 0)
-                : 0,
             },
           ],
           [
@@ -869,9 +873,22 @@ const EventsPanel = (props: EventsPanelProps) => {
                       Awaiting external
                     </Badge>
                   )}
+                  {blockedCount > 0 && (
+                    <Badge
+                      variant="warning"
+                      size="sm"
+                      withDot={false}
+                      title={`${blockedCount} deferred message${blockedCount === 1 ? "" : "s"} waiting on this failed message in session ${item.sessionId}`}
+                    >
+                      ⏸ {blockedCount} blocked
+                    </Badge>
+                  )}
                 </span>
               ),
-              searchValue: item.resolutionStatus ?? "",
+              searchValue:
+                blockedCount > 0
+                  ? `${item.resolutionStatus} ${blockedCount} blocked`
+                  : (item.resolutionStatus ?? ""),
             },
           ],
           [
@@ -1274,6 +1291,7 @@ const EventsPanel = (props: EventsPanelProps) => {
             headActions={headActions}
             rows={rows}
             withCheckboxes={true}
+            rowActions="menu"
             noDataMessage="No events available"
             isLoading={isLoading}
             count={rows.length}

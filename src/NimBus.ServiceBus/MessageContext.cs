@@ -318,7 +318,7 @@ namespace NimBus.ServiceBus
             }
         }
 
-        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/specs/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead.")]
+        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead.")]
         public async Task Defer(CancellationToken cancellationToken = default)
         {
             if (IsDeferred)
@@ -342,7 +342,7 @@ namespace NimBus.ServiceBus
             }
         }
 
-        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/specs/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead.")]
+        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead.")]
         public async Task DeferOnly(CancellationToken cancellationToken = default)
         {
             if (IsDeferred)
@@ -387,7 +387,7 @@ namespace NimBus.ServiceBus
             return state.BlockedByEventId;
         }
 
-        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/specs/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
+        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
         public async Task<IMessageContext> ReceiveNextDeferred(CancellationToken cancellationToken = default)
         {
             SessionState state = await GetSessionState(cancellationToken);
@@ -423,7 +423,7 @@ namespace NimBus.ServiceBus
             return null;
         }
 
-        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/specs/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
+        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
         public async Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken cancellationToken = default)
         {
             SessionState state = await GetSessionState(cancellationToken);
@@ -465,7 +465,7 @@ namespace NimBus.ServiceBus
             return null;
         }
 
-        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/specs/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
+        [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
         public async Task RestoreNextDeferred(IMessageContext deferredMessage, CancellationToken cancellationToken = default)
         {
             if (deferredMessage == null)

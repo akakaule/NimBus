@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Plan under review** | `docs/superpowers/plans/resolver-dead-letter-replay.md` (389 lines) |
+| **Plan under review** | `docs/plan/resolver-dead-letter-replay.md` (389 lines) |
 | **Commit** | `0dfc414` on branch `docs/resolver-dead-letter-replay-plan` |
 | **Date** | 2026-09-03 |
 | **Method** | Every file path, API signature, exception hierarchy, and behavioural claim in the plan was checked against the working tree. Claims about Azure Service Bus were checked against Microsoft's transaction documentation. |
@@ -82,7 +82,7 @@ So once Phase 1 raises the shared constant, **any operator running Clear Endpoin
 
 ### B5 — The atomicity bar is stricter than the platform's own recorded standard
 
-Spec 027's permanent non-goal reads, verbatim (`docs/specs/027-service-bus-emulator/spec.md:51`):
+Spec 027's permanent non-goal reads, verbatim (`docs/spec/027-service-bus-emulator/spec.md:51`):
 
 > AMQP transactions / `TransactionScope` / send-via (NimBus has zero usage; the send-then-complete in `MessageContext.ScheduleRedelivery` is **deliberately non-atomic**).
 
@@ -164,4 +164,4 @@ The plan does **not** silently contradict spec 027's permanent non-goal on AMQP 
 4. **Phase 2.** Unchanged, plus the wider heartbeat-comment fix (S6).
 5. **Phases 4–5.** Bound the operation per B2; simplify the API per S7.
 6. **Phases 6–7.** Sound as written.
-7. **Move the plan and this review to `docs/spec/`** and delete the recreated `docs/superpowers/` tree.
+7. **Move the plan and this review to `docs/plan/`** and delete the recreated `docs/superpowers/` tree. *(Done 2026-09-05 — plans now live in `docs/plan/`, specs in `docs/spec/`, `docs/specs/` was folded into `docs/spec/`.)*

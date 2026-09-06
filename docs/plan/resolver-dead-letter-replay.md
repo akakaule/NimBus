@@ -15,7 +15,7 @@ This revision incorporates the actionable findings from `docs/spec/2026-09-03-re
 - Keep the reason Cosmos-specific. SQL throttling codes do not become `CosmosDbThrottled`; SQL-backed installations can still inspect/replay every reason actually present in their Resolver DLQ.
 - Keep atomic replay. The source handoff explicitly requires it, and the existing non-atomic scheduled-redelivery path is not precedent for operator replay: replay deliberately assigns a fresh ID, so send-before-complete failure guarantees a processable duplicate rather than one duplicate-detectable retry.
 - Keep the `subscriptionName` route parameter and full server-side guard rails because they are part of the handoff contract and protect future declared terminal Resolver subscriptions, even though today only `Resolver/Resolver` qualifies.
-- Keep the plan in `docs/superpowers/plans/` as required by the repository instructions supplied for this task.
+- Keep the plan in `docs/plan/` (plans) — design specs live in `docs/spec/`.
 
 ## Preconditions and branch
 
@@ -209,7 +209,7 @@ Add stock Azure SDK smoke tests to `tests/NimBus.ServiceBusEmulator.Tests/SdkSmo
 
 ### Implementation
 
-- Update `docs/specs/027-service-bus-emulator/spec.md` so regular-DLQ browsing and the single complete-plus-send transaction are required NimBus surface; retain broader AMQP transactions as out of scope.
+- Update `docs/spec/027-service-bus-emulator/spec.md` so regular-DLQ browsing and the single complete-plus-send transaction are required NimBus surface; retain broader AMQP transactions as out of scope.
 - Extend `src/NimBus.ServiceBusEmulator/Protocol/AmqpFrontend.cs` to register regular-DLQ management nodes and a transaction coordinator.
 - Extend `src/NimBus.ServiceBusEmulator/Protocol/ManagementRequestProcessor.cs` and `src/NimBus.ServiceBusEmulator/Protocol/BrokerLinkProcessor.cs` to parse the `/$DeadLetterQueue` suffix, use the regular-DLQ store, and preserve transfer-DLQ exclusion.
 - Add a narrowly scoped transaction registry/coordinator under `src/NimBus.ServiceBusEmulator/Protocol/` for SDK `declare`, transactional transfer/disposition state, `discharge` commit, and rollback-on-close/abort.

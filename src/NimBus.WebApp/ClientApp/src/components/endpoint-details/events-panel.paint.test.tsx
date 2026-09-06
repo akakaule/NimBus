@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import * as api from "api-client";
@@ -81,7 +82,7 @@ describe("EventsPanel paints before the session-status batch resolves", () => {
     expect(postSessionsBatchMock).toHaveBeenCalledTimes(1);
     expect(sessionsDeferreds.length).toBe(1); // batch is still in flight
 
-    // Resolving the batch hydrates the per-session Deferred count into the row.
+    // Resolving the batch hydrates the blocked-count chip on the status badge.
     await act(async () => {
       sessionsDeferreds[0]([
         {
@@ -91,7 +92,7 @@ describe("EventsPanel paints before the session-status batch resolves", () => {
       ]);
     });
 
-    await waitFor(() => expect(screen.getByText("3")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/3 blocked/)).toBeTruthy());
   });
 });
 
@@ -170,5 +171,61 @@ describe("EventsPanel duplicate status display", () => {
 
     expect(screen.getByText("Skipped (duplicate)")).toBeTruthy();
     expect(screen.getAllByText("Skipped")).toHaveLength(1);
+  });
+});
+
+describe("EventsPanel row actions and report flag", () => {
+  it("shows a flag-only Report button and an Actions menu only on actionable rows", async () => {
+    // The previous test left viewMode=grouped in the per-endpoint filter store.
+    window.sessionStorage.clear();
+    const failed = Object.assign(new api.Event(), {
+      eventId: "evt-failed",
+      sessionId: "sess-failed",
+      eventTypeId: "FailedEvent",
+      lastMessageId: "msg-failed",
+      resolutionStatus: api.ResolutionStatus.Failed,
+    });
+    const completed = Object.assign(new api.Event(), {
+      eventId: "evt-completed",
+      sessionId: "sess-completed",
+      eventTypeId: "CompletedEvent",
+      lastMessageId: "msg-completed",
+      resolutionStatus: api.ResolutionStatus.Completed,
+    });
+    getByFilterMock.mockResolvedValue({
+      events: [failed, completed],
+      continuationToken: undefined,
+    });
+
+    const { default: EventsPanel } = await import("./events-panel");
+    render(
+      <MemoryRouter>
+        <EventsPanel endpointId="ep-1" />
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(screen.getByText("CompletedEvent")).toBeTruthy(),
+    );
+
+    // Report is a bare flag — the accessible name carries the label.
+    const reportButtons = screen.getAllByRole("button", { name: "Report" });
+    expect(reportButtons).toHaveLength(2);
+    expect(reportButtons[0].textContent?.trim()).toBe("⚑");
+
+    // One ellipsis trigger for the failed row, none for the completed one, and
+    // no inline Resubmit/Skip buttons in the rows.
+    expect(screen.getAllByRole("button", { name: "Actions" })).toHaveLength(1);
+    // (The only Skip/Resubmit buttons left are the disabled bulk ones in the
+    // table header.)
+    for (const b of screen.getAllByRole("button", { name: "Skip" })) {
+      expect((b as HTMLButtonElement).disabled).toBe(true);
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+    const menu = screen.getByRole("menu");
+    expect(
+      within(menu).getByRole("menuitem", { name: /Resubmit/ }),
+    ).toBeTruthy();
+    expect(within(menu).getByRole("menuitem", { name: /Skip/ })).toBeTruthy();
   });
 });

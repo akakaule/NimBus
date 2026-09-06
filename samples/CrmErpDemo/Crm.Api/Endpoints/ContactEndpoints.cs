@@ -1,5 +1,6 @@
 using Crm.Api.Entities;
 using Crm.Api.Mapping;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using NimBus.SDK;
 
@@ -52,42 +53,7 @@ public static class ContactEndpoints
         // it here to a local Account.Id via Accounts.ErpCustomerId so the CRM
         // contact ends up linked to the correct CRM account row (or null if
         // the matching account hasn't been synced yet).
-        group.MapPut("/upsert/{id:guid}", async (Guid id, ContactUpsertRequest req, CrmDbContext db) =>
-        {
-            Guid? resolvedAccountId = null;
-            if (req.ErpCustomerId is { } erpId && erpId != Guid.Empty)
-            {
-                var account = await db.Accounts.FirstOrDefaultAsync(a => a.ErpCustomerId == erpId);
-                resolvedAccountId = account?.Id;
-            }
-
-            var existing = await db.Contacts.FindAsync(id);
-            if (existing is null)
-            {
-                var contact = new Contact
-                {
-                    Id = id,
-                    AccountId = resolvedAccountId,
-                    FirstName = req.FirstName,
-                    LastName = req.LastName,
-                    Email = req.Email,
-                    Phone = req.Phone,
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    Origin = req.Origin ?? "Erp",
-                };
-                db.Contacts.Add(contact);
-                await db.SaveChangesAsync();
-                return Results.Ok(contact);
-            }
-            existing.AccountId = resolvedAccountId;
-            existing.FirstName = req.FirstName;
-            existing.LastName = req.LastName;
-            existing.Email = req.Email;
-            existing.Phone = req.Phone;
-            existing.UpdatedAt = DateTimeOffset.UtcNow;
-            await db.SaveChangesAsync();
-            return Results.Ok(existing);
-        });
+        group.MapPut("/upsert/{id:guid}", UpsertContactAsync);
 
         // User-driven soft delete: marks IsDeleted=true and publishes CrmContactDeleted.
         group.MapDelete("/{id:guid}", async (Guid id, CrmDbContext db, IPublisherClient publisher) =>
@@ -115,6 +81,64 @@ public static class ContactEndpoints
             return Results.Ok(existing);
         });
     }
+
+    private static async Task<IResult> UpsertContactAsync(
+        Guid id, ContactUpsertRequest req, CrmDbContext db, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+                // Lock the key (or its missing-key range) until both the contact
+                // and EF-generated audit rows commit. HTTP retries may overlap
+                // even when Service Bus delivers this session in order.
+                var contact = await db.Contacts.FromSqlInterpolated(
+                    $"SELECT * FROM [dbo].[Contacts] WITH (UPDLOCK, HOLDLOCK) WHERE [Id] = {id}")
+                    .SingleOrDefaultAsync(cancellationToken);
+                Guid? resolvedAccountId = null;
+                if (req.ErpCustomerId is { } erpId && erpId != Guid.Empty)
+                {
+                    var account = await db.Accounts.FirstOrDefaultAsync(a => a.ErpCustomerId == erpId, cancellationToken);
+                    resolvedAccountId = account?.Id;
+                }
+
+                if (contact is null)
+                {
+                    contact = new Contact
+                    {
+                        Id = id,
+                        CreatedAt = DateTimeOffset.UtcNow,
+                        Origin = req.Origin ?? "Erp",
+                    };
+                    db.Contacts.Add(contact);
+                }
+                else
+                {
+                    contact.UpdatedAt = DateTimeOffset.UtcNow;
+                }
+                contact.AccountId = resolvedAccountId;
+                contact.FirstName = req.FirstName;
+                contact.LastName = req.LastName;
+                contact.Email = req.Email;
+                contact.Phone = req.Phone;
+                await db.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return Results.Ok(contact);
+            }
+            catch (Exception exception) when (attempt < 2 && IsDeadlock(exception))
+            {
+                // The disposed transaction rolled back its audit rows too. A new
+                // attempt must not reuse tracked entities or generated audits.
+                db.ChangeTracker.Clear();
+                await Task.Delay(TimeSpan.FromMilliseconds(50 * (attempt + 1)), cancellationToken);
+            }
+        }
+    }
+
+    private static bool IsDeadlock(Exception exception) =>
+        exception is SqlException { Number: 1205 }
+        or DbUpdateException { InnerException: SqlException { Number: 1205 } };
 }
 
 // Adapter-side upsert request shape. Carries ErpCustomerId (ERP's customer id);

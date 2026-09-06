@@ -56,9 +56,7 @@ export default class EndpointsList extends React.Component<
       endpointIds: this.props.endpointIds ?? [],
       statusById: this.indexById(mappedProps ?? []),
       loading: !mappedProps,
-      checked: Cookies.get(this.cookieName)
-        ? Cookies.get(this.cookieName)!.split(",")
-        : [],
+      checked: this.readPersistedFilter(),
     };
 
     this.handleCheck = this.handleCheck.bind(this);
@@ -66,7 +64,7 @@ export default class EndpointsList extends React.Component<
 
   // componentDidMount gets called once we're client-side
   async componentDidMount() {
-    const cookie = Cookies.get(this.cookieName)?.split(",");
+    const persisted = this.readPersistedFilter();
 
     this.client = new api.Client(api.CookieAuth());
     // If we didn't rehydrate with endpoint states, call the api to get them.
@@ -78,14 +76,18 @@ export default class EndpointsList extends React.Component<
         : this.client.getEndpointsAll(),
       getApplicationStatus(),
     ]);
-    let filteredEndpointIds: Array<string>;
     this.env = appStatus.env;
 
-    if (cookie) {
-      filteredEndpointIds = cookie;
-    } else {
-      filteredEndpointIds = endPointIds;
+    // Drop ids the catalog no longer knows about, otherwise a stale saved
+    // filter keeps requesting ghost endpoints (and can hide every row).
+    const known = new Set(endPointIds);
+    const checked = persisted.filter((id) => known.has(id));
+    if (checked.length !== persisted.length) {
+      this.persistFilter(checked);
     }
+
+    const filteredEndpointIds: Array<string> =
+      checked.length > 0 ? checked : endPointIds;
 
     let endpoints: api.EndpointStatusCount[];
     try {
@@ -103,9 +105,31 @@ export default class EndpointsList extends React.Component<
 
     this.setState((prev) => ({
       endpointIds: endPointIds,
+      checked,
       statusById: this.mergeStatuses(prev.statusById, endpoints),
       loading: false,
     }));
+  }
+
+  // The ticked endpoint ids survive navigation and reloads in a cookie.
+  // An absent cookie means "show all".
+  private readPersistedFilter(): string[] {
+    const raw = Cookies.get(this.cookieName);
+    if (!raw) {
+      return [];
+    }
+    return raw.split(",").filter((id) => id.length > 0);
+  }
+
+  private persistFilter(checked: string[]): void {
+    if (checked.length === 0) {
+      Cookies.remove(this.cookieName);
+      return;
+    }
+    Cookies.set(this.cookieName, checked.join(","), {
+      expires: 365,
+      sameSite: "lax",
+    });
   }
 
   async handleCheck(endpointId: string, newState: boolean) {
@@ -122,6 +146,7 @@ export default class EndpointsList extends React.Component<
     const visibleIds = checked.length > 0 ? checked : this.state.endpointIds;
     const statusById = await this.loadStatuses(visibleIds, this.state.statusById);
 
+    this.persistFilter(checked);
     this.setState({ checked, statusById });
   }
 

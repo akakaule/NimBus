@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
@@ -29,7 +30,7 @@ internal sealed class SqlServerHeartbeatHistoryStore : IHeartbeatHistoryStore
                FROM {T("HeartbeatUptimeDays")}
                WHERE DayUtc >= @FromDayUtc
                ORDER BY EndpointId, DayUtc",
-            new { FromDayUtc = fromDayUtc.Date },
+            TimestampParameters("FromDayUtc", fromDayUtc.Date),
             commandTimeout: _context.CommandTimeout);
         return rows.Select(day =>
         {
@@ -56,7 +57,14 @@ WHEN NOT MATCHED THEN INSERT
 VALUES
     (@EndpointId, @DayUtc, @Expected, @Received, @Missed, @ObservedSeconds, @LongestGapSeconds, @LastBeatUtc);";
         await using var conn = await OpenAsync();
-        await conn.ExecuteAsync(sql, rows, commandTimeout: _context.CommandTimeout);
+        var parameters = rows.Select(day =>
+        {
+            var values = new DynamicParameters(day);
+            values.Add(nameof(day.DayUtc), day.DayUtc, DbType.DateTime2);
+            values.Add(nameof(day.LastBeatUtc), day.LastBeatUtc, DbType.DateTime2);
+            return values;
+        });
+        await conn.ExecuteAsync(sql, parameters, commandTimeout: _context.CommandTimeout);
         return true;
     }
 
@@ -68,7 +76,7 @@ VALUES
                FROM {T("HeartbeatGaps")}
                WHERE ToUtc IS NULL OR ToUtc >= @FromUtc
                ORDER BY FromUtc DESC",
-            new { FromUtc = fromUtc },
+            TimestampParameters("FromUtc", fromUtc),
             commandTimeout: _context.CommandTimeout);
         return rows.Select(gap =>
         {
@@ -94,7 +102,17 @@ WHEN NOT MATCHED THEN INSERT
 VALUES
     (@EndpointId, @FromUtc, @ToUtc, @SdkVersionBefore, @SdkVersionAfter);";
         await using var conn = await OpenAsync();
-        await conn.ExecuteAsync(sql, rows, commandTimeout: _context.CommandTimeout);
+        // SqlClient otherwise infers datetime for CLR DateTime. Comparing that
+        // parameter with a datetime2 key can miss an existing fractional-second
+        // row and then collide with that same key on INSERT.
+        var parameters = rows.Select(gap =>
+        {
+            var values = new DynamicParameters(gap);
+            values.Add(nameof(gap.FromUtc), gap.FromUtc, DbType.DateTime2);
+            values.Add(nameof(gap.ToUtc), gap.ToUtc, DbType.DateTime2);
+            return values;
+        });
+        await conn.ExecuteAsync(sql, parameters, commandTimeout: _context.CommandTimeout);
         return true;
     }
 
@@ -109,9 +127,11 @@ WHEN NOT MATCHED THEN
     INSERT (Id, Enabled, IntervalSeconds, TimeoutSeconds, LastHeartbeatFoldAtUtc)
     VALUES (@Id, 0, 300, 60, SYSUTCDATETIME());";
         await using var conn = await OpenAsync();
+        var parameters = TimestampParameters("DueBefore", dueBefore);
+        parameters.Add("Id", HeartbeatSettings.SingletonId);
         var rows = await conn.ExecuteAsync(
             sql,
-            new { Id = HeartbeatSettings.SingletonId, DueBefore = dueBefore },
+            parameters,
             commandTimeout: _context.CommandTimeout);
         return rows == 1;
     }
@@ -122,11 +142,17 @@ WHEN NOT MATCHED THEN
 DELETE FROM {T("HeartbeatUptimeDays")} WHERE DayUtc < @CutoffDayUtc;
 DELETE FROM {T("HeartbeatGaps")} WHERE ToUtc IS NOT NULL AND ToUtc < @CutoffUtc;";
         await using var conn = await OpenAsync();
+        var parameters = TimestampParameters("CutoffDayUtc", cutoffUtc.Date);
+        parameters.Add("CutoffUtc", cutoffUtc, DbType.DateTime2);
         await conn.ExecuteAsync(
             sql,
-            new { CutoffDayUtc = cutoffUtc.Date, CutoffUtc = cutoffUtc },
+            parameters,
             commandTimeout: _context.CommandTimeout);
     }
-
-
+    private static DynamicParameters TimestampParameters(string name, DateTime value)
+    {
+        var parameters = new DynamicParameters();
+        parameters.Add(name, value, DbType.DateTime2);
+        return parameters;
+    }
 }

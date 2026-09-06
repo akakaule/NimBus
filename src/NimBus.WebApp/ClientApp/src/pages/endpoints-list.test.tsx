@@ -10,13 +10,20 @@ import * as api from "api-client";
 const mocks = vi.hoisted(() => ({
   getEndpointsAll: vi.fn(),
   postApiEndpointStatusCount: vi.fn(),
+  cookieGet: vi.fn(() => "ep1" as string | undefined),
+  cookieSet: vi.fn(),
+  cookieRemove: vi.fn(),
 }));
 
 // The cookie seeds the initial "checked" filter. Returning a single id means
 // mount fetches only ep1, so checking ep2/ep3 later exercises the "fetch only
 // the ids we don't already hold" path.
 vi.mock("js-cookie", () => ({
-  default: { get: vi.fn(() => "ep1"), set: vi.fn() },
+  default: {
+    get: mocks.cookieGet,
+    set: mocks.cookieSet,
+    remove: mocks.cookieRemove,
+  },
 }));
 
 vi.mock("hooks/app-status", () => ({
@@ -53,6 +60,9 @@ const rowIds = () => (captured.rows ?? []).map((r) => r.id).sort();
 beforeEach(() => {
   captured.rows = undefined;
   captured.checked = undefined;
+  mocks.cookieGet.mockReset().mockReturnValue("ep1");
+  mocks.cookieSet.mockReset();
+  mocks.cookieRemove.mockReset();
   mocks.getEndpointsAll.mockReset().mockResolvedValue(["ep1", "ep2", "ep3"]);
   mocks.postApiEndpointStatusCount
     .mockReset()
@@ -125,5 +135,71 @@ describe("EndpointsList handleCheck (wave3)", () => {
     expect(captured.checked).toEqual(["ep1", "ep2"]);
     expect(ref.current!.state.checked).not.toBe(checkedBeforeUncheck);
     expect(checkedBeforeUncheck).toEqual(["ep1", "ep2", "ep3"]);
+  });
+});
+
+describe("EndpointsList filter persistence", () => {
+  const mount = async () => {
+    const { default: EndpointsList } = await import("./endpoints-list");
+    const ref = React.createRef<InstanceType<typeof EndpointsList>>();
+    render(
+      <MemoryRouter>
+        <EndpointsList ref={ref} />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(ref.current?.state.loading).toBe(false));
+    return ref;
+  };
+
+  it("writes the ticked ids to the cookie so the filter survives navigation", async () => {
+    const ref = await mount();
+
+    await act(async () => {
+      await ref.current!.handleCheck("ep2", true);
+    });
+
+    expect(mocks.cookieSet).toHaveBeenLastCalledWith(
+      "endpointFilters",
+      "ep1,ep2",
+      expect.objectContaining({ sameSite: "lax" }),
+    );
+  });
+
+  it("clears the cookie when the last box is unticked (show all)", async () => {
+    const ref = await mount();
+
+    await act(async () => {
+      await ref.current!.handleCheck("ep1", false);
+    });
+
+    expect(mocks.cookieRemove).toHaveBeenCalledWith("endpointFilters");
+    expect(rowIds()).toEqual(["ep1", "ep2", "ep3"]);
+  });
+
+  it("restores the persisted filter on a fresh mount", async () => {
+    mocks.cookieGet.mockReturnValue("ep2,ep3");
+
+    await mount();
+
+    expect(mocks.postApiEndpointStatusCount).toHaveBeenLastCalledWith([
+      "ep2",
+      "ep3",
+    ]);
+    expect(captured.checked).toEqual(["ep2", "ep3"]);
+    expect(rowIds()).toEqual(["ep2", "ep3"]);
+  });
+
+  it("drops persisted ids the catalog no longer knows about", async () => {
+    mocks.cookieGet.mockReturnValue("ep1,gone");
+
+    const ref = await mount();
+
+    expect(mocks.postApiEndpointStatusCount).toHaveBeenLastCalledWith(["ep1"]);
+    expect(ref.current!.state.checked).toEqual(["ep1"]);
+    expect(mocks.cookieSet).toHaveBeenLastCalledWith(
+      "endpointFilters",
+      "ep1",
+      expect.objectContaining({ sameSite: "lax" }),
+    );
   });
 });

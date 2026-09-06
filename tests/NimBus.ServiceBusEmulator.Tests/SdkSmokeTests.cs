@@ -510,7 +510,7 @@ public sealed class SdkSmokeTests
         await processor.StopProcessingAsync();
 
         Assert.HasCount(200, sessions);
-        Assert.HasCount(0, errors);
+        Assert.HasCount(0, errors, string.Join(System.Environment.NewLine, errors));
         await admin.DeleteTopicAsync(entityName);
     }
 

@@ -45,10 +45,7 @@ describe("DataTable (smoke)", () => {
   });
 
   it("renders row cell values from the per-row data map", () => {
-    const rows = [
-      makeRow("r1", "alpha", 42),
-      makeRow("r2", "beta", 7),
-    ];
+    const rows = [makeRow("r1", "alpha", 42), makeRow("r2", "beta", 7)];
     renderTable(<DataTable headCells={headCells} rows={rows} />);
 
     expect(screen.getByText("alpha")).toBeDefined();
@@ -88,7 +85,10 @@ describe("DataTable row navigation", () => {
   beforeEach(() => {
     navigateSpy.mockReset();
     openedTab = { opener: {} };
-    vi.stubGlobal("open", vi.fn(() => openedTab));
+    vi.stubGlobal(
+      "open",
+      vi.fn(() => openedTab),
+    );
   });
 
   afterEach(() => {
@@ -153,5 +153,75 @@ describe("DataTable row navigation", () => {
 
     expect(window.open).not.toHaveBeenCalled();
     expect(navigateSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("DataTable row actions menu", () => {
+  beforeEach(() => navigateSpy.mockReset());
+  const actionRows = (onResubmit: () => boolean): ITableRow[] => [
+    {
+      ...makeRow("r1", "failed-row", 1),
+      route: "/rows/r1",
+      bodyActions: [
+        {
+          name: "Resubmit",
+          description: "Send the message again",
+          onClick: onResubmit,
+        },
+        { name: "Skip", onClick: () => false },
+      ],
+    },
+    { ...makeRow("r2", "completed-row", 2), route: "/rows/r2" },
+  ];
+
+  it("shows a single ellipsis trigger only on rows that have actions", () => {
+    renderTable(
+      <DataTable
+        headCells={headCells}
+        rows={actionRows(() => false)}
+        rowActions="menu"
+      />,
+    );
+
+    expect(screen.getAllByRole("button", { name: "Actions" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Resubmit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Skip" })).toBeNull();
+  });
+
+  it("opens a dropdown listing the actions and runs the chosen one", () => {
+    const onResubmit = vi.fn(() => false);
+    renderTable(
+      <DataTable
+        headCells={headCells}
+        rows={actionRows(onResubmit)}
+        rowActions="menu"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+    const menu = screen.getByRole("menu");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // Compact menu: the description is a tooltip, not inline text.
+    expect(menu.textContent).not.toContain("Send the message again");
+    expect(
+      screen.getByRole("menuitem", { name: "Resubmit" }).getAttribute("title"),
+    ).toBe("Send the message again");
+    expect(screen.getByRole("menuitem", { name: "Skip" })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /Resubmit/ }));
+
+    expect(onResubmit).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menu")).toBeNull();
+    // Choosing an action must not also navigate the row.
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps inline buttons by default", () => {
+    renderTable(
+      <DataTable headCells={headCells} rows={actionRows(() => false)} />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Actions" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Resubmit" })).toBeDefined();
   });
 });

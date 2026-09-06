@@ -372,7 +372,7 @@ Commit: `fix(emulator): make admin mutations atomic with the topology journal`
 
 Files:
 
-- `docs/specs/027-service-bus-emulator/spec.md` — reconcile **SES-4**, its
+- `docs/spec/027-service-bus-emulator/spec.md` — reconcile **SES-4**, its
   **SES-8** reference, **TST-2 CommonFidelity** acceptance criteria, and the
   **M2** live-probe milestone with T0's recorded session contract. Replace the
   requirement that a never-materialized accept must pend if A is confirmed;

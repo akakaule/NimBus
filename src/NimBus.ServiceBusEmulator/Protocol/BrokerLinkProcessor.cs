@@ -5,6 +5,8 @@ using Amqp.Framing;
 using Amqp.Listener;
 using Amqp.Transactions;
 using Amqp.Types;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.ServiceBusEmulator.Broker;
 
 namespace NimBus.ServiceBusEmulator.Protocol;
@@ -12,8 +14,11 @@ namespace NimBus.ServiceBusEmulator.Protocol;
 internal sealed class BrokerLinkProcessor(
     BrokerNamespace broker,
     SessionLinkRegistry sessionLinks,
-    int maxMessageSize = 262_144) : ILinkProcessor
+    PendingLinkAttachRegistry pendingAttaches,
+    int maxMessageSize = 262_144,
+    ILogger<BrokerLinkProcessor>? logger = null) : ILinkProcessor
 {
+    private readonly ILogger _logger = logger ?? NullLogger<BrokerLinkProcessor>.Instance;
     private static readonly Symbol SessionFilter = new("com.microsoft:session-filter");
     private static readonly Symbol LockedUntilUtc = new("com.microsoft:locked-until-utc");
     private static readonly Symbol TimeoutProperty = new("com.microsoft:timeout");
@@ -45,7 +50,14 @@ internal sealed class BrokerLinkProcessor(
             return;
         }
 
-        AttachReceiverAsync(context, address).Observe();
+        var pending = pendingAttaches.Register(context);
+        _ = AttachReceiverAsync(pending, address).Observe(_logger, "receiver attach", context.Attach.LinkName, exception =>
+        {
+            if (!context.Link.IsClosed)
+            {
+                pending.Complete(ErrorFromException(exception));
+            }
+        });
     }
 
     private void AttachSender(AttachContext context, string topicName)
@@ -65,17 +77,18 @@ internal sealed class BrokerLinkProcessor(
         context.Complete(new TargetLinkEndpoint(new TopicMessageProcessor(broker, _transactions, topicName, maxMessageSize), context.Link), 100);
     }
 
-    private async Task AttachReceiverAsync(AttachContext context, string address)
+    private async Task AttachReceiverAsync(PendingLinkAttachRegistry.PendingAttach pending, string address)
     {
+        var context = pending.Context;
         if (!TryParseSubscription(address, out var topicName, out var subscriptionName, out var isDeadLetter) ||
             !broker.SubscriptionExists(topicName, subscriptionName))
         {
-            context.Complete(NotFound($"Subscription '{address}' does not exist."));
+            pending.Complete(NotFound($"Subscription '{address}' does not exist."));
             return;
         }
         if (!broker.CanReceive(topicName, subscriptionName))
         {
-            context.Complete(NotAllowed($"Subscription '{address}' is not available for receive."));
+            pending.Complete(NotAllowed($"Subscription '{address}' is not available for receive."));
             return;
         }
 
@@ -85,7 +98,7 @@ internal sealed class BrokerLinkProcessor(
         var isSessionReceiver = source.FilterSet?.TryGetValue(SessionFilter, out filterValue) == true;
         if (isSessionReceiver && !broker.GetSubscriptionDefinition(topicName, subscriptionName).RequiresSession)
         {
-            context.Complete(NotAllowed($"Subscription '{address}' does not require sessions."));
+            pending.Complete(NotAllowed($"Subscription '{address}' does not require sessions."));
             return;
         }
 
@@ -113,7 +126,7 @@ internal sealed class BrokerLinkProcessor(
                 catch (SessionCannotBeLockedException exception)
                 {
                     EmulatorDiagnostics.Write("Session accept rejected", requestedSession);
-                    context.Complete(new Error("com.microsoft:session-cannot-be-locked")
+                    pending.Complete(new Error("com.microsoft:session-cannot-be-locked")
                     {
                         Description = exception.Message,
                     });
@@ -131,13 +144,13 @@ internal sealed class BrokerLinkProcessor(
 
                 if (requestedSession is null && TimeProvider.System.GetElapsedTime(started) >= timeout)
                 {
-                    context.Complete(new Error("com.microsoft:timeout") { Description = "No unlocked session is available." });
+                    pending.Complete(new Error("com.microsoft:timeout") { Description = "No unlocked session is available." });
                     return;
                 }
 
                 await Task.Delay(25).ConfigureAwait(false);
             }
-            while (!context.Link.IsClosed);
+            while (pending.IsPending);
 
             if (sessionId is null)
             {
@@ -156,7 +169,10 @@ internal sealed class BrokerLinkProcessor(
             isDeadLetter,
             sessionId,
             owner);
-        context.Complete(new ResilientSourceLinkEndpoint(messageSource, context.Link), 0);
+        if (!pending.Complete(new ResilientSourceLinkEndpoint(messageSource, context.Link, _logger)))
+        {
+            messageSource.ReleaseSession();
+        }
     }
 
     private static TimeSpan GetTimeout(Attach attach)
@@ -177,6 +193,13 @@ internal sealed class BrokerLinkProcessor(
     private static Error NotFound(string description) => new("amqp:not-found") { Description = description };
 
     private static Error NotAllowed(string description) => new("amqp:not-allowed") { Description = description };
+
+    private static Error ErrorFromException(Exception exception) => exception switch
+    {
+        KeyNotFoundException => NotFound("The messaging entity no longer exists."),
+        AmqpException amqpException => amqpException.Error,
+        _ => new Error("amqp:internal-error") { Description = "The broker could not complete the link operation. See the broker logs." },
+    };
 
     private static bool TryParseSubscription(
         string address,
@@ -449,7 +472,14 @@ internal sealed class BrokerLinkProcessor(
             if (sessionId is not null)
             {
                 sessionLinks.Unregister(connection, linkName, owner);
-                broker.ReleaseSession(topicName, subscriptionName, sessionId, owner);
+                try
+                {
+                    broker.ReleaseSession(topicName, subscriptionName, sessionId, owner);
+                }
+                catch (KeyNotFoundException)
+                {
+                    // Deleting the entity already removed the session and its messages.
+                }
             }
         }
 
@@ -692,7 +722,7 @@ internal sealed class BrokerLinkProcessor(
     /// releases the failed delivery back to the broker and resets the flag so the
     /// next credit restarts delivery.
     /// </summary>
-    private sealed class ResilientSourceLinkEndpoint(SubscriptionMessageSource source, ListenerLink link) : LinkEndpoint
+    private sealed class ResilientSourceLinkEndpoint(SubscriptionMessageSource source, ListenerLink link, ILogger logger) : LinkEndpoint
     {
         // Message.Delivery and Amqp.Delivery are internal; the delivery's UserToken
         // carries the ReceiveContext that maps a disposition back to its lock token.
@@ -720,7 +750,7 @@ internal sealed class BrokerLinkProcessor(
                 return;
             }
 
-            PumpAsync().Observe();
+            StartPump();
         }
 
         public override void OnDisposition(DispositionContext dispositionContext)
@@ -753,7 +783,7 @@ internal sealed class BrokerLinkProcessor(
 
                     if (_pumpGate.Complete(!link.IsClosed, () => GetCredit(link) > 0))
                     {
-                        PumpAsync().Observe();
+                        StartPump();
                     }
 
                     return;
@@ -772,7 +802,7 @@ internal sealed class BrokerLinkProcessor(
                     source.DisposeMessage(context, NewDispositionContext(link, context.Message, new Released(), true));
                     if (_pumpGate.Complete(!link.IsClosed, () => GetCredit(link) > 0))
                     {
-                        PumpAsync().Observe();
+                        StartPump();
                     }
 
                     return;
@@ -781,6 +811,14 @@ internal sealed class BrokerLinkProcessor(
 
             _pumpGate.Complete(linkOpen: false, static () => false);
         }
+
+        private void StartPump() => _ = PumpAsync().Observe(logger, "receive pump", link.Name, exception =>
+        {
+            // GetMessageAsync and drain completion can fail too. Leaving the gate
+            // running would strand future flow/drain requests on a dead pump.
+            _pumpGate.Complete(linkOpen: false, static () => false);
+            link.Close(TimeSpan.Zero, ErrorFromException(exception));
+        });
     }
 }
 
@@ -832,15 +870,26 @@ internal sealed class ReceivePumpGate
 
 internal static class TaskExtensions
 {
-    public static async void Observe(this Task task)
+    private static readonly Action<ILogger, string, string, Exception?> LogFailure = LoggerMessage.Define<string, string>(
+        LogLevel.Error, new EventId(1, "AmqpBackgroundOperationFailed"), "AMQP {Operation} failed on link {LinkName}.");
+
+    public static async Task Observe(this Task task, ILogger logger, string operation, string linkName, Action<Exception> onFailure)
     {
         try
         {
             await task.ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (Exception exception)
         {
-            // AMQP.Net Lite owns the link lifecycle; a failed asynchronous attach is completed by the processor.
+            LogFailure(logger, operation, linkName, exception);
+            try
+            {
+                onFailure(exception);
+            }
+            catch (Exception cleanupException)
+            {
+                LogFailure(logger, "failure cleanup", linkName, cleanupException);
+            }
         }
     }
 }

@@ -1,5 +1,6 @@
 using Amqp;
 using Amqp.Listener;
+using Microsoft.Extensions.Logging;
 using NimBus.ServiceBusEmulator.Broker;
 
 namespace NimBus.ServiceBusEmulator.Protocol;
@@ -9,13 +10,14 @@ internal sealed class AmqpFrontend : IDisposable
     private readonly ContainerHost _host;
     private readonly HashSet<string> _managementNodes = new(StringComparer.OrdinalIgnoreCase);
 
-    public AmqpFrontend(int port, BrokerNamespace broker, int maxMessageSize = 262_144)
+    public AmqpFrontend(int port, BrokerNamespace broker, int maxMessageSize = 262_144, ILoggerFactory? loggerFactory = null)
     {
         var sessionLinks = new SessionLinkRegistry();
+        var pendingAttaches = new PendingLinkAttachRegistry();
         _host = new ContainerHost(new Address($"amqp://127.0.0.1:{port}"));
         var listener = _host.Listeners[0];
         listener.SASL.EnableMechanism("MSSBCBS", new MssbcbsSaslProfile());
-        listener.HandlerFactory = static _ => new GuidDeliveryTagHandler();
+        listener.HandlerFactory = _ => new GuidDeliveryTagHandler(pendingAttaches);
         _host.AddressResolver = static (_, attach) =>
         {
             if (!attach.Role && attach.Target is Amqp.Transactions.Coordinator)
@@ -41,7 +43,7 @@ internal sealed class AmqpFrontend : IDisposable
                 RegisterSubscriptionManagement(topic.Name, subscription.Name);
             }
         }
-        _host.RegisterLinkProcessor(new BrokerLinkProcessor(broker, sessionLinks, maxMessageSize));
+        _host.RegisterLinkProcessor(new BrokerLinkProcessor(broker, sessionLinks, pendingAttaches, maxMessageSize, loggerFactory?.CreateLogger<BrokerLinkProcessor>()));
 
         void RegisterTopicManagement(string topicName) => RegisterManagementNode(topicName);
 

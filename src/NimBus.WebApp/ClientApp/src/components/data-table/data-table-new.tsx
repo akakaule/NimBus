@@ -17,10 +17,12 @@ import { Checkbox } from "components/ui/checkbox";
 import { Button } from "components/ui/button";
 import { Input } from "components/ui/input";
 import { Tooltip } from "components/ui/tooltip";
+import { DropdownItem, DropdownMenu } from "components/ui/dropdown-menu";
 import type {
   ITableRow,
   ITableHeadCell,
   ITableHeadAction,
+  ITableBodyAction,
   SortDirection,
 } from "./types";
 
@@ -54,6 +56,12 @@ interface DataTableProps {
    * rows below the local page count.
    */
   hasMoreRows?: boolean;
+  /**
+   * How per-row actions are presented. "buttons" (default) renders one
+   * outline button per action inline; "menu" renders a single "…" trigger on
+   * rows that have actions, which opens a dropdown anchored to it.
+   */
+  rowActions?: "buttons" | "menu";
   endpointIds?: string[];
   checkedEndpointIds?: string[];
   checked?: (name: string, state: boolean) => void;
@@ -79,6 +87,7 @@ export function DataTable({
   count,
   onPageChange,
   hasMoreRows = false,
+  rowActions = "buttons",
   endpointIds,
   checkedEndpointIds,
   checked,
@@ -184,6 +193,13 @@ export function DataTable({
         cell: ({ row }) => {
           const actions = row.original.bodyActions;
           if (!actions || actions.length === 0) return null;
+          if (rowActions === "menu") {
+            return (
+              <div className="flex justify-end">
+                <RowActionsMenu actions={actions} onDone={clearRowSelection} />
+              </div>
+            );
+          }
           return (
             <div className="flex justify-end gap-2">
               {actions.map((action, i) => (
@@ -212,7 +228,7 @@ export function DataTable({
     }
 
     return cols;
-  }, [headCells, withCheckboxes, headActions, rows, rowSelection]);
+  }, [headCells, withCheckboxes, headActions, rows, rowSelection, rowActions]);
 
   // Custom global filter function for Map-based data
   const globalFilterFn = useMemo(
@@ -445,6 +461,49 @@ export function DataTable({
         </div>
       </div>
     </div>
+  );
+}
+
+// "…" trigger + dropdown anchored to it listing a row's actions. The menu is
+// portaled to document.body, but React synthetic events still bubble through
+// the component tree — so the wrapper stops click/auxclick propagation,
+// otherwise choosing an action would also fire the row's navigation.
+function RowActionsMenu({
+  actions,
+  onDone,
+}: {
+  actions: ITableBodyAction[];
+  onDone: () => void;
+}) {
+  return (
+    <span
+      className="inline-flex"
+      onClick={(e) => e.stopPropagation()}
+      onAuxClick={(e) => e.stopPropagation()}
+    >
+      <DropdownMenu
+        trigger={<span className="text-lg leading-none">⋯</span>}
+        triggerLabel="Actions"
+        triggerClassName="h-7 w-8"
+        menuClassName="min-w-[150px]"
+      >
+        {actions.map((action) => (
+          <DropdownItem
+            key={action.name}
+            title={action.description}
+            onSelect={() => {
+              try {
+                action.onClick();
+              } finally {
+                onDone();
+              }
+            }}
+          >
+            {action.name}
+          </DropdownItem>
+        ))}
+      </DropdownMenu>
+    </span>
   );
 }
 

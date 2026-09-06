@@ -192,6 +192,8 @@ export interface DropdownItemProps {
   trailing?: ReactNode;
   destructive?: boolean;
   disabled?: boolean;
+  /** Native tooltip, for a longer description that shouldn't widen the menu. */
+  title?: string;
 }
 
 export function DropdownItem({
@@ -201,6 +203,7 @@ export function DropdownItem({
   trailing,
   destructive = false,
   disabled = false,
+  title,
 }: DropdownItemProps) {
   const { close } = useContext(DropdownContext);
   return (
@@ -209,6 +212,7 @@ export function DropdownItem({
       role="menuitem"
       disabled={disabled}
       tabIndex={-1}
+      title={title}
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();

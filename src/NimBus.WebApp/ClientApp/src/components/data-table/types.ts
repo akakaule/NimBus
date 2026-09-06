@@ -7,6 +7,9 @@ export interface ITableData {
 
 export interface ITableBodyAction {
   name: string;
+  // Optional one-liner shown under the name when actions are presented in
+  // the row actions modal (DataTable rowActions="menu").
+  description?: string;
   onClick: () => boolean;
 }
 

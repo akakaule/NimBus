@@ -47,7 +47,7 @@ var instanceId = Guid.NewGuid();
 app.MapServiceBusAdmin(broker, instanceId, topologyJournal);
 
 await app.StartAsync().ConfigureAwait(false);
-using var amqp = new AmqpFrontend(amqpPort, broker, maxMessageSize);
+using var amqp = new AmqpFrontend(amqpPort, broker, maxMessageSize, app.Services.GetRequiredService<ILoggerFactory>());
 amqp.Start();
 await using var multiplexer = new TcpMultiplexer(
     publicPort,

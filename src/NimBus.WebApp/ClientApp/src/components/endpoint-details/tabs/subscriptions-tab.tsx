@@ -1,5 +1,5 @@
 import * as api from "api-client";
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import { useParams } from "react-router-dom";
 import DataTable, {
   ITableHeadAction,
@@ -10,6 +10,7 @@ import FeedbackToast, { toastProperties } from "../feedback-toast";
 import AlertModal from "../alert-modal";
 
 interface ISubscriptionsTabProps {
+  initialSubscriptions: api.EndpointSubscription[];
   setIsTabEnabled: Dispatch<SetStateAction<boolean>>;
 }
 
@@ -21,10 +22,9 @@ const SubscriptionsTab = (props: ISubscriptionsTabProps) => {
   const params = useParams();
   const endpointId = params.id!;
 
-  const [subscriptions, setSubscriptions] = useState<api.EndpointSubscription[]>(
-    [],
-  );
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [subscriptions, setSubscriptions] = useState<
+    api.EndpointSubscription[]
+  >(props.initialSubscriptions);
   const [selectedSubscription, setSelectedSubscription] =
     useState<api.EndpointSubscription>();
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] =
@@ -36,22 +36,6 @@ const SubscriptionsTab = (props: ISubscriptionsTabProps) => {
     description: "",
     title: "",
   });
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const tempSubscriptions = await client.getEndpointSubscribe(endpointId);
-        setSubscriptions(tempSubscriptions);
-        props.setIsTabEnabled(tempSubscriptions.length > 0);
-      } catch (e) {
-        console.error("Failed to load endpoint subscriptions", e);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endpointId]);
 
   const closeSubscriptionModal = () => setIsSubscriptionModalOpen(false);
 
@@ -122,7 +106,10 @@ const SubscriptionsTab = (props: ISubscriptionsTabProps) => {
       ],
       hoverText: recipient,
       data: new Map([
-        ["author", { value: sub.authorId ?? "—", searchValue: sub.authorId ?? "" }],
+        [
+          "author",
+          { value: sub.authorId ?? "—", searchValue: sub.authorId ?? "" },
+        ],
         ["recipient", { value: recipient, searchValue: recipient }],
         ["type", { value: sub.type ?? "—", searchValue: sub.type ?? "" }],
       ]),
@@ -153,7 +140,7 @@ const SubscriptionsTab = (props: ISubscriptionsTabProps) => {
         rows={rows}
         withCheckboxes={true}
         noDataMessage="No subscriptions available"
-        isLoading={isLoading}
+        isLoading={false}
         count={subscriptions.length}
         hideDense={true}
         fixedWidth={"-webkit-fill-available"}

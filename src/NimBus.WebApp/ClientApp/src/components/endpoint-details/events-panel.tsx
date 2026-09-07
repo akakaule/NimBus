@@ -918,9 +918,7 @@ const EventsPanel = (props: EventsPanelProps) => {
                   <Badge variant="info" size="sm">
                     {item.resubmitCount}
                   </Badge>
-                ) : (
-                  <span className="text-muted-foreground">0</span>
-                ),
+                ) : null,
               searchValue: String(item.resubmitCount ?? 0),
             },
           ],

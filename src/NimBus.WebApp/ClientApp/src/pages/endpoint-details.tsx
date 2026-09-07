@@ -23,17 +23,57 @@ type EndpointDetailsProps = {
 type DetailTab = "messages" | "event-types" | "alerts" | "audit";
 
 const EndpointDetails = (props: EndpointDetailsProps) => {
-  const client = new api.Client(api.CookieAuth());
-  const params = useParams();
-  const endpointId = params.id!;
+  const { id } = useParams();
+  return <EndpointDetailsContent key={id} {...props} endpointId={id!} />;
+};
+
+// Scope panel state and pending lookups to one endpoint, including route changes.
+const EndpointDetailsContent = (
+  props: EndpointDetailsProps & { endpointId: string },
+) => {
+  const { endpointId } = props;
+  const [client] = useState(() => new api.Client(api.CookieAuth()));
 
   const [endpointIsInvalid, setEndpointIsInvalid] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<DetailTab>("messages");
+  const [visitedTabs, setVisitedTabs] = useState<Set<DetailTab>>(
+    () => new Set(["messages"]),
+  );
+  const [alertSubscriptions, setAlertSubscriptions] = useState<
+    api.EndpointSubscription[]
+  >([]);
   const [isSubscriptionTabEnabled, setIsSubscriptionTabEnabled] =
-    useState<boolean>(false);
+    useState(false);
+
+  // Discover availability without mounting the Alerts panel. Reuse these rows
+  // when it is first opened so discovery does not cause a second request.
+  useEffect(() => {
+    let active = true;
+    client
+      .getEndpointSubscribe(endpointId)
+      .then((subscriptions) => {
+        if (!active) return;
+        setAlertSubscriptions(subscriptions);
+        setIsSubscriptionTabEnabled(subscriptions.length > 0);
+      })
+      .catch(() => {
+        // Match the existing behavior: an unavailable probe leaves Alerts disabled.
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, endpointId]);
+
+  const selectTab = (tab: DetailTab) => {
+    setVisitedTabs((visited) =>
+      visited.has(tab) ? visited : new Set([...visited, tab]),
+    );
+    setActiveTab(tab);
+  };
 
   // Validate endpoint exists
   useEffect(() => {
+    let active = true;
     const fetchData = async () => {
       try {
         if (!props.endpointState) {
@@ -41,7 +81,7 @@ const EndpointDetails = (props: EndpointDetailsProps) => {
         }
       } catch (e) {
         console.log("Failed to load endpoint details");
-        if (e instanceof api.SwaggerException) {
+        if (active && e instanceof api.SwaggerException) {
           if (e.status === 404) {
             setEndpointIsInvalid(true);
           }
@@ -49,9 +89,11 @@ const EndpointDetails = (props: EndpointDetailsProps) => {
       }
     };
 
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void fetchData();
+    return () => {
+      active = false;
+    };
+  }, [client, endpointId, props.endpointState]);
 
   const tabs = useMemo<{ id: DetailTab; label: string; enabled: boolean }[]>(
     () => [
@@ -72,23 +114,29 @@ const EndpointDetails = (props: EndpointDetailsProps) => {
   return (
     <Page title={endpointId} subtitle="Endpoint details">
       <div className="flex flex-col gap-4 w-full">
-        <TabStrip tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
-        {/* Mount every tab so SubscriptionsTab can fire setIsTabEnabled from
-            its own subscriptions probe (the tab is greyed out until any
-            exist), and so each panel preserves its internal state across tab
-            switches. */}
+        <TabStrip tabs={tabs} activeTab={activeTab} onChange={selectTab} />
+        {/* Mount on first visit; retain visited panels to preserve filters and pages. */}
         <div className={activeTab === "messages" ? "" : "hidden"}>
           <EventsPanel endpointId={endpointId} />
         </div>
-        <div className={activeTab === "event-types" ? "" : "hidden"}>
-          <EventTypesPanel endpointId={endpointId} />
-        </div>
-        <div className={activeTab === "alerts" ? "" : "hidden"}>
-          <SubscriptionsTab setIsTabEnabled={setIsSubscriptionTabEnabled} />
-        </div>
-        <div className={activeTab === "audit" ? "" : "hidden"}>
-          <AuditTab endpointId={endpointId} />
-        </div>
+        {visitedTabs.has("event-types") && (
+          <div className={activeTab === "event-types" ? "" : "hidden"}>
+            <EventTypesPanel endpointId={endpointId} />
+          </div>
+        )}
+        {visitedTabs.has("alerts") && (
+          <div className={activeTab === "alerts" ? "" : "hidden"}>
+            <SubscriptionsTab
+              initialSubscriptions={alertSubscriptions}
+              setIsTabEnabled={setIsSubscriptionTabEnabled}
+            />
+          </div>
+        )}
+        {visitedTabs.has("audit") && (
+          <div className={activeTab === "audit" ? "" : "hidden"}>
+            <AuditTab endpointId={endpointId} />
+          </div>
+        )}
       </div>
     </Page>
   );

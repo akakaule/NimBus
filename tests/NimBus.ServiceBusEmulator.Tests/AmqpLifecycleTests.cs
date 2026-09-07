@@ -14,6 +14,74 @@ public sealed class AmqpLifecycleTests
 {
     [TestMethod]
     [Timeout(30_000)]
+    public async Task Worker_session_deadletter_reaches_the_broker_with_its_reason()
+    {
+        var broker = CreateBroker();
+        var port = GetPort();
+        using var frontend = new AmqpFrontend(port, broker);
+        frontend.Start();
+        await using var client = CreateClient(port);
+        await using var processor = client.CreateSessionProcessor("events", "consumer", new ServiceBusSessionProcessorOptions
+        {
+            AutoCompleteMessages = false,
+        });
+        var settled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        processor.ProcessMessageAsync += async args =>
+        {
+            var session = new NimBus.ServiceBus.ServiceBusSession(args);
+            await session.DeadLetterAsync(new NimBus.ServiceBus.ServiceBusMessage(args.Message), "rejected", "invalid business input");
+            settled.TrySetResult();
+        };
+        processor.ProcessErrorAsync += args => { settled.TrySetException(args.Exception); return Task.CompletedTask; };
+        await processor.StartProcessingAsync();
+        await using var sender = client.CreateSender("events");
+        await sender.SendMessageAsync(new ServiceBusMessage("poison") { SessionId = "S" });
+        await settled.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await using var deadletters = client.CreateReceiver("events", "consumer", new ServiceBusReceiverOptions { SubQueue = SubQueue.DeadLetter });
+        var deadletter = await deadletters.ReceiveMessageAsync(TimeSpan.FromSeconds(2));
+        Assert.IsNotNull(deadletter);
+        Assert.AreEqual("rejected", deadletter.DeadLetterReason);
+        Assert.AreEqual("invalid business input", deadletter.DeadLetterErrorDescription);
+        await deadletters.CompleteMessageAsync(deadletter);
+        await processor.StopProcessingAsync();
+    }
+
+    [TestMethod]
+    [Timeout(30_000)]
+    public async Task Unsettled_session_message_redelivers_after_lock_expiry()
+    {
+        var broker = CreateBroker();
+        broker.UpdateSubscription("events", new SubscriptionDefinition("consumer")
+        {
+            RequiresSession = true, LockDuration = TimeSpan.FromSeconds(1), MaxDeliveryCount = 3,
+        });
+        var port = GetPort();
+        using var frontend = new AmqpFrontend(port, broker);
+        frontend.Start();
+        await using var client = CreateClient(port);
+        await using var processor = client.CreateSessionProcessor("events", "consumer", new ServiceBusSessionProcessorOptions
+        {
+            AutoCompleteMessages = false, MaxAutoLockRenewalDuration = TimeSpan.Zero,
+            SessionIdleTimeout = TimeSpan.FromSeconds(2), MaxConcurrentSessions = 2,
+        });
+        var delivered = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var attempts = 0;
+        processor.ProcessMessageAsync += async args =>
+        {
+            if (Interlocked.Increment(ref attempts) == 1) return;
+            await args.CompleteMessageAsync(args.Message);
+            delivered.TrySetResult(args.Message.DeliveryCount);
+        };
+        processor.ProcessErrorAsync += _ => Task.CompletedTask;
+        await processor.StartProcessingAsync();
+        await using var sender = client.CreateSender("events");
+        await sender.SendMessageAsync(new ServiceBusMessage("retry") { SessionId = "S" });
+        Assert.AreEqual(2, await delivered.Task.WaitAsync(TimeSpan.FromSeconds(15)));
+        await processor.StopProcessingAsync();
+    }
+
+    [TestMethod]
+    [Timeout(30_000)]
     public async Task Closing_a_pending_session_attach_keeps_other_links_on_the_connection_usable()
     {
         var broker = CreateBroker();

@@ -1,4 +1,5 @@
 using Azure.Messaging.ServiceBus;
+using CrmErpDemo.Contracts.E2E;
 using CrmErpDemo.Contracts.Dtos;
 using CrmErpDemo.Contracts.Events;
 using Erp.Adapter.Functions.Clients;
@@ -71,6 +72,7 @@ builder.Services.AddNimBus(n =>
     // Runs after the service-mode gate: don't delay messages that are being rejected,
     // but hold the rest for the configured time before their handler runs.
     n.AddPipelineBehavior<ProcessingDelayMiddleware>();
+    if (E2eSettings.IsEnabled(builder.Configuration, builder.Environment)) n.AddPipelineBehavior<E2eMiddleware>();
 });
 
 // The deferred-processor BackgroundService is intentionally NOT registered here —
@@ -108,4 +110,5 @@ builder.Services.AddNimBusNotifications(channels =>
     options.NotifyOnSessionBlock = true; // Critical (default-on for this path anyway)
 });
 
+builder.Services.AddE2eExecution(builder.Configuration, builder.Environment, ResolveErpApiBaseUrl(builder.Configuration));
 builder.Build().Run();

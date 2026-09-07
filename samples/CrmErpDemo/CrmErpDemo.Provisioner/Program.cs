@@ -27,6 +27,20 @@ Console.WriteLine("Topology provisioning complete.");
 
 var adminClient = new ServiceBusAdministrationClient(connectionString);
 
+// Keep broker-redelivery regressions bounded in the isolated E2E profile.
+// This changes neither normal demo provisioning nor the NimBus retry policy.
+if (Environment.GetEnvironmentVariable("E2E__Enabled") == "true" &&
+    Environment.GetEnvironmentVariable("E2E__Key") is { Length: >= 32 })
+{
+    foreach (var endpoint in new[] { "CrmEndpoint", "ErpEndpoint" })
+    {
+        var subscription = (await adminClient.GetSubscriptionAsync(endpoint, endpoint)).Value;
+        subscription.MaxDeliveryCount = 3;
+        subscription.LockDuration = TimeSpan.FromSeconds(5);
+        await adminClient.UpdateSubscriptionAsync(subscription);
+    }
+}
+
 if (!await adminClient.TopicExistsAsync(partnerInboundTopic))
 {
     await adminClient.CreateTopicAsync(partnerInboundTopic);

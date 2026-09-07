@@ -31,6 +31,24 @@ public sealed class EventImplementationPlainResubmitTests
     private const string TerminalMessageId = "term-1";
 
     [TestMethod]
+    public async Task Resubmit_uses_the_parked_payload_when_the_original_CloudEvent_has_no_native_event_json()
+    {
+        var store = new InMemoryMessageStore();
+        await store.StoreMessage(Entity("req-1", MessageType.EventRequest, "2026-06-01T10:00:00Z",
+            eventTypeId: "Demo.Type", from: "PublisherEp", to: "SubscriberEp"));
+        await store.StoreMessage(Entity("pending-1", MessageType.PendingHandoffResponse, "2026-06-01T10:00:01Z",
+            eventJson: "{\"v\":2}", eventTypeId: "Demo.Type", from: "SubscriberEp", to: "Resolver", originatingMessageId: "req-1"));
+        await store.StoreMessage(Entity(TerminalMessageId, MessageType.ErrorResponse, "2026-06-01T10:00:02Z",
+            from: "SubscriberEp", to: "Resolver", originatingMessageId: "req-1"));
+        var manager = new CapturingManagerClient();
+        var result = await CreateSut(store, manager).PostResubmitEventIdsAsync(EventId, TerminalMessageId);
+        Assert.IsInstanceOfType<OkResult>(result);
+        Assert.AreEqual("{\"v\":2}", manager.EventJson);
+        Assert.AreEqual("Demo.Type", manager.EventTypeId);
+        Assert.AreEqual("SubscriberEp", manager.Endpoint);
+    }
+
+    [TestMethod]
     public async Task Resubmit_replays_the_original_EventRequest_payload_for_a_failed_handoff()
     {
         // Failed hand-off history: the terminal ErrorResponse (which lastMessageId

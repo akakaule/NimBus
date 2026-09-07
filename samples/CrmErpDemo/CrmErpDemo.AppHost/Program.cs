@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Configuration;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
 // NimBus storage provider toggle. Accepts the same flag names as the slim
@@ -188,7 +190,7 @@ var crmApi = builder.AddProject<Projects.Crm_Api>("crm-api")
     .WithEndpoint("http", e => e.Port = 5080)
     .WithExternalHttpEndpoints()
     .WaitFor(crmDb)
-    .WaitFor(provisioner);
+    .WaitForCompletion(provisioner);
 
 var crmAdapter = builder.AddProject<Projects.Crm_Adapter>("crm-adapter")
     .WithReference(servicebus)
@@ -198,7 +200,7 @@ var crmAdapter = builder.AddProject<Projects.Crm_Adapter>("crm-adapter")
     .WithReference(crmDb)
     .WaitFor(crmDb)
     .WaitFor(crmApi)
-    .WaitFor(provisioner);
+    .WaitForCompletion(provisioner);
 
 builder.AddViteApp("crm-web", "../Crm.Web")
     .WithReference(crmApi)
@@ -212,7 +214,7 @@ var erpApi = builder.AddProject<Projects.Erp_Api>("erp-api")
     .WithEndpoint("http", e => e.Port = 5090)
     .WithExternalHttpEndpoints()
     .WaitFor(erpDb)
-    .WaitFor(provisioner);
+    .WaitForCompletion(provisioner);
 
 var erpAdapter = builder.AddAzureFunctionsProject<Projects.Erp_Adapter_Functions>("erp-adapter")
     .WithReference(servicebus)
@@ -221,7 +223,7 @@ var erpAdapter = builder.AddAzureFunctionsProject<Projects.Erp_Adapter_Functions
     .WithEnvironment("TopicName", "ErpEndpoint")
     .WithEnvironment("SubscriptionName", "ErpEndpoint")
     .WaitFor(erpApi)
-    .WaitFor(provisioner);
+    .WaitForCompletion(provisioner);
 
 builder.AddViteApp("erp-web", "../Erp.Web")
     .WithReference(erpApi)
@@ -238,7 +240,7 @@ var dataPlatformAdapter = builder
     .WithEnvironment("AzureWebJobsServiceBus", servicebus.Resource.ConnectionStringExpression)
     .WithEnvironment("TopicName", "DataPlatformEndpoint")
     .WithEnvironment("SubscriptionName", "DataPlatformEndpoint")
-    .WaitFor(provisioner);
+    .WaitForCompletion(provisioner);
 
 // Agent Zone (spec 022). The park host subscribes to AgentZoneEndpoint and parks
 // every inbound CrmContactCreated as Pending+Handoff. Wired exactly like the
@@ -247,7 +249,7 @@ var dataPlatformAdapter = builder
 // the same topology gate the other subscribers rely on.
 var agentZone = builder.AddProject<Projects.CrmErpDemo_AgentZone>("agent-zone")
     .WithReference(servicebus)
-    .WaitFor(provisioner);
+    .WaitForCompletion(provisioner);
 
 // PartnerPortal — simulated EXTERNAL partner for the CloudEvents interop showcase.
 // Deliberately references only Azure.Messaging.ServiceBus (zero NimBus): it publishes
@@ -258,16 +260,33 @@ var agentZone = builder.AddProject<Projects.CrmErpDemo_AgentZone>("agent-zone")
 var partnerPortal = builder.AddProject<Projects.PartnerPortal>("partner-portal")
     .WithReference(servicebus)
     .WaitFor(crmAdapter)
-    .WaitFor(provisioner);
+    .WaitForCompletion(provisioner);
 
 // EnrichmentAgent (spec 022). Runs the receive->classify->define->publish->settle
 // loop against the agent REST API on nimbus-ops. nimbus-ops is registered
 // unconditionally above, so the agent binds to it directly — service discovery
 // rewrites "https+http://nimbus-ops" to the resolved endpoint. ANTHROPIC_API_KEY
 // is forwarded when present; absent, the agent uses its deterministic classifier.
-builder.AddProject<Projects.EnrichmentAgent>("enrichment-agent")
+var enrichmentAgent = builder.AddProject<Projects.EnrichmentAgent>("enrichment-agent")
     .WithReference(nimbusOps)
     .WaitFor(nimbusOps)
     .WithEnvironment("ANTHROPIC_API_KEY", builder.Configuration["ANTHROPIC_API_KEY"] ?? "");
 
+// Explicit test profile. Normal demo runs never expose E2E controls.
+if (builder.Configuration.GetValue<bool>("E2E:Enabled"))
+{
+    var e2eKey = builder.Configuration["E2E:Key"];
+    if (e2eKey is not { Length: >= 32 })
+        throw new InvalidOperationException("E2E:Key must contain at least 32 characters for the test profile.");
+    crmApi.WithEnvironment("E2E__Enabled", "true").WithEnvironment("E2E__Key", e2eKey);
+    erpApi.WithEnvironment("E2E__Enabled", "true").WithEnvironment("E2E__Key", e2eKey);
+    crmAdapter.WithEnvironment("E2E__Enabled", "true").WithEnvironment("E2E__Key", e2eKey);
+    crmAdapter.WithEnvironment("DOTNET_ENVIRONMENT", "Development");
+    erpAdapter.WithEnvironment("E2E__Enabled", "true").WithEnvironment("E2E__Key", e2eKey);
+    erpAdapter.WithEnvironment("AzureFunctionsJobHost__extensions__serviceBus__maxAutoLockRenewalDuration", "00:00:00");
+    provisioner.WithEnvironment("E2E__Enabled", "true").WithEnvironment("E2E__Key", e2eKey);
+    dataPlatformAdapter.WithEnvironment("AzureFunctionsJobHost__extensions__serviceBus__maxConcurrentSessions", "64")
+        .WithEnvironment("AzureFunctionsJobHost__extensions__serviceBus__sessionIdleTimeout", "00:00:01");
+    enrichmentAgent.WithEnvironment("ANTHROPIC_API_KEY", "");
+}
 builder.Build().Run();

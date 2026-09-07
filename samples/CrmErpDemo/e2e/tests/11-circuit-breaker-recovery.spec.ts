@@ -68,15 +68,23 @@ test.describe("Circuit breaker opens on CRM outage and recovers", () => {
     const open = await waitFor(
       async () => {
         const state = await crm.getCircuitState();
-        return state.state === "Open" ? state : null;
+        if (state.state === "Open") return state;
+        // Earlier tests contribute successes to the shared ratio window. Keep
+        // generating failures until the actual circuit threshold is crossed.
+        const account = await crm.createAccount({
+          legalName: `Breaker Trip Co ${stamp}-${accountIds.length}`, countryCode: "SE",
+        });
+        accountIds.push(account.id);
+        return null;
       },
       { timeoutMs: 90_000, description: "CrmEndpoint circuit Open after sustained failures" },
     );
     expect(open.endpoint).toBe("CrmEndpoint");
 
     // Sanity: NimBus recorded real failures on CrmEndpoint for this run.
-    const failedEvents = await nimbus.searchEvents("CrmEndpoint", { resolutionStatus: ["Failed"] });
-    expect(failedEvents.some((e) => accountIds.includes(e.sessionId))).toBe(true);
+    const failures = await Promise.all(accountIds.map(sessionId =>
+      nimbus.searchEvents("CrmEndpoint", { sessionId, resolutionStatus: ["Failed"] })));
+    expect(failures.some(events => events.length > 0)).toBe(true);
 
     // ── 5. Outage over. The paused receiver waits out BreakDuration (20s),
     //       probes at one session, and closes after 2 successful probes. Fresh
@@ -107,7 +115,7 @@ test.describe("Circuit breaker opens on CRM outage and recovers", () => {
     });
     await waitFor(
       async () => {
-        const events = await nimbus.searchEvents("CrmEndpoint", { resolutionStatus: ["Completed"] });
+        const events = await nimbus.searchEvents("CrmEndpoint", { sessionId: proof.id, resolutionStatus: ["Completed"] });
         return events.find((e) => e.sessionId === proof.id) ?? null;
       },
       { timeoutMs: Timeouts.propagationMs, description: `Completed CrmEndpoint event for post-recovery account ${proof.id}` },

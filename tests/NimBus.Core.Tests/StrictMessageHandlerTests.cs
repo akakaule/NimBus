@@ -15,6 +15,27 @@ public class StrictMessageHandlerTests
     // ── HandleEventRequest ──────────────────────────────────────────────
 
     [TestMethod]
+    public async Task HandleEventRequest_HandlerFailure_NotifiesObserverWithOriginalException()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var failure = new InvalidOperationException("handler failure");
+        var observer = new RecordingLifecycleObserver();
+        var response = new FakeResponseService();
+        var sut = new StrictMessageHandler(
+            new FakeEventContextHandler { ThrowOnHandle = failure }, response, NullLogger.Instance,
+            retryPolicyProvider: null, pipeline: null, lifecycleNotifier: new MessageLifecycleNotifier([observer]));
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, observer.FailedCalls);
+        Assert.AreSame(failure, observer.LastFailure);
+        Assert.AreEqual(0, observer.CompletedCalls);
+        Assert.AreEqual(1, response.ErrorCalls);
+        Assert.AreEqual(1, ctx.BlockSessionCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
     public async Task HandleEventRequest_NormalEvent_HandlesAndCompletes()
     {
         var trace = new OperationTrace();
@@ -614,6 +635,30 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(1, ctx.CompletedCalls, "Message must be completed, not left for redelivery");
         Assert.AreEqual(0, ctx.UnblockSessionCalls, "Must NOT unblock — this settlement does not own the block");
         Assert.AreEqual(0, ctx.DeadLetterCalls, "Must not silently dead-letter");
+    }
+
+    [TestMethod]
+    [DataRow(null, 1)]
+    [DataRow("newer-blocking-event", 0)]
+    public async Task HandleHandoffCompletedRequest_RedeliveryAfterUnblock_ResumesDeferredDrainOnlyWithoutANewBlock(
+        string? blockedBy, int expectedDrainCalls)
+    {
+        // The first delivery lost its lock after clearing the block but before
+        // sending ProcessDeferredRequest. Redelivery must repair that gap.
+        var ctx = CreateContext(messageType: MessageType.HandoffCompletedRequest, from: "Manager");
+        ctx.IsSessionBlockedByThisResult = false;
+        ctx.BlockedByEventId = blockedBy;
+        ctx.DeferredCountResult = 2;
+        var handler = new FakeEventContextHandler();
+        var response = new FakeResponseService();
+
+        await CreateHandler(handler, response).Handle(ctx);
+
+        Assert.AreEqual(expectedDrainCalls, response.ProcessDeferredCalls);
+        Assert.AreEqual(0, ctx.UnblockSessionCalls);
+        Assert.AreEqual(0, handler.HandleCalls);
+        Assert.AreEqual(1, response.ResolutionCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
     }
 
     [TestMethod]
@@ -1896,6 +1941,7 @@ public class StrictMessageHandlerTests
         public int ReceivedCalls { get; private set; }
         public int CompletedCalls { get; private set; }
         public int FailedCalls { get; private set; }
+        public Exception? LastFailure { get; private set; }
 
         public Task OnMessageReceived(MessageLifecycleContext context, CancellationToken cancellationToken = default)
         {
@@ -1912,6 +1958,7 @@ public class StrictMessageHandlerTests
         public Task OnMessageFailed(MessageLifecycleContext context, Exception exception, CancellationToken cancellationToken = default)
         {
             FailedCalls++;
+            LastFailure = exception;
             return Task.CompletedTask;
         }
     }

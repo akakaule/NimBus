@@ -1,98 +1,136 @@
-# CrmErpDemo end-to-end tests
+# CRM/ERP end-to-end tests
 
-Playwright suite that drives the live CrmErpDemo Aspire AppHost end-to-end:
-creates entities, lets NimBus propagate them, simulates failures, drives the
-NimBus management WebApp UI to resubmit, and asserts on cross-system state.
+The 84-scenario Playwright suite drives the real CRM and ERP APIs, worker and Functions
+adapters, Service Bus, SQL databases, Resolver, and management WebApp. Domain tests
+publish through the normal business APIs. Wire-format tests deliberately inject
+native envelopes from an authenticated test route to the receiving endpoint.
 
-## What's covered
+Open [the interactive HTML coverage map](test-coverage.html) to explore all 84
+scenarios, filter by direction or family, and step through message journeys.
+The standalone page works offline and shows the recorded full-run and rerun
+results from 2026-09-06; it is not a live test monitor.
 
-| Spec | Scenario |
-|---|---|
-| `01-happy-path.spec.ts` | CRM → ERP propagation, ERP → CRM propagation, both endpoints stay clean |
-| `02-error-mode-recovery.spec.ts` | Single message fails (ERP error mode) → resubmit via NimBus WebApp UI → success. Plus a service-mode silent-drop variant. |
-| `03-blocked-messages-recovery.spec.ts` | One create + N updates published while ERP is in error mode. Head fails, siblings defer behind the session lock. Resubmit head from the WebApp; verify the deferred backlog drains in order and all endpoints return to zero. |
-| `04-pending-handoff-success.spec.ts` | Handoff mode ON: create handed off, sibling updates defer behind the in-flight handoff, `HandoffJobBackgroundService` settles via `IHandoffClient.CompleteAsync`, all rows reach Completed. |
-| `05-pending-handoff-failure.spec.ts` | Handoff mode at failureRate=1.0: `IHandoffClient.FailAsync` carries DMF error text → audit row Failed → operator Skip via NimBus REST → Skipped. |
-| `06-pending-handoff-resubmit.spec.ts` | Same trigger as 05, but operator clicks Resubmit in the NimBus.WebApp UI (handoff mode disabled first); audit row leaves Failed and the ERP customer materialises. |
-| `11-circuit-breaker-recovery.spec.ts` | CRM outage mode fails 6 sessions on CrmEndpoint → circuit opens (asserted via crm-api `/api/admin/circuit-state`) → outage off → probe traffic closes it → a fresh event completes end to end. |
+## Run against an isolated local demo
 
-Setup and teardown go through REST APIs; the WebApp browser is used for the
-operator action being demonstrated. Specs 02, 03 and 06 drive the WebApp
-endpoints-list view (drilling in via UI click and clicking Resubmit on a
-row); specs 04 and 05 are pure REST.
+Use Node 22.18+ (native TypeScript support), .NET 10, Aspire CLI, Docker, and
+Chromium. From the repository root in PowerShell:
 
-## Prerequisites
-
-1. **Node 22+** (matches the rest of NimBus).
-2. **The Aspire AppHost running**:
-   ```bash
-   dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost
-   ```
-   Wait for everything to come up healthy in the Aspire dashboard (default
-   `https://localhost:17080`).
-3. **Local dev auth enabled** in the NimBus WebApp. The AppHost wires this in
-   Development environment automatically; if you've overridden settings,
-   ensure `EnableLocalDevAuthentication=true` and `ASPNETCORE_ENVIRONMENT=Development`
-   are set for the `nimbus-ops` resource.
-
-## Setup
-
-```bash
+```powershell
+$env:E2E__Enabled = 'true'
+$env:E2E__Key = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+$env:ASPIRE_CLI_START_TIMEOUT = '600'
+aspire start --apphost samples/CrmErpDemo/CrmErpDemo.AppHost --isolated --non-interactive
 cd samples/CrmErpDemo/e2e
-npm install
+npm ci
 npx playwright install chromium
-
-cp .env.example .env.local
-# Fill in CRM_API_URL, ERP_API_URL, NIMBUS_OPS_URL with the URLs Aspire
-# assigned (visible in the dashboard's "Endpoints" column for each project).
+npm run typecheck
+npm run test:live
 ```
 
-## Run
+Keep the same key in the shell for startup and tests. Do not commit it. The runner
+waits for resources and discovers URLs from Aspire; explicitly supplied URLs take
+precedence over old `.env.local` ports. `npm test` still supports manually supplied
+URLs, but receiver restart tests require the explicit AppHost selected by
+`test:live`. Use the isolated demo: infrastructure cases temporarily disable a
+send channel or restart a receiver.
 
-```bash
-# All specs, headless, report at the end
-npm test
-
-# Just the happy path
-npm run test:happy
-
-# Watch the browser drive the WebApp (useful for debugging selectors)
-npm run test:headed
-
-# Interactive UI mode (Playwright UI)
-npm run test:ui
-
-# Open last HTML report
+```powershell
+npm run test:live -- 12-message-lifecycle --max-failures=1
+npm run test:live -- 13-handoff-lifecycle
+npm run test:live -- 14-wire-validation
+npm run test:live -- 16-outbox-recovery 17-receiver-recovery 19-broker-redelivery
 npm run report
 ```
 
-## Why serial?
+Stop the AppHost when finished:
 
-The tests share the live AppHost — same Service Bus, same database, same NimBus
-backing store — so they are configured `workers: 1` and `fullyParallel: false`.
-Test ordering is not guaranteed across files, but each spec's `beforeAll`
-resets ERP failure modes so cross-test contamination is bounded.
+```powershell
+aspire stop --apphost ../CrmErpDemo.AppHost --non-interactive
+```
 
-## What the tests assume
+## Coverage
 
-- ERP API exposes `/api/admin/error-mode` and `/api/admin/service-mode` PUT
-  endpoints (provided by `Erp.Api/Endpoints/AdminEndpoints.cs`).
-- The NimBus management WebApp uses the `CrmErpPlatformConfiguration` so
-  endpoints `CrmEndpoint` and `ErpEndpoint` are visible (wired in the AppHost
-  via `NimBus__PlatformType`/`NimBus__PlatformAssembly`).
-- `SessionKey` on Crm/Erp events resolves to the account/customer id, which
-  is what test 03 relies on for the deferred-backlog behaviour.
+| Scenario families | Specs | Assertions |
+|---|---|---|
+| Account/customer CRUD, round trip, routing | 01, 12 | Both directions, linked identifiers, ordered business audit revisions, soft deletion |
+| Contact CRUD and relationships | 15 | Both directions, parent mapping, preserved origin, three completed events |
+| Session isolation, deferral, FIFO recovery | 03, 12 | Observe failure and deferred siblings before recovery; independent session progresses; exact business revision sequence |
+| Resubmit, skip, replay failure | 02, 03, 12 | Real Actions-menu resubmit, skip without applying bad revision, new blocked head during replay |
+| No policy, automatic retry, exhausted budget | 12 | Exact attempt counts, two configured retries, stable event lineage, no implicit retry or implicit DLQ on exhaustion |
+| Transient redelivery and broker exhaustion | 12, 19 | Same message redelivery, no error/retry response, actual MaxDeliveryCountExceeded DLQ entry |
+| Permanent and discard classifications | 12 | Exact DeadLettered/Skipped status, actual DLQ, no duplicate business effects, discard releases a blocked retry |
+| Middleware and validation rejection | 12, 14 | Exact DeadLettered outcome; one physical dead letter; no handler invocation for invalid payloads |
+| Invalid/missing/null/deep payload, metadata mismatch, unsupported | 14 | Both receiving adapters; unknown valid types are Unsupported; malformed known types reach the broker DLQ |
+| Real ERP external-job handoff | 04, 05, 06 | Pending+Handoff before explicit job release; no premature ERP write; real worker completes/fails; deferred updates replay |
+| Handoff completion/failure/recovery | 13 | Both directions using a test decorator around real handlers; no handler invocation on settlement; skip, resubmit, second handoff |
+| Overdue and repeated declarations | 13 | ExpectedBy is not an automatic timeout; last declaration wins; throw after declaration follows failure classification |
+| Duplicate/stale settlement | 13 | An old event cannot release a newer blocked event in the same session |
+| Inbox/application idempotency | 08, 12 | CRM DuplicateDetected; ERP idempotent replay; unchanged business audit |
+| Transactional outbox | 16 | Rollback removes entity, audit and event; committed SQL outbox survives broker send rejection and drains after recovery |
+| Receiver interruption | 17 | Restart each real adapter with a blocked session and queued/deferred work, then recover in FIFO order |
+| Circuit breaker | 11 | Observed Open and Closed transitions with real downstream failures and successful recovery traffic |
+| Request/reply and commands | 09, 10, 18 | Approved, not found, timeout, credit hold, concurrent reply correlation |
+| Fan-out and notifications | 07, 18 | Enrichment reaches DataPlatform; webhook and Resolver history carry the failed event identity |
 
-## Debugging tips
+## Deterministic controls and evidence
 
-- **Tests time out early**: increase `PROPAGATION_TIMEOUT_MS` in `.env.local`.
-  Cosmos cold starts and Service Bus handshake latency vary.
-- **Selector fails in the WebApp**: the WebApp does not currently expose
-  stable `data-testid` attributes; selectors rely on row text + button text.
-  Use `npm run test:headed` to watch what the UI looks like vs what the
-  selector targets.
-- **Failed-count never goes to zero in test 03**: this usually means the
-  resubmit raced against the deferred siblings being redelivered — bump
-  `FAILED_MESSAGE_TIMEOUT_MS` or rerun.
-- **Auth fails (302 to login)**: confirm the `nimbus-ops` Aspire resource is
-  running in Development mode with `EnableLocalDevAuthentication=true`.
+The sample-only `/api/e2e` routes are absent unless Development, `E2E__Enabled=true`,
+and a key of at least 32 characters are configured. Every route checks
+`X-NimBus-E2E-Key`. The handler decorator and middleware probe are installed only
+under the same gate. Scripts are bounded, keyed by GUID session, event type, and
+execution stage. They leave unregistered sessions on the normal code path.
+The E2E profile uses a 5-second broker lock and maximum delivery count of 3 on the
+two receiving subscriptions and disables automatic lock renewal on both test
+receivers so transient lock-expiry retries are bounded. Normal demo provisioning
+and receiver settings remain unchanged. The
+scripted NimBus retry policy is separate: two retries with a 2-second delay, and
+only exceptions tagged `E2E configured retry` match it.
+The DataPlatform sink uses 64 concurrent sessions with a one-second idle timeout
+in this profile so its deliberate ingestion delay does not build a backlog across
+the suite. The enrichment agent uses the deterministic classifier.
+
+Real ERP handoff tests use a long deadline and explicitly release the registered
+job only after observing Pending/Deferred. The normal background service still
+performs the business upsert, outbox publish, and settlement. Reverse handoff
+contract tests use the opt-in handler decorator; CRM has no real external-job
+implementation.
+
+New lifecycle tests attach per-session Resolver rows, handler attempts, and
+business audits. Wire tests attach actual broker DLQ evidence. Failure
+screenshots and videos are retained; tracing is opt-in with
+`--trace=retain-on-failure` (trace teardown stalled in this Windows environment).
+Tests run serially, use unique entity IDs,
+restore toggles, and remove their scripts. Expected dead letters and business
+audit rows remain available for diagnosis; the suite never purges the namespace.
+
+## Limits
+
+- Passing against the local emulator does not establish Azure broker restart
+  durability. The receiver tests restart adapters while the broker stays up.
+- The demo external-job registry is in memory. ERP API restart durability for
+  pending external jobs is not claimed; it needs a durable job registry first.
+- Missing EventId wire tests use the actual DLQ as their oracle, since a valid
+  event identity is unavailable for an ordinary Resolver search.
+
+## Verification
+
+Verified on 2026-09-06 with the isolated Development AppHost, SQL stores and local
+Service Bus emulator:
+
+- `npm run test:live`: 83 passed, one failed in 9.2 minutes. The failure exposed
+  session-lock loss after handoff unblock but before deferred scheduling.
+- After fixing that recovery gap, all 17 affected cases passed in 1.5 minutes:
+  `npm run test:live -- 04-pending 05-pending 06-pending 13-handoff`.
+  The exact stalled live session also recovered its deferred sibling and applied
+  the business update when completion was redelivered. All 84 distinct scenarios
+  are therefore verified across the full run and affected rerun.
+- TypeScript typecheck and `git diff --check` passed.
+- Targeted C# checks: 73 core lifecycle/extension tests, 23 AppHost/control tests,
+  5 Service Bus session tests, 2 real AMQP regressions, and 12 WebApp resubmit
+  tests passed (115 total; one existing AppHost test skipped).
+
+The tests also drove fixes for worker dead-lettering, ERP Functions manual
+settlement, failed CloudEvent handoff payload recovery, and failure notifications.
+The three focused platform regressions were observed failing before their fixes;
+the handoff drain regression additionally verifies that a newer blocker remains
+untouched.

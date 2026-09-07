@@ -426,6 +426,13 @@ namespace NimBus.Core.Messages
                 // in the Flow and Complete, rather than letting the base handler
                 // swallow it and silently dead-letter. Do NOT unblock.
                 LogError(messageContext, "HandoffCompleted settlement does not match a blocked session — surfacing as resolved", exception);
+                // A previous delivery may have cleared the block and then lost its
+                // lock before scheduling the drain. Repair that gap on redelivery,
+                // but never resume work behind a newer event's block.
+                if (string.IsNullOrEmpty(exception.BlockedByEventId))
+                {
+                    await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
+                }
                 await SendResolutionResponse(messageContext, cancellationToken);
                 await CompleteMessage(messageContext, cancellationToken);
             }

@@ -66,7 +66,8 @@ test.describe("Error mode + resubmit-from-WebApp recovery", () => {
     await erp.setErrorMode(false);
     expect((await erp.getErrorMode()).enabled).toBe(false);
 
-    await failedRow.locator("button", { hasText: "Resubmit" }).click();
+    await failedRow.getByRole("button", { name: "Actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Resubmit", exact: true }).click();
 
     // ── 6. After resubmit, the ERP customer should now exist (the new delivery
     //       attempt succeeds because error mode is off). The specific failed
@@ -99,14 +100,13 @@ test.describe("Error mode + resubmit-from-WebApp recovery", () => {
     const legalName = `Quiet Drop Co ${Date.now()}`;
     const crmAccount = await crm.createAccount({ legalName, countryCode: "DE" });
 
-    // Wait for NimBus to surface the message as Failed (after Service Bus
-    // exhausted its retries against the throwing handler).
+    // Middleware rejection dead-letters immediately and notifies the Resolver.
     const failedEvent = await waitFor(
       async () => {
-        const events = await nimbus.searchEvents("ErpEndpoint", { resolutionStatus: ["Failed", "DeadLettered"] });
+        const events = await nimbus.searchEvents("ErpEndpoint", { resolutionStatus: ["DeadLettered"] });
         return events.find((e) => e.sessionId === crmAccount.id) ?? null;
       },
-      { timeoutMs: Timeouts.failedMessageMs, description: `Failed event for service-mode account ${crmAccount.id}` },
+      { timeoutMs: Timeouts.failedMessageMs, description: `DeadLettered event for service-mode account ${crmAccount.id}` },
     );
 
     // Sanity: ERP didn't create the customer.
@@ -117,7 +117,8 @@ test.describe("Error mode + resubmit-from-WebApp recovery", () => {
     await page.goto(`/Endpoints/Details/ErpEndpoint`);
     const failedRow = page.locator("table tbody tr").filter({ hasText: failedEvent.eventId.substring(0, 8) });
     await expect(failedRow).toBeVisible();
-    await failedRow.locator("button", { hasText: "Resubmit" }).click();
+    await failedRow.getByRole("button", { name: "Actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Resubmit", exact: true }).click();
 
     const erpCustomer = await waitFor(
       async () => await erp.findCustomerByCrmAccountId(crmAccount.id),

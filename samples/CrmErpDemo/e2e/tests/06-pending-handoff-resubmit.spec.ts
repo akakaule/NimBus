@@ -41,14 +41,15 @@ test.describe("PendingHandoff failure: handoff fails → operator Resubmit via W
 
   test("create + handoff fails → Failed row → Resubmit in WebApp → Completed + ERP customer materialises", async ({ page }) => {
     // ── 1. Force every handoff settlement to fail with a DMF-style error.
-    await erp.setHandoffMode({ enabled: true, durationSeconds: 3, failureRate: 1.0 });
+    await erp.setHandoffMode({ enabled: true, durationSeconds: 600, failureRate: 1.0 });
 
     // ── 2. Create one CRM account. Single-message scenario: no siblings.
     const legalName = `Handoff-Resubmit-${Date.now()}`;
     const account = await crm.createAccount({ legalName, countryCode: "FR" });
 
     // ── 3. Wait for the audit row to reach Failed with the DMF errorText.
-    //       ~3s deadline + 1s BackgroundService tick + slack.
+    //       ~explicit job release + 1s BackgroundService tick + slack.
+    await erp.releaseHandoffForSession(account.id);
     const failedEvent: NimBusEvent = await waitFor(
       async () => {
         const events = await nimbus.searchEvents("ErpEndpoint", {
@@ -74,7 +75,7 @@ test.describe("PendingHandoff failure: handoff fails → operator Resubmit via W
     // ── 4. Disable handoff mode BEFORE clicking Resubmit. Otherwise the
     //       redelivery would just hand off + fail again and the test would
     //       race. Mirrors the setErrorMode(false) step in spec 02.
-    await erp.setHandoffMode({ enabled: false, durationSeconds: 3, failureRate: 0 });
+    await erp.setHandoffMode({ enabled: false, durationSeconds: 600, failureRate: 0 });
 
     // ── 5. Operator opens the NimBus WebApp, navigates to ErpEndpoint detail,
     //       confirms the failed handoff row is visible, and clicks "Resubmit".
@@ -82,7 +83,8 @@ test.describe("PendingHandoff failure: handoff fails → operator Resubmit via W
     const failedRow = page.locator("table tbody tr").filter({ hasText: failedEvent.eventId.substring(0, 8) });
     await expect(failedRow).toBeVisible();
     await expect(failedRow).toContainText("Failed");
-    await failedRow.locator("button", { hasText: "Resubmit" }).click();
+    await failedRow.getByRole("button", { name: "Actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Resubmit", exact: true }).click();
 
     // ── 6. With handoff mode off, the resubmitted message hits the synchronous
     //       upsert path in the ERP adapter, so the customer should now exist.

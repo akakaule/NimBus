@@ -95,7 +95,7 @@ namespace NimBus.ServiceBus
             }
             if (_processSessionArgs != null)
             {
-                return _processSessionArgs.DeadLetterMessageAsync(message.Message, null, deadLetterReason, deadLetterErrorDescription, cancellationToken);
+                return _processSessionArgs.DeadLetterMessageAsync(message.Message, new System.Collections.Generic.Dictionary<string, object>(), deadLetterReason, deadLetterErrorDescription, cancellationToken);
             }
 
             throw new InvalidOperationException(

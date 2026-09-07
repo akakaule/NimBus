@@ -4,6 +4,7 @@ import { ErpApiClient } from "../helpers/erp-api-client.js";
 import { NimBusApiClient } from "../helpers/nimbus-api-client.js";
 import { Timeouts } from "../helpers/service-urls.js";
 import { waitFor } from "../helpers/wait-for.js";
+import { actOnEvent } from "../helpers/operator-actions.js";
 
 /**
  * Multiple updates published while the receiving system is in error mode.
@@ -14,7 +15,7 @@ import { waitFor } from "../helpers/wait-for.js";
  * first failed message. After error mode is turned off and the failed
  * head-of-session message is resubmitted, the deferred backlog drains.
  *
- * Verification: status counts on both endpoints return to all-zero, and
+ * Verification: this session has no outstanding failures or deferrals, and
  * the final ERP customer reflects the most recent update.
  */
 test.describe("Blocked/deferred messages drain after head resubmit", () => {
@@ -56,14 +57,11 @@ test.describe("Blocked/deferred messages drain after head resubmit", () => {
       updates.push({ revision: i, legalName });
     }
 
-    // ── 3. Wait for at least one bad event on ErpEndpoint tied to OUR session.
-    //       The ServiceBus retry budget can take a while to exhaust under error
-    //       mode, so be generous on the timeout. We also accept DeadLettered as
-    //       evidence the head reached terminal failure.
+    // ── 3. Ordinary handler failure must be Failed and block this session.
     const failedHead = await waitFor(
       async () => {
         const events = await nimbus.searchEvents("ErpEndpoint", {
-          resolutionStatus: ["Failed", "DeadLettered"],
+          resolutionStatus: ["Failed"],
         });
         return events.find((e) => e.sessionId === account.id) ?? null;
       },
@@ -84,9 +82,7 @@ test.describe("Blocked/deferred messages drain after head resubmit", () => {
     // succeeds and releases the session lock.)
     await erp.setErrorMode(false);
 
-    const failedRow = page.locator("table tbody tr").filter({ hasText: failedHead.eventId.substring(0, 8) });
-    await expect(failedRow).toBeVisible();
-    await failedRow.locator("button", { hasText: "Resubmit" }).click();
+    await actOnEvent(page, "ErpEndpoint", failedHead, "Resubmit");
 
     // ── 5. Strict design contract: resubmitting the head must auto-drain
     //       the deferred backlog. NimBus's StrictMessageHandler sends a
@@ -133,7 +129,9 @@ test.describe("Blocked/deferred messages drain after head resubmit", () => {
     // Sanity: the loopback path (ERP → CRM acks for each update) shouldn't have
     // produced unsupported events.
     for (const c of finalCounts) {
-      expect.soft(c.unsupportedCount, `${c.endpointId} unsupportedCount`).toBe(0);
+      expect.soft(await nimbus.searchEvents(c.endpointId, {
+        sessionId: account.id, resolutionStatus: ["Unsupported"],
+      }), `${c.endpointId} unsupported events for this session`).toHaveLength(0);
     }
   });
 });

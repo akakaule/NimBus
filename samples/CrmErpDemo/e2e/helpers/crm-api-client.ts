@@ -70,6 +70,24 @@ export class CrmApiClient {
     return (await res.json()) as CrmContact;
   }
 
+  async getContact(id: string): Promise<CrmContact | null> {
+    const res = await this.api.get(`/api/contacts/${id}`);
+    if (res.status() === 404) return null;
+    if (!res.ok()) throw new Error(`CRM GET contact → ${res.status()}`);
+    return await res.json() as CrmContact;
+  }
+
+  async updateContact(id: string, data: CreateCrmContactRequest): Promise<CrmContact> {
+    const res = await this.api.put(`/api/contacts/${id}`, { data });
+    if (!res.ok()) throw new Error(`CRM PUT contact → ${res.status()} ${await res.text()}`);
+    return await res.json() as CrmContact;
+  }
+
+  async deleteContact(id: string): Promise<void> {
+    const res = await this.api.delete(`/api/contacts/${id}`);
+    if (!res.ok()) throw new Error(`CRM DELETE contact → ${res.status()}`);
+  }
+
   async getAccount(id: string): Promise<CrmAccount | null> {
     const res = await this.api.get(`/api/accounts/${id}`);
     if (res.status() === 404) return null;

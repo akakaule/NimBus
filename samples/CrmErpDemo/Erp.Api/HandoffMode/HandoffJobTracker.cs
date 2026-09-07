@@ -19,6 +19,16 @@ public sealed class HandoffJobTracker
     public bool TryRemove(string eventId, out HandoffJob? job)
         => _jobs.TryRemove(eventId, out job);
 
+    /// <summary>Makes one job due for deterministic E2E settlement through the normal worker.</summary>
+    public bool Release(string eventId)
+    {
+        while (_jobs.TryGetValue(eventId, out var job))
+        {
+            if (_jobs.TryUpdate(eventId, job with { DueAt = DateTime.UtcNow }, job)) return true;
+        }
+        return false;
+    }
+
     public IReadOnlyList<HandoffJob> DrainExpired(DateTime utcNow)
     {
         var drained = new List<HandoffJob>();

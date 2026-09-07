@@ -1,4 +1,5 @@
 using Crm.Api;
+using CrmErpDemo.Contracts.E2E;
 using Crm.Api.Endpoints;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -46,7 +47,13 @@ builder.Services.AddSingleton<CircuitStateStore>();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 
+if (E2eSettings.IsEnabled(builder.Configuration, builder.Environment))
+{
+    builder.Services.AddSingleton<E2eRegistry>();
+    builder.Services.AddNimBusHandoffClient("CrmEndpoint");
+}
 var app = builder.Build();
+app.MapE2eControls()?.MapE2eWireControls("CrmEndpoint");
 app.UseCors();
 app.MapDefaultEndpoints();
 

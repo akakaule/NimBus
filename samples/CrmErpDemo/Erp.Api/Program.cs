@@ -1,4 +1,5 @@
 using Azure.Messaging.ServiceBus;
+using CrmErpDemo.Contracts.E2E;
 using Erp.Api;
 using Erp.Api.Endpoints;
 using Erp.Api.HandoffMode;
@@ -81,7 +82,14 @@ else
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 
+if (E2eSettings.IsEnabled(builder.Configuration, builder.Environment))
+    builder.Services.AddSingleton<E2eRegistry>();
 var app = builder.Build();
+var e2e = app.MapE2eControls();
+e2e?.MapE2eWireControls("ErpEndpoint");
+e2e?.MapE2eOutboxControls();
+e2e?.MapPost("/handoff-jobs/{eventId}/release", (string eventId, HandoffJobTracker tracker) =>
+    tracker.Release(eventId) ? Results.NoContent() : Results.NotFound());
 app.UseCors();
 app.MapDefaultEndpoints();
 

@@ -194,12 +194,19 @@ namespace NimBus.WebApp.Controllers.ApiContract
             // resubmit-with-changes event-type resolution below.
             var history = await messageStore.GetEventHistory(eventId);
             MessageEntity? latestRequest = LatestRequestMessageWithPayload(history);
-            MessageEntity requestMessage = latestRequest ?? errorResponse;
+            // A CloudEvent may be stored without native EventContent. The subscriber's
+            // PendingHandoffResponse preserves the validated event JSON it parked.
+            var parkedPayload = history
+                .Where(message => message.MessageType == Core.Messages.MessageType.PendingHandoffResponse
+                    && !string.IsNullOrEmpty(message.MessageContent?.EventContent?.EventJson))
+                .OrderByDescending(message => message.EnqueuedTimeUtc)
+                .FirstOrDefault();
+            MessageEntity requestMessage = latestRequest ?? parkedPayload ?? errorResponse;
 
             eventTypeId = errorResponse.EventTypeId;
             if (string.IsNullOrEmpty(eventTypeId))
             {
-                MessageEntity typeSource = latestRequest
+                MessageEntity typeSource = latestRequest ?? parkedPayload
                     ?? await GetMessageWithFallback(eventId, errorResponse.OriginatingMessageId)
                     ?? errorResponse;
                 eventTypeId = !string.IsNullOrWhiteSpace(typeSource.EventTypeId)

@@ -102,8 +102,14 @@ namespace NimBus.Core.Messages
                     await _lifecycleNotifier.NotifySessionBlocked(messageContext, sessionBlocked.BlockedByEventId, cancellationToken);
                 }
             }
-            catch (EventContextHandlerException)
+            catch (EventContextHandlerException handlerFailure)
             {
+                // Strict handling has already recorded the error and settled the delivery.
+                // Observers still need the original failure, without settling it again.
+                if (_lifecycleNotifier?.HasObservers == true)
+                {
+                    await _lifecycleNotifier.NotifyFailed(messageContext, handlerFailure.InnerException ?? handlerFailure, cancellationToken);
+                }
             }
             catch (PermanentFailureException permanentFailure)
             {

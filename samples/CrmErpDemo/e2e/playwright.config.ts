@@ -1,8 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 import * as dotenv from "dotenv";
 
+// Explicit runner/Aspire-discovered URLs take precedence over saved local ports.
+dotenv.config({ path: ".env.local" });
 dotenv.config({ path: ".env" });
-dotenv.config({ path: ".env.local", override: true });
 
 // Tests assume the AppHost (samples/CrmErpDemo/CrmErpDemo.AppHost) is already running.
 // Service URLs come from .env.local (created by the operator) or fall back to common
@@ -19,16 +20,19 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : [["list"], ["html", { open: "never" }]],
-  // Failure-mode + resubmit specs do multiple long waits in series. Per-test
-  // budget needs to accommodate the worst case: write fails → ServiceBus retries
-  // → DLQ → resubmit → propagate.
+  // Recovery specs include several bounded waits, broker redeliveries and
+  // adapter restarts within a single test.
   timeout: 360_000,
   expect: {
     timeout: 30_000,
   },
   use: {
     baseURL: NIMBUS_OPS_URL,
-    trace: "on-first-retry",
+    actionTimeout: 30_000,
+    navigationTimeout: 30_000,
+    // Enable explicitly with --trace=retain-on-failure when diagnosing a case.
+    // Screenshots, video and session evidence remain available by default.
+    trace: "off",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
     ignoreHTTPSErrors: true,

@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
+    "test:live": "node scripts/run-live.ts",
+    "typecheck": "tsc --noEmit",
     "test:headed": "playwright test --headed",
     "test:ui": "playwright test --ui",
     "test:happy": "playwright test 01-happy-path",

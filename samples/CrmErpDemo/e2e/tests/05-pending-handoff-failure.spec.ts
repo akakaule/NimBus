@@ -46,7 +46,7 @@ test.describe("PendingHandoff failure: handoff fails → operator Skip → row r
 
   test("create + handoff fails → audit Failed with DMF errorText → operator Skip → Skipped", async () => {
     // ── 1. Force every handoff settlement to fail.
-    await erp.setHandoffMode({ enabled: true, durationSeconds: 3, failureRate: 1.0 });
+    await erp.setHandoffMode({ enabled: true, durationSeconds: 600, failureRate: 1.0 });
 
     // ── 2. Create one CRM account. Single-message scenario: no siblings.
     const account = await crm.createAccount({
@@ -55,8 +55,9 @@ test.describe("PendingHandoff failure: handoff fails → operator Skip → row r
     });
 
     // ── 3. Wait for the audit row to reach Failed with the DMF errorText.
-    //       The window is ~3s (deadline) + 1s (BackgroundService tick) + slack
-    //       for the resolver write to land — covered by the polling timeout.
+    //       Release only after observing Pending; the background service performs
+    //       the failure settlement and the Resolver records it asynchronously.
+    await erp.releaseHandoffForSession(account.id);
     const failedEvent: NimBusEvent = await waitFor(
       async () => {
         const events = await nimbus.searchEvents("ErpEndpoint", {

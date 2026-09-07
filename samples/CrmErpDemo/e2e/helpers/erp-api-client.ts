@@ -1,6 +1,10 @@
 import type { APIRequestContext } from "@playwright/test";
 import { request } from "@playwright/test";
 import { ServiceUrls } from "./service-urls.js";
+import type { CrmContact } from "./crm-api-client.js";
+import { E2eControl } from "./e2e-control.js";
+import { waitFor } from "./wait-for.js";
+import { NimBusApiClient } from "./nimbus-api-client.js";
 
 export interface ErpCustomer {
   id: string;
@@ -22,6 +26,9 @@ export interface CreateErpCustomerRequest {
   countryCode: string;
   customerNumber?: string | null;
 }
+
+export interface ErpContact extends Omit<CrmContact, "accountId"> { customerId?: string | null }
+export interface ErpContactRequest { customerId?: string | null; firstName: string; lastName: string; email?: string | null; phone?: string | null }
 
 export interface ServiceModeState {
   enabled: boolean;
@@ -101,6 +108,41 @@ export class ErpApiClient {
     return (await res.json()) as ErpCustomer;
   }
 
+  async deleteCustomer(id: string): Promise<void> {
+    const res = await this.api.delete(`/api/customers/${id}`);
+    if (!res.ok()) throw new Error(`ERP DELETE customer → ${res.status()}`);
+  }
+
+  async createContact(data: ErpContactRequest): Promise<ErpContact> {
+    const res = await this.api.post("/api/contacts", { data });
+    if (!res.ok()) throw new Error(`ERP POST contact → ${res.status()} ${await res.text()}`);
+    return await res.json() as ErpContact;
+  }
+
+  async getContact(id: string): Promise<ErpContact | null> {
+    const res = await this.api.get(`/api/contacts/${id}`);
+    if (res.status() === 404) return null;
+    if (!res.ok()) throw new Error(`ERP GET contact → ${res.status()}`);
+    return await res.json() as ErpContact;
+  }
+
+  async updateContact(id: string, data: ErpContactRequest): Promise<ErpContact> {
+    const res = await this.api.put(`/api/contacts/${id}`, { data });
+    if (!res.ok()) throw new Error(`ERP PUT contact → ${res.status()} ${await res.text()}`);
+    return await res.json() as ErpContact;
+  }
+
+  async deleteContact(id: string): Promise<void> {
+    const res = await this.api.delete(`/api/contacts/${id}`);
+    if (!res.ok()) throw new Error(`ERP DELETE contact → ${res.status()}`);
+  }
+
+  async getAuditLog(entityType: "Customer" | "Contact", id: string): Promise<unknown[]> {
+    const res = await this.api.get(`/api/audit/${entityType}/${id}`);
+    if (!res.ok()) throw new Error(`ERP GET audit → ${res.status()}`);
+    return await res.json() as unknown[];
+  }
+
   // ─── Failure-mode toggles ─────────────────────────────────────
 
   async getServiceMode(): Promise<ServiceModeState> {
@@ -156,5 +198,17 @@ export class ErpApiClient {
     const res = await this.api.get("/api/internal/handoff-jobs");
     if (!res.ok()) throw new Error(`ERP GET handoff-jobs → ${res.status()}`);
     return (await res.json()) as HandoffJob[];
+  }
+
+  async releaseHandoffForSession(session: string): Promise<void> {
+    const control = await E2eControl.create("erp");
+    const nimbus = await NimBusApiClient.create();
+    try {
+      const pending = await waitFor(async () => (await nimbus.searchEvents("ErpEndpoint", {
+        sessionId: session, eventTypeId: ["CrmAccountCreated"], resolutionStatus: ["Pending"],
+      })).find(event => event.pendingSubStatus === "Handoff") ?? null,
+      { timeoutMs: 60_000, description: "Real ERP job is Pending+Handoff before release" });
+      await control.releaseHandoff(pending.eventId);
+    } finally { await control.dispose(); await nimbus.dispose(); }
   }
 }

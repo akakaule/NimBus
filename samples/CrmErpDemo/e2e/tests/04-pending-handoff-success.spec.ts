@@ -13,7 +13,7 @@ import { waitFor } from "../helpers/wait-for.js";
  * as Pending+Handoff and blocks the session, so sibling messages on the same
  * session (further updates to the same account) defer FIFO behind it.
  *
- * After the configured deadline elapses, Erp.Api's HandoffJobBackgroundService
+ * After the test releases the registered job, Erp.Api's HandoffJobBackgroundService
  * applies the ERP-side upsert and signals IHandoffClient.CompleteAsync. The
  * Resolver flips the Pending row to Completed; the deferred siblings replay
  * in order.
@@ -49,9 +49,9 @@ test.describe("PendingHandoff success: create handed off, sibling updates defer,
   });
 
   test("create + 2 in-flight updates → create reaches Pending+Handoff, updates defer, all complete", async () => {
-    // ── 1. Enable handoff mode with a short deadline so the test wraps up
-    //       quickly. failureRate=0 means CompleteAsync always wins.
-    await erp.setHandoffMode({ enabled: true, durationSeconds: 3, failureRate: 0 });
+    // ── 1. Hold the job until Pending and Deferred have been observed.
+    //       failureRate=0 means CompleteAsync always wins when released.
+    await erp.setHandoffMode({ enabled: true, durationSeconds: 600, failureRate: 0 });
 
     // ── 2. Create one CRM account. The ERP adapter's CrmAccountCreated handler
     //       reads handoff mode, registers a job in Erp.Api, and signals
@@ -80,7 +80,7 @@ test.describe("PendingHandoff success: create handed off, sibling updates defer,
     // is deferred to the BackgroundService settlement tick.
     expect(await erp.findCustomerByCrmAccountId(account.id)).toBeNull();
 
-    // ── 4. Within the 3s window, fire two updates back-to-back. They share
+    // ── 4. Within the held-job window, fire two updates back-to-back. They share
     //       SessionKey=AccountId with the in-flight create, so they should
     //       defer behind it instead of running.
     const updates = [
@@ -106,13 +106,14 @@ test.describe("PendingHandoff success: create handed off, sibling updates defer,
       { timeoutMs: Timeouts.propagationMs, description: `Both CrmAccountUpdated rows reach Deferred for session ${account.id}` },
     );
 
-    // ── 6. Wait past the 3s deadline + one BackgroundService tick (~1s) plus
+    // ── 6. Wait past the explicit job release + one BackgroundService tick (~1s) plus
     //       slack for the deferred replay to drain. The polling helper covers
     //       the slack — we don't need a fixed sleep.
     //
     // ── 7. All three audit rows for our session on ErpEndpoint should be
     //       Completed (the create after CompleteAsync fires; the two updates
     //       after the deferred replay drains the session).
+    await erp.releaseHandoffForSession(account.id);
     const lastRevName = updates[updates.length - 1].legalName;
     await waitFor(
       async () => {

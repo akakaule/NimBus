@@ -12,6 +12,7 @@ public class ErpEndpointFunction(ISubscriberClient subscriber)
             "%TopicName%",
             "%SubscriptionName%",
             Connection = "AzureWebJobsServiceBus",
+            AutoCompleteMessages = false,
             IsSessionsEnabled = true)]
         ServiceBusReceivedMessage message,
         ServiceBusMessageActions messageActions,

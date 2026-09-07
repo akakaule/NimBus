@@ -1,4 +1,5 @@
 using Crm.Adapter.Clients;
+using CrmErpDemo.Contracts.E2E;
 using Crm.Adapter.Handlers;
 using Crm.Adapter.Observability;
 using Microsoft.Extensions.Configuration;
@@ -57,6 +58,7 @@ builder.Services.AddNimBus(n =>
 {
     n.AddPipelineBehavior<LoggingMiddleware>();
     n.AddPipelineBehavior<ValidationMiddleware>();
+    if (E2eSettings.IsEnabled(builder.Configuration, builder.Environment)) n.AddPipelineBehavior<E2eMiddleware>();
     // Circuit-breaker showcase: report every transition to crm-api so the SPA
     // shows Closed / Open / HalfOpen live. Also an SDK extensibility example —
     // OnCircuitStateChanged is a default-implemented lifecycle hook.
@@ -78,9 +80,9 @@ builder.Services.AddNimBusSubscriber(
         sub.AddHandlersFromAssemblyContaining<ErpCustomerCreatedHandler>();
 
         // Inbox showcase: platform-level dedup on (CrmEndpoint, MessageId).
-        // Resubmitting an already-Completed event from nimbus-ops redelivers the
-        // same MessageId and is skipped with reason DuplicateDetected — contrast
-        // with the ERP side, which relies on application-level idempotent upserts.
+        // Redelivery of the same broker MessageId is skipped as DuplicateDetected.
+        // Operator resubmit allocates a new MessageId and invokes the handler;
+        // both adapters rely on idempotent upserts for that replay.
         sub.UseInbox(options =>
         {
             options.DeduplicationStore = InboxStore.SqlServer;
@@ -114,6 +116,8 @@ builder.Services.AddNimBusReceiver(opts =>
     // ground: 32× the current throughput with enough headroom that the shared
     // SQL Server isn't fighting itself. Per-session ordering still holds.
     opts.MaxConcurrentSessions = 32;
+    if (E2eSettings.IsEnabled(builder.Configuration, builder.Environment))
+        opts.MaxAutoLockRenewalDuration = TimeSpan.Zero;
 });
 
 // Second receiver: partner ingress. The external PartnerPortal publishes raw
@@ -132,4 +136,5 @@ builder.Services.AddNimBusReceiver(opts =>
 // [ServiceBusTrigger] function class instead.
 builder.Services.AddNimBusDeferredProcessorHostedService("CrmEndpoint");
 
+builder.Services.AddE2eExecution(builder.Configuration, builder.Environment, crmApiBaseUrl);
 builder.Build().Run();

@@ -119,6 +119,31 @@ export class NimBusApiClient {
     if (!res.ok()) throw new Error(`NimBus skip → ${res.status()} ${await res.text()}`);
   }
 
+  async settleHandoff(endpoint: string, event: NimBusEvent, outcome: "complete" | "fail", reason = "E2E external rejection"): Promise<void> {
+    const res = await this.api.post(`/api/event/handoff/${outcome}/${endpoint}/${event.eventId}/${event.lastMessageId}`,
+      { data: outcome === "fail" ? { reason } : {} });
+    if (!res.ok()) throw new Error(`NimBus handoff ${outcome} → ${res.status()} ${await res.text()}`);
+  }
+
+  async channelState(endpoint: string, channel: "send" | "subscription"): Promise<string> {
+    const res = await this.api.get(`/api/endpoint/${endpoint}/${channel}status`);
+    if (!res.ok()) throw new Error(`NimBus channel status: ${res.status()}`);
+    return await res.text();
+  }
+
+  async history(endpoint: string, eventId: string): Promise<Array<{ messageType: string; [key: string]: unknown }>> {
+    const res = await this.api.get(`/api/event/details/${endpoint}/${eventId}/history`);
+    if (!res.ok()) throw new Error(`NimBus event history: ${res.status()}`);
+    return await res.json();
+  }
+
+  async setChannelState(endpoint: string, channel: "send" | "subscription", enabled: boolean): Promise<void> {
+    const res = await this.api.post(`/api/endpoint/${endpoint}/${channel}status`, {
+      data: JSON.stringify(enabled ? "enable" : "disable"), headers: { "Content-Type": "application/json" },
+    });
+    if (!res.ok()) throw new Error(`NimBus change channel status: ${res.status()} ${await res.text()}`);
+  }
+
   /** Trigger reprocessing of all Deferred messages on a (endpoint, session). */
   async reprocessDeferred(endpointId: string, sessionId: string): Promise<void> {
     const res = await this.api.post(`/api/event/reprocess-deferred/${endpointId}/${sessionId}`);

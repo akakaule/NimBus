@@ -66,7 +66,7 @@ graph TB
 - **Two hosting models, identical handlers** — same `IEventHandler<T>` works in a worker container (CRM) and in Azure Functions (ERP). Demonstrates that hosting is a deployment concern, not a code concern.
 - **Session-based ordering** — `[SessionKey(nameof(AccountId))]` keeps the round-trip `CrmAccountCreated → ErpCustomerCreated → link-erp` ordered for each account.
 - **Operator surface** — reuses the existing `NimBus.WebApp` + Resolver from the main repo for full audit trail and resubmit/skip.
-- **Inbox deduplication on CRM** — `Crm.Adapter` opts into platform-level dedup (`UseInbox`, SQL store in the crm DB); a nimbus-ops resubmit of a Completed event is skipped as `DuplicateDetected`, contrasting with ERP's application-level idempotent upserts.
+- **Inbox deduplication on CRM** — `Crm.Adapter` opts into platform-level dedup (`UseInbox`, SQL store in the crm DB); redelivery of the same broker `MessageId` is skipped as `DuplicateDetected`, contrasting with ERP's application-level idempotent upserts. Operator resubmit uses a new message identity.
 - **Request/reply (synchronous credit check)** — CRM asks ERP for a customer's credit standing via `PublisherClient.Request` and gets a typed answer back over the `CrmEndpoint-reply` session subscription.
 - **Commands (imperative, exactly one consumer)** — `PlaceCustomerOnCreditHold : Command` is fire-and-forget with a single declared consumer (`ErpEndpoint`); platform validation fails provisioning if anyone adds a second consumer (ADR-014).
 
@@ -252,7 +252,7 @@ sequenceDiagram
 
 ### Flow 4 — Failure + resubmit (operator path)
 
-When a downstream call fails, NimBus retries up to MaxDeliveryCount, then dead-letters the message and **blocks the session** so subsequent events for the same entity wait. The operator resubmits via `nimbus-ops`, which re-publishes the failed message; the deferred-processor subscription then drains any messages parked behind it.
+When an ordinary downstream handler call fails, NimBus records **Failed** and **blocks the session** so subsequent events for the same entity wait. Automatic NimBus retries require an explicit retry policy; broker MaxDeliveryCount applies to unsettled redeliveries. The operator resubmits via `nimbus-ops`, which re-publishes the failed message; the deferred-processor subscription then drains any messages parked behind it.
 
 ```mermaid
 sequenceDiagram
@@ -272,8 +272,8 @@ sequenceDiagram
     ErpAd->>ErpApi: PUT /api/customers/by-crm/{id}
     ErpApi--xErpAd: connection refused (erp-api stopped)
 
-    Note over SB,ErpAd: NimBus retries up to MaxDeliveryCount<br/>session AccountId is now blocked
-    SB-->>SB: dead-letter on ErpEndpoint subscription
+    Note over SB,ErpAd: Resolver records Failed<br/>session AccountId is now blocked
+    ErpAd->>SB: complete failed delivery after recording recovery state
 
     Op->>Ops: see blocked session in nimbus-ops
     Op->>ErpApi: restart erp-api (Aspire dashboard)
@@ -557,7 +557,7 @@ Key mechanics on display:
 ## Showcase: Inbox deduplication (CrmEndpoint)
 
 NimBus fan-out forwards copies of one published message — with the same broker
-`MessageId` — so redelivery and operator resubmits can hand a subscriber the same
+`MessageId` — so broker redelivery can hand a subscriber the same
 message twice. `Crm.Adapter` opts into the platform-level inbox so a second delivery
 of an already-processed `MessageId` is skipped instead of re-invoking the handler:
 
@@ -583,9 +583,10 @@ both browsable in DbGate.
 
 1. AppHost up → create a customer in **erp-web** → wait until the account appears in **crm-web**.
 2. Open **nimbus-ops** → CrmEndpoint → find the Completed `ErpCustomerCreated` event → **Resubmit** it.
-3. The redelivery carries the original `MessageId`; **crm-adapter** logs `Inbox duplicate detected`
-   and the event history shows the skip with reason `DuplicateDetected` — no second CRM API call,
-   no new CRM audit row.
+3. Operator resubmit allocates a new `MessageId`, invokes the handler, and completes.
+   The idempotent business upsert leaves the CRM audit unchanged. The automated
+   inbox test below republishes the original broker identity separately and asserts
+   `DuplicateDetected`, no second handler invocation, and no new business audit row.
 4. DbGate → crm DB → `SELECT * FROM nimbus.InboxMessages` shows one row per processed message.
 
 ### Automated coverage

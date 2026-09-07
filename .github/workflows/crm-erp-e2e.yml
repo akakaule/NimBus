@@ -33,13 +33,13 @@ jobs:
         shell: bash
         working-directory: samples/CrmErpDemo/e2e
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6.0.0
         with:
           dotnet-version: '10.0.x'
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: '22'
           cache: npm
@@ -107,7 +107,7 @@ jobs:
 
       - name: Upload results and failure evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: crm-erp-e2e-${{ github.run_number }}-${{ github.run_attempt }}
           retention-days: 14

@@ -65,9 +65,9 @@ namespace NimBus.Core.Endpoints
 
     public class RoleAssignment : IRoleAssignment
     {
-        public string PrincipalId { get; set; }
+        public string PrincipalId { get; set; } = string.Empty;
 
-        public string Environment { get; set; }
+        public string Environment { get; set; } = string.Empty;
     }
 
     public enum Environment

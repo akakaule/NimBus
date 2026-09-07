@@ -35,7 +35,7 @@ namespace NimBus.Core.Events
             _type.GetProperties()
             .Select(p => new Property(p));
 
-        public override bool Equals(object obj) =>
+        public override bool Equals(object? obj) =>
             obj is EventType et &&
             et._type == _type;
 

@@ -37,9 +37,9 @@ namespace NimBus.Core
         // across a full event-type listing. Build the inverted indexes once, lazily,
         // and invalidate if an endpoint is added afterwards. Equality matches the old
         // `.Contains(eventType)` (default IEventType comparer), so results are identical.
-        private List<IEventType> _eventTypesCache;
-        private Dictionary<IEventType, List<IEndpoint>> _consumersByType;
-        private Dictionary<IEventType, List<IEndpoint>> _producersByType;
+        private List<IEventType>? _eventTypesCache;
+        private Dictionary<IEventType, List<IEndpoint>>? _consumersByType;
+        private Dictionary<IEventType, List<IEndpoint>>? _producersByType;
 
         protected Platform()
         {

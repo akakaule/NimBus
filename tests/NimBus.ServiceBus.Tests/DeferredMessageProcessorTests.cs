@@ -225,12 +225,30 @@ public class DeferredMessageProcessorTests
     // ── Multi-batch loop ────────────────────────────────────────────────
 
     [TestMethod]
-    public async Task ProcessDeferredMessagesAsync_MultipleBatches_ProcessesAllBatchesUntilFinalShortBatch()
+    public async Task ProcessDeferredMessagesAsync_PartialBatches_DrainsRemainingMessages()
     {
-        // Production loop receives in chunks of BatchSize (100) and exits when a
-        // batch returns fewer than BatchSize messages. Feed a full first batch
-        // (forces the loop to continue) plus a short second batch (forces the
-        // terminating break at `messages.Count < BatchSize`).
+        var client = new RecordingServiceBusClient();
+        var first = CreateReceivedMessage("deferred-before-restart", deferralSequence: 1);
+        var second = CreateReceivedMessage("queued-during-restart", deferralSequence: 2);
+        // Service Bus can return fewer than maxMessages even with more available.
+        client.SessionReceiver.ReceiveBatches.Add(new List<ServiceBusReceivedMessage> { first });
+        client.SessionReceiver.ReceiveBatches.Add(new List<ServiceBusReceivedMessage> { second });
+
+        var sut = new DeferredMessageProcessor(client);
+        await sut.ProcessDeferredMessagesAsync("session-1", "my-topic");
+
+        CollectionAssert.AreEqual(
+            new[] { "deferred-before-restart", "queued-during-restart" },
+            client.Sender.SentMessages.Select(message => message.CorrelationId).ToArray());
+        CollectionAssert.AreEqual(
+            new[] { first, second }, client.SessionReceiver.CompletedMessages.ToArray());
+    }
+
+    [TestMethod]
+    public async Task ProcessDeferredMessagesAsync_MultipleBatches_ProcessesAllBatchesUntilEmpty()
+    {
+        // Drain a full batch followed by a short batch. The receiver returns an
+        // empty batch after these configured batches, terminating the drain.
         const int batchSize = 100;
         var client = new RecordingServiceBusClient();
         var firstBatch = Enumerable.Range(1, batchSize)

@@ -97,9 +97,9 @@ namespace NimBus.ServiceBus
                             NimBusMeters.DeferredReplayDuration.Record(batchElapsedMs, endpointTag);
                             totalReplayed += orderedMessages.Count;
 
-                            // If we received fewer messages than BatchSize, we've processed all available
-                            if (messages.Count < BatchSize)
-                                break;
+                            // A short receive does not mean the session is drained: the SDK
+                            // can return a partial batch while more messages are available.
+                            // Keep receiving until an empty batch confirms the drain is done.
                         }
                     }
                     catch (ServiceBusException ex) when (ex.IsTransient)

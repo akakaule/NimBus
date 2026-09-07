@@ -69,8 +69,14 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
     {
         var container = await _getEndpointContainer(endpointId);
         const string sqlQuery =
-            "SELECT COUNT(1) AS EventCount, c.status FROM c WHERE (NOT IS_DEFINED(c.deleted) or c.deleted != true) GROUP BY c.status";
-        var queryDefinition = new QueryDefinition(sqlQuery);
+            "SELECT COUNT(1) AS EventCount, c.status FROM c WHERE (NOT IS_DEFINED(c.deleted) or c.deleted != true) " +
+            "AND c.status IN (@pendingStatus, @deferredStatus, @failedStatus, @deadletterStatus, @unsupportedStatus) GROUP BY c.status";
+        var queryDefinition = new QueryDefinition(sqlQuery)
+            .WithParameter("@pendingStatus", PendingStatus)
+            .WithParameter("@deferredStatus", DeferredStatus)
+            .WithParameter("@failedStatus", FailedStatus)
+            .WithParameter("@deadletterStatus", DLQStatus)
+            .WithParameter("@unsupportedStatus", UnsupportedStatus);
 
         var result = container.GetItemQueryIterator<StatusQueryResult>(queryDefinition);
         var resultDict = new Dictionary<string, int>();

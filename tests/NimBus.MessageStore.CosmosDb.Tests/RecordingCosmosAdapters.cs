@@ -98,6 +98,8 @@ internal sealed class RecordingCosmosContainerAdapter : ICosmosContainerAdapter
 
     public int QueryCount { get; private set; }
 
+    public List<QueryDefinition> Queries { get; } = new();
+
     /// <summary>The upserted document as it goes on the wire. <c>EventDbo</c> is private to
     /// <c>CosmosDbClient</c>, so serializing is the only way to read its <c>ttl</c>.</summary>
     public JObject UpsertedDocument(int index) =>
@@ -108,12 +110,14 @@ internal sealed class RecordingCosmosContainerAdapter : ICosmosContainerAdapter
 
     public FeedIterator<T> GetItemQueryIterator<T>(QueryDefinition queryDefinition)
     {
+        Queries.Add(queryDefinition);
         QueryCount++;
         return new EmptyFeedIterator<T>();
     }
 
     public FeedIterator<T> GetItemQueryIterator<T>(QueryDefinition queryDefinition, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
     {
+        Queries.Add(queryDefinition);
         QueryCount++;
         return new EmptyFeedIterator<T>();
     }

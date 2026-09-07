@@ -540,6 +540,7 @@ GROUP BY EventId";
 SELECT Status, COUNT(*) AS Count
 FROM {T("UnresolvedEvents")}
 WHERE EndpointId = @EndpointId AND Deleted = 0
+  AND Status IN ('Pending','Deferred','Failed','DeadLettered','Unsupported')
 GROUP BY Status";
         await using var conn = await OpenAsync();
         var rows = await conn.QueryAsync<(string Status, int Count)>(sql, new { EndpointId = endpointId }, commandTimeout: _context.CommandTimeout);

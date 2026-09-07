@@ -404,6 +404,42 @@ public abstract class MessageTrackingStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task Endpoint_counts_preserve_all_unfinished_statuses_and_exclude_terminal_history()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-active-counts");
+        var uploads = new Func<string, string, string, UnresolvedEvent, Task<bool>>[]
+        {
+            store.UploadPendingMessage, store.UploadDeferredMessage, store.UploadFailedMessage,
+            store.UploadDeadletteredMessage, store.UploadUnsupportedMessage,
+            store.UploadCompletedMessage, store.UploadSkippedMessage,
+        };
+        foreach (var upload in uploads)
+        {
+            var eventId = Id(Guid.NewGuid().ToString("N"));
+            await upload(eventId, "session", endpointId, SampleEvent(endpointId, eventId, "session"));
+        }
+
+        // Pending handoffs remain part of Pending, irrespective of their substatus.
+        var handoff = SampleEvent(endpointId, Id("handoff-count"), "session");
+        handoff.PendingSubStatus = "Handoff";
+        await store.UploadPendingMessage(handoff.EventId, "session", endpointId, handoff);
+        var other = SampleEvent(Id("other-endpoint"), Id("other-event"), "session");
+        await store.UploadFailedMessage(other.EventId, "session", other.EndpointId, other);
+
+        var counts = await store.DownloadEndpointStateCount(endpointId);
+        Assert.AreEqual(2, counts.PendingCount);
+        Assert.AreEqual(1, counts.DeferredCount);
+        Assert.AreEqual(1, counts.FailedCount);
+        Assert.AreEqual(1, counts.DeadletterCount);
+        Assert.AreEqual(1, counts.UnsupportedCount);
+        Assert.AreEqual(endpointId, counts.EndpointId);
+
+        var empty = await store.DownloadEndpointStateCount(Id("empty-endpoint"));
+        Assert.AreEqual(0, empty.PendingCount + empty.DeferredCount + empty.FailedCount + empty.DeadletterCount + empty.UnsupportedCount);
+    }
+
+    [TestMethod]
     public async Task DownloadEndpointSessionStateCount_returns_pending_and_deferred_event_ids()
     {
         var store = CreateStore();

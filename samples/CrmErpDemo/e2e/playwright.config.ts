@@ -19,7 +19,11 @@ export default defineConfig({
   workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? "github" : [["list"], ["html", { open: "never" }]],
+  reporter: [
+    [process.env.CI ? "github" : "list"],
+    ["html", { open: "never" }],
+    ["json", { outputFile: "artifacts/results.json" }],
+  ],
   // Recovery specs include several bounded waits, broker redeliveries and
   // adapter restarts within a single test.
   timeout: 360_000,

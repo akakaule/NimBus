@@ -13,6 +13,8 @@
     "test:error": "playwright test 02-error-mode-recovery",
     "test:blocked": "playwright test 03-blocked-messages-recovery",
     "report": "playwright show-report",
+    "report:results": "node scripts/report-results.mjs",
+    "test:report": "node --test scripts/report-results.test.mjs scripts/collect-diagnostics.test.mjs",
     "demo": "playwright test --config playwright.demo.config.ts",
     "demo:act0": "playwright test --config playwright.demo.config.ts act0",
     "demo:act1": "playwright test --config playwright.demo.config.ts act1",

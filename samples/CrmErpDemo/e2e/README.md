@@ -10,6 +10,49 @@ scenarios, filter by direction or family, and step through message journeys.
 The standalone page works offline and shows the recorded full-run and rerun
 results from 2026-09-06; it is not a live test monitor.
 
+## GitHub Actions
+
+[CRM ERP end-to-end](../../../.github/workflows/crm-erp-e2e.yml) runs the entire
+suite serially on Ubuntu at **02:23 UTC each day**, or manually from GitHub's
+Actions tab using **Run workflow**. The workflow becomes available after it is
+published to the default branch. It starts its own isolated Aspire demo with SQL
+Server, the local Service Bus emulator, deterministic enrichment and a fresh masked
+E2E key. No repository secrets or Azure subscription are needed.
+
+Each run uploads a `crm-erp-e2e-<run>-<attempt>` artifact, retained for 14 days:
+
+- `artifacts/test-coverage.html`: offline, searchable visualization of that run's
+  actual outcomes, attempts, timings and commit. This is separate from the dated
+  coverage map above.
+- `playwright-report/`: detailed Playwright HTML report; open with
+  `npx playwright show-report <extracted-artifact>/playwright-report`.
+- `artifacts/catalog.json`, `artifacts/results.json`, `test-results/` and
+  `artifacts/logs/`: discovered scenarios, actual results, failure evidence and
+  bounded application logs with E2E keys and connection-string credentials redacted.
+
+The job summary counts passed, failed, flaky, skipped and unexecuted scenarios.
+Retries are visible but a flaky scenario still fails the complete-pass check.
+Startup failures produce an incomplete result visualization when checkout and Node
+setup succeeded. Cleanup and artifact upload are attempted even after failure.
+Runner destruction removes remaining containers and volumes.
+
+This initial rollout is manual/nightly; it does not change required PR checks.
+Establish a clean full run on the GitHub runner before promoting it to a PR gate.
+
+For a fresh local run with the same visualization (after starting the demo):
+
+```powershell
+New-Item -ItemType Directory -Force artifacts | Out-Null
+Remove-Item artifacts/results.json -ErrorAction SilentlyContinue
+npx playwright test --list --reporter=json > artifacts/catalog.json
+npm run test:live
+npm run report:results
+```
+
+The report command exits nonzero for incomplete or nonpassing runs, while still
+writing `artifacts/test-coverage.html`. Use `npm run test:report` to verify the
+report generator and log redaction without starting the demo.
+
 ## Run against an isolated local demo
 
 Use Node 22.18+ (native TypeScript support), .NET 10, Aspire CLI, Docker, and

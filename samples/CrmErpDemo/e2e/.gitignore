@@ -3,6 +3,7 @@ node_modules/
 .env.local
 playwright-report/
 test-results/
+artifacts/
 demo-results/
 demo-footage/
 demo-audio/

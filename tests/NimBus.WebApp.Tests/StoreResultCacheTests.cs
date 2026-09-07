@@ -130,6 +130,78 @@ public sealed class StoreResultCacheTests
             "Same-period calls inside the TTL share one store query; a different period is a distinct cache key.");
     }
 
+    [TestMethod]
+    public async Task Failed_insights_cache_the_aggregate_per_period_across_controllers()
+    {
+        var store = new FailedInsightsStore();
+        var cache = NewCache();
+        var first = new MetricsImplementation(store, cache, new AllowAllAuthorizationService());
+        var second = new MetricsImplementation(store, cache, new AllowAllAuthorizationService());
+
+        var a = await first.GetMetricsFailedInsightsAsync(Period._1d);
+        var b = await second.GetMetricsFailedInsightsAsync(Period._1d);
+        await first.GetMetricsFailedInsightsAsync(Period._7d);
+
+        Assert.AreEqual(2, store.Calls);
+        Assert.AreSame(a.Value, b.Value, "Cache the aggregate, not just the raw error rows.");
+        Assert.AreEqual(2, a.Value!.TotalFailed);
+        Assert.AreEqual(2, a.Value.Groups.Single().Count);
+        Assert.AreEqual(2, a.Value.Groups.Single().SubGroups.Single().Count);
+    }
+
+    [TestMethod]
+    public async Task Concurrent_failed_insights_requests_share_one_store_query()
+    {
+        var release = new TaskCompletionSource<List<FailedMessageInfo>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new FailedInsightsStore { Read = () => release.Task };
+        var sut = new MetricsImplementation(store, NewCache(), new AllowAllAuthorizationService());
+        var requests = Enumerable.Range(0, 10).Select(_ => sut.GetMetricsFailedInsightsAsync(Period._1d)).ToArray();
+        release.SetResult([]);
+        await Task.WhenAll(requests);
+        Assert.AreEqual(1, store.Calls);
+    }
+
+    [TestMethod]
+    public async Task Failed_insights_retry_after_store_failure()
+    {
+        var store = new FailedInsightsStore { Read = () => Task.FromException<List<FailedMessageInfo>>(new InvalidOperationException("store down")) };
+        var sut = new MetricsImplementation(store, NewCache(), new AllowAllAuthorizationService());
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => sut.GetMetricsFailedInsightsAsync(Period._1d));
+        store.Read = () => Task.FromResult(new List<FailedMessageInfo>());
+        var result = await sut.GetMetricsFailedInsightsAsync(Period._1d);
+        Assert.AreEqual(0, result.Value!.TotalFailed);
+        Assert.AreEqual(2, store.Calls);
+    }
+
+    [TestMethod]
+    public async Task Failed_insights_check_authorization_even_when_cache_is_warm()
+    {
+        var store = new FailedInsightsStore();
+        var authorization = new AllowAllAuthorizationService();
+        var sut = new MetricsImplementation(store, NewCache(), authorization);
+        await sut.GetMetricsFailedInsightsAsync(Period._1d);
+        authorization.Allowed = false;
+        var denied = await sut.GetMetricsFailedInsightsAsync(Period._1d);
+        Assert.IsInstanceOfType<ForbidResult>(denied.Result);
+        Assert.AreEqual(1, store.Calls);
+    }
+
+    private sealed class FailedInsightsStore : InMemoryMessageStore, IMetricsStore
+    {
+        public int Calls { get; private set; }
+        public Func<Task<List<FailedMessageInfo>>> Read { get; set; } = () => Task.FromResult(new List<FailedMessageInfo>
+        {
+            new() { EndpointId = "crm", EventTypeId = "Account", ErrorText = "Timeout: connection unavailable", EnqueuedTimeUtc = DateTime.UtcNow },
+            new() { EndpointId = "erp", EventTypeId = "Account", ErrorText = "Timeout: connection unavailable", EnqueuedTimeUtc = DateTime.UtcNow },
+        });
+
+        public new Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from)
+        {
+            Calls++;
+            return Read();
+        }
+    }
+
     private static StoreResultCache NewCache() =>
         new StoreResultCache(new MemoryCache(new MemoryCacheOptions()));
 
@@ -226,7 +298,9 @@ public sealed class StoreResultCacheTests
 
     private sealed class AllowAllAuthorizationService : IEndpointAuthorizationService
     {
-        public Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null) => Task.FromResult(true);
+        public bool Allowed { get; set; } = true;
+
+        public Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null) => Task.FromResult(Allowed);
 
         public Task<bool> CanReadPiiAsync() => Task.FromResult(true);
 

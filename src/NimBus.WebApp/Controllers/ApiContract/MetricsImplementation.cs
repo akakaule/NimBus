@@ -123,6 +123,16 @@ public class MetricsImplementation : IMetricsApiController
         if (!await IsSiteReaderAsync())
             return new ForbidResult();
 
+        // Keep authorization outside the shared cache. Cache the finished aggregate
+        // so repeated dashboards avoid both store reads and error normalization.
+        return await _storeResultCache.GetOrCreateAsync(
+            $"metrics:failed-insights:{period}",
+            MetricsTtl,
+            () => BuildFailedInsightsAsync(period));
+    }
+
+    private async Task<FailedInsightsOverview> BuildFailedInsightsAsync(Period period)
+    {
         var from = DateTime.UtcNow - PeriodToTimeSpan(period);
         var messages = await _metricsStore.GetFailedMessageInsights(from);
 

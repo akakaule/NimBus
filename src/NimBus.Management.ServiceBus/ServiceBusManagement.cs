@@ -96,7 +96,7 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task CreateSubscription(string topicName, string subscriptionName)
     {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
         try
         {
@@ -122,7 +122,7 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task DeleteSubscription(string topicName, string subscriptionName)
     {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
         try
         {
@@ -142,7 +142,7 @@ public class ServiceBusManagement : IServiceBusManagement
         // Names are validated here; `filter` and `action` are SQL templates whose
         // interpolated values must already have been validated upstream. We don't
         // second-guess the SQL syntax of an explicitly-supplied custom rule.
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
         ServiceBusFilterValidator.ValidateName(ruleName, nameof(ruleName));
         try
@@ -171,7 +171,7 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task DeleteRule(string topicName, string subscriptionName, string ruleName)
     {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
         ServiceBusFilterValidator.ValidateName(ruleName, nameof(ruleName));
         try
@@ -188,7 +188,7 @@ public class ServiceBusManagement : IServiceBusManagement
     }
     public async Task DisableSubscription(string topicName, string subscriptionName)
     {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
         try
         {
@@ -212,7 +212,7 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task EnableSubscription(string topicName, string subscriptionName)
     {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
         try
         {
@@ -236,7 +236,7 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task DisableTopicSend(string topicName)
     {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         try
         {
             var topic = await client.GetTopicAsync(topicName);
@@ -259,7 +259,7 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task EnableTopicSend(string topicName)
     {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         try
         {
             var topic = await client.GetTopicAsync(topicName);
@@ -282,7 +282,7 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task<TopicSendState> GetTopicSendState(string topicName)
     {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         try
         {
             var topic = await client.GetTopicAsync(topicName);
@@ -307,9 +307,9 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task UpdateForwardTo(string topicName, string subscriptionName, string forwardTo)
     {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
-        ServiceBusFilterValidator.ValidateName(forwardTo, nameof(forwardTo));
+        ServiceBusFilterValidator.ValidateEntityPath(forwardTo, nameof(forwardTo));
         try
         {
             var subscription = await client.GetSubscriptionAsync(topicName, subscriptionName);
@@ -337,11 +337,11 @@ public class ServiceBusManagement : IServiceBusManagement
         string forwardTo,
         bool changeForwardTo)
     {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
         if (changeForwardTo && !String.IsNullOrEmpty(forwardTo))
         {
-            ServiceBusFilterValidator.ValidateName(forwardTo, nameof(forwardTo));
+            ServiceBusFilterValidator.ValidateEntityPath(forwardTo, nameof(forwardTo));
         }
 
         try
@@ -370,7 +370,7 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task<SubscriptionProperties> GetSubscription(string topicName, string subscriptionName)
     {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
         try
         {
@@ -401,7 +401,7 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async IAsyncEnumerable<SubscriptionProperties> ListSubscriptionsAsync(string topicName)
     {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         await foreach (var page in client.GetSubscriptionsAsync(topicName).AsPages())
         {
             foreach (var subscription in page.Values)
@@ -413,7 +413,7 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async IAsyncEnumerable<RuleProperties> ListRulesAsync(string topicName, string subscriptionName)
     {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
         await foreach (var page in client.GetRulesAsync(topicName, subscriptionName).AsPages())
         {
@@ -437,7 +437,7 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async IAsyncEnumerable<SubscriptionRuntimeProperties> ListSubscriptionRuntimePropertiesAsync(string topicName)
     {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         await foreach (var page in client.GetSubscriptionsRuntimePropertiesAsync(topicName).AsPages())
         {
             foreach (var subscription in page.Values)
@@ -454,7 +454,7 @@ public class ServiceBusManagement : IServiceBusManagement
 
     public async Task<SubscriptionState> GetSubscriptionState(string topicName, string subscriptionName)
     {
-        ServiceBusFilterValidator.ValidateName(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
         ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
         try
         {

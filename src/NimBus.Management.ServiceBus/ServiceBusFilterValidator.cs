@@ -7,7 +7,8 @@ namespace NimBus.Management.ServiceBus;
 /// Allowlist guard for values that get interpolated into Service Bus
 /// <c>SqlRuleFilter</c> / <c>SqlRuleAction</c> expressions and entity names
 /// (topics, subscriptions, rules). Rejects anything outside
-/// <c>[A-Za-z0-9._$-]{1,50}</c> so quotes, parentheses, semicolons, spaces
+/// <c>[A-Za-z0-9._$-]</c>, with a 50-character limit for subscriptions/rules
+/// and a 260-character limit for topic/queue paths, so quotes, parentheses, semicolons, spaces
 /// and other SQL-filter metacharacters can't be smuggled in via operator
 /// input or an environment variable.
 /// </summary>
@@ -33,6 +34,9 @@ public static class ServiceBusFilterValidator
 {
     public const int MaxNameLength = 50;
 
+    /// <summary>Maximum length of a Service Bus topic or queue path.</summary>
+    public const int MaxEntityPathLength = 260;
+
     // Characters Service Bus accepts in entity/rule names and in interpolated
     // filter value positions: ASCII letters, digits, period, hyphen,
     // underscore, plus `$` so Service Bus's own `$Default` rule-name prefix
@@ -49,17 +53,25 @@ public static class ServiceBusFilterValidator
     /// null/empty, longer than <see cref="MaxNameLength"/>, or contains
     /// characters outside <c>[A-Za-z0-9._$-]</c>.
     /// </summary>
-    public static void ValidateName(string value, string paramName)
+    public static void ValidateName(string value, string paramName) => Validate(value, paramName, MaxNameLength);
+
+    /// <summary>
+    /// Validates a topic or queue path with the same filter-safe character allowlist
+    /// as <see cref="ValidateName"/>, using the broker's 260-character path limit.
+    /// </summary>
+    public static void ValidateEntityPath(string value, string paramName) => Validate(value, paramName, MaxEntityPathLength);
+
+    private static void Validate(string value, string paramName, int maxLength)
     {
         if (string.IsNullOrEmpty(value))
         {
             throw new ArgumentException("value must not be null or empty", paramName);
         }
 
-        if (value.Length > MaxNameLength)
+        if (value.Length > maxLength)
         {
             throw new ArgumentException(
-                $"value '{value}' exceeds the {MaxNameLength}-character limit for Service Bus names",
+                $"value '{value}' exceeds the {maxLength}-character limit for Service Bus names",
                 paramName);
         }
 

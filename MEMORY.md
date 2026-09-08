@@ -1,5 +1,7 @@
 # Memory
 
+- Service Bus name-limit correction: topic and queue paths allow 260 characters; subscription and rule names allow 50. Keep filter-safe character validation, but use the path limit for topic and forwarding-destination arguments. A namespace listing can contain long valid topic names and must not fail while loading their subscription counters.
+
 - Windows text-edit correction: specify encoding="utf-8" on both Python reads and writes. A default-codepage read followed by a UTF-8 write corrupts existing arrows and box-drawing comments even when the intended replacement is ASCII-only.
 
 - One-shot Aspire dependency correction: receivers and APIs that depend on a provisioning job must use WaitForCompletion(provisioner). WaitFor(provisioner) can pass during initial startup but hangs resource rebuild/restart after the job has reached Finished.

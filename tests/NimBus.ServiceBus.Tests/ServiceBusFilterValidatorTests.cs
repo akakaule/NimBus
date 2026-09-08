@@ -3,12 +3,67 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Management.ServiceBus;
 using System;
 using System.Globalization;
+using System.Threading;
+using System.Threading.Tasks;
+using Azure;
+using Azure.Messaging.ServiceBus.Administration;
 
 namespace NimBus.ServiceBus.Tests;
 
 [TestClass]
 public class ServiceBusFilterValidatorTests
 {
+    [TestMethod]
+    [DataRow(50)]
+    [DataRow(51)]
+    [DataRow(260)]
+    public async Task TopicListings_AcceptTopicNamesUpToTheBrokerLimit(int length)
+    {
+        var topicName = new string('a', length);
+        var client = new ListingAdministrationClient();
+        var management = new ServiceBusManagement(client);
+
+        await foreach (var _ in management.ListSubscriptionRuntimePropertiesAsync(topicName)) { }
+        await foreach (var _ in management.ListSubscriptionsAsync(topicName)) { }
+        await foreach (var _ in management.ListRulesAsync(topicName, "subscription")) { }
+
+        Assert.AreEqual(3, client.ListingCalls);
+        Assert.AreEqual(topicName, client.LastTopicName);
+    }
+
+    [TestMethod]
+    [DataRow(261)]
+    public async Task TopicListings_RejectNamesAboveTheBrokerLimit(int length)
+    {
+        var client = new ListingAdministrationClient();
+        var management = new ServiceBusManagement(client);
+
+        var exception = await Assert.ThrowsExactlyAsync<ArgumentException>(async () =>
+        {
+            await foreach (var _ in management.ListSubscriptionRuntimePropertiesAsync(new string('a', length))) { }
+        });
+
+        Assert.AreEqual("topicName", exception.ParamName);
+        Assert.AreEqual(0, client.ListingCalls);
+    }
+
+    [TestMethod]
+    [DataRow("a' OR 1=1 OR 'b")]
+    [DataRow("foo;bar")]
+    [DataRow("foo\nbar")]
+    public async Task TopicListings_RejectFilterMetacharacters(string topicName)
+    {
+        var client = new ListingAdministrationClient();
+        var management = new ServiceBusManagement(client);
+
+        await Assert.ThrowsExactlyAsync<ArgumentException>(async () =>
+        {
+            await foreach (var _ in management.ListSubscriptionRuntimePropertiesAsync(topicName)) { }
+        });
+
+        Assert.AreEqual(0, client.ListingCalls);
+    }
+
     // The values that flow through ServiceBusFilterValidator in production:
     // NimBus endpoint ids, NimBus.Core.Messages.Constants ids, composed
     // subscription/rule names (e.g. "to-Crm", "from-Crm"), and Service Bus's
@@ -82,5 +137,28 @@ public class ServiceBusFilterValidatorTests
     {
         var value = new string('a', ServiceBusFilterValidator.MaxNameLength);
         ServiceBusFilterValidator.ValidateName(value, "param");
+    }
+
+    private sealed class ListingAdministrationClient : ServiceBusAdministrationClient
+    {
+        public int ListingCalls { get; private set; }
+
+        public string? LastTopicName { get; private set; }
+
+        public override AsyncPageable<SubscriptionRuntimeProperties> GetSubscriptionsRuntimePropertiesAsync(
+            string topicName, CancellationToken cancellationToken = default) => List<SubscriptionRuntimeProperties>(topicName);
+
+        public override AsyncPageable<SubscriptionProperties> GetSubscriptionsAsync(
+            string topicName, CancellationToken cancellationToken = default) => List<SubscriptionProperties>(topicName);
+
+        public override AsyncPageable<RuleProperties> GetRulesAsync(
+            string topicName, string subscriptionName, CancellationToken cancellationToken = default) => List<RuleProperties>(topicName);
+
+        private AsyncPageable<T> List<T>(string topicName) where T : notnull
+        {
+            ListingCalls++;
+            LastTopicName = topicName;
+            return AsyncPageable<T>.FromPages(new[] { Page<T>.FromValues(Array.Empty<T>(), null, null!) });
+        }
     }
 }

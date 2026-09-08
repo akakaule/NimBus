@@ -1455,6 +1455,29 @@ paths:
                   $ref: '#/components/schemas/ServiceBusTopicOverview'
         '403':
           description: Forbidden
+  '/api/admin/servicebus/topics/{topicName}':
+    parameters:
+      - schema:
+          type: string
+        name: topicName
+        in: path
+        required: true
+    delete:
+      summary: Delete a topic outside the platform topology
+      operationId: delete-admin-servicebus-topic
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: Topic deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionActionResult'
+        '400':
+          description: Topic belongs to the platform topology
+        '403':
+          description: Forbidden
   '/api/admin/servicebus/topics/{topicName}/subscriptions':
     parameters:
       - schema:

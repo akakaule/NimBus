@@ -30,6 +30,7 @@ internal sealed class FakeServiceBusManagement : IServiceBusManagement
     public List<(string Topic, string Subscription, EntityStatus Status, string ForwardTo, bool ChangeForwardTo)> Updates { get; } = new();
 
     public List<(string Topic, string Subscription)> DeletedSubscriptions { get; } = new();
+    public List<string> DeletedTopics { get; } = new();
     public List<(string Topic, string Subscription, string Rule)> DeletedRules { get; } = new();
     public List<(string Topic, string Subscription, string Rule, string Filter, string Action)> CreatedRules { get; } = new();
 
@@ -71,6 +72,12 @@ internal sealed class FakeServiceBusManagement : IServiceBusManagement
                 new SqlRuleFilter(rule.Filter),
                 string.IsNullOrEmpty(rule.Action) ? null : new SqlRuleAction(rule.Action)))
             .ToList();
+    }
+
+    public Task DeleteTopic(string topicName)
+    {
+        DeletedTopics.Add(topicName);
+        return Task.CompletedTask;
     }
 
     public void SeedTopic(string topicName, long active = 0, long deadLetter = 0, long transfer = 0, long transferDeadLetter = 0)

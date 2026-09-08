@@ -23,6 +23,9 @@ public interface ISubscriptionAdminService
     /// <summary>Message counters for every topic in the namespace.</summary>
     Task<IEnumerable<ServiceBusTopicOverview>> GetTopicOverviewAsync();
 
+    /// <summary>Deletes a topic that is outside the platform topology.</summary>
+    Task<SubscriptionActionResult> DeleteTopicAsync(string topicName);
+
     /// <summary>Counters, settings and rules for every subscription on a topic.</summary>
     Task<IEnumerable<ServiceBusSubscriptionInfo>> GetSubscriptionsAsync(string topicName);
 

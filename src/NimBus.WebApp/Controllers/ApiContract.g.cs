@@ -1304,6 +1304,15 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<ServiceBusTopicOverview>>> GetAdminServicebusTopicsAsync();
 
         /// <summary>
+        /// Delete a topic outside the platform topology
+        /// </summary>
+
+
+        /// <returns>Topic deleted</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SubscriptionActionResult>> DeleteAdminServicebusTopicAsync(string topicName);
+
+        /// <summary>
         /// Message counts and settings per subscription on a topic
         /// </summary>
 
@@ -1680,6 +1689,17 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.GetAdminServicebusTopicsAsync();
+        }
+
+        /// <summary>
+        /// Delete a topic outside the platform topology
+        /// </summary>
+        /// <returns>Topic deleted</returns>
+        [Microsoft.AspNetCore.Mvc.HttpDelete, Microsoft.AspNetCore.Mvc.Route("api/admin/servicebus/topics/{topicName}")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<SubscriptionActionResult>> DeleteAdminServicebusTopic(string topicName)
+        {
+
+            return _implementation.DeleteAdminServicebusTopicAsync(topicName);
         }
 
         /// <summary>

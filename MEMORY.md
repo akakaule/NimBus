@@ -1,6 +1,7 @@
 # Memory
 
 - Service Bus name-limit correction: topic and queue paths allow 260 characters; subscription and rule names allow 50. Keep filter-safe character validation, but use the path limit for topic and forwarding-destination arguments. A namespace listing can contain long valid topic names and must not fail while loading their subscription counters.
+- Admin topic ownership correction: namespace visibility and mutation ownership are separate. Site owners may delete topics explicitly marked outside NimBus topology, while platform and system topics remain protected; expose this through a typed confirmation and audited API route.
 
 - Windows text-edit correction: specify encoding="utf-8" on both Python reads and writes. A default-codepage read followed by a UTF-8 write corrupts existing arrows and box-drawing comments even when the intended replacement is ASCII-only.
 

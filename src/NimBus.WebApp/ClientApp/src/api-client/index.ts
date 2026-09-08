@@ -3131,6 +3131,57 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Delete a topic outside the platform topology
+     * @return Topic deleted
+     */
+    deleteAdminServicebusTopic(topicName: string): Promise<SubscriptionActionResult> {
+        let url_ = this.baseUrl + "/api/admin/servicebus/topics/{topicName}";
+        if (topicName === undefined || topicName === null)
+            throw new globalThis.Error("The parameter 'topicName' must be defined.");
+        url_ = url_.replace("{topicName}", encodeURIComponent("" + topicName));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "DELETE",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processDeleteAdminServicebusTopic(_response);
+        });
+    }
+
+    protected processDeleteAdminServicebusTopic(response: Response): Promise<SubscriptionActionResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SubscriptionActionResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Topic belongs to the platform topology", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SubscriptionActionResult>(null as any);
+    }
+
+    /**
      * Message counts and settings per subscription on a topic
      * @return OK
      */

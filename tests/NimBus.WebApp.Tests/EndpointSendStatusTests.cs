@@ -182,6 +182,7 @@ public sealed class EndpointSendStatusTests
         public Task CreateSubscription(string t, string s) => throw new NotSupportedException();
         public Task DeleteRule(string t, string s, string r) => throw new NotSupportedException();
         public Task DeleteSubscription(string t, string s) => throw new NotSupportedException();
+        public Task DeleteTopic(string t) => throw new NotSupportedException();
         public Task DisableSubscription(string t, string s) => throw new NotSupportedException();
         public Task EnableSubscription(string t, string s) => throw new NotSupportedException();
         public Task<bool> IsSubscriptionActive(string t, string s) => throw new NotSupportedException();

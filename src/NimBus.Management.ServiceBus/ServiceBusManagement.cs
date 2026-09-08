@@ -33,6 +33,7 @@ public interface IServiceBusManagement
     Task CreateSubscription(string topicName, string subscriptionName);
     Task DeleteRule(string topicName, string subscriptionName, string ruleName);
     Task DeleteSubscription(string topicName, string subscriptionName);
+    Task DeleteTopic(string topicName);
     Task DisableSubscription(string topicName, string subscriptionName);
     Task EnableSubscription(string topicName, string subscriptionName);
     Task<bool> IsSubscriptionActive(string topicName, string subscriptionName);
@@ -133,6 +134,20 @@ public class ServiceBusManagement : IServiceBusManagement
         catch (Exception e)
         {
             _logger?.LogError(e, "Could not delete subscription");
+            throw;
+        }
+    }
+
+    public async Task DeleteTopic(string topicName)
+    {
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
+        try
+        {
+            await client.DeleteTopicAsync(topicName);
+        }
+        catch (Exception e)
+        {
+            _logger?.LogError(e, "Could not delete topic");
             throw;
         }
     }

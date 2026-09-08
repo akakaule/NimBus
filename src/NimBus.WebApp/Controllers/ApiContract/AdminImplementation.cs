@@ -242,6 +242,18 @@ public class AdminImplementation : IAdminApiController
         return new OkObjectResult(result);
     }
 
+    public async Task<ActionResult<SubscriptionActionResult>> DeleteAdminServicebusTopicAsync(string topicName)
+    {
+        if (!await IsSiteOwnerAsync()) return new ForbidResult();
+        if (IsPlatformTopic(topicName))
+            return new BadRequestObjectResult("Platform topics cannot be deleted from this page.");
+
+        var result = await _subscriptionAdminService.DeleteTopicAsync(topicName);
+        await _auditLogService.LogAuditAsync(MessageAuditType.ManageSubscription, _context,
+            data: JsonConvert.SerializeObject(new { topicName, action = "delete-topic" }));
+        return new OkObjectResult(result);
+    }
+
     public async Task<ActionResult<IEnumerable<ServiceBusSubscriptionInfo>>> GetAdminServicebusSubscriptionsAsync(string topicName)
     {
         if (!await IsSiteOwnerAsync())

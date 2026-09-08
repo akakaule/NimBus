@@ -172,6 +172,7 @@ public sealed class AdminResolverDeadLetterTests
         }
 
         public Task<IEnumerable<ServiceBusTopicOverview>> GetTopicOverviewAsync() => throw Unexpected();
+        public Task<SubscriptionActionResult> DeleteTopicAsync(string topicName) => throw Unexpected();
 
         public Task<IEnumerable<ServiceBusSubscriptionInfo>> GetSubscriptionsAsync(string topicName) => throw Unexpected();
 

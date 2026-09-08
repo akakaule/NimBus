@@ -384,6 +384,7 @@ public sealed class AdminStatusSafetyTests
             throw new AssertFailedException("The controller reached the subscription admin for invalid input.");
 
         public Task<IEnumerable<ServiceBusTopicOverview>> GetTopicOverviewAsync() => Unexpected<IEnumerable<ServiceBusTopicOverview>>();
+        public Task<SubscriptionActionResult> DeleteTopicAsync(string topicName) => Unexpected<SubscriptionActionResult>();
         public Task<IEnumerable<ServiceBusSubscriptionInfo>> GetSubscriptionsAsync(string topicName) => Unexpected<IEnumerable<ServiceBusSubscriptionInfo>>();
         public Task<DeadLetterOverview> GetResolverDeadLettersAsync(string subscriptionName, System.Threading.CancellationToken cancellationToken = default) => Unexpected<DeadLetterOverview>();
         public Task<BulkOperationResult> ResubmitResolverDeadLettersAsync(string subscriptionName, bool all, string? reason, System.Threading.CancellationToken cancellationToken = default) => Unexpected<BulkOperationResult>();

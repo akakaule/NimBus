@@ -538,6 +538,7 @@ public class RateLimitEnforcementTests
         public Task<ActionResult<TopologyCleanupResult>> PostAdminTopologyRemoveDeprecatedAsync(string endpointName) => Ok<TopologyCleanupResult>();
 
         public Task<ActionResult<IEnumerable<ServiceBusTopicOverview>>> GetAdminServicebusTopicsAsync() => Ok<IEnumerable<ServiceBusTopicOverview>>();
+        public Task<ActionResult<SubscriptionActionResult>> DeleteAdminServicebusTopicAsync(string topicName) => Ok<SubscriptionActionResult>();
 
         public Task<ActionResult<IEnumerable<ServiceBusSubscriptionInfo>>> GetAdminServicebusSubscriptionsAsync(string topicName) => Ok<IEnumerable<ServiceBusSubscriptionInfo>>();
 

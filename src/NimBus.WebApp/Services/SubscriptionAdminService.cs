@@ -103,6 +103,23 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             .ToList();
     }
 
+    public async Task<SubscriptionActionResult> DeleteTopicAsync(string topicName)
+    {
+        var result = NewResult(topicName, string.Empty, "delete-topic");
+        try
+        {
+            await _sbManagement.DeleteTopic(topicName);
+            result.Succeeded = true;
+            result.Message = $"Topic '{topicName}' deleted along with its subscriptions and messages.";
+            _logger.LogWarning("Topic {Topic} deleted by operator", topicName);
+        }
+        catch (Exception exception)
+        {
+            Fail(result, exception, "Failed to delete topic {Topic}", topicName);
+        }
+        return result;
+    }
+
     public async Task<IEnumerable<ServiceBusSubscriptionInfo>> GetSubscriptionsAsync(string topicName)
     {
         var runtimeByName = new Dictionary<string, SubscriptionRuntimeProperties>(StringComparer.OrdinalIgnoreCase);

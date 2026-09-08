@@ -168,6 +168,7 @@ export default function SubscriptionManager() {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [acknowledgeUnknown, setAcknowledgeUnknown] = useState(false);
   const [replaySubscription, setReplaySubscription] = useState<string | null>(null);
+  const [pendingTopic, setPendingTopic] = useState<string | null>(null);
 
   const loadTopics = useCallback(async () => {
     try {
@@ -223,6 +224,23 @@ export default function SubscriptionManager() {
   async function refresh() {
     await loadTopics();
     if (selectedTopic) await loadSubscriptions(selectedTopic);
+  }
+
+  async function deleteExternalTopic() {
+    if (!pendingTopic) return;
+    const topic = pendingTopic;
+    setPendingTopic(null);
+    setBusyRow(topic);
+    try {
+      const result = await client.deleteAdminServicebusTopic(topic);
+      if (result.succeeded === false) throw new Error(result.message ?? "Delete topic failed.");
+      closeTopic();
+      await loadTopics();
+    } catch (err: any) {
+      setError(err?.message ?? "Delete topic failed.");
+    } finally {
+      setBusyRow(null);
+    }
   }
 
   function openTopic(topicName: string) {
@@ -446,9 +464,17 @@ export default function SubscriptionManager() {
             // topology, so don't offer buttons that are guaranteed to 404.
             <div className="bg-status-warning-50 border border-status-warning/30 dark:bg-yellow-950/30 dark:border-yellow-900/60 rounded-nb-md p-3 text-sm text-status-warning-ink dark:text-yellow-200">
               <span className="font-mono">{selectedTopic}</span> is not part of
-              the platform topology. Counts are shown for diagnosis, but NimBus
-              won&apos;t change a topic it doesn&apos;t own — manage it in the
-              Azure portal.
+              the platform topology. You can delete this topic and all of its
+              subscriptions and messages.
+              <Button
+                className="ml-3"
+                colorScheme="red"
+                size="sm"
+                onClick={() => setPendingTopic(selectedTopic)}
+                disabled={busyRow !== null}
+              >
+                Delete topic
+              </Button>
             </div>
           )}
 
@@ -483,6 +509,17 @@ export default function SubscriptionManager() {
         description={pendingDescription(pending)}
         confirmText={pending?.subscription.name ?? ""}
         confirmLabel={pendingConfirmLabel(pending)}
+        isLoading={busyRow !== null}
+      />
+
+      <ConfirmDestructiveAction
+        isOpen={pendingTopic !== null}
+        onClose={() => setPendingTopic(null)}
+        onConfirm={deleteExternalTopic}
+        title="Delete topic"
+        description={`Deletes topic "${pendingTopic ?? ""}" with all subscriptions and messages. This cannot be undone.`}
+        confirmText={pendingTopic ?? ""}
+        confirmLabel="Delete topic permanently"
         isLoading={busyRow !== null}
       />
 

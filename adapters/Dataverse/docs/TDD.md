@@ -211,7 +211,7 @@ Documentation follows code; preview contracts must not be advertised as producti
 
 ## 12. Related documents
 
-[README](../README.md), [events](events.md), [registration](dataverse-registration.md), [operations](operations.md), [compatibility](compatibility.md). The implementation plan is in the source repository at `docs/superpowers/plans/2026-09-09-dataverse-adapter.md`.
+[README](../README.md), [events](events.md), [registration](dataverse-registration.md), [operations](operations.md), [compatibility](compatibility.md). The implementation plan is in the source repository at `docs/plan/2026-09-09-dataverse-adapter.md`.
 
 ## Appendix A — History
 

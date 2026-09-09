@@ -8,6 +8,8 @@
 
 - Planning correction: do not use Superpowers skills or workflows. Plans belong in `docs/plan/`, specs in `docs/spec/`; never recreate `docs/superpowers/`. This supersedes earlier Superpowers planning instructions.
 
+- Dataverse preview validation: classify non-scalar JSON context fields as permanent input failures (JToken conversions can throw ArgumentException), bound output/session sizes as well as input, and distinguish synthetic redelivery identity tests from real Dataverse repost qualification. Publish artifacts only against an explicitly tested released NimBus dependency version.
+
 - Dataverse adapter hosting preference: ship the reusable Dataverse platform adapter with Azure Functions as its default packaged host. Keep normalization/publication reusable, but do not make a worker deployment the primary customer onboarding path.
 
 - Third-party adapter product scope: Dataverse and similar system adapters should be reusable, out-of-the-box NimBus platform extensions with packaged runtime/configuration and optional business mappings, rather than customer-specific integration projects. Evaluate repository placement separately from package and deployment boundaries.

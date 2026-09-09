@@ -1,0 +1,55 @@
+name: Dataverse adapter preview
+
+on:
+  pull_request:
+    paths:
+      - 'adapters/Dataverse/**'
+      - 'src/NimBus.Abstractions/**'
+      - 'src/NimBus.Core/**'
+      - 'src/NimBus.SDK/**'
+      - 'src/NimBus.ServiceBus/**'
+      - 'src/NimBus.OpenTelemetry/**'
+      - 'src/NimBus.MessageStore.Abstractions/**'
+      - 'Directory.Build.*'
+      - 'Directory.Packages.props'
+      - 'NuGet.config'
+      - '.github/workflows/dataverse-adapter.yml'
+  workflow_dispatch:
+    inputs:
+      nimbusVersion:
+        description: 'Published NimBus version to verify and package against; empty builds development artifacts only'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build, test and create preview bundle
+        shell: pwsh
+        env:
+          NIMBUS_RELEASE_VERSION: ${{ inputs.nimbusVersion }}
+        run: |
+          ./adapters/Dataverse/deploy/build-bundle.ps1 -OutputDirectory "$env:RUNNER_TEMP/dataverse-bundle" -NimBusVersion $env:NIMBUS_RELEASE_VERSION
+      - name: Validate Bicep syntax
+        shell: pwsh
+        run: |
+          az bicep build --file adapters/Dataverse/deploy/main.bicep --stdout | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Bicep validation failed.' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dataverse-preview
+          path: |
+            ${{ runner.temp }}/dataverse-bundle/function.zip
+            ${{ runner.temp }}/dataverse-bundle/manifest.json
+            ${{ runner.temp }}/dataverse-bundle/README.md
+            ${{ runner.temp }}/dataverse-bundle/deploy/
+            ${{ runner.temp }}/dataverse-bundle/docs/
+            ${{ runner.temp }}/dataverse-bundle/packages/

@@ -1,5 +1,9 @@
 # Memory
 
+- Dataverse adapter hosting preference: ship the reusable Dataverse platform adapter with Azure Functions as its default packaged host. Keep normalization/publication reusable, but do not make a worker deployment the primary customer onboarding path.
+
+- Third-party adapter product scope: Dataverse and similar system adapters should be reusable, out-of-the-box NimBus platform extensions with packaged runtime/configuration and optional business mappings, rather than customer-specific integration projects. Evaluate repository placement separately from package and deployment boundaries.
+
 - Live-flow animation correction: newly inserted SVG SMIL animations with `begin="0s"` use the SVG document timeline and may already be finished when a poll delivers new messages. Use per-element CSS animation timing for polled traffic, and preserve full event-type IDs (a dotted ID can end in a version such as `v1`).
 
 - Service Bus name-limit correction: topic and queue paths allow 260 characters; subscription and rule names allow 50. Keep filter-safe character validation, but use the path limit for topic and forwarding-destination arguments. A namespace listing can contain long valid topic names and must not fail while loading their subscription counters.

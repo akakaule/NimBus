@@ -229,3 +229,55 @@ describe("EventsPanel row actions and report flag", () => {
     expect(within(menu).getByRole("menuitem", { name: /Skip/ })).toBeTruthy();
   });
 });
+
+describe("EventsPanel payload URL filters", () => {
+  it.each([403, 500])(
+    "shows HTTP %s search failures instead of empty results",
+    async (status) => {
+      getByFilterMock.mockRejectedValue({
+        status,
+        response: "private diagnostics",
+      });
+      const { default: EventsPanel } = await import("./events-panel");
+      render(
+        <MemoryRouter
+          initialEntries={["/?payload=95f596ac-42ac-f111-aaab-6045bda15b3a"]}
+        >
+          <EventsPanel endpointId="ep-1" />
+        </MemoryRouter>,
+      );
+      expect((await screen.findByRole("alert")).textContent).toContain(
+        "Search failed",
+      );
+      expect(screen.queryByText("No events match your filters")).toBeNull();
+      expect(screen.queryByText("private diagnostics")).toBeNull();
+      expect(screen.getByRole("alert").textContent).toContain(String(status));
+    },
+  );
+
+  it.each([
+    [
+      "TestContactRecordForDynamicsIntegration+",
+      "TestContactRecordForDynamicsIntegration",
+    ],
+    ["+++", undefined],
+    ["+two+words+", "two words"],
+  ])(
+    "normalizes pasted whitespace in %s before searching",
+    async (encoded, expected) => {
+      getByFilterMock.mockResolvedValue({
+        events: [],
+        continuationToken: undefined,
+      });
+      const { default: EventsPanel } = await import("./events-panel");
+      render(
+        <MemoryRouter initialEntries={[`/?payload=${encoded}`]}>
+          <EventsPanel endpointId="ep-1" />
+        </MemoryRouter>,
+      );
+      await waitFor(() => expect(getByFilterMock).toHaveBeenCalled());
+      const request = getByFilterMock.mock.calls.at(-1)![1];
+      expect(request.eventFilter?.payload).toBe(expected);
+    },
+  );
+});

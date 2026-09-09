@@ -1,5 +1,11 @@
 # Memory
 
+- Cosmos payload-search investigation: the deployed API rejected the search because PiiReader was missing; the user confirmed the same ContactId search succeeds after granting the role. Show search failures explicitly instead of empty matches. Inspect HTTP status/response before diagnosing Cosmos storage or query behavior.
+
+- Payload-search correction: URL query `+` decodes to a space. Advanced-filter chips trim their display, so normalize payload search boundaries on Apply and when building requests from existing URLs; preserve internal spaces. A detail-page payload and a summary payload can have different sources, so verify the actual term and normal response behavior before attributing missing results to completion.
+
+- Planning correction: do not use Superpowers skills or workflows. Plans belong in `docs/plan/`, specs in `docs/spec/`; never recreate `docs/superpowers/`. This supersedes earlier Superpowers planning instructions.
+
 - Dataverse adapter hosting preference: ship the reusable Dataverse platform adapter with Azure Functions as its default packaged host. Keep normalization/publication reusable, but do not make a worker deployment the primary customer onboarding path.
 
 - Third-party adapter product scope: Dataverse and similar system adapters should be reusable, out-of-the-box NimBus platform extensions with packaged runtime/configuration and optional business mappings, rather than customer-specific integration projects. Evaluate repository placement separately from package and deployment boundaries.

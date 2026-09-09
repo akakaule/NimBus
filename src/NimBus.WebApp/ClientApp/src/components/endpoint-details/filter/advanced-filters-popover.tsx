@@ -103,7 +103,7 @@ export default function AdvancedFiltersPopover({
     setDraft((d) => ({ ...d, [key]: v }));
 
   const apply = () => {
-    onApply(draft);
+    onApply({ ...draft, payload: draft.payload.trim() });
     setOpen(false);
   };
 

@@ -254,7 +254,8 @@ function buildEventFilterFromParams(
   if (params.addedFrom)
     filter.enqueuedAtFrom = parseLocalDateTime(params.addedFrom);
   if (params.addedTo) filter.enqueuedAtTo = parseLocalDateTime(params.addedTo);
-  if (params.payload) filter.payload = params.payload;
+  const payload = params.payload.trim();
+  if (payload) filter.payload = payload;
   return filter;
 }
 
@@ -310,6 +311,7 @@ const EventsPanel = (props: EventsPanelProps) => {
     string | undefined
   >();
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
+  const [searchError, setSearchError] = React.useState<string>();
   const [currentFilter, setCurrentFilter] = React.useState<
     api.EventFilter | undefined
   >();
@@ -471,6 +473,7 @@ const EventsPanel = (props: EventsPanelProps) => {
   const fetchEvents = async (filter: api.EventFilter): Promise<void> => {
     const ticket = ++fetchTicket.current;
     setIsLoading(true);
+    setSearchError(undefined);
     // Invalidate the previous generation's pagination inputs immediately so a
     // Next click during the refresh can't issue a page for the old query.
     setContinuationToken(undefined);
@@ -510,6 +513,12 @@ const EventsPanel = (props: EventsPanelProps) => {
       if (ticket === fetchTicket.current) {
         console.error("Failed to fetch events:", error);
         setEvents([]);
+        const status = (error as { status?: number } | null)?.status;
+        setSearchError(
+          status === 403
+            ? "Access denied (HTTP 403). Payload searches require the PiiReader role in addition to endpoint read access."
+            : `Unable to load search results${typeof status === "number" ? ` (HTTP ${status})` : ""}. Try again; if it persists, contact your administrator.`,
+        );
       }
     } finally {
       if (ticket === fetchTicket.current) {
@@ -1251,7 +1260,15 @@ const EventsPanel = (props: EventsPanelProps) => {
           onApply={handleApplyAdvanced}
         />
 
-        {viewMode === "grouped" ? (
+        {searchError ? (
+          <div
+            role="alert"
+            className="rounded-nb-md border border-border bg-card p-6"
+          >
+            <p className="font-semibold">Search failed</p>
+            <p className="text-sm text-muted-foreground">{searchError}</p>
+          </div>
+        ) : viewMode === "grouped" ? (
           <ErrorGroupedView
             events={events}
             onResubmitEvent={resubmitSingleEvent}

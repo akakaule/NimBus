@@ -29,7 +29,10 @@ describe("AdvancedFiltersPopover (trigger + popover)", () => {
   it("opens the popover and Apply commits the edited values then closes", async () => {
     const onApply = vi.fn();
     render(
-      <AdvancedFiltersPopover value={EMPTY_ADVANCED_FILTERS} onApply={onApply} />,
+      <AdvancedFiltersPopover
+        value={EMPTY_ADVANCED_FILTERS}
+        onApply={onApply}
+      />,
     );
 
     await userEvent.click(
@@ -40,7 +43,9 @@ describe("AdvancedFiltersPopover (trigger + popover)", () => {
       within(dialog).getByLabelText("Payload contains"),
       "abc",
     );
-    await userEvent.click(within(dialog).getByRole("button", { name: /apply/i }));
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: /apply/i }),
+    );
 
     expect(onApply).toHaveBeenCalledWith({
       ...EMPTY_ADVANCED_FILTERS,
@@ -51,10 +56,31 @@ describe("AdvancedFiltersPopover (trigger + popover)", () => {
     ).toBeNull();
   });
 
+  it("trims pasted payload boundaries while preserving internal spaces", async () => {
+    const onApply = vi.fn();
+    render(
+      <AdvancedFiltersPopover
+        value={{ ...EMPTY_ADVANCED_FILTERS, payload: "  two words  " }}
+        onApply={onApply}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: /advanced filters/i }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /apply/i }));
+    expect(onApply).toHaveBeenCalledWith({
+      ...EMPTY_ADVANCED_FILTERS,
+      payload: "two words",
+    });
+  });
+
   it("Cancel closes the popover without applying", async () => {
     const onApply = vi.fn();
     render(
-      <AdvancedFiltersPopover value={EMPTY_ADVANCED_FILTERS} onApply={onApply} />,
+      <AdvancedFiltersPopover
+        value={EMPTY_ADVANCED_FILTERS}
+        onApply={onApply}
+      />,
     );
     await userEvent.click(
       screen.getByRole("button", { name: /advanced filters/i }),
@@ -80,7 +106,9 @@ describe("AdvancedFilterChips", () => {
     expect(
       screen.getByRole("button", { name: /remove updated from/i }),
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: /remove payload/i })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /remove payload/i }),
+    ).toBeTruthy();
     expect(screen.getByRole("button", { name: /clear all/i })).toBeTruthy();
   });
 
@@ -106,7 +134,9 @@ describe("AdvancedFilterChips", () => {
       payload: "abc",
     };
     render(<AdvancedFilterChips value={one} onApply={vi.fn()} />);
-    expect(screen.getByRole("button", { name: /remove payload/i })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /remove payload/i }),
+    ).toBeTruthy();
     expect(screen.queryByRole("button", { name: /clear all/i })).toBeNull();
   });
 });

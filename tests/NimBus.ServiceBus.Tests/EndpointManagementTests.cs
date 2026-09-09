@@ -72,6 +72,10 @@ public sealed class EndpointManagementTests
         public Task DeleteSubscription(string topicName, string subscriptionName)
             => Record($"DeleteSubscription|{topicName}|{subscriptionName}");
 
+        // Topic deletion is WebApp admin surface; ClearEndpoint never removes the topic itself.
+        public Task DeleteTopic(string topicName)
+            => throw new NotSupportedException();
+
         public Task DisableSubscription(string topicName, string subscriptionName)
             => throw new NotSupportedException();
 

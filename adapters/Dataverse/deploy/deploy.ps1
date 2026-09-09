@@ -16,6 +16,12 @@ $parameters = Get-Content -LiteralPath $ParametersFile -Raw | ConvertFrom-Json
 if ($parameters.parameters.organizationId.value -eq '00000000-0000-0000-0000-000000000000') { throw 'Set the actual Dataverse organization ID.' }
 $appName = $parameters.parameters.functionName.value
 if ([string]::IsNullOrWhiteSpace($appName)) { throw 'functionName must be supplied in the parameter file.' }
+$tables = @($parameters.parameters.tables.value.PSObject.Properties)
+if ($tables.Count -eq 0) { throw 'tables must allowlist at least one Dataverse table.' }
+foreach ($table in $tables) {
+    # An empty column array cannot be expressed as app settings, so the table would be dropped silently.
+    if (@($table.Value).Count -eq 0) { throw "Table '$($table.Name)' selects no columns; allowlist explicit columns or remove the table." }
+}
 az deployment group create --resource-group $ResourceGroup --template-file (Join-Path $PSScriptRoot 'main.bicep') --parameters "@$ParametersFile" --output none
 if ($LASTEXITCODE -ne 0) { throw 'Infrastructure deployment failed.' }
 az functionapp deployment source config-zip --resource-group $ResourceGroup --name $appName --src (Join-Path $bundleRoot 'function.zip') --output none

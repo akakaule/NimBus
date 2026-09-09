@@ -9,7 +9,7 @@ public sealed class DataverseOptions
     /// <summary>Publisher endpoint provisioned in the NimBus catalog.</summary>
     public string PublisherEndpoint { get; set; } = "DataverseEndpoint";
 
-    /// <summary>Allowed tables and selected columns. No wildcard projection.</summary>
+    /// <summary>Allowed tables and selected columns. No wildcard projection; every table needs at least one column.</summary>
     public Dictionary<string, string[]> Tables { get; set; } = new(StringComparer.Ordinal);
 
     /// <summary>Optional required pre-image alias for Update/Delete.</summary>
@@ -26,9 +26,11 @@ public sealed class DataverseOptions
     {
         if (OrganizationId == Guid.Empty || string.IsNullOrWhiteSpace(PublisherEndpoint) ||
             MaxBodyBytes is < 1024 or > 192 * 1024 || Tables.Count == 0 ||
-            Tables.Any(p => string.IsNullOrWhiteSpace(p.Key) || p.Value is null || p.Value.Any(string.IsNullOrWhiteSpace)))
+            // An empty column array cannot survive the Dataverse__Tables__<table>__<index> app-setting
+            // shape, so it would silently drop the table from the allowlist; reject it here instead.
+            Tables.Any(p => string.IsNullOrWhiteSpace(p.Key) || p.Value is null or [] || p.Value.Any(string.IsNullOrWhiteSpace)))
         {
-            throw new ArgumentException("Configure OrganizationId, PublisherEndpoint, bounded MaxBodyBytes and an explicit table/column allowlist.");
+            throw new ArgumentException("Configure OrganizationId, PublisherEndpoint, bounded MaxBodyBytes and an explicit table/column allowlist selecting at least one column per table.");
         }
     }
 }

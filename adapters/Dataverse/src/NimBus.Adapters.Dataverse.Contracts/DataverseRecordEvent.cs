@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Newtonsoft.Json.Linq;
 using NimBus.Core.Events;
+using NimBus.Core.Messages.PII;
 
 namespace NimBus.Adapters.Dataverse.Contracts;
 
@@ -31,12 +32,19 @@ public abstract class DataverseRecordEvent : Event
     [Required]
     public string SessionId { get; set; } = string.Empty;
 
-    /// <summary>Selected target attributes. Missing keys mean absent, not null.</summary>
+    /// <summary>
+    /// Selected target attributes. Missing keys mean absent, not null. Sensitive as a whole:
+    /// the projected columns are configuration-driven, so no per-column annotation can exist
+    /// and the masker must not treat unclassified business data as safe to reveal.
+    /// </summary>
+    [Sensitive]
     public JObject Attributes { get; set; } = new();
 
-    /// <summary>Selected pre-image attributes, null when no image was requested.</summary>
+    /// <summary>Selected pre-image attributes, null when no image was requested. Sensitive; see <see cref="Attributes"/>.</summary>
+    [Sensitive]
     public JObject? Before { get; set; }
 
-    /// <summary>Selected post-image attributes, null when no image was requested.</summary>
+    /// <summary>Selected post-image attributes, null when no image was requested. Sensitive; see <see cref="Attributes"/>.</summary>
+    [Sensitive]
     public JObject? After { get; set; }
 }

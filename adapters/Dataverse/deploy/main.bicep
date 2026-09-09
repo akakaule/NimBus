@@ -9,9 +9,21 @@ param functionName string
 param organizationId string
 param location string = resourceGroup().location
 @description('Dataverse table logical names mapped to explicit arrays of allowed column names.')
-param tables object
+param tables tableProjections
 @description('Enable only after validating source identity and registration in the designated test environment.')
 param ingressEnabled bool = false
+
+// An empty column array cannot be expressed as Dataverse__Tables__<table>__<index> app settings,
+// so the table would silently vanish from the adapter's allowlist. Reject it at deployment instead.
+@minLength(1)
+type columnName = string
+
+@minLength(1)
+type columnProjection = columnName[]
+
+type tableProjections = {
+  *: columnProjection
+}
 
 var suffix = uniqueString(resourceGroup().id, functionName)
 var storageName = 'dv${suffix}'

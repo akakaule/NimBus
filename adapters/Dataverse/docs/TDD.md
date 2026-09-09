@@ -65,7 +65,7 @@ Dataverse uses its Service Endpoint SAS. The Functions input binding and output 
 
 ### 2.4 Configuration
 
-`DataverseQueue`, `DataverseServiceBus__fullyQualifiedNamespace`, `NimBusServiceBus__fullyQualifiedNamespace`, `Dataverse__OrganizationId`, `Dataverse__PublisherEndpoint`, `Dataverse__Tables__<table>__<index>`. Optional instance-wide `Dataverse__PreImageAlias`, `Dataverse__PostImageAlias`, and `Dataverse__MaxBodyBytes`. Host storage and identity settings are separate; see example local settings and Bicep. Configuration is validated at startup.
+`DataverseQueue`, `DataverseServiceBus__fullyQualifiedNamespace`, `NimBusServiceBus__fullyQualifiedNamespace`, `Dataverse__OrganizationId`, `Dataverse__PublisherEndpoint`, `Dataverse__Tables__<table>__<index>` (at least one column per allowlisted table; an empty projection cannot be expressed as app settings and is rejected by the template, the deployment script and startup validation). Optional instance-wide `Dataverse__PreImageAlias`, `Dataverse__PostImageAlias`, and `Dataverse__MaxBodyBytes`. Host storage and identity settings are separate; see example local settings and Bicep. Configuration is validated at startup.
 
 ## 3. Events and triggers
 
@@ -189,7 +189,7 @@ Bounded input/output and concurrency are implemented. Actual throughput, source 
 - At-least-once send/complete boundary can duplicate; pre-session processing can reorder.
 - Synthetic fixtures may not cover organization-specific context/value encodings.
 - Azure deployment/network/identity and released SDK compatibility are unqualified.
-- Generic attributes can contain sensitive data; projection and downstream retention need customer ownership.
+- Generic attributes can contain sensitive data. Because the projection is configuration-driven, `Attributes`, `Before` and `After` are marked `[Sensitive]` wholesale, so the WebApp masks every projected value for operators without the PiiReader role. Column-level classification is not available; downstream retention still needs customer ownership.
 
 ## 9. Logging and monitoring
 

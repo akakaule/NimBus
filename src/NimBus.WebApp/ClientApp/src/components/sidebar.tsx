@@ -110,19 +110,6 @@ const Icon = {
       />
     </svg>
   ),
-  topology: (
-    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
-      <circle cx="4" cy="4" r="2" stroke="currentColor" strokeWidth="1.4" />
-      <circle cx="12" cy="4" r="2" stroke="currentColor" strokeWidth="1.4" />
-      <circle cx="8" cy="12" r="2" stroke="currentColor" strokeWidth="1.4" />
-      <path
-        d="M5.6 5.4l1.5 5M10.4 5.4L8.9 10.4M6 4h4"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-    </svg>
-  ),
   flow: (
     <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
       <circle cx="3.5" cy="5" r="2" stroke="currentColor" strokeWidth="1.4" />
@@ -216,11 +203,6 @@ const NAV: NavGroup[] = [
         icon: Icon.messages,
       },
       { name: "Metrics", path: "/Metrics", icon: Icon.metrics },
-      {
-        name: "Topology",
-        path: "/Topology",
-        icon: Icon.topology,
-      },
       {
         name: "Flow",
         path: "/Flow",

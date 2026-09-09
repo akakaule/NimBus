@@ -7,6 +7,8 @@ import {
   useState,
 } from "react";
 import { Link } from "react-router-dom";
+import * as api from "api-client";
+import { messageKey } from "hooks/use-live-messages";
 import type { TopologyData } from "components/topology/types";
 import type { StatusSnapshot } from "components/flow/types";
 import {
@@ -40,6 +42,7 @@ export interface SpineViewProps {
   periodLabel: string;
   /** Live per-endpoint counts — subscriber cards prefer these when present. */
   snapshots: Record<string, StatusSnapshot>;
+  traffic?: api.Message[];
 }
 
 export const SpineView = ({
@@ -49,6 +52,7 @@ export const SpineView = ({
   periodMinutes,
   periodLabel,
   snapshots,
+  traffic = [],
 }: SpineViewProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [rects, setRects] = useState<Record<string, SpineRect>>({});
@@ -137,12 +141,31 @@ export const SpineView = ({
   const handleLeave = useCallback(() => setFocus(null), []);
 
   const focusLine = spineFocusLine(model, focus);
+  const journeys = traffic.flatMap((message) => {
+    if (message.messageType !== api.MessageType.EventRequest) return [];
+    const incoming = model.lanes.find(
+      (lane) =>
+        lane.s === `p:${message.from}` && lane.t === `t:${message.eventTypeId}`,
+    );
+    const outgoing = model.lanes.find(
+      (lane) =>
+        lane.s === `t:${message.eventTypeId}` && lane.t === `s:${message.to}`,
+    );
+    const first = edges.find((edge) => edge.key === incoming?.key);
+    const second = edges.find((edge) => edge.key === outgoing?.key);
+    return first && second
+      ? [{ key: messageKey(message), first: first.d, second: second.d }]
+      : [];
+  });
 
   return (
     <div className="bg-card border border-border rounded-nb-lg overflow-hidden text-foreground">
       <style>{`
-        @keyframes nb-spine-dash { to { stroke-dashoffset: -160; } }
-        .nb-spine-dash { animation: nb-spine-dash 4s linear infinite; }
+        @keyframes nb-message-travel {
+          0% { offset-distance: 0%; opacity: 1; }
+          99% { opacity: 1; }
+          100% { offset-distance: 100%; opacity: 0; }
+        }
       `}</style>
       <div className="flex items-center justify-between gap-4 px-4 py-3 border-b border-border">
         <span className="font-mono text-[10px] font-semibold tracking-[0.12em] uppercase text-muted-foreground">
@@ -201,22 +224,33 @@ export const SpineView = ({
                     strokeLinecap="round"
                   />
                 ))}
-                {edges.map(
-                  (e) =>
-                    e.dop > 0 && (
+                {journeys.map((journey, journeyIndex) => (
+                  <g key={journey.key} data-message-traffic={journey.key}>
+                    {reducedMotion ? (
                       <path
-                        key={`${e.key}::dash`}
-                        d={e.d}
+                        d={`${journey.first} ${journey.second}`}
                         fill="none"
-                        stroke={e.color}
-                        strokeWidth={e.dw}
-                        strokeOpacity={e.dop}
-                        strokeLinecap="round"
-                        strokeDasharray="2 22"
-                        className="nb-spine-dash"
+                        stroke="#3B82F6"
+                        strokeWidth={3}
                       />
-                    ),
-                )}
+                    ) : (
+                      [journey.first, journey.second].map((path, index) => (
+                        <circle
+                          key={index}
+                          r={5}
+                          fill="#3B82F6"
+                          stroke="white"
+                          strokeWidth={1.5}
+                          opacity={0}
+                          style={{
+                            offsetPath: `path("${path}")`,
+                            animation: `nb-message-travel 1.5s linear ${index * 1.5 + (journeyIndex % 8) * 0.15}s forwards`,
+                          }}
+                        />
+                      ))
+                    )}
+                  </g>
+                ))}
                 {rings.map((r) => (
                   <rect
                     key={r.key}
@@ -336,7 +370,8 @@ export const SpineView = ({
           </span>
         ) : (
           <span className="font-mono text-[12px] text-muted-foreground">
-            Hover a publisher, event type or subscriber to light its lane.
+            Blue dots show newly observed messages on visible routes · refreshed
+            every 5s. Hover a card to highlight its lanes.
           </span>
         )}
       </div>

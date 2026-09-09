@@ -1,5 +1,7 @@
 # Memory
 
+- Live-flow animation correction: newly inserted SVG SMIL animations with `begin="0s"` use the SVG document timeline and may already be finished when a poll delivers new messages. Use per-element CSS animation timing for polled traffic, and preserve full event-type IDs (a dotted ID can end in a version such as `v1`).
+
 - Service Bus name-limit correction: topic and queue paths allow 260 characters; subscription and rule names allow 50. Keep filter-safe character validation, but use the path limit for topic and forwarding-destination arguments. A namespace listing can contain long valid topic names and must not fail while loading their subscription counters.
 - Admin topic ownership correction: namespace visibility and mutation ownership are separate. Site owners may delete topics explicitly marked outside NimBus topology, while platform and system topics remain protected; expose this through a typed confirmation and audited API route.
 
@@ -78,6 +80,7 @@
 - Handoff verification correction: proving eventual completion alone is insufficient for the CRM/ERP demo. Capture Pending plus Handoff before settlement, update the same account/session, verify Deferred and no premature ERP write, then prove automatic replay, empty pending/deferred session lists, and the final updated ERP fields.
 - SQL timestamp correction: bind Dapper parameters explicitly as DbType.DateTime2 when comparing or upserting datetime2 keys; SqlClient's inferred datetime can miss a fractional-second key on MERGE and then collide on INSERT. Prove the fix against SQL Server with a round-tripped fractional key.
 - Concurrent upsert correction: ordered Service Bus delivery does not prevent overlapping HTTP retries. Lock the database key/missing-key range through the entity and audit commit, propagate request cancellation, and clear EF tracking before retrying a deadlocked transaction.
+- Heartbeat page removal correction: when removing a rendered section, update tests that counted values supplied by both the retained summary and the deleted section; assert the removed heading and row content are absent.
 - Emulator failure-test correction: the Azure SDK can complete an outstanding receive with null on remote detach; verify prompt completion, subsequent SessionLockLost, and the logged original pump exception instead of assuming the first receive throws MessagingEntityNotFound.
 - Emulator test-output correction: AspireHostingTests and SdkSmokeTests locate the repository from AppContext.BaseDirectory, and the latter infers configuration from the normal bin layout. Run those suites from normal test outputs with BuildProjectReferences=false after compiling dependencies; external temporary artifacts cannot satisfy those fixture assumptions.
 - Pending-AMQP-attach correction: AMQPNetLite 2.5.3 keeps an asynchronous listener attach in Start; a remote detach then tears down the shared connection with OnDetach/Start. Serialize pending completion and finish the cancelled attach handshake from LinkRemoteClose before the library handles detach. Prove another link remains usable and release any session acquired during the cancellation race.

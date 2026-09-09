@@ -255,48 +255,6 @@ export default function Heartbeat() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Recent gaps</CardTitle>
-                <CardDescription>
-                  Actual elapsed duration; ongoing gaps update on refresh.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-0">
-                {(data.gaps?.length ?? 0) === 0 ? (
-                  <EmptyState
-                    title="No recent gaps"
-                    description="No heartbeat outage overlaps this window."
-                  />
-                ) : (
-                  <div className="divide-y">
-                    {(data.gaps ?? []).map((gap) => (
-                      <div
-                        key={`${gap.endpointId}-${gap.fromUtc?.toISOString()}`}
-                        className="flex items-center gap-4 p-4"
-                      >
-                        <span className="font-medium flex-1">
-                          {gap.endpointId}
-                        </span>
-                        <span className="font-mono text-xs">
-                          {gap.fromUtc?.format("DD MMM HH:mm")} →{" "}
-                          {gap.toUtc?.format("DD MMM HH:mm") ?? "now"}
-                        </span>
-                        <span className="font-mono text-xs">
-                          {duration(gap.durationSeconds)}
-                        </span>
-                        {gap.ongoing && <Badge variant="error">ongoing</Badge>}
-                        {gap.cause && (
-                          <span className="text-xs text-muted-foreground">
-                            {gap.cause}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
           </>
         ) : null}
       </div>

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "api-client";
+import { Link } from "react-router-dom";
+import { messageKey, useLiveMessages } from "hooks/use-live-messages";
 import Page from "components/page";
 import { Button } from "components/ui/button";
 import { Checkbox } from "components/ui/checkbox";
@@ -15,10 +17,7 @@ import type { TopologyNode } from "components/topology/types";
 import { useFlowData } from "hooks/use-flow-data";
 import { useUrlFilters } from "hooks/use-url-filters";
 
-// Flow page — the event-type spine (design 1b: publisher → event type →
-// subscriber). The spec-020 animated dots canvas was removed in favor of the
-// lanes; useFlowData still runs the live snapshot pipeline so subscriber
-// cards carry current failure counts and the mode badge stays honest.
+// Endpoint snapshots drive health; stored message records drive live traffic.
 
 const PERIODS: Array<{ label: string; value: api.Period }> = [
   { label: "1h", value: api.Period._1h },
@@ -87,6 +86,7 @@ function savePrefs(prefs: FlowPrefs): void {
 // ---------------------------------------------------------------------------
 
 export default function Flow() {
+  const [paused, setPaused] = useState(false);
   const [period, setPeriod] = useState<api.Period>(api.Period._1h);
   const [selection, setSelection] = useState<string[] | null | undefined>(
     () => loadPrefs().endpointIds,
@@ -97,6 +97,7 @@ export default function Flow() {
     eventType: string;
   }>({ eventType: "" });
   const eventType = urlFilters.eventType;
+  const live = useLiveMessages(eventType, paused);
   const setEventType = (next: string): void =>
     setFiltersWithoutHistory({ eventType: next });
 
@@ -115,9 +116,17 @@ export default function Flow() {
   }, [selection, topology]);
 
   const visibleSet = useMemo(
-    () => (effectiveSelection === null ? undefined : new Set(effectiveSelection)),
+    () =>
+      effectiveSelection === null ? undefined : new Set(effectiveSelection),
     [effectiveSelection],
   );
+
+  const matchesEndpoints = (message: api.Message) =>
+    !visibleSet ||
+    [message.from, message.to, message.endpointId].some(
+      (id) => id !== undefined && visibleSet.has(id),
+    );
+  const visibleMessages = live.messages.filter(matchesEndpoints).slice(0, 50);
 
   const eventTypeOptions = useMemo(() => {
     if (topology === undefined) return [];
@@ -199,11 +208,108 @@ export default function Flow() {
               visibleEndpointIds={visibleSet}
               eventType={eventType}
               periodMinutes={PERIOD_MINUTES[period] ?? 60}
-              periodLabel={
-                PERIODS.find((p) => p.value === period)?.label ?? ""
-              }
+              periodLabel={PERIODS.find((p) => p.value === period)?.label ?? ""}
               snapshots={snapshots}
+              traffic={live.traffic.filter(matchesEndpoints)}
             />
+            <section
+              className="rounded-nb-lg border border-border bg-card overflow-hidden"
+              aria-label="Live message feed"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
+                <div>
+                  <h2 className="font-semibold">Live message feed</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {paused ? "Paused" : "Refreshes every 5 seconds"} · Latest{" "}
+                    {visibleMessages.length} matching messages from the 100 most
+                    recent records
+                    {live.updatedAt &&
+                      ` · Updated ${new Date(live.updatedAt).toLocaleTimeString()}`}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setPaused((value) => !value)}
+                >
+                  {paused ? "Resume traffic" : "Pause traffic"}
+                </Button>
+              </div>
+              {live.error && (
+                <p role="alert" className="p-4 text-status-danger">
+                  Message refresh failed. Retrying automatically; the last
+                  received messages remain below.
+                </p>
+              )}
+              <div className="max-h-[360px] overflow-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="sticky top-0 bg-card text-xs text-muted-foreground">
+                    <tr>
+                      {[
+                        "Enqueued",
+                        "Event type",
+                        "Route",
+                        "Message type",
+                        "Message",
+                      ].map((label) => (
+                        <th key={label} className="p-3 font-medium">
+                          {label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleMessages.map((message) => (
+                      <tr
+                        key={messageKey(message)}
+                        className="border-t border-border"
+                      >
+                        <td className="p-3 whitespace-nowrap font-mono text-xs">
+                          {message.enqueuedTimeUtc?.format("HH:mm:ss") ?? "—"}
+                        </td>
+                        <td
+                          className="p-3 max-w-[260px] truncate"
+                          title={message.eventTypeId}
+                        >
+                          {message.eventTypeId ?? "—"}
+                        </td>
+                        <td className="p-3">
+                          {message.from || message.originatingFrom || "—"} →{" "}
+                          {message.to || "—"}
+                        </td>
+                        <td className="p-3 text-xs">
+                          {message.messageType ?? "unknown"}
+                        </td>
+                        <td className="p-3 font-mono text-xs">
+                          {message.eventId &&
+                          (message.endpointId || message.to) ? (
+                            <Link
+                              className="text-status-info hover:underline"
+                              title={message.messageId}
+                              to={`/Message/Index/${encodeURIComponent(message.endpointId || message.to!)}/${encodeURIComponent(message.eventId)}/0`}
+                            >
+                              {message.messageId &&
+                              message.messageId.length > 16
+                                ? `${message.messageId.slice(0, 8)}…${message.messageId.slice(-8)}`
+                                : message.messageId}
+                            </Link>
+                          ) : (
+                            message.messageId
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {visibleMessages.length === 0 && (
+                  <p className="p-6 text-sm text-muted-foreground">
+                    {live.updatedAt
+                      ? "No recent messages match these filters."
+                      : "Waiting for messages…"}
+                  </p>
+                )}
+              </div>
+            </section>
           </>
         ) : topologyLoading ? (
           <div className="flex items-center justify-center h-[400px] w-full">
@@ -295,9 +401,7 @@ const EndpointFilterMenu = ({
     selection === null || selection.includes(id);
   const toggle = (id: string): void => {
     const base = selection ?? nodes.map((n) => n.id);
-    onChange(
-      base.includes(id) ? base.filter((x) => x !== id) : [...base, id],
-    );
+    onChange(base.includes(id) ? base.filter((x) => x !== id) : [...base, id]);
   };
 
   return (

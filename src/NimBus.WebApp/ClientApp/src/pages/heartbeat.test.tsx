@@ -100,8 +100,9 @@ describe("Heartbeat page", () => {
     expect(screen.getByText("Unsupported")).toBeTruthy();
     expect(screen.getByText("pre-heartbeat SDK")).toBeTruthy();
     expect(screen.getByLabelText("16 Aug: partial")).toBeTruthy();
-    expect(screen.getAllByText("1.5h")).toHaveLength(2);
-    expect(screen.getByText("ongoing")).toBeTruthy();
+    expect(screen.getAllByText("1.5h")).toHaveLength(1);
+    expect(screen.queryByText("Recent gaps")).toBeNull();
+    expect(screen.queryByText("ongoing")).toBeNull();
     expect(mocks.getHeartbeatPage).toHaveBeenCalledWith(30);
   });
 
@@ -132,18 +133,6 @@ describe("Heartbeat page", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "history unavailable",
     );
-  });
-
-  it("shows the empty-gaps state", async () => {
-    mocks.getHeartbeatPage.mockResolvedValue(page({ gaps: [] }));
-
-    render(
-      <MemoryRouter>
-        <Heartbeat />
-      </MemoryRouter>,
-    );
-
-    expect(await screen.findByText("No recent gaps")).toBeTruthy();
   });
 
   it("refreshes when the heartbeat hub publishes an update", async () => {

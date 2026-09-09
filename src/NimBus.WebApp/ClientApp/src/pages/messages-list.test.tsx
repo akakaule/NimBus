@@ -126,3 +126,49 @@ describe("MessagesList out-of-order response guard", () => {
     expect(captured.rows?.map((r) => r.id)).toEqual(["fresh"]);
   });
 });
+
+describe("MessagesList type column", () => {
+  const typeCell = (messageType: string) => {
+    const message = Object.assign(new api.Message(), {
+      messageId: "m1",
+      eventId: "m1",
+      messageType,
+    });
+    return { messages: [message], continuationToken: undefined };
+  };
+
+  const renderWith = async (messageType: string) => {
+    const { default: MessagesList } = await import("./messages-list");
+    render(
+      <MemoryRouter initialEntries={["/messages"]}>
+        <MessagesList />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(mocks.deferreds).toHaveLength(1));
+    await act(async () => {
+      mocks.deferreds[0].resolve(typeCell(messageType));
+    });
+    return captured.rows?.[0].data.get("messageType");
+  };
+
+  it("shows the operator label instead of the raw contract value", async () => {
+    const cell = await renderWith("resolutionResponse");
+
+    expect(cell?.value).toBe("Completed");
+    // The raw value stays searchable so an existing query keeps matching.
+    expect(cell?.searchValue).toContain("resolutionResponse");
+    expect(cell?.searchValue).toContain("Completed");
+  });
+
+  it("labels the legacy PascalCase spelling stored history still carries", async () => {
+    const cell = await renderWith("ResolutionResponse");
+
+    expect(cell?.value).toBe("Completed");
+  });
+
+  it("falls back to the raw value for a type the catalog does not name", async () => {
+    const cell = await renderWith("brandNewResponse");
+
+    expect(cell?.value).toBe("brandNewResponse");
+  });
+});

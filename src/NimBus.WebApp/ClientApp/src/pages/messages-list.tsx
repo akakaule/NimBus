@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import * as api from "api-client";
 import { formatMoment } from "functions/endpoint.functions";
+import { formatMessageType } from "functions/message-type.functions";
 import DataTable, { ITableRow, ITableHeadCell } from "components/data-table";
 import Page from "components/page";
 import TruncatedGuid from "components/common/truncated-guid";
@@ -91,8 +92,11 @@ function mapMessageToRow(
       [
         Column.messageType,
         {
-          value: msg.messageType ?? "-",
-          searchValue: msg.messageType?.toString() ?? "",
+          // Operator-facing label; search still matches the raw contract value
+          // so an existing `resolutionResponse` query keeps working.
+          value: formatMessageType(msg.messageType) || "-",
+          searchValue:
+            `${formatMessageType(msg.messageType)} ${msg.messageType ?? ""}`.trim(),
         },
       ],
       [

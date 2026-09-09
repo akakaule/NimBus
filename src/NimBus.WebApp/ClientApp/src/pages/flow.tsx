@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "api-client";
 import { Link } from "react-router-dom";
 import { messageKey, useLiveMessages } from "hooks/use-live-messages";
+import { formatMessageType } from "functions/message-type.functions";
 import Page from "components/page";
 import { Button } from "components/ui/button";
 import { Checkbox } from "components/ui/checkbox";
@@ -278,7 +279,7 @@ export default function Flow() {
                           {message.to || "—"}
                         </td>
                         <td className="p-3 text-xs">
-                          {message.messageType ?? "unknown"}
+                          {formatMessageType(message.messageType) || "Unknown"}
                         </td>
                         <td className="p-3 font-mono text-xs">
                           {message.eventId &&

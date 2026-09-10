@@ -31,6 +31,9 @@ public interface IServiceBusManagement
 {
     Task CreateCustomRule(string topicName, string subscriptionName, string ruleName, string filter, string action);
     Task CreateSubscription(string topicName, string subscriptionName);
+    /// <summary>Deletes and recreates a subscription, retaining its settings and rules while removing all messages.</summary>
+    Task RecreateSubscription(string topicName, string subscriptionName)
+        => throw new NotSupportedException("Subscription recreation is not supported by this management implementation.");
     Task DeleteRule(string topicName, string subscriptionName, string ruleName);
     Task DeleteSubscription(string topicName, string subscriptionName);
     Task DeleteTopic(string topicName);
@@ -119,6 +122,30 @@ public class ServiceBusManagement : IServiceBusManagement
             _logger?.LogError(e, "Could not create subscription");
             throw;
         }
+    }
+
+    /// <inheritdoc/>
+    public async Task RecreateSubscription(string topicName, string subscriptionName)
+    {
+        ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));
+        ServiceBusFilterValidator.ValidateName(subscriptionName, nameof(subscriptionName));
+
+        // Snapshot everything before deletion, including emulator TTLs and paused status.
+        var existing = await client.GetSubscriptionAsync(topicName, subscriptionName);
+        var options = new CreateSubscriptionOptions(existing.Value);
+        var rules = new List<CreateRuleOptions>();
+        await foreach (var rule in client.GetRulesAsync(topicName, subscriptionName))
+            rules.Add(new CreateRuleOptions(rule));
+
+        await client.DeleteSubscriptionAsync(topicName, subscriptionName);
+        // Create with a real rule so the SDK never installs its default match-all filter.
+        // An empty rule set stays empty after removing the temporary deny-all rule.
+        var initialRule = rules.Count > 0 ? rules[0] : new CreateRuleOptions("$Default", new FalseRuleFilter());
+        await client.CreateSubscriptionAsync(options, initialRule);
+        for (var index = 1; index < rules.Count; index++)
+            await client.CreateRuleAsync(topicName, subscriptionName, rules[index]);
+        if (rules.Count == 0)
+            await client.DeleteRuleAsync(topicName, subscriptionName, initialRule.Name);
     }
 
     public async Task DeleteSubscription(string topicName, string subscriptionName)

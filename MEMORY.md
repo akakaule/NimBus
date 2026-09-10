@@ -1,5 +1,7 @@
 # Memory
 
+- Endpoint purge correction: clearing message-store rows and the main endpoint subscription leaves parked messages in the topic's Deferred subscription. Purge must await its deletion and recreation, preserving session support, TTL, status and rules; read settings/rules before deletion and avoid a transient match-all default rule.
+
 - Payload-search authorization preference: ordinary Readers may search receiving endpoints whose registered event contracts have no sensitive fields. Classify nested contracts too, retain PiiReader for sensitive or unclassified contracts, and constrain store queries to the verified event types so unknown historical rows cannot bypass classification.
 
 - Cosmos payload-search investigation: the deployed API rejected the search because PiiReader was missing; the user confirmed the same ContactId search succeeds after granting the role. Show search failures explicitly instead of empty matches. Inspect HTTP status/response before diagnosing Cosmos storage or query behavior.

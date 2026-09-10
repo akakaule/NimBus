@@ -147,6 +147,13 @@
     animation: nb-monitor-pulse-card 1.6s ease-in-out infinite;
   }
 
+  /* Deep-backlog card pulse — the amber sibling of the fresh-failure glow.
+     A queue past the "high backlog" threshold breathes so it reads as an
+     active problem, not a static big number. */
+  .nb-monitor-pulse-backlog {
+    animation: nb-monitor-pulse-backlog 2.2s ease-in-out infinite;
+  }
+
   /* Slow-scrolling marquee for the ticker. The track is duplicated in JSX
      so the loop is seamless — translateX(-50%) lands at the start of the
      duplicate, then snaps back to 0 on iteration. Pause on hover so an
@@ -197,6 +204,20 @@
     box-shadow:
       0 0 0 2px rgba(194, 65, 46, 0.75),
       0 0 32px rgba(194, 65, 46, 0.28);
+  }
+}
+
+@keyframes nb-monitor-pulse-backlog {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(201, 138, 27, 0.4),
+      0 0 24px rgba(201, 138, 27, 0.1);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(201, 138, 27, 0.8),
+      0 0 32px rgba(201, 138, 27, 0.3);
   }
 }
 

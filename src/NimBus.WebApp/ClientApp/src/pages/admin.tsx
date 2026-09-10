@@ -4,8 +4,13 @@ import Topology from "components/admin/topology";
 import Operations from "components/admin/operations";
 import SubscriptionManager from "components/admin/subscription-manager";
 import Health from "components/admin/health";
+import CosmosContainerManager from "components/admin/cosmos-container-manager";
+import { useStorageProvider } from "hooks/app-status";
 
 export default function Admin() {
+  const storageProvider = useStorageProvider();
+  const hasCosmosStorage = storageProvider === "Cosmos DB";
+
   return (
     <Page
       title="Admin"
@@ -17,6 +22,7 @@ export default function Admin() {
           <Tab index={1}>Operations</Tab>
           <Tab index={2}>Subscriptions</Tab>
           <Tab index={3}>Health</Tab>
+          {hasCosmosStorage && <Tab index={4}>Storage</Tab>}
         </TabList>
         <TabPanels>
           <TabPanel index={0} className="p-6">
@@ -31,6 +37,11 @@ export default function Admin() {
           <TabPanel index={3} className="p-6">
             <Health />
           </TabPanel>
+          {hasCosmosStorage && (
+            <TabPanel index={4} className="p-6">
+              <CosmosContainerManager />
+            </TabPanel>
+          )}
         </TabPanels>
       </Tabs>
     </Page>

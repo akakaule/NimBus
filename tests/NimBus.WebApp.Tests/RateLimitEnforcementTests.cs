@@ -525,6 +525,8 @@ public class RateLimitEnforcementTests
 
     private sealed class StubAdminApi : IAdminApiController
     {
+        public Task<ActionResult<IEnumerable<CosmosContainerInfo>>> GetAdminCosmosContainersAsync() => throw new NotSupportedException();
+        public Task<ActionResult<CosmosContainerDeleteResult>> PostAdminCosmosContainerDeleteAsync(CosmosContainerDeleteRequest body, string containerName) => throw new NotSupportedException();
         private static Task<ActionResult<T>> Ok<T>() => Task.FromResult<ActionResult<T>>(new OkResult());
 
         private static Task<IActionResult> OkPlain() => Task.FromResult<IActionResult>(new OkResult());

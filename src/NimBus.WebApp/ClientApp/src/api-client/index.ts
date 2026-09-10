@@ -2679,6 +2679,128 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * List Cosmos DB containers outside the current platform
+     * @return Orphaned Cosmos DB containers
+     */
+    getAdminCosmosContainers(): Promise<CosmosContainerInfo[]> {
+        let url_ = this.baseUrl + "/api/admin/storage/cosmos/containers";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminCosmosContainers(_response);
+        });
+    }
+
+    protected processGetAdminCosmosContainers(response: Response): Promise<CosmosContainerInfo[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(CosmosContainerInfo.fromJS(item));
+            }
+            else {
+                result200 = null as any;
+            }
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Cosmos DB storage is not configured", status, _responseText, _headers);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            return throwException("Cosmos DB operation unavailable", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<CosmosContainerInfo[]>(null as any);
+    }
+
+    /**
+     * Permanently delete a Cosmos DB container outside the current platform
+     * @return Container deleted
+     */
+    postAdminCosmosContainerDelete(body: CosmosContainerDeleteRequest, containerName: string): Promise<CosmosContainerDeleteResult> {
+        let url_ = this.baseUrl + "/api/admin/storage/cosmos/containers/{containerName}/delete";
+        if (containerName === undefined || containerName === null)
+            throw new globalThis.Error("The parameter 'containerName' must be defined.");
+        url_ = url_.replace("{containerName}", encodeURIComponent("" + containerName));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminCosmosContainerDelete(_response);
+        });
+    }
+
+    protected processPostAdminCosmosContainerDelete(response: Response): Promise<CosmosContainerDeleteResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = CosmosContainerDeleteResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Invalid confirmation or protected container", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Container or Cosmos DB provider not found", status, _responseText, _headers);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            return throwException("Cosmos DB operation unavailable", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<CosmosContainerDeleteResult>(null as any);
+    }
+
+    /**
      * Get the platform heartbeat schedule
      * @return OK
      */
@@ -9091,6 +9213,177 @@ export interface IServiceBusTopicOverview {
     [key: string]: any;
 }
 
+export class CosmosContainerInfo implements ICosmosContainerInfo {
+    name!: string;
+
+    [key: string]: any;
+
+    constructor(data?: ICosmosContainerInfo) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.name = _data["name"];
+        }
+    }
+
+    static fromJS(data: any): CosmosContainerInfo {
+        data = typeof data === 'object' ? data : {};
+        let result = new CosmosContainerInfo();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["name"] = this.name;
+        return data;
+    }
+
+    clone(): CosmosContainerInfo {
+        const json = this.toJSON();
+        let result = new CosmosContainerInfo();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ICosmosContainerInfo {
+    name: string;
+
+    [key: string]: any;
+}
+
+export class CosmosContainerDeleteRequest implements ICosmosContainerDeleteRequest {
+    /** Must exactly match the container name */
+    confirmation!: string;
+
+    [key: string]: any;
+
+    constructor(data?: ICosmosContainerDeleteRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.confirmation = _data["confirmation"];
+        }
+    }
+
+    static fromJS(data: any): CosmosContainerDeleteRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new CosmosContainerDeleteRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["confirmation"] = this.confirmation;
+        return data;
+    }
+
+    clone(): CosmosContainerDeleteRequest {
+        const json = this.toJSON();
+        let result = new CosmosContainerDeleteRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ICosmosContainerDeleteRequest {
+    /** Must exactly match the container name */
+    confirmation: string;
+
+    [key: string]: any;
+}
+
+export class CosmosContainerDeleteResult implements ICosmosContainerDeleteResult {
+    name!: string;
+    deleted?: boolean;
+
+    [key: string]: any;
+
+    constructor(data?: ICosmosContainerDeleteResult) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.name = _data["name"];
+            this.deleted = _data["deleted"];
+        }
+    }
+
+    static fromJS(data: any): CosmosContainerDeleteResult {
+        data = typeof data === 'object' ? data : {};
+        let result = new CosmosContainerDeleteResult();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["name"] = this.name;
+        data["deleted"] = this.deleted;
+        return data;
+    }
+
+    clone(): CosmosContainerDeleteResult {
+        const json = this.toJSON();
+        let result = new CosmosContainerDeleteResult();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ICosmosContainerDeleteResult {
+    name: string;
+    deleted?: boolean;
+
+    [key: string]: any;
+}
+
 export class ServiceBusSubscriptionInfo implements IServiceBusSubscriptionInfo {
     name?: string;
     topicName?: string;
@@ -13518,6 +13811,7 @@ export enum MessageAuditAuditType {
     SendHeartbeatNow = "sendHeartbeatNow",
     EnableEndpointHeartbeat = "enableEndpointHeartbeat",
     DisableEndpointHeartbeat = "disableEndpointHeartbeat",
+    DeleteStorageContainer = "deleteStorageContainer",
 }
 
 export class MessageContent implements IMessageContent {
@@ -13642,6 +13936,7 @@ export enum AuditSearchFilterAuditType {
     SendHeartbeatNow = "sendHeartbeatNow",
     EnableEndpointHeartbeat = "enableEndpointHeartbeat",
     DisableEndpointHeartbeat = "disableEndpointHeartbeat",
+    DeleteStorageContainer = "deleteStorageContainer",
 }
 
 export enum RoleEntryRole {
@@ -13690,6 +13985,7 @@ export enum AuditEntryAuditType {
     SendHeartbeatNow = "sendHeartbeatNow",
     EnableEndpointHeartbeat = "enableEndpointHeartbeat",
     DisableEndpointHeartbeat = "disableEndpointHeartbeat",
+    DeleteStorageContainer = "deleteStorageContainer",
 }
 
 export enum AgentSettleRequestOutcome {

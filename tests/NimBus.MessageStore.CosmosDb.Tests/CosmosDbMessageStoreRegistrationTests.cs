@@ -71,6 +71,7 @@ public sealed class CosmosDbMessageStoreRegistrationTests
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IAccessControlStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IServiceHealthStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<IHeartbeatHistoryStore>());
+        Assert.IsNotNull(provider.GetRequiredService<ICosmosContainerAdmin>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<INimBusMessageStore>());
         Assert.AreSame((object)aggregate, (object)provider.GetRequiredService<INimBusMessageStore>());
         Assert.AreEqual(-1, provider.GetRequiredService<IOptions<CosmosDbMessageStoreOptions>>().Value.UnresolvedRetentionDays);
@@ -83,6 +84,19 @@ public sealed class CosmosDbMessageStoreRegistrationTests
 
         Assert.IsNotNull(provider.GetRequiredService<INimBusMessageStore>());
         Assert.AreEqual(180, provider.GetRequiredService<IOptions<CosmosDbMessageStoreOptions>>().Value.UnresolvedRetentionDays);
+    }
+
+    [TestMethod]
+    public void Control_plane_container_admin_is_selected_when_resource_id_is_configured()
+    {
+        using var provider = BuildProvider(config: new()
+        {
+            ["CosmosAccountResourceId"] =
+                "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/providers/Microsoft.DocumentDB/databaseAccounts/account",
+        });
+
+        Assert.IsInstanceOfType<ArmCosmosContainerAdmin>(
+            provider.GetRequiredService<ICosmosContainerAdmin>());
     }
 
     [TestMethod]

@@ -38,7 +38,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     private readonly CosmosDbEndpointMetadataStore _endpointMetadata;
     private readonly CosmosDbMessageTrackingStore _messageTracking;
 
-    private const string DatabaseId = "MessageDatabase";
+    internal const string DatabaseId = "MessageDatabase";
 
     // Hot-path writes only ever inspect StatusCode on the response; skipping the
     // response body (which echoes the whole document, EventJson included) saves

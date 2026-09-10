@@ -126,5 +126,8 @@ namespace NimBus.MessageStore
 
         /// <summary>Operator excluded one endpoint from the heartbeat fan-out.</summary>
         DisableEndpointHeartbeat,
+
+        /// <summary>Operator permanently deleted an orphaned Cosmos DB container.</summary>
+        DeleteStorageContainer,
     }
 }

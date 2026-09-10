@@ -34,7 +34,7 @@ Every path ultimately performs the same three layers, in order:
 **RBAC for the deploying identity.** The Bicep creates role assignments (`Microsoft.Authorization/roleAssignments`: Azure Service Bus Data Owner and, on Flex Consumption, Storage Blob Data Owner), and plain **Contributor cannot write role assignments**. On the target resource group, grant the pipeline/service principal either:
 
 - **Owner**, or
-- least-privilege: **Contributor + Role Based Access Control Administrator** (role id `f58310d9-a9f6-439a-9e8d-f62e7b41a168`), ideally with an [ABAC condition](https://learn.microsoft.com/azure/role-based-access-control/delegate-role-assignments-overview) restricting assignable roles to Azure Service Bus Data Owner (`090c5cfd-751d-490a-894a-3ce6f1109419`) and Storage Blob Data Owner (`b7e6dc6d-f1e8-4753-8033-0f276bb0955b`).
+- least-privilege: **Contributor + Role Based Access Control Administrator** (role id `f58310d9-a9f6-439a-9e8d-f62e7b41a168`), ideally with an [ABAC condition](https://learn.microsoft.com/azure/role-based-access-control/delegate-role-assignments-overview) restricting assignable roles to Azure Service Bus Data Owner (`090c5cfd-751d-490a-894a-3ce6f1109419`), Storage Blob Data Owner (`b7e6dc6d-f1e8-4753-8033-0f276bb0955b`), and Cosmos DB Operator (`230815da-be43-4aae-9cb4-875f7bd000aa`).
 
 Cosmos data-plane role assignments (`Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments`) live under the DocumentDB provider and are covered by Contributor.
 
@@ -189,6 +189,8 @@ trap - EXIT
 ```
 
 The Service Bus namespace follows the convention `sb-{solutionId}-{environment}.servicebus.windows.net`.
+
+For Cosmos deployments, the template also configures `CosmosAccountResourceId` and grants the WebApp's managed identity Cosmos DB Operator on `MessageDatabase`. The Admin **Storage** tab uses that ARM access to list and delete containers outside the current platform catalog; Cosmos data-plane Entra authentication cannot perform container deletion.
 
 **Re-running against an existing WebApp?** Pass `webAppExists=true`. The app-settings deployment is a full replace, and several settings are configured out of band — `webAppExists=true` makes the template read the site's current settings and carry those keys forward instead of wiping them (which, for the auth settings, takes authentication down). Four prefixes are preserved:
 

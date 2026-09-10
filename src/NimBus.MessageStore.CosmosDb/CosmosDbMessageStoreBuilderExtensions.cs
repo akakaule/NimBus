@@ -1,5 +1,6 @@
 using System;
 using Azure.Identity;
+using Azure.ResourceManager;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -139,6 +140,18 @@ public static class CosmosDbMessageStoreBuilderExtensions
             (IHeartbeatHistoryStore)sp.GetRequiredService<INimBusMessageStore>());
         services.AddSingleton<IStorageProviderRegistration>(_ => new CosmosDbStorageProviderRegistration());
         services.AddSingleton<IStorageProviderCapabilities>(_ => new CosmosDbStorageProviderCapabilities());
+        services.AddSingleton<ICosmosContainerAdmin>(sp =>
+        {
+            var accountResourceId = sp.GetService<IConfiguration>()?["CosmosAccountResourceId"];
+            if (!string.IsNullOrWhiteSpace(accountResourceId))
+            {
+                return new ArmCosmosContainerAdmin(
+                    new ArmClient(new DefaultAzureCredential()),
+                    accountResourceId);
+            }
+
+            return new CosmosContainerAdmin(sp.GetRequiredService<CosmosClient>());
+        });
     }
 
     internal static CosmosClient CreateCosmosClient(IConfiguration config)

@@ -1216,6 +1216,23 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> GetAdminAsyncapiAsync(string format);
 
         /// <summary>
+        /// List Cosmos DB containers outside the current platform
+        /// </summary>
+
+        /// <returns>Orphaned Cosmos DB containers</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<CosmosContainerInfo>>> GetAdminCosmosContainersAsync();
+
+        /// <summary>
+        /// Permanently delete a Cosmos DB container outside the current platform
+        /// </summary>
+
+
+        /// <returns>Container deleted</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<CosmosContainerDeleteResult>> PostAdminCosmosContainerDeleteAsync(CosmosContainerDeleteRequest body, string containerName);
+
+        /// <summary>
         /// Get the platform heartbeat schedule
         /// </summary>
 
@@ -1581,6 +1598,28 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.GetAdminAsyncapiAsync(format);
+        }
+
+        /// <summary>
+        /// List Cosmos DB containers outside the current platform
+        /// </summary>
+        /// <returns>Orphaned Cosmos DB containers</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/admin/storage/cosmos/containers")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<CosmosContainerInfo>>> GetAdminCosmosContainers()
+        {
+
+            return _implementation.GetAdminCosmosContainersAsync();
+        }
+
+        /// <summary>
+        /// Permanently delete a Cosmos DB container outside the current platform
+        /// </summary>
+        /// <returns>Container deleted</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/storage/cosmos/containers/{containerName}/delete")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<CosmosContainerDeleteResult>> PostAdminCosmosContainerDelete([Microsoft.AspNetCore.Mvc.FromBody] CosmosContainerDeleteRequest body, string containerName)
+        {
+
+            return _implementation.PostAdminCosmosContainerDeleteAsync(body, containerName);
         }
 
         /// <summary>
@@ -7672,6 +7711,173 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class CosmosContainerInfo : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _name;
+
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static CosmosContainerInfo FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<CosmosContainerInfo>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class CosmosContainerDeleteRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _confirmation;
+
+        /// <summary>
+        /// Must exactly match the container name
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("confirmation", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string Confirmation    {
+            get { return _confirmation; }
+            set
+            {
+                if (_confirmation != value)
+                {
+                    _confirmation = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static CosmosContainerDeleteRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<CosmosContainerDeleteRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class CosmosContainerDeleteResult : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _name;
+        private bool _deleted;
+
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.Always)]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("deleted", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Deleted    {
+            get { return _deleted; }
+            set
+            {
+                if (_deleted != value)
+                {
+                    _deleted = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static CosmosContainerDeleteResult FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<CosmosContainerDeleteResult>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class ServiceBusSubscriptionInfo : System.ComponentModel.INotifyPropertyChanged
     {
         private string _name;
@@ -13379,6 +13585,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"disableEndpointHeartbeat")]
         DisableEndpointHeartbeat = 23,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"deleteStorageContainer")]
+        DeleteStorageContainer = 24,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -13622,6 +13831,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"disableEndpointHeartbeat")]
         DisableEndpointHeartbeat = 23,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"deleteStorageContainer")]
+        DeleteStorageContainer = 24,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -13753,6 +13965,9 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"disableEndpointHeartbeat")]
         DisableEndpointHeartbeat = 23,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"deleteStorageContainer")]
+        DeleteStorageContainer = 24,
 
     }
 

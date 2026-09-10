@@ -1272,6 +1272,60 @@ paths:
           description: Invalid format
         '403':
           description: Forbidden
+  /api/admin/storage/cosmos/containers:
+    get:
+      summary: List Cosmos DB containers outside the current platform
+      operationId: get-admin-cosmos-containers
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: Orphaned Cosmos DB containers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CosmosContainerInfo'
+        '403':
+          description: Forbidden
+        '404':
+          description: Cosmos DB storage is not configured
+        '503':
+          description: Cosmos DB operation unavailable
+  '/api/admin/storage/cosmos/containers/{containerName}/delete':
+    parameters:
+      - schema:
+          type: string
+        name: containerName
+        in: path
+        required: true
+    post:
+      summary: Permanently delete a Cosmos DB container outside the current platform
+      operationId: post-admin-cosmos-container-delete
+      tags:
+        - Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CosmosContainerDeleteRequest'
+      responses:
+        '200':
+          description: Container deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CosmosContainerDeleteResult'
+        '400':
+          description: Invalid confirmation or protected container
+        '403':
+          description: Forbidden
+        '404':
+          description: Container or Cosmos DB provider not found
+        '503':
+          description: Cosmos DB operation unavailable
   /api/admin/heartbeat/settings:
     get:
       summary: Get the platform heartbeat schedule
@@ -2991,6 +3045,7 @@ components:
             - sendHeartbeatNow
             - enableEndpointHeartbeat
             - disableEndpointHeartbeat
+            - deleteStorageContainer
         comment:
           type: string
           nullable: true
@@ -3576,6 +3631,33 @@ components:
         sizeInBytes:
           type: integer
           format: int64
+    CosmosContainerInfo:
+      title: CosmosContainerInfo
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    CosmosContainerDeleteRequest:
+      title: CosmosContainerDeleteRequest
+      type: object
+      required:
+        - confirmation
+      properties:
+        confirmation:
+          type: string
+          description: Must exactly match the container name
+    CosmosContainerDeleteResult:
+      title: CosmosContainerDeleteResult
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        deleted:
+          type: boolean
     ServiceBusSubscriptionInfo:
       title: ServiceBusSubscriptionInfo
       type: object
@@ -4004,6 +4086,7 @@ components:
             - sendHeartbeatNow
             - enableEndpointHeartbeat
             - disableEndpointHeartbeat
+            - deleteStorageContainer
         createdAtFrom:
           type: string
           format: date-time
@@ -4473,6 +4556,7 @@ components:
             - sendHeartbeatNow
             - enableEndpointHeartbeat
             - disableEndpointHeartbeat
+            - deleteStorageContainer
         comment:
           type: string
           nullable: true

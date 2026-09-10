@@ -16,6 +16,10 @@ param storageProvider string = 'cosmos'
 param funcStorageAccountName string = ''
 param grantFuncStorageBlobAccess bool = false
 
+// The management WebApp needs ARM control-plane access to list and delete orphaned
+// containers. Resolver and adapter deployments leave this disabled.
+param grantCosmosControlPlaneAccess bool = false
+
 // ----------------------------------------------------------------------------
 // Service Bus Data Owner — required regardless of storage provider so the
 // resolver identity can receive and complete messages via managed identity.
@@ -56,6 +60,25 @@ resource cosmosRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssi
     roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/${cosmosDataContributorRoleId}'
     principalId: principalId
     scope: cosmosAccount.id
+  }
+}
+
+// Cosmos DB Operator permits control-plane management without exposing account keys.
+// Scope it to NimBus's database so the WebApp cannot manage the account or other databases.
+var cosmosOperatorRoleId = '230815da-be43-4aae-9cb4-875f7bd000aa'
+
+resource cosmosDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2022-05-15' existing = if (storageProvider == 'cosmos' && grantCosmosControlPlaneAccess) {
+  parent: cosmosAccount
+  name: 'MessageDatabase'
+}
+
+resource cosmosOperatorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (storageProvider == 'cosmos' && grantCosmosControlPlaneAccess) {
+  name: guid(cosmosDatabase.id, principalId, cosmosOperatorRoleId)
+  scope: cosmosDatabase
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cosmosOperatorRoleId)
+    principalId: principalId
+    principalType: 'ServicePrincipal'
   }
 }
 

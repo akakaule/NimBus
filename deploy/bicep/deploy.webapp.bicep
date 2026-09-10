@@ -123,6 +123,12 @@ var cosmosSetting = hasCosmos ? [
     name: 'CosmosAccountEndpoint'
     value: cosmosAccountEndpoint
   }
+  {
+    // Container administration uses ARM because Entra-authenticated Cosmos data-plane
+    // clients cannot create or delete containers.
+    name: 'CosmosAccountResourceId'
+    value: resourceId('Microsoft.DocumentDB/databaseAccounts', cosmosAccountName)
+  }
 ] : []
 
 // NimBus Identity (username/password) is wired only on SQL deployments and only
@@ -238,5 +244,6 @@ module webAppRoleAssignments 'templates/roleAssignments.bicep' = {
     cosmosAccountName: hasCosmos ? cosmosAccountName : ''
     principalId: webAppModule.outputs.identity
     storageProvider: hasCosmos ? 'cosmos' : 'sqlserver'
+    grantCosmosControlPlaneAccess: hasCosmos
   }
 }

@@ -47,12 +47,13 @@ done
 
 ## Role assignments created by the deployment
 
-For governance review — the Bicep grants the two system-assigned managed identities these data-plane roles:
+For governance review — the Bicep grants the two system-assigned managed identities these roles:
 
 | Role | Role ID | Scope | Granted to | When |
 |---|---|---|---|---|
 | Azure Service Bus Data Owner | `090c5cfd-751d-490a-894a-3ce6f1109419` | Service Bus namespace | Resolver + WebApp identities | Always |
 | Cosmos DB Built-in Data Contributor *(Cosmos data-plane `sqlRoleAssignments`)* | `00000000-0000-0000-0000-000000000002` | Cosmos account | Resolver + WebApp identities | Cosmos provider |
+| Cosmos DB Operator *(Azure control plane; account keys remain inaccessible)* | `230815da-be43-4aae-9cb4-875f7bd000aa` | `MessageDatabase` | WebApp identity | Cosmos provider; required by Admin storage cleanup |
 | Storage Blob Data Owner | `b7e6dc6d-f1e8-4753-8033-0f276bb0955b` | Functions storage account | Resolver identity | Flex Consumption plan (identity-based host storage + deployment package) |
 
 No secrets are distributed to the apps on the Cosmos path — everything is managed identity. The provisioned-SQL path passes a SQL connection string as app settings instead.
@@ -66,7 +67,7 @@ The identity running `nb infra apply` / the pipelines needs, **on the target res
 
 Why Contributor alone is not enough: the table above is written as `Microsoft.Authorization/roleAssignments`, and Contributor's `NotActions` explicitly exclude `Microsoft.Authorization/*/Write`. The Cosmos entries are the exception — they are `Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments` resources and **are** covered by Contributor.
 
-Hardening the RBAC Administrator grant with an [ABAC condition](https://learn.microsoft.com/azure/role-based-access-control/delegate-role-assignments-overview) restricting assignable roles to the two IDs the deployment actually needs:
+Hardening the RBAC Administrator grant with an [ABAC condition](https://learn.microsoft.com/azure/role-based-access-control/delegate-role-assignments-overview) restricting assignable roles to the three IDs the deployment needs:
 
 ```bash
 az role assignment create \
@@ -74,7 +75,7 @@ az role assignment create \
   --assignee-object-id <SP_OBJECT_ID> --assignee-principal-type ServicePrincipal \
   --scope /subscriptions/<SUB_ID>/resourceGroups/<RG> \
   --condition-version 2.0 \
-  --condition "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {090c5cfd-751d-490a-894a-3ce6f1109419, b7e6dc6d-f1e8-4753-8033-0f276bb0955b}))"
+  --condition "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {090c5cfd-751d-490a-894a-3ce6f1109419, b7e6dc6d-f1e8-4753-8033-0f276bb0955b, 230815da-be43-4aae-9cb4-875f7bd000aa}))"
 ```
 
 Everything else the CLI does is covered by resource-group Contributor:

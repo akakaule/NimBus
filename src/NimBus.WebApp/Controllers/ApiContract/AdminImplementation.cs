@@ -31,6 +31,7 @@ public class AdminImplementation : IAdminApiController
     private readonly IEndpointAuthorizationService _authorizationService;
     private readonly IHeartbeatService _heartbeatService;
     private readonly ILogger<AdminImplementation> _logger;
+    private readonly ICosmosContainerAdmin? _containerAdmin;
 
     public AdminImplementation(
         IHttpContextAccessor contextAccessor,
@@ -41,7 +42,8 @@ public class AdminImplementation : IAdminApiController
         IAuditLogService auditLogService,
         IEndpointAuthorizationService authorizationService,
         IHeartbeatService heartbeatService,
-        ILogger<AdminImplementation>? logger = null)
+        ILogger<AdminImplementation>? logger = null,
+        ICosmosContainerAdmin? containerAdmin = null)
     {
         _adminService = adminService;
         _subscriptionAdminService = subscriptionAdminService;
@@ -52,6 +54,7 @@ public class AdminImplementation : IAdminApiController
         _authorizationService = authorizationService;
         _heartbeatService = heartbeatService;
         _logger = logger ?? NullLogger<AdminImplementation>.Instance;
+        _containerAdmin = containerAdmin;
     }
 
     public async Task<ActionResult<PlatformConfig>> GetAdminPlatformConfigAsync()
@@ -241,6 +244,81 @@ public class AdminImplementation : IAdminApiController
         var result = await _subscriptionAdminService.GetTopicOverviewAsync();
         return new OkObjectResult(result);
     }
+
+    public async Task<ActionResult<IEnumerable<CosmosContainerInfo>>> GetAdminCosmosContainersAsync()
+    {
+        if (!await IsSiteOwnerAsync()) return new ForbidResult();
+        if (_containerAdmin is null)
+            return new NotFoundObjectResult("Cosmos DB storage is not configured.");
+
+        try
+        {
+            var containers = await _containerAdmin.ListContainerIdsAsync(_context.RequestAborted);
+            var result = containers
+                .Where(name => !IsProtectedContainer(name))
+                .Order(StringComparer.Ordinal)
+                .Select(name => new CosmosContainerInfo { Name = name })
+                .ToArray();
+            return new OkObjectResult(result);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogError(exception, "Could not list Cosmos DB containers");
+            return new ObjectResult("Cosmos DB containers could not be loaded.")
+            {
+                StatusCode = StatusCodes.Status503ServiceUnavailable,
+            };
+        }
+    }
+
+    public async Task<ActionResult<CosmosContainerDeleteResult>> PostAdminCosmosContainerDeleteAsync(
+        CosmosContainerDeleteRequest body,
+        string containerName)
+    {
+        var auditData = JsonConvert.SerializeObject(new { containerName });
+        if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.DeleteStorageContainer, _context,
+                accessDenied: true, data: auditData);
+            return new ForbidResult();
+        }
+
+        if (body is null || !string.Equals(body.Confirmation, containerName, StringComparison.Ordinal))
+            return new BadRequestObjectResult("Confirmation must exactly match the container name.");
+        if (IsProtectedContainer(containerName))
+            return new BadRequestObjectResult("Platform and internal NimBus containers cannot be deleted.");
+        if (_containerAdmin is null)
+            return new NotFoundObjectResult("Cosmos DB storage is not configured.");
+
+        try
+        {
+            var containers = await _containerAdmin.ListContainerIdsAsync(_context.RequestAborted);
+            if (!containers.Contains(containerName, StringComparer.Ordinal))
+                return new NotFoundObjectResult($"Container '{containerName}' was not found.");
+
+            var deleted = await _containerAdmin.DeleteContainerAsync(containerName, _context.RequestAborted);
+            if (!deleted) return new NotFoundObjectResult($"Container '{containerName}' was not found.");
+
+            await _auditLogService.LogAuditAsync(MessageAuditType.DeleteStorageContainer, _context,
+                data: auditData);
+            return new OkObjectResult(new CosmosContainerDeleteResult { Name = containerName, Deleted = true });
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogError(exception, "Could not delete Cosmos DB container {ContainerName}", containerName);
+            await _auditLogService.LogAuditAsync(MessageAuditType.DeleteStorageContainer, _context,
+                data: JsonConvert.SerializeObject(new { containerName, success = false }));
+            return new ObjectResult("The Cosmos DB container could not be deleted.")
+            {
+                StatusCode = StatusCodes.Status503ServiceUnavailable,
+            };
+        }
+    }
+
+    private bool IsProtectedContainer(string containerName) =>
+        CosmosContainerDefaults.ReservedContainerIds.Contains(containerName)
+        || _platform.Endpoints.Any(endpoint =>
+            string.Equals(endpoint.Id, containerName, StringComparison.Ordinal));
 
     public async Task<ActionResult<SubscriptionActionResult>> DeleteAdminServicebusTopicAsync(string topicName)
     {

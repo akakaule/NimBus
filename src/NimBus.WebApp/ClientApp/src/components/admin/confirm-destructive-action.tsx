@@ -23,6 +23,8 @@ interface ConfirmDestructiveActionProps {
    * doesn't end that way.
    */
   confirmLabel?: string;
+  /** Require exact casing when the confirmed value is a case-sensitive resource id. */
+  caseSensitive?: boolean;
 }
 
 export default function ConfirmDestructiveAction({
@@ -34,9 +36,12 @@ export default function ConfirmDestructiveAction({
   confirmText,
   isLoading = false,
   confirmLabel,
+  caseSensitive = false,
 }: ConfirmDestructiveActionProps) {
   const [inputValue, setInputValue] = useState("");
-  const isMatch = inputValue.toLowerCase() === confirmText.toLowerCase();
+  const isMatch = caseSensitive
+    ? inputValue === confirmText
+    : inputValue.toLowerCase() === confirmText.toLowerCase();
 
   const handleClose = () => {
     setInputValue("");
@@ -57,7 +62,10 @@ export default function ConfirmDestructiveAction({
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">{description}</p>
           <div className="bg-status-danger-50 border border-status-danger/30 dark:bg-red-950/30 dark:border-red-900/60 rounded-nb-md p-3 flex items-start gap-2">
-            <span aria-hidden="true" className="text-status-danger font-bold leading-tight">
+            <span
+              aria-hidden="true"
+              className="text-status-danger font-bold leading-tight"
+            >
               ⚠
             </span>
             <p className="text-sm text-status-danger-ink dark:text-red-200 font-semibold m-0">
@@ -94,7 +102,8 @@ export default function ConfirmDestructiveAction({
           disabled={!isMatch || isLoading}
           isLoading={isLoading}
         >
-          {confirmLabel ?? `Permanently ${title.toLowerCase().replace(/^.*\s/, "")}`}
+          {confirmLabel ??
+            `Permanently ${title.toLowerCase().replace(/^.*\s/, "")}`}
         </Button>
       </ModalFooter>
     </Modal>

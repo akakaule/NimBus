@@ -94,6 +94,42 @@ pwsh .github/scripts/Invoke-NpmAudit.ps1 -Fix -MarkdownOut npm.md
 Set `GITHUB_TOKEN` before running the NuGet script to avoid the unauthenticated GitHub Advisory
 API rate limit (60 requests/hour); `gh auth token` produces a usable value.
 
+## Dropped rather than patched: the Postman collection generator
+
+`GHSA-qxc2-j82w-r537` (`@faker-js/faker`, high) held the daily run red for weeks. It reached the
+WebApp SPA only as `openapi-to-postmanv2` (devDependency) -> `postman-collection@5.3.1` ->
+`@faker-js/faker`, pinned there at the exact version `5.5.3`. The only fix npm offered was a
+semver-major downgrade of the converter to `4.18.0`.
+
+Overriding the transitive pin does not work, and the failure is worth recording so nobody
+retries it: the advisory covers `<=10.4.0`, so an override has to reach `10.5.0` or later, and
+`postman-collection` is written against the faker 5 API — `lib/superstring/dynamic-variables.js`
+reads `faker.address.city` off `require('@faker-js/faker/locale/en')` at module load, which
+throws `TypeError: Cannot read properties of undefined` on every faker release that clears the
+advisory. Verified against `postman-collection@5.3.1` with `@faker-js/faker@^10.5.0`.
+
+The converter was removed instead. It was never part of the build: `NimBus.WebApp.csproj` hooked
+its `GenPostmanCollection` target to `AfterTargets="NpmRunBuild"`, a target no project defines,
+so it had never run — the generated `api.postman_collection.json` was weeks stale and never
+appears in a build log. The output is gitignored and nothing consumes it. So the dead target is
+gone and `npm run gen-postman` now fetches the converter on demand:
+
+```bash
+cd src/NimBus.WebApp/ClientApp && npm run gen-postman
+```
+
+which runs `npx --yes --package openapi-to-postmanv2@6.3.3`. The tool is no longer installed into
+an audited workspace, nothing from it ships in the SPA bundle or any NuGet package, and its only
+input is our own checked-in `api-spec.yaml`. Anyone running that script should know they are
+pulling a package with a known-high advisory onto their machine for the length of one conversion.
+Revisit if `postman-collection` ever moves off faker 5 — track
+[postman-collection](https://github.com/postmanlabs/postman-collection) and
+[openapi-to-postman](https://github.com/postmanlabs/openapi-to-postman).
+
+Removing the converter also retired two overrides that existed only for its subtree: the scoped
+`ajv` pin, and a repository-wide `yaml: ^1.10.3` that was quietly forcing Vite and Tailwind onto
+yaml 1.x.
+
 ## Relationship to the build-time audit
 
 `Directory.Build.props` sets `NuGetAudit`/`NuGetAuditMode=all`/`NuGetAuditLevel=moderate`, which

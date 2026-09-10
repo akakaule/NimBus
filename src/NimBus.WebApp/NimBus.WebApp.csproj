@@ -124,10 +124,6 @@
     <Exec WorkingDirectory="$(SpaRoot)" Command="npm install" />
   </Target>
 
-  <Target Name="GenPostmanCollection" AfterTargets="NpmRunBuild" DependsOnTargets="NpmInstall">
-    <Exec WorkingDirectory="$(SpaRoot)" Command="npm run gen-postman" />
-  </Target>
-
   <Target Name="RebuildClientAssets" BeforeTargets="build" Condition="'$(SkipSpaBuild)' != 'true'">
     <Exec WorkingDirectory="$(SpaRoot)" Command="npm run build" />
   </Target>

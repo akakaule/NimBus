@@ -15,7 +15,7 @@
     "fmt": "prettier --write ./src",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
-    "gen-postman": "openapi2postmanv2 -s ../api-spec.yaml -o ../api.postman_collection.json -p"
+    "gen-postman": "npx --yes --package openapi-to-postmanv2@6.3.3 -- openapi2postmanv2 -s ../api-spec.yaml -o ../api.postman_collection.json -p"
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.2.8",
@@ -49,7 +49,6 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^17.7.0",
     "jsdom": "^29.1.1",
-    "openapi-to-postmanv2": "^6.3.3",
     "postcss": "^8.5.13",
     "prettier": "^3.1.1",
     "rimraf": "^5.0.5",
@@ -57,14 +56,10 @@
     "typescript": "^5.3.3",
     "vite": "^8.0.10",
     "vite-plugin-compression2": "2.5.3",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.11"
   },
   "overrides": {
-    "openapi-to-postmanv2": {
-      "ajv": "^8.18.0"
-    },
-    "js-yaml": "^4.1.1",
-    "yaml": "^1.10.3",
+    "js-yaml": "^4.3.2",
     "uuid": "^14.0.0"
   }
 }

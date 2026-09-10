@@ -24,7 +24,6 @@ const headCells: ITableHeadCell[] = [
     numeric: false,
     info: "Structured context recorded with the action (click to copy)",
   },
-  { id: "accessDenied", label: "Access Denied", numeric: false },
 ];
 
 // Endpoint-scoped audit trail (the "Audit" tab): every operator action on this
@@ -123,35 +122,31 @@ const AuditTab = (props: IAuditTabProps) => {
       [
         "data",
         {
-          value: entry.data ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                copyData(entry.data!);
-              }}
-              title={entry.data}
-              className="max-w-[280px] truncate text-left font-mono text-[11.5px] text-muted-foreground hover:text-foreground"
-            >
-              {entry.data}
-            </button>
-          ) : (
-            "—"
+          value: (
+            <span className="inline-flex min-w-0 items-center gap-2">
+              {entry.accessDenied && (
+                <Badge variant="failed" size="sm" withDot={false}>
+                  Denied
+                </Badge>
+              )}
+              {entry.data ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    copyData(entry.data!);
+                  }}
+                  title={entry.data}
+                  className="max-w-[280px] truncate text-left font-mono text-[11.5px] text-muted-foreground hover:text-foreground"
+                >
+                  {entry.data}
+                </button>
+              ) : (
+                "—"
+              )}
+            </span>
           ),
-          searchValue: entry.data ?? "",
-        },
-      ],
-      [
-        "accessDenied",
-        {
-          value: entry.accessDenied ? (
-            <Badge variant="failed" size="sm" withDot={false}>
-              Denied
-            </Badge>
-          ) : (
-            ""
-          ),
-          searchValue: entry.accessDenied ? "denied" : "",
+          searchValue: `${entry.accessDenied ? "denied " : ""}${entry.data ?? ""}`,
         },
       ],
     ]),

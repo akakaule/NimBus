@@ -21,7 +21,6 @@ enum Column {
   eventTypeId = "eventTypeId",
   endpointId = "endpointId",
   data = "data",
-  accessDenied = "accessDenied",
 }
 
 const headCells: ITableHeadCell[] = [
@@ -37,7 +36,6 @@ const headCells: ITableHeadCell[] = [
     numeric: false,
     info: "Structured context recorded with the action (click to copy)",
   },
-  { id: Column.accessDenied, label: "Access Denied", numeric: false },
 ];
 
 // Audit types arrive as the values api-spec.yaml declares — camelCase. They were
@@ -128,37 +126,31 @@ function mapAuditToRow(entry: api.AuditEntry): ITableRow {
       [
         Column.data,
         {
-          value: entry.data ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                copyAuditData(entry.data!);
-              }}
-              title={entry.data}
-              className="max-w-[280px] truncate text-left font-mono text-[11.5px] text-muted-foreground hover:text-foreground"
-            >
-              {entry.data}
-            </button>
-          ) : (
-            "-"
+          value: (
+            <span className="inline-flex min-w-0 items-center gap-2">
+              {entry.accessDenied && (
+                <Badge variant="failed" size="sm" withDot={false}>
+                  Denied
+                </Badge>
+              )}
+              {entry.data ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    copyAuditData(entry.data!);
+                  }}
+                  title={entry.data}
+                  className="max-w-[280px] truncate text-left font-mono text-[11.5px] text-muted-foreground hover:text-foreground"
+                >
+                  {entry.data}
+                </button>
+              ) : (
+                "-"
+              )}
+            </span>
           ),
-          searchValue: entry.data ?? "",
-        },
-      ],
-      [
-        Column.accessDenied,
-        {
-          // A denied attempt records the same action data as a completed one —
-          // without this the Detail column reads as though the action ran.
-          value: entry.accessDenied ? (
-            <Badge variant="failed" size="sm" withDot={false}>
-              Denied
-            </Badge>
-          ) : (
-            ""
-          ),
-          searchValue: entry.accessDenied ? "denied" : "",
+          searchValue: `${entry.accessDenied ? "denied " : ""}${entry.data ?? ""}`,
         },
       ],
     ]),

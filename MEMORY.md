@@ -7,6 +7,7 @@
 - Payload-search correction: URL query `+` decodes to a space. Advanced-filter chips trim their display, so normalize payload search boundaries on Apply and when building requests from existing URLs; preserve internal spaces. A detail-page payload and a summary payload can have different sources, so verify the actual term and normal response behavior before attributing missing results to completion.
 
 - Planning correction: do not use Superpowers skills or workflows. Plans belong in `docs/plan/`, specs in `docs/spec/`; never recreate `docs/superpowers/`. This supersedes earlier Superpowers planning instructions.
+- Audit presentation correction: access-denied is an audit detail of the action, so show its Denied badge inside the Detail cell and keep it in that cell's search text instead of using a separate column.
 
 - Dataverse adapter hosting preference: ship the reusable Dataverse platform adapter with Azure Functions as its default packaged host. Keep normalization/publication reusable, but do not make a worker deployment the primary customer onboarding path.
 

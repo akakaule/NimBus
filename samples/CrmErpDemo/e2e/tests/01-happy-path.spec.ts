@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { CrmApiClient } from "../helpers/crm-api-client.js";
 import { ErpApiClient } from "../helpers/erp-api-client.js";
 import { NimBusApiClient } from "../helpers/nimbus-api-client.js";
+import { readFailureBaseline, reportEndpointFailures, type FailureBaseline } from "../helpers/failure-baseline.js";
 import { Timeouts } from "../helpers/service-urls.js";
 import { waitFor } from "../helpers/wait-for.js";
 
@@ -9,9 +10,11 @@ test.describe("Bidirectional happy-path propagation", () => {
   let crm: CrmApiClient;
   let erp: ErpApiClient;
   let nimbus: NimBusApiClient;
-  // Captured at suite start so we can assert THIS test didn't leak a new failure
-  // even if prior runs left dead-lettered messages behind on the live broker.
-  let baseline: Record<string, { failed: number; deadletter: number }> = {};
+  // Captured by global setup, once per run, so we can assert THIS test didn't leak a new
+  // failure even if prior runs left dead-lettered messages behind on the live broker.
+  // Deliberately not captured here: beforeAll re-runs on a retry, which would re-baseline
+  // the leak and turn a real regression into a permanently self-healing flake.
+  let baseline: FailureBaseline = {};
 
   test.beforeAll(async () => {
     crm = await CrmApiClient.create();
@@ -19,10 +22,7 @@ test.describe("Bidirectional happy-path propagation", () => {
     nimbus = await NimBusApiClient.create();
     // Make sure we start from a clean failure-mode state.
     await erp.resetFailureModes();
-    const counts = await nimbus.getStatusCounts(["CrmEndpoint", "ErpEndpoint"]);
-    baseline = Object.fromEntries(
-      counts.map((c) => [c.endpointId, { failed: c.failedCount, deadletter: c.deadletterCount }]),
-    );
+    baseline = readFailureBaseline();
   });
 
   test.afterAll(async () => {
@@ -31,6 +31,23 @@ test.describe("Bidirectional happy-path propagation", () => {
     await erp.dispose();
     await nimbus.dispose();
   });
+
+  /**
+   * Asserts the flow under test added no failure or dead-letter beyond what the broker
+   * already carried. On a breach the offending audit rows are printed, because the
+   * application logs are only collected after the whole suite has finished.
+   */
+  async function expectNoNewFailures(): Promise<void> {
+    const counts = await nimbus.getStatusCounts(["CrmEndpoint", "ErpEndpoint"]);
+    for (const c of counts) {
+      const allowed = baseline[c.endpointId] ?? { failed: 0, deadletter: 0 };
+      if (c.failedCount > allowed.failed || c.deadletterCount > allowed.deadletter) {
+        await reportEndpointFailures(nimbus, c.endpointId);
+      }
+      expect.soft(c.failedCount, `${c.endpointId} failedCount`).toBeLessThanOrEqual(allowed.failed);
+      expect.soft(c.deadletterCount, `${c.endpointId} deadletterCount`).toBeLessThanOrEqual(allowed.deadletter);
+    }
+  }
 
   test("CRM-originated account propagates to ERP and links back", async () => {
     const legalName = `Acme Robotics ${Date.now()}`;
@@ -65,11 +82,7 @@ test.describe("Bidirectional happy-path propagation", () => {
 
     // 4. NimBus admin: this happy-path flow added no new failures or dead-letters
     //    beyond whatever was already on the broker when the suite started.
-    const counts = await nimbus.getStatusCounts(["CrmEndpoint", "ErpEndpoint"]);
-    for (const c of counts) {
-      expect.soft(c.failedCount, `${c.endpointId} failedCount`).toBeLessThanOrEqual(baseline[c.endpointId]?.failed ?? 0);
-      expect.soft(c.deadletterCount, `${c.endpointId} deadletterCount`).toBeLessThanOrEqual(baseline[c.endpointId]?.deadletter ?? 0);
-    }
+    await expectNoNewFailures();
   });
 
   test("ERP-originated customer propagates to CRM", async () => {
@@ -97,10 +110,6 @@ test.describe("Bidirectional happy-path propagation", () => {
     expect(crmAccount.erpCustomerNumber).toBe(erpCustomer.customerNumber);
 
     // 3. NimBus admin: this happy-path flow added no new failures or dead-letters.
-    const counts = await nimbus.getStatusCounts(["CrmEndpoint", "ErpEndpoint"]);
-    for (const c of counts) {
-      expect.soft(c.failedCount, `${c.endpointId} failedCount`).toBeLessThanOrEqual(baseline[c.endpointId]?.failed ?? 0);
-      expect.soft(c.deadletterCount, `${c.endpointId} deadletterCount`).toBeLessThanOrEqual(baseline[c.endpointId]?.deadletter ?? 0);
-    }
+    await expectNoNewFailures();
   });
 });

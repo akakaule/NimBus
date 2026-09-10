@@ -13,6 +13,10 @@ const NIMBUS_OPS_URL = process.env.NIMBUS_OPS_URL ?? "http://localhost:28376";
 
 export default defineConfig({
   testDir: "./tests",
+  // Captures the pre-suite failure counters once per run. A retry restarts the worker
+  // and re-runs beforeAll, so a baseline captured there would absorb the very leak it
+  // exists to detect.
+  globalSetup: "./helpers/global-setup.ts",
   fullyParallel: false,
   // Force serial execution: tests share Service Bus + storage state and need
   // deterministic ordering against a single live AppHost.

@@ -194,11 +194,20 @@ export default function AdvancedFiltersPopover({
             <input
               type="text"
               aria-label="Payload contains"
+              aria-describedby="payload-search-access"
               placeholder="e.g. orderId:4471"
               className={inputClass}
               value={draft.payload}
               onChange={(e) => setField("payload", e.target.value)}
             />
+            <p
+              id="payload-search-access"
+              className="mt-1.5 text-xs text-muted-foreground"
+            >
+              Readers can search endpoints whose received event types have no
+              sensitive fields. Sensitive or unclassified event types require
+              PiiReader access from a site Owner.
+            </p>
           </div>
 
           <div className="flex items-center gap-2 border-t border-border pt-3">

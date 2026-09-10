@@ -39,6 +39,14 @@ describe("AdvancedFiltersPopover (trigger + popover)", () => {
       screen.getByRole("button", { name: /advanced filters/i }),
     );
     const dialog = screen.getByRole("dialog", { name: /advanced filters/i });
+    expect(
+      within(dialog).getByText(/Readers can search endpoints/),
+    ).toBeTruthy();
+    expect(
+      within(dialog)
+        .getByLabelText("Payload contains")
+        .getAttribute("aria-describedby"),
+    ).toBe("payload-search-access");
     await userEvent.type(
       within(dialog).getByLabelText("Payload contains"),
       "abc",

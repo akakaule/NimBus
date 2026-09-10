@@ -948,15 +948,22 @@ namespace NimBus.WebApp.Controllers.ApiContract
 
             var canReadPii = await authorizationService.CanReadPiiAsync();
 
-            // A payload-content predicate is an oracle even when results are
-            // redacted (hit/miss counts reveal payload contents), so the
-            // predicate itself requires the PiiReader capability.
+            // A raw predicate can reveal sensitive values through hit/miss results.
+            // Ordinary Readers may search only verified non-sensitive receiving contracts.
+            string[] nonSensitiveTypes = null;
             if (!canReadPii && !string.IsNullOrWhiteSpace(body.EventFilter?.Payload))
+            {
+                nonSensitiveTypes = PayloadSearchPolicy.GetNonSensitiveReceivedTypes(
+                    platform.Endpoints.Single(e => e.Id == endpointId));
+            }
+            if (!canReadPii && !string.IsNullOrWhiteSpace(body.EventFilter?.Payload)
+                && (nonSensitiveTypes == null || (body.EventFilter.EventTypeId?.Any(
+                    id => !nonSensitiveTypes.Contains(id, StringComparer.Ordinal)) ?? false)))
             {
                 await auditLogService.LogAuditAsync(MessageAuditType.SearchEvents, httpContextAccessor.HttpContext,
                     accessDenied: true, data: searchDataJson, endpointId: endpointId);
                 return new ObjectResult(
-                    "The PiiReader role is required for payload filters. A site Owner can grant it on the Access Control page.")
+                    "Payload search requires PiiReader when receiving event contracts contain sensitive fields or cannot be classified. A site Owner can grant it on the Access Control page.")
                 {
                     StatusCode = StatusCodes.Status403Forbidden,
                 };
@@ -966,6 +973,10 @@ namespace NimBus.WebApp.Controllers.ApiContract
             {
                 var filter = Mapper.MapFilter(body.EventFilter);
                 filter.EndPointId = endpointId;  // Use validated URL parameter instead of body value
+                // Exclude historical/unregistered types rather than letting a catalog check
+                // authorize an unrestricted query against every document in the container.
+                if (nonSensitiveTypes != null && (filter.EventTypeId == null || filter.EventTypeId.Count == 0))
+                    filter.EventTypeId = nonSensitiveTypes.ToList();
                 var reponse = await messageStore.GetEventsByFilter(filter, body.ContinuationToken, body.MaxSearchItemsCount);
                 await auditLogService.LogAuditAsync(MessageAuditType.SearchEvents, httpContextAccessor.HttpContext,
                     data: searchDataJson, endpointId: endpointId);

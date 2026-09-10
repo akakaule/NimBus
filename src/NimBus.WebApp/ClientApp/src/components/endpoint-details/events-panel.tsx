@@ -516,7 +516,7 @@ const EventsPanel = (props: EventsPanelProps) => {
         const status = (error as { status?: number } | null)?.status;
         setSearchError(
           status === 403
-            ? "Access denied (HTTP 403). Payload searches require the PiiReader role in addition to endpoint read access."
+            ? "Access denied (HTTP 403). Payload searches involving sensitive or unclassified receiving event types require PiiReader. Endpoint read access is also required."
             : `Unable to load search results${typeof status === "number" ? ` (HTTP ${status})` : ""}. Try again; if it persists, contact your administrator.`,
         );
       }

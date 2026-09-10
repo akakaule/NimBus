@@ -8,6 +8,24 @@ import {
   type TickerEvent,
 } from "hooks/use-monitor-data";
 
+/* Theme-aware status tints. The rest of the app pairs a dark "ink" hue for
+   the cream light theme with a lifted tint for warm-black dark mode; the
+   wall reuses exactly those pairs so its palette never drifts from the app's.
+   Surfaces/borders/text go through the shared tokens (background, card,
+   border, foreground, muted) so /Monitor follows the theme toggle. */
+const DANGER_TEXT = "text-status-danger-ink dark:text-[#E4A096]";
+const WARNING_TEXT = "text-status-warning-ink dark:text-[#E7C783]";
+const TREND_UP = DANGER_TEXT;
+const TREND_DOWN = "text-status-success-ink dark:text-[#7FD2A6]";
+const TREND_FLAT = "text-muted-foreground";
+
+/** Backlog (pending + deferred) at which an endpoint starts shouting. */
+export const BACKLOG_ELEVATED = 100;
+/** Backlog at which it gets the loudest treatment the amber band has. */
+export const BACKLOG_HIGH = 500;
+
+export type BacklogLevel = "normal" | "elevated" | "high";
+
 /**
  * Live Status Monitor — designed for a wall display, not a desktop tool.
  *
@@ -69,7 +87,7 @@ export default function Monitor() {
     <div
       className={cn(
         "min-h-screen flex flex-col p-6 gap-4",
-        "bg-[#0B0A07] text-[#F4F2EA] font-sans",
+        "bg-background text-foreground font-sans",
         "[font-feature-settings:'tnum']",
         showCursor ? "" : "cursor-none",
       )}
@@ -127,19 +145,18 @@ const Hero = ({ env, tenant, clock, unackedFresh }: HeroProps) => {
   // borrows the warning amber so it still reads as "this is not prod".
   const envClass =
     upperEnv === "PROD" || upperEnv === "PRD"
-      ? "bg-status-danger/[0.22] text-[#E4A096] border-status-danger/40"
-      : "bg-status-warning/[0.18] text-[#E7C783] border-status-warning/40";
+      ? "bg-status-danger/[0.22] text-status-danger-ink dark:text-[#E4A096] border-status-danger/40"
+      : "bg-status-warning/[0.18] text-status-warning-ink dark:text-[#E7C783] border-status-warning/40";
 
   return (
     <div
       className={cn(
         "grid grid-cols-[auto_1fr_auto_auto] gap-6 items-center",
         "px-5 py-4 rounded-nb-md",
-        "bg-gradient-to-r from-[#1A1814] to-[#15130E]",
-        "border border-[#2A2620]",
+        "bg-card border border-border",
       )}
     >
-      <div className="inline-flex items-baseline gap-1 text-[#F4F2EA] font-extrabold text-[22px] tracking-tight">
+      <div className="inline-flex items-baseline gap-1 text-foreground font-extrabold text-[22px] tracking-tight">
         <LogoMark size={22} />
         <span className="ml-1">NimBus</span>
         <span className="text-primary">.</span>
@@ -148,7 +165,7 @@ const Hero = ({ env, tenant, clock, unackedFresh }: HeroProps) => {
         <span className="text-[18px] font-bold tracking-tight truncate">
           Live Status Monitor
         </span>
-        <span className="font-mono text-[11px] text-[#8A8473] tracking-wider truncate">
+        <span className="font-mono text-[11px] text-muted-foreground tracking-wider truncate">
           {tenant ? `${tenant} · ` : ""}Auto-refresh every 5 s · Acknowledge to silence
           {unackedFresh > 0
             ? ` · ${unackedFresh} new failure${unackedFresh === 1 ? "" : "s"}`
@@ -170,7 +187,7 @@ const Hero = ({ env, tenant, clock, unackedFresh }: HeroProps) => {
         <span className="text-[32px] font-bold tracking-wide tabular-nums">
           {formatClock(clock)}
         </span>
-        <span className="text-[11px] text-[#8A8473] tracking-[0.16em] uppercase mt-1 font-medium">
+        <span className="text-[11px] text-muted-foreground tracking-[0.16em] uppercase mt-1 font-medium">
           {formatDate(clock)}
         </span>
       </div>
@@ -186,6 +203,8 @@ interface SummaryShape {
   unackedFreshFailures: number;
   pendingTotal: number;
   pendingDeltaPerMin: number;
+  /** Endpoints whose backlog is at or above BACKLOG_ELEVATED. */
+  backlogHotCount: number;
   failedTotal: number;
   failedRatePerHour: number;
   healthyCount: number;
@@ -210,11 +229,7 @@ const KpiMega = ({ summary }: { summary: SummaryShape }) => (
       icon="⏱"
       label="Pending"
       value={formatBigNumber(summary.pendingTotal)}
-      delta={
-        summary.pendingDeltaPerMin === 0
-          ? "stable"
-          : `${summary.pendingDeltaPerMin > 0 ? "▲" : "▼"} ${Math.abs(Math.round(summary.pendingDeltaPerMin))} / min`
-      }
+      delta={describePendingDelta(summary)}
     />
     <KpiTile
       tone={summary.failedTotal > 0 ? "bad" : "muted"}
@@ -250,22 +265,22 @@ interface KpiTileProps {
 
 const KpiTile = ({ tone, icon, label, value, unit, delta }: KpiTileProps) => {
   const toneCls: Record<KpiTone, string> = {
-    bad: "border-status-danger/50 bg-gradient-to-r from-status-danger/[0.18] to-[#15130E]",
-    warn: "border-status-warning/40 bg-gradient-to-r from-status-warning/[0.12] to-[#15130E]",
-    ok: "border-status-success/40 bg-[#15130E]",
-    muted: "border-[#2A2620] bg-[#15130E]",
+    bad: "border-status-danger/50 bg-gradient-to-r from-status-danger/[0.18] to-card",
+    warn: "border-status-warning/40 bg-gradient-to-r from-status-warning/[0.12] to-card",
+    ok: "border-status-success/40 bg-card",
+    muted: "border-border bg-card",
   };
   const iconCls: Record<KpiTone, string> = {
-    bad: "bg-status-danger/[0.28] text-[#E4A096]",
-    warn: "bg-status-warning/[0.22] text-[#E7C783]",
-    ok: "bg-status-success/[0.22] text-[#7FD2A6]",
-    muted: "bg-[#23201A] text-[#8A8473]",
+    bad: "bg-status-danger/[0.28] text-status-danger-ink dark:text-[#E4A096]",
+    warn: "bg-status-warning/[0.22] text-status-warning-ink dark:text-[#E7C783]",
+    ok: "bg-status-success/[0.22] text-status-success-ink dark:text-[#7FD2A6]",
+    muted: "bg-muted text-muted-foreground",
   };
   const deltaCls: Record<KpiTone, string> = {
-    bad: "text-[#E4A096]",
-    warn: "text-[#E7C783]",
-    ok: "text-[#8A8473]",
-    muted: "text-[#8A8473]",
+    bad: "text-status-danger-ink dark:text-[#E4A096]",
+    warn: "text-status-warning-ink dark:text-[#E7C783]",
+    ok: "text-muted-foreground",
+    muted: "text-muted-foreground",
   };
   return (
     <div
@@ -284,13 +299,13 @@ const KpiTile = ({ tone, icon, label, value, unit, delta }: KpiTileProps) => {
         {icon}
       </span>
       <div className="min-w-0">
-        <div className="font-mono text-[10px] tracking-[0.14em] uppercase text-[#8A8473] font-semibold mb-1">
+        <div className="font-mono text-[10px] tracking-[0.14em] uppercase text-muted-foreground font-semibold mb-1">
           {label}
         </div>
         <div className="text-[30px] font-extrabold leading-none tracking-tight tabular-nums">
           {value}
           {unit && (
-            <small className="text-[13px] font-medium text-[#8A8473] ml-1.5">
+            <small className="text-[13px] font-medium text-muted-foreground ml-1.5">
               {unit}
             </small>
           )}
@@ -325,11 +340,11 @@ const FailingBand = ({ endpoints, onAck, onUnack, now }: BandProps) => {
       )}
     >
       <div className="flex items-center justify-between mb-3">
-        <h3 className="m-0 text-[13px] font-bold tracking-[0.14em] uppercase text-[#E4A096] flex items-center gap-2">
+        <h3 className="m-0 text-[13px] font-bold tracking-[0.14em] uppercase text-status-danger-ink dark:text-[#E4A096] flex items-center gap-2">
           <Pulser />
           Failing · sorted by impact
         </h3>
-        <span className="font-mono text-[11px] text-[#E4A096] tracking-wider">
+        <span className="font-mono text-[11px] text-status-danger-ink dark:text-[#E4A096] tracking-wider">
           click ACK to silence
           {freshUnacked > 0
             ? ` · ${freshUnacked} unacked in the last min`
@@ -354,18 +369,49 @@ const FailingBand = ({ endpoints, onAck, onUnack, now }: BandProps) => {
 
 const WatchingBand = ({ endpoints, onAck, onUnack, now }: BandProps) => {
   if (endpoints.length === 0) return null;
+  const hot = endpoints.filter((e) => backlogLevel(e) !== "normal").length;
   return (
-    <div className="grid grid-cols-4 gap-2.5">
-      {endpoints.map((e) => (
-        <BigCard
-          key={e.id}
-          endpoint={e}
-          tone="warn"
-          now={now}
-          onAck={onAck}
-          onUnack={onUnack}
-        />
-      ))}
+    <div
+      className={cn(
+        "rounded-nb-md px-5 py-4 pb-5 border",
+        hot > 0
+          ? "bg-status-warning/[0.10] border-status-warning/40"
+          : "bg-card border-border",
+      )}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <h3
+          className={cn(
+            "m-0 text-[13px] font-bold tracking-[0.14em] uppercase flex items-center gap-2",
+            hot > 0 ? WARNING_TEXT : "text-muted-foreground",
+          )}
+        >
+          <span aria-hidden="true">●</span>
+          Backlog · sorted by depth
+        </h3>
+        <span
+          className={cn(
+            "font-mono text-[11px] tracking-wider",
+            hot > 0 ? WARNING_TEXT : "text-muted-foreground",
+          )}
+        >
+          {hot > 0
+            ? `${hot} endpoint${hot === 1 ? "" : "s"} at or above ${BACKLOG_ELEVATED} pending`
+            : `all below ${BACKLOG_ELEVATED} pending`}
+        </span>
+      </div>
+      <div className="grid grid-cols-4 gap-2.5">
+        {endpoints.map((e) => (
+          <BigCard
+            key={e.id}
+            endpoint={e}
+            tone="warn"
+            now={now}
+            onAck={onAck}
+            onUnack={onUnack}
+          />
+        ))}
+      </div>
     </div>
   );
 };
@@ -373,13 +419,13 @@ const WatchingBand = ({ endpoints, onAck, onUnack, now }: BandProps) => {
 const HealthyStrip = ({ endpoints }: { endpoints: MonitorEndpoint[] }) => {
   if (endpoints.length === 0) return null;
   return (
-    <div className="rounded-nb-md border border-[#2A2620] bg-[#15130E] px-4 py-3.5">
+    <div className="rounded-nb-md border border-border bg-card px-4 py-3.5">
       <div className="flex items-center justify-between mb-2.5">
-        <h3 className="m-0 text-[13px] font-bold tracking-[0.14em] uppercase text-[#7FD2A6] flex items-center gap-2">
+        <h3 className="m-0 text-[13px] font-bold tracking-[0.14em] uppercase text-status-success-ink dark:text-[#7FD2A6] flex items-center gap-2">
           <span aria-hidden="true">●</span>
           Healthy · {endpoints.length} endpoint{endpoints.length === 1 ? "" : "s"}
         </h3>
-        <span className="font-mono text-[11px] text-[#7FD2A6] tracking-wider">
+        <span className="font-mono text-[11px] text-status-success-ink dark:text-[#7FD2A6] tracking-wider">
           all clear
         </span>
       </div>
@@ -401,14 +447,14 @@ const HealthyChip = ({ endpoint }: { endpoint: MonitorEndpoint }) => {
   return (
     <div
       className={cn(
-        "rounded-md bg-[#1A1814] border border-[#2A2620] border-l-[3px] border-l-status-success",
-        "px-2.5 py-2 flex items-center gap-2 text-xs font-semibold text-[#C9C1AB]",
+        "rounded-md bg-card border border-border border-l-[3px] border-l-status-success",
+        "px-2.5 py-2 flex items-center gap-2 text-xs font-semibold text-foreground",
       )}
     >
       <span className="w-[7px] h-[7px] rounded-full bg-status-success shrink-0 nb-monitor-pulseg" />
       <span className="flex-1 min-w-0 truncate">{endpoint.id}</span>
       {(pending > 0 || deferred > 0) && (
-        <span className="font-mono text-[10.5px] text-[#6F6A5C] font-medium">
+        <span className="font-mono text-[10.5px] text-muted-foreground/70 font-medium">
           {formatBigNumber(pending + deferred)}
         </span>
       )}
@@ -434,6 +480,7 @@ const BigCard = ({ endpoint, tone, now, onAck, onUnack }: BigCardProps) => {
   const deferred = endpoint.status.deferredCount ?? 0;
   const acked = Boolean(endpoint.ack);
   const isWatching = tone === "warn";
+  const backlog = backlogLevel(endpoint);
   const heroIsPending = isWatching && pending > failed;
   const heroValue = heroIsPending ? pending : failed;
   const heroLabel = heroIsPending ? "pending" : "failed";
@@ -469,9 +516,13 @@ const BigCard = ({ endpoint, tone, now, onAck, onUnack }: BigCardProps) => {
   const toneCls =
     tone === "fail"
       ? acked
-        ? "bg-[#1A1814] border-[#2A2620] opacity-80"
-        : "bg-gradient-to-b from-status-danger/[0.18] to-[#1A1814] border-status-danger/55"
-      : "bg-gradient-to-b from-status-warning/[0.14] to-[#1A1814] border-status-warning/45";
+        ? "bg-card border-border opacity-80"
+        : "bg-gradient-to-b from-status-danger/[0.18] to-card border-status-danger/55"
+      : backlog === "high"
+        ? "bg-gradient-to-b from-status-warning/[0.30] to-card border-status-warning"
+        : backlog === "elevated"
+          ? "bg-gradient-to-b from-status-warning/[0.20] to-card border-status-warning/70"
+          : "bg-gradient-to-b from-status-warning/[0.14] to-card border-status-warning/45";
 
   const sIconCls =
     tone === "fail"
@@ -481,18 +532,18 @@ const BigCard = ({ endpoint, tone, now, onAck, onUnack }: BigCardProps) => {
   const heroCls =
     tone === "fail"
       ? acked
-        ? "text-[#C9C1AB]"
-        : "text-[#F4D9D3]"
-      : "text-[#F6E7C7]";
+        ? "text-foreground"
+        : "text-status-danger-ink dark:text-[#F4D9D3]"
+      : "text-status-warning-ink dark:text-[#F6E7C7]";
 
   const labelCls =
     tone === "fail"
       ? acked
-        ? "text-[#8A8473]"
-        : "text-[#E4A096]"
-      : "text-[#E7C783]";
+        ? "text-muted-foreground"
+        : "text-status-danger-ink dark:text-[#E4A096]"
+      : "text-status-warning-ink dark:text-[#E7C783]";
 
-  const trendStroke = describeTrend(trendValues).stroke;
+  const trendClass = describeTrend(trendValues).className;
   const rateText = describeRate(endpoint.ratePerMin);
   const drainEta = isWatching ? describeDrainEta(endpoint) : undefined;
 
@@ -502,6 +553,10 @@ const BigCard = ({ endpoint, tone, now, onAck, onUnack }: BigCardProps) => {
         "rounded-nb-md border px-4 py-3.5 flex flex-col gap-2 relative overflow-hidden",
         toneCls,
         pulse && "nb-monitor-pulse-card",
+        isWatching &&
+          backlog === "high" &&
+          !acked &&
+          "nb-monitor-pulse-backlog",
       )}
     >
       <div className="flex items-center gap-2">
@@ -514,9 +569,10 @@ const BigCard = ({ endpoint, tone, now, onAck, onUnack }: BigCardProps) => {
         >
           {tone === "fail" ? "!" : "⏱"}
         </span>
-        <span className="font-bold text-[15px] tracking-tight flex-1 min-w-0 truncate text-[#F4F2EA]">
+        <span className="font-bold text-[15px] tracking-tight flex-1 min-w-0 truncate text-foreground">
           {endpoint.id}
         </span>
+        {backlog !== "normal" && <BacklogTag level={backlog} />}
         <AckButton acked={acked} onAck={() => onAck(endpoint.id)} onUnack={() => onUnack(endpoint.id)} />
       </div>
 
@@ -539,11 +595,21 @@ const BigCard = ({ endpoint, tone, now, onAck, onUnack }: BigCardProps) => {
         </span>
       </div>
 
-      <div className="grid grid-cols-3 gap-1.5 font-mono text-[10.5px] text-[#8A8473]">
+      <div className="grid grid-cols-3 gap-1.5 font-mono text-[10.5px] text-muted-foreground">
         <Stat
           label={heroIsPending ? "Failed" : "Pending"}
           value={heroIsPending ? failed : pending}
-          tone={heroIsPending ? (failed > 0 ? "bad" : undefined) : pending > 0 ? "warn" : undefined}
+          tone={
+            heroIsPending
+              ? failed > 0
+                ? "bad"
+                : undefined
+              : backlog !== "normal"
+                ? "hot"
+                : pending > 0
+                  ? "warn"
+                  : undefined
+          }
         />
         <Stat
           label="Deferred"
@@ -557,19 +623,19 @@ const BigCard = ({ endpoint, tone, now, onAck, onUnack }: BigCardProps) => {
         />
       </div>
 
-      <div className="flex justify-between items-center font-mono text-[10px] text-[#6F6A5C] pt-1.5 border-t border-[#2A2620]">
+      <div className="flex justify-between items-center font-mono text-[10px] text-muted-foreground/70 pt-1.5 border-t border-border">
         <span
           className={cn(
             acked
-              ? "text-[#8A8473]"
+              ? "text-muted-foreground"
               : tone === "fail"
-                ? "text-[#E4A096] font-bold"
-                : "text-[#E7C783]",
+                ? "text-status-danger-ink dark:text-[#E4A096] font-bold"
+                : "text-status-warning-ink dark:text-[#E7C783]",
           )}
         >
           {sinceText}
         </span>
-        <Sparkline values={trendValues} stroke={trendStroke} />
+        <Sparkline values={trendValues} className={trendClass} />
       </div>
     </div>
   );
@@ -582,23 +648,49 @@ const Stat = ({
 }: {
   label: string;
   value: number | string;
-  tone?: "bad" | "warn";
+  /** "hot" is the deep-backlog variant — same hue as "warn", louder weight. */
+  tone?: "bad" | "warn" | "hot";
 }) => (
   <div className="flex flex-col gap-0.5">
     <span>{label}</span>
     <span
       className={cn(
-        "text-sm font-bold tabular-nums",
+        "text-sm tabular-nums",
+        tone === "hot" ? "font-extrabold" : "font-bold",
         tone === "bad"
-          ? "text-[#E4A096]"
-          : tone === "warn"
-            ? "text-[#E7C783]"
-            : "text-[#C9C1AB]",
+          ? DANGER_TEXT
+          : tone === "warn" || tone === "hot"
+            ? WARNING_TEXT
+            : "text-foreground",
       )}
     >
       {typeof value === "number" ? formatBigNumber(value) : value}
     </span>
   </div>
+);
+
+/**
+ * Pill that calls out an endpoint sitting on a deep queue. It rides next to
+ * the endpoint name on both bands: a failing endpoint can also be drowning
+ * in pending work, and that is worth knowing before you ack the failure.
+ */
+const BacklogTag = ({ level }: { level: BacklogLevel }) => (
+  <span
+    className={cn(
+      "font-mono text-[9px] tracking-wider uppercase font-bold shrink-0",
+      "px-1.5 py-0.5 rounded-sm border",
+      level === "high"
+        ? "bg-status-warning text-ink border-status-warning"
+        : cn("bg-status-warning/[0.18] border-status-warning/50", WARNING_TEXT),
+    )}
+    title={
+      level === "high"
+        ? `Backlog at or above ${BACKLOG_HIGH} pending, or growing while already elevated`
+        : `Backlog at or above ${BACKLOG_ELEVATED} pending`
+    }
+  >
+    {level === "high" ? "high backlog" : "backlog"}
+  </span>
 );
 
 const AckButton = ({
@@ -620,8 +712,8 @@ const AckButton = ({
       "font-mono text-[9px] tracking-wider uppercase font-semibold",
       "px-1.5 py-0.5 rounded-sm border",
       acked
-        ? "bg-status-success/[0.16] text-[#7FD2A6] border-status-success/40"
-        : "bg-transparent text-[#8A8473] border-[#3a352d] hover:text-[#F4F2EA] hover:border-[#5a554b]",
+        ? "bg-status-success/[0.16] text-status-success-ink dark:text-[#7FD2A6] border-status-success/40"
+        : "bg-transparent text-muted-foreground border-border-strong hover:text-foreground hover:border-foreground/40",
       "transition-colors cursor-pointer",
     )}
     title={acked ? "Click to clear acknowledgement" : "Acknowledge this failure (auto-expires after 4 h or on recovery)"}
@@ -636,21 +728,27 @@ const AckButton = ({
 
 interface SparklineProps {
   values: number[];
-  stroke: string;
+  /** Tailwind text-colour class; the stroke follows it via currentColor. */
+  className: string;
   width?: number;
   height?: number;
 }
 
-const Sparkline = ({ values, stroke, width = 36, height = 10 }: SparklineProps) => {
+const Sparkline = ({ values, className, width = 36, height = 10 }: SparklineProps) => {
   if (values.length < 2) {
     return (
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+      <svg
+        width={width}
+        height={height}
+        viewBox={`0 0 ${width} ${height}`}
+        className="text-muted-foreground"
+      >
         <line
           x1={0}
           y1={height / 2}
           x2={width}
           y2={height / 2}
-          stroke="#C9C1AB"
+          stroke="currentColor"
           strokeWidth={1.5}
         />
       </svg>
@@ -668,8 +766,18 @@ const Sparkline = ({ values, stroke, width = 36, height = 10 }: SparklineProps) 
     })
     .join(" ");
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-      <polyline points={points} fill="none" stroke={stroke} strokeWidth={1.5} />
+    <svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      className={className}
+    >
+      <polyline
+        points={points}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.5}
+      />
     </svg>
   );
 };
@@ -691,7 +799,7 @@ const LogoMark = ({ size = 22 }: { size?: number }) => (
   >
     <path
       d="M5 22c0-3.5 2.8-6.3 6.3-6.3.7 0 1.4.1 2 .3.8-3.7 4.1-6.5 8-6.5 4.2 0 7.6 3.2 8.1 7.2 2.7.4 4.8 2.7 4.8 5.5 0 3.1-2.5 5.5-5.5 5.5H11.3C7.8 27.7 5 25 5 22z"
-      stroke="#F4F2EA"
+      stroke="currentColor"
       strokeWidth={2.5}
       strokeLinejoin="round"
     />
@@ -704,12 +812,12 @@ const LogoMark = ({ size = 22 }: { size?: number }) => (
    ===================================================================== */
 
 const WallFoot = ({ ticker }: { ticker: TickerEvent[] }) => (
-  <div className="flex items-center gap-6 mt-1 font-mono text-[11px] text-[#8A8473] tracking-wider">
+  <div className="flex items-center gap-6 mt-1 font-mono text-[11px] text-muted-foreground tracking-wider">
     <div className="flex gap-3.5 items-center">
       <LegendKey color="bg-status-danger">Failed</LegendKey>
       <LegendKey color="bg-status-warning">Pending / backlog</LegendKey>
       <LegendKey color="bg-status-success">Healthy</LegendKey>
-      <LegendKey color="bg-[#3a352d]">Idle</LegendKey>
+      <LegendKey color="bg-border-strong">Idle</LegendKey>
     </div>
     <Ticker events={ticker} />
   </div>
@@ -734,13 +842,13 @@ const Ticker = ({ events }: { events: TickerEvent[] }) => {
   // proving the page hasn't frozen. Pause animation on hover for legibility.
   if (events.length === 0) {
     return (
-      <div className="ml-auto flex-1 overflow-hidden whitespace-nowrap pl-4 border-l border-[#2A2620] text-[#6F6A5C]">
+      <div className="ml-auto flex-1 overflow-hidden whitespace-nowrap pl-4 border-l border-border text-muted-foreground/70">
         Waiting for activity…
       </div>
     );
   }
   return (
-    <div className="ml-auto flex-1 overflow-hidden pl-4 border-l border-[#2A2620]">
+    <div className="ml-auto flex-1 overflow-hidden pl-4 border-l border-border">
       <div className="nb-monitor-ticker whitespace-nowrap">
         {events.map((e) => (
           <TickerItem key={e.id} event={e} />
@@ -758,10 +866,10 @@ const TickerItem = ({ event }: { event: TickerEvent }) => {
   const ts = moment(event.t).format("HH:mm:ss");
   const labelCls =
     event.kind === "failure"
-      ? "text-[#E4A096]"
+      ? "text-status-danger-ink dark:text-[#E4A096]"
       : event.kind === "recovery"
-        ? "text-[#7FD2A6]"
-        : "text-[#C9C1AB]";
+        ? "text-status-success-ink dark:text-[#7FD2A6]"
+        : "text-foreground";
   const verb =
     event.kind === "failure"
       ? "failed"
@@ -772,7 +880,7 @@ const TickerItem = ({ event }: { event: TickerEvent }) => {
           : "ack cleared";
   return (
     <span className="inline-block mr-8">
-      <span className="text-[#6F6A5C] mr-1.5">{ts}</span>
+      <span className="text-muted-foreground/70 mr-1.5">{ts}</span>
       <span className={cn("font-semibold", labelCls)}>{event.endpoint}</span>
       <span className="ml-1">
         {verb}
@@ -797,14 +905,14 @@ const StaleBanner = ({
     <div
       className={cn(
         "rounded-nb-md px-4 py-3 flex items-center gap-3",
-        "bg-status-danger/20 border border-status-danger/60 text-[#F4D9D3]",
+        "bg-status-danger/20 border border-status-danger/60 text-status-danger-ink dark:text-[#F4D9D3]",
         "font-mono text-[12px] tracking-wider",
       )}
       role="alert"
     >
       <Pulser />
       <span className="font-bold uppercase">Connection lost</span>
-      <span className="text-[#E4A096]">
+      <span className="text-status-danger-ink dark:text-[#E4A096]">
         Last update {lastTs} · {seconds}s ago · retrying every 5 s
       </span>
     </div>
@@ -858,6 +966,49 @@ function splitIntoBands(endpoints: MonitorEndpoint[]): Bands {
   return { failing, watching, healthy };
 }
 
+/** Pending + deferred — everything queued up in front of an endpoint. */
+export function backlogTotal(endpoint: MonitorEndpoint): number {
+  return (
+    (endpoint.status.pendingCount ?? 0) + (endpoint.status.deferredCount ?? 0)
+  );
+}
+
+/**
+ * How loudly the wall should call out an endpoint's queue depth.
+ *
+ * Absolute thresholds keep the answer predictable from across a room — the
+ * same number always earns the same colour, whatever the rest of the wall is
+ * doing. Growth only escalates an already-notable backlog: a handful of
+ * messages ticking up is normal in-flight traffic, but a queue that is past
+ * BACKLOG_ELEVATED *and* still climbing is worse than its number suggests.
+ */
+export function backlogLevel(endpoint: MonitorEndpoint): BacklogLevel {
+  const total = backlogTotal(endpoint);
+  if (total >= BACKLOG_HIGH) return "high";
+  if (total < BACKLOG_ELEVATED) return "normal";
+  return isBacklogGrowing(endpoint) ? "high" : "elevated";
+}
+
+function isBacklogGrowing(endpoint: MonitorEndpoint): boolean {
+  if (endpoint.samples.length < 2) return false;
+  const oldest = endpoint.samples[0];
+  const latest = endpoint.samples[endpoint.samples.length - 1];
+  return (
+    latest.pending + latest.deferred > oldest.pending + oldest.deferred
+  );
+}
+
+/** KPI-tile sub-line: backlog callout first, then the pending trend. */
+function describePendingDelta(summary: SummaryShape): string {
+  const trend =
+    summary.pendingDeltaPerMin === 0
+      ? "stable"
+      : `${summary.pendingDeltaPerMin > 0 ? "▲" : "▼"} ${Math.abs(Math.round(summary.pendingDeltaPerMin))} / min`;
+  if (summary.backlogHotCount === 0) return trend;
+  const plural = summary.backlogHotCount === 1 ? "" : "s";
+  return `${summary.backlogHotCount} endpoint${plural} at or above ${BACKLOG_ELEVATED} · ${trend}`;
+}
+
 function summarize(endpoints: MonitorEndpoint[]): SummaryShape {
   let failingCount = 0;
   let ackedFailingCount = 0;
@@ -868,6 +1019,7 @@ function summarize(endpoints: MonitorEndpoint[]): SummaryShape {
   let failedTotal = 0;
   let failedRatePerHour = 0;
   let healthyCount = 0;
+  let backlogHotCount = 0;
 
   for (const e of endpoints) {
     const failed = e.status.failedCount ?? 0;
@@ -875,6 +1027,7 @@ function summarize(endpoints: MonitorEndpoint[]): SummaryShape {
     const deferred = e.status.deferredCount ?? 0;
     failedTotal += failed;
     pendingTotal += pending;
+    if (backlogLevel(e) !== "normal") backlogHotCount += 1;
     if (failed > 0) {
       failingCount += 1;
       if (e.ack) ackedFailingCount += 1;
@@ -907,19 +1060,20 @@ function summarize(endpoints: MonitorEndpoint[]): SummaryShape {
     unackedFreshFailures: unackedFresh,
     pendingTotal,
     pendingDeltaPerMin,
+    backlogHotCount,
     failedTotal,
     failedRatePerHour,
     healthyCount,
   };
 }
 
-function describeTrend(values: number[]): { stroke: string } {
-  if (values.length < 2) return { stroke: "#C9C1AB" };
+function describeTrend(values: number[]): { className: string } {
+  if (values.length < 2) return { className: TREND_FLAT };
   const first = values[0];
   const last = values[values.length - 1];
-  if (last > first) return { stroke: "#E4A096" };
-  if (last < first) return { stroke: "#7FD2A6" };
-  return { stroke: "#C9C1AB" };
+  if (last > first) return { className: TREND_UP };
+  if (last < first) return { className: TREND_DOWN };
+  return { className: TREND_FLAT };
 }
 
 function describeRate(rate: number | undefined): string {

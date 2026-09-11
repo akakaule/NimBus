@@ -1274,13 +1274,13 @@ paths:
           description: Forbidden
   /api/admin/storage/cosmos/containers:
     get:
-      summary: List Cosmos DB containers outside the current platform
+      summary: List Cosmos DB containers with platform membership
       operationId: get-admin-cosmos-containers
       tags:
         - Admin
       responses:
         '200':
-          description: Orphaned Cosmos DB containers
+          description: Cosmos DB containers
           content:
             application/json:
               schema:
@@ -3636,9 +3636,13 @@ components:
       type: object
       required:
         - name
+        - isInPlatform
       properties:
         name:
           type: string
+        isInPlatform:
+          type: boolean
+          description: Used by the current platform catalog or reserved NimBus storage; protected from deletion
     CosmosContainerDeleteRequest:
       title: CosmosContainerDeleteRequest
       type: object

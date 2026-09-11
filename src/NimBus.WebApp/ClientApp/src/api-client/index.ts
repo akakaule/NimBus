@@ -2679,8 +2679,8 @@ export class Client extends ApiClientBase {
     }
 
     /**
-     * List Cosmos DB containers outside the current platform
-     * @return Orphaned Cosmos DB containers
+     * List Cosmos DB containers with platform membership
+     * @return Cosmos DB containers
      */
     getAdminCosmosContainers(): Promise<CosmosContainerInfo[]> {
         let url_ = this.baseUrl + "/api/admin/storage/cosmos/containers";
@@ -9215,6 +9215,8 @@ export interface IServiceBusTopicOverview {
 
 export class CosmosContainerInfo implements ICosmosContainerInfo {
     name!: string;
+    /** Used by the current platform catalog or reserved NimBus storage; protected from deletion */
+    isInPlatform!: boolean;
 
     [key: string]: any;
 
@@ -9234,6 +9236,7 @@ export class CosmosContainerInfo implements ICosmosContainerInfo {
                     this[property] = _data[property];
             }
             this.name = _data["name"];
+            this.isInPlatform = _data["isInPlatform"];
         }
     }
 
@@ -9251,6 +9254,7 @@ export class CosmosContainerInfo implements ICosmosContainerInfo {
                 data[property] = this[property];
         }
         data["name"] = this.name;
+        data["isInPlatform"] = this.isInPlatform;
         return data;
     }
 
@@ -9264,6 +9268,8 @@ export class CosmosContainerInfo implements ICosmosContainerInfo {
 
 export interface ICosmosContainerInfo {
     name: string;
+    /** Used by the current platform catalog or reserved NimBus storage; protected from deletion */
+    isInPlatform: boolean;
 
     [key: string]: any;
 }

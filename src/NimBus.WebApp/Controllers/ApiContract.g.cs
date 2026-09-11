@@ -1216,10 +1216,10 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> GetAdminAsyncapiAsync(string format);
 
         /// <summary>
-        /// List Cosmos DB containers outside the current platform
+        /// List Cosmos DB containers with platform membership
         /// </summary>
 
-        /// <returns>Orphaned Cosmos DB containers</returns>
+        /// <returns>Cosmos DB containers</returns>
 
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<CosmosContainerInfo>>> GetAdminCosmosContainersAsync();
 
@@ -1601,9 +1601,9 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// List Cosmos DB containers outside the current platform
+        /// List Cosmos DB containers with platform membership
         /// </summary>
-        /// <returns>Orphaned Cosmos DB containers</returns>
+        /// <returns>Cosmos DB containers</returns>
         [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/admin/storage/cosmos/containers")]
         public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<CosmosContainerInfo>>> GetAdminCosmosContainers()
         {
@@ -7714,6 +7714,7 @@ namespace NimBus.WebApp.ManagementApi
     public partial class CosmosContainerInfo : System.ComponentModel.INotifyPropertyChanged
     {
         private string _name;
+        private bool _isInPlatform;
 
         [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.Always)]
         [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
@@ -7724,6 +7725,22 @@ namespace NimBus.WebApp.ManagementApi
                 if (_name != value)
                 {
                     _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Used by the current platform catalog or reserved NimBus storage; protected from deletion
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("isInPlatform", Required = Newtonsoft.Json.Required.Always)]
+        public bool IsInPlatform    {
+            get { return _isInPlatform; }
+            set
+            {
+                if (_isInPlatform != value)
+                {
+                    _isInPlatform = value;
                     RaisePropertyChanged();
                 }
             }

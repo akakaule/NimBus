@@ -1,0 +1,8 @@
+<Project>
+  <Target Name="RequireNimBusReleaseVersion" BeforeTargets="CollectPackageReferences" Condition="'$(UsePublishedNimBus)' == 'true' and '$(NimBusVersion)' == ''">
+    <Error Text="Set NimBusVersion to an explicitly tested published NimBus version." />
+  </Target>
+  <Target Name="RequirePublishedDependenciesForPacking" BeforeTargets="Pack" Condition="'$(IsPackable)' == 'true' and '$(UsePublishedNimBus)' != 'true'">
+    <Error Text="Distribution requires UsePublishedNimBus=true and NimBusVersion; do not package development project references." />
+  </Target>
+</Project>

@@ -1,0 +1,14 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "DataverseQueue": "dataverse-inbound",
+    "DataverseServiceBus__fullyQualifiedNamespace": "YOUR-INGRESS.servicebus.windows.net",
+    "NimBusServiceBus__fullyQualifiedNamespace": "YOUR-NIMBUS.servicebus.windows.net",
+    "Dataverse__OrganizationId": "00000000-0000-0000-0000-000000000000",
+    "Dataverse__PublisherEndpoint": "DataverseEndpoint",
+    "Dataverse__Tables__account__0": "name",
+    "Dataverse__Tables__account__1": "emailaddress1"
+  }
+}

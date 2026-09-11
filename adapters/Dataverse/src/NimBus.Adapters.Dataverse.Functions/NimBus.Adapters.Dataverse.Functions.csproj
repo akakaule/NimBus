@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AzureFunctionsVersion>v4</AzureFunctionsVersion><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.52.0" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="2.1.0" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.ServiceBus" Version="5.24.0" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.ApplicationInsights" Version="2.51.0" />
+    <PackageReference Include="Microsoft.ApplicationInsights.WorkerService" Version="2.23.0" />
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <ProjectReference Include="../NimBus.Adapters.Dataverse/NimBus.Adapters.Dataverse.csproj" />
+  </ItemGroup>
+  <ItemGroup><None Update="host.json" CopyToOutputDirectory="PreserveNewest" /><None Update="local.settings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" /></ItemGroup>
+</Project>

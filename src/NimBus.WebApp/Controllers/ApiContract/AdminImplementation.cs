@@ -255,9 +255,8 @@ public class AdminImplementation : IAdminApiController
         {
             var containers = await _containerAdmin.ListContainerIdsAsync(_context.RequestAborted);
             var result = containers
-                .Where(name => !IsProtectedContainer(name))
                 .Order(StringComparer.Ordinal)
-                .Select(name => new CosmosContainerInfo { Name = name })
+                .Select(name => new CosmosContainerInfo { Name = name, IsInPlatform = IsProtectedContainer(name) })
                 .ToArray();
             return new OkObjectResult(result);
         }

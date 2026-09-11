@@ -17,7 +17,7 @@ namespace NimBus.WebApp.Tests;
 public sealed class AdminCosmosContainerTests
 {
     [TestMethod]
-    public async Task List_returns_only_containers_outside_platform()
+    public async Task List_returns_all_containers_with_platform_membership()
     {
         var cosmos = new RecordingContainerAdmin(
             "CurrentEndpoint", "currentendpoint", "messages", "Messages", "orphan-a");
@@ -28,7 +28,10 @@ public sealed class AdminCosmosContainerTests
         var result = Assert.IsInstanceOfType<OkObjectResult>(response.Result);
         var names = Assert.IsInstanceOfType<IEnumerable<CosmosContainerInfo>>(result.Value)
             .Select(container => container.Name).ToArray();
-        CollectionAssert.AreEqual(new[] { "Messages", "currentendpoint", "orphan-a" }, names);
+        CollectionAssert.AreEqual(new[] { "CurrentEndpoint", "Messages", "currentendpoint", "messages", "orphan-a" }, names);
+        var containers = Assert.IsInstanceOfType<IEnumerable<CosmosContainerInfo>>(result.Value).ToArray();
+        CollectionAssert.AreEqual(new[] { true, false, false, true, false },
+            containers.Select(container => container.IsInPlatform).ToArray());
     }
 
     [TestMethod]

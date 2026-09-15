@@ -75,6 +75,12 @@ public static class NimBusMeters
     public static readonly Counter<long> ResolverOutcomeWritten = Resolver.CreateCounter<long>(
         "nimbus.resolver.outcome_written", "{records}", "Outcome rows written by the resolver.");
 
+    // Spec 030: a non-terminal write the store refused because the row already held a later
+    // outcome. Together with outcome_written this is one per handled message, so a dashboard
+    // that used outcome_written as throughput should sum the two.
+    public static readonly Counter<long> ResolverOutcomeIgnored = Resolver.CreateCounter<long>(
+        "nimbus.resolver.outcome_ignored", "{records}", "Outcome writes the store refused as stale.");
+
     public static readonly Counter<long> ResolverAuditWritten = Resolver.CreateCounter<long>(
         "nimbus.resolver.audit_written", "{records}", "Audit rows written by the resolver.");
 

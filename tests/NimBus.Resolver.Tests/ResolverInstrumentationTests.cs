@@ -135,12 +135,12 @@ public class ResolverInstrumentationTests
         Assert.AreEqual(typeof(InvalidOperationException).FullName, counterRow.Tags[MessagingAttributes.ErrorType]);
     }
 
-    private static ResolverServiceTests.FakeMessageContext NewMessage(
+    private static FakeMessageContext NewMessage(
         MessageType messageType,
         string to = "BillingEndpoint",
         string from = "StorefrontEndpoint")
     {
-        return new ResolverServiceTests.FakeMessageContext
+        return new FakeMessageContext
         {
             EventId = $"event-{Guid.NewGuid()}",
             MessageId = "msg-1",

@@ -13,13 +13,39 @@ namespace NimBus.MessageStore.Abstractions;
 /// </summary>
 public interface IMessageTrackingStore
 {
-    // Status transition uploads
+    // Status transition uploads.
+    //
+    // Every one of them returns true when the audit row was created or replaced, and false when
+    // StaleWriteGuard refused the write because the row already holds a later outcome — a copy
+    // delayed by auto-forward lag, by ScheduleRedelivery, or replayed from the dead-letter queue
+    // (Spec 030). Nothing is written on a refusal, and the caller must not retry: the row is
+    // already correct. Provider failures, including a lost compare-and-swap, throw rather than
+    // returning false, so an unavailable store is never mistaken for a refusal.
+    //
+    // Terminal writes (Failed, DeadLettered, Unsupported, Skipped, Completed) and content whose
+    // MessageType the guard does not classify are unguarded and always return true. The
+    // conformance suite pins the rule identically for every provider.
+
+    /// <inheritdoc cref="IMessageTrackingStore"/>
+    /// <returns>True when the row was created or replaced; false when the write was refused as stale.</returns>
     Task<bool> UploadPendingMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content);
+
+    /// <inheritdoc cref="UploadPendingMessage"/>
     Task<bool> UploadDeferredMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content);
+
+    /// <inheritdoc cref="UploadPendingMessage"/>
     Task<bool> UploadFailedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content);
+
+    /// <inheritdoc cref="UploadPendingMessage"/>
     Task<bool> UploadDeadletteredMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content);
+
+    /// <inheritdoc cref="UploadPendingMessage"/>
     Task<bool> UploadUnsupportedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content);
+
+    /// <inheritdoc cref="UploadPendingMessage"/>
     Task<bool> UploadSkippedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content);
+
+    /// <inheritdoc cref="UploadPendingMessage"/>
     Task<bool> UploadCompletedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content);
 
     // Single-event lookups

@@ -1,6 +1,8 @@
 # Spec 031 — Resolver capacity controls and Cosmos capacity visibility (port from DIS)
 
-Status: proposed (design only, nothing implemented)
+Status: §3.1–§3.3 implemented on branch `feat/resolver-capacity-controls` (2026-09-15, see
+`docs/plan/2026-09-15-resolver-capacity-controls-plan.md`); §3.4 (capacity library, API, banner)
+and the bounded DLQ replay remain follow-ups.
 Companion to: Spec 030 (stale copies must not reopen a settled audit row). 030 makes the
 throttle-induced reorder harmless; this spec reduces how often the Resolver is throttled and
 makes throttling visible to operators.

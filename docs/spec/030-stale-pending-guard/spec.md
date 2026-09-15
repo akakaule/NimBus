@@ -1,6 +1,8 @@
 # Spec 030 — Stale message copies must not reopen a settled audit row
 
-Status: proposed (design only, nothing implemented)
+Status: proposed; the guard itself is not implemented yet. The ADR-012 amendment it relies on
+(handoff settlement requests are history only) shipped on branch `feat/resolver-capacity-controls`
+on 2026-09-15.
 Trigger: production incident on EET `Nav09Endpoint`, 2026-09-14, NimBus 3.5.1, Cosmos DB store
 Baseline: master `84e63e6` (v3.6.1). Every file named below is byte-identical to the deployed v3.5.1.
 Review status: design reviewed adversarially (three independent passes); §13 lists what changed.

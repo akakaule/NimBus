@@ -79,7 +79,10 @@ WHEN MATCHED AND (
                 <> @LastMessageId COLLATE Latin1_General_BIN2)                                       -- the row does not already answer this message
         AND CASE
               WHEN @MessageType IN ('EventRequest','DeferralResponse') THEN
-                   CASE WHEN target.Status IN ('Pending','Deferred')
+                   -- Negated terminal list, not IN ('Pending','Deferred'): StaleWriteGuard tests
+                   -- !IsTerminal, and ResolutionStatus also has TooManyRequests and Published.
+                   -- No upload method writes those today, but the two rules must not drift.
+                   CASE WHEN target.Status NOT IN ('Completed','Skipped','Failed','DeadLettered','Unsupported')
                          AND (target.MessageType IS NULL
                               OR target.MessageType IN ('EventRequest','DeferralResponse','Unknown')) THEN 1 ELSE 0 END
               WHEN @MessageType = 'PendingHandoffResponse' THEN

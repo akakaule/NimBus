@@ -836,9 +836,13 @@ namespace NimBus.Broker.Services
                 var tags = BuildOutcomeTags(endpointId, outcome, errorType);
                 NimBusMeters.ResolverWriteDuration.Record(elapsed, tags);
 
-                // A refusal is not a write. Counting it under outcome_written would report a
-                // stale copy as a fresh outcome; dashboards that used outcome_written as
-                // throughput should sum outcome_written + outcome_ignored.
+                // A refusal is not a write: it is a successful call that deliberately stored
+                // nothing, so counting it under outcome_written would report a stale copy as a
+                // fresh outcome. A *failed* write keeps counting there, carrying its error_type
+                // tag — that pairing is how the write error rate is read, and moving failures to
+                // outcome_ignored would hide them behind a counter named for stale copies.
+                // Dashboards that used outcome_written as throughput should sum
+                // outcome_written + outcome_ignored.
                 if (applied || errorType is not null)
                 {
                     NimBusMeters.ResolverOutcomeWritten.Add(1, tags);

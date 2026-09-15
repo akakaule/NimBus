@@ -1618,6 +1618,13 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
     /// <para>404, 409 and 412 are not in <c>CosmosExceptionTranslation.IsTransient</c>, so they
     /// are handled here — a raw <see cref="CosmosException"/> would dead-letter the message in
     /// the Resolver. A 429 still translates to the throttle path as before.</para>
+    ///
+    /// <para><strong>Cost.</strong> Every message type the Resolver projects as Pending or
+    /// Deferred is guarded, so this is the path for all of its non-terminal writes: one extra
+    /// point read each, and two round-trips (404 + create) for the first projection of an event.
+    /// The read returns the whole document, <c>MessageContent</c> included. Terminal writes are
+    /// unguarded and unaffected. Narrowing the read to the fields the rule needs would require
+    /// new adapter overloads (Spec 030 §11).</para>
     /// </summary>
     private async Task<bool> UploadGuarded(string eventId, string sessionId, string endpointId,
         UnresolvedEvent content, string status)
@@ -1663,11 +1670,15 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
             }
 
             var row = HydrateResolutionStatus(current.Resource);
-            if (row is null || !Enum.TryParse<ResolutionStatus>(current.Resource.Status, out _))
+            if (row is null || !Enum.TryParse<ResolutionStatus>(current.Resource?.Status, out _))
             {
-                // Fail closed: never treat an unreadable row as still in flight.
+                // Fail closed: never treat an unreadable row as still in flight. This is a
+                // refusal, not a failure, so the message is completed and the projection is
+                // dropped — deliberate (Spec 030 §5.1), because an unreadable row is the one
+                // state where applying the write could silently undo a recorded outcome. The
+                // warning plus the Resolver's Comment audit are the operator's signal.
                 _logger?.LogWarning(
-                    "COSMOS UPSERT-REFUSED: row {Id} has unparseable status {Status}", eventDbo.Id, current.Resource.Status);
+                    "COSMOS UPSERT-REFUSED: row {Id} has unparseable status {Status}", eventDbo.Id, current.Resource?.Status);
                 return false;
             }
 

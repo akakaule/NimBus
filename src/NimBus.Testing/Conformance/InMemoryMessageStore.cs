@@ -51,6 +51,11 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         // factory's own decision rather than comparing references: passing the same instance
         // twice must not be able to bypass StaleWriteGuard. Parity with Cosmos and SQL, which
         // evaluate the same rule atomically against the row they are about to replace.
+        //
+        // AddOrUpdate may invoke a factory more than once under contention, and only the last
+        // invocation's value is committed — so both branches assign the flag unconditionally and
+        // the winning call is the one that decides. Setting it only on the applied branch would
+        // report a refusal as applied after a lost CAS.
         var applied = false;
 
         UnresolvedEvent Stamp()
@@ -67,7 +72,16 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         _events.AddOrUpdate(
             Key(endpointId, eventId, sessionId),
             _ => Stamp(),
-            (_, existing) => StaleWriteGuard.Allows(status, content, existing) ? Stamp() : existing);
+            (_, existing) =>
+            {
+                if (StaleWriteGuard.Allows(status, content, existing))
+                {
+                    return Stamp();
+                }
+
+                applied = false;
+                return existing;
+            });
 
         return Task.FromResult(applied);
     }

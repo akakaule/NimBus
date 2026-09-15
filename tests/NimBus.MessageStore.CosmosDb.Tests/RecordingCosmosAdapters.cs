@@ -100,6 +100,54 @@ internal sealed class RecordingCosmosContainerAdapter : ICosmosContainerAdapter
 
     public List<QueryDefinition> Queries { get; } = new();
 
+    /// <summary>Every created document, in order. Unlike the unconditional upsert path, the
+    /// guarded write (Spec 030) creates the first projection of an event.</summary>
+    public List<object?> CreatedItems { get; } = new();
+
+    /// <summary>Scripted <see cref="ReadItemAsync{T}(string, PartitionKey)"/> results, consumed in
+    /// order: a document (with its ETag) to return, or an exception to throw. When the queue runs
+    /// dry the read throws <see cref="NotSupportedException"/>, so an unscripted read is a test bug
+    /// rather than a silent pass. Documents are held as JSON because the store's row type is
+    /// private to it; the read materialises them into whatever type the caller asked for.</summary>
+    public Queue<object> ScriptedReads { get; } = new();
+
+    /// <summary>Scripted upsert failures, consumed in order; a null entry lets that upsert
+    /// succeed and be recorded.</summary>
+    public Queue<Exception?> ScriptedUpsertFailures { get; } = new();
+
+    /// <summary>Scripted create failures, consumed in order; a null entry lets that create
+    /// succeed and be recorded.</summary>
+    public Queue<Exception?> ScriptedCreateFailures { get; } = new();
+
+    public int ReadCount { get; private set; }
+
+    /// <summary>Scripts one read of the audit row as the store's own document shape.</summary>
+    public void EnqueueRead(string id, string status, UnresolvedEvent @event, string etag, bool deleted = false) =>
+        ScriptedReads.Enqueue((JObject.FromObject(new
+        {
+            id,
+            status,
+            eventType = @event?.EventTypeId,
+            sessionId = @event?.SessionId,
+            @event,
+            deleted,
+        }), etag));
+
+    /// <summary>Scripts one read that returns a row whose status the store cannot parse.</summary>
+    public void EnqueueUnparseableRead(string id, UnresolvedEvent @event, string etag) =>
+        EnqueueRead(id, "NotAStatus", @event, etag);
+
+    public void EnqueueReadFailure(Exception exception) => ScriptedReads.Enqueue(exception);
+
+    public static CosmosException NotFound() =>
+        new("not found", System.Net.HttpStatusCode.NotFound, 0, activityId: string.Empty, requestCharge: 0);
+
+    public static CosmosException Conflict() =>
+        new("conflict", System.Net.HttpStatusCode.Conflict, 0, activityId: string.Empty, requestCharge: 0);
+
+    public static CosmosException PreconditionFailed() =>
+        new("etag mismatch", System.Net.HttpStatusCode.PreconditionFailed, 0, activityId: string.Empty, requestCharge: 0);
+
     /// <summary>The upserted document as it goes on the wire. <c>EventDbo</c> is private to
     /// <c>CosmosDbClient</c>, so serializing is the only way to read its <c>ttl</c>.</summary>
     public JObject UpsertedDocument(int index) =>
@@ -139,6 +187,12 @@ internal sealed class RecordingCosmosContainerAdapter : ICosmosContainerAdapter
 
     public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions? requestOptions = null)
     {
+        if (ScriptedUpsertFailures.Count > 0 && ScriptedUpsertFailures.Dequeue() is { } failure)
+        {
+            CapturedRequestOptions.Add(requestOptions);
+            return Task.FromException<ItemResponse<T>>(failure);
+        }
+
         UpsertedItems.Add(item);
         CapturedRequestOptions.Add(requestOptions);
         // The client under test is constructed without a logger, so the null-conditional
@@ -153,22 +207,76 @@ internal sealed class RecordingCosmosContainerAdapter : ICosmosContainerAdapter
     }
 
     public Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default)
-        => throw new NotSupportedException();
+    {
+        if (ScriptedCreateFailures.Count > 0 && ScriptedCreateFailures.Dequeue() is { } failure)
+        {
+            return Task.FromException<ItemResponse<T>>(failure);
+        }
+
+        CreatedItems.Add(item);
+        return Task.FromResult<ItemResponse<T>>(null!);
+    }
 
     public Task<ItemResponse<T>> DeleteItemAsync<T>(string id, PartitionKey partitionKey)
         => throw new NotSupportedException();
 
     public Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey)
-        => throw new NotSupportedException();
+    {
+        ReadCount++;
+        if (ScriptedReads.Count == 0)
+        {
+            throw new NotSupportedException($"No scripted read for '{id}'.");
+        }
+
+        var next = ScriptedReads.Dequeue();
+        if (next is Exception failure)
+        {
+            return Task.FromException<ItemResponse<T>>(failure);
+        }
+
+        var (document, etag) = ((JObject Document, string ETag))next;
+        return Task.FromResult<ItemResponse<T>>(new FakeItemResponse<T>(document.ToObject<T>()!, etag));
+    }
 
     public Task<ItemResponse<T>> ReadItemAsync<T>(string id, PartitionKey partitionKey, ItemRequestOptions requestOptions)
-        => throw new NotSupportedException();
+        => ReadItemAsync<T>(id, partitionKey);
 
     public Task<ContainerResponse> DeleteContainerAsync()
         => throw new NotSupportedException();
 
     public Task<FeedResponse<T>> ReadManyItemsAsync<T>(IReadOnlyList<(string id, PartitionKey partitionKey)> items)
         => throw new NotSupportedException();
+}
+
+/// <summary>
+/// The minimum of <see cref="ItemResponse{T}"/> the guarded write reads: the document and its
+/// ETag. The SDK keeps its own constructors internal, so a subclass is the only way to hand a
+/// store a synthetic read result.
+/// </summary>
+internal sealed class FakeItemResponse<T> : ItemResponse<T>
+{
+    private readonly T _resource;
+    private readonly string _etag;
+
+    public FakeItemResponse(T resource, string etag)
+    {
+        _resource = resource;
+        _etag = etag;
+    }
+
+    public override T Resource => _resource;
+
+    public override string ETag => _etag;
+
+    public override System.Net.HttpStatusCode StatusCode => System.Net.HttpStatusCode.OK;
+
+    public override double RequestCharge => 1;
+
+    public override Headers Headers => new();
+
+    public override string ActivityId => string.Empty;
+
+    public override CosmosDiagnostics Diagnostics => null!;
 }
 
 internal sealed class EmptyFeedIterator<T> : FeedIterator<T>

@@ -49,14 +49,45 @@ internal sealed class SqlServerMessageTrackingStore : IMessageTrackingStore
     public Task<bool> UploadCompletedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content)
         => UpsertStatus(eventId, sessionId, endpointId, "Completed", content);
 
+    /// <summary>
+    /// Writes one status transition. The MATCHED branch carries the Spec 030 stale-write guard,
+    /// transliterated from <see cref="StaleWriteGuard.Allows"/>: keep the two in step — the
+    /// conformance suite runs the same cases against this provider and against the rule.
+    /// <para>HOLDLOCK (a serializable range lock) makes the write serializable per key. It is the
+    /// hint the EventReports MERGE below already uses, and it also closes the pre-existing
+    /// first-insert race where two concurrent first writes both miss MATCHED and collide on the
+    /// primary key.</para>
+    /// <para>Returns whether a row was inserted or updated. The count comes from an explicit
+    /// <c>@@ROWCOUNT</c> rather than Dapper's records-affected, which <c>SET NOCOUNT ON</c> turns
+    /// into -1.</para>
+    /// </summary>
     private async Task<bool> UpsertStatus(string eventId, string sessionId, string endpointId, string status, UnresolvedEvent content)
     {
         var sql = $@"
-MERGE {T("UnresolvedEvents")} AS target
+MERGE {T("UnresolvedEvents")} WITH (HOLDLOCK) AS target
 USING (SELECT @EventId AS EventId, @SessionId AS SessionId, @EndpointId AS EndpointId) AS source
 ON target.EndpointId = source.EndpointId AND target.EventId = source.EventId
    AND ((target.SessionId IS NULL AND source.SessionId IS NULL) OR target.SessionId = source.SessionId)
-WHEN MATCHED THEN UPDATE SET
+WHEN MATCHED AND (
+        @Status IN ('Completed','Skipped','Failed','DeadLettered','Unsupported')                     -- terminal writes are unguarded
+     OR @MessageType NOT IN ('EventRequest','DeferralResponse','PendingHandoffResponse',
+                             'ResubmissionRequest','SkipRequest','RetryRequest','ContinuationRequest',
+                             'HandoffCompletedRequest','HandoffFailedRequest')                       -- so are unguarded message types
+     OR (
+            (NULLIF(target.ParentMessageId, '') IS NULL OR NULLIF(@LastMessageId, '') IS NULL
+             OR target.ParentMessageId COLLATE Latin1_General_BIN2
+                <> @LastMessageId COLLATE Latin1_General_BIN2)                                       -- the row does not already answer this message
+        AND CASE
+              WHEN @MessageType IN ('EventRequest','DeferralResponse') THEN
+                   CASE WHEN target.Status IN ('Pending','Deferred')
+                         AND (target.MessageType IS NULL
+                              OR target.MessageType IN ('EventRequest','DeferralResponse','Unknown')) THEN 1 ELSE 0 END
+              WHEN @MessageType = 'PendingHandoffResponse' THEN
+                   CASE WHEN target.Status NOT IN ('Completed','Skipped') THEN 1 ELSE 0 END
+              ELSE 1                                                                                 -- control requests
+            END = 1
+        )
+) THEN UPDATE SET
     Status = @Status,
     UpdatedAtUtc = @UpdatedAt,
     EnqueuedTimeUtc = @EnqueuedTimeUtc,
@@ -102,10 +133,11 @@ VALUES (
     @ToAddress, @FromAddress, @QueueTimeMs, @ProcessingTimeMs,
     @CloudEventId, @CloudEventSource, @CloudEventType, @CloudEventSubject,
     @PendingSubStatus, @HandoffReason, @ExternalJobId, @ExpectedBy,
-    @MessageContentJson);";
+    @MessageContentJson);
+SELECT @@ROWCOUNT;";
 
         await using var conn = await OpenAsync();
-        var rows = await conn.ExecuteAsync(sql, new
+        var rows = await conn.QuerySingleAsync<int>(sql, new
         {
             EventId = eventId,
             SessionId = sessionId,

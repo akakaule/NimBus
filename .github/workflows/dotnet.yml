@@ -100,3 +100,21 @@ jobs:
           echo "::error::$skipped Cosmos test(s) did not execute; the live conformance suite must run in CI."
           exit 1
         fi
+    - name: SQL Server conformance must not skip
+      # Same evidence gate for the SQL provider. The Spec 030 stale-write guard lives in the
+      # UnresolvedEvents MERGE predicate, so a suite that skipped itself would let a wrong
+      # predicate pass CI by being inconclusive rather than by conforming.
+      if: always()
+      run: |
+        trx=$(grep -ril --include='*.trx' 'nimbus.messagestore.sqlserver.tests.dll' TestResults | head -1)
+        if [ -z "$trx" ]; then
+          echo "::error::No trx found for NimBus.MessageStore.SqlServer.Tests; the suite did not run at all."
+          exit 1
+        fi
+        skipped=$(grep -o 'outcome="\(NotExecuted\|Inconclusive\|Skipped\)"' "$trx" | wc -l)
+        echo "SQL Server results file: $trx"
+        echo "SQL Server tests not executed: $skipped"
+        if [ "$skipped" != "0" ]; then
+          echo "::error::$skipped SQL Server test(s) did not execute; the live conformance suite must run in CI."
+          exit 1
+        fi

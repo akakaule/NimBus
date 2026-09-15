@@ -320,7 +320,9 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
 
     public Task<bool> UploadDeferredMessage(string eventId, string sessionId, string endpointId,
         UnresolvedEvent content) =>
-        UploadMessage(eventId, sessionId, endpointId, content, DeferredStatus);
+        StaleWriteGuard.IsGuarded(ResolutionStatus.Deferred, content.MessageType)
+            ? UploadGuarded(eventId, sessionId, endpointId, content, DeferredStatus)
+            : UploadMessage(eventId, sessionId, endpointId, content, DeferredStatus);
 
     public Task<bool> UploadFailedMessage(string eventId, string sessionId, string endpointId,
         UnresolvedEvent content) =>
@@ -328,7 +330,9 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
 
     public Task<bool> UploadPendingMessage(string eventId, string sessionId, string endpointId,
         UnresolvedEvent content) =>
-        UploadMessage(eventId, sessionId, endpointId, content, PendingStatus);
+        StaleWriteGuard.IsGuarded(ResolutionStatus.Pending, content.MessageType)
+            ? UploadGuarded(eventId, sessionId, endpointId, content, PendingStatus)
+            : UploadMessage(eventId, sessionId, endpointId, content, PendingStatus);
 
     public Task<bool> UploadDeadletteredMessage(string eventId, string sessionId, string endpointId,
         UnresolvedEvent contet) =>
@@ -1598,6 +1602,97 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
         {
             _logger?.LogTrace("COSMOS ARCHIVE-FAILED: Event not found. EventId: {EventId}, SessionId: {SessionId}, EndpointId: {EndpointId}", eventId, sessionId, endpointId);
         }
+    }
+
+    /// <summary>
+    /// Non-terminal write that <see cref="StaleWriteGuard"/> governs (Spec 030): read the row,
+    /// evaluate the rule against it, and replace it only under its ETag so a concurrent writer
+    /// cannot slip between the read and the write.
+    ///
+    /// <para>Returns <see langword="true"/> when the row was created or replaced,
+    /// <see langword="false"/> when the rule refused a stale copy. A lost compare-and-swap is a
+    /// transient failure, not a refusal: it throws
+    /// <see cref="StorageProviderTransientException"/> so the Resolver reschedules and
+    /// re-evaluates idempotently.</para>
+    ///
+    /// <para>404, 409 and 412 are not in <c>CosmosExceptionTranslation.IsTransient</c>, so they
+    /// are handled here — a raw <see cref="CosmosException"/> would dead-letter the message in
+    /// the Resolver. A 429 still translates to the throttle path as before.</para>
+    /// </summary>
+    private async Task<bool> UploadGuarded(string eventId, string sessionId, string endpointId,
+        UnresolvedEvent content, string status)
+    {
+        var container = await _getEndpointContainer(endpointId);
+        var eventDbo = new EventDbo
+        {
+            Id = $"{eventId}_{sessionId}",
+            Event = content,
+            SessionId = sessionId,
+            Status = status,
+            EventType = content.EventTypeId,
+            Deleted = false,
+            TimeToLive = _unresolvedTtlSeconds
+        };
+        var partitionKey = new PartitionKey(eventDbo.Id);
+        var incomingStatus = Enum.Parse<ResolutionStatus>(status);
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            ItemResponse<EventDbo> current;
+            try
+            {
+                // Point read by id: unlike the status-scoped lookups it also sees soft-deleted
+                // (deleted = true) documents, which is exactly what a Completed row looks like.
+                current = await container.ReadItemAsync<EventDbo>(eventDbo.Id, partitionKey);
+            }
+            catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+            {
+                try
+                {
+                    // First projection of this event. The adapter has no CreateItemAsync overload
+                    // taking ItemRequestOptions, so this one write echoes the document body back
+                    // (bandwidth only, RU unchanged).
+                    await container.CreateItemAsync(eventDbo, partitionKey);
+                    return true;
+                }
+                catch (CosmosException conflict) when (conflict.StatusCode == HttpStatusCode.Conflict)
+                {
+                    // Created concurrently between the read and the create: re-read and re-evaluate.
+                    continue;
+                }
+            }
+
+            var row = HydrateResolutionStatus(current.Resource);
+            if (row is null || !Enum.TryParse<ResolutionStatus>(current.Resource.Status, out _))
+            {
+                // Fail closed: never treat an unreadable row as still in flight.
+                _logger?.LogWarning(
+                    "COSMOS UPSERT-REFUSED: row {Id} has unparseable status {Status}", eventDbo.Id, current.Resource.Status);
+                return false;
+            }
+
+            if (!StaleWriteGuard.Allows(incomingStatus, content, row))
+            {
+                _logger?.LogInformation(
+                    "COSMOS UPSERT-REFUSED: stale {MessageType} {MessageId}; row {Id} already {Status} written by {RowMessageType} {RowMessageId}",
+                    content.MessageType, content.LastMessageId, eventDbo.Id, current.Resource.Status, row.MessageType, row.LastMessageId);
+                return false;
+            }
+
+            try
+            {
+                await container.UpsertItemAsync(eventDbo, partitionKey,
+                    new ItemRequestOptions { IfMatchEtag = current.ETag, EnableContentResponseOnWrite = false });
+                return true;
+            }
+            catch (CosmosException e) when (e.StatusCode == HttpStatusCode.PreconditionFailed)
+            {
+                // The row changed between the read and the replace (a WebApp patch, a lock-loss
+                // twin): re-read and re-evaluate against what is there now.
+            }
+        }
+
+        throw new StorageProviderTransientException($"Audit row {eventDbo.Id} changed concurrently three times.");
     }
 
     private async Task<bool> UploadMessage(string eventId, string sessionId, string endpointId,

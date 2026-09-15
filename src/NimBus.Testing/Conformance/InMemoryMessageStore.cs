@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -47,13 +47,29 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
 
     private Task<bool> Upsert(string eventId, string sessionId, string endpointId, ResolutionStatus status, UnresolvedEvent content)
     {
-        content.ResolutionStatus = status;
-        content.UpdatedAt = DateTime.UtcNow;
-        content.EndpointId = endpointId;
-        content.EventId = eventId;
-        content.SessionId = sessionId;
-        _events[Key(endpointId, eventId, sessionId)] = content;
-        return Task.FromResult(true);
+        // Decide against the stored row BEFORE stamping the caller's object, and report the
+        // factory's own decision rather than comparing references: passing the same instance
+        // twice must not be able to bypass StaleWriteGuard. Parity with Cosmos and SQL, which
+        // evaluate the same rule atomically against the row they are about to replace.
+        var applied = false;
+
+        UnresolvedEvent Stamp()
+        {
+            content.ResolutionStatus = status;
+            content.UpdatedAt = DateTime.UtcNow;
+            content.EndpointId = endpointId;
+            content.EventId = eventId;
+            content.SessionId = sessionId;
+            applied = true;
+            return content;
+        }
+
+        _events.AddOrUpdate(
+            Key(endpointId, eventId, sessionId),
+            _ => Stamp(),
+            (_, existing) => StaleWriteGuard.Allows(status, content, existing) ? Stamp() : existing);
+
+        return Task.FromResult(applied);
     }
 
     public Task<bool> UploadPendingMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => Upsert(eventId, sessionId, endpointId, ResolutionStatus.Pending, content);

@@ -183,6 +183,337 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual(0, counts.PendingCount);
     }
 
+    // ---------------------------------------------------------------------------------
+    // Spec 030 - the stale-write guard. A late copy of a message (auto-forward lag, a
+    // ScheduleRedelivery copy, a dead-letter replay) must never reopen or downgrade a row
+    // that already holds a later outcome. StaleWriteGuard is the single source of truth;
+    // these cases pin that every provider applies it identically.
+    //
+    // Convention (as in the cases above): statuses are looped inside ONE endpoint container
+    // with distinct event ids, because every distinct endpoint id is a new Cosmos container
+    // on the emulator. A fresh SampleEvent is passed per call.
+    // ---------------------------------------------------------------------------------
+
+    private static readonly ResolutionStatus[] TerminalStatuses =
+    [
+        ResolutionStatus.Completed, ResolutionStatus.Skipped, ResolutionStatus.Failed,
+        ResolutionStatus.DeadLettered, ResolutionStatus.Unsupported,
+    ];
+
+    /// <summary>Dispatches to the upload method that writes <paramref name="status"/>.</summary>
+    private static Task<bool> Upload(
+        IMessageTrackingStore store,
+        ResolutionStatus status,
+        string eventId,
+        string sessionId,
+        string endpointId,
+        UnresolvedEvent content) => status switch
+        {
+            ResolutionStatus.Pending => store.UploadPendingMessage(eventId, sessionId, endpointId, content),
+            ResolutionStatus.Deferred => store.UploadDeferredMessage(eventId, sessionId, endpointId, content),
+            ResolutionStatus.Failed => store.UploadFailedMessage(eventId, sessionId, endpointId, content),
+            ResolutionStatus.DeadLettered => store.UploadDeadletteredMessage(eventId, sessionId, endpointId, content),
+            ResolutionStatus.Unsupported => store.UploadUnsupportedMessage(eventId, sessionId, endpointId, content),
+            ResolutionStatus.Skipped => store.UploadSkippedMessage(eventId, sessionId, endpointId, content),
+            ResolutionStatus.Completed => store.UploadCompletedMessage(eventId, sessionId, endpointId, content),
+            _ => throw new ArgumentOutOfRangeException(nameof(status), status, "No upload method writes this status."),
+        };
+
+    /// <summary>A <see cref="SampleEvent"/> carrying the identity fields the guard reads.</summary>
+    private static UnresolvedEvent GuardedEvent(
+        string endpointId,
+        string eventId,
+        string sessionId,
+        MessageType messageType,
+        string lastMessageId,
+        string parentMessageId = null)
+    {
+        var content = SampleEvent(endpointId, eventId, sessionId);
+        content.MessageType = messageType;
+        content.LastMessageId = lastMessageId;
+        content.ParentMessageId = parentMessageId;
+        return content;
+    }
+
+    [TestMethod]
+    public async Task Stale_request_copy_does_not_regress_settled_rows()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-stale-request");
+
+        foreach (var terminal in TerminalStatuses)
+        {
+            // The incident: a rescheduled EventRequest copy arriving after the response.
+            var requestId = Id($"sr-req-{terminal}");
+            Assert.IsTrue(await store.UploadPendingMessage(requestId, "s1", endpointId,
+                GuardedEvent(endpointId, requestId, "s1", MessageType.EventRequest, "req-1")));
+            Assert.IsTrue(await Upload(store, terminal, requestId, "s1", endpointId,
+                GuardedEvent(endpointId, requestId, "s1", MessageType.ResolutionResponse, "rsp-1", parentMessageId: "req-1")));
+
+            var lateRequest = await store.UploadPendingMessage(requestId, "s1", endpointId,
+                GuardedEvent(endpointId, requestId, "s1", MessageType.EventRequest, "req-late"));
+
+            Assert.IsFalse(lateRequest, $"a late EventRequest copy must not reopen a {terminal} row");
+            Assert.AreEqual(terminal, (await store.GetEvent(endpointId, requestId)).ResolutionStatus);
+
+            // The stuck-Deferred variant: a throttled DeferralResponse landing after the response.
+            var deferralId = Id($"sr-def-{terminal}");
+            Assert.IsTrue(await store.UploadPendingMessage(deferralId, "s1", endpointId,
+                GuardedEvent(endpointId, deferralId, "s1", MessageType.EventRequest, "req-2")));
+            Assert.IsTrue(await Upload(store, terminal, deferralId, "s1", endpointId,
+                GuardedEvent(endpointId, deferralId, "s1", MessageType.ResolutionResponse, "rsp-2", parentMessageId: "req-2")));
+
+            var lateDeferral = await store.UploadDeferredMessage(deferralId, "s1", endpointId,
+                GuardedEvent(endpointId, deferralId, "s1", MessageType.DeferralResponse, "def-late"));
+
+            Assert.IsFalse(lateDeferral, $"a late DeferralResponse must not reopen a {terminal} row");
+            Assert.AreEqual(terminal, (await store.GetEvent(endpointId, deferralId)).ResolutionStatus);
+        }
+
+        var counts = await store.DownloadEndpointStateCount(endpointId);
+        Assert.AreEqual(0, counts.PendingCount, "no settled row may have been reopened as Pending");
+        Assert.AreEqual(0, counts.DeferredCount, "no settled row may have been reopened as Deferred");
+    }
+
+    [TestMethod]
+    public async Task Request_copy_refreshes_request_stage_rows()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-refresh");
+
+        // A broker redelivery re-stamps its own projection (this exercises the Cosmos ETag replace).
+        var repeated = Id("rf-repeat");
+        Assert.IsTrue(await store.UploadPendingMessage(repeated, "s1", endpointId,
+            GuardedEvent(endpointId, repeated, "s1", MessageType.EventRequest, "m1")));
+        Assert.IsTrue(await store.UploadPendingMessage(repeated, "s1", endpointId,
+            GuardedEvent(endpointId, repeated, "s1", MessageType.EventRequest, "m2")));
+        Assert.AreEqual("m2", (await store.GetPendingEvent(endpointId, repeated, "s1")).LastMessageId);
+
+        // Deferred drain: the republished request reopens its own deferral.
+        var drained = Id("rf-drain");
+        Assert.IsTrue(await store.UploadDeferredMessage(drained, "s1", endpointId,
+            GuardedEvent(endpointId, drained, "s1", MessageType.DeferralResponse, "d1")));
+        Assert.IsTrue(await store.UploadPendingMessage(drained, "s1", endpointId,
+            GuardedEvent(endpointId, drained, "s1", MessageType.EventRequest, "d2")));
+        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(endpointId, drained, "s1")).ResolutionStatus);
+
+        // Re-deferral during a drain.
+        var deferred = Id("rf-defer");
+        Assert.IsTrue(await store.UploadPendingMessage(deferred, "s1", endpointId,
+            GuardedEvent(endpointId, deferred, "s1", MessageType.EventRequest, "p1")));
+        Assert.IsTrue(await store.UploadDeferredMessage(deferred, "s1", endpointId,
+            GuardedEvent(endpointId, deferred, "s1", MessageType.DeferralResponse, "p2")));
+        Assert.AreEqual(ResolutionStatus.Deferred, (await store.GetDeferredEvent(endpointId, deferred, "s1")).ResolutionStatus);
+    }
+
+    [TestMethod]
+    public async Task Request_copy_does_not_replace_control_or_handoff_rows()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-control-row");
+
+        // A resubmission's projection must survive the original request's late copy.
+        var resubmitted = Id("cr-resubmit");
+        Assert.IsTrue(await store.UploadPendingMessage(resubmitted, "s1", endpointId,
+            GuardedEvent(endpointId, resubmitted, "s1", MessageType.ResubmissionRequest, "rs-1")));
+        Assert.IsFalse(await store.UploadPendingMessage(resubmitted, "s1", endpointId,
+            GuardedEvent(endpointId, resubmitted, "s1", MessageType.EventRequest, "req-late")));
+        Assert.AreEqual(MessageType.ResubmissionRequest,
+            (await store.GetPendingEvent(endpointId, resubmitted, "s1")).MessageType);
+
+        // A handoff park must survive it too, or GetPendingHandoffByExternalJobId loses the row.
+        var parked = Id("cr-park");
+        var externalJobId = Id("cr-job");
+        var park = GuardedEvent(endpointId, parked, "s2", MessageType.PendingHandoffResponse, "ho-1");
+        park.PendingSubStatus = "Handoff";
+        park.ExternalJobId = externalJobId;
+        Assert.IsTrue(await store.UploadPendingMessage(parked, "s2", endpointId, park));
+        Assert.IsFalse(await store.UploadPendingMessage(parked, "s2", endpointId,
+            GuardedEvent(endpointId, parked, "s2", MessageType.EventRequest, "req-late")));
+        Assert.IsNotNull(await store.GetPendingHandoffByExternalJobId(endpointId, externalJobId));
+
+        // So must a settlement's plain Pending projection.
+        var settled = Id("cr-settled");
+        Assert.IsTrue(await store.UploadPendingMessage(settled, "s3", endpointId,
+            GuardedEvent(endpointId, settled, "s3", MessageType.HandoffCompletedRequest, "hc-1")));
+        Assert.IsFalse(await store.UploadPendingMessage(settled, "s3", endpointId,
+            GuardedEvent(endpointId, settled, "s3", MessageType.EventRequest, "req-late")));
+        Assert.AreEqual(MessageType.HandoffCompletedRequest,
+            (await store.GetPendingEvent(endpointId, settled, "s3")).MessageType);
+    }
+
+    [TestMethod]
+    public async Task Handoff_park_is_refused_over_completed_and_skipped_only()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-park");
+
+        foreach (var settled in new[] { ResolutionStatus.Completed, ResolutionStatus.Skipped })
+        {
+            var eventId = Id($"hp-closed-{settled}");
+            Assert.IsTrue(await Upload(store, settled, eventId, "s1", endpointId,
+                GuardedEvent(endpointId, eventId, "s1", MessageType.ResolutionResponse, "rsp-1")));
+
+            var park = GuardedEvent(endpointId, eventId, "s1", MessageType.PendingHandoffResponse, "ho-late");
+            park.PendingSubStatus = "Handoff";
+
+            Assert.IsFalse(await store.UploadPendingMessage(eventId, "s1", endpointId, park),
+                $"a late handoff park must not reopen a {settled} row");
+            Assert.AreEqual(settled, (await store.GetEvent(endpointId, eventId)).ResolutionStatus);
+        }
+
+        // Failed, DeadLettered and Unsupported stay open: a policy retry parks a handoff straight
+        // from a Failed row, and a resubmission's park can overtake its own throttled Pending write.
+        foreach (var open in new[] { ResolutionStatus.Failed, ResolutionStatus.DeadLettered, ResolutionStatus.Unsupported })
+        {
+            var eventId = Id($"hp-open-{open}");
+            Assert.IsTrue(await Upload(store, open, eventId, "s1", endpointId,
+                GuardedEvent(endpointId, eventId, "s1", MessageType.ErrorResponse, "err-1")));
+
+            var park = GuardedEvent(endpointId, eventId, "s1", MessageType.PendingHandoffResponse, "ho-1");
+            park.PendingSubStatus = "Handoff";
+
+            Assert.IsTrue(await store.UploadPendingMessage(eventId, "s1", endpointId, park),
+                $"a handoff park must stay allowed over a {open} row");
+            Assert.AreEqual("Handoff", (await store.GetPendingEvent(endpointId, eventId, "s1")).PendingSubStatus);
+        }
+
+        // As do Deferred and a control-request projection.
+        var deferredId = Id("hp-open-deferred");
+        Assert.IsTrue(await store.UploadDeferredMessage(deferredId, "s1", endpointId,
+            GuardedEvent(endpointId, deferredId, "s1", MessageType.DeferralResponse, "def-1")));
+        var deferredPark = GuardedEvent(endpointId, deferredId, "s1", MessageType.PendingHandoffResponse, "ho-2");
+        deferredPark.PendingSubStatus = "Handoff";
+        Assert.IsTrue(await store.UploadPendingMessage(deferredId, "s1", endpointId, deferredPark));
+        Assert.AreEqual("Handoff", (await store.GetPendingEvent(endpointId, deferredId, "s1")).PendingSubStatus);
+
+        var resubmittedId = Id("hp-open-resubmission");
+        Assert.IsTrue(await store.UploadPendingMessage(resubmittedId, "s1", endpointId,
+            GuardedEvent(endpointId, resubmittedId, "s1", MessageType.ResubmissionRequest, "rs-1")));
+        var resubmittedPark = GuardedEvent(endpointId, resubmittedId, "s1", MessageType.PendingHandoffResponse, "ho-3");
+        resubmittedPark.PendingSubStatus = "Handoff";
+        Assert.IsTrue(await store.UploadPendingMessage(resubmittedId, "s1", endpointId, resubmittedPark));
+        Assert.AreEqual("Handoff", (await store.GetPendingEvent(endpointId, resubmittedId, "s1")).PendingSubStatus);
+    }
+
+    [TestMethod]
+    public async Task Handoff_settlement_clears_substatus()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-settle");
+        var eventId = Id("hs-1");
+        var externalJobId = Id("hs-job");
+
+        var park = GuardedEvent(endpointId, eventId, "s1", MessageType.PendingHandoffResponse, "ho-1");
+        park.PendingSubStatus = "Handoff";
+        park.ExternalJobId = externalJobId;
+        Assert.IsTrue(await store.UploadPendingMessage(eventId, "s1", endpointId, park));
+
+        // The settlement request projects a plain Pending row (ADR-012); the handoff lookup must
+        // stop finding it, which is what the agent zone's receive loop and settle guard rely on.
+        Assert.IsTrue(await store.UploadPendingMessage(eventId, "s1", endpointId,
+            GuardedEvent(endpointId, eventId, "s1", MessageType.HandoffCompletedRequest, Guid.NewGuid().ToString())));
+
+        Assert.IsNull(await store.GetPendingHandoffByExternalJobId(endpointId, externalJobId));
+    }
+
+    [TestMethod]
+    public async Task Control_request_reopens_settled_rows()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-reopen");
+        var cases = new (ResolutionStatus Settled, MessageType Control)[]
+        {
+            (ResolutionStatus.Failed, MessageType.ResubmissionRequest),
+            (ResolutionStatus.DeadLettered, MessageType.SkipRequest),
+            (ResolutionStatus.Completed, MessageType.ResubmissionRequest),
+            (ResolutionStatus.Unsupported, MessageType.ResubmissionRequest),
+        };
+
+        foreach (var (settled, control) in cases)
+        {
+            var eventId = Id($"co-{settled}-{control}");
+            Assert.IsTrue(await Upload(store, settled, eventId, "s1", endpointId,
+                GuardedEvent(endpointId, eventId, "s1", MessageType.ErrorResponse, "err-1", parentMessageId: "req-1")));
+
+            Assert.IsTrue(
+                await store.UploadPendingMessage(eventId, "s1", endpointId,
+                    GuardedEvent(endpointId, eventId, "s1", control, Guid.NewGuid().ToString(), parentMessageId: "err-1")),
+                $"{control} must reopen a {settled} row");
+            Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(endpointId, eventId, "s1")).ResolutionStatus);
+        }
+
+        var counts = await store.DownloadEndpointStateCount(endpointId);
+        Assert.AreEqual(cases.Length, counts.PendingCount);
+    }
+
+    [TestMethod]
+    public async Task Write_answered_by_row_is_refused()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-ancestor");
+        var eventId = Id("an-1");
+
+        Assert.IsTrue(await store.UploadPendingMessage(eventId, "s1", endpointId,
+            GuardedEvent(endpointId, eventId, "s1", MessageType.ResubmissionRequest, "rs-1")));
+        Assert.IsTrue(await store.UploadCompletedMessage(eventId, "s1", endpointId,
+            GuardedEvent(endpointId, eventId, "s1", MessageType.ResolutionResponse, "rsp-1", parentMessageId: "rs-1")));
+
+        // The row already holds rs-1's outcome, so a rescheduled copy of rs-1 is stale even though
+        // a control request may otherwise reopen a settled row.
+        Assert.IsFalse(await store.UploadPendingMessage(eventId, "s1", endpointId,
+            GuardedEvent(endpointId, eventId, "s1", MessageType.ResubmissionRequest, "rs-1")));
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(endpointId, eventId)).ResolutionStatus);
+
+        // A genuinely new resubmission still reopens it.
+        Assert.IsTrue(await store.UploadPendingMessage(eventId, "s1", endpointId,
+            GuardedEvent(endpointId, eventId, "s1", MessageType.ResubmissionRequest, "rs-2")));
+        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(endpointId, eventId, "s1")).ResolutionStatus);
+    }
+
+    [TestMethod]
+    public async Task Pending_write_after_ArchiveFailedEvent_revives_row()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-archive-revive");
+        var eventId = Id("ar-1");
+
+        Assert.IsTrue(await store.UploadFailedMessage(eventId, "s1", endpointId,
+            GuardedEvent(endpointId, eventId, "s1", MessageType.ErrorResponse, "err-1")));
+        await store.ArchiveFailedEvent(eventId, "s1", endpointId);
+
+        // No companion case for "archive, then a stale request copy": the providers legitimately
+        // differ there. The in-memory store hard-removes on archive (so the copy is applied against
+        // an absent row) while Cosmos and SQL soft-delete (so the Failed row is still there to
+        // refuse it). See StaleWriteGuard and Spec 030 section 5.5.
+        Assert.IsTrue(await store.UploadPendingMessage(eventId, "s1", endpointId,
+            GuardedEvent(endpointId, eventId, "s1", MessageType.ResubmissionRequest, "rs-1")));
+        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(endpointId, eventId, "s1")).ResolutionStatus);
+    }
+
+    [TestMethod]
+    public async Task First_write_of_every_status_reports_applied()
+    {
+        // Guards the SQL @@ROWCOUNT path: an insert must report true just like a replace.
+        var store = CreateStore();
+        var endpointId = Id("ep-first-write");
+        var statuses = new[]
+        {
+            ResolutionStatus.Pending, ResolutionStatus.Deferred, ResolutionStatus.Failed,
+            ResolutionStatus.DeadLettered, ResolutionStatus.Unsupported, ResolutionStatus.Skipped,
+            ResolutionStatus.Completed,
+        };
+
+        foreach (var status in statuses)
+        {
+            var eventId = Id($"fw-{status}");
+            Assert.IsTrue(
+                await Upload(store, status, eventId, "s1", endpointId,
+                    GuardedEvent(endpointId, eventId, "s1", MessageType.EventRequest, $"m-{status}")),
+                $"the first {status} write must report applied");
+        }
+    }
+
     [TestMethod]
     public async Task All_lookup_resolution_statuses_round_trip()
     {

@@ -169,7 +169,11 @@ What is added, in `NimBusMeters` and `MessagingAttributes`:
   `RetryAction` and `DelaySource` in `NimBus.Core.Diagnostics`, following `StoreProvider`. Both
   reasons share one settlement path (`HandleStoreFailure`) and one delivery budget
   (`ThrottleRetryCount + DeliveryCount`), and every increment happens after its settlement
-  call succeeded, so a failed dead-letter or reschedule is never counted as done.
+  call succeeded, so a failed dead-letter or reschedule is never counted as done. The converse
+  residual: if the bus itself fails after the scheduled copy was sent (for example a lost lock
+  on the trailing `Complete`), the exception escapes `Handle`, the invocation fails, and that
+  attempt records nothing; the broker redelivers and the next attempt is counted. The counter is
+  therefore "settled outcomes", not "invocations".
   Provider-neutral on purpose: `transient` covers Cosmos 408/410/449/5xx and every SQL Server
   transient error, so it must not be labelled as Cosmos throttling. Alert on
   `reason == throttled`: sum over 1 min > 0 for two consecutive evaluations (Azure Monitor metric
@@ -371,7 +375,14 @@ budget to check.
 - Whether a per-app `functionAppScaleLimit` below the Premium plan's minimum or pre-warmed
   instance count is rejected or ignored (read both before choosing a cap; §4 step 1).
 - Target-based scaling for the Service Bus trigger uses the per-instance session concurrency as
-  its target, which is why sessions and instances are coupled (§3.2).
+  its target, which is why sessions and instances are coupled (§3.2). Whether the scale
+  controller reads that target from the `AzureFunctionsJobHost__…maxConcurrentSessions` app
+  setting or from the packaged `host.json` is not stated in the Functions documentation. It
+  only matters when `--resolver-max-sessions` differs from the `host.json` default of 16: if the
+  scaler still divides the backlog by 16, a higher override under-scales per instance and a
+  lower one over-scales. Verify in dev by comparing the instance count the scaler requests under
+  load with and without the override; until then, changing the `host.json` default is the
+  safer way to move the session count far from 16.
 - Azure Monitor metric alerts on custom metrics evaluate at 1 min granularity at best (§3.3).
 
 ## 8. Alternatives rejected

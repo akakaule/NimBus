@@ -10,6 +10,13 @@ param storageConnectionString string
 param appInsightsInstrumentationKey string
 param functionAppVersion string = '4'
 
+// Per-app instance ceiling (siteConfig.functionAppScaleLimit) on the Elastic
+// Premium plan. 0 is the platform's documented "unrestricted" value and is written
+// explicitly: a null property would be dropped from the request and a cap applied
+// by an earlier deployment would silently stay in place.
+@minValue(0)
+param functionAppScaleLimit int = 0
+
 var secretAppSettings = [for setting in items(secretSettings): {
   name: setting.key
   value: setting.value
@@ -48,6 +55,7 @@ resource azureFunction 'Microsoft.Web/sites@2022-03-01' = {
       appSettings:appsettings
       netFrameworkVersion: 'v10.0'
       minTlsVersion: '1.2'
+      functionAppScaleLimit: functionAppScaleLimit
     }
     httpsOnly: true
   }

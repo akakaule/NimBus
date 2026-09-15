@@ -16,4 +16,10 @@
     <ProjectReference Include="..\..\src\NimBus.Resolver\NimBus.Resolver.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Explicit fixture for ResolverHostConfigurationTests, linked under its own name so the
+         pin does not depend on the Functions SDK's transitive host.json copy. -->
+    <None Include="..\..\src\NimBus.Resolver\host.json" Link="Resolver.host.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

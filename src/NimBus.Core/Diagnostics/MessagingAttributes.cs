@@ -39,6 +39,14 @@ public static class MessagingAttributes
     public const string NimBusDeferredBatchSize = "nimbus.deferred.batch_size";
     public const string NimBusOutboxBatchSize = "nimbus.outbox.batch_size";
 
+    // Resolver store-retry attribution (see NimBusMeters.ResolverStoreRetry).
+    /// <summary>Why the Resolver could not persist: <c>throttled</c> (Cosmos 429) or <c>transient</c> (any other transient store failure).</summary>
+    public const string NimBusStoreReason = "nimbus.store.reason";
+    /// <summary>What the Resolver did with the message: <c>rescheduled</c>, <c>dead_lettered</c> or <c>abandoned</c>.</summary>
+    public const string NimBusRetryAction = "nimbus.retry.action";
+    /// <summary>Which side chose the applied retry delay: <c>provider</c> (the store's RetryAfter hint) or <c>backoff</c> (the Resolver's exponential schedule).</summary>
+    public const string NimBusDelaySource = "nimbus.delay.source";
+
     // OTel error attribution
     public const string ErrorType = "error.type";
 }

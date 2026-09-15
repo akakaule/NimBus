@@ -81,6 +81,25 @@ public static class NimBusMeters
     public static readonly Histogram<double> ResolverWriteDuration = Resolver.CreateHistogram<double>(
         "nimbus.resolver.write.duration", "ms", "Time the resolver took to persist a single outcome or audit row.");
 
+    /// <summary>
+    /// One event per message the Resolver could not persist on this attempt, tagged with
+    /// <see cref="MessagingAttributes.NimBusEndpoint"/>, <see cref="MessagingAttributes.NimBusStoreReason"/>
+    /// (<see cref="StoreRetryReason"/>) and <see cref="MessagingAttributes.NimBusRetryAction"/>
+    /// (<see cref="RetryAction"/>). Recorded after the settlement call succeeded. A sustained
+    /// <see cref="StoreRetryReason.Throttled"/> rate is the direct signal that the store is pushing back.
+    /// </summary>
+    public static readonly Counter<long> ResolverStoreRetry = Resolver.CreateCounter<long>(
+        "nimbus.resolver.store_retry", "{events}", "Resolver messages rescheduled, dead-lettered or abandoned because the store could not persist them.");
+
+    /// <summary>
+    /// The delay the Resolver actually applied when it rescheduled a message, tagged with
+    /// <see cref="MessagingAttributes.NimBusEndpoint"/> and <see cref="MessagingAttributes.NimBusDelaySource"/>
+    /// (<see cref="DelaySource"/>). Recorded only after the scheduled re-send succeeded, so it is how
+    /// far the copy was pushed behind its session, not the store's raw hint.
+    /// </summary>
+    public static readonly Histogram<double> ResolverRetryDelay = Resolver.CreateHistogram<double>(
+        "nimbus.resolver.retry.delay", "s", "Applied delay before a rescheduled Resolver message is redelivered.");
+
     public static readonly Meter Store = new(NimBusInstrumentation.StoreMeterName);
 
     public static readonly Histogram<double> StoreOperationDuration = Store.CreateHistogram<double>(

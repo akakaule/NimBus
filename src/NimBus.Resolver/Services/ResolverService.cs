@@ -28,6 +28,16 @@ namespace NimBus.Broker.Services
         private const string CosmosThrottleDeadLetterReason = "CosmosDbThrottled";
         private const int BaseDelaySeconds = 5;
         private const int MaxDelaySeconds = 300; // 5 minutes
+        private const string TransientDeadLetterReason = "Max throttle retries exceeded";
+
+        // Backoff for a message the store could not persist: 5 s doubling to 5 min, the
+        // same schedule NimBus.Core.RetryPolicy offers to handlers. Attempt 0 = 5 s.
+        private static readonly RetryPolicy StoreBackoff = new()
+        {
+            Strategy = BackoffStrategy.Exponential,
+            BaseDelay = TimeSpan.FromSeconds(BaseDelaySeconds),
+            MaxDelay = TimeSpan.FromSeconds(MaxDelaySeconds),
+        };
 
         private static readonly Dictionary<MessageType, ResolutionStatus> MessageTypeToStatusMap = new()
         {
@@ -37,9 +47,11 @@ namespace NimBus.Broker.Services
             [MessageType.SkipRequest] = ResolutionStatus.Pending,
             [MessageType.ContinuationRequest] = ResolutionStatus.Pending,
             // PendingHandoff control flow. The response from the subscriber records
-            // the audit row as Pending+Handoff; the two Manager-issued requests are
-            // recorded as Pending audit rows that flip when their resulting
-            // ResolutionResponse / ErrorResponse arrive (via the existing path).
+            // the audit row as Pending+Handoff; the two settlement requests are
+            // projected as plain Pending rows (sub-status cleared) that flip when
+            // their resulting ResolutionResponse / ErrorResponse arrive. The agent
+            // zone's non-claiming receive and the WebApp's settle guard rely on that
+            // projection to stop handing out a just-settled event (ADR-012, 2026-09-15 note).
             [MessageType.PendingHandoffResponse] = ResolutionStatus.Pending,
             [MessageType.HandoffCompletedRequest] = ResolutionStatus.Pending,
             [MessageType.HandoffFailedRequest] = ResolutionStatus.Pending,
@@ -113,12 +125,7 @@ namespace NimBus.Broker.Services
                 _logger?.LogInformation("Resolver: Updated Endpoint EndpointId:{EndpointId}, Status:{Status}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
                     messageEntity.EndpointId, status, messageEntity.EventId, messageContext.MessageId, messageEntity.SessionId);
 
-                // Fire state-change notification (provider-neutral). Webhook is no longer
-                // the only way for the WebApp to learn about updates; this works for any
-                // storage provider including SQL Server which has no Change Feed.
-                try { await _notifier.NotifyEndpointStateChangedAsync(messageEntity.EndpointId, cancellationToken); }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-                catch (Exception notifyEx) { _logger?.LogWarning(notifyEx, "Resolver: state-change notification failed (non-fatal)"); }
+                await NotifyEndpointStateChanged(messageEntity.EndpointId, cancellationToken);
 
                 await messageContext.Complete(cancellationToken);
             }
@@ -148,19 +155,39 @@ namespace NimBus.Broker.Services
             }
         }
 
-        private async Task HandleCosmosThrottle(
+        private Task HandleCosmosThrottle(
             IMessageContext messageContext,
             RequestLimitException exception,
+            CancellationToken cancellationToken) =>
+            HandleStoreFailure(messageContext, exception, exception.RetryAfter, StoreRetryReason.Throttled, CosmosThrottleDeadLetterReason, cancellationToken);
+
+        private Task HandleThrottling(IMessageContext messageContext, TimeSpan? retryAfter, CancellationToken cancellationToken) =>
+            HandleStoreFailure(messageContext, exception: null, retryAfter, StoreRetryReason.Transient, TransientDeadLetterReason, cancellationToken);
+
+        // One settlement path for every message the store could not persist, whether Cosmos
+        // rate-limited it (throttled) or the provider failed transiently. The logical attempt
+        // counts scheduled re-sends plus broker deliveries, so both reasons share one delivery
+        // budget; the delay is the larger of the exponential backoff and the store's RetryAfter
+        // hint. Each outcome is counted once, after its settlement call succeeded, so a failed
+        // settlement is never reported as done.
+        private async Task HandleStoreFailure(
+            IMessageContext messageContext,
+            Exception? exception,
+            TimeSpan? retryAfter,
+            string reason,
+            string deadLetterReason,
             CancellationToken cancellationToken)
         {
             var deliveryCount = messageContext is IMessageDeliveryContext deliveryContext
                 ? Math.Max(1, deliveryContext.DeliveryCount)
                 : 1;
             var logicalAttempt = messageContext.ThrottleRetryCount + deliveryCount;
+            var (endpointId, _) = DetermineEndpoint(messageContext);
 
             _logger?.LogWarning(
                 exception,
-                "Resolver: Cosmos DB throttled. EventId:{EventId}, SessionId:{SessionId}, LogicalAttempt:{LogicalAttempt}/{MaxAttempts}, DeliveryCount:{DeliveryCount}",
+                "Resolver: Store write failed ({Reason}). EventId:{EventId}, SessionId:{SessionId}, LogicalAttempt:{LogicalAttempt}/{MaxAttempts}, DeliveryCount:{DeliveryCount}",
+                reason,
                 messageContext.EventId,
                 messageContext.SessionId,
                 logicalAttempt,
@@ -170,76 +197,27 @@ namespace NimBus.Broker.Services
             if (logicalAttempt >= Constants.ServiceBusMaxDeliveryCount)
             {
                 _logger?.LogError(
-                    "Resolver: Cosmos DB throttling exhausted the delivery budget ({MaxAttempts}). Dead-lettering. EventId:{EventId}, SessionId:{SessionId}",
+                    "Resolver: Store failures ({Reason}) exhausted the delivery budget ({MaxAttempts}). Dead-lettering. EventId:{EventId}, SessionId:{SessionId}",
+                    reason,
                     Constants.ServiceBusMaxDeliveryCount,
                     messageContext.EventId,
                     messageContext.SessionId);
-                await messageContext.DeadLetter(CosmosThrottleDeadLetterReason, null, cancellationToken);
+                await messageContext.DeadLetter(deadLetterReason, null, cancellationToken);
+                RecordStoreRetry(endpointId, reason, RetryAction.DeadLettered);
                 return;
             }
 
-            await ScheduleStorageRedelivery(messageContext, exception.RetryAfter, logicalAttempt, cancellationToken);
-        }
-
-        private async Task HandleThrottling(IMessageContext messageContext, TimeSpan? retryAfter, CancellationToken cancellationToken)
-        {
-            var retryCount = messageContext.ThrottleRetryCount;
-
-            if (retryCount >= Constants.ServiceBusMaxDeliveryCount)
-            {
-                _logger?.LogError("Resolver: Max throttle retries ({MaxRetries}) exceeded. DeadLettering. EventId:{EventId}, SessionId:{SessionId}",
-                    Constants.ServiceBusMaxDeliveryCount, messageContext.EventId, messageContext.SessionId);
-                await messageContext.DeadLetter("Max throttle retries exceeded", null, cancellationToken);
-                return;
-            }
-
-            // Calculate exponential backoff: 5s, 10s, 20s, 40s, ... up to 300s
-            var calculatedDelay = TimeSpan.FromSeconds(
-                Math.Min(BaseDelaySeconds * Math.Pow(2, retryCount), MaxDelaySeconds));
-
-            // Honor a provider hint only when it is longer than the calculated
-            // backoff. Providers such as SQL Server may not supply one.
-            var providerRetryAfter = retryAfter.GetValueOrDefault();
-            var useProviderRetryAfter = retryAfter.HasValue && providerRetryAfter > calculatedDelay;
-            var delay = useProviderRetryAfter ? providerRetryAfter : calculatedDelay;
-
-            _logger?.LogTrace(
-                "Resolver: Transient storage delay decision - using {DelaySource}. ProviderRetryAfter:{ProviderRetryAfter}s, CalculatedBackoff:{CalculatedBackoff}s, EventId:{EventId}",
-                useProviderRetryAfter ? "ProviderRetryAfter" : "CalculatedBackoff",
-                retryAfter?.TotalSeconds,
-                calculatedDelay.TotalSeconds,
-                messageContext.EventId);
+            // Honor a provider hint only when it is longer than the calculated backoff.
+            // Providers such as SQL Server may not supply one.
+            var backoff = StoreBackoff.GetDelay(logicalAttempt - 1);
+            var useProviderRetryAfter = retryAfter.HasValue && retryAfter.Value > backoff;
+            var delay = useProviderRetryAfter ? retryAfter.Value : backoff;
 
             _logger?.LogInformation(
-                "Resolver: Storage provider temporarily unavailable. Scheduling redelivery in {DelaySeconds}s. EventId:{EventId}, SessionId:{SessionId}, RetryCount:{RetryCount}/{MaxRetries}",
-                delay.TotalSeconds, messageContext.EventId, messageContext.SessionId, retryCount + 1, Constants.ServiceBusMaxDeliveryCount);
-
-            try
-            {
-                await messageContext.ScheduleRedelivery(delay, retryCount + 1, cancellationToken);
-            }
-            catch (TransientException ex)
-            {
-                _logger?.LogInformation(ex, "Resolver: Failed to schedule redelivery. Abandoning for retry. EventId:{EventId}, SessionId:{SessionId}",
-                    messageContext.EventId, messageContext.SessionId);
-                await messageContext.Abandon(ex);
-            }
-        }
-
-        private async Task ScheduleStorageRedelivery(
-            IMessageContext messageContext,
-            TimeSpan? retryAfter,
-            int logicalAttempt,
-            CancellationToken cancellationToken)
-        {
-            var calculatedDelay = TimeSpan.FromSeconds(
-                Math.Min(BaseDelaySeconds * Math.Pow(2, logicalAttempt - 1), MaxDelaySeconds));
-            var useProviderRetryAfter = retryAfter.HasValue && retryAfter.Value > calculatedDelay;
-            var delay = useProviderRetryAfter ? retryAfter.Value : calculatedDelay;
-
-            _logger?.LogInformation(
-                "Resolver: Cosmos DB throttled. Scheduling redelivery in {DelaySeconds}s. EventId:{EventId}, SessionId:{SessionId}, LogicalAttempt:{LogicalAttempt}/{MaxAttempts}",
+                "Resolver: Store write failed ({Reason}). Scheduling redelivery in {DelaySeconds}s ({DelaySource}). EventId:{EventId}, SessionId:{SessionId}, LogicalAttempt:{LogicalAttempt}/{MaxAttempts}",
+                reason,
                 delay.TotalSeconds,
+                useProviderRetryAfter ? DelaySource.Provider : DelaySource.Backoff,
                 messageContext.EventId,
                 messageContext.SessionId,
                 logicalAttempt,
@@ -251,10 +229,49 @@ namespace NimBus.Broker.Services
             }
             catch (TransientException ex)
             {
-                _logger?.LogInformation(ex, "Resolver: Failed to schedule Cosmos DB throttle redelivery. Abandoning for retry. EventId:{EventId}, SessionId:{SessionId}",
+                _logger?.LogInformation(ex, "Resolver: Failed to schedule redelivery. Abandoning for retry. EventId:{EventId}, SessionId:{SessionId}",
                     messageContext.EventId, messageContext.SessionId);
                 await messageContext.Abandon(ex);
+                RecordStoreRetry(endpointId, reason, RetryAction.Abandoned);
+                return;
             }
+
+            RecordStoreRetry(endpointId, reason, RetryAction.Rescheduled);
+            RecordRetryDelay(endpointId, delay, useProviderRetryAfter);
+        }
+
+        // Fire the state-change notification (provider-neutral). Webhook is no longer
+        // the only way for the WebApp to learn about updates; this works for any
+        // storage provider including SQL Server which has no Change Feed.
+        private async Task NotifyEndpointStateChanged(string endpointId, CancellationToken cancellationToken)
+        {
+            try { await _notifier.NotifyEndpointStateChangedAsync(endpointId, cancellationToken); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception notifyEx) { _logger?.LogWarning(notifyEx, "Resolver: state-change notification failed (non-fatal)"); }
+        }
+
+        private static void RecordStoreRetry(string? endpoint, string reason, string action) =>
+            NimBusMeters.ResolverStoreRetry.Add(1, BuildRetryTags(endpoint,
+                new KeyValuePair<string, object?>(MessagingAttributes.NimBusStoreReason, reason),
+                new KeyValuePair<string, object?>(MessagingAttributes.NimBusRetryAction, action)));
+
+        // The delay that was actually applied (max of the Resolver's backoff and the store's
+        // RetryAfter hint), i.e. how far the copy was pushed behind its session.
+        private static void RecordRetryDelay(string? endpoint, TimeSpan delay, bool fromProvider) =>
+            NimBusMeters.ResolverRetryDelay.Record(delay.TotalSeconds, BuildRetryTags(endpoint,
+                new KeyValuePair<string, object?>(MessagingAttributes.NimBusDelaySource, fromProvider ? DelaySource.Provider : DelaySource.Backoff)));
+
+        // Same optional-endpoint shape as BuildOutcomeTags so operators can split the
+        // retry series per endpoint like every other Resolver instrument.
+        private static KeyValuePair<string, object?>[] BuildRetryTags(string? endpoint, params KeyValuePair<string, object?>[] tags)
+        {
+            if (string.IsNullOrEmpty(endpoint))
+                return tags;
+
+            var withEndpoint = new KeyValuePair<string, object?>[tags.Length + 1];
+            tags.CopyTo(withEndpoint, 0);
+            withEndpoint[tags.Length] = new KeyValuePair<string, object?>(MessagingAttributes.NimBusEndpoint, endpoint);
+            return withEndpoint;
         }
 
         /// <summary>

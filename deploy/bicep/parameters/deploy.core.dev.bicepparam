@@ -30,3 +30,8 @@ param locationParam = 'westeurope'
 //   storageProvider   = 'cosmos'
 //   resolverPlan      = 'FlexConsumption'  (FC1, scale-to-zero Linux)
 //   managementPlanSku = ''                 -> 'B1' for dev/development
+//
+// Resolver capacity (see docs/throughput-tuning.md):
+//   resolverMaxConcurrentSessions    = 16   (1-200 Service Bus sessions per instance; template-owned host override)
+//   resolverMaxInstances             = 0    (ElasticPremium only; 0 = no per-app cap, max 10)
+//   resolverFlexMaximumInstanceCount = 100  (FlexConsumption only; 1-1000)

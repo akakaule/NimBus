@@ -101,6 +101,14 @@ Why coords and not `externalJobId`: a "look the row up by external job id" desig
 
 DI: `AddNimBusSubscriber` auto-registers `IHandoffClient` for the subscriber's endpoint. Settlement-only processes call `services.AddNimBusHandoffClient(endpoint)` explicitly. Neither path requires a tracking-store registration.
 
+## Note — 2026-09-15 — history-only settlement projection evaluated and not adopted
+
+The DIS platform records `HandoffCompletedRequest` / `HandoffFailedRequest` in message history only (`ShouldProjectToUnresolvedState`) and leaves the Pending+Handoff row untouched until the subscriber's terminal response. That rule was approved for NimBus, implemented, and reversed in the same day's code review, so the behaviour described above stands: the Resolver projects a settlement request as a plain Pending row with `PendingSubStatus` cleared, and the terminal `ResolutionResponse` / `ErrorResponse` flips it.
+
+Why it stays: NimBus has an agent zone that DIS does not. `GetAgentReceiveAsync` is a non-claiming, oldest-first read of Pending+Handoff rows, and `HandoffSettlementService` gates settlement on that sub-status. Without the projection the zone would re-deliver the just-settled event until the subscriber's round trip completed, would admit a second settlement in that window, and would block the whole zone on that one row for the duration (the whole outage, if the subscriber were down). The projection is what moves the row out of the receive query within milliseconds of the settlement request reaching the Resolver. It is pinned by `ResolverServiceTests.Handle_HandoffSettlementRequest_ProjectsPlainPendingRow`.
+
+What the DIS rule would have bought, and why it was not enough: parity with DIS, the handoff badge staying visible during settlement, and one fewer case in the stale-write guard of Spec 030. The guard keeps a control-request clause for Resubmit and Skip regardless, so a row last written by a settlement request is already protected against a late copy of the original request. A badge-preserving variant (project the settlement but keep `PendingSubStatus = "Handoff"`, and exclude settled rows from the receive query by `MessageType`) remains possible at the cost of a query change in all three storage providers.
+
 ## See Also
 
 - ADR-002: Centralized Resolver — establishes the audit-trail contract that PendingHandoff plugs into.

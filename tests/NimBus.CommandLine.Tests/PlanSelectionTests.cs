@@ -122,4 +122,103 @@ public class PlanSelectionTests
     {
         Assert.Equal(expected, PlanSelection.SupportsAlwaysOn(skuName));
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ParseResolverMaxSessionsOption_ReturnsNullForAbsentValue(string? value)
+    {
+        Assert.Null(PlanSelection.ParseResolverMaxSessionsOption(value));
+    }
+
+    [Fact]
+    public void ParseResolverMaxSessionsOption_ParsesValueInRange()
+    {
+        Assert.Equal(16, PlanSelection.ParseResolverMaxSessionsOption("16"));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("201")]
+    [InlineData("abc")]
+    public void ParseResolverMaxSessionsOption_ThrowsOutsideRange(string value)
+    {
+        var exception = Assert.Throws<CommandException>(() => PlanSelection.ParseResolverMaxSessionsOption(value));
+        Assert.Contains("--resolver-max-sessions", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("1 to 200", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ParseResolverMaxInstancesOption_ReturnsNullForAbsentValue(string? value)
+    {
+        Assert.Null(PlanSelection.ParseResolverMaxInstancesOption(value));
+    }
+
+    [Theory]
+    [InlineData("0", 0)]
+    [InlineData("3", 3)]
+    public void ParseResolverMaxInstancesOption_ParsesNonNegativeIntegers(string value, int expected)
+    {
+        Assert.Equal(expected, PlanSelection.ParseResolverMaxInstancesOption(value));
+    }
+
+    [Theory]
+    [InlineData("-1")]
+    [InlineData("x")]
+    public void ParseResolverMaxInstancesOption_ThrowsOnInvalidValue(string value)
+    {
+        var exception = Assert.Throws<CommandException>(() => PlanSelection.ParseResolverMaxInstancesOption(value));
+        Assert.Contains("--resolver-max-instances", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ResolveResolverMaxInstances_ReturnsNullWhenNothingRequested()
+    {
+        Assert.Null(PlanSelection.ResolveResolverMaxInstances(null, ResolverPlanChoice.ElasticPremium));
+        Assert.Null(PlanSelection.ResolveResolverMaxInstances(null, ResolverPlanChoice.FlexConsumption));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(10)]
+    public void ResolveResolverMaxInstances_MapsElasticPremiumToFunctionAppScaleLimit(int requested)
+    {
+        Assert.Equal<(string ParameterName, int Value)?>(
+            ("resolverMaxInstances", requested),
+            PlanSelection.ResolveResolverMaxInstances(requested, ResolverPlanChoice.ElasticPremium));
+    }
+
+    [Fact]
+    public void ResolveResolverMaxInstances_RejectsElasticPremiumAbovePlanMaximum()
+    {
+        var exception = Assert.Throws<CommandException>(
+            () => PlanSelection.ResolveResolverMaxInstances(11, ResolverPlanChoice.ElasticPremium));
+        Assert.Contains("Elastic Premium allows 0 (no cap) to 10", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(40)]
+    [InlineData(1000)]
+    public void ResolveResolverMaxInstances_MapsFlexConsumptionToMaximumInstanceCount(int requested)
+    {
+        Assert.Equal<(string ParameterName, int Value)?>(
+            ("resolverFlexMaximumInstanceCount", requested),
+            PlanSelection.ResolveResolverMaxInstances(requested, ResolverPlanChoice.FlexConsumption));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1001)]
+    public void ResolveResolverMaxInstances_RejectsFlexConsumptionOutsidePlatformRange(int requested)
+    {
+        // Flex Consumption has no "0 = no cap" value; the platform accepts 1 to 1000.
+        var exception = Assert.Throws<CommandException>(
+            () => PlanSelection.ResolveResolverMaxInstances(requested, ResolverPlanChoice.FlexConsumption));
+        Assert.Contains("Flex Consumption requires 1 to 1000", exception.Message, StringComparison.Ordinal);
+    }
 }

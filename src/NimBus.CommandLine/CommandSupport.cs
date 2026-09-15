@@ -166,7 +166,9 @@ internal sealed record InfrastructureOptions(
     ResolverPlanChoice? ResolverPlan = null,
     string? IdentityAdminEmail = null,
     string? IdentityAdminPassword = null,
-    string? ManagementPlanSku = null);
+    string? ManagementPlanSku = null,
+    int? ResolverMaxConcurrentSessions = null,
+    int? ResolverMaxInstances = null);
 
 internal enum StorageProviderChoice
 {

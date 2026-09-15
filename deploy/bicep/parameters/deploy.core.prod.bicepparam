@@ -27,3 +27,10 @@ param locationParam = 'westeurope'
 param resolverPlan = 'FlexConsumption' // or 'ElasticPremium' (EP1, Windows)
 param managementPlanSku = 'S1'
 param storageProvider = 'cosmos' // or 'sqlserver' (+ sqlMode/sqlAdmin* params)
+
+// Resolver capacity. The session count is a template-owned host override and
+// wins over host.json. The instance ceiling is plan-specific: only the
+// parameter matching resolverPlan above takes effect.
+param resolverMaxConcurrentSessions = 16 // 1-200 Service Bus sessions per instance
+param resolverFlexMaximumInstanceCount = 100 // FlexConsumption: 40-1000
+// param resolverMaxInstances = 4            // ElasticPremium: 0 = no per-app cap, max 10

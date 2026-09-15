@@ -20,6 +20,16 @@ on:
         required: false
         type: string
         default: ""
+      resolver-max-sessions:
+        description: "Resolver Service Bus sessions per instance, 1-200 (empty = template default 16)"
+        required: false
+        type: string
+        default: ""
+      resolver-max-instances:
+        description: "Resolver instance ceiling: ElasticPremium 0-10 (0 = no cap), FlexConsumption 40-1000 (empty = template default)"
+        required: false
+        type: string
+        default: ""
       management-plan-sku:
         description: "Management App Service Plan SKU (empty = existing SKU, else B1 for dev, S1 otherwise)"
         required: false
@@ -69,11 +79,15 @@ jobs:
           NB_ENVIRONMENT: ${{ inputs.environment }}
           NB_RESOURCE_GROUP: ${{ inputs.resource-group }}
           NB_RESOLVER_PLAN: ${{ inputs.resolver-plan }}
+          NB_RESOLVER_MAX_SESSIONS: ${{ inputs.resolver-max-sessions }}
+          NB_RESOLVER_MAX_INSTANCES: ${{ inputs.resolver-max-instances }}
           NB_MANAGEMENT_PLAN_SKU: ${{ inputs.management-plan-sku }}
           NB_LOCATION: ${{ inputs.location }}
         run: |
           EXTRA_ARGS=()
           if [ -n "$NB_RESOLVER_PLAN" ]; then EXTRA_ARGS+=(--resolver-plan "$NB_RESOLVER_PLAN"); fi
+          if [ -n "$NB_RESOLVER_MAX_SESSIONS" ]; then EXTRA_ARGS+=(--resolver-max-sessions "$NB_RESOLVER_MAX_SESSIONS"); fi
+          if [ -n "$NB_RESOLVER_MAX_INSTANCES" ]; then EXTRA_ARGS+=(--resolver-max-instances "$NB_RESOLVER_MAX_INSTANCES"); fi
           if [ -n "$NB_MANAGEMENT_PLAN_SKU" ]; then EXTRA_ARGS+=(--management-plan-sku "$NB_MANAGEMENT_PLAN_SKU"); fi
           if [ -n "$NB_LOCATION" ]; then EXTRA_ARGS+=(--location "$NB_LOCATION"); fi
           dotnet run --project src/NimBus.CommandLine --no-build -c Release -- \

@@ -4,13 +4,16 @@
     "id": "Microsoft.Azure.Functions.ExtensionBundle",
     "version": "[4.*, 5.0.0)"
   },
+  "concurrency": {
+    "dynamicConcurrencyEnabled": false
+  },
   "extensions": {
     "serviceBus": {
       "prefetchCount": 0,
       "autoCompleteMessages": false,
       "maxAutoLockRenewalDuration": "00:05:00",
-      "maxConcurrentSessions": 200,
-      "sessionIdleTimeout": "00:00:30",
+      "maxConcurrentSessions": 16,
+      "sessionIdleTimeout": "00:00:01",
       "clientRetryOptions": {
         "mode": "Exponential",
         "tryTimeout": "00:01:00",

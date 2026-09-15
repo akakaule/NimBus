@@ -56,6 +56,27 @@ param resolverPlan string = 'FlexConsumption'
 // "environment default": B1 for dev/development, S1 otherwise.
 param managementPlanSku string = ''
 
+// Resolver Service Bus session concurrency per instance. Applied as a
+// template-owned host override (AzureFunctionsJobHost__...), so it takes
+// precedence over host.json. The Resolver is bounded by its Cosmos RU budget,
+// not by the bus; 200 sessions per instance produced a 429 storm in production.
+@minValue(1)
+@maxValue(200)
+param resolverMaxConcurrentSessions int = 16
+
+// Elastic Premium per-app scale ceiling (siteConfig.functionAppScaleLimit).
+// 0 means no per-app cap (today's behaviour). The EP plan template allows at
+// most 10 workers (maximumElasticWorkerCount), so 10 is the useful maximum.
+@minValue(0)
+@maxValue(10)
+param resolverMaxInstances int = 0
+
+// Flex Consumption maximumInstanceCount. The platform minimum is 40, so it
+// cannot share the Elastic Premium parameter above (whose range is 0-10).
+@minValue(40)
+@maxValue(1000)
+param resolverFlexMaximumInstanceCount int = 100
+
 //##############################################
 // Define names Azure resource names
 //##############################################
@@ -204,6 +225,25 @@ var sharedResolverSettings = [
     name: 'AzureWebJobsServiceBus__fullyQualifiedNamespace'
     value: serviceBusNamespace.outputs.fullyQualifiedNamespace
   }
+  // Service Bus consumer bounds. The Resolver's app settings are template-owned
+  // and fully replaced on each deploy, so host overrides must live here; they
+  // take precedence over the values in host.json.
+  {
+    name: 'AzureFunctionsJobHost__extensions__serviceBus__maxConcurrentSessions'
+    value: string(resolverMaxConcurrentSessions)
+  }
+  {
+    name: 'AzureFunctionsJobHost__extensions__serviceBus__prefetchCount'
+    value: '0'
+  }
+  {
+    name: 'AzureFunctionsJobHost__extensions__serviceBus__sessionIdleTimeout'
+    value: '00:00:01'
+  }
+  {
+    name: 'AzureFunctionsJobHost__concurrency__dynamicConcurrencyEnabled'
+    value: 'false'
+  }
 ]
 
 // Elastic Premium needs the Windows host to know where its content share lives.
@@ -229,17 +269,22 @@ var resolverappsettings = concat(sharedResolverSettings, elasticPremiumExtraSett
 // history even though sqlAdminPassword is a secure top-level parameter.
 var sharedResolverSecretSettings = {
   GlobalTraceLogInstrKey: applicationinsights.outputs.instrumentationKey
+  // NimBus.ServiceDefaults registers the Azure Monitor exporter only when
+  // APPLICATIONINSIGHTS_CONNECTION_STRING is present, so both plan branches need
+  // it. The Elastic Premium branch previously received only
+  // APPINSIGHTS_INSTRUMENTATIONKEY (injected by templates/functionApp.bicep) and
+  // therefore exported no telemetry.
+  APPLICATIONINSIGHTS_CONNECTION_STRING: applicationinsights.outputs.connectionString
 }
 
 var elasticPremiumSecretSettings = resolverPlan == 'ElasticPremium' ? {
   WEBSITE_CONTENTAZUREFILECONNECTIONSTRING: funcstorageaccount.outputs.connectionString
 } : {}
 
-// The Elastic Premium template injects APPINSIGHTS_INSTRUMENTATIONKEY itself; the
-// Flex template does not, so wire platform telemetry here via the connection string.
-var flexSecretSettings = resolverPlan == 'FlexConsumption' ? {
-  APPLICATIONINSIGHTS_CONNECTION_STRING: applicationinsights.outputs.connectionString
-} : {}
+// Flex-only secrets. Empty today: the Application Insights connection string
+// used to live here but moved to sharedResolverSecretSettings because the
+// Elastic Premium host needs it just as much (see the comment above).
+var flexSecretSettings = {}
 
 var sqlResolverSecretSettings = storageProvider == 'sqlserver' && sqlMode == 'provision' ? {
   SqlConnection: 'Server=tcp:${azureSql.outputs.serverFqdn},1433;Initial Catalog=${sqlDbName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=true;'
@@ -275,6 +320,7 @@ module resolverFunctionElastic 'templates/functionApp.bicep' = if (resolverPlan 
     location: effectiveResolverFunctionAppLocation
     settings: resolverappsettings
     secretSettings: resolverSecretSettings
+    functionAppScaleLimit: resolverMaxInstances
   }
 }
 
@@ -300,6 +346,7 @@ module resolverFunctionFlex 'templates/flexConsumptionFunctionApp.bicep' = if (r
     location: effectiveResolverFunctionAppLocation
     settings: resolverappsettings
     secretSettings: resolverSecretSettings
+    maximumInstanceCount: resolverFlexMaximumInstanceCount
   }
 }
 

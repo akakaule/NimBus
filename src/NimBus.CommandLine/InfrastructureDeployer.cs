@@ -271,6 +271,18 @@ internal sealed class InfrastructureDeployer
             arguments.Add($"locationParam={options.Location}");
         }
 
+        // Resolver capacity: nothing is passed when the options are unset, so the
+        // Bicep defaults (16 sessions, no Elastic Premium cap, Flex maximum 100) apply.
+        if (options.ResolverMaxConcurrentSessions is { } resolverMaxConcurrentSessions)
+        {
+            arguments.Add(FormattableString.Invariant($"resolverMaxConcurrentSessions={resolverMaxConcurrentSessions}"));
+        }
+
+        if (PlanSelection.ResolveResolverMaxInstances(options.ResolverMaxInstances, resolverPlan) is { } resolverMaxInstances)
+        {
+            arguments.Add(FormattableString.Invariant($"{resolverMaxInstances.ParameterName}={resolverMaxInstances.Value}"));
+        }
+
         var pinned = new List<(string Name, string Location)>();
         AddPinnedLocation(arguments, existingLocations, names.ServiceBusNamespace, "serviceBusLocation", pinned);
         AddPinnedLocation(arguments, existingLocations, names.AppInsightsName, "appInsightsLocation", pinned);

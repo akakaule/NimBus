@@ -98,4 +98,33 @@ public class BicepTemplateProviderTests
         Assert.Contains("090c5cfd-751d-490a-894a-3ce6f1109419", template, StringComparison.Ordinal);
         Assert.Contains("serviceBusDataOwnerRoleId", template, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// The Resolver's app settings are template-owned and replaced on every deploy, so the
+    /// Service Bus consumer bounds must be expressed as host overrides in the core template.
+    /// </summary>
+    [Fact]
+    public void Core_template_owns_the_Resolver_host_overrides()
+    {
+        var context = new CommandContext(null);
+        var template = File.ReadAllText(context.CoreBicepPath);
+
+        Assert.Contains("AzureFunctionsJobHost__extensions__serviceBus__maxConcurrentSessions", template, StringComparison.Ordinal);
+        Assert.Contains("AzureFunctionsJobHost__extensions__serviceBus__prefetchCount", template, StringComparison.Ordinal);
+        Assert.Contains("AzureFunctionsJobHost__extensions__serviceBus__sessionIdleTimeout", template, StringComparison.Ordinal);
+        Assert.Contains("AzureFunctionsJobHost__concurrency__dynamicConcurrencyEnabled", template, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Elastic_Premium_function_app_template_exposes_functionAppScaleLimit()
+    {
+        var context = new CommandContext(null);
+        var functionApp = Path.Combine(
+            Path.GetDirectoryName(context.CoreBicepPath)!,
+            "templates",
+            "functionApp.bicep");
+        var template = File.ReadAllText(functionApp);
+
+        Assert.Contains("functionAppScaleLimit", template, StringComparison.Ordinal);
+    }
 }

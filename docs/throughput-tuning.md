@@ -316,6 +316,18 @@ healthy backlog into upstream 429s and retry storms. A custom throttling
 [pipeline behavior](pipeline-middleware.md) is a better lever than a bigger
 concurrency number.
 
+**The Resolver is profile C.** Its limit is the Cosmos RU budget, not the bus:
+every event produces two Resolver messages (the request copy and the response),
+and each ends in Cosmos writes. It ships at `maxConcurrentSessions = 16` and
+`prefetchCount = 0`, enforced through template-owned app settings in
+`deploy/bicep/deploy.core.bicep` (override with `nb setup --resolver-max-sessions`).
+It deliberately uses a 1 s `SessionIdleTimeout` instead of profile C's 30–60 s:
+the Resolver sees thousands of per-aggregate sessions, and a session slot is
+held for handler time plus idle timeout per message, so its throughput ceiling
+is roughly `sessions × instances / (t_handler + idle)`. With a 30 s idle timeout
+that ceiling collapses to a fraction of a message per second per slot; with 1 s
+the slot rotates to the next waiting session almost immediately.
+
 ### D. Low-volume control plane — latency-sensitive
 
 Commands, request/reply, admin operations. A few messages per second, latency

@@ -138,6 +138,8 @@ Parameter notes (see the comments in the sample files):
 - `resolverId` must be `Resolver` — it matches the compiled-in constant `src/NimBus.Core/Constants.cs`.
 - `solutionId`/`environment` are woven into every resource name; the storage account `st{solutionId}{environment}func` must stay ≤ 24 characters, lowercase alphanumeric.
 - Defaults: `storageProvider=cosmos`, `resolverPlan=FlexConsumption`, `managementPlanSku` empty → B1 for dev/development, S1 otherwise. **ElasticPremium ↔ FlexConsumption cannot be converted in place** — to switch, delete the resolver Function App *and* the core App Service Plan first.
+- Resolver capacity: `resolverMaxConcurrentSessions` (default 16, range 1–200) is applied as a template-owned host override that wins over the Resolver's `host.json`. `resolverMaxInstances` (Elastic Premium `functionAppScaleLimit`; default 0 = no per-app cap, max 10) and `resolverFlexMaximumInstanceCount` (Flex Consumption `maximumInstanceCount`; default 100, range 40–1000) cap the instance count for their respective plan. Through the CLI these are `--resolver-max-sessions` and `--resolver-max-instances`.
+- **Brownfield note.** An unmodified `nb setup` now applies 16 sessions per instance and a 1 s session idle timeout to the Resolver through template-owned app settings (previously 200 sessions and 30 s from `host.json`). No instance cap is applied unless `--resolver-max-instances` is passed. Every knob is an app setting, so a rollback is simply another `nb setup` with different values — no code deploy is needed.
 
 ### 4.2 WebApp infrastructure
 

@@ -107,6 +107,8 @@ before they are released.
 | `--sql-admin-login` | Conditional | Required when `--sql-mode provision` |
 | `--sql-server-name` | No | Override the SQL server name (default: `sql-{solution-id}-{environment}`). Useful when the default DNS name is held in Azure's global namespace from a recent delete (24–72h cooldown). |
 | `--resolver-plan` | No | Resolver Function App hosting plan: `FlexConsumption` (default for new deployments; FC1, scale-to-zero Linux) or `ElasticPremium` (EP1 Windows). Existing deployments keep their current plan type unless this flag is passed. |
+| `--resolver-max-sessions` | No | Resolver Service Bus session concurrency per instance (1–200). Defaults to the template value (16). Applied as a template-owned host override (`AzureFunctionsJobHost__extensions__serviceBus__maxConcurrentSessions`), so it wins over the Resolver's `host.json`. |
+| `--resolver-max-instances` | No | Resolver Function App instance ceiling. Elastic Premium: `0` (no cap, default) to `10`, applied as `functionAppScaleLimit`. Flex Consumption: `40`–`1000`, applied as `maximumInstanceCount` (default 100). |
 | `--management-plan-sku` | No | SKU for the management App Service Plan hosting the WebApp. Default for new deployments: `B1` for `dev`/`development`, `S1` otherwise. Existing deployments keep their current SKU unless this flag is passed. |
 
 Deployment secrets are intentionally not accepted as command-line options because process arguments can be inspected by other tools. Set the required environment variable before invoking `nb`:
@@ -262,7 +264,7 @@ Run infrastructure, topology, and app deployment in sequence.
 nb setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
-Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resolver-plan`, `--management-plan-sku`, `--assembly`, and `--from-source`. SQL and bootstrap-admin secrets use the environment variables documented under `nb infra apply`.
+Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resolver-plan`, `--resolver-max-sessions`, `--resolver-max-instances`, `--management-plan-sku`, `--assembly`, and `--from-source`. SQL and bootstrap-admin secrets use the environment variables documented under `nb infra apply`.
 
 Like the individual commands, this needs no repository clone. Deploying your own event
 catalog means passing `--assembly` so the topology step provisions your endpoints rather

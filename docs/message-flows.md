@@ -407,6 +407,8 @@ sequenceDiagram
     Ep->>Sub: main sub — siblings handled in FIFO
 ```
 
+The Resolver records the `HandoffCompletedRequest` itself in message history only; the Pending+Handoff audit row is untouched until the subscriber's `ResolutionResponse` arrives (ADR-012, amended 2026-09-15). A settlement request is therefore visible on the Flow tab but never changes the endpoint state on its own.
+
 The failure path is symmetrical: `ManagerClient.FailHandoff(entity, endpoint, errorText, errorType)` issues a `HandoffFailedRequest`, the subscriber's `HandleHandoffFailedRequest` synthesises an `EventContextHandlerException` that wraps a `HandoffFailedException(errorText, errorType)`, sends an `ErrorResponse` to the Resolver (status flips Pending to Failed with `errorText` preserved verbatim), and leaves the session blocked. The operator chooses Resubmit or Skip from the WebApp — both follow today's existing flows.
 
 `MarkPendingHandoff` is idempotent — calling it twice from the same handler invocation overwrites the metadata (last call wins). If the handler calls it AND then throws, the failure path takes precedence: an `ErrorResponse` is sent and the PendingHandoff metadata is discarded.

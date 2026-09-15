@@ -101,6 +101,14 @@ Why coords and not `externalJobId`: a "look the row up by external job id" desig
 
 DI: `AddNimBusSubscriber` auto-registers `IHandoffClient` for the subscriber's endpoint. Settlement-only processes call `services.AddNimBusHandoffClient(endpoint)` explicitly. Neither path requires a tracking-store registration.
 
+## Update — 2026-09-15 — settlement requests are history only
+
+The Resolver no longer projects `HandoffCompletedRequest` / `HandoffFailedRequest` onto the audit row. Until this change they were recorded as plain Pending rows (clearing `PendingSubStatus`) that the subscriber's terminal `ResolutionResponse` / `ErrorResponse` then flipped. Now the settlement request is written to message history only and the row stays Pending+Handoff until the terminal response arrives, which is what the sequence diagram in `docs/message-flows.md` §13 always showed.
+
+Why: the intermediate plain-Pending state carried no information operators needed (the Flow tab already shows the settlement message), it hid the handoff badge before the work was actually settled, and it created a window in which a late copy of the original `EventRequest` found an ordinary Pending row to overwrite (Spec 030). The DIS platform made the same change (`ShouldProjectToUnresolvedState`), so the two implementations agree again.
+
+Consequences: `HandoffSettlementService` and `GetNextPendingHandoffEvent` keep seeing the row as Pending+Handoff for the few seconds between the settlement request and the terminal response. A second settlement issued in that window is answered by the subscriber's existing misaddressed-settlement path (`StrictMessageHandler.HandleHandoffCompletedRequest` / `HandleHandoffFailedRequest` surface it as resolved); no new state is needed. The Resolver still notifies the WebApp after storing the settlement message, so the Flow tab refreshes.
+
 ## See Also
 
 - ADR-002: Centralized Resolver — establishes the audit-trail contract that PendingHandoff plugs into.

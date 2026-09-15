@@ -29,6 +29,15 @@ namespace NimBus.Broker.Services
         private const int BaseDelaySeconds = 5;
         private const int MaxDelaySeconds = 300; // 5 minutes
 
+        // Tag values for NimBusMeters.ResolverStoreRetry / ResolverRetryDelay.
+        private const string StoreReasonThrottled = "throttled";
+        private const string StoreReasonTransient = "transient";
+        private const string RetryActionRescheduled = "rescheduled";
+        private const string RetryActionDeadLettered = "dead_lettered";
+        private const string RetryActionAbandoned = "abandoned";
+        private const string DelaySourceProvider = "provider";
+        private const string DelaySourceBackoff = "backoff";
+
         private static readonly Dictionary<MessageType, ResolutionStatus> MessageTypeToStatusMap = new()
         {
             [MessageType.EventRequest] = ResolutionStatus.Pending,
@@ -37,12 +46,12 @@ namespace NimBus.Broker.Services
             [MessageType.SkipRequest] = ResolutionStatus.Pending,
             [MessageType.ContinuationRequest] = ResolutionStatus.Pending,
             // PendingHandoff control flow. The response from the subscriber records
-            // the audit row as Pending+Handoff; the two Manager-issued requests are
-            // recorded as Pending audit rows that flip when their resulting
-            // ResolutionResponse / ErrorResponse arrive (via the existing path).
+            // the audit row as Pending+Handoff. The two settlement requests
+            // (HandoffCompletedRequest / HandoffFailedRequest) are deliberately NOT
+            // mapped: they are recorded in message history only and the row stays
+            // Pending+Handoff until the subscriber's terminal ResolutionResponse /
+            // ErrorResponse flips it (ADR-012, amended 2026-09).
             [MessageType.PendingHandoffResponse] = ResolutionStatus.Pending,
-            [MessageType.HandoffCompletedRequest] = ResolutionStatus.Pending,
-            [MessageType.HandoffFailedRequest] = ResolutionStatus.Pending,
             [MessageType.ErrorResponse] = ResolutionStatus.Failed,
             [MessageType.ResolutionResponse] = ResolutionStatus.Completed,
             [MessageType.DeferralResponse] = ResolutionStatus.Deferred,
@@ -108,17 +117,26 @@ namespace NimBus.Broker.Services
 
                 await _store.StoreMessage(messageEntity);
 
+                if (!ShouldProjectToUnresolvedState(messageEntity.MessageType))
+                {
+                    // Handoff settlement requests live in message history only. The
+                    // Pending+Handoff row keeps its discriminator until the subscriber's
+                    // terminal ResolutionResponse / ErrorResponse flips it; re-projecting
+                    // the row here would clear the handoff early and hand a late copy of
+                    // the original request a plain Pending row to overwrite.
+                    _logger?.LogInformation("Resolver: Recorded control message without changing endpoint state. EndpointId:{EndpointId}, MessageType:{MessageType}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
+                        messageEntity.EndpointId, messageEntity.MessageType, messageEntity.EventId, messageContext.MessageId, messageEntity.SessionId);
+                    await NotifyEndpointStateChanged(messageEntity.EndpointId, cancellationToken);
+                    await messageContext.Complete(cancellationToken);
+                    return;
+                }
+
                 var status = await UpdateState(messageEntity);
 
                 _logger?.LogInformation("Resolver: Updated Endpoint EndpointId:{EndpointId}, Status:{Status}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
                     messageEntity.EndpointId, status, messageEntity.EventId, messageContext.MessageId, messageEntity.SessionId);
 
-                // Fire state-change notification (provider-neutral). Webhook is no longer
-                // the only way for the WebApp to learn about updates; this works for any
-                // storage provider including SQL Server which has no Change Feed.
-                try { await _notifier.NotifyEndpointStateChangedAsync(messageEntity.EndpointId, cancellationToken); }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-                catch (Exception notifyEx) { _logger?.LogWarning(notifyEx, "Resolver: state-change notification failed (non-fatal)"); }
+                await NotifyEndpointStateChanged(messageEntity.EndpointId, cancellationToken);
 
                 await messageContext.Complete(cancellationToken);
             }
@@ -174,6 +192,7 @@ namespace NimBus.Broker.Services
                     Constants.ServiceBusMaxDeliveryCount,
                     messageContext.EventId,
                     messageContext.SessionId);
+                RecordStoreRetry(StoreReasonThrottled, RetryActionDeadLettered);
                 await messageContext.DeadLetter(CosmosThrottleDeadLetterReason, null, cancellationToken);
                 return;
             }
@@ -189,6 +208,7 @@ namespace NimBus.Broker.Services
             {
                 _logger?.LogError("Resolver: Max throttle retries ({MaxRetries}) exceeded. DeadLettering. EventId:{EventId}, SessionId:{SessionId}",
                     Constants.ServiceBusMaxDeliveryCount, messageContext.EventId, messageContext.SessionId);
+                RecordStoreRetry(StoreReasonTransient, RetryActionDeadLettered);
                 await messageContext.DeadLetter("Max throttle retries exceeded", null, cancellationToken);
                 return;
             }
@@ -202,6 +222,7 @@ namespace NimBus.Broker.Services
             var providerRetryAfter = retryAfter.GetValueOrDefault();
             var useProviderRetryAfter = retryAfter.HasValue && providerRetryAfter > calculatedDelay;
             var delay = useProviderRetryAfter ? providerRetryAfter : calculatedDelay;
+            RecordRetryDelay(delay, useProviderRetryAfter);
 
             _logger?.LogTrace(
                 "Resolver: Transient storage delay decision - using {DelaySource}. ProviderRetryAfter:{ProviderRetryAfter}s, CalculatedBackoff:{CalculatedBackoff}s, EventId:{EventId}",
@@ -217,12 +238,14 @@ namespace NimBus.Broker.Services
             try
             {
                 await messageContext.ScheduleRedelivery(delay, retryCount + 1, cancellationToken);
+                RecordStoreRetry(StoreReasonTransient, RetryActionRescheduled);
             }
             catch (TransientException ex)
             {
                 _logger?.LogInformation(ex, "Resolver: Failed to schedule redelivery. Abandoning for retry. EventId:{EventId}, SessionId:{SessionId}",
                     messageContext.EventId, messageContext.SessionId);
                 await messageContext.Abandon(ex);
+                RecordStoreRetry(StoreReasonTransient, RetryActionAbandoned);
             }
         }
 
@@ -236,6 +259,7 @@ namespace NimBus.Broker.Services
                 Math.Min(BaseDelaySeconds * Math.Pow(2, logicalAttempt - 1), MaxDelaySeconds));
             var useProviderRetryAfter = retryAfter.HasValue && retryAfter.Value > calculatedDelay;
             var delay = useProviderRetryAfter ? retryAfter.Value : calculatedDelay;
+            RecordRetryDelay(delay, useProviderRetryAfter);
 
             _logger?.LogInformation(
                 "Resolver: Cosmos DB throttled. Scheduling redelivery in {DelaySeconds}s. EventId:{EventId}, SessionId:{SessionId}, LogicalAttempt:{LogicalAttempt}/{MaxAttempts}",
@@ -248,14 +272,44 @@ namespace NimBus.Broker.Services
             try
             {
                 await messageContext.ScheduleRedelivery(delay, logicalAttempt, cancellationToken);
+                RecordStoreRetry(StoreReasonThrottled, RetryActionRescheduled);
             }
             catch (TransientException ex)
             {
                 _logger?.LogInformation(ex, "Resolver: Failed to schedule Cosmos DB throttle redelivery. Abandoning for retry. EventId:{EventId}, SessionId:{SessionId}",
                     messageContext.EventId, messageContext.SessionId);
                 await messageContext.Abandon(ex);
+                RecordStoreRetry(StoreReasonThrottled, RetryActionAbandoned);
             }
         }
+
+        // Handoff settlement requests (HandoffCompletedRequest / HandoffFailedRequest) are
+        // recorded in message history only; the subscriber's terminal response is what
+        // flips the Pending+Handoff row. See ADR-012 (amended 2026-09).
+        private static bool ShouldProjectToUnresolvedState(MessageType messageType) =>
+            messageType != MessageType.HandoffCompletedRequest &&
+            messageType != MessageType.HandoffFailedRequest;
+
+        // Fire the state-change notification (provider-neutral). Webhook is no longer
+        // the only way for the WebApp to learn about updates; this works for any
+        // storage provider including SQL Server which has no Change Feed.
+        private async Task NotifyEndpointStateChanged(string endpointId, CancellationToken cancellationToken)
+        {
+            try { await _notifier.NotifyEndpointStateChangedAsync(endpointId, cancellationToken); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception notifyEx) { _logger?.LogWarning(notifyEx, "Resolver: state-change notification failed (non-fatal)"); }
+        }
+
+        private static void RecordStoreRetry(string reason, string action) =>
+            NimBusMeters.ResolverStoreRetry.Add(1,
+                new KeyValuePair<string, object?>(MessagingAttributes.NimBusStoreReason, reason),
+                new KeyValuePair<string, object?>(MessagingAttributes.NimBusRetryAction, action));
+
+        // Records the delay that was actually applied (max of the Resolver's backoff and the
+        // store's RetryAfter hint), i.e. how far the copy is pushed behind its session.
+        private static void RecordRetryDelay(TimeSpan delay, bool fromProvider) =>
+            NimBusMeters.ResolverRetryDelay.Record(delay.TotalSeconds,
+                new KeyValuePair<string, object?>(MessagingAttributes.NimBusDelaySource, fromProvider ? DelaySourceProvider : DelaySourceBackoff));
 
         /// <summary>
         /// Routes one heartbeat message. Endpoint answers update the heartbeat store; the
@@ -508,9 +562,10 @@ namespace NimBus.Broker.Services
                 ProcessingTimeMs = message.ProcessingTimeMs,
                 // PendingHandoff metadata. Sub-status is set only on the
                 // PendingHandoffResponse audit row (the original Pending+Handoff
-                // entry); the Manager-issued HandoffCompleted/HandoffFailed
-                // requests are recorded as plain Pending so the subsequent
-                // ResolutionResponse / ErrorResponse can flip the original.
+                // entry); the HandoffCompleted/HandoffFailed settlement requests
+                // are stored in history only and never projected onto the row,
+                // so the subsequent ResolutionResponse / ErrorResponse flips the
+                // original Pending+Handoff entry directly.
                 HandoffReason = message.HandoffReason,
                 ExternalJobId = message.ExternalJobId,
                 ExpectedBy = message.ExpectedBy,

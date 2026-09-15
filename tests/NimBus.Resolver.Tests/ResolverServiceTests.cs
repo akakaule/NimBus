@@ -6,6 +6,8 @@ using NimBus.Core.Messages.Exceptions;
 using NimBus.MessageStore;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
+using System.Diagnostics.Metrics;
+using NimBus.Core.Diagnostics;
 
 namespace NimBus.Resolver.Tests;
 
@@ -492,6 +494,119 @@ public class ResolverServiceTests
         Assert.AreEqual(0, message.ScheduleRedeliveryCalls);
     }
 
+    [TestMethod]
+    [DataRow(MessageType.HandoffCompletedRequest)]
+    [DataRow(MessageType.HandoffFailedRequest)]
+    public async Task Handle_HandoffSettlementRequest_RecordsHistoryWithoutProjectingState(MessageType messageType)
+    {
+        // ADR-012 (amended 2026-09): settlement requests are history only. The
+        // Pending+Handoff row keeps its discriminator until the subscriber's terminal
+        // response flips it, so a late copy of the original request never finds a
+        // plain Pending row to overwrite.
+        var cosmos = new FakeCosmosDbClient();
+        var notifier = new RecordingMessageStateChangeNotifier();
+        var message = CreateMessageContext(messageType: messageType, to: "BillingEndpoint", from: "Manager");
+        var service = CreateService(cosmos, notifier);
+
+        await service.Handle(message);
+
+        Assert.AreEqual(1, cosmos.StoredMessages.Count);
+        Assert.AreEqual(messageType, cosmos.StoredMessages[0].MessageType);
+        Assert.AreEqual("BillingEndpoint", cosmos.StoredMessages[0].EndpointId);
+        Assert.AreEqual(0, cosmos.PendingUploads.Count, "Settlement requests must not touch the audit row.");
+        Assert.AreEqual(0,
+            cosmos.CompletedUploads.Count + cosmos.FailedUploads.Count + cosmos.DeferredUploads.Count
+            + cosmos.SkippedUploads.Count + cosmos.DeadLetteredUploads.Count + cosmos.UnsupportedUploads.Count);
+        Assert.AreEqual(1, message.CompletedCalls);
+        Assert.AreEqual(0, message.DeadLetterCalls);
+        CollectionAssert.AreEqual(new[] { "BillingEndpoint" }, notifier.Notified);
+    }
+
+    [TestMethod]
+    public async Task Handle_RequestLimitException_CountsThrottledRescheduleAndBackoffDelay()
+    {
+        using var meters = new ResolverMeterRecorder();
+        var cosmos = new FakeCosmosDbClient
+        {
+            StoreMessageException = new RequestLimitException(TimeSpan.FromSeconds(17)),
+        };
+        var message = CreateMessageContext(messageType: MessageType.EventRequest, throttleRetryCount: 2);
+
+        await CreateService(cosmos).Handle(message);
+
+        meters.AssertStoreRetry("throttled", "rescheduled");
+        meters.AssertRetryDelay(20, "backoff"); // 5 s × 2^2 = 20 s beats the 17 s hint
+    }
+
+    [TestMethod]
+    public async Task Handle_RequestLimitException_WithLongerRetryAfter_RecordsProviderDelay()
+    {
+        using var meters = new ResolverMeterRecorder();
+        var cosmos = new FakeCosmosDbClient
+        {
+            StoreMessageException = new RequestLimitException(TimeSpan.FromSeconds(60)),
+        };
+        var message = CreateMessageContext(messageType: MessageType.EventRequest);
+
+        await CreateService(cosmos).Handle(message);
+
+        Assert.AreEqual(TimeSpan.FromSeconds(60), message.LastScheduledDelay);
+        meters.AssertStoreRetry("throttled", "rescheduled");
+        meters.AssertRetryDelay(60, "provider");
+    }
+
+    [TestMethod]
+    public async Task Handle_RequestLimitException_OnFinalAttempt_CountsDeadLettered()
+    {
+        using var meters = new ResolverMeterRecorder();
+        var cosmos = new FakeCosmosDbClient
+        {
+            StoreMessageException = new RequestLimitException(TimeSpan.FromSeconds(1)),
+        };
+        var message = CreateMessageContext(messageType: MessageType.EventRequest, throttleRetryCount: 9);
+
+        await CreateService(cosmos).Handle(message);
+
+        Assert.AreEqual(1, message.DeadLetterCalls);
+        meters.AssertStoreRetry("throttled", "dead_lettered");
+        Assert.AreEqual(0, meters.RetryDelays.Count, "No delay is applied when dead-lettering.");
+    }
+
+    [TestMethod]
+    public async Task Handle_StorageProviderTransientException_CountsTransientReschedule()
+    {
+        using var meters = new ResolverMeterRecorder();
+        var cosmos = new FakeCosmosDbClient
+        {
+            StoreMessageException = new StorageProviderTransientException("temporarily unavailable", retryAfter: null),
+        };
+        var message = CreateMessageContext(messageType: MessageType.EventRequest, throttleRetryCount: 1);
+
+        await CreateService(cosmos).Handle(message);
+
+        meters.AssertStoreRetry("transient", "rescheduled");
+        meters.AssertRetryDelay(10, "backoff");
+    }
+
+    [TestMethod]
+    public async Task Handle_RequestLimitException_WhenSchedulingUnavailable_CountsAbandoned()
+    {
+        using var meters = new ResolverMeterRecorder();
+        var cosmos = new FakeCosmosDbClient
+        {
+            StoreMessageException = new RequestLimitException(TimeSpan.FromSeconds(1)),
+        };
+        var message = CreateMessageContext(messageType: MessageType.EventRequest);
+        message.ScheduleRedeliveryException = new TransientException("Scheduled redelivery not available in current configuration.");
+
+        await CreateService(cosmos).Handle(message);
+
+        Assert.AreEqual(1, message.AbandonCalls);
+        Assert.AreEqual(0, message.CompletedCalls);
+        Assert.AreEqual(0, message.DeadLetterCalls);
+        meters.AssertStoreRetry("throttled", "abandoned");
+    }
+
     private static ResolverService CreateService(
         FakeCosmosDbClient? cosmos = null,
         IMessageStateChangeNotifier? notifier = null)
@@ -579,6 +694,7 @@ public class ResolverServiceTests
         public int? LastScheduledRetryCount { get; private set; }
         public string? LastDeadLetterReason { get; private set; }
         public Exception? CompleteException { get; set; }
+        public Exception? ScheduleRedeliveryException { get; set; }
 
         public Task Complete(CancellationToken cancellationToken = default)
         {
@@ -623,7 +739,84 @@ public class ResolverServiceTests
             ScheduleRedeliveryCalls++;
             LastScheduledDelay = delay;
             LastScheduledRetryCount = throttleRetryCount;
+            return ScheduleRedeliveryException is null
+                ? Task.CompletedTask
+                : Task.FromException(ScheduleRedeliveryException);
+        }
+    }
+
+    private sealed class RecordingMessageStateChangeNotifier : IMessageStateChangeNotifier
+    {
+        public List<string> Notified { get; } = new();
+
+        public Task NotifyEndpointStateChangedAsync(string endpointId, CancellationToken cancellationToken = default)
+        {
+            Notified.Add(endpointId);
             return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// Captures the Resolver's store-retry counter and retry-delay histogram for one test.
+    /// Instruments are matched by reference, so measurements from other meters are ignored.
+    /// </summary>
+    private sealed class ResolverMeterRecorder : IDisposable
+    {
+        private readonly MeterListener _listener = new();
+
+        public List<(string Reason, string Action)> StoreRetries { get; } = new();
+        public List<(double Seconds, string Source)> RetryDelays { get; } = new();
+
+        public ResolverMeterRecorder()
+        {
+            // Touch the statics first so the instruments exist before Start() replays
+            // the published-instrument callbacks.
+            var storeRetry = NimBusMeters.ResolverStoreRetry;
+            var retryDelay = NimBusMeters.ResolverRetryDelay;
+
+            _listener.InstrumentPublished = (instrument, listener) =>
+            {
+                if (ReferenceEquals(instrument, storeRetry) || ReferenceEquals(instrument, retryDelay))
+                    listener.EnableMeasurementEvents(instrument);
+            };
+            _listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
+            {
+                if (ReferenceEquals(instrument, storeRetry))
+                    StoreRetries.Add((Tag(tags, MessagingAttributes.NimBusStoreReason), Tag(tags, MessagingAttributes.NimBusRetryAction)));
+            });
+            _listener.SetMeasurementEventCallback<double>((instrument, value, tags, _) =>
+            {
+                if (ReferenceEquals(instrument, retryDelay))
+                    RetryDelays.Add((value, Tag(tags, MessagingAttributes.NimBusDelaySource)));
+            });
+            _listener.Start();
+        }
+
+        public void AssertStoreRetry(string reason, string action)
+        {
+            Assert.AreEqual(1, StoreRetries.Count, "Exactly one store_retry event expected.");
+            Assert.AreEqual(reason, StoreRetries[0].Reason);
+            Assert.AreEqual(action, StoreRetries[0].Action);
+        }
+
+        public void AssertRetryDelay(double seconds, string source)
+        {
+            Assert.AreEqual(1, RetryDelays.Count, "Exactly one retry_delay measurement expected.");
+            Assert.AreEqual(seconds, RetryDelays[0].Seconds, 0.001);
+            Assert.AreEqual(source, RetryDelays[0].Source);
+        }
+
+        public void Dispose() => _listener.Dispose();
+
+        private static string Tag(ReadOnlySpan<KeyValuePair<string, object?>> tags, string key)
+        {
+            foreach (var tag in tags)
+            {
+                if (string.Equals(tag.Key, key, StringComparison.Ordinal))
+                    return tag.Value?.ToString() ?? string.Empty;
+            }
+
+            return string.Empty;
         }
     }
 

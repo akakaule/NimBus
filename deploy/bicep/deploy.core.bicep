@@ -65,15 +65,18 @@ param managementPlanSku string = ''
 param resolverMaxConcurrentSessions int = 16
 
 // Elastic Premium per-app scale ceiling (siteConfig.functionAppScaleLimit).
-// 0 means no per-app cap (today's behaviour). The EP plan template allows at
-// most 10 workers (maximumElasticWorkerCount), so 10 is the useful maximum.
+// 0 means no per-app cap (today's behaviour) and is written explicitly, so a cap
+// applied by an earlier deployment is cleared rather than left in place. The EP
+// plan template allows at most 10 workers (maximumElasticWorkerCount), so 10 is
+// the useful maximum.
 @minValue(0)
 @maxValue(10)
 param resolverMaxInstances int = 0
 
-// Flex Consumption maximumInstanceCount. The platform minimum is 40, so it
-// cannot share the Elastic Premium parameter above (whose range is 0-10).
-@minValue(40)
+// Flex Consumption maximumInstanceCount (platform range 1-1000; template default
+// 100). Kept separate from the Elastic Premium parameter above because 0 has no
+// "no cap" meaning on Flex.
+@minValue(1)
 @maxValue(1000)
 param resolverFlexMaximumInstanceCount int = 100
 
@@ -225,24 +228,15 @@ var sharedResolverSettings = [
     name: 'AzureWebJobsServiceBus__fullyQualifiedNamespace'
     value: serviceBusNamespace.outputs.fullyQualifiedNamespace
   }
-  // Service Bus consumer bounds. The Resolver's app settings are template-owned
-  // and fully replaced on each deploy, so host overrides must live here; they
-  // take precedence over the values in host.json.
+  // The one tunable consumer bound. The Resolver's app settings are template-owned
+  // and fully replaced on each deploy, so this override lives here and takes
+  // precedence over host.json. The fixed bounds (prefetch 0, 1 s session idle
+  // timeout, dynamic concurrency off) ship in host.json with the binary and are
+  // pinned by ResolverHostConfigurationTests; keeping them out of the template
+  // leaves each value with exactly one owner.
   {
     name: 'AzureFunctionsJobHost__extensions__serviceBus__maxConcurrentSessions'
     value: string(resolverMaxConcurrentSessions)
-  }
-  {
-    name: 'AzureFunctionsJobHost__extensions__serviceBus__prefetchCount'
-    value: '0'
-  }
-  {
-    name: 'AzureFunctionsJobHost__extensions__serviceBus__sessionIdleTimeout'
-    value: '00:00:01'
-  }
-  {
-    name: 'AzureFunctionsJobHost__concurrency__dynamicConcurrencyEnabled'
-    value: 'false'
   }
 ]
 
@@ -281,11 +275,6 @@ var elasticPremiumSecretSettings = resolverPlan == 'ElasticPremium' ? {
   WEBSITE_CONTENTAZUREFILECONNECTIONSTRING: funcstorageaccount.outputs.connectionString
 } : {}
 
-// Flex-only secrets. Empty today: the Application Insights connection string
-// used to live here but moved to sharedResolverSecretSettings because the
-// Elastic Premium host needs it just as much (see the comment above).
-var flexSecretSettings = {}
-
 var sqlResolverSecretSettings = storageProvider == 'sqlserver' && sqlMode == 'provision' ? {
   SqlConnection: 'Server=tcp:${azureSql.outputs.serverFqdn},1433;Initial Catalog=${sqlDbName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=true;'
 } : {}
@@ -293,7 +282,6 @@ var sqlResolverSecretSettings = storageProvider == 'sqlserver' && sqlMode == 'pr
 var resolverSecretSettings = union(
   sharedResolverSecretSettings,
   elasticPremiumSecretSettings,
-  flexSecretSettings,
   sqlResolverSecretSettings)
 
 //##############################################

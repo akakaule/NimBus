@@ -201,6 +201,7 @@ public class PlanSelectionTests
     }
 
     [Theory]
+    [InlineData(1)]
     [InlineData(40)]
     [InlineData(1000)]
     public void ResolveResolverMaxInstances_MapsFlexConsumptionToMaximumInstanceCount(int requested)
@@ -210,11 +211,14 @@ public class PlanSelectionTests
             PlanSelection.ResolveResolverMaxInstances(requested, ResolverPlanChoice.FlexConsumption));
     }
 
-    [Fact]
-    public void ResolveResolverMaxInstances_RejectsFlexConsumptionBelowPlatformMinimum()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1001)]
+    public void ResolveResolverMaxInstances_RejectsFlexConsumptionOutsidePlatformRange(int requested)
     {
+        // Flex Consumption has no "0 = no cap" value; the platform accepts 1 to 1000.
         var exception = Assert.Throws<CommandException>(
-            () => PlanSelection.ResolveResolverMaxInstances(39, ResolverPlanChoice.FlexConsumption));
-        Assert.Contains("the platform minimum is 40", exception.Message, StringComparison.Ordinal);
+            () => PlanSelection.ResolveResolverMaxInstances(requested, ResolverPlanChoice.FlexConsumption));
+        Assert.Contains("Flex Consumption requires 1 to 1000", exception.Message, StringComparison.Ordinal);
     }
 }

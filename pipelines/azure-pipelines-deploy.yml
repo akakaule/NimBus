@@ -22,7 +22,7 @@ parameters:
     type: string
     default: ""
   - name: resolverMaxInstances
-    displayName: "Resolver instance ceiling: ElasticPremium 0-10 (0 = no cap), FlexConsumption 40-1000 (empty = template default)"
+    displayName: "Resolver instance ceiling: ElasticPremium 0-10 (0 = no cap), FlexConsumption 1-1000 (empty = template default)"
     type: string
     default: ""
   - name: managementPlanSku

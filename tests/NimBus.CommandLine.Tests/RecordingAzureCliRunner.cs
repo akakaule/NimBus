@@ -1,3 +1,5 @@
+#pragma warning disable CA1707, CA2007
+
 using System.Text.Json;
 using Xunit;
 

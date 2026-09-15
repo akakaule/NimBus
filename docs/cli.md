@@ -108,7 +108,7 @@ before they are released.
 | `--sql-server-name` | No | Override the SQL server name (default: `sql-{solution-id}-{environment}`). Useful when the default DNS name is held in Azure's global namespace from a recent delete (24–72h cooldown). |
 | `--resolver-plan` | No | Resolver Function App hosting plan: `FlexConsumption` (default for new deployments; FC1, scale-to-zero Linux) or `ElasticPremium` (EP1 Windows). Existing deployments keep their current plan type unless this flag is passed. |
 | `--resolver-max-sessions` | No | Resolver Service Bus session concurrency per instance (1–200). Defaults to the template value (16). Applied as a template-owned host override (`AzureFunctionsJobHost__extensions__serviceBus__maxConcurrentSessions`), so it wins over the Resolver's `host.json`. |
-| `--resolver-max-instances` | No | Resolver Function App instance ceiling. Elastic Premium: `0` (no cap, default) to `10`, applied as `functionAppScaleLimit`. Flex Consumption: `40`–`1000`, applied as `maximumInstanceCount` (default 100). |
+| `--resolver-max-instances` | No | Resolver Function App instance ceiling. Elastic Premium: `0` (no cap, default) to `10`, applied as `functionAppScaleLimit`; passing `0` clears a cap set by an earlier deployment. Flex Consumption: `1`–`1000`, applied as `maximumInstanceCount` (default 100). |
 | `--management-plan-sku` | No | SKU for the management App Service Plan hosting the WebApp. Default for new deployments: `B1` for `dev`/`development`, `S1` otherwise. Existing deployments keep their current SKU unless this flag is passed. |
 
 Deployment secrets are intentionally not accepted as command-line options because process arguments can be inspected by other tools. Set the required environment variable before invoking `nb`:

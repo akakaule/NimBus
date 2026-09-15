@@ -54,15 +54,38 @@ and banner (031 §3.4), bounded DLQ replay.
 
 ## Workstream C — handoff settlement requests are history only (Resolver)
 
+**Outcome: implemented, then reversed in code review the same day.** The history-only
+projection (DIS `ShouldProjectToUnresolvedState`) broke the agent zone, which DIS does not
+have: `GetAgentReceiveAsync` is a non-claiming, oldest-first read of Pending+Handoff rows and
+`HandoffSettlementService` gates on that sub-status, so without the projection the zone
+re-delivers the just-settled event, admits a second settlement, and head-of-line blocks until
+the subscriber's terminal response lands. The projection stays; it is now pinned by
+`Handle_HandoffSettlementRequest_ProjectsPlainPendingRow`, the reasoning is recorded in the
+2026-09-15 note of `docs/adr/012-pending-handoff.md` and in Spec 031 §3.6, and Spec 030 keeps
+the settlement requests in its control-request set.
+
+Original steps, kept for the record:
+
 1. `ResolverService.Handle`: after `StoreMessage`, when `MessageType` is
    `HandoffCompletedRequest` or `HandoffFailedRequest`, log, notify, complete, and return
-   without `UpdateState` (DIS `ShouldProjectToUnresolvedState`). Remove the two types from
-   `MessageTypeToStatusMap`; update the comments in the map and `CreateMessageEntity`.
-2. Tests: settlement requests store history, do not upload, complete the message; the terminal
-   response still flips the row (existing wall-clock tests).
-3. `docs/adr/012-pending-handoff.md`: amendment 2026-09; `docs/message-flows.md` §13 note.
-4. Spec 030 §5.1 / §6: handoff settlements no longer write the row; the "control request"
-   clause keeps only Resubmission / Skip (and the legacy Retry / Continuation).
+   without `UpdateState`. Remove the two types from `MessageTypeToStatusMap`.
+2. Tests: settlement requests store history, do not upload, complete the message.
+3. ADR-012 amendment; `docs/message-flows.md` §13 note.
+4. Spec 030: drop the settlement requests from the control-request clause.
+
+## Post-review fixes (2026-09-15)
+
+Applied from the branch code review before the PR: Flex Consumption instance range corrected
+to 1–1000 (the "minimum 40" was stale per Microsoft Learn); `functionAppScaleLimit` written
+unconditionally so 0 clears an earlier cap; only `maxConcurrentSessions` remains a template
+override, `host.json` owns the fixed bounds (one owner per value); throttled and transient
+store failures share one settlement path on `RetryPolicy` with one delivery budget, counters
+recorded after each settlement call and the delay histogram only after a successful
+reschedule; `nimbus.endpoint` tag and public `StoreRetryReason` / `RetryAction` / `DelaySource`
+constants; histogram renamed `nimbus.resolver.retry.delay`; per-plan range check also runs
+before login when `--resolver-plan` is explicit; test helpers reuse `ResolverTelemetryCapture`
+and `ResolverHeartbeatTests.RecordingNotifier`; `host.json` linked explicitly into the test
+output.
 
 ## Verification
 

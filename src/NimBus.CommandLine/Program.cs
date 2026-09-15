@@ -123,7 +123,7 @@ internal static class Program
                 var sqlServerName = applyCommand.Option("--sql-server-name <NAME>", "Override the SQL server name (default: 'sql-{solution-id}-{environment}'). Use this when the default DNS name is held in Azure's global namespace from a recent delete (24-72h cooldown).", CommandOptionType.SingleValue);
                 var resolverPlan = applyCommand.Option("--resolver-plan <PLAN>", "Hosting plan for the resolver Function App: ElasticPremium | FlexConsumption. Defaults to the existing plan when one is deployed, otherwise 'FlexConsumption' (FC1, scale-to-zero Linux). 'ElasticPremium' (EP1, Windows) remains available.", CommandOptionType.SingleValue);
                 var resolverMaxSessions = applyCommand.Option("--resolver-max-sessions <N>", "Resolver Service Bus session concurrency per instance (1-200). Defaults to the template value (16). Applied as a template-owned host override.", CommandOptionType.SingleValue);
-                var resolverMaxInstances = applyCommand.Option("--resolver-max-instances <N>", "Resolver Function App instance ceiling. Elastic Premium: 0 (no cap, default) to 10, applied as functionAppScaleLimit. Flex Consumption: 40-1000, applied as maximumInstanceCount (default 100).", CommandOptionType.SingleValue);
+                var resolverMaxInstances = applyCommand.Option("--resolver-max-instances <N>", "Resolver Function App instance ceiling. Elastic Premium: 0 (no cap, default) to 10, applied as functionAppScaleLimit. Flex Consumption: 1-1000, applied as maximumInstanceCount (default 100).", CommandOptionType.SingleValue);
                 var managementPlanSku = applyCommand.Option("--management-plan-sku <SKU>", "SKU for the management App Service Plan hosting the WebApp. Defaults to the existing plan's SKU when one is deployed, otherwise 'B1' for dev/development and 'S1' for other environments.", CommandOptionType.SingleValue);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
@@ -354,7 +354,7 @@ internal static class Program
             var configuration = setupCommand.Option("--configuration <NAME>", "Build configuration passed to dotnet publish.", CommandOptionType.SingleValue);
             var setupResolverPlan = setupCommand.Option("--resolver-plan <PLAN>", "Hosting plan for the resolver Function App: ElasticPremium | FlexConsumption. Defaults to the existing plan when one is deployed, otherwise 'FlexConsumption' (FC1, scale-to-zero Linux).", CommandOptionType.SingleValue);
             var setupResolverMaxSessions = setupCommand.Option("--resolver-max-sessions <N>", "Resolver Service Bus session concurrency per instance (1-200). Defaults to the template value (16). Applied as a template-owned host override.", CommandOptionType.SingleValue);
-            var setupResolverMaxInstances = setupCommand.Option("--resolver-max-instances <N>", "Resolver Function App instance ceiling. Elastic Premium: 0 (no cap, default) to 10, applied as functionAppScaleLimit. Flex Consumption: 40-1000, applied as maximumInstanceCount (default 100).", CommandOptionType.SingleValue);
+            var setupResolverMaxInstances = setupCommand.Option("--resolver-max-instances <N>", "Resolver Function App instance ceiling. Elastic Premium: 0 (no cap, default) to 10, applied as functionAppScaleLimit. Flex Consumption: 1-1000, applied as maximumInstanceCount (default 100).", CommandOptionType.SingleValue);
             var setupManagementPlanSku = setupCommand.Option("--management-plan-sku <SKU>", "SKU for the management App Service Plan hosting the WebApp. Defaults to the existing plan's SKU when one is deployed, otherwise 'B1' for dev/development and 'S1' for other environments.", CommandOptionType.SingleValue);
             var setupStorageProvider = setupCommand.Option("--storage-provider <PROVIDER>", "Storage provider for NimBus message persistence: cosmos | sqlserver. Defaults to 'cosmos' for backwards compatibility.", CommandOptionType.SingleValue);
             var setupSqlMode = setupCommand.Option("--sql-mode <MODE>", $"When --storage-provider is sqlserver: 'provision' deploys a new Azure SQL resource; 'external' reads the connection string from {DeploymentSecrets.SqlConnectionStringEnvironmentVariable}.", CommandOptionType.SingleValue);
@@ -378,6 +378,10 @@ internal static class Program
             {
                 var context = CommandContext.Create(repoRoot.Value());
                 var az = new AzureCliRunner();
+                // Parse the capacity options before the platform package download so a
+                // malformed value fails before any network work.
+                var setupResolverMaxSessionsValue = PlanSelection.ParseResolverMaxSessionsOption(setupResolverMaxSessions.Value());
+                var setupResolverMaxInstancesValue = PlanSelection.ParseResolverMaxInstancesOption(setupResolverMaxInstances.Value());
                 var setupPlatformPackage = setupPackage.HasValue()
                     ? await PlatformPackage.ResolveAsync(PlatformHttpClient, setupPackage.Value()!, setupFeed.Value(), setupPlatform.Value(), cancellationToken).ConfigureAwait(false)
                     : null;
@@ -428,8 +432,8 @@ internal static class Program
                     setupIdentityAdminEmail.Value(),
                     secrets.IdentityAdminPassword,
                     setupManagementPlanSku.Value(),
-                    ResolverMaxConcurrentSessions: PlanSelection.ParseResolverMaxSessionsOption(setupResolverMaxSessions.Value()),
-                    ResolverMaxInstances: PlanSelection.ParseResolverMaxInstancesOption(setupResolverMaxInstances.Value()));
+                    ResolverMaxConcurrentSessions: setupResolverMaxSessionsValue,
+                    ResolverMaxInstances: setupResolverMaxInstancesValue);
 
                 var topologyOptions = new TopologyOptions(solutionId.Value(), environment.Value(), resourceGroup.Value());
                 var appOptions = new AppDeploymentOptions(

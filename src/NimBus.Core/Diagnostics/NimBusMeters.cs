@@ -83,20 +83,22 @@ public static class NimBusMeters
 
     /// <summary>
     /// One event per message the Resolver could not persist on this attempt, tagged with
-    /// <see cref="MessagingAttributes.NimBusStoreReason"/> (throttled | transient) and
-    /// <see cref="MessagingAttributes.NimBusRetryAction"/> (rescheduled | dead_lettered | abandoned).
-    /// A sustained <c>throttled</c> rate is the direct signal that the store is pushing back.
+    /// <see cref="MessagingAttributes.NimBusEndpoint"/>, <see cref="MessagingAttributes.NimBusStoreReason"/>
+    /// (<see cref="StoreRetryReason"/>) and <see cref="MessagingAttributes.NimBusRetryAction"/>
+    /// (<see cref="RetryAction"/>). Recorded after the settlement call succeeded. A sustained
+    /// <see cref="StoreRetryReason.Throttled"/> rate is the direct signal that the store is pushing back.
     /// </summary>
     public static readonly Counter<long> ResolverStoreRetry = Resolver.CreateCounter<long>(
         "nimbus.resolver.store_retry", "{events}", "Resolver messages rescheduled, dead-lettered or abandoned because the store could not persist them.");
 
     /// <summary>
-    /// The delay the Resolver actually applied when rescheduling a message, tagged with
-    /// <see cref="MessagingAttributes.NimBusDelaySource"/> (provider | backoff). This is how far
-    /// the copy is pushed behind its session, not the store's raw hint.
+    /// The delay the Resolver actually applied when it rescheduled a message, tagged with
+    /// <see cref="MessagingAttributes.NimBusEndpoint"/> and <see cref="MessagingAttributes.NimBusDelaySource"/>
+    /// (<see cref="DelaySource"/>). Recorded only after the scheduled re-send succeeded, so it is how
+    /// far the copy was pushed behind its session, not the store's raw hint.
     /// </summary>
     public static readonly Histogram<double> ResolverRetryDelay = Resolver.CreateHistogram<double>(
-        "nimbus.resolver.retry_delay_seconds", "s", "Applied delay before a rescheduled Resolver message is redelivered.");
+        "nimbus.resolver.retry.delay", "s", "Applied delay before a rescheduled Resolver message is redelivered.");
 
     public static readonly Meter Store = new(NimBusInstrumentation.StoreMeterName);
 

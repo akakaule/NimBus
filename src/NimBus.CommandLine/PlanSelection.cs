@@ -11,37 +11,33 @@ namespace NimBus.CommandLine;
 /// </summary>
 internal static class PlanSelection
 {
-    /// <summary>Parses the --resolver-max-sessions option value. Null/blank means "use the template default".</summary>
-    public static int? ParseResolverMaxSessionsOption(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        if (int.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var sessions) && sessions is >= 1 and <= 200)
-        {
-            return sessions;
-        }
+    /// <summary>Range of <c>--resolver-max-sessions</c> (Service Bus sessions per Resolver instance); mirrors the Bicep parameter bounds.</summary>
+    public const int MinResolverSessions = 1;
+    public const int MaxResolverSessions = 200;
 
-        throw new CommandException($"Invalid --resolver-max-sessions value '{value}'. Expected an integer from 1 to 200.");
-    }
+    /// <summary>Elastic Premium <c>functionAppScaleLimit</c>: 0 means no per-app cap; the plan template allows 10 workers.</summary>
+    public const int MaxElasticPremiumInstances = 10;
+
+    /// <summary>Flex Consumption <c>maximumInstanceCount</c>: the platform accepts 1 to 1000 (template default 100).</summary>
+    public const int MinFlexInstances = 1;
+    public const int MaxFlexInstances = 1000;
+
+    /// <summary>Parses the --resolver-max-sessions option value. Null/blank means "use the template default".</summary>
+    public static int? ParseResolverMaxSessionsOption(string? value) =>
+        ParseIntegerOption(value, "--resolver-max-sessions", MinResolverSessions, MaxResolverSessions);
 
     /// <summary>
     /// Parses the --resolver-max-instances option value. Null/blank means "use the template default".
     /// Only the shape is checked here; the plan-specific range is applied by <see cref="ResolveResolverMaxInstances"/>.
     /// </summary>
-    public static int? ParseResolverMaxInstancesOption(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        if (int.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var instances) && instances >= 0)
-        {
-            return instances;
-        }
-
-        throw new CommandException($"Invalid --resolver-max-instances value '{value}'. Expected a non-negative integer.");
-    }
+    public static int? ParseResolverMaxInstancesOption(string? value) =>
+        ParseIntegerOption(value, "--resolver-max-instances", 0, int.MaxValue);
 
     /// <summary>
     /// Maps the requested Resolver instance ceiling onto the Bicep parameter for the resolved plan.
-    /// Elastic Premium caps the app through functionAppScaleLimit (0 = no cap, at most the plan's 10 workers);
-    /// Flex Consumption uses maximumInstanceCount, whose platform minimum is 40, so the two cannot share a parameter.
+    /// Elastic Premium caps the app through functionAppScaleLimit (0 = no cap, written explicitly so an
+    /// earlier cap is cleared); Flex Consumption uses maximumInstanceCount (1-1000), where 0 has no
+    /// "no cap" meaning, so the two cannot share a parameter.
     /// </summary>
     public static (string ParameterName, int Value)? ResolveResolverMaxInstances(int? requested, ResolverPlanChoice plan)
     {
@@ -49,14 +45,26 @@ internal static class PlanSelection
 
         return plan switch
         {
-            ResolverPlanChoice.ElasticPremium when value is >= 0 and <= 10 => ("resolverMaxInstances", value),
+            ResolverPlanChoice.ElasticPremium when value >= 0 && value <= MaxElasticPremiumInstances => ("resolverMaxInstances", value),
             ResolverPlanChoice.ElasticPremium => throw new CommandException(
-                $"--resolver-max-instances {value} is out of range. Elastic Premium allows 0 (no cap) to 10."),
-            ResolverPlanChoice.FlexConsumption when value is >= 40 and <= 1000 => ("resolverFlexMaximumInstanceCount", value),
+                $"--resolver-max-instances {value} is out of range. Elastic Premium allows 0 (no cap) to {MaxElasticPremiumInstances}."),
+            ResolverPlanChoice.FlexConsumption when value >= MinFlexInstances && value <= MaxFlexInstances => ("resolverFlexMaximumInstanceCount", value),
             ResolverPlanChoice.FlexConsumption => throw new CommandException(
-                $"--resolver-max-instances {value} is out of range. Flex Consumption requires 40 to 1000; the platform minimum is 40."),
+                $"--resolver-max-instances {value} is out of range. Flex Consumption requires {MinFlexInstances} to {MaxFlexInstances}; omit the option to keep the template default."),
             _ => throw new ArgumentOutOfRangeException(nameof(plan), plan, "Unknown resolver plan."),
         };
+    }
+
+    private static int? ParseIntegerOption(string? value, string optionName, int min, int max)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (int.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed >= min && parsed <= max)
+        {
+            return parsed;
+        }
+
+        var expected = max == int.MaxValue ? $"an integer of at least {min}" : $"an integer from {min} to {max}";
+        throw new CommandException($"Invalid {optionName} value '{value}'. Expected {expected}.");
     }
 
     /// <summary>Parses the --resolver-plan option value. Null/blank means "auto" (pin existing, else default).</summary>

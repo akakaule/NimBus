@@ -100,31 +100,38 @@ public class BicepTemplateProviderTests
     }
 
     /// <summary>
-    /// The Resolver's app settings are template-owned and replaced on every deploy, so the
-    /// Service Bus consumer bounds must be expressed as host overrides in the core template.
+    /// The Resolver's app settings are template-owned and replaced on every deploy, so the one
+    /// tunable consumer bound (session concurrency) is expressed as a host override in the core
+    /// template. The fixed bounds (prefetch, session idle timeout, dynamic concurrency) ship in
+    /// host.json with the binary and are pinned there; each value has exactly one owner.
     /// </summary>
     [Fact]
-    public void Core_template_owns_the_Resolver_host_overrides()
+    public void Core_template_owns_only_the_session_concurrency_override()
     {
         var context = new CommandContext(null);
         var template = File.ReadAllText(context.CoreBicepPath);
 
         Assert.Contains("AzureFunctionsJobHost__extensions__serviceBus__maxConcurrentSessions", template, StringComparison.Ordinal);
-        Assert.Contains("AzureFunctionsJobHost__extensions__serviceBus__prefetchCount", template, StringComparison.Ordinal);
-        Assert.Contains("AzureFunctionsJobHost__extensions__serviceBus__sessionIdleTimeout", template, StringComparison.Ordinal);
-        Assert.Contains("AzureFunctionsJobHost__concurrency__dynamicConcurrencyEnabled", template, StringComparison.Ordinal);
+        Assert.Contains("param resolverMaxConcurrentSessions int = 16", template, StringComparison.Ordinal);
+        Assert.DoesNotContain("AzureFunctionsJobHost__extensions__serviceBus__prefetchCount", template, StringComparison.Ordinal);
+        Assert.DoesNotContain("AzureFunctionsJobHost__extensions__serviceBus__sessionIdleTimeout", template, StringComparison.Ordinal);
+        Assert.DoesNotContain("AzureFunctionsJobHost__concurrency__dynamicConcurrencyEnabled", template, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Elastic_Premium_function_app_template_exposes_functionAppScaleLimit()
+    public void Function_app_templates_expose_their_instance_ceiling_parameters()
     {
         var context = new CommandContext(null);
-        var functionApp = Path.Combine(
-            Path.GetDirectoryName(context.CoreBicepPath)!,
-            "templates",
-            "functionApp.bicep");
-        var template = File.ReadAllText(functionApp);
+        var templates = Path.Combine(Path.GetDirectoryName(context.CoreBicepPath)!, "templates");
 
-        Assert.Contains("functionAppScaleLimit", template, StringComparison.Ordinal);
+        var elastic = File.ReadAllText(Path.Combine(templates, "functionApp.bicep"));
+        Assert.Contains("param functionAppScaleLimit int = 0", elastic, StringComparison.Ordinal);
+        // 0 is the platform's "unrestricted" value; it must be written, not dropped as null,
+        // so a cap applied by an earlier deployment can be cleared.
+        Assert.Contains("functionAppScaleLimit: functionAppScaleLimit", elastic, StringComparison.Ordinal);
+        Assert.DoesNotContain("functionAppScaleLimit > 0", elastic, StringComparison.Ordinal);
+
+        var flex = File.ReadAllText(Path.Combine(templates, "flexConsumptionFunctionApp.bicep"));
+        Assert.Contains("param maximumInstanceCount int = 100", flex, StringComparison.Ordinal);
     }
 }

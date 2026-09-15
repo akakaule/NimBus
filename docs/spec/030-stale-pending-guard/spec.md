@@ -1,8 +1,8 @@
 # Spec 030 — Stale message copies must not reopen a settled audit row
 
-Status: proposed; the guard itself is not implemented yet. The ADR-012 amendment it relies on
-(handoff settlement requests are history only) shipped on branch `feat/resolver-capacity-controls`
-on 2026-09-15.
+Status: proposed; the guard itself is not implemented yet. DIS's history-only handoff
+settlement projection was evaluated for it on 2026-09-15 and not adopted (Spec 031 §3.6); the
+rule below keeps the settlement requests in its control-request set.
 Trigger: production incident on EET `Nav09Endpoint`, 2026-09-14, NimBus 3.5.1, Cosmos DB store
 Baseline: master `84e63e6` (v3.6.1). Every file named below is byte-identical to the deployed v3.5.1.
 Review status: design reviewed adversarially (three independent passes); §13 lists what changed.
@@ -104,11 +104,10 @@ Vocabulary:
 - Terminal statuses: Completed, Skipped, Failed, DeadLettered, Unsupported.
 - Request-stage writes: `EventRequest` (projected as Pending) and `DeferralResponse` (Deferred).
   A row last written by one of these is a *request-stage row*.
-- Control requests: `ResubmissionRequest`, `SkipRequest`, `RetryRequest`, `ContinuationRequest`
-  (all projected as Pending). They are operator or manager intent.
-- Handoff settlement requests (`HandoffCompletedRequest` / `HandoffFailedRequest`) never reach a
-  status write since ADR-012 was amended on 2026-09-15: the Resolver records them in history only
-  and the Pending+Handoff row waits for the terminal response.
+- Control requests: `ResubmissionRequest`, `SkipRequest`, `RetryRequest`, `ContinuationRequest`,
+  `HandoffCompletedRequest`, `HandoffFailedRequest` (all projected as Pending). They are operator or
+  manager intent. (DIS's history-only projection of the two settlement requests was evaluated on
+  2026-09-15 and not adopted; see Spec 031 §3.6 and the ADR-012 note.)
 - Handoff park: `PendingHandoffResponse` (Pending with `PendingSubStatus = "Handoff"`).
 - Everything else (`MessageType.Unknown` from CLI and test seeds) is not guarded.
 
@@ -117,8 +116,9 @@ Decision for an incoming write with status `S`, content `c`, against the existin
 1. `r` absent, or `S` terminal, or `c.MessageType` not guarded: **apply** (unchanged behaviour).
 2. Ancestor check: if `r.ParentMessageId` is non-empty and equals `c.LastMessageId`, **refuse**.
    `ResponseService.CreateResponse` stamps every response's `ParentMessageId` with the message it
-   answers, so a row whose last write names this message as its parent already holds this
-   message's outcome. Original requests arrive with `ParentMessageId = "self"`
+   answers, and `HandoffControlMessageFactory` stamps a settlement's `ParentMessageId` with the
+   handoff response it settles. A row whose last write names this message as its parent therefore
+   already holds this message's outcome. Original requests arrive with `ParentMessageId = "self"`
    (`MessageContext.cs:115`), so first writes are unaffected.
 3. By incoming type:
    - request-stage write: **apply only if `r` is a request-stage row that is not terminal**, that is
@@ -153,7 +153,7 @@ public static class StaleWriteGuard
 
     public static bool IsControlRequest(MessageType t) =>
         t is MessageType.ResubmissionRequest or MessageType.SkipRequest or MessageType.RetryRequest
-          or MessageType.ContinuationRequest;
+          or MessageType.ContinuationRequest or MessageType.HandoffCompletedRequest or MessageType.HandoffFailedRequest;
 
     /// <summary>True when the incoming write is subject to the rule (and so needs the current row).</summary>
     public static bool IsGuarded(ResolutionStatus incomingStatus, MessageType incomingType) =>
@@ -297,7 +297,8 @@ ON target.EndpointId = source.EndpointId AND target.EventId = source.EventId
 WHEN MATCHED AND (
         @Status IN ('Completed','Skipped','Failed','DeadLettered','Unsupported')                        -- terminal writes
      OR @MessageType NOT IN ('EventRequest','DeferralResponse','PendingHandoffResponse',
-                             'ResubmissionRequest','SkipRequest','RetryRequest','ContinuationRequest') -- not guarded
+                             'ResubmissionRequest','SkipRequest','RetryRequest','ContinuationRequest',
+                             'HandoffCompletedRequest','HandoffFailedRequest')                          -- not guarded
      OR (
             (NULLIF(target.ParentMessageId, '') IS NULL OR NULLIF(@LastMessageId, '') IS NULL
              OR target.ParentMessageId COLLATE Latin1_General_BIN2 <> @LastMessageId COLLATE Latin1_General_BIN2)  -- ancestor check
@@ -423,7 +424,7 @@ Update the acceptance item in `docs/plan/resolver-dead-letter-replay.md` that pr
 | Operator Resubmit (`ManagerClient.Resubmit`) | `ResubmissionRequest`, fresh `MessageId`, `ParentMessageId = errorResponse.MessageId` | Failed / DeadLettered / Unsupported (possibly archived); Completed via direct API | Control request; row parent is the original request id, never the fresh id. Applied, `Deleted = 0` / `deleted = false` restored as today. |
 | Operator Skip (`ManagerClient.Skip`) | `SkipRequest`, fresh id | Failed / DeadLettered / Unsupported | Same. The following `SkipResponse` is terminal, unguarded. |
 | Handoff park | `PendingHandoffResponse` | Pending (request or control row), Deferred, or Failed (policy retry) | Allowed statuses. Applied. |
-| Handoff settlement (SDK `HandoffClient` or WebApp `HandoffSettlementService`) | `HandoffCompletedRequest` / `HandoffFailedRequest` | Pending+Handoff | Never reaches a status write: the Resolver stores it in history only (ADR-012, amended 2026-09-15). The row stays Pending+Handoff until the subscriber's terminal response, a terminal write. |
+| Handoff settlement (SDK `HandoffClient` or WebApp `HandoffSettlementService`) | `HandoffCompletedRequest` / `HandoffFailedRequest`, `MessageId = Guid.NewGuid()`, `ParentMessageId` = the handoff response's id | Pending+Handoff | Control request; fresh Guid never equals the row's parent. Applied as plain Pending with `PendingSubStatus` cleared, which is what the agent zone's receive loop and settle guard rely on (ADR-012, 2026-09-15 note). |
 | Subscriber inbox duplicate | `SkipResponse` (DuplicateDetected) | any | Terminal write, unguarded. Unchanged. |
 | Admin bulk skip, CLI `nb container resubmit/skip`, WebApp archive/remove/purge patches, test seeds | Skipped / Failed writes, `PatchItemAsync`, or `MessageType.Unknown` | any | Terminal, patch, or not guarded. Unchanged. The CLI stamps `MessageType = EventRequest` on a **Failed** write (`Container.cs`); that row is terminal, so a late request copy is refused. |
 | `RetryRequest` / `ContinuationRequest` | addressed to `Retry` / `Continuation` | any | The provisioned fan-out rules never match them, so the Resolver does not see them; a legacy namespace that forwards them applies them as control requests. |
@@ -434,7 +435,7 @@ What the rule newly protects:
   `DeferralResponse` copies (the incident, and the stuck-Deferred variant).
 - Completed and Skipped rows against a late `PendingHandoffResponse` copy (phantom "awaiting
   external" rows that `GetNextPendingHandoffEvent` would hand to agents).
-- Pending rows written by a resubmission or a handoff park against late request copies, so
+- Pending rows written by a control request or a handoff park against late request copies, so
   `HandoffSettlementService`'s gate on `PendingSubStatus == "Handoff"` and
   `GetPendingHandoffByExternalJobId` keep working, and a resubmission's projection is not overwritten
   by the original request's late copy.
@@ -467,14 +468,16 @@ Cosmos container on the emulator. Pass a fresh `SampleEvent` per call.
 3. `Request_copy_does_not_replace_control_or_handoff_rows`: Pending(ResubmissionRequest) ->
    Pending(EventRequest) `false` and `GetPendingEvent().MessageType == ResubmissionRequest`;
    Pending(PendingHandoffResponse, `PendingSubStatus = "Handoff"`, `ExternalJobId = "job-1"`) ->
-   Pending(EventRequest) `false` and `GetPendingHandoffByExternalJobId` still returns the row.
+   Pending(EventRequest) `false` and `GetPendingHandoffByExternalJobId` still returns the row;
+   Pending(HandoffCompletedRequest) -> Pending(EventRequest) `false`.
 4. `Handoff_park_is_refused_over_completed_and_skipped_only`:
    Completed -> Pending(PendingHandoffResponse) `false`; Skipped -> `false`; Failed, DeadLettered,
    Unsupported, Deferred and Pending(ResubmissionRequest) -> `true`, each with
    `GetPendingEvent().PendingSubStatus == "Handoff"`.
-5. (Removed 2026-09-15.) Settlement requests no longer write the row, so there is no
-   settlement-clears-substatus case; the Resolver unit test
-   `Handle_HandoffSettlementRequest_RecordsHistoryWithoutProjectingState` pins the new behaviour.
+5. `Handoff_settlement_clears_substatus`: Pending(PendingHandoffResponse, "Handoff", "job-1") ->
+   Pending(HandoffCompletedRequest, fresh id) `true`, `GetPendingHandoffByExternalJobId` returns null.
+   (The Resolver side of this projection is already pinned by
+   `Handle_HandoffSettlementRequest_ProjectsPlainPendingRow`.)
 6. `Control_request_reopens_settled_rows` (`[DataRow]`): (Failed, ResubmissionRequest),
    (DeadLettered, SkipRequest), (Completed, ResubmissionRequest), (Unsupported, ResubmissionRequest)
    -> `true`, `PendingCount == 1`.
@@ -497,9 +500,10 @@ Resolver unit tests (`tests/NimBus.Resolver.Tests`). First hoist `CreateMessageC
   incident order (`ResolutionResponse` with `ParentMessageId = request-1`, then a late `EventRequest`
   `request-1` with `ThrottleRetryCount = 5`) leaves the row Completed, `PendingCount == 0`, two
   history entries, both messages completed; fan-out-lag order (request, response, same-id request
-  copy) likewise; a late request over Pending+Handoff keeps the handoff; a `ResubmissionRequest`
-  over Failed reopens; a late `DeferralResponse` or `PendingHandoffResponse` after Completed keeps
-  Completed; a same-id `ResubmissionRequest` arriving after its own response is refused.
+  copy) likewise; a late request over Pending+Handoff keeps the handoff; a late request over a
+  Pending row written by `HandoffCompletedRequest` is refused; a `ResubmissionRequest` over Failed
+  reopens; a late `DeferralResponse` or `PendingHandoffResponse` after Completed keeps Completed; a
+  same-id `ResubmissionRequest` arriving after its own response is refused.
 
 Cosmos unit tests with the recording adapter (make `ReadItemAsync` scriptable and let
 `CreateItemAsync` record instead of throw): refused path performs no upsert and returns `false`;

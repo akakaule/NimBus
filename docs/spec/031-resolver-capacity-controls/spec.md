@@ -90,40 +90,48 @@ so the overrides must live in Bicep, exactly as DIS did.
     is 10). Opt-in on purpose: with `host.json` at 16 sessions, an uncapped plan is already
     16 × 10 = 160 sessions, twelve times below today's 200 × 10, and the instance cap is the value
     with the least evidence behind it (DIS calls its 2 a UAT hypothesis).
-  - `@minValue(40) @maxValue(1000) param resolverFlexMaximumInstanceCount int = 100` (Flex
-    Consumption's `maximumInstanceCount` has a platform minimum of 40, so the EP ceiling cannot
-    be reused; today's template default is kept). On Flex the session ceiling is therefore at
-    least 40 × sessions; only the per-instance sessions value bounds Cosmos concurrency there.
-    Note also that sessions and instances are coupled on both plans: target-based scaling uses
-    the per-instance concurrency as its target, so lowering sessions raises the instance count
-    the scale controller wants. Change one, measure, then the other.
-  - append to `sharedResolverSettings`: `AzureFunctionsJobHost__extensions__serviceBus__maxConcurrentSessions = string(resolverMaxConcurrentSessions)`,
-    `AzureFunctionsJobHost__extensions__serviceBus__prefetchCount = '0'`,
-    `AzureFunctionsJobHost__extensions__serviceBus__sessionIdleTimeout = '00:00:01'`,
-    `AzureFunctionsJobHost__concurrency__dynamicConcurrencyEnabled = 'false'`
+  - `@minValue(1) @maxValue(1000) param resolverFlexMaximumInstanceCount int = 100` (Flex
+    Consumption's `maximumInstanceCount` accepts 1–1000 per Microsoft Learn as of 2026-09-14;
+    the earlier "minimum 40" was stale. It stays a separate parameter because 0 has no "no cap"
+    meaning on Flex; today's template default is kept). Note that sessions and instances are
+    coupled on both plans: target-based scaling uses the per-instance concurrency as its target,
+    so lowering sessions raises the instance count the scale controller wants. Change one,
+    measure, then the other.
+  - append to `sharedResolverSettings` the one tunable bound:
+    `AzureFunctionsJobHost__extensions__serviceBus__maxConcurrentSessions = string(resolverMaxConcurrentSessions)`.
+    The fixed bounds (prefetch 0, 1 s idle timeout, dynamic concurrency off) are **not**
+    duplicated as template literals: they ship in `host.json` with the binary and are pinned
+    by `ResolverHostConfigurationTests`, so each value has exactly one owner (review finding;
+    an app setting silently wins over `host.json`, which would have made the pin meaningless)
   - move `APPLICATIONINSIGHTS_CONNECTION_STRING` from `flexSecretSettings` into
     `sharedResolverSecretSettings` so both plan branches register the Azure Monitor exporter
     (§3.3 depends on it)
   - pass `functionAppScaleLimit: resolverMaxInstances` to `resolverFunctionElastic` and
     `maximumInstanceCount: resolverFlexMaximumInstanceCount` to `resolverFunctionFlex`.
 - `deploy/bicep/templates/functionApp.bicep`: `@minValue(0) param functionAppScaleLimit int = 0`
-  and `siteConfig.functionAppScaleLimit: functionAppScaleLimit > 0 ? functionAppScaleLimit : null`
-  (the template has one caller today; the optional parameter keeps the packaged template
-  reusable).
-- CLI (`Program.cs`, both `setup` and `infra apply`): `--resolver-max-sessions <N>` and
-  `--resolver-max-instances <N>`. `Program.cs` parses to `int` and rejects non-integers and
-  values below 1. The per-plan range check happens in `DeployCoreInfrastructureAsync`, because
-  the effective plan is only known after existing-plan pinning (`PlanSelection.ResolveResolverPlan`):
-  EP requires 1–10 and emits `resolverMaxInstances=`, Flex requires 40–1000 and emits
-  `resolverFlexMaximumInstanceCount=`; violations throw `CommandException`. New optional members
+  and `siteConfig.functionAppScaleLimit: functionAppScaleLimit`, written unconditionally. 0 is
+  the platform's documented "unrestricted" value; a null property would be dropped from the
+  ARM request and a cap applied by an earlier deployment would silently stay in place (review
+  finding).
+- CLI (`Program.cs`, both `setup` and `infra apply`): `--resolver-max-sessions <N>` (1–200) and
+  `--resolver-max-instances <N>`. `Program.cs` parses both to `int` (sessions 1–200; instances
+  any non-negative integer) before any network work. The per-plan range check lives in
+  `PlanSelection.ResolveResolverMaxInstances`: EP accepts 0–10 (0 = no cap) and emits
+  `resolverMaxInstances=`, Flex accepts 1–1000 and emits `resolverFlexMaximumInstanceCount=`;
+  violations throw `CommandException`. It runs at the top of `ApplyAsync` when `--resolver-plan`
+  is explicit (before login and provider registration) and again in
+  `DeployCoreInfrastructureAsync` once an auto-pinned plan is known. New optional members
   `ResolverMaxConcurrentSessions` and `ResolverMaxInstances` on `InfrastructureOptions`; the
   parameters are passed only when given, so the Bicep defaults apply otherwise. This is a
   deliberate difference from DIS, whose pipeline variables are mandatory.
 - Tests: `PlanSelectionTests`-style cases for parsing and per-plan ranges; an
   `InfrastructureDeployerSecretTests`-style case asserting the parameters reach the
   `deployment group create` arguments for each branch; a `BicepTemplateProviderTests` string
-  check that `deploy.core.bicep` carries the four `AzureFunctionsJobHost__` settings and both
-  templates declare their ceiling parameter. CI has no Bicep compile step today (the Bicep CLI
+  check that `deploy.core.bicep` carries only the `maxConcurrentSessions` override (and none of
+  the fixed-bound literals), that `functionApp.bicep` writes `functionAppScaleLimit`
+  unconditionally, and that both templates declare their ceiling parameter; an MSTest that
+  pins `host.json` (linked into the test output as `Resolver.host.json`). CI has no Bicep
+  compile step today (the Bicep CLI
   is a deployment prerequisite only); `az bicep build --stdout` on both entry templates is part
   of the manual verification and worth adding to CI separately (§6).
 - Docs and entry points: `docs/cli.md` (the option reference `deployment.md` delegates to),
@@ -132,13 +140,15 @@ so the overrides must live in Bicep, exactly as DIS did.
   `pipelines/azure-pipelines-deploy.yml` gain the two options as optional pass-through inputs,
   as they already do for `--resolver-plan`.
 
-**Brownfield note.** An unmodified `nb setup` with this version changes exactly one thing on an
-existing deployment: sessions per instance drop from 200 to 16 (and the idle timeout to 1 s)
-through the template-owned overrides. No instance cap is applied unless `--resolver-max-instances`
-is passed. EET's `deploy-stage-template.yml` passes nothing today, so the pipeline change that
-pins per-environment values must land in the same PR as the version bump, and every throughput
-knob is an app setting so that a rollback is another `nb setup` with different values, never a
-binary rollback (which would also remove Spec 030's guard).
+**Brownfield note.** An unmodified `nb setup` with this version changes exactly one setting on
+an existing deployment: sessions per instance drop from 200 to 16 through the template-owned
+override. The 1 s idle timeout, prefetch 0 and disabled dynamic concurrency arrive with the new
+Resolver binary's `host.json`. No instance cap is applied unless `--resolver-max-instances` is
+passed, and passing `0` on Elastic Premium clears a cap set earlier. EET's
+`deploy-stage-template.yml` passes nothing today, so the pipeline change that pins
+per-environment values must land in the same PR as the version bump. Sessions and the instance
+cap roll back with another `nb setup`; the `host.json` bounds need a Resolver redeploy (which is
+why Spec 030 may ship separately, §6).
 
 ### 3.3 Telemetry, step 1 (this change): settlement counters through the existing meters
 
@@ -152,20 +162,25 @@ move in §3.2 fixes the export path; §5 adds the check that proves it.
 
 What is added, in `NimBusMeters` and `MessagingAttributes`:
 
-- Counter `nimbus.resolver.store_retry` {events}, tags `nimbus.store.reason` = `throttled`
-  (from `HandleCosmosThrottle`, `RequestLimitException`) | `transient` (from `HandleThrottling`,
-  `StorageProviderTransientException`) and `nimbus.retry.action` = `rescheduled` |
-  `dead_lettered` | `abandoned` (the fallback when `ScheduleRedelivery` itself throws).
+- Counter `nimbus.resolver.store_retry` {events}, tags `nimbus.endpoint`, `nimbus.store.reason` =
+  `throttled` (`RequestLimitException`) | `transient` (`StorageProviderTransientException`) and
+  `nimbus.retry.action` = `rescheduled` | `dead_lettered` | `abandoned` (the fallback when
+  `ScheduleRedelivery` itself throws). Tag values are the public constants `StoreRetryReason`,
+  `RetryAction` and `DelaySource` in `NimBus.Core.Diagnostics`, following `StoreProvider`. Both
+  reasons share one settlement path (`HandleStoreFailure`) and one delivery budget
+  (`ThrottleRetryCount + DeliveryCount`), and every increment happens after its settlement
+  call succeeded, so a failed dead-letter or reschedule is never counted as done.
   Provider-neutral on purpose: `transient` covers Cosmos 408/410/449/5xx and every SQL Server
   transient error, so it must not be labelled as Cosmos throttling. Alert on
   `reason == throttled`: sum over 1 min > 0 for two consecutive evaluations (Azure Monitor metric
   alerts evaluate at 1 min granularity at best; a 30 s window needs a log-based KQL alert or the
   §3.4 evaluator).
-- Histogram `nimbus.resolver.retry_delay_seconds` recording the **applied** delay
-  (`max(backoff, RetryAfter)` as computed in `ScheduleStorageRedelivery` / `HandleThrottling`)
-  with tag `nimbus.delay.source` = `provider` | `backoff`. The applied delay is the number that
-  matters for Spec 030 (how far a copy is pushed behind its session); the raw hint is in the
-  existing warning log.
+- Histogram `nimbus.resolver.retry.delay` (unit `s`; the unit is not embedded in the name)
+  recording the **applied** delay (`max(RetryPolicy backoff, RetryAfter)`) with tags
+  `nimbus.endpoint` and `nimbus.delay.source` = `provider` | `backoff`, recorded only after the
+  scheduled re-send succeeded, so an abandoned message never contributes a delay it did not
+  wait. The applied delay is the number that matters for Spec 030 (how far a copy is pushed
+  behind its session); the raw hint is in the existing warning log.
 
 About twenty lines plus unit tests on `FakeCosmosDbClient` throwing `RequestLimitException`
 (with and without `RetryAfter`) and `StorageProviderTransientException`, asserting the tag values
@@ -248,13 +263,23 @@ keep NimBus's approach:
 This section supersedes the "hold the session lock instead of re-sending" follow-up that Spec
 030 §11 listed; that bullet now points here.
 
-### 3.6 Noted, not in scope: handoff settlement projection
+### 3.6 Evaluated and not adopted: DIS's history-only handoff settlement projection
 
 DIS records `HandoffCompletedRequest` / `HandoffFailedRequest` in history only and leaves the
 Pending+Handoff row untouched until the subscriber's terminal response. NimBus projects them as
-plain Pending (ADR-012). Adopting the DIS behaviour would remove the "row written by a handoff
-settlement" case from Spec 030's rule, because settlements would never write the row. Decide
-together with the Spec 030 implementation; default is to keep ADR-012.
+plain Pending with the handoff sub-status cleared (ADR-012). The DIS rule was approved on
+2026-09-15, implemented, and then reversed during code review for one reason DIS never faced:
+DIS has no agent zone. NimBus's `GetAgentReceiveAsync` is a non-claiming, oldest-first read of
+Pending+Handoff rows and `HandoffSettlementService` gates on that sub-status. Without the
+projection the zone re-delivers the just-settled event until the subscriber's round trip
+completes, admits a second settlement in that window, and blocks the whole zone on that row
+for the duration (the whole outage, if the subscriber is down). The Spec 030 simplification it
+would have bought is marginal, because the guard keeps its control-request clause for
+Resubmit and Skip regardless. ADR-012 carries the note; the projection is now pinned by
+`Handle_HandoffSettlementRequest_ProjectsPlainPendingRow`. A badge-preserving variant (project
+the settlement but keep `PendingSubStatus = "Handoff"`, and exclude settled rows from the
+receive query by `MessageType`) is possible later at the cost of a query change in all three
+providers.
 
 ## 4. Rollout for EET
 
@@ -273,7 +298,7 @@ together with the Spec 030 implementation; default is to keep ADR-012.
    `EET.Deploy/pipelines/deploy-stage-template.yml`, fed from the `DIS-{env}` variable groups,
    sized from step 1 with the ceiling formula in §3.1. Start dev at 16 sessions with no instance
    cap unless the measured peak says otherwise. After the first deploy per environment, read
-   back `functionAppScaleLimit` and the four `AzureFunctionsJobHost__` settings.
+   back `functionAppScaleLimit` and the `maxConcurrentSessions` app setting.
 3. Measure in dev and test: 429s should drop to near zero. Rollback trigger: active-message age
    on the Resolver subscription above an agreed limit (say 5 min at steady state) with 429s at
    zero means the ceiling is too low; raise sessions first, then relax the instance cap, one
@@ -298,7 +323,7 @@ budget to check.
   applied delay with its source.
 - Bicep: `az bicep build --stdout` on `deploy.core.bicep` and `deploy.webapp.bicep`; a
   `what-if` against a sandbox resource group must show only the Resolver app changing
-  (`functionAppScaleLimit`, four `AzureFunctionsJobHost__` settings, the connection-string
+  (`functionAppScaleLimit`, the `maxConcurrentSessions` app setting, the connection-string
   setting on EP) and no change to the WebApp or plans.
 - Live, after `nb setup` on an EP1 deployment: read back `az functionapp config appsettings list`
   and `az functionapp show --query siteConfig.functionAppScaleLimit`; confirm the extension
@@ -320,16 +345,18 @@ budget to check.
 3. Whether to add a Bicep compile step to CI in the same PR.
 4. Whether to open the ADR-012 question in §3.6 alongside Spec 030.
 5. Whether Spec 030 ships alone first (3.6.2, correctness only) and this spec follows (3.7.0),
-   so a throughput problem can never force a rollback of the guard. With every knob being an app
-   setting, a settings-only rollback is available either way; shipping separately is still the
-   cleaner story.
+   so a throughput problem can never force a rollback of the guard. Sessions and the instance
+   cap roll back through `nb setup` either way; the `host.json` bounds need a Resolver
+   redeploy, so shipping separately is still the cleaner story.
 6. Whether `nb setup` should refuse to run on Elastic Premium without an explicit
    `--resolver-max-instances`, instead of the opt-in default proposed in §3.2.
 
 ## 7. Facts to verify before implementing
 
-- Flex Consumption `maximumInstanceCount` minimum is 40 (Azure platform limit, not a NimBus
-  choice); confirm against current Azure documentation.
+- (Resolved 2026-09-15.) Flex Consumption `maximumInstanceCount` accepts 1–1000 and Elastic
+  Premium `functionAppScaleLimit` treats 0 as unrestricted, both per Microsoft Learn pages dated
+  2026-09-14 and 2026-08-03; the earlier "minimum 40" assumption was stale and has been removed
+  from the code, templates and docs.
 - `AzureFunctionsJobHost__*` host overrides are honoured on Flex Consumption as on Elastic
   Premium (they are on Windows EP; Flex rejects only the legacy content-share settings).
 - `functionAppScaleLimit` is honoured on Elastic Premium plans (documented for Premium and
@@ -375,5 +402,12 @@ arithmetic was softened to what the repos show. The third pass then corrected th
 model in §3.5 (session release, not per-message lock expiry), added the session-turnover ceiling
 arithmetic that made the idle timeout follow DIS's 1 s and the instance cap opt-in (default 0),
 added the sizing rule, the rollback trigger and the plan-inventory step to §4, noted the
-sessions/instances coupling and the Flex 40-instance floor, restated the alert at 1 min
-granularity, and retired the conflicting "hold the lock" follow-up in Spec 030 §11.
+sessions/instances coupling, restated the alert at 1 min granularity, and retired the
+conflicting "hold the lock" follow-up in Spec 030 §11. The post-implementation code review
+(2026-09-15) then: corrected the Flex Consumption range to 1–1000 (the "minimum 40" was stale)
+and made `functionAppScaleLimit` 0 explicit so a cap can be cleared; kept only the tunable
+`maxConcurrentSessions` as a template override, leaving the fixed bounds to `host.json`;
+unified the throttled and transient reschedule paths on `RetryPolicy` with one delivery budget
+and moved every counter increment after its settlement call; added the `nimbus.endpoint` tag
+and public tag-value constants; renamed the histogram to `nimbus.resolver.retry.delay`; and
+reversed the §3.6 decision (see there).

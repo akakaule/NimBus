@@ -18,6 +18,15 @@ internal sealed class InfrastructureDeployer
     {
         var names = NamingConventions.Build(options.SolutionId, options.Environment);
 
+        // Fail fast on a plan-specific --resolver-max-instances range error when the plan is
+        // explicit, before the login and provider-registration side effects. An auto-pinned
+        // plan is only known after discovery, so that case is validated in
+        // DeployCoreInfrastructureAsync.
+        if (options.ResolverPlan is { } explicitPlan)
+        {
+            _ = PlanSelection.ResolveResolverMaxInstances(options.ResolverMaxInstances, explicitPlan);
+        }
+
         await _az.EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false);
 
         // Provider registration is subscription-scoped, so an RG-scoped pipeline

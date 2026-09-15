@@ -22,6 +22,46 @@ for message tracking, subscriptions, endpoint metadata, heartbeat history, and
 service health; this keeps registration and public construction compatibility
 while allowing each persistence concern to evolve independently.
 
+## Status writes: the stale-write guard
+
+`IMessageTrackingStore.Upload*Message` returns `Task<bool>`. Since 3.7.0 that bool
+means something:
+
+- `true` — the audit row was created or replaced.
+- `false` — the write was **refused** because the row already holds a later
+  outcome. Nothing was written, and the caller must not retry: the row is correct.
+- provider failures, including a lost compare-and-swap, **throw**. An unavailable
+  store is never reported as a refusal.
+
+The rule lives in one place, `NimBus.MessageStore.StaleWriteGuard`, and every
+provider applies it *inside* its non-terminal status write, atomically against the
+row it is about to replace — Cosmos with a point read plus an `IfMatchEtag`
+replace, SQL Server as a `WHEN MATCHED` predicate on the `UnresolvedEvents` MERGE
+under `HOLDLOCK`, the in-memory store inside its `AddOrUpdate`. It decides from
+three fields every provider already persists: the row's `ResolutionStatus`, the
+`MessageType` that last wrote it, and its `ParentMessageId`.
+
+What it refuses:
+
+| Incoming write | Refused when the existing row is |
+|---|---|
+| `EventRequest`, `DeferralResponse` (a request-stage write) | terminal, or written by a control request or a handoff park |
+| `PendingHandoffResponse` (a handoff park) | `Completed` or `Skipped` |
+| `ResubmissionRequest`, `SkipRequest`, `RetryRequest`, `ContinuationRequest`, `HandoffCompletedRequest`, `HandoffFailedRequest` (control requests) | one whose `ParentMessageId` is this message's own id — the row already holds this message's outcome |
+
+Terminal writes (`Failed`, `DeadLettered`, `Unsupported`, `Skipped`, `Completed`)
+and content carrying `MessageType.Unknown` — CLI and test seeds — are unguarded and
+always apply. Terminal-over-terminal reorders stay last-writer-wins.
+
+Why: a copy of a message can reach the Resolver after the outcome it belongs to,
+through auto-forward lag, a `ScheduleRedelivery` re-send, a dead-letter replay or a
+double deferred drain. Without the guard its `Pending` projection replaced the
+settled row; see [Spec 030](spec/030-stale-pending-guard/spec.md) for the incident.
+
+**If you are writing a provider**, the guard is not optional — the shared
+conformance suite fails you until you apply it, and a refusal must be the only
+reason you return `false`.
+
 ## Cosmos DB
 
 Add the package and register:

@@ -497,6 +497,41 @@ The Resolver stores every message state change in Cosmos DB:
 | `Unsupported` | UnsupportedResponse | No handler registered for event type |
 | `DeadLettered` | ErrorResponse with DeadLetterReason set | NimBus dead-lettered the message — routed to Resolver alongside the SB DLQ move |
 
+### Which messages may reopen a settled row
+
+The Resolver handles one message at a time per session, but nothing orders the
+copies of one event by causality: an auto-forwarded copy can lag, and a message the
+store throttled is re-sent on a delay and lands behind whatever is already queued in
+its session. So a request copy can arrive *after* the response that settled it.
+
+Since 3.7.0 the store decides, not arrival order (the
+[stale-write guard](storage-providers.md#status-writes-the-stale-write-guard)):
+
+- **Control requests** — `ResubmissionRequest`, `SkipRequest`, `RetryRequest`,
+  `ContinuationRequest`, `HandoffCompletedRequest`, `HandoffFailedRequest` — are
+  operator or manager intent and reopen a settled row, exactly as Resubmit and Skip
+  always have. The one exception is a rescheduled or replayed copy of a request the
+  row already answers; that is refused.
+- **A request copy or a deferral** (`EventRequest`, `DeferralResponse`) only
+  refreshes a row that is still in the request stage. It never replaces a settled
+  row, a handoff park, or a control request's projection.
+- **A handoff park** (`PendingHandoffResponse`) is refused over `Completed` and
+  `Skipped` only; `Failed`, `DeadLettered` and `Unsupported` stay open because a
+  policy retry parks a handoff straight from a failed row.
+- **Terminal writes** are unguarded and always apply.
+
+Two consequences for reading the Flow tab:
+
+- A late fan-out copy, a rescheduled copy and a replayed dead-letter copy all still
+  appear there — the per-message history is written before the status write and is
+  never guarded. Seeing a request *after* its response is expected; the row's status
+  is what tells you the outcome. A refusal is logged by the Resolver
+  (`Resolver: Ignored stale ...`), counted as `nimbus.resolver.outcome_ignored`, and
+  recorded as a Comment audit on the event.
+- A message re-sent after a store throttle keeps its original `MessageId`, so a
+  whole throttle chain shares **one** history entry instead of leaving one per round.
+  A five-round backoff therefore no longer looks like five request copies.
+
 ---
 
 ## Design Notes

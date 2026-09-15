@@ -28,6 +28,7 @@ public static class MessagingAttributes
     public const string NimBusEventType = "nimbus.event_type";
     public const string NimBusSessionKey = "nimbus.session.key";
     public const string NimBusOutcome = "nimbus.outcome";
+    public const string NimBusOutcomeApplied = "nimbus.outcome.applied";
     public const string NimBusPermanentFailure = "nimbus.permanent_failure";
     public const string NimBusDeliveryCount = "nimbus.delivery_count";
     public const string NimBusHandlerType = "nimbus.handler.type";

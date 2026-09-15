@@ -103,6 +103,10 @@ namespace NimBus.Core.Messages
         /// Schedules the current message for redelivery after a delay.
         /// Creates a new message with the same content and completes the original.
         /// Used for exponential backoff when Cosmos DB is throttled.
+        /// <para>The copy keeps the original <c>MessageId</c>: it can arrive after the outcome it
+        /// belongs to, and the tracking store's stale-write guard recognises an already-answered
+        /// message by that id (Spec 030). Implementations must not mint a fresh one, and the
+        /// receiving entity must not have duplicate detection enabled.</para>
         /// </summary>
         /// <param name="delay">The delay before the message is redelivered.</param>
         /// <param name="throttleRetryCount">The retry count to set on the new message.</param>

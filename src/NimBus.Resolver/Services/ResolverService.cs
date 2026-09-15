@@ -120,13 +120,23 @@ namespace NimBus.Broker.Services
 
                 await _store.StoreMessage(messageEntity);
 
-                var status = await UpdateState(messageEntity);
+                var (status, applied) = await UpdateState(messageEntity);
 
-                _logger?.LogInformation("Resolver: Updated Endpoint EndpointId:{EndpointId}, Status:{Status}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
-                    messageEntity.EndpointId, status, messageEntity.EventId, messageContext.MessageId, messageEntity.SessionId);
+                if (applied)
+                {
+                    _logger?.LogInformation("Resolver: Updated Endpoint EndpointId:{EndpointId}, Status:{Status}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
+                        messageEntity.EndpointId, status, messageEntity.EventId, messageContext.MessageId, messageEntity.SessionId);
 
-                await NotifyEndpointStateChanged(messageEntity.EndpointId, cancellationToken);
+                    await NotifyEndpointStateChanged(messageEntity.EndpointId, cancellationToken);
+                }
+                else
+                {
+                    await HandleStaleOutcome(messageContext, messageEntity, cancellationToken);
+                }
 
+                // Completed either way: the history document is already stored, so the Flow tab
+                // keeps showing the late copy after the response — the forensic trail that made
+                // the Spec 030 incident diagnosable.
                 await messageContext.Complete(cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -238,6 +248,61 @@ namespace NimBus.Broker.Services
 
             RecordStoreRetry(endpointId, reason, RetryAction.Rescheduled);
             RecordRetryDelay(endpointId, delay, useProviderRetryAfter);
+        }
+
+        // The store refused the write because the audit row already holds a later outcome
+        // (Spec 030): a copy delayed by auto-forward lag, by ScheduleRedelivery, or replayed
+        // from the dead-letter queue. Nothing is retried — the row is already correct — but the
+        // copy is attributed, because a silent drop is indistinguishable from a lost message.
+        private async Task HandleStaleOutcome(
+            IMessageContext messageContext,
+            MessageEntity messageEntity,
+            CancellationToken cancellationToken)
+        {
+            var deliveryCount = messageContext is IMessageDeliveryContext deliveryContext
+                ? Math.Max(1, deliveryContext.DeliveryCount)
+                : 1;
+
+            // ThrottleRetryCount > 0 attributes the copy to ScheduleRedelivery; a zero count with
+            // DeliveryCount 1 to fan-out lag or a dead-letter replay; DeliveryCount > 1 to a
+            // broker redelivery.
+            _logger?.LogWarning(
+                "Resolver: Ignored stale {MessageType}; audit row already reflects a later state. EndpointId:{EndpointId}, EventId:{EventId}, SessionId:{SessionId}, MessageId:{MessageId}, EnqueuedTimeUtc:{EnqueuedTimeUtc}, ThrottleRetryCount:{ThrottleRetryCount}, DeliveryCount:{DeliveryCount}",
+                messageEntity.MessageType,
+                messageEntity.EndpointId,
+                messageEntity.EventId,
+                messageEntity.SessionId,
+                messageContext.MessageId,
+                messageEntity.EnqueuedTimeUtc,
+                messageContext.ThrottleRetryCount,
+                deliveryCount);
+
+            // Best effort. The audit shows in the WebApp audit listing with no UI change and
+            // gives SQL deployments an attribution the store itself cannot log; failing to write
+            // it must not turn a harmless stale copy into a redelivery.
+            try
+            {
+                var audit = new MessageAuditEntity
+                {
+                    AuditorName = Constants.ResolverId,
+                    AuditTimestamp = DateTime.UtcNow,
+                    AuditType = MessageAuditType.Comment,
+                    EventId = messageEntity.EventId,
+                    EndpointId = messageEntity.EndpointId,
+                    Data = $"Ignored stale {messageEntity.MessageType} {messageContext.MessageId}: the audit row already holds a later outcome.",
+                };
+                await InstrumentAuditWrite(messageContext, audit, messageEntity.EndpointId, messageEntity.EventTypeId);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception auditException)
+            {
+                _logger?.LogWarning(auditException,
+                    "Resolver: Failed to record the stale-copy audit (non-fatal). EventId:{EventId}, MessageId:{MessageId}",
+                    messageEntity.EventId, messageContext.MessageId);
+            }
         }
 
         // Fire the state-change notification (provider-neutral). Webhook is no longer
@@ -656,13 +721,19 @@ namespace NimBus.Broker.Services
             return (long)Math.Max(0, (DateTime.UtcNow - eventRequest.EnqueuedTimeUtc).TotalMilliseconds);
         }
 
-        private async Task<ResolutionStatus> UpdateState(MessageEntity message)
+        /// <summary>
+        /// Projects the message onto the audit row. <c>Applied</c> is the store's answer
+        /// (Spec 030): false means <c>StaleWriteGuard</c> refused the write because the row
+        /// already holds a later outcome. A status with no upload handler writes nothing and
+        /// counts as applied, exactly as before.
+        /// </summary>
+        private async Task<(ResolutionStatus Status, bool Applied)> UpdateState(MessageEntity message)
         {
             ResolutionStatus status = GetResultingStatus(message);
             long? wallClockMs = await ComputeHandoffWallClockMsIfTerminal(message);
             UnresolvedEvent unresolvedEvent = CreateUnresolvedEvent(message, wallClockMs);
 
-            var statusHandlers = new Dictionary<ResolutionStatus, Func<Task>>
+            var statusHandlers = new Dictionary<ResolutionStatus, Func<Task<bool>>>
             {
                 [ResolutionStatus.Completed] = () => _store.UploadCompletedMessage(message.EventId, message.SessionId, message.EndpointId, unresolvedEvent),
                 [ResolutionStatus.Skipped] = () => _store.UploadSkippedMessage(message.EventId, message.SessionId, message.EndpointId, unresolvedEvent),
@@ -675,18 +746,23 @@ namespace NimBus.Broker.Services
 
             if (statusHandlers.TryGetValue(status, out var handler))
             {
-                await InstrumentOutcomeWrite(message.EndpointId, status, handler);
+                return (status, await InstrumentOutcomeWrite(message.EndpointId, status, handler));
             }
 
-            return status;
+            return (status, true);
         }
 
-        private async Task InstrumentAuditWrite(IReceivedMessage message, MessageAuditEntity audit)
+        private async Task InstrumentAuditWrite(
+            IReceivedMessage message,
+            MessageAuditEntity audit,
+            string? endpointId = null,
+            string? eventTypeId = null)
         {
             var auditType = audit.AuditType.ToString().ToLowerInvariant();
             // RetryRequest is a request type, so DetermineEndpoint resolves to message.To.
-            // We use that directly to avoid recomputing.
-            var endpoint = message.To;
+            // We use that directly to avoid recomputing; a caller that already knows the
+            // endpoint (the stale-copy audit) passes it explicitly.
+            var endpoint = endpointId ?? message.To;
             var startTimestamp = Stopwatch.GetTimestamp();
             using var activity = NimBusActivitySources.Resolver.StartActivity(
                 "NimBus.Resolver.RecordAudit", ActivityKind.Internal);
@@ -700,7 +776,7 @@ namespace NimBus.Broker.Services
             string? errorType = null;
             try
             {
-                await _store.StoreMessageAudit(message.EventId, audit);
+                await _store.StoreMessageAudit(message.EventId, audit, endpointId, eventTypeId);
                 activity?.SetStatus(ActivityStatusCode.Ok);
             }
             catch (Exception ex)
@@ -722,7 +798,7 @@ namespace NimBus.Broker.Services
             }
         }
 
-        private async Task InstrumentOutcomeWrite(string endpointId, ResolutionStatus status, Func<Task> handler)
+        private async Task<bool> InstrumentOutcomeWrite(string endpointId, ResolutionStatus status, Func<Task<bool>> handler)
         {
             var outcome = status.ToString().ToLowerInvariant();
             var startTimestamp = Stopwatch.GetTimestamp();
@@ -736,10 +812,13 @@ namespace NimBus.Broker.Services
             }
 
             string? errorType = null;
+            var applied = false;
             try
             {
-                await handler();
+                applied = await handler();
+                activity?.SetTag(MessagingAttributes.NimBusOutcomeApplied, applied);
                 activity?.SetStatus(ActivityStatusCode.Ok);
+                return applied;
             }
             catch (Exception ex)
             {
@@ -756,7 +835,22 @@ namespace NimBus.Broker.Services
                 var elapsed = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
                 var tags = BuildOutcomeTags(endpointId, outcome, errorType);
                 NimBusMeters.ResolverWriteDuration.Record(elapsed, tags);
-                NimBusMeters.ResolverOutcomeWritten.Add(1, tags);
+
+                // A refusal is not a write: it is a successful call that deliberately stored
+                // nothing, so counting it under outcome_written would report a stale copy as a
+                // fresh outcome. A *failed* write keeps counting there, carrying its error_type
+                // tag — that pairing is how the write error rate is read, and moving failures to
+                // outcome_ignored would hide them behind a counter named for stale copies.
+                // Dashboards that used outcome_written as throughput should sum
+                // outcome_written + outcome_ignored.
+                if (applied || errorType is not null)
+                {
+                    NimBusMeters.ResolverOutcomeWritten.Add(1, tags);
+                }
+                else
+                {
+                    NimBusMeters.ResolverOutcomeIgnored.Add(1, tags);
+                }
             }
         }
 

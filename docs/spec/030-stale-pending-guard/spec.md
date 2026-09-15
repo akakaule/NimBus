@@ -1,8 +1,11 @@
 # Spec 030 — Stale message copies must not reopen a settled audit row
 
-Status: proposed; the guard itself is not implemented yet. DIS's history-only handoff
-settlement projection was evaluated for it on 2026-09-15 and not adopted (Spec 031 §3.6); the
-rule below keeps the settlement requests in its control-request set.
+Status: **implemented** (2026-09-15, branch `feat/stale-write-guard`; plan:
+`docs/plan/2026-09-15-stale-pending-guard-plan.md`). §9 (repairing the corrupted production rows)
+and the `nb container reconcile-stale-pending` verb are deliberately out of that change and still
+open. DIS's history-only handoff settlement projection was evaluated for this spec on 2026-09-15
+and not adopted (Spec 031 §3.6); the rule below keeps the settlement requests in its
+control-request set.
 Trigger: production incident on EET `Nav09Endpoint`, 2026-09-14, NimBus 3.5.1, Cosmos DB store
 Baseline: master `84e63e6` (v3.6.1). Every file named below is byte-identical to the deployed v3.5.1.
 Review status: design reviewed adversarially (three independent passes); §13 lists what changed.

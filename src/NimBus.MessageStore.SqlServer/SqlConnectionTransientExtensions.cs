@@ -57,6 +57,16 @@ internal static class SqlConnectionTransientExtensions
         SqlServerExceptionTranslation.TranslateAsync(() =>
             SqlMapper.QueryFirstOrDefaultAsync(connection, sql, param, transaction, commandTimeout, commandType));
 
+    public static Task<T> QuerySingleAsync<T>(
+        this SqlConnection connection,
+        string sql,
+        object? param = null,
+        IDbTransaction? transaction = null,
+        int? commandTimeout = null,
+        CommandType? commandType = null) =>
+        SqlServerExceptionTranslation.TranslateAsync(() =>
+            SqlMapper.QuerySingleAsync<T>(connection, sql, param, transaction, commandTimeout, commandType));
+
     public static Task<T?> QuerySingleOrDefaultAsync<T>(
         this SqlConnection connection,
         string sql,

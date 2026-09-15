@@ -7,7 +7,6 @@ using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using CoreHeartbeat = NimBus.Core.Events.Heartbeat;
 using FakeCosmosDbClient = NimBus.Resolver.Tests.ResolverServiceTests.FakeCosmosDbClient;
-using FakeMessageContext = NimBus.Resolver.Tests.ResolverServiceTests.FakeMessageContext;
 
 namespace NimBus.Resolver.Tests;
 

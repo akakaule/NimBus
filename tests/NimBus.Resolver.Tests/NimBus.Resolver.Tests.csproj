@@ -14,6 +14,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NimBus.Resolver\NimBus.Resolver.csproj" />
+    <!-- InMemoryMessageStore: the Spec 030 stale-copy tests run the Resolver against a real
+         store that applies StaleWriteGuard, not a fake that answers true. No cycle -
+         NimBus.Testing references Core / MessageStore.Abstractions / SDK only. -->
+    <ProjectReference Include="..\..\src\NimBus.Testing\NimBus.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

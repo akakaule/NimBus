@@ -308,10 +308,12 @@ public sealed class ResolverDeadLetterClient : IResolverDeadLetterClient, IAsync
 
     internal static ServiceBusMessage CloneForReplay(ServiceBusReceivedMessage source)
     {
-        var replay = new ServiceBusMessage(source)
-        {
-            MessageId = Guid.NewGuid().ToString("N"),
-        };
+        // The replay keeps the source MessageId (Spec 030 §5.7). A replayed control request can
+        // land after the outcome it asked for, and the tracking store's stale-write guard
+        // recognises an already-answered message by that id; a fresh GUID would reopen the
+        // settled row permanently. DeadLetterOriginalMessageId is kept for continuity with
+        // replays made before this change.
+        var replay = new ServiceBusMessage(source);
         replay.ApplicationProperties.Remove("DeadLetterReason");
         replay.ApplicationProperties.Remove("DeadLetterErrorDescription");
         replay.ApplicationProperties["DeadLetterOriginalMessageId"] = source.MessageId ?? string.Empty;

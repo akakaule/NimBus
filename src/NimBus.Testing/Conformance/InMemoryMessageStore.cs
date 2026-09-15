@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -47,13 +47,43 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
 
     private Task<bool> Upsert(string eventId, string sessionId, string endpointId, ResolutionStatus status, UnresolvedEvent content)
     {
-        content.ResolutionStatus = status;
-        content.UpdatedAt = DateTime.UtcNow;
-        content.EndpointId = endpointId;
-        content.EventId = eventId;
-        content.SessionId = sessionId;
-        _events[Key(endpointId, eventId, sessionId)] = content;
-        return Task.FromResult(true);
+        // Decide against the stored row BEFORE stamping the caller's object, and report the
+        // factory's own decision rather than comparing references: passing the same instance
+        // twice must not be able to bypass StaleWriteGuard. Parity with Cosmos and SQL, which
+        // evaluate the same rule atomically against the row they are about to replace.
+        //
+        // AddOrUpdate may invoke a factory more than once under contention, and only the last
+        // invocation's value is committed — so both branches assign the flag unconditionally and
+        // the winning call is the one that decides. Setting it only on the applied branch would
+        // report a refusal as applied after a lost CAS.
+        var applied = false;
+
+        UnresolvedEvent Stamp()
+        {
+            content.ResolutionStatus = status;
+            content.UpdatedAt = DateTime.UtcNow;
+            content.EndpointId = endpointId;
+            content.EventId = eventId;
+            content.SessionId = sessionId;
+            applied = true;
+            return content;
+        }
+
+        _events.AddOrUpdate(
+            Key(endpointId, eventId, sessionId),
+            _ => Stamp(),
+            (_, existing) =>
+            {
+                if (StaleWriteGuard.Allows(status, content, existing))
+                {
+                    return Stamp();
+                }
+
+                applied = false;
+                return existing;
+            });
+
+        return Task.FromResult(applied);
     }
 
     public Task<bool> UploadPendingMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => Upsert(eventId, sessionId, endpointId, ResolutionStatus.Pending, content);

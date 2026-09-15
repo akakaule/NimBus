@@ -13,7 +13,7 @@ This revision incorporates the actionable findings from `docs/spec/2026-09-03-re
 - Add a real-Azure feasibility gate before committing to the cross-entity transaction design.
 - Bound each inspect/replay snapshot and the request wall-clock budget, bound held locks, reject overlapping in-process replay, inventory every max-delivery literal, correct emulator/current-code claims, and describe the existing heartbeat dead-letter behavior accurately.
 - Keep the reason Cosmos-specific. SQL throttling codes do not become `CosmosDbThrottled`; SQL-backed installations can still inspect/replay every reason actually present in their Resolver DLQ.
-- Keep atomic replay. The source handoff explicitly requires it, and the existing non-atomic scheduled-redelivery path is not precedent for operator replay: replay deliberately assigns a fresh ID, so send-before-complete failure guarantees a processable duplicate rather than one duplicate-detectable retry.
+- Keep atomic replay. The source handoff explicitly requires it, and the existing non-atomic scheduled-redelivery path is not precedent for operator replay: a send-before-complete failure must not leave the message both replayed and dead-lettered. (The original reasoning here — that replay assigns a fresh ID, so a duplicate would be processable rather than duplicate-detectable — no longer holds: Spec 030 §5.7 has replay keep the source `MessageId`. The transaction is what prevents the duplicate; a repeated copy is now refused by the store's stale-write guard instead of reopening the row.)
 - Keep the `subscriptionName` route parameter and full server-side guard rails because they are part of the handoff contract and protect future declared terminal Resolver subscriptions, even though today only `Resolver/Resolver` qualifies.
 - Keep the plan in `docs/plan/` (plans) — design specs live in `docs/spec/`.
 
@@ -236,7 +236,7 @@ Cover every transport invariant:
 2. `reason` scope handles case-sensitive exact matches only; null selects only missing reasons.
 3. `all` selects every message in the starting snapshot.
 4. Non-selected and beyond-boundary messages are renewed when necessary, abandoned, and never completed.
-5. A replay gets a GUID-based new `MessageId`; body, session, correlation/reply metadata, subject/content type, TTL, partition/sendable headers, and ordinary application properties survive.
+5. A replay keeps the source `MessageId` (superseded 2026-09-15 by Spec 030 §5.7 — it used to be a fresh GUID, which let a replayed control request reopen a settled audit row permanently); body, session, correlation/reply metadata, subject/content type, TTL, partition/sendable headers, and ordinary application properties survive.
 6. `DeadLetterReason` and `DeadLetterErrorDescription` are removed, while `DeadLetterOriginalMessageId` and `DeadLetterOriginalReason` are added.
 7. Completion precedes send inside the transaction, and success is counted only after commit.
 8. A complete/send/commit failure produces a stable per-sequence error, logs the exception, abandons or leaves the original unsettled, and increments failed.

@@ -56,10 +56,11 @@ that copy inside the detection window and the audit update is lost. The provisio
 it, so a namespace NimBus created is fine; verify one it did not:
 
 ```bash
-az servicebus topic show -g <rg> --namespace-name <ns> -n Resolver --query requiresDuplicateDetection
+az servicebus topic show -g <rg> --namespace-name <ns> -n Resolver
 ```
 
-It must print `false`. Duplicate detection is create-time only, so turning it off means recreating
+`requiresDuplicateDetection` must be `false` (some CLI versions nest the entity settings under
+`properties`, so read the field rather than relying on a `--query` path). Duplicate detection is create-time only, so turning it off means recreating
 the topic — see [Spec 030](spec/030-stale-pending-guard/spec.md) §5.7 for the alternative if you
 cannot.
 

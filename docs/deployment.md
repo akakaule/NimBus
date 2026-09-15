@@ -48,6 +48,21 @@ done
 
 `Microsoft.EventGrid` backs only the optional storage-hook webhooks; `nb infra apply` tries to register it and warns-and-continues when the identity lacks permission.
 
+**Brownfield namespaces: duplicate detection must be off on the Resolver topic.** From 3.7.0 the
+Resolver re-sends a throttled message, and the WebApp replays a dead-lettered one, under the
+message's *original* `MessageId`, so the tracking store can recognise a late copy as one it has
+already answered. If the topic has `RequiresDuplicateDetection` enabled, the broker silently drops
+that copy inside the detection window and the audit update is lost. The provisioner never enables
+it, so a namespace NimBus created is fine; verify one it did not:
+
+```bash
+az servicebus topic show -g <rg> --namespace-name <ns> -n Resolver --query requiresDuplicateDetection
+```
+
+It must print `false`. Duplicate detection is create-time only, so turning it off means recreating
+the topic — see [Spec 030](spec/030-stale-pending-guard/spec.md) §5.7 for the alternative if you
+cannot.
+
 ## Path 1: One command
 
 ```bash

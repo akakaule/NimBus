@@ -787,7 +787,7 @@ public class MessageContextTests
     // ── ScheduleRedelivery ─────────────────────────────────────────
 
     [TestMethod]
-    public async Task ScheduleRedelivery_CopiesBodyAndStandardProperties_WithNewMessageId()
+    public async Task ScheduleRedelivery_CopiesBodyAndStandardProperties_AndKeepsTheMessageId()
     {
         var body = new BinaryData("scheduled payload");
         var timeToLive = TimeSpan.FromMinutes(15);
@@ -821,8 +821,9 @@ public class MessageContextTests
         Assert.AreEqual(received.PartitionKey, scheduled.PartitionKey);
         Assert.AreEqual(received.TransactionPartitionKey, scheduled.TransactionPartitionKey);
         Assert.AreEqual(received.TimeToLive, scheduled.TimeToLive);
-        Assert.AreNotEqual(received.MessageId, scheduled.MessageId);
-        Assert.IsTrue(Guid.TryParse(scheduled.MessageId, out _));
+        // Spec 030 §5.7: the copy must stay identifiable as the same message, or the store's
+        // stale-write guard cannot tell a rescheduled control request from a genuinely new one.
+        Assert.AreEqual(received.MessageId, scheduled.MessageId);
     }
 
     [TestMethod]

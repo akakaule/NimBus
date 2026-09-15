@@ -44,7 +44,10 @@ public sealed class ResolverDeadLetterClientTests
 
         var replay = ResolverDeadLetterClient.CloneForReplay(source);
 
-        Assert.AreNotEqual(source.MessageId, replay.MessageId);
+        // Spec 030 §5.7: a replayed control request must stay identifiable as the same message,
+        // or the tracking store's stale-write guard cannot tell it from a genuinely new one and
+        // it reopens the settled row permanently.
+        Assert.AreEqual(source.MessageId, replay.MessageId);
         Assert.AreEqual("payload", replay.Body.ToString());
         Assert.AreEqual("session", replay.SessionId);
         Assert.AreEqual("reply-session", replay.ReplyToSessionId);

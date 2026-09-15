@@ -75,7 +75,7 @@ endpoints that do not need ordered replay, but make it a conscious decision.
 | Topic | `SupportOrdering` | `true` |
 | Topic | `EnableBatchedOperations` | `true` |
 | Topic | `MaxSizeInMegabytes` | `5120` (omitted on the emulator) |
-| Topic | `DuplicateDetectionHistoryTimeWindow` | `10 min` — **inert**: `RequiresDuplicateDetection` is never set, so duplicate detection is off. No write-path cost, and no dedup either. Idempotent handlers or the [inbox pattern](inbox-pattern.md) remain your dedup story. |
+| Topic | `DuplicateDetectionHistoryTimeWindow` | `10 min` — **inert**: `RequiresDuplicateDetection` is never set, so duplicate detection is off. No write-path cost, and no dedup either. Idempotent handlers or the [inbox pattern](inbox-pattern.md) remain your dedup story. **Leave it off.** Since 3.7.0 a rescheduled or replayed copy keeps its original `MessageId` so the tracking store can recognise it as already answered; with duplicate detection enabled the broker would silently drop that copy inside the detection window and the audit update would be lost. Brownfield namespaces must be checked before deploying. |
 | Subscription | `MaxDeliveryCount` | `10` |
 | Subscription | `LockDuration` | `30 s` |
 | Subscription | `EnableBatchedOperations` | `true` |

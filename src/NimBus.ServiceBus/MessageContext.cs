@@ -242,7 +242,9 @@ namespace NimBus.ServiceBus
         /// <summary>
         /// We actually don't do anything when Abandon is called.
         /// The intention of abandoning a message is to make a retry attempt, and if we actually call IMessageSession.AbandonAsync, then the lock will be released and the message will be picked up again immediately.
-        /// By doing nothing, the lock will expire before the message is picked up again.
+        /// By doing nothing the message stays unsettled, so the broker redelivers it once the
+        /// session lock is released or expires — a session lock, not a per-message one, so the
+        /// pause before the retry is however long the session stays held.
         /// </summary>
         public Task Abandon(TransientException exception) => Task.CompletedTask;
 
@@ -722,7 +724,17 @@ namespace NimBus.ServiceBus
             {
                 SessionId = SessionId,
                 CorrelationId = CorrelationId,
-                MessageId = Guid.NewGuid().ToString(),
+                // The copy keeps the original MessageId (Spec 030 §5.7). The scheduled copy lands
+                // behind whatever is already queued in the session, so it can arrive after the
+                // outcome it belongs to; the store's stale-write guard recognises it as an
+                // already-answered message only if it still carries its own id. It also makes the
+                // per-message history write idempotent, so a throttle chain leaves one history
+                // document instead of one per round.
+                //
+                // Precondition: the receiving topic must not have RequiresDuplicateDetection
+                // enabled, or the broker silently drops the copy inside the detection window.
+                // The provisioner never enables it; brownfield namespaces must be checked.
+                MessageId = receivedMessage.MessageId,
                 // Copy standard Service Bus properties
                 ContentType = receivedMessage.ContentType,
                 Subject = receivedMessage.Subject,
@@ -762,7 +774,10 @@ namespace NimBus.ServiceBus
                 // SendScheduledMessageAsync requires ServiceBusClient + entityPath which may not be available
                 // in all handler configurations (e.g., ServiceBusSessionReceiver path).
                 // Fall back to letting the message retry via lock expiration - don't complete it.
-                // The message will be redelivered after the lock expires (~30s).
+                // The message stays unsettled, so the broker redelivers it once the session lock
+                // is released or expires. That is a session lock, not a per-message one, and the
+                // SDK renews it while the invocation runs, so the retry cadence is governed by
+                // session release rather than by any fixed interval.
                 throw new Core.Messages.Exceptions.TransientException(
                     "Scheduled redelivery not available in current configuration. Message will retry after lock expiration.");
             }

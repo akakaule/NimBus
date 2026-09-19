@@ -15,8 +15,58 @@ code (adapter constructors, forwarding overloads) lives exactly one major cycle.
 **Release mechanics:** releases are tag-driven. Pushing a `v*` tag runs
 `.github/workflows/nuget-publish.yml`, which builds Release (warnings-as-errors
 for compiler warnings), runs the full test suite, packs with `/p:Version` from
-the tag, and pushes to nuget.org. A GitHub Release with categorized notes
-(⚠️ Breaking / ✨ Features / 🔧 Improvements / 🐛 Fixes) accompanies every tag.
+the tag, pushes every packable project to nuget.org, and publishes the Resolver
+and WebApp as deployable zips. The version lives only in the tag —
+`Directory.Build.props` holds a `0.0.0` placeholder, so no file is edited to
+release. A GitHub Release accompanies every tag; its notes follow the pattern
+below, which is the one the release history actually uses (3.6.0 onward).
+
+## Cutting a release
+
+1. Read the two most recent releases first — `gh release view v<prev>` — and
+   match them. The notes are what package consumers and operators read; a
+   consistent house form keeps successive releases scannable.
+2. Tag the release commit on `master` with an **annotated** tag whose body is
+   the one-line title, nothing more. Notes live on the release, not in the tag,
+   and a tag is never force-pushed: every `v*` tag push re-runs the publish
+   workflow.
+
+   ```shell
+   git tag -a v3.7.0 -m "NimBus v3.7.0"
+   git push origin v3.7.0
+   ```
+
+3. Create the release from a notes file written to
+   [`.github/RELEASE_NOTES_TEMPLATE.md`](../.github/RELEASE_NOTES_TEMPLATE.md):
+
+   ```shell
+   gh release create v3.7.0 --verify-tag --title "NimBus v3.7.0" --notes-file notes.md
+   ```
+
+4. Confirm the workflow run is green and that nuget.org lists the new version
+   (`https://api.nuget.org/v3-flatcontainer/akaule.nimbus.core/index.json`;
+   indexing lags the push by a few minutes per package).
+
+**The notes pattern**, in GitHub markdown, in this order and nothing else:
+
+- **Title:** `NimBus vX.Y.Z` — no subtitle.
+- **Opening sentence:** `NimBus X.Y.Z adds / improves / fixes …` — one
+  sentence, what the release is for.
+- **`### Highlights`** — plain bullets, one sentence each, verb first (`Added`,
+  `Fixed`, `Improved`); bold only a UI feature name. Roughly one bullet per
+  user-visible change, not per commit.
+- **`### Compatibility`** — every change a consumer must act on: new or changed
+  public surface, removed pages or endpoints, config defaults that moved,
+  metrics renamed. State plainly when there is nothing (`No schema migration,
+  topology change or wire change.`). A **major** additionally opens this
+  section with the breaking changes.
+- **Validation paragraph:** `This release was validated with …` — the build,
+  the test counts, the suites that ran live, and any manual check.
+- **`PR:` / `PRs:`** — links to the merged pull requests, or the commit range
+  when work landed directly.
+
+Aim for the length of v3.6.0 — about twenty lines for a ten-item minor. A
+patch release is a sentence, one or two bullets, compatibility, validation.
 
 **Note for maintainers:** several DI registrations assume their service type has
 a single public constructor (e.g. `AddSingleton<IManagerClient, ManagerClient>()`).

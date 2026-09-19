@@ -56,6 +56,8 @@ git push origin v1.0.0
 
 Use the intended new release version; prerelease tags such as `v1.0.0-preview.1` are supported.
 
+Tag with `git tag -a vX.Y.Z -m "NimBus vX.Y.Z"` and pair every tag with a GitHub Release whose notes follow the house pattern — see [Cutting a release](docs/versioning.md#cutting-a-release) and the [notes template](.github/RELEASE_NOTES_TEMPLATE.md).
+
 ## Branching & commits
 
 - Branch from `master`. Name it with a type prefix and a short kebab summary, e.g. `feat/cloudevents-envelope`, `fix/resolver-session-lag`, `docs/contributing-guide`.

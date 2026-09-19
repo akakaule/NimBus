@@ -76,6 +76,7 @@ docs/
   stale-pending-reconcile.md # Admin > Operations operator guide (repair rows a late request copy left Pending)
   dependency-security.md   # Daily NuGet/npm vulnerability audit workflow (auto-PR on fixes)
   cli.md                   # CLI command reference
+  versioning.md            # SemVer policy + "Cutting a release": annotated tag, gh release, the release-notes pattern
   deployment.md            # Deployment guide (one-command, GitHub Actions OIDC, Azure DevOps, raw Bicep, RBAC)
   azure-requirements.md    # Azure requirements reference (resource inventory, provider registrations, RBAC matrix)
   extensions.md            # Extension framework

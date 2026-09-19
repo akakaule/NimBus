@@ -33,69 +33,24 @@ public partial class AdminService
     {
         var limit = NormalizeMaxRows(maxRows);
         var rows = new List<StalePendingRow>();
-        var scanned = 0;
-        var truncated = false;
-        var continuationToken = string.Empty;
-
-        do
+        var scan = await ScanCandidatesAsync(endpointId, enqueuedBefore, async row =>
         {
-            var page = await _messageStore.GetEventsByFilter(
-                new StoreEventFilter
-                {
-                    EndPointId = endpointId,
-                    ResolutionStatus = new List<string> { StoreResolutionStatus.Pending.ToString() },
-                    // Push the cut-off into the query so a backlog of rows newer than it is not
-                    // paged through 20 at a time. The store's bound is inclusive and providers may
-                    // ignore the field (the in-memory one does), so the strict test below stays.
-                    EnqueuedAtTo = enqueuedBefore,
-                },
-                continuationToken,
-                PageSize);
-
-            foreach (var row in page.Events)
+            if (rows.Count >= limit)
             {
-                // EndPointId is a prefix match on SQL Server, where every endpoint shares one
-                // table — without this, previewing "Orders" would also classify "OrdersArchive"
-                // rows against the wrong endpoint and report them as bogus NoTerminal verdicts.
-                // Those rows are not this endpoint's, so they are not counted as scanned either.
-                if (!string.Equals(row.EndpointId, endpointId, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                scanned++;
-                if (!StalePendingReconciler.IsCandidate(row)
-                    || (enqueuedBefore.HasValue && row.EnqueuedTimeUtc >= enqueuedBefore.Value))
-                {
-                    continue;
-                }
-
-                if (rows.Count >= limit)
-                {
-                    truncated = true;
-                    break;
-                }
-
-                var classification = await ClassifyAsync(row, endpointId);
-                rows.Add(ToContractRow(classification));
+                return false;
             }
 
-            if (truncated)
-            {
-                break;
-            }
-
-            continuationToken = page.ContinuationToken;
-        }
-        while (continuationToken is not null);
+            rows.Add(ToContractRow(await ClassifyAsync(row, endpointId)));
+            return true;
+        });
 
         return new StalePendingPreview
         {
             EndpointId = endpointId,
-            Scanned = scanned,
+            Scanned = scan.Scanned,
             Candidates = rows.Count,
             Repairable = rows.Count(row => row.Verdict == StalePendingRowVerdict.Repairable),
-            Truncated = truncated,
+            Truncated = scan.Truncated,
             Rows = rows,
         };
     }
@@ -107,12 +62,30 @@ public partial class AdminService
         string auditorName,
         string? note)
     {
-        // Size the internal preview from the repair budget: asking for more repairs than the
-        // default preview page would otherwise silently look at only the first 500 rows.
-        var preview = await PreviewStalePendingAsync(
-            endpointId,
-            enqueuedBefore,
-            Math.Max(DefaultStalePendingMaxRows, maxRepairs.GetValueOrDefault()));
+        // Unlike the preview, the reconcile is not capped by candidate count: it walks every Pending
+        // row before the cut-off and stops only once it holds maxRepairs repairable ones. Otherwise
+        // a backlog of operator-decision rows ahead in the scan would hide the repairable rows behind
+        // them, and no number of "repair what is listed and preview again" rounds would reach them.
+        // The budget bounds what gets ATTEMPTED, so a caller batching through a large backlog can
+        // read "Processed < maxRepairs" as "the scan reached the end".
+        var budget = maxRepairs.GetValueOrDefault(int.MaxValue);
+        var repairable = new List<StalePendingClassification>();
+        await ScanCandidatesAsync(endpointId, enqueuedBefore, async row =>
+        {
+            if (repairable.Count >= budget)
+            {
+                return false;
+            }
+
+            var classification = await ClassifyAsync(row, endpointId);
+            if (classification.IsRepairable)
+            {
+                repairable.Add(classification);
+            }
+
+            return true;
+        });
+
         var result = new StalePendingReconcileResult
         {
             Errors = new List<string>(),
@@ -120,20 +93,14 @@ public partial class AdminService
         };
         var now = DateTime.UtcNow;
         var ageCutoff = now.AddMinutes(-StalePendingAgeMinutes);
-        var repairLimit = maxRepairs.GetValueOrDefault(int.MaxValue);
 
-        foreach (var row in preview.Rows.Where(row => row.Verdict == StalePendingRowVerdict.Repairable))
+        foreach (var row in repairable.Select(classification => classification.Row))
         {
-            // maxRepairs bounds what gets REPAIRED, not what gets looked at: a row skipped for being
-            // too fresh must not use up the operator's budget.
-            if (result.Succeeded >= repairLimit)
-            {
-                break;
-            }
-
             result.Processed++;
             try
             {
+                // Re-read and re-classify: the scan's verdict is a hint, the row as it stands now is
+                // what gets written, conditionally on its last message id.
                 var storedRow = await GetPendingRowOrNullAsync(endpointId, row.EventId, row.SessionId);
                 if (storedRow is null || storedRow.UpdatedAt > ageCutoff)
                 {
@@ -214,6 +181,66 @@ public partial class AdminService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Walks the endpoint's Pending rows enqueued before the cut-off and hands each candidate to
+    /// <paramref name="onCandidate"/>, which returns false to stop the scan; the result then reads
+    /// as truncated. <c>Scanned</c> counts every row of the endpoint the query returned, candidate
+    /// or not, so the caller can tell "nothing to do" from "nothing matched".
+    /// </summary>
+    private async Task<(int Scanned, bool Truncated)> ScanCandidatesAsync(
+        string endpointId,
+        DateTime? enqueuedBefore,
+        Func<UnresolvedEvent, Task<bool>> onCandidate)
+    {
+        var scanned = 0;
+        var continuationToken = string.Empty;
+
+        do
+        {
+            var page = await _messageStore.GetEventsByFilter(
+                new StoreEventFilter
+                {
+                    EndPointId = endpointId,
+                    ResolutionStatus = new List<string> { StoreResolutionStatus.Pending.ToString() },
+                    // Push the cut-off into the query so a backlog of rows newer than it is not
+                    // paged through 20 at a time. The store's bound is inclusive and providers may
+                    // ignore the field (the in-memory one does), so the strict test below stays.
+                    EnqueuedAtTo = enqueuedBefore,
+                },
+                continuationToken,
+                PageSize);
+
+            foreach (var row in page.Events)
+            {
+                // EndPointId is a prefix match on SQL Server, where every endpoint shares one
+                // table — without this, previewing "Orders" would also classify "OrdersArchive"
+                // rows against the wrong endpoint and report them as bogus NoTerminal verdicts.
+                // Those rows are not this endpoint's, so they are not counted as scanned either.
+                if (!string.Equals(row.EndpointId, endpointId, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                scanned++;
+                if (!StalePendingReconciler.IsCandidate(row)
+                    || (enqueuedBefore.HasValue && row.EnqueuedTimeUtc >= enqueuedBefore.Value))
+                {
+                    continue;
+                }
+
+                if (!await onCandidate(row))
+                {
+                    return (scanned, true);
+                }
+            }
+
+            continuationToken = page.ContinuationToken;
+        }
+        while (continuationToken is not null);
+
+        return (scanned, false);
     }
 
     /// <summary>

@@ -174,7 +174,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
     public Task<IEnumerable<UnresolvedEvent>> GetCompletedEventsOnEndpoint(string endpointId)
         => Task.FromResult<IEnumerable<UnresolvedEvent>>(_events.Values.Where(e => e.EndpointId == endpointId && e.ResolutionStatus == ResolutionStatus.Completed).ToList());
 
-    public Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount)
+    public virtual Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount)
     {
         IEnumerable<UnresolvedEvent> q = _events.Values;
         // ID-like fields use case-insensitive PREFIX matching, converging with

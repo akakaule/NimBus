@@ -24,6 +24,7 @@ afterEach(() => {
 });
 
 const endpoints = [{ value: "Nav09Endpoint", label: "Nav09Endpoint" }];
+const { REPAIR_BATCH_SIZE } = await import("./stale-pending-reconcile");
 
 async function renderCard() {
   const { StalePendingReconcileCard } = await import("./stale-pending-reconcile");
@@ -36,13 +37,13 @@ async function renderCard() {
   await userEvent.click(screen.getByText("Nav09Endpoint"));
 }
 
-function previewWith(verdicts: string[]) {
+function previewWith(verdicts: string[], truncated = false) {
   return {
     endpointId: "Nav09Endpoint",
     scanned: verdicts.length,
     candidates: verdicts.length,
     repairable: verdicts.filter((v) => v === "Repairable").length,
-    truncated: false,
+    truncated,
     rows: verdicts.map((verdict, index) => ({
       eventId: `event-${index}`,
       sessionId: "session-1",
@@ -77,6 +78,81 @@ describe("StalePendingReconcileCard", () => {
       (screen.getByRole("button", { name: "Repair 1 rows" }) as HTMLButtonElement).disabled,
     ).toBe(false);
   }, 10_000);
+
+  it("keeps Repair and Download above the table so a long preview never buries them", async () => {
+    previewMock.mockResolvedValue(previewWith(["Repairable"]));
+    await renderCard();
+
+    await userEvent.click(screen.getByRole("button", { name: "Preview" }));
+
+    const repair = await screen.findByRole("button", { name: "Repair 1 rows" });
+    const download = screen.getByRole("button", { name: "Download CSV" });
+    const table = screen.getByRole("table");
+    const precedes = (a: Element, b: Element) =>
+      (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(precedes(repair, table)).toBe(true);
+    expect(precedes(download, table)).toBe(true);
+  }, 10_000);
+
+  it("repairs a truncated preview in batches until the server reports a short round", async () => {
+    // The preview page lists three rows; the backlog behind it is a full batch plus two.
+    previewMock
+      .mockResolvedValueOnce(previewWith(Array(3).fill("Repairable"), true))
+      .mockResolvedValueOnce(previewWith([]));
+    reconcileMock
+      .mockResolvedValueOnce({
+        processed: REPAIR_BATCH_SIZE,
+        succeeded: REPAIR_BATCH_SIZE,
+        failed: 0,
+        skipped: 0,
+        errors: [],
+      })
+      .mockResolvedValueOnce({ processed: 2, succeeded: 1, failed: 0, skipped: 1, errors: [] });
+    await renderCard();
+
+    await userEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Repair all repairable rows" }),
+    );
+    const dialog = within(screen.getByRole("dialog"));
+    await userEvent.type(dialog.getByPlaceholderText("Nav09Endpoint"), "Nav09Endpoint");
+    await userEvent.click(dialog.getByRole("button", { name: "Repair all repairable rows" }));
+
+    await waitFor(() => expect(reconcileMock).toHaveBeenCalledTimes(2));
+    expect(reconcileMock.mock.calls[0][1].maxRepairs).toBe(REPAIR_BATCH_SIZE);
+    expect(reconcileMock.mock.calls[1][1].maxRepairs).toBe(REPAIR_BATCH_SIZE);
+    // Totals across both rounds: one skipped, the rest succeeded.
+    expect(
+      await screen.findByText(`${REPAIR_BATCH_SIZE + 1}/${REPAIR_BATCH_SIZE + 2}`),
+    ).toBeTruthy();
+    expect(screen.getByText("2 batches · 1 skipped")).toBeTruthy();
+    await waitFor(() => expect(previewMock).toHaveBeenCalledTimes(2));
+  }, 15_000);
+
+  it("stops batching when a full round repaired nothing, so skipped rows cannot loop forever", async () => {
+    previewMock
+      .mockResolvedValueOnce(previewWith(["Repairable"], true))
+      .mockResolvedValueOnce(previewWith([]));
+    reconcileMock.mockResolvedValue({
+      processed: REPAIR_BATCH_SIZE,
+      succeeded: 0,
+      failed: 0,
+      skipped: REPAIR_BATCH_SIZE,
+      errors: [],
+    });
+    await renderCard();
+
+    await userEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Repair all repairable rows" }),
+    );
+    const dialog = within(screen.getByRole("dialog"));
+    await userEvent.type(dialog.getByPlaceholderText("Nav09Endpoint"), "Nav09Endpoint");
+    await userEvent.click(dialog.getByRole("button", { name: "Repair all repairable rows" }));
+
+    await waitFor(() => expect(previewMock).toHaveBeenCalledTimes(2));
+    expect(reconcileMock).toHaveBeenCalledTimes(1);
+  }, 15_000);
 
   it("disables Repair when nothing is repairable", async () => {
     previewMock.mockResolvedValue(previewWith(["NoTerminal"]));
@@ -120,6 +196,8 @@ describe("StalePendingReconcileCard", () => {
     expect(
       await screen.findByText("No Pending rows before that cut-off."),
     ).toBeTruthy();
+    // One short round: a preview that lists everything is repaired in a single request.
+    expect(reconcileMock.mock.calls[0][1].maxRepairs).toBe(REPAIR_BATCH_SIZE);
   }, 15_000);
 
   it("explains a too-recent cut-off rejected by the server", async () => {

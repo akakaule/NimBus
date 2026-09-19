@@ -64,7 +64,10 @@ export default function Operations() {
             <BulkResubmitCard endpoints={endpoints} />
             <SkipMessagesCard endpoints={endpoints} />
             <SessionPurgeCard endpoints={endpoints} />
-            <StalePendingReconcileCard endpoints={endpoints} />
+            {/* Six columns and a page of rows: this one needs the full row. */}
+            <div className="lg:col-span-2">
+              <StalePendingReconcileCard endpoints={endpoints} />
+            </div>
           </div>
         </OperationGroup>
 

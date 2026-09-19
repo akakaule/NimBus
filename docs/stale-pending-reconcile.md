@@ -26,12 +26,18 @@ was repaired from, and your note.
    refuses one newer than 15 minutes, so a preview you cannot act on is still a preview you can read.
 2. **Preview.** Nothing is written. Three tiles summarise the scan (candidates, repairable, rows
    that need a human) and the table gives one verdict per row with the messages and times it rests
-   on.
+   on. The preview classifies at most 500 candidates (2 000 with an explicit `maxRows`); when it
+   stops short the card says so and the repair button reads **Repair all repairable rows**.
 3. **Download CSV** if you want the list in the incident record. The preview is not stored
    anywhere.
-4. **Repair N rows** — red, and it asks you to type the endpoint id. Only rows the rule called
-   `Repairable` are touched, the preview is recomputed server-side (the client's list is never
-   trusted), and any row written within the last 15 minutes is skipped even then.
+4. **Repair N rows** (or **Repair all repairable rows**) — red, and it asks you to type the
+   endpoint id. Only rows the rule called `Repairable` are touched, the preview is recomputed
+   server-side (the client's list is never trusted), and any row written within the last 15
+   minutes is skipped even then. The repair is not bound by the preview's page: the server walks
+   every Pending row before the cut-off and stops only when it holds `maxRepairs` repairable ones,
+   so operator-decision rows ahead in the scan never hide repairable rows behind them. The card
+   sends `maxRepairs: 500` and asks again while a round comes back full, one audit entry per
+   round; a full round that repaired nothing ends the loop.
 5. The preview re-runs afterwards. A second run repairs nothing: the rows it fixed are no longer
    Pending.
 

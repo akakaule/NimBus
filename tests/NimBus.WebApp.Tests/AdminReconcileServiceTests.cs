@@ -14,6 +14,8 @@ using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
 using MessageType = NimBus.Core.Messages.MessageType;
 using ResolutionStatus = NimBus.MessageStore.ResolutionStatus;
+using StoreEventFilter = NimBus.MessageStore.EventFilter;
+using StoreSearchResponse = NimBus.MessageStore.States.SearchResponse;
 
 namespace NimBus.WebApp.Tests;
 
@@ -214,6 +216,65 @@ public sealed class AdminReconcileServiceTests
             (await store.GetEvent(EndpointId, "evt-repairable")).ResolutionStatus);
     }
 
+    [TestMethod]
+    public async Task Reconcile_without_a_budget_scans_past_the_preview_page_cap()
+    {
+        // The incident shape at scale: hundreds of rows a human must decide sort ahead of the one
+        // the rule can repair. A reconcile that reuses the 500-row preview page never reaches it,
+        // and no amount of "repair what is listed and preview again" makes progress.
+        var store = new PagingStore();
+        for (var i = 0; i < AdminService.DefaultStalePendingMaxRows + 1; i++)
+        {
+            await SeedNoTerminal(store, $"evt-in-flight-{i:D4}");
+        }
+
+        await SeedRepairable(store, "evt-repairable", updatedAt: DateTime.UtcNow.AddHours(-2));
+        var service = CreateAdminService(store);
+
+        var result = await service.ReconcileStalePendingAsync(EndpointId, Base.AddHours(1), maxRepairs: null, "owner", null);
+
+        Assert.AreEqual(1, result.Succeeded, "the repairable row sorts after 501 operator-decision rows");
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(EndpointId, "evt-repairable")).ResolutionStatus);
+    }
+
+    [TestMethod]
+    public async Task Reconcile_with_a_budget_reports_a_full_batch_so_the_caller_knows_to_continue()
+    {
+        var store = new PagingStore();
+        await SeedRepairable(store, "evt-a");
+        await SeedRepairable(store, "evt-b");
+        await SeedRepairable(store, "evt-c");
+        var service = CreateAdminService(store);
+
+        var first = await service.ReconcileStalePendingAsync(EndpointId, Base.AddHours(1), maxRepairs: 2, "owner", null);
+        var second = await service.ReconcileStalePendingAsync(EndpointId, Base.AddHours(1), maxRepairs: 2, "owner", null);
+
+        Assert.AreEqual(2, first.Processed, "a full batch: there may be more");
+        Assert.AreEqual(1, second.Processed, "a short batch: the scan reached the end");
+        Assert.AreEqual(3, first.Succeeded + second.Succeeded);
+    }
+
+    /// <summary>
+    /// The shipped in-memory store answers one page and no continuation token, which is enough for
+    /// every conformance case but hides a scan that stops early. This one pages the way SQL Server
+    /// and Cosmos do, with the token carrying the offset.
+    /// </summary>
+    private sealed class PagingStore : InMemoryMessageStore
+    {
+        public override async Task<StoreSearchResponse> GetEventsByFilter(StoreEventFilter filter, string continuationToken, int maxSearchItemsCount)
+        {
+            var all = (await base.GetEventsByFilter(filter, string.Empty, int.MaxValue)).Events.ToList();
+            var offset = string.IsNullOrEmpty(continuationToken) ? 0 : int.Parse(continuationToken, System.Globalization.CultureInfo.InvariantCulture);
+            var page = all.Skip(offset).Take(maxSearchItemsCount).ToList();
+            var next = offset + page.Count;
+            return new StoreSearchResponse
+            {
+                Events = page,
+                ContinuationToken = next < all.Count ? next.ToString(System.Globalization.CultureInfo.InvariantCulture) : null,
+            };
+        }
+    }
+
     private sealed class AuditRefusingStore : InMemoryMessageStore
     {
         public override Task StoreMessageAudit(
@@ -226,12 +287,13 @@ public sealed class AdminReconcileServiceTests
     // The incident shape of Spec 030 §1: the endpoint answered, and then a redelivered copy of the
     // request overtook the answer and reopened the row as Pending.
 
-    private static async Task SeedRepairable(InMemoryMessageStore store, string eventId, bool backdateRow = true)
+    private static async Task SeedRepairable(
+        InMemoryMessageStore store, string eventId, bool backdateRow = true, DateTime? updatedAt = null)
     {
         await store.StoreMessage(Message(eventId, "req-1", MessageType.EventRequest, Base, from: "publisher"));
         await store.StoreMessage(Message(eventId, "rsp-1", MessageType.ResolutionResponse, Base.AddMinutes(1), from: EndpointId));
         await store.StoreMessage(Message(eventId, "req-copy", MessageType.EventRequest, Base.AddMinutes(2), from: "publisher"));
-        await Park(store, eventId, MessageType.EventRequest, "req-copy", Base.AddMinutes(2), backdateRow);
+        await Park(store, eventId, MessageType.EventRequest, "req-copy", Base.AddMinutes(2), backdateRow, updatedAt);
     }
 
     private static async Task SeedNoTerminal(InMemoryMessageStore store, string eventId)
@@ -267,7 +329,8 @@ public sealed class AdminReconcileServiceTests
         MessageType messageType,
         string lastMessageId,
         DateTime enqueuedTimeUtc,
-        bool backdate = true)
+        bool backdate = true,
+        DateTime? updatedAt = null)
     {
         var row = new UnresolvedEvent
         {
@@ -284,7 +347,7 @@ public sealed class AdminReconcileServiceTests
         Assert.IsTrue(await store.UploadPendingMessage(eventId, SessionId, EndpointId, row));
         if (backdate)
         {
-            row.UpdatedAt = DateTime.UtcNow.AddHours(-1);
+            row.UpdatedAt = updatedAt ?? DateTime.UtcNow.AddHours(-1);
         }
     }
 

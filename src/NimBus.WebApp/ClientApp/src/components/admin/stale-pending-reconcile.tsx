@@ -39,6 +39,17 @@ const VERDICT_TONE: Record<string, BadgeVariant> = {
   LaterRequestCopy: "pending",
 };
 
+/**
+ * Repairs per server round-trip. The server scans every candidate before the cut-off and stops
+ * collecting at this many Repairable rows, so a round that comes back with fewer processed than
+ * this reached the end of the backlog; a full round means there may be more, and the card asks
+ * again. Small enough that one request stays well inside any front-door timeout.
+ */
+export const REPAIR_BATCH_SIZE = 500;
+
+/** Safety valve on the batch loop: 200 batches is 100 000 repairs, far beyond any real incident. */
+const MAX_REPAIR_BATCHES = 200;
+
 /** The card sends UTC, so the local datetime-local value is converted, never pasted through. */
 function toIsoUtc(localValue: string): Date | undefined {
   if (!localValue) return undefined;
@@ -95,6 +106,26 @@ function toCsv(rows: api.StalePendingRow[]): string {
   return [header.join(","), ...lines].join("\n");
 }
 
+interface RepairTotals {
+  processed: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  errors: string[];
+  batches: number;
+}
+
+function addRound(totals: RepairTotals, round: api.StalePendingReconcileResult): RepairTotals {
+  return {
+    processed: totals.processed + (round.processed ?? 0),
+    succeeded: totals.succeeded + (round.succeeded ?? 0),
+    failed: totals.failed + (round.failed ?? 0),
+    skipped: totals.skipped + (round.skipped ?? 0),
+    errors: [...totals.errors, ...(round.errors ?? [])],
+    batches: totals.batches + 1,
+  };
+}
+
 export function StalePendingReconcileCard({
   endpoints,
 }: {
@@ -104,7 +135,7 @@ export function StalePendingReconcileCard({
   const [cutoff, setCutoff] = useState(defaultCutoff);
   const [note, setNote] = useState("");
   const [preview, setPreview] = useState<api.StalePendingPreview | null>(null);
-  const [result, setResult] = useState<api.StalePendingReconcileResult | null>(null);
+  const [result, setResult] = useState<RepairTotals | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [executing, setExecuting] = useState(false);
@@ -113,12 +144,16 @@ export function StalePendingReconcileCard({
   const endpointId = selected[0] ?? "";
   const rows = preview?.rows ?? [];
   const repairable = preview?.repairable ?? 0;
+  const truncated = preview?.truncated ?? false;
+  // A truncated preview lists only the first page of candidates; the repair runs past it.
+  const repairLabel = truncated ? "Repair all repairable rows" : `Repair ${repairable} rows`;
 
-  function buildRequest(): api.StalePendingReconcileRequest {
+  function buildRequest(maxRepairs?: number): api.StalePendingReconcileRequest {
     const request = new api.StalePendingReconcileRequest();
     const before = toIsoUtc(cutoff);
     if (before) request.enqueuedBefore = before as never;
     if (note) request.note = note;
+    if (maxRepairs) request.maxRepairs = maxRepairs;
     return request;
   }
 
@@ -149,14 +184,43 @@ export function StalePendingReconcileCard({
     }
   }
 
+  /**
+   * Repairs in batches until the server reports a short round. Each round is its own audited
+   * request; a round that repairs nothing (every row skipped) ends the loop, since the next
+   * round would only meet the same rows again.
+   */
   async function runRepair() {
     if (!endpointId) return;
     setShowConfirm(false);
     setExecuting(true);
     setError(null);
+    let totals: RepairTotals = {
+      processed: 0,
+      succeeded: 0,
+      failed: 0,
+      skipped: 0,
+      errors: [],
+      batches: 0,
+    };
+    setResult(totals);
     try {
       const client = new api.Client(api.CookieAuth());
-      setResult(await client.postAdminStalePendingReconcile(endpointId, buildRequest()));
+      let round: api.StalePendingReconcileResult;
+      do {
+        round = await client.postAdminStalePendingReconcile(
+          endpointId,
+          buildRequest(REPAIR_BATCH_SIZE),
+        );
+        totals = addRound(totals, round);
+        setResult(totals);
+      } while (
+        (round.processed ?? 0) >= REPAIR_BATCH_SIZE &&
+        (round.succeeded ?? 0) > 0 &&
+        totals.batches < MAX_REPAIR_BATCHES
+      );
+      if (totals.batches >= MAX_REPAIR_BATCHES) {
+        setError(`Stopped after ${MAX_REPAIR_BATCHES} batches. Preview again to continue.`);
+      }
       // The repaired rows are no longer Pending: re-read so the table matches the store.
       setPreview(await client.postAdminStalePendingPreview(endpointId, buildRequest()));
     } catch (caught) {
@@ -194,7 +258,8 @@ export function StalePendingReconcileCard({
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Filters and Preview on one line: the button sits at the end of the row it acts on. */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">
                 Endpoint
@@ -232,16 +297,15 @@ export function StalePendingReconcileCard({
                 placeholder="Incident or ticket reference"
               />
             </div>
+            <Button
+              onClick={runPreview}
+              disabled={!endpointId || loading}
+              isLoading={loading}
+              variant="outline"
+            >
+              Preview
+            </Button>
           </div>
-
-          <Button
-            onClick={runPreview}
-            disabled={!endpointId || loading}
-            isLoading={loading}
-            variant="outline"
-          >
-            Preview
-          </Button>
 
           {error && (
             <p role="alert" className="text-sm text-status-danger">
@@ -261,84 +325,96 @@ export function StalePendingReconcileCard({
                 />
               </div>
 
-              {preview.truncated && (
-                <p className="text-xs text-status-warning">
-                  The preview stopped at its row cap; repair what is listed and preview again.
+              {/* Actions sit above the table so a 500-row preview never hides them below the fold. */}
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  colorScheme="red"
+                  size="sm"
+                  disabled={repairable === 0 || executing}
+                  isLoading={executing}
+                  onClick={() => setShowConfirm(true)}
+                >
+                  {repairLabel}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={downloadCsv}
+                  disabled={rows.length === 0}
+                >
+                  Download CSV
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  {truncated
+                    ? `Listing the first ${rows.length} candidates. Repair runs in batches of ${REPAIR_BATCH_SIZE} until every repairable row before the cut-off is done.`
+                    : rows.length === 0
+                      ? "No Pending rows before that cut-off."
+                      : `${rows.length} candidates listed.`}
                 </p>
+              </div>
+
+              {result && (
+                <div className="space-y-1">
+                  <OperationProgress
+                    processed={result.processed}
+                    succeeded={result.succeeded}
+                    failed={result.failed}
+                    errors={result.errors}
+                    isComplete={!executing}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {result.batches} {result.batches === 1 ? "batch" : "batches"}
+                    {result.skipped > 0 && ` · ${result.skipped} skipped`}
+                  </p>
+                </div>
               )}
 
-              {rows.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No Pending rows before that cut-off.
-                </p>
-              ) : (
-                <>
+              {rows.length > 0 && (
+                <div className="max-h-[32rem] overflow-auto rounded-nb-md border border-border">
                   <table className="w-full text-sm">
-                    <thead>
+                    <thead className="sticky top-0 bg-card shadow-[inset_0_-1px_0_0] shadow-border">
                       <tr className="text-left text-xs uppercase text-muted-foreground">
-                        <th className="py-1 pr-3">Verdict</th>
-                        <th className="py-1 pr-3">Event</th>
-                        <th className="py-1 pr-3">Stale message</th>
-                        <th className="py-1 pr-3">Row enqueued</th>
-                        <th className="py-1 pr-3">Response</th>
-                        <th className="py-1">Why</th>
+                        <th className="px-3 py-2">Verdict</th>
+                        <th className="px-3 py-2">Event</th>
+                        <th className="px-3 py-2">Stale message</th>
+                        <th className="px-3 py-2">Row enqueued</th>
+                        <th className="px-3 py-2">Response</th>
+                        <th className="px-3 py-2">Why</th>
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map((row) => (
-                        <tr key={`${row.eventId}-${row.sessionId ?? ""}`} className="group border-t border-border">
-                          <td className="py-1.5 pr-3 align-top">
+                        <tr
+                          key={`${row.eventId}-${row.sessionId ?? ""}`}
+                          className="group border-t border-border"
+                        >
+                          <td className="px-3 py-1.5 align-top">
                             <Badge variant={VERDICT_TONE[row.verdict ?? ""] ?? "default"} size="sm">
                               {row.verdict}
                             </Badge>
                           </td>
-                          <td className="py-1.5 pr-3 align-top">
+                          <td className="px-3 py-1.5 align-top">
                             <TruncatedGuid guid={row.eventId} />
                           </td>
-                          <td className="py-1.5 pr-3 align-top">
+                          <td className="px-3 py-1.5 align-top">
                             <TruncatedGuid guid={row.staleMessageId} />
                           </td>
-                          <td className="py-1.5 pr-3 align-top whitespace-nowrap font-mono text-[11.5px]">
+                          <td className="px-3 py-1.5 align-top whitespace-nowrap font-mono text-[11.5px]">
                             {formatTime(row.rowEnqueuedTimeUtc)}
                           </td>
-                          <td className="py-1.5 pr-3 align-top">
+                          <td className="px-3 py-1.5 align-top">
                             <TruncatedGuid guid={row.responseMessageId} />
                           </td>
-                          <td className="py-1.5 align-top font-mono text-[11.5px] text-muted-foreground">
+                          <td className="min-w-[18rem] px-3 py-1.5 align-top font-mono text-[11.5px] text-muted-foreground break-words">
                             {row.detail}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-
-                  <div className="flex gap-3">
-                    <Button variant="outline" size="sm" onClick={downloadCsv}>
-                      Download CSV
-                    </Button>
-                    <Button
-                      colorScheme="red"
-                      size="sm"
-                      disabled={repairable === 0 || executing}
-                      isLoading={executing}
-                      onClick={() => setShowConfirm(true)}
-                    >
-                      Repair {repairable} rows
-                    </Button>
-                  </div>
-                </>
+                </div>
               )}
             </div>
-          )}
-
-          {result && (
-            <OperationProgress
-              processed={result.processed ?? 0}
-              succeeded={result.succeeded ?? 0}
-              failed={result.failed ?? 0}
-              errors={result.errors}
-              isComplete={true}
-            />
           )}
 
           <ConfirmDestructiveAction
@@ -346,9 +422,13 @@ export function StalePendingReconcileCard({
             onClose={() => setShowConfirm(false)}
             onConfirm={runRepair}
             title="Reconcile Stale Pending"
-            description={`This will replace ${repairable} Pending row(s) on "${endpointId}" with the Completed outcome the Resolver already stored. Every repair is audited.`}
+            description={
+              truncated
+                ? `This will replace every Repairable Pending row on "${endpointId}" enqueued before the cut-off with the Completed outcome the Resolver already stored, in batches of ${REPAIR_BATCH_SIZE}, including rows beyond the ${rows.length} listed. Every repair is audited.`
+                : `This will replace ${repairable} Pending row(s) on "${endpointId}" with the Completed outcome the Resolver already stored. Every repair is audited.`
+            }
             confirmText={endpointId}
-            confirmLabel={`Repair ${repairable} rows`}
+            confirmLabel={repairLabel}
             isLoading={executing}
           />
         </div>

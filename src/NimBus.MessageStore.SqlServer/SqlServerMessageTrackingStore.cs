@@ -49,6 +49,65 @@ internal sealed class SqlServerMessageTrackingStore : IMessageTrackingStore
     public Task<bool> UploadCompletedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content)
         => UpsertStatus(eventId, sessionId, endpointId, "Completed", content);
 
+    public async Task<bool> TryCompletePendingMessage(
+        string eventId,
+        string sessionId,
+        string endpointId,
+        string? expectedLastMessageId,
+        UnresolvedEvent content)
+    {
+        var sql = $@"
+UPDATE {T("UnresolvedEvents")}
+SET {StatusUpdateSet}
+WHERE EndpointId = @EndpointId
+  AND EventId = @EventId
+  AND ((SessionId IS NULL AND @SessionId IS NULL) OR SessionId = @SessionId)
+  AND Status = 'Pending'
+  AND Deleted = 0
+  AND ((LastMessageId IS NULL AND @ExpectedLastMessageId IS NULL)
+       OR LastMessageId COLLATE Latin1_General_BIN2 = @ExpectedLastMessageId COLLATE Latin1_General_BIN2);
+SELECT @@ROWCOUNT;";
+
+        await using var conn = await OpenAsync();
+        var rows = await conn.QuerySingleAsync<int>(
+            sql,
+            StatusParameters(eventId, sessionId, endpointId, "Completed", content, expectedLastMessageId),
+            commandTimeout: _context.CommandTimeout);
+        return rows == 1;
+    }
+
+    private const string StatusUpdateSet = @"
+    Status = @Status,
+    UpdatedAtUtc = @UpdatedAt,
+    EnqueuedTimeUtc = @EnqueuedTimeUtc,
+    CorrelationId = @CorrelationId,
+    EndpointRole = @EndpointRole,
+    MessageType = @MessageType,
+    RetryCount = @RetryCount,
+    RetryLimit = @RetryLimit,
+    LastMessageId = @LastMessageId,
+    OriginatingMessageId = @OriginatingMessageId,
+    ParentMessageId = @ParentMessageId,
+    OriginatingFrom = @OriginatingFrom,
+    Reason = @Reason,
+    DeadLetterReason = @DeadLetterReason,
+    DeadLetterErrorDescription = @DeadLetterErrorDescription,
+    EventTypeId = @EventTypeId,
+    ToAddress = @ToAddress,
+    FromAddress = @FromAddress,
+    QueueTimeMs = @QueueTimeMs,
+    ProcessingTimeMs = @ProcessingTimeMs,
+    CloudEventId = @CloudEventId,
+    CloudEventSource = @CloudEventSource,
+    CloudEventType = @CloudEventType,
+    CloudEventSubject = @CloudEventSubject,
+    PendingSubStatus = @PendingSubStatus,
+    HandoffReason = @HandoffReason,
+    ExternalJobId = @ExternalJobId,
+    ExpectedBy = @ExpectedBy,
+    MessageContentJson = @MessageContentJson,
+    Deleted = 0";
+
     /// <summary>
     /// Writes one status transition. The MATCHED branch carries the Spec 030 stale-write guard,
     /// transliterated from <see cref="StaleWriteGuard.Allows"/>: keep the two in step — the
@@ -91,36 +150,7 @@ WHEN MATCHED AND (
             END = 1
         )
 ) THEN UPDATE SET
-    Status = @Status,
-    UpdatedAtUtc = @UpdatedAt,
-    EnqueuedTimeUtc = @EnqueuedTimeUtc,
-    CorrelationId = @CorrelationId,
-    EndpointRole = @EndpointRole,
-    MessageType = @MessageType,
-    RetryCount = @RetryCount,
-    RetryLimit = @RetryLimit,
-    LastMessageId = @LastMessageId,
-    OriginatingMessageId = @OriginatingMessageId,
-    ParentMessageId = @ParentMessageId,
-    OriginatingFrom = @OriginatingFrom,
-    Reason = @Reason,
-    DeadLetterReason = @DeadLetterReason,
-    DeadLetterErrorDescription = @DeadLetterErrorDescription,
-    EventTypeId = @EventTypeId,
-    ToAddress = @ToAddress,
-    FromAddress = @FromAddress,
-    QueueTimeMs = @QueueTimeMs,
-    ProcessingTimeMs = @ProcessingTimeMs,
-    CloudEventId = @CloudEventId,
-    CloudEventSource = @CloudEventSource,
-    CloudEventType = @CloudEventType,
-    CloudEventSubject = @CloudEventSubject,
-    PendingSubStatus = @PendingSubStatus,
-    HandoffReason = @HandoffReason,
-    ExternalJobId = @ExternalJobId,
-    ExpectedBy = @ExpectedBy,
-    MessageContentJson = @MessageContentJson,
-    Deleted = 0
+{StatusUpdateSet}
 WHEN NOT MATCHED THEN INSERT (
     EventId, SessionId, EndpointId, Status, UpdatedAtUtc, EnqueuedTimeUtc, CorrelationId, EndpointRole,
     MessageType, RetryCount, RetryLimit, LastMessageId, OriginatingMessageId, ParentMessageId,
@@ -140,43 +170,57 @@ VALUES (
 SELECT @@ROWCOUNT;";
 
         await using var conn = await OpenAsync();
-        var rows = await conn.QuerySingleAsync<int>(sql, new
-        {
-            EventId = eventId,
-            SessionId = sessionId,
-            EndpointId = endpointId,
-            Status = status,
-            UpdatedAt = DateTime.UtcNow,
-            EnqueuedTimeUtc = content.EnqueuedTimeUtc,
-            CorrelationId = content.CorrelationId,
-            EndpointRole = content.EndpointRole.ToString(),
-            MessageType = content.MessageType.ToString(),
-            RetryCount = content.RetryCount,
-            RetryLimit = content.RetryLimit,
-            LastMessageId = content.LastMessageId,
-            OriginatingMessageId = content.OriginatingMessageId,
-            ParentMessageId = content.ParentMessageId,
-            OriginatingFrom = content.OriginatingFrom,
-            Reason = content.Reason,
-            DeadLetterReason = content.DeadLetterReason,
-            DeadLetterErrorDescription = content.DeadLetterErrorDescription,
-            EventTypeId = content.EventTypeId,
-            ToAddress = content.To,
-            FromAddress = content.From,
-            QueueTimeMs = content.QueueTimeMs,
-            ProcessingTimeMs = content.ProcessingTimeMs,
-            content.CloudEventId,
-            content.CloudEventSource,
-            content.CloudEventType,
-            content.CloudEventSubject,
-            PendingSubStatus = content.PendingSubStatus,
-            HandoffReason = content.HandoffReason,
-            ExternalJobId = content.ExternalJobId,
-            ExpectedBy = content.ExpectedBy,
-            MessageContentJson = JsonConvert.SerializeObject(content.MessageContent),
-        }, commandTimeout: _context.CommandTimeout);
+        var rows = await conn.QuerySingleAsync<int>(
+            sql,
+            StatusParameters(eventId, sessionId, endpointId, status, content, expectedLastMessageId: null),
+            commandTimeout: _context.CommandTimeout);
 
         return rows > 0;
+    }
+
+    private static DynamicParameters StatusParameters(
+        string eventId,
+        string sessionId,
+        string endpointId,
+        string status,
+        UnresolvedEvent content,
+        string? expectedLastMessageId)
+    {
+        var parameters = new DynamicParameters();
+        parameters.Add("EventId", eventId);
+        parameters.Add("SessionId", sessionId);
+        parameters.Add("EndpointId", endpointId);
+        parameters.Add("Status", status);
+        parameters.Add("UpdatedAt", DateTime.UtcNow);
+        parameters.Add("EnqueuedTimeUtc", content.EnqueuedTimeUtc);
+        parameters.Add("CorrelationId", content.CorrelationId);
+        parameters.Add("EndpointRole", content.EndpointRole.ToString());
+        parameters.Add("MessageType", content.MessageType.ToString());
+        parameters.Add("RetryCount", content.RetryCount);
+        parameters.Add("RetryLimit", content.RetryLimit);
+        parameters.Add("LastMessageId", content.LastMessageId);
+        parameters.Add("ExpectedLastMessageId", expectedLastMessageId);
+        parameters.Add("OriginatingMessageId", content.OriginatingMessageId);
+        parameters.Add("ParentMessageId", content.ParentMessageId);
+        parameters.Add("OriginatingFrom", content.OriginatingFrom);
+        parameters.Add("Reason", content.Reason);
+        parameters.Add("DeadLetterReason", content.DeadLetterReason);
+        parameters.Add("DeadLetterErrorDescription", content.DeadLetterErrorDescription);
+        parameters.Add("EventTypeId", content.EventTypeId);
+        parameters.Add("ToAddress", content.To);
+        parameters.Add("FromAddress", content.From);
+        parameters.Add("QueueTimeMs", content.QueueTimeMs);
+        parameters.Add("ProcessingTimeMs", content.ProcessingTimeMs);
+        parameters.Add("CloudEventId", content.CloudEventId);
+        parameters.Add("CloudEventSource", content.CloudEventSource);
+        parameters.Add("CloudEventType", content.CloudEventType);
+        parameters.Add("CloudEventSubject", content.CloudEventSubject);
+        parameters.Add("PendingSubStatus", content.PendingSubStatus);
+        parameters.Add("HandoffReason", content.HandoffReason);
+        parameters.Add("ExternalJobId", content.ExternalJobId);
+        parameters.Add("ExpectedBy", content.ExpectedBy);
+        parameters.Add("MessageContentJson", JsonConvert.SerializeObject(content.MessageContent));
+        return parameters;
     }
 
     // ───────── Per-message persistence (StoreMessage / history) ─────────

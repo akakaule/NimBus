@@ -45,3 +45,19 @@ Subscribers:
 - Additional Cosmos DB cost for storing every message
 - Resolver lag — state updates are eventually consistent (not real-time)
 - Cosmos DB throttling under high load requires backoff and retry logic
+
+## Note — 2026-09-17 — Operator reconcile
+
+The Resolver is still the only component that derives a terminal status from a message. Spec 032
+adds exactly one sanctioned exception: an Admin → Operations action that repairs rows a late
+request copy left `Pending` before the Spec 030 guard shipped.
+
+It does not weaken this decision, because it does not decide anything. It re-applies a
+`ResolutionResponse` the Resolver had already stored for that event and session, field for field as
+`ResolverService.CreateUnresolvedEvent` built it, through a conditional store primitive
+(`IMessageTrackingStore.TryCompletePendingMessage`) that writes only while the row is still
+`Pending` with the same `LastMessageId`. Anything the rule cannot derive from a stored outcome is
+classified and left to a human. The action is site-Owner only and audited per repaired event.
+
+See `docs/spec/032-stale-pending-reconcile/spec.md` and
+[the operator guide](../stale-pending-reconcile.md).

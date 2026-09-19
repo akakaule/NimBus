@@ -1,9 +1,9 @@
 # Spec 030 — Stale message copies must not reopen a settled audit row
 
 Status: **implemented** (2026-09-15, branch `feat/stale-write-guard`; plan:
-`docs/plan/2026-09-15-stale-pending-guard-plan.md`). §9 (repairing the corrupted production rows)
-and the `nb container reconcile-stale-pending` verb are deliberately out of that change and still
-open. DIS's history-only handoff settlement projection was evaluated for this spec on 2026-09-15
+`docs/plan/2026-09-15-stale-pending-guard-plan.md`). §9 (repairing the corrupted production rows) is
+packaged by **Spec 032** (`docs/spec/032-stale-pending-reconcile/spec.md`) as a WebApp admin action;
+the `nb container reconcile-stale-pending` verb is dropped there (§10). DIS's history-only handoff settlement projection was evaluated for this spec on 2026-09-15
 and not adopted (Spec 031 §3.6); the rule below keeps the settlement requests in its
 control-request set.
 Trigger: production incident on EET `Nav09Endpoint`, 2026-09-14, NimBus 3.5.1, Cosmos DB store
@@ -565,10 +565,11 @@ a duplicate change-feed row) and bulk Skip is wrong (it would record Skipped).
 4. **Verify.** The identification query returns zero rows, `PendingCount` on the endpoint drops by the
    CSV row count, and event `0b89d545` shows Completed with `LastMessageId 906c2b00…`.
 
-Packaging is an open decision (§12): a throwaway console project referencing
-`Akaule.NimBus.MessageStore.CosmosDb` and calling those `CosmosDbClient` methods is the smallest; a
-reusable `nb container reconcile-stale-pending <endpoint> [--before] [--dry-run]` verb next to
-`nb container skip` is the durable option.
+Packaging is settled (§12 item 2): from 3.7.0 this procedure ships as the **Reconcile Stale
+Pending** action in the WebApp Admin → Operations tab — `StalePendingReconciler` is the rule above,
+`IMessageTrackingStore.TryCompletePendingMessage` the conditional write, site-Owner gated and
+audited per repaired event. See Spec 032 and `docs/stale-pending-reconcile.md`. The EET.Deploy
+console tool remains the path for deployments older than 3.7.0, which have no such API.
 
 Incident confirmation outside the repo: search Resolver logs for "Cosmos DB throttled. Scheduling
 redelivery" with `EventId 0b89d545` around 23:48–23:52 UTC. The MessageId shape already points at
@@ -614,7 +615,10 @@ depend on the answer.
 ## 12. Open decisions for the repo owner
 
 1. Version framing: 3.7.0 (conformance contract tightened) or 3.6.2 (suite treated as internal).
-2. Repair packaging: throwaway script or `nb container reconcile-stale-pending` verb.
+2. ~~Repair packaging: throwaway script or `nb container reconcile-stale-pending` verb.~~ **Resolved**
+   2026-09-15: a WebApp Admin → Operations action, specified in Spec 032. The CLI verb is dropped (it is
+   Cosmos-only and writes no audit row); the EET.Deploy console tool remains the path for pre-3.7.0
+   production, which has no such API.
 3. Whether §5.7 ships in the same PR (recommended, after the duplicate-detection check) or as its own.
 4. Whether the `outcome_ignored` counter and the SQL must-not-skip CI gate go in the same PR.
 

@@ -281,6 +281,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public Task<bool> UploadUnsupportedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => _messageTracking.UploadUnsupportedMessage(eventId, sessionId, endpointId, content);
     public Task<bool> UploadSkippedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => _messageTracking.UploadSkippedMessage(eventId, sessionId, endpointId, content);
     public Task<bool> UploadCompletedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => _messageTracking.UploadCompletedMessage(eventId, sessionId, endpointId, content);
+    public Task<bool> TryCompletePendingMessage(string eventId, string sessionId, string endpointId, string? expectedLastMessageId, UnresolvedEvent content) => _messageTracking.TryCompletePendingMessage(eventId, sessionId, endpointId, expectedLastMessageId, content);
     public Task<bool> RemoveMessage(string eventId, string sessionId, string endpointId) => _messageTracking.RemoveMessage(eventId, sessionId, endpointId);
     public Task<bool> PurgeMessages(string endpointId, string sessionId) => _messageTracking.PurgeMessages(endpointId, sessionId);
     public Task<bool> PurgeMessages(string endpointId) => _messageTracking.PurgeMessages(endpointId);

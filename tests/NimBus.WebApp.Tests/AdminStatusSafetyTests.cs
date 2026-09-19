@@ -427,6 +427,8 @@ public sealed class AdminStatusSafetyTests
         public Task<BulkOperationResult> SkipMessagesAsync(string endpointId, List<string> statuses, DateTime? before) => Unexpected<BulkOperationResult>();
         public Task<CopyResult> CopyEndpointDataAsync(string endpointId, string targetConnectionString, DateTime? from, DateTime? to, List<string> statuses, int? batchSize) => Unexpected<CopyResult>();
         public Task<DeferredReprocessResult> ReprocessDeferredAsync(string endpointId, string sessionId) => Unexpected<DeferredReprocessResult>();
+        public Task<StalePendingPreview> PreviewStalePendingAsync(string endpointId, DateTime? enqueuedBefore, int maxRows) => Unexpected<StalePendingPreview>();
+        public Task<StalePendingReconcileResult> ReconcileStalePendingAsync(string endpointId, DateTime enqueuedBefore, int? maxRepairs, string auditorName, string? note) => Unexpected<StalePendingReconcileResult>();
     }
 
     private sealed class NoOpAuditLogService : IAuditLogService

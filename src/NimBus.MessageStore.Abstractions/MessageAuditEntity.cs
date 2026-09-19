@@ -129,5 +129,8 @@ namespace NimBus.MessageStore
 
         /// <summary>Operator permanently deleted an orphaned Cosmos DB container.</summary>
         DeleteStorageContainer,
+
+        /// <summary>Operator reconciled stale Pending rows from stored Resolver responses.</summary>
+        ReconcileStalePending,
     }
 }

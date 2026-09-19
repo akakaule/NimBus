@@ -93,6 +93,7 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<bool> UploadUnsupportedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => _messageTracking.UploadUnsupportedMessage(eventId, sessionId, endpointId, content);
     public Task<bool> UploadSkippedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => _messageTracking.UploadSkippedMessage(eventId, sessionId, endpointId, content);
     public Task<bool> UploadCompletedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => _messageTracking.UploadCompletedMessage(eventId, sessionId, endpointId, content);
+    public Task<bool> TryCompletePendingMessage(string eventId, string sessionId, string endpointId, string? expectedLastMessageId, UnresolvedEvent content) => _messageTracking.TryCompletePendingMessage(eventId, sessionId, endpointId, expectedLastMessageId, content);
     public Task<MessageEntity> GetMessage(string eventId, string messageId) => _messageTracking.GetMessage(eventId, messageId);
     public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId) => _messageTracking.GetEventHistory(eventId);
     public Task<MessageEntity> GetLatestEventRequestMessage(string eventId) => _messageTracking.GetLatestEventRequestMessage(eventId);

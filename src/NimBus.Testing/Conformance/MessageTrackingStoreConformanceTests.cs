@@ -183,6 +183,132 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual(0, counts.PendingCount);
     }
 
+    [TestMethod]
+    public async Task TryCompletePendingMessage_replaces_matching_pending_row_and_guard_refuses_late_copy()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-reconcile");
+        var eventId = Id("repair-1");
+        var pending = SampleEvent(endpointId, eventId, "s1");
+        pending.LastMessageId = "stale-message";
+        Assert.IsTrue(await store.UploadPendingMessage(eventId, "s1", endpointId, pending));
+
+        var completed = SampleEvent(endpointId, eventId, "s1");
+        completed.MessageType = MessageType.ResolutionResponse;
+        completed.LastMessageId = "response-message";
+        Assert.IsTrue(await store.TryCompletePendingMessage(
+            eventId, "s1", endpointId, "stale-message", completed));
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(endpointId, eventId)).ResolutionStatus);
+        Assert.AreEqual(0, (await store.DownloadEndpointStateCount(endpointId)).PendingCount);
+
+        Assert.IsFalse(await store.UploadPendingMessage(
+            eventId, "s1", endpointId, GuardedEvent(
+                endpointId, eventId, "s1", MessageType.EventRequest, "stale-message")));
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(endpointId, eventId)).ResolutionStatus);
+    }
+
+    [TestMethod]
+    public async Task TryCompletePendingMessage_refuses_mismatch_terminal_and_missing_rows()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-reconcile-refuse");
+
+        var mismatchId = Id("mismatch");
+        var mismatch = SampleEvent(endpointId, mismatchId, "s1");
+        mismatch.LastMessageId = "actual";
+        await store.UploadPendingMessage(mismatchId, "s1", endpointId, mismatch);
+        Assert.IsFalse(await store.TryCompletePendingMessage(
+            mismatchId, "s1", endpointId, "expected", SampleEvent(endpointId, mismatchId, "s1")));
+        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetPendingEvent(endpointId, mismatchId, "s1")).ResolutionStatus);
+
+        var terminalId = Id("terminal");
+        await store.UploadCompletedMessage(terminalId, "s1", endpointId, SampleEvent(endpointId, terminalId, "s1"));
+        Assert.IsFalse(await store.TryCompletePendingMessage(
+            terminalId, "s1", endpointId, "last-message", SampleEvent(endpointId, terminalId, "s1")));
+
+        Assert.IsFalse(await store.TryCompletePendingMessage(
+            Id("missing"), "s1", endpointId, null, SampleEvent(endpointId, Id("missing"), "s1")));
+    }
+
+    [TestMethod]
+    public async Task StalePendingReconciler_classifies_the_incident_shape_read_back_through_this_provider()
+    {
+        // The rule's own tests run on in-memory MessageEntity objects. This case runs it on history
+        // the PROVIDER hands back, because providers disagree on what a NULL column reads as (SQL
+        // Server: string.Empty; Cosmos, in-memory: null) and that difference once made every SQL
+        // Server row classify as dead-lettered. Spec 032 §4.2.
+        var store = CreateStore();
+        var endpointId = Id("ep-reconcile-history");
+        var eventId = Id("classify-1");
+        var t0 = DateTime.UtcNow.AddHours(-3);
+
+        await store.StoreMessage(HistoryMessage(endpointId, eventId, "req-1", MessageType.EventRequest, t0, from: "publisher", to: endpointId));
+        await store.StoreMessage(HistoryMessage(endpointId, eventId, "rsp-1", MessageType.ResolutionResponse, t0.AddSeconds(30), from: endpointId, to: "Resolver"));
+        await store.StoreMessage(HistoryMessage(endpointId, eventId, "req-copy", MessageType.EventRequest, t0.AddMinutes(3), from: "publisher", to: endpointId));
+
+        var row = SampleEvent(endpointId, eventId, "s1");
+        row.MessageType = MessageType.EventRequest;
+        row.LastMessageId = "req-copy";
+        row.EnqueuedTimeUtc = t0.AddMinutes(3);
+        Assert.IsTrue(await store.UploadPendingMessage(eventId, "s1", endpointId, row));
+
+        var history = (await store.GetEventHistory(eventId)).ToList();
+        Assert.AreEqual(3, history.Count);
+        var stored = await store.GetPendingEvent(endpointId, eventId, "s1");
+
+        var verdict = StalePendingReconciler.Classify(stored, history, endpointId);
+        Assert.AreEqual(StalePendingVerdict.Repairable, verdict.Verdict, verdict.Detail);
+        Assert.AreEqual("rsp-1", verdict.Response!.MessageId);
+
+        var projection = StalePendingReconciler.BuildCompletedProjection(verdict.Response, history, endpointId, DateTime.UtcNow);
+        Assert.IsNull(projection.DeadLetterErrorDescription, "a clean response must project without a dead-letter description, whatever the provider reads NULL back as");
+        Assert.IsTrue(await store.TryCompletePendingMessage(eventId, "s1", endpointId, stored.LastMessageId, projection));
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(endpointId, eventId)).ResolutionStatus);
+    }
+
+    private static MessageEntity HistoryMessage(
+        string endpointId, string eventId, string messageId, MessageType type, DateTime enqueuedUtc, string from, string to) => new()
+    {
+        EventId = eventId,
+        MessageId = messageId,
+        EndpointId = endpointId,
+        SessionId = "s1",
+        CorrelationId = "corr-1",
+        EventTypeId = "OrderPlaced",
+        MessageType = type,
+        EndpointRole = EndpointRole.Subscriber,
+        EnqueuedTimeUtc = enqueuedUtc,
+        From = from,
+        To = to,
+        OriginatingFrom = "publisher",
+        OriginatingMessageId = "req-1",
+        ParentMessageId = type == MessageType.ResolutionResponse ? "req-1" : "self",
+        MessageContent = new MessageContent { EventContent = new EventContent { EventTypeId = "OrderPlaced", EventJson = "{}" } },
+    };
+
+    [TestMethod]
+    public async Task TryCompletePendingMessage_null_expected_id_matches_only_null()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-reconcile-null");
+        var eventId = Id("null-id");
+        var pending = SampleEvent(endpointId, eventId, "s1");
+        pending.LastMessageId = null;
+        await store.UploadPendingMessage(eventId, "s1", endpointId, pending);
+
+        Assert.IsTrue(await store.TryCompletePendingMessage(
+            eventId, "s1", endpointId, null, SampleEvent(endpointId, eventId, "s1")));
+
+        // ...and a row that does carry one is not matched by a null expectation.
+        var withIdEventId = Id("null-id-negative");
+        await store.UploadPendingMessage(withIdEventId, "s1", endpointId, SampleEvent(endpointId, withIdEventId, "s1"));
+        Assert.IsFalse(await store.TryCompletePendingMessage(
+            withIdEventId, "s1", endpointId, null, SampleEvent(endpointId, withIdEventId, "s1")));
+        Assert.AreEqual(
+            ResolutionStatus.Pending,
+            (await store.GetPendingEvent(endpointId, withIdEventId, "s1")).ResolutionStatus);
+    }
+
     // ---------------------------------------------------------------------------------
     // Spec 030 - the stale-write guard. A late copy of a message (auto-forward lag, a
     // ScheduleRedelivery copy, a dead-letter replay) must never reopen or downgrade a row

@@ -15,7 +15,7 @@ are still on the roadmap.
 - **Title** in the spec: *EIP Management Web API* — `api-spec.yaml:3`.
 - **Spec version:** `0.0.1` (pre-1.0; see [Versioning + stability](#versioning--stability) below).
 - **Route prefix:** every operation lives under `/api/…`.
-- **Surface size:** 74 operations across 10 domains (Endpoint, Event, EventType, Application, Admin, Message, Audit, Metrics, Dev, StorageHook).
+- **Surface size:** 115 operations across 12 tags (Admin, Event, Endpoint, AccessControl, Agent, Metrics, EventType, StorageHook, Application, Message, Audit, Heartbeat).
 - **Auth:** ASP.NET Identity cookie *and/or* Microsoft Entra ID (interactive browser flow + bearer-token flow). Effectively all `/api/…` endpoints require an authenticated principal. Two are reachable anonymously by design: `GET /api/app/stats` (a liveness shape that discloses nothing to an anonymous caller — see [Application](#application)) and `POST /api/storagehook/cosmos/{endpointId}` (gated by a shared webhook key rather than a principal). Beyond `/api/…`, `/health`, `/alive` and `/ready` are anonymous.
 - **Schema generation:** NSwag reads `api-spec.yaml` pre-build and emits server contracts (`Controllers/ApiContract.g.cs`) plus a TypeScript client (`ClientApp/src/api-client/index.ts`) — see [Code generation](#code-generation).
 
@@ -269,8 +269,9 @@ clients accept either shape.
 ### Admin
 
 Platform configuration and destructive maintenance operations (delete-by-To,
-platform-config rotation). The largest tag — 20 operations. Treat with
-appropriate care; most operations require operator privileges.
+platform-config rotation, stale-Pending reconcile). The largest tag — 42
+operations. Treat with appropriate care; most operations require operator
+privileges.
 
 ### Message
 
@@ -408,6 +409,7 @@ controller method that fires each one:
 | `DisableEndpoint`     | `EndpointImplementation.PostEndpointSubscriptionstatusAsync` (body="disable") |
 | `PurgeMessages`       | `EndpointImplementation.PostEndpointPurgeAsync`, `AdminImplementation.PostAdminSessionPurgeAsync`, `AdminImplementation.PostAdminPurgeAsync` |
 | `Compose`             | `EventImplementation.PostComposeNewEventAsync`            |
+| `ReconcileStalePending` | `AdminImplementation.PostAdminStalePendingReconcileAsync` — one row per invocation (request + counts as `Data`) plus one per repaired event |
 
 `Retry` and `Comment` remain on the enum for backward compatibility with rows
 written before spec 008.

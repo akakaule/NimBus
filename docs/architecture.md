@@ -187,6 +187,7 @@ Primary responsibilities:
 - expose the backing management API from a contract-first OpenAPI definition — see [WebApp REST API](webapp-rest-api.md) for the per-endpoint reference and external-caller setup
 - query and mutate operational state in Cosmos DB
 - issue recovery commands back into the messaging pipeline
+- reconcile stale `Pending` rows — the one operator-initiated terminal write in the platform. It is safe because it never invents a status: it re-applies a `ResolutionResponse` the Resolver already stored for that event, conditionally on the row still being `Pending` with the same last message id, gated on the site Owner role and audited per repaired event. See [Reconciling stale Pending rows](stale-pending-reconcile.md).
 - manage Service Bus topology and subscriptions
 - surface operational telemetry and metrics
 - push live UI updates through SignalR
@@ -247,7 +248,7 @@ Primary responsibilities:
 
 - consume session-enabled resolver messages from Service Bus
 - persist normalized message history
-- project messages into per-endpoint unresolved/completed/failed/deferred state
+- project messages into per-endpoint unresolved/completed/failed/deferred state — the Resolver is the only component that writes a terminal status from a message, the sole exception being the audited operator reconcile in the WebApp
 - handle Cosmos throttling through scheduled redelivery
 - explicitly settle or dead-letter messages
 

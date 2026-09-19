@@ -16,6 +16,7 @@ import {
   DeleteAllEventsCard,
 } from "./advanced-operations";
 import { SessionPurgeCard } from "./session-management";
+import { StalePendingReconcileCard } from "./stale-pending-reconcile";
 import { EndpointControlsCard } from "./endpoint-controls";
 
 interface EndpointOption {
@@ -55,14 +56,15 @@ export default function Operations() {
           tone="success"
           icon="↻"
           title="Recovery"
-          count={3}
+          count={4}
           caption="Safe · reversible"
-          description="Recover from failures by resubmitting, skipping, or reprocessing messages. Idempotent handlers absorb safely."
+          description="Recover from failures by resubmitting, skipping, or reprocessing messages, or reconcile rows a redelivered copy left Pending. Idempotent handlers absorb safely."
         >
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <BulkResubmitCard endpoints={endpoints} />
             <SkipMessagesCard endpoints={endpoints} />
             <SessionPurgeCard endpoints={endpoints} />
+            <StalePendingReconcileCard endpoints={endpoints} />
           </div>
         </OperationGroup>
 

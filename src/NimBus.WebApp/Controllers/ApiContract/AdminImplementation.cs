@@ -578,6 +578,66 @@ public class AdminImplementation : IAdminApiController
         return new OkObjectResult(result);
     }
 
+    public async Task<ActionResult<StalePendingPreview>> PostAdminStalePendingPreviewAsync(
+        string endpointId,
+        StalePendingReconcileRequest body)
+    {
+        if (!await IsSiteOwnerAsync()) return new ForbidResult();
+        if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
+            return new NotFoundObjectResult("Endpoint not found");
+
+        var result = await _adminService.PreviewStalePendingAsync(
+            endpointId,
+            body?.EnqueuedBefore,
+            body?.MaxRows ?? AdminService.DefaultStalePendingMaxRows);
+        return new OkObjectResult(result);
+    }
+
+    public async Task<ActionResult<StalePendingReconcileResult>> PostAdminStalePendingReconcileAsync(
+        string endpointId,
+        StalePendingReconcileRequest body)
+    {
+        if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(
+                MessageAuditType.ReconcileStalePending,
+                _context,
+                accessDenied: true,
+                endpointId: endpointId,
+                data: JsonConvert.SerializeObject(body));
+            return new ForbidResult();
+        }
+
+        if (!EndpointVerificationService.EndpointExists(_platform, endpointId))
+            return new NotFoundObjectResult("Endpoint not found");
+
+        var cutoff = body?.EnqueuedBefore;
+        if (!cutoff.HasValue || cutoff.Value > DateTime.UtcNow.AddMinutes(-AdminService.StalePendingAgeMinutes))
+            return new BadRequestObjectResult(
+                $"enqueuedBefore is required and must be at least {AdminService.StalePendingAgeMinutes} minutes in the past.");
+
+        var auditorName = AuditLogService.ResolveAuditorName(_context);
+        var result = await _adminService.ReconcileStalePendingAsync(
+            endpointId,
+            cutoff.Value,
+            body?.MaxRepairs,
+            auditorName,
+            body?.Note);
+        await _auditLogService.LogAuditAsync(
+            MessageAuditType.ReconcileStalePending,
+            _context,
+            endpointId: endpointId,
+            data: JsonConvert.SerializeObject(new
+            {
+                request = body,
+                result.Processed,
+                result.Succeeded,
+                result.Failed,
+                result.Skipped,
+            }));
+        return new OkObjectResult(result);
+    }
+
     public async Task<ActionResult<BulkOperationResult>> PostAdminPurgeAsync(string endpointId, PurgeRequest body)
     {
         if (!await IsSiteOwnerAsync())

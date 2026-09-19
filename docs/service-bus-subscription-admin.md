@@ -131,5 +131,8 @@ point; outside one, prefer Pause.
   topology and removes deprecated leftovers.
 - Admin → **Operations** tab — message-store operations (resubmit, skip, delete
   by status). Those act on stored events, not on the bus.
+- [stale-pending-reconcile.md](stale-pending-reconcile.md) — Admin → Operations →
+  *Reconcile Stale Pending*, for rows a late request copy left `Pending` before
+  3.7.0. It repairs the stored projection; it sends nothing to the bus.
 - [cli.md](cli.md) — `nb topology apply` re-provisions everything the descriptor
   describes, and is the way back from a rebuild that failed.

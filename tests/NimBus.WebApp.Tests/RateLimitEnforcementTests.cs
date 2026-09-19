@@ -580,6 +580,10 @@ public class RateLimitEnforcementTests
 
         public Task<ActionResult<BulkOperationResult>> PostAdminPurgeAsync(string endpointId, PurgeRequest body) => Ok<BulkOperationResult>();
 
+        public Task<ActionResult<StalePendingPreview>> PostAdminStalePendingPreviewAsync(string endpointId, StalePendingReconcileRequest body) => Ok<StalePendingPreview>();
+
+        public Task<ActionResult<StalePendingReconcileResult>> PostAdminStalePendingReconcileAsync(string endpointId, StalePendingReconcileRequest body) => Ok<StalePendingReconcileResult>();
+
         public Task<ActionResult<CountResponse>> PostAdminDeleteByToPreviewAsync(DeleteByToRequest body) => Ok<CountResponse>();
 
         public Task<ActionResult<BulkOperationResult>> PostAdminDeleteByToAsync(DeleteByToRequest body) => Ok<BulkOperationResult>();

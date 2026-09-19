@@ -127,6 +127,9 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task<bool> UploadCompletedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) =>
         InstrumentAsync(nameof(UploadCompletedMessage), () => _inner.UploadCompletedMessage(eventId, sessionId, endpointId, content));
 
+    public Task<bool> TryCompletePendingMessage(string eventId, string sessionId, string endpointId, string? expectedLastMessageId, UnresolvedEvent content) =>
+        InstrumentAsync(nameof(TryCompletePendingMessage), () => _inner.TryCompletePendingMessage(eventId, sessionId, endpointId, expectedLastMessageId, content));
+
     // ── Single-event lookups ────────────────────────────────────────────
 
     public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId) =>

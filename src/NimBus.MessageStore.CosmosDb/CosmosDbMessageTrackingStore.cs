@@ -350,22 +350,60 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
         UnresolvedEvent content) =>
         UploadCompletedMessage(eventId, sessionId, endpointId, content, CompletedStatus);
 
+    public async Task<bool> TryCompletePendingMessage(
+        string eventId,
+        string sessionId,
+        string endpointId,
+        string? expectedLastMessageId,
+        UnresolvedEvent content)
+    {
+        var container = await _getEndpointContainer(endpointId);
+        var id = $"{eventId}_{sessionId}";
+        ItemResponse<EventDbo> current;
+        try
+        {
+            current = await container.ReadItemAsync<EventDbo>(id, new PartitionKey(id));
+        }
+        catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
+        {
+            return false;
+        }
+
+        if (!string.Equals(current.Resource.Status, PendingStatus, StringComparison.Ordinal)
+            || current.Resource.Deleted == true
+            || !string.Equals(current.Resource.Event?.LastMessageId, expectedLastMessageId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var completed = CreateCompletedDbo(eventId, sessionId, content, CompletedStatus);
+        try
+        {
+            await container.UpsertItemAsync(
+                completed,
+                new PartitionKey(id),
+                new ItemRequestOptions
+                {
+                    IfMatchEtag = current.ETag,
+                    EnableContentResponseOnWrite = false,
+                });
+            return true;
+        }
+        catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.PreconditionFailed)
+        {
+            _logger?.LogInformation(
+                "COSMOS COMPLETE-IF-PENDING refused for {EventId}/{SessionId}: the row changed after it was read",
+                eventId,
+                sessionId);
+            return false;
+        }
+    }
+
     private async Task<bool> UploadCompletedMessage(string eventId, string sessionId, string endpointId,
         UnresolvedEvent content, string status)
     {
         var container = await _getEndpointContainer(endpointId);
-        //var cosmosEvent = await GetPendingEvent(endpointId, eventId, sessionId);
-        //cosmosEvent.ResolutionStatus = resolutionStatus;
-        var eventDbo = new EventDbo
-        {
-            Id = $"{eventId}_{sessionId}",
-            Event = content,
-            SessionId = sessionId,
-            Status = status,
-            EventType = content.EventTypeId,
-            Deleted = true,
-            TimeToLive = 60 * 60 * 24 * 30 // 30 days TTL
-        };
+        var eventDbo = CreateCompletedDbo(eventId, sessionId, content, status);
 
         try
         {
@@ -381,6 +419,21 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
             throw;
         }
     }
+
+    private static EventDbo CreateCompletedDbo(
+        string eventId,
+        string sessionId,
+        UnresolvedEvent content,
+        string status) => new()
+    {
+        Id = $"{eventId}_{sessionId}",
+        Event = content,
+        SessionId = sessionId,
+        Status = status,
+        EventType = content.EventTypeId,
+        Deleted = true,
+        TimeToLive = 60 * 60 * 24 * 30,
+    };
 
     public async Task<bool> RemoveMessage(string eventId, string sessionId, string endpointId)
     {

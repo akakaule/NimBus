@@ -30,4 +30,6 @@ public interface IAdminService
     Task<CopyResult> CopyEndpointDataAsync(string endpointId, string targetConnectionString, System.DateTime? from, System.DateTime? to, List<string> statuses, int? batchSize);
     Task<DeferredReprocessResult> ReprocessDeferredAsync(string endpointId, string sessionId);
     Task<BulkOperationResult> DeleteAllEventsAsync(string endpointId);
+    Task<StalePendingPreview> PreviewStalePendingAsync(string endpointId, System.DateTime? enqueuedBefore, int maxRows);
+    Task<StalePendingReconcileResult> ReconcileStalePendingAsync(string endpointId, System.DateTime enqueuedBefore, int? maxRepairs, string auditorName, string? note);
 }

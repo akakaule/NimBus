@@ -4337,6 +4337,121 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Preview stale Pending reconciliation
+     * @param body (optional) 
+     * @return OK
+     */
+    postAdminStalePendingPreview(endpointId: string, body?: StalePendingReconcileRequest | undefined): Promise<StalePendingPreview> {
+        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/stale-pending-preview";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminStalePendingPreview(_response);
+        });
+    }
+
+    protected processPostAdminStalePendingPreview(response: Response): Promise<StalePendingPreview> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = StalePendingPreview.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<StalePendingPreview>(null as any);
+    }
+
+    /**
+     * Reconcile stale Pending rows
+     * @return OK
+     */
+    postAdminStalePendingReconcile(endpointId: string, body: StalePendingReconcileRequest): Promise<StalePendingReconcileResult> {
+        let url_ = this.baseUrl + "/api/admin/endpoint/{endpointId}/stale-pending-reconcile";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminStalePendingReconcile(_response);
+        });
+    }
+
+    protected processPostAdminStalePendingReconcile(response: Response): Promise<StalePendingReconcileResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = StalePendingReconcileResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Invalid or too-recent cutoff", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<StalePendingReconcileResult>(null as any);
+    }
+
+    /**
      * Preview delete messages by To field
      * @param body (optional) 
      * @return OK
@@ -11339,6 +11454,342 @@ export interface IAuditSearchResponse {
     [key: string]: any;
 }
 
+export class StalePendingReconcileRequest implements IStalePendingReconcileRequest {
+    enqueuedBefore?: moment.Moment | undefined;
+    maxRows?: number | undefined;
+    maxRepairs?: number | undefined;
+    note?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IStalePendingReconcileRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.enqueuedBefore = _data["enqueuedBefore"] ? moment(_data["enqueuedBefore"].toString()) : undefined as any;
+            this.maxRows = _data["maxRows"];
+            this.maxRepairs = _data["maxRepairs"];
+            this.note = _data["note"];
+        }
+    }
+
+    static fromJS(data: any): StalePendingReconcileRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new StalePendingReconcileRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["enqueuedBefore"] = this.enqueuedBefore ? this.enqueuedBefore.toISOString() : undefined as any;
+        data["maxRows"] = this.maxRows;
+        data["maxRepairs"] = this.maxRepairs;
+        data["note"] = this.note;
+        return data;
+    }
+
+    clone(): StalePendingReconcileRequest {
+        const json = this.toJSON();
+        let result = new StalePendingReconcileRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IStalePendingReconcileRequest {
+    enqueuedBefore?: moment.Moment | undefined;
+    maxRows?: number | undefined;
+    maxRepairs?: number | undefined;
+    note?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class StalePendingPreview implements IStalePendingPreview {
+    endpointId?: string;
+    scanned?: number;
+    candidates?: number;
+    repairable?: number;
+    truncated?: boolean;
+    rows?: StalePendingRow[];
+
+    [key: string]: any;
+
+    constructor(data?: IStalePendingPreview) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.endpointId = _data["endpointId"];
+            this.scanned = _data["scanned"];
+            this.candidates = _data["candidates"];
+            this.repairable = _data["repairable"];
+            this.truncated = _data["truncated"];
+            if (Array.isArray(_data["rows"])) {
+                this.rows = [] as any;
+                for (let item of _data["rows"])
+                    this.rows!.push(StalePendingRow.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): StalePendingPreview {
+        data = typeof data === 'object' ? data : {};
+        let result = new StalePendingPreview();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["endpointId"] = this.endpointId;
+        data["scanned"] = this.scanned;
+        data["candidates"] = this.candidates;
+        data["repairable"] = this.repairable;
+        data["truncated"] = this.truncated;
+        if (Array.isArray(this.rows)) {
+            data["rows"] = [];
+            for (let item of this.rows)
+                data["rows"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): StalePendingPreview {
+        const json = this.toJSON();
+        let result = new StalePendingPreview();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IStalePendingPreview {
+    endpointId?: string;
+    scanned?: number;
+    candidates?: number;
+    repairable?: number;
+    truncated?: boolean;
+    rows?: StalePendingRow[];
+
+    [key: string]: any;
+}
+
+export class StalePendingRow implements IStalePendingRow {
+    eventId?: string;
+    sessionId?: string | undefined;
+    eventTypeId?: string | undefined;
+    rowMessageType?: string;
+    staleMessageId?: string | undefined;
+    rowEnqueuedTimeUtc?: moment.Moment;
+    rowUpdatedAt?: moment.Moment;
+    verdict?: StalePendingRowVerdict;
+    detail?: string;
+    responseMessageId?: string | undefined;
+    responseEnqueuedTimeUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IStalePendingRow) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.eventId = _data["eventId"];
+            this.sessionId = _data["sessionId"];
+            this.eventTypeId = _data["eventTypeId"];
+            this.rowMessageType = _data["rowMessageType"];
+            this.staleMessageId = _data["staleMessageId"];
+            this.rowEnqueuedTimeUtc = _data["rowEnqueuedTimeUtc"] ? moment(_data["rowEnqueuedTimeUtc"].toString()) : undefined as any;
+            this.rowUpdatedAt = _data["rowUpdatedAt"] ? moment(_data["rowUpdatedAt"].toString()) : undefined as any;
+            this.verdict = _data["verdict"];
+            this.detail = _data["detail"];
+            this.responseMessageId = _data["responseMessageId"];
+            this.responseEnqueuedTimeUtc = _data["responseEnqueuedTimeUtc"] ? moment(_data["responseEnqueuedTimeUtc"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): StalePendingRow {
+        data = typeof data === 'object' ? data : {};
+        let result = new StalePendingRow();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["eventId"] = this.eventId;
+        data["sessionId"] = this.sessionId;
+        data["eventTypeId"] = this.eventTypeId;
+        data["rowMessageType"] = this.rowMessageType;
+        data["staleMessageId"] = this.staleMessageId;
+        data["rowEnqueuedTimeUtc"] = this.rowEnqueuedTimeUtc ? this.rowEnqueuedTimeUtc.toISOString() : undefined as any;
+        data["rowUpdatedAt"] = this.rowUpdatedAt ? this.rowUpdatedAt.toISOString() : undefined as any;
+        data["verdict"] = this.verdict;
+        data["detail"] = this.detail;
+        data["responseMessageId"] = this.responseMessageId;
+        data["responseEnqueuedTimeUtc"] = this.responseEnqueuedTimeUtc ? this.responseEnqueuedTimeUtc.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): StalePendingRow {
+        const json = this.toJSON();
+        let result = new StalePendingRow();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IStalePendingRow {
+    eventId?: string;
+    sessionId?: string | undefined;
+    eventTypeId?: string | undefined;
+    rowMessageType?: string;
+    staleMessageId?: string | undefined;
+    rowEnqueuedTimeUtc?: moment.Moment;
+    rowUpdatedAt?: moment.Moment;
+    verdict?: StalePendingRowVerdict;
+    detail?: string;
+    responseMessageId?: string | undefined;
+    responseEnqueuedTimeUtc?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class StalePendingReconcileResult implements IStalePendingReconcileResult {
+    processed?: number;
+    succeeded?: number;
+    failed?: number;
+    skipped?: number;
+    errors?: string[];
+    repairedEventIds?: string[];
+
+    [key: string]: any;
+
+    constructor(data?: IStalePendingReconcileResult) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.processed = _data["processed"];
+            this.succeeded = _data["succeeded"];
+            this.failed = _data["failed"];
+            this.skipped = _data["skipped"];
+            if (Array.isArray(_data["errors"])) {
+                this.errors = [] as any;
+                for (let item of _data["errors"])
+                    this.errors!.push(item);
+            }
+            if (Array.isArray(_data["repairedEventIds"])) {
+                this.repairedEventIds = [] as any;
+                for (let item of _data["repairedEventIds"])
+                    this.repairedEventIds!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): StalePendingReconcileResult {
+        data = typeof data === 'object' ? data : {};
+        let result = new StalePendingReconcileResult();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["processed"] = this.processed;
+        data["succeeded"] = this.succeeded;
+        data["failed"] = this.failed;
+        data["skipped"] = this.skipped;
+        if (Array.isArray(this.errors)) {
+            data["errors"] = [];
+            for (let item of this.errors)
+                data["errors"].push(item);
+        }
+        if (Array.isArray(this.repairedEventIds)) {
+            data["repairedEventIds"] = [];
+            for (let item of this.repairedEventIds)
+                data["repairedEventIds"].push(item);
+        }
+        return data;
+    }
+
+    clone(): StalePendingReconcileResult {
+        const json = this.toJSON();
+        let result = new StalePendingReconcileResult();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IStalePendingReconcileResult {
+    processed?: number;
+    succeeded?: number;
+    failed?: number;
+    skipped?: number;
+    errors?: string[];
+    repairedEventIds?: string[];
+
+    [key: string]: any;
+}
+
 export class PurgeRequest implements IPurgeRequest {
     subscription?: string | undefined;
     states?: string[];
@@ -13818,6 +14269,7 @@ export enum MessageAuditAuditType {
     EnableEndpointHeartbeat = "enableEndpointHeartbeat",
     DisableEndpointHeartbeat = "disableEndpointHeartbeat",
     DeleteStorageContainer = "deleteStorageContainer",
+    ReconcileStalePending = "reconcileStalePending",
 }
 
 export class MessageContent implements IMessageContent {
@@ -13943,6 +14395,19 @@ export enum AuditSearchFilterAuditType {
     EnableEndpointHeartbeat = "enableEndpointHeartbeat",
     DisableEndpointHeartbeat = "disableEndpointHeartbeat",
     DeleteStorageContainer = "deleteStorageContainer",
+    ReconcileStalePending = "reconcileStalePending",
+}
+
+export enum StalePendingRowVerdict {
+    Repairable = "Repairable",
+    HistoryMissing = "HistoryMissing",
+    NoTerminal = "NoTerminal",
+    LatestTerminalIsError = "LatestTerminalIsError",
+    LatestTerminalIsSkip = "LatestTerminalIsSkip",
+    LatestTerminalIsDeadLettered = "LatestTerminalIsDeadLettered",
+    ResponseNotBeforeRow = "ResponseNotBeforeRow",
+    LaterControlMessage = "LaterControlMessage",
+    LaterRequestCopy = "LaterRequestCopy",
 }
 
 export enum RoleEntryRole {
@@ -13992,6 +14457,7 @@ export enum AuditEntryAuditType {
     EnableEndpointHeartbeat = "enableEndpointHeartbeat",
     DisableEndpointHeartbeat = "disableEndpointHeartbeat",
     DeleteStorageContainer = "deleteStorageContainer",
+    ReconcileStalePending = "reconcileStalePending",
 }
 
 export enum AgentSettleRequestOutcome {

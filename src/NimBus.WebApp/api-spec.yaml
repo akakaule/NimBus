@@ -2047,6 +2047,65 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkOperationResult'
+  '/api/admin/endpoint/{endpointId}/stale-pending-preview':
+    post:
+      summary: Preview stale Pending reconciliation
+      operationId: post-admin-stale-pending-preview
+      tags:
+        - Admin
+      parameters:
+        - schema:
+            type: string
+          name: endpointId
+          in: path
+          required: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StalePendingReconcileRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StalePendingPreview'
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+  '/api/admin/endpoint/{endpointId}/stale-pending-reconcile':
+    post:
+      summary: Reconcile stale Pending rows
+      operationId: post-admin-stale-pending-reconcile
+      tags:
+        - Admin
+      parameters:
+        - schema:
+            type: string
+          name: endpointId
+          in: path
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StalePendingReconcileRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StalePendingReconcileResult'
+        '400':
+          description: Invalid or too-recent cutoff
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
   /api/admin/messages/delete-by-to-preview:
     post:
       summary: Preview delete messages by To field
@@ -3046,6 +3105,7 @@ components:
             - enableEndpointHeartbeat
             - disableEndpointHeartbeat
             - deleteStorageContainer
+            - reconcileStalePending
         comment:
           type: string
           nullable: true
@@ -4091,6 +4151,7 @@ components:
             - enableEndpointHeartbeat
             - disableEndpointHeartbeat
             - deleteStorageContainer
+            - reconcileStalePending
         createdAtFrom:
           type: string
           format: date-time
@@ -4110,6 +4171,108 @@ components:
         continuationToken:
           type: string
           nullable: true
+    StalePendingReconcileRequest:
+      title: StalePendingReconcileRequest
+      type: object
+      properties:
+        enqueuedBefore:
+          type: string
+          format: date-time
+          nullable: true
+        maxRows:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 2000
+        maxRepairs:
+          type: integer
+          nullable: true
+          minimum: 1
+        note:
+          type: string
+          nullable: true
+    StalePendingPreview:
+      title: StalePendingPreview
+      type: object
+      properties:
+        endpointId:
+          type: string
+        scanned:
+          type: integer
+        candidates:
+          type: integer
+        repairable:
+          type: integer
+        truncated:
+          type: boolean
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/StalePendingRow'
+    StalePendingRow:
+      title: StalePendingRow
+      type: object
+      properties:
+        eventId:
+          type: string
+        sessionId:
+          type: string
+          nullable: true
+        eventTypeId:
+          type: string
+          nullable: true
+        rowMessageType:
+          type: string
+        staleMessageId:
+          type: string
+          nullable: true
+        rowEnqueuedTimeUtc:
+          type: string
+          format: date-time
+        rowUpdatedAt:
+          type: string
+          format: date-time
+        verdict:
+          type: string
+          enum:
+            - Repairable
+            - HistoryMissing
+            - NoTerminal
+            - LatestTerminalIsError
+            - LatestTerminalIsSkip
+            - LatestTerminalIsDeadLettered
+            - ResponseNotBeforeRow
+            - LaterControlMessage
+            - LaterRequestCopy
+        detail:
+          type: string
+        responseMessageId:
+          type: string
+          nullable: true
+        responseEnqueuedTimeUtc:
+          type: string
+          format: date-time
+          nullable: true
+    StalePendingReconcileResult:
+      title: StalePendingReconcileResult
+      type: object
+      properties:
+        processed:
+          type: integer
+        succeeded:
+          type: integer
+        failed:
+          type: integer
+        skipped:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: string
+        repairedEventIds:
+          type: array
+          items:
+            type: string
     PurgeRequest:
       title: PurgeRequest
       type: object
@@ -4561,6 +4724,7 @@ components:
             - enableEndpointHeartbeat
             - disableEndpointHeartbeat
             - deleteStorageContainer
+            - reconcileStalePending
         comment:
           type: string
           nullable: true

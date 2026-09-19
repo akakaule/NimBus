@@ -94,6 +94,33 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
     public Task<bool> UploadSkippedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => Upsert(eventId, sessionId, endpointId, ResolutionStatus.Skipped, content);
     public Task<bool> UploadCompletedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => Upsert(eventId, sessionId, endpointId, ResolutionStatus.Completed, content);
 
+    public Task<bool> TryCompletePendingMessage(
+        string eventId,
+        string sessionId,
+        string endpointId,
+        string? expectedLastMessageId,
+        UnresolvedEvent content)
+    {
+        var key = Key(endpointId, eventId, sessionId);
+        if (!_events.TryGetValue(key, out var existing)
+            || existing.ResolutionStatus != ResolutionStatus.Pending
+            || !string.Equals(existing.LastMessageId, expectedLastMessageId, StringComparison.Ordinal))
+        {
+            return Task.FromResult(false);
+        }
+
+        // Unlike the Upsert path, this one stamps a COPY: Cosmos and SQL Server leave the caller's
+        // content untouched when they refuse, and a caller must not be able to tell the providers
+        // apart by inspecting its own projection after a lost compare-and-swap.
+        var replacement = Clone(content);
+        replacement.ResolutionStatus = ResolutionStatus.Completed;
+        replacement.UpdatedAt = DateTime.UtcNow;
+        replacement.EndpointId = endpointId;
+        replacement.EventId = eventId;
+        replacement.SessionId = sessionId;
+        return Task.FromResult(_events.TryUpdate(key, replacement, existing));
+    }
+
     public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.Pending);
 
     public Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default)
@@ -170,6 +197,10 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
             .ToList();
         return Task.FromResult(new SearchResponse { Events = results });
     }
+
+    /// <summary>Deep copy, so a stamped replacement cannot alias the caller's instance.</summary>
+    private static UnresolvedEvent Clone(UnresolvedEvent source) =>
+        JsonConvert.DeserializeObject<UnresolvedEvent>(JsonConvert.SerializeObject(source))!;
 
     private static UnresolvedEvent CloneWithoutEventJson(UnresolvedEvent source)
     {

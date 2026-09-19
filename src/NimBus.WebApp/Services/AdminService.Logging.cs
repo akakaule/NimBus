@@ -79,4 +79,12 @@ public partial class AdminService
     [LoggerMessage(EventId = 18, Level = LogLevel.Warning,
         Message = "Failed to delete all events for {EndpointId}")]
     private partial void LogDeleteAllEventsFailed(System.Exception ex, string endpointId);
+
+    [LoggerMessage(EventId = 19, Level = LogLevel.Warning,
+        Message = "Failed to reconcile stale Pending event {EventId} on {EndpointId}")]
+    private partial void LogStalePendingRepairFailed(System.Exception ex, string eventId, string endpointId);
+
+    [LoggerMessage(EventId = 20, Level = LogLevel.Error,
+        Message = "Repaired stale Pending event {EventId} on {EndpointId} but failed to write its audit row")]
+    private partial void LogStalePendingAuditFailed(System.Exception ex, string eventId, string endpointId);
 }

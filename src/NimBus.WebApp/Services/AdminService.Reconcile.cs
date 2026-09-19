@@ -1,0 +1,260 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Newtonsoft.Json;
+using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
+using NimBus.WebApp.ManagementApi;
+using StoreEventFilter = NimBus.MessageStore.EventFilter;
+using StoreResolutionStatus = NimBus.MessageStore.ResolutionStatus;
+
+namespace NimBus.WebApp.Services;
+
+public partial class AdminService
+{
+    /// <summary>Rows the synchronous preview will classify when the caller names no limit.</summary>
+    internal const int DefaultStalePendingMaxRows = 500;
+
+    /// <summary>Hard cap on a single preview, whatever the caller asks for.</summary>
+    internal const int MaxStalePendingRows = 2000;
+
+    /// <summary>
+    /// How stale a row must be before it may be repaired. The controller rejects a cut-off newer
+    /// than this and the reconcile skips any row touched more recently, so a row that is simply
+    /// mid-flight is never overwritten.
+    /// </summary>
+    internal const int StalePendingAgeMinutes = 15;
+
+    public async Task<StalePendingPreview> PreviewStalePendingAsync(
+        string endpointId,
+        DateTime? enqueuedBefore,
+        int maxRows)
+    {
+        var limit = NormalizeMaxRows(maxRows);
+        var rows = new List<StalePendingRow>();
+        var scanned = 0;
+        var truncated = false;
+        var continuationToken = string.Empty;
+
+        do
+        {
+            var page = await _messageStore.GetEventsByFilter(
+                new StoreEventFilter
+                {
+                    EndPointId = endpointId,
+                    ResolutionStatus = new List<string> { StoreResolutionStatus.Pending.ToString() },
+                    // Push the cut-off into the query so a backlog of rows newer than it is not
+                    // paged through 20 at a time. The store's bound is inclusive and providers may
+                    // ignore the field (the in-memory one does), so the strict test below stays.
+                    EnqueuedAtTo = enqueuedBefore,
+                },
+                continuationToken,
+                PageSize);
+
+            foreach (var row in page.Events)
+            {
+                // EndPointId is a prefix match on SQL Server, where every endpoint shares one
+                // table — without this, previewing "Orders" would also classify "OrdersArchive"
+                // rows against the wrong endpoint and report them as bogus NoTerminal verdicts.
+                // Those rows are not this endpoint's, so they are not counted as scanned either.
+                if (!string.Equals(row.EndpointId, endpointId, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                scanned++;
+                if (!StalePendingReconciler.IsCandidate(row)
+                    || (enqueuedBefore.HasValue && row.EnqueuedTimeUtc >= enqueuedBefore.Value))
+                {
+                    continue;
+                }
+
+                if (rows.Count >= limit)
+                {
+                    truncated = true;
+                    break;
+                }
+
+                var classification = await ClassifyAsync(row, endpointId);
+                rows.Add(ToContractRow(classification));
+            }
+
+            if (truncated)
+            {
+                break;
+            }
+
+            continuationToken = page.ContinuationToken;
+        }
+        while (continuationToken is not null);
+
+        return new StalePendingPreview
+        {
+            EndpointId = endpointId,
+            Scanned = scanned,
+            Candidates = rows.Count,
+            Repairable = rows.Count(row => row.Verdict == StalePendingRowVerdict.Repairable),
+            Truncated = truncated,
+            Rows = rows,
+        };
+    }
+
+    public async Task<StalePendingReconcileResult> ReconcileStalePendingAsync(
+        string endpointId,
+        DateTime enqueuedBefore,
+        int? maxRepairs,
+        string auditorName,
+        string? note)
+    {
+        // Size the internal preview from the repair budget: asking for more repairs than the
+        // default preview page would otherwise silently look at only the first 500 rows.
+        var preview = await PreviewStalePendingAsync(
+            endpointId,
+            enqueuedBefore,
+            Math.Max(DefaultStalePendingMaxRows, maxRepairs.GetValueOrDefault()));
+        var result = new StalePendingReconcileResult
+        {
+            Errors = new List<string>(),
+            RepairedEventIds = new List<string>(),
+        };
+        var now = DateTime.UtcNow;
+        var ageCutoff = now.AddMinutes(-StalePendingAgeMinutes);
+        var repairLimit = maxRepairs.GetValueOrDefault(int.MaxValue);
+
+        foreach (var row in preview.Rows.Where(row => row.Verdict == StalePendingRowVerdict.Repairable))
+        {
+            // maxRepairs bounds what gets REPAIRED, not what gets looked at: a row skipped for being
+            // too fresh must not use up the operator's budget.
+            if (result.Succeeded >= repairLimit)
+            {
+                break;
+            }
+
+            result.Processed++;
+            try
+            {
+                var storedRow = await GetPendingRowOrNullAsync(endpointId, row.EventId, row.SessionId);
+                if (storedRow is null || storedRow.UpdatedAt > ageCutoff)
+                {
+                    result.Skipped++;
+                    continue;
+                }
+
+                var history = (await _messageStore.GetEventHistory(row.EventId)).ToList();
+                var classification = StalePendingReconciler.Classify(storedRow, history, endpointId);
+                if (!classification.IsRepairable || classification.Response is null)
+                {
+                    result.Skipped++;
+                    continue;
+                }
+
+                var projection = StalePendingReconciler.BuildCompletedProjection(
+                    classification.Response, history, endpointId, now);
+                if (!await _messageStore.TryCompletePendingMessage(
+                        storedRow.EventId,
+                        storedRow.SessionId,
+                        endpointId,
+                        storedRow.LastMessageId,
+                        projection))
+                {
+                    result.Skipped++;
+                    continue;
+                }
+
+                var auditData = JsonConvert.SerializeObject(new
+                {
+                    previousStatus = storedRow.ResolutionStatus.ToString(),
+                    newStatus = StoreResolutionStatus.Completed.ToString(),
+                    staleMessageType = storedRow.MessageType.ToString(),
+                    staleMessageId = storedRow.LastMessageId,
+                    staleEnqueuedTimeUtc = storedRow.EnqueuedTimeUtc,
+                    responseMessageId = classification.Response.MessageId,
+                    responseEnqueuedTimeUtc = classification.Response.EnqueuedTimeUtc,
+                    note,
+                });
+                // The row is already repaired. An audit failure from here on must not be reported
+                // as a failed repair: the caller would see Failed++ for a row that did change, and
+                // a second run cannot compensate because the row is no longer Pending. Count the
+                // repair, and surface the missing audit row as its own error.
+                try
+                {
+                    await _messageStore.StoreMessageAudit(
+                        storedRow.EventId,
+                        new MessageAuditEntity
+                        {
+                            AuditorName = auditorName,
+                            AuditTimestamp = now,
+                            AuditType = MessageAuditType.ReconcileStalePending,
+                            Comment = "Reconciled a stale Pending row from its stored ResolutionResponse.",
+                            Data = auditData,
+                            EventId = storedRow.EventId,
+                            EndpointId = endpointId,
+                        },
+                        endpointId,
+                        storedRow.EventTypeId);
+                }
+                catch (Exception auditException) when (auditException is not OperationCanceledException)
+                {
+                    LogStalePendingAuditFailed(auditException, storedRow.EventId, endpointId);
+                    result.Errors.Add(
+                        $"{storedRow.EventId}: repaired, but writing its audit row failed ({auditException.Message}). " +
+                        "The repair stands; the per-event audit is missing.");
+                }
+
+                result.Succeeded++;
+                result.RepairedEventIds.Add(storedRow.EventId);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                LogStalePendingRepairFailed(exception, row.EventId, endpointId);
+                result.Failed++;
+                result.Errors.Add($"{row.EventId}: {exception.Message}");
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The row as it stands now, or null when it is no longer Pending. Providers disagree on how a
+    /// missing row reads — Cosmos returns null, SQL Server and the in-memory store throw
+    /// <see cref="EndpointNotFoundException"/> — and either answer means the same thing here: the row
+    /// moved on since the preview, so the reconcile skips it instead of reporting a failure.
+    /// </summary>
+    private async Task<UnresolvedEvent?> GetPendingRowOrNullAsync(string endpointId, string eventId, string? sessionId)
+    {
+        try
+        {
+            return await _messageStore.GetPendingEvent(endpointId, eventId, sessionId ?? string.Empty);
+        }
+        catch (EndpointNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    private async Task<StalePendingClassification> ClassifyAsync(UnresolvedEvent row, string endpointId)
+    {
+        var history = (await _messageStore.GetEventHistory(row.EventId)).ToList();
+        return StalePendingReconciler.Classify(row, history, endpointId);
+    }
+
+    private static StalePendingRow ToContractRow(StalePendingClassification classification) => new()
+    {
+        EventId = classification.Row.EventId,
+        SessionId = classification.Row.SessionId,
+        EventTypeId = classification.Row.EventTypeId,
+        RowMessageType = classification.Row.MessageType.ToString(),
+        StaleMessageId = classification.Row.LastMessageId,
+        RowEnqueuedTimeUtc = classification.Row.EnqueuedTimeUtc,
+        RowUpdatedAt = classification.Row.UpdatedAt,
+        Verdict = Enum.Parse<StalePendingRowVerdict>(classification.Verdict.ToString()),
+        Detail = classification.Detail,
+        ResponseMessageId = classification.Response?.MessageId,
+        ResponseEnqueuedTimeUtc = classification.Response?.EnqueuedTimeUtc,
+    };
+
+    private static int NormalizeMaxRows(int maxRows) =>
+        Math.Clamp(maxRows <= 0 ? DefaultStalePendingMaxRows : maxRows, 1, MaxStalePendingRows);
+}

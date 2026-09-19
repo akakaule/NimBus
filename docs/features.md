@@ -23,7 +23,7 @@ This document is a concise catalog of the current NimBus feature set, grouped in
 | Extensibility hooks | Lifecycle observers | Passive hooks for received/completed/failed/dead-lettered message events. | `NimBus.Core` |
 | Built-in middleware | Logging/Metrics/Validation middleware | Built-in behaviors for processing logs, OpenTelemetry metrics, and basic message validation. | `NimBus.Core` |
 | State and audit | Resolver state tracking | Central resolver stores message outcomes and endpoint resolution state in Cosmos DB. | `NimBus.Resolver`, `NimBus.MessageStore` |
-| Operations UI | Management WebApp | Authenticated UI/API for endpoint/event/message inspection and operational workflows. | `NimBus.WebApp` |
+| Operations UI | Management WebApp | Authenticated UI/API for endpoint/event/message inspection and operational workflows, including reconciling stale `Pending` rows from their stored outcome. | `NimBus.WebApp` |
 | Operations automation | CLI provisioning + operations | `nb` CLI commands for infra/topology/app deploy, purge, session cleanup, and container operations. | `NimBus.CommandLine` |
 | Topology management | Declarative topology export/apply | Export platform config and provision topics/subscriptions/rules from it. | `NimBus`, `NimBus.Management.ServiceBus`, `NimBus.CommandLine` |
 | Observability | Health checks | `IHealthCheck` probes for Service Bus and the message store, surfaced on `/health`, `/alive` and `/ready`. | `NimBus.ServiceBus`, `NimBus.MessageStore.CosmosDb` |

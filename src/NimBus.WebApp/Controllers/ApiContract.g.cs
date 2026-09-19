@@ -1503,6 +1503,24 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<BulkOperationResult>> PostAdminPurgeAsync(string endpointId, PurgeRequest body);
 
         /// <summary>
+        /// Preview stale Pending reconciliation
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<StalePendingPreview>> PostAdminStalePendingPreviewAsync(string endpointId, StalePendingReconcileRequest body);
+
+        /// <summary>
+        /// Reconcile stale Pending rows
+        /// </summary>
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<StalePendingReconcileResult>> PostAdminStalePendingReconcileAsync(string endpointId, StalePendingReconcileRequest body);
+
+        /// <summary>
         /// Preview delete messages by To field
         /// </summary>
 
@@ -1948,6 +1966,28 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.PostAdminPurgeAsync(endpointId, body);
+        }
+
+        /// <summary>
+        /// Preview stale Pending reconciliation
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/stale-pending-preview")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<StalePendingPreview>> PostAdminStalePendingPreview(string endpointId, [Microsoft.AspNetCore.Mvc.FromBody] StalePendingReconcileRequest body)
+        {
+
+            return _implementation.PostAdminStalePendingPreviewAsync(endpointId, body);
+        }
+
+        /// <summary>
+        /// Reconcile stale Pending rows
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/stale-pending-reconcile")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<StalePendingReconcileResult>> PostAdminStalePendingReconcile(string endpointId, [Microsoft.AspNetCore.Mvc.FromBody] StalePendingReconcileRequest body)
+        {
+
+            return _implementation.PostAdminStalePendingReconcileAsync(endpointId, body);
         }
 
         /// <summary>
@@ -10339,6 +10379,527 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class StalePendingReconcileRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.DateTime? _enqueuedBefore;
+        private int? _maxRows;
+        private int? _maxRepairs;
+        private string _note;
+
+        [Newtonsoft.Json.JsonProperty("enqueuedBefore", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? EnqueuedBefore    {
+            get { return _enqueuedBefore; }
+            set
+            {
+                if (_enqueuedBefore != value)
+                {
+                    _enqueuedBefore = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("maxRows", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [System.ComponentModel.DataAnnotations.Range(1, 2000)]
+        public int? MaxRows    {
+            get { return _maxRows; }
+            set
+            {
+                if (_maxRows != value)
+                {
+                    _maxRows = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("maxRepairs", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)]
+        public int? MaxRepairs    {
+            get { return _maxRepairs; }
+            set
+            {
+                if (_maxRepairs != value)
+                {
+                    _maxRepairs = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("note", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Note    {
+            get { return _note; }
+            set
+            {
+                if (_note != value)
+                {
+                    _note = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static StalePendingReconcileRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<StalePendingReconcileRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class StalePendingPreview : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _endpointId;
+        private int _scanned;
+        private int _candidates;
+        private int _repairable;
+        private bool _truncated;
+        private System.Collections.Generic.List<StalePendingRow> _rows;
+
+        [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EndpointId    {
+            get { return _endpointId; }
+            set
+            {
+                if (_endpointId != value)
+                {
+                    _endpointId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("scanned", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Scanned    {
+            get { return _scanned; }
+            set
+            {
+                if (_scanned != value)
+                {
+                    _scanned = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("candidates", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Candidates    {
+            get { return _candidates; }
+            set
+            {
+                if (_candidates != value)
+                {
+                    _candidates = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("repairable", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Repairable    {
+            get { return _repairable; }
+            set
+            {
+                if (_repairable != value)
+                {
+                    _repairable = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("truncated", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Truncated    {
+            get { return _truncated; }
+            set
+            {
+                if (_truncated != value)
+                {
+                    _truncated = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("rows", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<StalePendingRow> Rows    {
+            get { return _rows; }
+            set
+            {
+                if (_rows != value)
+                {
+                    _rows = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static StalePendingPreview FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<StalePendingPreview>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class StalePendingRow : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _eventId;
+        private string _sessionId;
+        private string _eventTypeId;
+        private string _rowMessageType;
+        private string _staleMessageId;
+        private System.DateTime _rowEnqueuedTimeUtc;
+        private System.DateTime _rowUpdatedAt;
+        private StalePendingRowVerdict _verdict;
+        private string _detail;
+        private string _responseMessageId;
+        private System.DateTime? _responseEnqueuedTimeUtc;
+
+        [Newtonsoft.Json.JsonProperty("eventId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EventId    {
+            get { return _eventId; }
+            set
+            {
+                if (_eventId != value)
+                {
+                    _eventId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("sessionId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SessionId    {
+            get { return _sessionId; }
+            set
+            {
+                if (_sessionId != value)
+                {
+                    _sessionId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("eventTypeId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EventTypeId    {
+            get { return _eventTypeId; }
+            set
+            {
+                if (_eventTypeId != value)
+                {
+                    _eventTypeId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("rowMessageType", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string RowMessageType    {
+            get { return _rowMessageType; }
+            set
+            {
+                if (_rowMessageType != value)
+                {
+                    _rowMessageType = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("staleMessageId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string StaleMessageId    {
+            get { return _staleMessageId; }
+            set
+            {
+                if (_staleMessageId != value)
+                {
+                    _staleMessageId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("rowEnqueuedTimeUtc", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime RowEnqueuedTimeUtc    {
+            get { return _rowEnqueuedTimeUtc; }
+            set
+            {
+                if (_rowEnqueuedTimeUtc != value)
+                {
+                    _rowEnqueuedTimeUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("rowUpdatedAt", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime RowUpdatedAt    {
+            get { return _rowUpdatedAt; }
+            set
+            {
+                if (_rowUpdatedAt != value)
+                {
+                    _rowUpdatedAt = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("verdict", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public StalePendingRowVerdict Verdict    {
+            get { return _verdict; }
+            set
+            {
+                if (_verdict != value)
+                {
+                    _verdict = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("detail", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Detail    {
+            get { return _detail; }
+            set
+            {
+                if (_detail != value)
+                {
+                    _detail = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("responseMessageId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ResponseMessageId    {
+            get { return _responseMessageId; }
+            set
+            {
+                if (_responseMessageId != value)
+                {
+                    _responseMessageId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("responseEnqueuedTimeUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? ResponseEnqueuedTimeUtc    {
+            get { return _responseEnqueuedTimeUtc; }
+            set
+            {
+                if (_responseEnqueuedTimeUtc != value)
+                {
+                    _responseEnqueuedTimeUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static StalePendingRow FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<StalePendingRow>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class StalePendingReconcileResult : System.ComponentModel.INotifyPropertyChanged
+    {
+        private int _processed;
+        private int _succeeded;
+        private int _failed;
+        private int _skipped;
+        private System.Collections.Generic.List<string> _errors;
+        private System.Collections.Generic.List<string> _repairedEventIds;
+
+        [Newtonsoft.Json.JsonProperty("processed", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Processed    {
+            get { return _processed; }
+            set
+            {
+                if (_processed != value)
+                {
+                    _processed = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("succeeded", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Succeeded    {
+            get { return _succeeded; }
+            set
+            {
+                if (_succeeded != value)
+                {
+                    _succeeded = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("failed", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Failed    {
+            get { return _failed; }
+            set
+            {
+                if (_failed != value)
+                {
+                    _failed = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("skipped", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Skipped    {
+            get { return _skipped; }
+            set
+            {
+                if (_skipped != value)
+                {
+                    _skipped = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("errors", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Errors    {
+            get { return _errors; }
+            set
+            {
+                if (_errors != value)
+                {
+                    _errors = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("repairedEventIds", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> RepairedEventIds    {
+            get { return _repairedEventIds; }
+            set
+            {
+                if (_repairedEventIds != value)
+                {
+                    _repairedEventIds = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static StalePendingReconcileResult FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<StalePendingReconcileResult>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class PurgeRequest : System.ComponentModel.INotifyPropertyChanged
     {
         private string _subscription;
@@ -13605,6 +14166,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"deleteStorageContainer")]
         DeleteStorageContainer = 24,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"reconcileStalePending")]
+        ReconcileStalePending = 25,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -13851,6 +14415,42 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"deleteStorageContainer")]
         DeleteStorageContainer = 24,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"reconcileStalePending")]
+        ReconcileStalePending = 25,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum StalePendingRowVerdict
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Repairable")]
+        Repairable = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"HistoryMissing")]
+        HistoryMissing = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"NoTerminal")]
+        NoTerminal = 2,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"LatestTerminalIsError")]
+        LatestTerminalIsError = 3,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"LatestTerminalIsSkip")]
+        LatestTerminalIsSkip = 4,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"LatestTerminalIsDeadLettered")]
+        LatestTerminalIsDeadLettered = 5,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"ResponseNotBeforeRow")]
+        ResponseNotBeforeRow = 6,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"LaterControlMessage")]
+        LaterControlMessage = 7,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"LaterRequestCopy")]
+        LaterRequestCopy = 8,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -13985,6 +14585,9 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"deleteStorageContainer")]
         DeleteStorageContainer = 24,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"reconcileStalePending")]
+        ReconcileStalePending = 25,
 
     }
 

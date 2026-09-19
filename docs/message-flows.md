@@ -532,6 +532,11 @@ Two consequences for reading the Flow tab:
   whole throttle chain shares **one** history entry instead of leaving one per round.
   A five-round backoff therefore no longer looks like five request copies.
 
+Rows that a late copy corrupted **before** 3.7.0 still read `Pending`; the guard stops new ones but
+repairs none. Repair them from Admin → Operations → *Reconcile Stale Pending*, which re-applies the
+`ResolutionResponse` the Resolver already stored — see
+[the operator guide](stale-pending-reconcile.md).
+
 ---
 
 ## Design Notes

@@ -48,6 +48,50 @@ public interface IMessageTrackingStore
     /// <inheritdoc cref="UploadPendingMessage"/>
     Task<bool> UploadCompletedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content);
 
+    /// <summary>
+    /// Replaces a Pending row with a Completed projection only when the row still has the
+    /// expected last message id. Returns <see langword="false"/> when the row is missing,
+    /// no longer Pending, has a different last message id, or another writer won the race.
+    /// Provider failures throw. The default implementation is a compatibility fallback for
+    /// external providers and is not atomic; built-in providers override it with an atomic
+    /// conditional write.
+    /// </summary>
+    Task<bool> TryCompletePendingMessage(
+        string eventId,
+        string sessionId,
+        string endpointId,
+        string? expectedLastMessageId,
+        UnresolvedEvent content)
+    {
+        return TryCompletePendingMessageFallbackAsync(
+            eventId, sessionId, endpointId, expectedLastMessageId, content);
+    }
+
+    private async Task<bool> TryCompletePendingMessageFallbackAsync(
+        string eventId,
+        string sessionId,
+        string endpointId,
+        string? expectedLastMessageId,
+        UnresolvedEvent content)
+    {
+        UnresolvedEvent? current;
+        try
+        {
+            current = await GetPendingEvent(endpointId, eventId, sessionId).ConfigureAwait(false);
+        }
+        catch (EndpointNotFoundException)
+        {
+            return false;
+        }
+        if (current is null
+            || !string.Equals(current.LastMessageId, expectedLastMessageId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return await UploadCompletedMessage(eventId, sessionId, endpointId, content).ConfigureAwait(false);
+    }
+
     // Single-event lookups
     Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId);
     Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId);

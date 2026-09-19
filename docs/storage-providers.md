@@ -62,6 +62,28 @@ settled row; see [Spec 030](spec/030-stale-pending-guard/spec.md) for the incide
 conformance suite fails you until you apply it, and a refusal must be the only
 reason you return `false`.
 
+### The one conditional terminal write
+
+`IMessageTrackingStore.TryCompletePendingMessage(eventId, sessionId, endpointId,
+expectedLastMessageId, content)` replaces a row with a Completed projection **only if** the row
+still exists, is still `Pending`, is not soft-deleted, and its `LastMessageId` still equals
+`expectedLastMessageId` (ordinal; null matches null). It returns `true` only when it replaced the
+row and `false` for every refusal — missing, already terminal, another last message id, or a lost
+compare-and-swap. There is no retry: a lost race means someone else decided, and the caller
+re-reads. Provider failures throw.
+
+It exists for one caller, the operator reconcile of rows corrupted before the guard shipped
+([Spec 032](spec/032-stale-pending-reconcile/spec.md), driven from Admin → Operations). Every other
+terminal write stays unguarded and unconditional.
+
+The interface ships a **default implementation** — read the row, compare, then
+`UploadCompletedMessage` — so an external provider keeps compiling. That fallback is *not* atomic
+and says so in its XML docs. The three built-in providers override it with a single conditional
+statement: Cosmos DB an `IfMatchEtag` upsert after a point read (412 → `false`), SQL Server one
+`UPDATE … WHERE Status = 'Pending' AND LastMessageId = @Expected` with `@@ROWCOUNT`, the in-memory
+store a `ConcurrentDictionary.TryUpdate`. The shared conformance suite pins the behaviour for all
+of them.
+
 ## Cosmos DB
 
 Add the package and register:

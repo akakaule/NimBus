@@ -1,5 +1,7 @@
 # Memory
 
+- Endpoint purge correction: clearing message-store rows and the main endpoint subscription leaves parked messages in the topic's Deferred subscription. Purge must await its deletion and recreation, preserving session support, TTL, status and rules; read settings/rules before deletion and avoid a transient match-all default rule.
+
 - Payload-search authorization preference: ordinary Readers may search receiving endpoints whose registered event contracts have no sensitive fields. Classify nested contracts too, retain PiiReader for sensitive or unclassified contracts, and constrain store queries to the verified event types so unknown historical rows cannot bypass classification.
 
 - Cosmos payload-search investigation: the deployed API rejected the search because PiiReader was missing; the user confirmed the same ContactId search succeeds after granting the role. Show search failures explicitly instead of empty matches. Inspect HTTP status/response before diagnosing Cosmos storage or query behavior.
@@ -8,6 +10,8 @@
 
 - Planning correction: do not use Superpowers skills or workflows. Plans belong in `docs/plan/`, specs in `docs/spec/`; never recreate `docs/superpowers/`. This supersedes earlier Superpowers planning instructions.
 - Audit presentation correction: access-denied is an audit detail of the action, so show its Denied badge inside the Detail cell and keep it in that cell's search text instead of using a separate column.
+
+- Dataverse preview validation: classify non-scalar JSON context fields as permanent input failures (JToken conversions can throw ArgumentException), bound output/session sizes as well as input, and distinguish synthetic redelivery identity tests from real Dataverse repost qualification. Publish artifacts only against an explicitly tested released NimBus dependency version.
 
 - Dataverse adapter hosting preference: ship the reusable Dataverse platform adapter with Azure Functions as its default packaged host. Keep normalization/publication reusable, but do not make a worker deployment the primary customer onboarding path.
 

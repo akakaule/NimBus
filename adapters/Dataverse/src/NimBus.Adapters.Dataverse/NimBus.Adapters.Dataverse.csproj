@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsPackable>true</IsPackable><Description>Dataverse JSON ingress and NimBus publication.</Description><Version>0.1.0-preview.1</Version></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../NimBus.Adapters.Dataverse.Contracts/NimBus.Adapters.Dataverse.Contracts.csproj" /><ProjectReference Include="../../../../src/NimBus.SDK/NimBus.SDK.csproj" Condition="'$(UsePublishedNimBus)' != 'true'" /><PackageReference Include="Akaule.NimBus.SDK" Version="$(NimBusVersion)" Condition="'$(UsePublishedNimBus)' == 'true'" /></ItemGroup>
+  <ItemGroup><None Include="../../README.md" Pack="true" PackagePath="/" /></ItemGroup>
+</Project>

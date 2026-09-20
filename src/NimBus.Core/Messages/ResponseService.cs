@@ -226,7 +226,11 @@ namespace NimBus.Core.Messages
                 OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageId,
                 ParentMessageId = messageId,
                 RetryCount = messageContext.RetryCount ?? null,
-                OriginatingFrom = messageContext.From,
+                // Non-throwing From access: From is stamped by the topology's forward rule, so a
+                // request put on the topic by hand (e.g. resubmitted from a dead-letter queue
+                // with a broker tool) arrives without it. It is only recorded here; throwing
+                // would dead-letter a message whose handler side effect already landed.
+                OriginatingFrom = messageContext.GetFromOrDefault(),
                 EventTypeId = messageContext.EventTypeId,
                 MessageType = responseType,
                 MessageContent = responseContent,
@@ -266,7 +270,7 @@ namespace NimBus.Core.Messages
                 OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
                 ParentMessageId = messageContext.MessageId,
                 RetryCount = messageContext.RetryCount.HasValue ? messageContext.RetryCount + 1 : 1,
-                OriginatingFrom = messageContext.From,
+                OriginatingFrom = messageContext.GetFromOrDefault(),
                 EventTypeId = messageContext.EventTypeId,
                 MessageType = MessageType.RetryRequest,
                 MessageContent = responseContent,
@@ -301,18 +305,17 @@ namespace NimBus.Core.Messages
             IMessage deferredMessage = new Message()
             {
                 To = Constants.DeferredSubscriptionName,
-                // Preserve the publisher endpoint name. When this parked message is later
-                // republished by DeferredMessageProcessor and the receiver picks it back up,
-                // StrictMessageHandler reads messageContext.From and throws InvalidMessageException
-                // if the property is missing.
-                From = messageContext.From,
+                // Preserve the publisher endpoint name so the republished copy still says who
+                // sent it. Non-throwing: a request that arrived without From (see CreateResponse)
+                // parks and republishes without it rather than failing here.
+                From = messageContext.GetFromOrDefault(),
                 CorrelationId = messageContext.CorrelationId,
                 SessionId = messageContext.SessionId,           // Session-enabled deferred subscription
                 EventId = messageContext.EventId,
                 OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
                 ParentMessageId = messageContext.MessageId,
                 RetryCount = messageContext.RetryCount ?? null,
-                OriginatingFrom = messageContext.From,
+                OriginatingFrom = messageContext.GetFromOrDefault(),
                 EventTypeId = messageContext.EventTypeId,
                 MessageType = messageContext.MessageType,
                 MessageContent = messageContext.MessageContent,

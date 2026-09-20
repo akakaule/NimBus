@@ -571,7 +571,14 @@ namespace NimBus.Broker.Services
                 MessageId = message.MessageId,
                 OriginatingMessageId = message.OriginatingMessageId,
                 ParentMessageId = message.ParentMessageId,
-                From = message.From,
+                // A request is attributed by To, so From is only recorded. A request put on an
+                // endpoint topic by hand (e.g. resubmitted from a dead-letter queue with a broker
+                // tool) bypasses the forward rule that stamps From; record its audit copy under
+                // the originating endpoint instead of dead-lettering it. A response is attributed
+                // BY From, so there it stays required.
+                From = IsRequest(message.MessageType)
+                    ? message.GetFromOrDefault() ?? message.OriginatingFrom
+                    : message.From,
                 To = message.To,
                 OriginatingFrom = message.OriginatingFrom,
                 SessionId = message.SessionId,
@@ -622,13 +629,7 @@ namespace NimBus.Broker.Services
             string endpointId;
 
             // Request types are directed to the subscriber (use To)
-            if (message.MessageType == MessageType.EventRequest ||
-                     message.MessageType == MessageType.ContinuationRequest ||
-                     message.MessageType == MessageType.RetryRequest ||
-                     message.MessageType == MessageType.ResubmissionRequest ||
-                     message.MessageType == MessageType.SkipRequest ||
-                     message.MessageType == MessageType.HandoffCompletedRequest ||
-                     message.MessageType == MessageType.HandoffFailedRequest)
+            if (IsRequest(message.MessageType))
             {
                 endpointId = message.To;
             }
@@ -640,6 +641,15 @@ namespace NimBus.Broker.Services
 
             return (endpointId, endpointRole);
         }
+
+        private static bool IsRequest(MessageType messageType) =>
+            messageType == MessageType.EventRequest ||
+            messageType == MessageType.ContinuationRequest ||
+            messageType == MessageType.RetryRequest ||
+            messageType == MessageType.ResubmissionRequest ||
+            messageType == MessageType.SkipRequest ||
+            messageType == MessageType.HandoffCompletedRequest ||
+            messageType == MessageType.HandoffFailedRequest;
 
         private UnresolvedEvent CreateUnresolvedEvent(MessageEntity message, long? processingTimeMsOverride = null)
         {

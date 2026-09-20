@@ -38,6 +38,21 @@ namespace NimBus.Core.Messages
         }
 
         /// <summary>
+        /// Gets the sending endpoint identifier, or <see langword="null"/> when the message is
+        /// <see langword="null"/> or the sender is not defined on the message. <c>From</c> is
+        /// stamped by the topology's forward rule, so a message put on a topic by hand (e.g.
+        /// resubmitted from a dead-letter queue with a broker tool) arrives without it.
+        /// </summary>
+        /// <param name="message">The message.</param>
+        /// <returns>The sending endpoint identifier, or <see langword="null"/> when unavailable.</returns>
+        public static string? GetFromOrDefault(this IMessage? message)
+        {
+            if (message is null) return null;
+            try { return string.IsNullOrEmpty(message.From) ? null : message.From; }
+            catch (InvalidMessageException) { return null; }
+        }
+
+        /// <summary>
         /// Gets the session identifier, or <see langword="null"/> when the context is
         /// <see langword="null"/> or the identifier is not defined on the message.
         /// </summary>

@@ -29,6 +29,57 @@ public class ResponseServiceTests
         Assert.AreEqual(MessageType.ResolutionResponse, msg.MessageType);
     }
 
+    // ── Request without From ────────────────────────────────────────────
+    // From is stamped by the topology's forward rule. A request put on the topic by hand
+    // (e.g. resubmitted from a dead-letter queue with a broker tool) arrives without it, and
+    // the Service Bus context throws on access. From is only recorded on a response, so its
+    // absence must not fail the response AFTER the handler's side effect has landed.
+
+    [TestMethod]
+    public async Task SendResolutionResponse_MissingFrom_StillResponds()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var ctx = CreateContext();
+        ctx.FromIsMissing = true;
+
+        await sut.SendResolutionResponse(ctx);
+
+        var msg = sender.SentMessages.Single();
+        Assert.AreEqual(MessageType.ResolutionResponse, msg.MessageType);
+        Assert.IsNull(msg.OriginatingFrom);
+    }
+
+    [TestMethod]
+    public async Task SendRetryResponse_MissingFrom_StillSchedulesRetry()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var ctx = CreateContext();
+        ctx.FromIsMissing = true;
+
+        await sut.SendRetryResponse(ctx, messageDelayMinutes: 1);
+
+        var msg = sender.SentMessages.Single();
+        Assert.AreEqual(MessageType.RetryRequest, msg.MessageType);
+        Assert.IsNull(msg.OriginatingFrom);
+    }
+
+    [TestMethod]
+    public async Task SendToDeferredSubscription_MissingFrom_StillParksMessage()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var ctx = CreateContext();
+        ctx.FromIsMissing = true;
+
+        await sut.SendToDeferredSubscription(ctx, deferralSequence: 0);
+
+        var msg = sender.SentMessages.Single();
+        Assert.AreEqual(Constants.DeferredSubscriptionName, msg.To);
+        Assert.IsNull(msg.From);
+    }
+
     [TestMethod]
     public async Task SendResolutionResponse_CopiesMessageContentFromContext()
     {
@@ -151,6 +202,24 @@ public class ResponseServiceTests
         Assert.IsNotNull(msg.DeadLetterErrorDescription);
         StringAssert.Contains(msg.DeadLetterErrorDescription, "boom");
         StringAssert.Contains(msg.DeadLetterErrorDescription, nameof(InvalidOperationException));
+    }
+
+    [TestMethod]
+    public async Task SendDeadLetterResponse_MissingFrom_StillNotifiesResolver()
+    {
+        // The transport context throws when From is absent on the wire. That is exactly the
+        // message being dead-lettered here, so the notification must not need From.
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var ctx = CreateContext();
+        ctx.FromIsMissing = true;
+
+        await sut.SendDeadLetterResponse(ctx, reason: "Failed to handle message.", exception: null);
+
+        var msg = sender.SentMessages.Single();
+        Assert.AreEqual(MessageType.ErrorResponse, msg.MessageType);
+        Assert.AreEqual("Failed to handle message.", msg.DeadLetterReason);
+        Assert.IsNull(msg.OriginatingFrom);
     }
 
     [TestMethod]
@@ -592,7 +661,17 @@ public class ResponseServiceTests
         public string OriginalSessionId { get; set; } = string.Empty;
         public int? DeferralSequence { get; set; }
         public DateTime EnqueuedTimeUtc { get; set; }
-        public string From { get; set; } = string.Empty;
+        private string _from = string.Empty;
+
+        // Mirrors the Service Bus MessageContext, which throws when From is absent on the wire.
+        public bool FromIsMissing { get; set; }
+
+        public string From
+        {
+            get => FromIsMissing ? throw new InvalidMessageException("Message.UserProperties[From] is not defined.") : _from;
+            set => _from = value;
+        }
+
         public string DeadLetterReason { get; set; }
         public string DeadLetterErrorDescription { get; set; }
         public string HandoffReason { get; set; }

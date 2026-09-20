@@ -59,6 +59,43 @@ public class ResolverServiceTests
     }
 
     [TestMethod]
+    public async Task Handle_EventRequestWithoutFrom_StillRecordsTheAuditCopy()
+    {
+        // A request put on an endpoint topic by hand (e.g. resubmitted from a DLQ with a
+        // broker tool) bypasses the forward rule that stamps From. A request is attributed
+        // by To, so the audit copy must be recorded rather than dead-lettered.
+        var cosmos = new FakeCosmosDbClient();
+        var message = CreateMessageContext(messageType: MessageType.EventRequest, to: "BillingEndpoint", from: "StorefrontEndpoint");
+        message.FromIsMissing = true;
+        var service = CreateService(cosmos);
+
+        await service.Handle(message);
+
+        Assert.AreEqual(1, cosmos.StoredMessages.Count);
+        Assert.AreEqual("BillingEndpoint", cosmos.StoredMessages[0].EndpointId);
+        Assert.AreEqual("StorefrontEndpoint", cosmos.StoredMessages[0].From);
+        Assert.AreEqual(1, cosmos.PendingUploads.Count);
+        Assert.AreEqual(1, message.CompletedCalls);
+        Assert.AreEqual(0, message.DeadLetterCalls);
+    }
+
+    [TestMethod]
+    public async Task Handle_ResponseWithoutFrom_IsStillRejected()
+    {
+        // A response is attributed to an endpoint by From; without it there is no row to update.
+        var cosmos = new FakeCosmosDbClient();
+        var message = CreateMessageContext(messageType: MessageType.ResolutionResponse, to: "Resolver");
+        message.FromIsMissing = true;
+        var service = CreateService(cosmos);
+
+        await service.Handle(message);
+
+        Assert.AreEqual(0, cosmos.StoredMessages.Count);
+        Assert.AreEqual(1, message.DeadLetterCalls);
+        Assert.AreEqual(0, message.CompletedCalls);
+    }
+
+    [TestMethod]
     public async Task Handle_DynamicallyTypedEvent_RecordsPendingThenCompleted_KeyedByEventTypeId()
     {
         // Spec 022 Phase 0: the Resolver/audit trail must work for an event identified only by a

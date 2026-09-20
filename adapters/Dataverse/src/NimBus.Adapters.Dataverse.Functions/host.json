@@ -1,0 +1,14 @@
+{
+  "version": "2.0",
+  "extensions": {
+    "serviceBus": {
+      "autoCompleteMessages": false,
+      "prefetchCount": 0,
+      "maxConcurrentCalls": 8,
+      "maxAutoLockRenewalDuration": "00:05:00"
+    }
+  },
+  "logging": {
+    "applicationInsights": { "samplingSettings": { "isEnabled": true, "excludedTypes": "Request;Exception" } }
+  }
+}

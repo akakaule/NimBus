@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsPackable>true</IsPackable><Description>Versioned Dataverse record events for NimBus.</Description><Version>0.1.0-preview.1</Version></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../../../src/NimBus.Abstractions/NimBus.Abstractions.csproj" Condition="'$(UsePublishedNimBus)' != 'true'" /><PackageReference Include="Akaule.NimBus.Abstractions" Version="$(NimBusVersion)" Condition="'$(UsePublishedNimBus)' == 'true'" /><PackageReference Include="Newtonsoft.Json" Version="13.0.4" /></ItemGroup>
+  <ItemGroup><None Include="../../README.md" Pack="true" PackagePath="/" /></ItemGroup>
+</Project>

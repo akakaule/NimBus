@@ -42,6 +42,9 @@ public class EndpointManagement
             $"user.To = '{Constants.RetryId}'",
             $"SET user.To = '{subscriptionName}'; SET user.From = '{Constants.RetryId}'");
 
+        // Parked messages live separately from the endpoint's main subscription.
+        await _serviceBusManagement.RecreateSubscription(topicName, Constants.DeferredSubscriptionName);
+
         _logger?.LogInformation("Cleared endpoint successfully");
     }
 

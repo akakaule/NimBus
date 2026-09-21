@@ -8,6 +8,12 @@ namespace CrmErpDemo.Contracts.Events;
 [SessionKey(nameof(ContactId))]
 public class CrmContactDeleted : Event
 {
+    public static readonly CrmContactDeleted Example = new()
+    {
+        ContactId = Guid.Parse("9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c03"),
+        DeletedAt = new DateTimeOffset(2026, 9, 21, 9, 30, 0, TimeSpan.Zero),
+    };
+
     [Required]
     public Guid ContactId { get; set; }
 

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using NimBus.Core.Events;
+using NimBus.Core.Messages.PII;
 
 namespace CrmErpDemo.Contracts.Events;
 
@@ -8,6 +9,17 @@ namespace CrmErpDemo.Contracts.Events;
 [SessionKey(nameof(AccountId))]
 public class ErpCustomerCreated : Event
 {
+    public static readonly ErpCustomerCreated Example = new()
+    {
+        Origin = CustomerOrigin.Crm,
+        AccountId = Guid.Parse("6f1c0a5e-4b2d-4e8a-9c3f-1a2b3c4d5e01"),
+        ErpCustomerId = Guid.Parse("e2a7c9d1-5b3f-4a6e-8d2c-7f1e0b9a6c02"),
+        CustomerNumber = "C-100245",
+        LegalName = "Contoso Nordics ApS",
+        TaxId = "DK12345678",
+        CountryCode = "DK",
+    };
+
     [Required]
     [Description("Where the customer originated. Crm = ack of a CRM-originated CrmAccountCreated round-trip; Erp = customer created directly in ERP.")]
     public CustomerOrigin Origin { get; set; }
@@ -27,6 +39,7 @@ public class ErpCustomerCreated : Event
     [Required]
     public string LegalName { get; set; } = string.Empty;
 
+    [Sensitive(Mode = MaskMode.PartialReveal, Reveal = 4)]
     public string? TaxId { get; set; }
 
     [Required]

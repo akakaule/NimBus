@@ -8,6 +8,13 @@ namespace CrmErpDemo.Contracts.Commands;
 [SessionKey(nameof(AccountId))]
 public class PlaceCustomerOnCreditHold : Command
 {
+    public static readonly PlaceCustomerOnCreditHold Example = new()
+    {
+        AccountId = Guid.Parse("6f1c0a5e-4b2d-4e8a-9c3f-1a2b3c4d5e01"),
+        Reason = "Invoice 4471 overdue by 60 days",
+        RequestedAt = new DateTimeOffset(2026, 9, 21, 10, 0, 0, TimeSpan.Zero),
+    };
+
     [Required]
     [Description("The CRM account whose linked ERP customer must be placed on hold.")]
     public Guid AccountId { get; set; }

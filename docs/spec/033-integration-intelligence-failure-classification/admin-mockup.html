@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>NimBus · Failure intelligence settings mockup</title>
+  <style>
+    :root{--bg:#f4f1e8;--paper:#fbf9f3;--ink:#292820;--muted:#706c60;--line:#e2ddcf;--accent:#ec7137;--green:#367455;--dark:#1b1a15}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}button,input,select{font:inherit}button{cursor:pointer}button:disabled{cursor:default;opacity:.55}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #a84a1d;outline-offset:3px}a{color:inherit}
+    .sidebar{position:fixed;inset:0 auto 0 0;width:200px;background:var(--dark);color:#c8c2af;padding:25px 18px}.brand{font-size:23px;font-weight:750;color:#faf5e7;letter-spacing:-1px}.brand span{color:var(--accent)}.tagline{font:10px/1.6 monospace;letter-spacing:1px;color:#9f9986;margin:7px 0 32px}.navlabel{font:10px monospace;letter-spacing:2px;color:#aaa28e;margin:25px 10px 10px}.navitem{padding:10px 12px;border-radius:6px;margin:3px 0}.navitem.active{background:#34291e;color:#ffae79;box-shadow:inset 3px 0 var(--accent)}.sidefoot{position:absolute;bottom:22px;font-size:11px;color:#aaa28e}
+    .shell{margin-left:200px}.topbar{height:61px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 35px;font-size:12px}.crumb{color:var(--muted)}.badge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:5px;padding:3px 8px;font-size:11px;font-weight:650}.badge.demo{color:#945017;background:#fff0d9;border-color:#efd8b5}.badge.green{color:var(--green);background:#edf4e9;border-color:#d4e3ce}.dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+    main{max-width:1370px;padding:30px 35px 45px;margin:auto}h1{font-size:28px;letter-spacing:-.9px;margin:0 0 3px}h2{font-size:18px;letter-spacing:-.35px;margin:0}h3{font-size:14px;margin:0}p{margin:5px 0}.muted{color:var(--muted)}.tabs{display:flex;gap:27px;border-bottom:1px solid var(--line);margin:25px 0}.tab{padding:10px 0;color:var(--muted);white-space:nowrap}.tab.selected{color:var(--ink);font-weight:650;border-bottom:3px solid var(--accent)}.intro{display:flex;justify-content:space-between;align-items:flex-start;gap:15px;margin:28px 0 20px}.intro p{max-width:720px}.layout{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr);gap:22px;align-items:start}.stack{display:grid;gap:18px}.card{background:var(--paper);border:1px solid var(--line);border-radius:9px;overflow:hidden}.cardhead{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:15px}.cardbody{padding:20px 22px}.step{font:11px monospace;color:#9a5931;margin-right:10px}.row{display:flex;justify-content:space-between;align-items:center;gap:25px}.row p{font-size:12px;max-width:460px}.divider{border-top:1px solid var(--line);margin:18px 0}.fields{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}.field label{display:block;font-size:12px;font-weight:650;margin-bottom:6px}.field small{display:block;color:var(--muted);font-size:11px;margin-top:6px}.field.wide{grid-column:1/-1}input[type=text],input[type=number],select{width:100%;border:1px solid #d6d0c0;border-radius:5px;background:#fffdf8;color:var(--ink);padding:9px 11px}input[readonly]{background:#f0ede4;color:var(--muted)}.switch{appearance:none;width:39px;height:23px;flex:none;border-radius:20px;background:#aaa696;position:relative;cursor:pointer;margin:0}.switch:before{content:'';position:absolute;width:17px;height:17px;top:3px;left:3px;background:white;border-radius:100%;box-shadow:0 1px 3px #0002;transition:transform .15s}.switch:checked{background:var(--accent)}.switch:checked:before{transform:translateX(16px)}
+    .notice{border:1px solid #e8caa0;border-radius:6px;background:#fff3df;padding:13px 15px;font-size:12px;color:#744b21;margin-top:17px}.notice strong{display:block;margin-bottom:4px}.notice.neutral{background:#f0ede4;border-color:var(--line);color:var(--muted)}.smallcode{font:11px ui-monospace,Consolas,monospace;color:#78684e}.preview{background:var(--dark);color:#e6dec8;padding:19px 20px;margin:0;font:12px/1.7 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:455px;overflow:auto}.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;padding:12px 20px;background:#26241c;color:#d2c4a5}.previewhead{background:#26241c;color:#eee5d1;padding:13px 20px;display:flex;justify-content:space-between;font-size:12px}.checklist{list-style:none;padding:0;margin:14px 0 0}.checklist li{margin:9px 0;font-size:12px}.checklist li:before{content:'✓';color:var(--green);font-weight:bold;margin-right:9px}.sectionnote{font-size:12px;padding:15px 20px;background:#f0ede4;border-top:1px solid var(--line)}details summary{cursor:pointer;font-weight:650}details .fields{margin:15px 0}.footer{margin-top:24px;border-top:1px solid var(--line);padding:18px 0;display:flex;justify-content:space-between;gap:20px;align-items:center}.actions{display:flex;gap:9px}.button{border:1px solid #d8d1bf;background:var(--paper);color:var(--ink);border-radius:5px;padding:9px 16px;font-weight:650;font-size:12px}.primary{background:var(--accent);color:#fff;border-color:var(--accent)}.footer p{font-size:12px}.statusline{font-size:12px;color:var(--green);min-height:18px;margin-top:8px}dialog{max-width:480px;width:calc(100% - 32px);border:1px solid var(--line);border-radius:10px;padding:25px;background:var(--paper);color:var(--ink);box-shadow:0 24px 80px #0004}dialog::backdrop{background:#17150f88}dialog p{margin:14px 0 22px}dialog .actions{justify-content:flex-end}[hidden]{display:none!important}
+    @media(min-width:1450px){main{padding-top:36px}.layout{grid-template-columns:minmax(0,1.5fr) minmax(350px,1fr)}}@media(max-width:1000px){.sidebar{width:165px}.shell{margin-left:165px}main{padding:24px}.layout{grid-template-columns:1fr}.tabs{gap:19px;overflow:auto}.topbar{padding:0 24px}.intro{flex-wrap:wrap}}@media(max-width:600px){.sidebar{display:none}.shell{margin:0}main{padding:20px 16px}.topbar{padding:0 16px}.fields{grid-template-columns:1fr}.footer{align-items:flex-start;flex-direction:column}.cardbody,.cardhead{padding:17px}.intro{margin-top:20px}.tabs{gap:22px}.topbar .crumb{max-width:65%}}
+  </style>
+</head>
+<body>
+  <aside class="sidebar" aria-label="Application navigation preview">
+    <div class="brand">☁ NimBus<span>.</span></div><div class="tagline">A nimbus for your Azure cloud.<br>LOCAL DEVELOPMENT</div>
+    <div class="navlabel">OBSERVE</div><div class="navitem">Endpoints</div><div class="navitem">Event Types</div><div class="navitem">Messages</div><div class="navitem">Metrics</div><div class="navitem">Flow</div><div class="navitem">Heartbeat</div><div class="navitem">Monitor</div>
+    <div class="navlabel">DIAGNOSE</div><div class="navitem">Insights</div><div class="navitem">Audit Log</div>
+    <div class="navlabel">MANAGE</div><div class="navitem active">Admin</div><div class="navitem">Access Control</div><div class="sidefoot">Local Developer · Administrator</div>
+  </aside>
+  <div class="shell">
+    <header class="topbar"><span class="crumb">Admin / Failure intelligence</span><span class="badge demo">INTERACTIVE MOCKUP</span></header>
+    <main>
+      <h1>Admin</h1><p class="muted">Configure your integration platform and manage operations.</p>
+      <nav class="tabs" aria-label="Admin sections preview"><span class="tab">Topology</span><span class="tab">Operations</span><span class="tab">Subscriptions</span><span class="tab">Health</span><span class="tab selected" aria-current="page">Failure intelligence</span></nav>
+      <div class="intro"><div><h2>Make failures easier to understand.</h2><p class="muted">Let operators request an AI-assisted assessment. You control the provider, the evidence shared and where analysis is available.</p></div><span class="badge demo">Draft · restart required</span></div>
+      <form id="settings">
+        <div class="layout">
+          <div class="stack">
+            <section class="card" aria-labelledby="provider-title">
+              <div class="cardhead"><h3 id="provider-title"><span class="step">01</span>Activation &amp; provider</h3><span class="badge green">Example configuration</span></div>
+              <div class="cardbody">
+                <div class="row"><div><label for="enabled"><strong>Enable failure intelligence</strong></label><p class="muted">Contributor-triggered analysis. Never runs automatically or changes a message.</p></div><input id="enabled" class="switch" type="checkbox" role="switch" checked></div>
+                <div class="fields">
+                  <div class="field"><label for="provider">Provider</label><select id="provider"><option>TypeSafe</option></select></div>
+                  <div class="field"><label for="model">Model</label><input id="model" type="text" value="jev-1.13.0" required></div>
+                  <div class="field wide"><label for="key">API key</label><input id="key" type="text" value="Managed by deployment · value never displayed" readonly><small>Proposed: keep the key in the server secret store. Rotate it through deployment configuration, not in this browser mockup.</small></div>
+                </div>
+              </div>
+            </section>
+            <section class="card" aria-labelledby="evidence-title">
+              <div class="cardhead"><h3 id="evidence-title"><span class="step">02</span>Evidence sent to Jev</h3><span class="smallcode">Data settings</span></div>
+              <div class="cardbody">
+                <div class="row"><div><label for="payload"><strong>Include redacted event payload</strong></label><p class="muted">Give the model business context from this specific failure occurrence.</p><span class="smallcode">Data.IncludeEventPayload</span></div><input id="payload" class="switch" type="checkbox" role="switch" checked></div>
+                <div id="payload-warning" class="notice"><strong>Event data will leave NimBus.</strong>Only explicitly classified failures are sent to TypeSafe. PII annotations and secret-key rules are applied first, but unmarked business data may remain. Confirm your organization's data-sharing policy before enabling.</div>
+                <div class="divider"></div>
+                <div class="row"><div><label for="history"><strong>Include recent failure history</strong></label><p class="muted">Earlier failures for the same event, endpoint and session. No successful messages.</p></div><input id="history" class="switch" type="checkbox" role="switch" checked></div>
+                <div class="fields"><div class="field"><label for="history-limit">Maximum history items</label><input id="history-limit" type="number" min="0" max="5" value="5"></div><div class="field"><label for="redact">Additional redacted keys</label><input id="redact" type="text" value="TaxId, AccountId"><small>Example policy · comma-separated field names.</small></div></div>
+              </div>
+              <div class="sectionnote">Unverifiable payloads are omitted. Free-text errors are withheld when safe redaction cannot be established.</div>
+            </section>
+            <section class="card" aria-labelledby="access-title">
+              <div class="cardhead"><h3 id="access-title"><span class="step">03</span>Scope &amp; guardrails</h3></div>
+              <div class="cardbody">
+                <div class="field"><label for="scope">Allow new analysis on</label><select id="scope"><option value="all">All authorized endpoints</option><option value="selected">Selected endpoints</option></select></div>
+                <div id="endpoints" class="field" style="margin-top:12px" hidden><label for="endpoint-list">Endpoint IDs</label><input id="endpoint-list" type="text" value="ErpEndpoint, CrmEndpoint"></div>
+                <p class="muted" style="font-size:12px;margin-top:10px">Existing endpoint permissions still apply. Contributors can analyze; Readers can view saved results. Restricting analysis does not remove authorized history access.</p>
+                <div class="divider"></div>
+                <details><summary>Advanced limits &amp; guidance thresholds</summary><div class="fields">
+                  <div class="field"><label for="timeout">Provider timeout (seconds)</label><input id="timeout" type="number" min="1" max="20" value="20"></div>
+                  <div class="field"><label for="confidence">Minimum category confidence</label><input id="confidence" type="number" min="0" max="1" step="0.05" value="0.60"></div>
+                  <div class="field"><label for="retry">Retry-likely threshold</label><input id="retry" type="number" min="0" max="1" step="0.05" value="0.75"></div>
+                  <div class="field"><label for="change">Change-required threshold</label><input id="change" type="number" min="0" max="1" step="0.05" value="0.75"></div>
+                </div><p class="muted">These thresholds affect advisory guidance only. They never trigger retries or recovery actions.</p></details>
+              </div>
+            </section>
+          </div>
+          <aside class="stack" aria-label="Evidence and change summary">
+            <section class="card"><div class="cardhead"><div><h3>What leaves NimBus</h3><p class="muted" style="font-size:12px">Illustrative ERP failure · not live message data</p></div></div><div class="previewhead"><span>state.json</span><span id="payload-label">Payload included</span></div><pre id="preview" class="preview" aria-label="Illustrative outbound state"></pre><div class="legend"><span>● PII &amp; secret rules applied</span><span>● No operational IDs</span></div><div class="cardbody"><p class="muted" style="font-size:12px">The request also contains your model selection and four fixed classification questions. This example does not execute the production redactor.</p><ul class="checklist"><li>No event, message or session IDs</li><li>No stack traces or raw exception dumps</li><li>No provider credentials in the state</li><li>Bounded history and payload size</li></ul></div></section>
+            <section class="card"><div class="cardbody"><h3>Activation is deliberate</h3><p class="muted" style="font-size:12px;margin-top:10px">Proposed workflow: save a configuration draft, then restart the WebApp to apply it. Current settings remain active until restart.</p><div class="notice neutral">Disabling intelligence stops new analysis and hides its routes. It does not delete stored classifications.</div></div></section>
+            <div class="muted" style="font-size:12px;padding:0 4px">Design preview only. All changes stay in this page and are lost on reload. No secrets, messages or settings are transmitted.</div>
+          </aside>
+        </div>
+        <footer class="footer"><div><strong id="draft-label">Draft: include redacted event payload</strong><p class="muted">Administrator-only settings · application restart required</p><div id="feedback" class="statusline" role="status" aria-live="polite"></div></div><div class="actions"><button class="button" type="reset">Reset preview</button><button class="button primary" type="submit">Review changes</button></div></footer>
+      </form>
+    </main>
+  </div>
+  <dialog id="review" aria-labelledby="review-title"><h2 id="review-title">Review failure intelligence</h2><p id="review-copy"></p><div class="notice neutral">Mockup only: nothing is saved, no restart occurs and no provider request is made. Settings persistence and secret management must be designed before implementation.</div><div class="actions" style="margin-top:22px"><button id="cancel" class="button" type="button">Back</button><button id="save" class="button primary" type="button">Simulate save</button></div></dialog>
+  <script>
+    const byId = id => document.getElementById(id);
+    const form = byId('settings');
+    function refresh() {
+      const enabled = byId('enabled').checked;
+      const payload = byId('payload').checked;
+      const history = byId('history').checked;
+      byId('payload-warning').hidden = !payload;
+      byId('endpoints').hidden = byId('scope').value !== 'selected';
+      byId('endpoint-list').required = byId('scope').value === 'selected';
+      byId('history-limit').disabled = !history;
+      byId('payload-label').textContent = !enabled ? 'Feature disabled' : payload ? 'Payload included' : 'Payload omitted';
+      byId('draft-label').textContent = !enabled ? 'Draft: failure intelligence disabled' : payload ? 'Draft: include redacted event payload' : 'Draft: exclude event payload';
+      const examplePayload = { AccountId: '[redacted]', LegalName: 'Example Company', TaxId: '[redacted]', CountryCode: 'ES' };
+      const keys = byId('redact').value.split(',').map(key => key.trim().toLowerCase());
+      for (const key of Object.keys(examplePayload)) if (keys.includes(key.toLowerCase())) examplePayload[key] = '[redacted]';
+      const state = { failure: { eventType: 'CrmAccountCreated', endpoint: 'ErpEndpoint', status: 'Failed', retryCount: 1, retryLimit: 3, exception: { type: 'InvalidOperationException', message: 'ERP is in error mode.', source: 'Erp.Adapter' }, deadLetterReason: null }, recentHistory: history && Number(byId('history-limit').value) > 0 ? [{ attempt: 1, outcome: 'ErrorResponse', errorType: 'InvalidOperationException', errorMessage: 'ERP is in error mode.' }] : [], eventPayload: payload ? examplePayload : null };
+      byId('preview').textContent = enabled ? JSON.stringify(state, null, 2) : '// No classification request is sent while disabled.';
+    }
+    form.addEventListener('input', () => { refresh(); byId('feedback').textContent = ''; });
+    form.addEventListener('reset', () => { setTimeout(() => { refresh(); byId('feedback').textContent = 'Preview reset. Live settings were not changed.'; }, 0); });
+    form.addEventListener('submit', event => { event.preventDefault(); byId('review-copy').textContent = !byId('enabled').checked ? 'Disable failure intelligence after the next restart. Existing classifications are retained.' : 'Enable on-demand analysis with ' + byId('model').value + '. Event payload sharing: ' + (byId('payload').checked ? 'enabled, after redaction. Unmarked business data may leave NimBus.' : 'disabled.') + ' Endpoint scope: ' + (byId('scope').value === 'all' ? 'all authorized endpoints.' : byId('endpoint-list').value + '.'); byId('review').showModal(); });
+    byId('cancel').addEventListener('click', () => byId('review').close());
+    byId('save').addEventListener('click', () => { byId('review').close(); byId('feedback').textContent = 'Save simulated. No configuration changed; no provider call made.'; });
+    refresh();
+  </script>
+</body>
+</html>

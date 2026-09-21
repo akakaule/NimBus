@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import IntelligenceCard from "./intelligence-card";
 
@@ -7,10 +7,40 @@ const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   globalThis.fetch = originalFetch;
 });
 
 describe("IntelligenceCard", () => {
+  it("clears active and historical labels when polling returns a completed result", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "Ready", canAnalyze: true, contractVersion: 1 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: "AnalysisInProgress" }), { status: 409 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "Ready", canAnalyze: true, contractVersion: 1 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        category: "business_rule", categoryConfidence: 0.9, retryLikelihood: 0, changeRequiredLikelihood: 1,
+        externalDependencyLikelihood: 0, guidance: "Investigate", revision: 2, model: "test",
+        createdAtUtc: "2026-09-20T00:00:00Z",
+      })));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    await act(async () => {
+      render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
+    });
+    expect(screen.getByText("Analyzing failure…")).toBeTruthy();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+
+    expect(screen.getByText("business_rule (90%)")).toBeTruthy();
+    expect(screen.queryByText("Analyzing failure…")).toBeNull();
+    expect(screen.queryByText(/Historical result/)).toBeNull();
+    expect(screen.queryByText("Analysis is in progress.")).toBeNull();
+    expect((screen.getByRole("button", { name: "Re-analyze" }) as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
   it("hides unsupported contract versions without loading or posting", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "Ready", canAnalyze: true, contractVersion: 99 })));
     globalThis.fetch = fetchMock as typeof fetch;

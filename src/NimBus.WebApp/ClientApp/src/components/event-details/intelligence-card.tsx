@@ -47,7 +47,7 @@ function OccurrenceCard(props: IntelligenceCardProps) {
         if (latest.status === 404) return;
         const payload = await latest.json();
         if (controller.signal.aborted) return;
-        if (latest.ok) { setClassification(payload); setError(undefined); setUnknownOutcome(false); }
+        if (latest.ok) { setClassification(payload); setError(undefined); setUnknownOutcome(false); setAnalysisActive(false); }
         else if (payload.code === "AnalysisInProgress") {
           setBusy(true);
           setAnalysisActive(true);

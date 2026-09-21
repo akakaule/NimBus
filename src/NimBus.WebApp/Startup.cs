@@ -84,10 +84,14 @@ namespace NimBus.WebApp
             services.AddScoped<IIntegrationIntelligenceHost, WebAppIntegrationIntelligenceHostAdapter>();
             services.AddSingleton<IIntegrationIntelligenceStorageSettings>(sp =>
                 new WebAppIntegrationIntelligenceStorageSettings(storageProvider, sp));
-            services.AddNimBusIntegrationIntelligence(Configuration);
             AddManagementServices(services);
             AddObservability(services, storageProvider);
             AddAuthorizationAndAuditServices(services);
+            // The intelligence adapter depends on the scoped authorization and
+            // audit services. Register those before the optional extension so
+            // enabled routes can never be discovered with an unconstructible
+            // adapter.
+            services.AddNimBusIntegrationIntelligence(Configuration);
             AddApiControllers(services);
         }
 
@@ -769,6 +773,9 @@ namespace NimBus.WebApp
                 app.UseOpenApi();
                 app.UseSwaggerUi();
             }
+
+            if (app.ApplicationServices.GetService<IntegrationIntelligenceActivation>()?.Enabled == true)
+                app.UseMiddleware<NimBus.Extensions.IntegrationIntelligence.IntegrationIntelligenceAuditMiddleware>();
 
             app.UseAuthentication();
             app.UseAuthorization();

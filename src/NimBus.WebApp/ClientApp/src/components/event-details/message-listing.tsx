@@ -1,5 +1,6 @@
 import * as React from "react";
 import * as api from "api-client";
+import IntelligenceCard from "components/event-details/intelligence-card";
 import { Badge } from "components/ui/badge";
 import { Button } from "components/ui/button";
 import {
@@ -253,6 +254,25 @@ export function getResubmitPayload(
     )[0]?.eventContent;
 }
 
+/** Returns every stored failure occurrence represented by the event history. */
+export function getFailureOccurrences(
+  event: api.Event | undefined,
+  messages: api.Message[] | undefined,
+): Array<{ eventId: string; messageId: string }> {
+  const rows = (messages ?? []).filter((message) => {
+    const dynamic = message as api.Message & { deadLetterReason?: string; deadLetterErrorDescription?: string };
+    const type = String(message.messageType ?? "").toLowerCase();
+    return Boolean(message.messageId && message.eventId &&
+      (type.endsWith("errorresponse") || message.errorContent || dynamic.deadLetterReason || dynamic.deadLetterErrorDescription));
+  });
+  const occurrences = rows.map((message) => ({ eventId: message.eventId!, messageId: message.messageId! }));
+  if (occurrences.length > 0) return occurrences.filter((entry, index) =>
+    occurrences.findIndex(candidate => candidate.eventId === entry.eventId && candidate.messageId === entry.messageId) === index);
+  if (event?.eventId && event.lastMessageId && ["failed", "deadlettered"].includes((event.resolutionStatus ?? "").toLowerCase()))
+    return [{ eventId: event.eventId, messageId: event.lastMessageId }];
+  return [];
+}
+
 // A completed hand-off carries the external system's optional result details
 // on the HandoffCompletedRequest's event content (the original request
 // payload lives elsewhere). Surface it as a separate "Handoff result" block.
@@ -372,6 +392,7 @@ interface IButtonState {
 }
 
 export default function MessageListing(props: IMessageListingProps) {
+  const failureOccurrences = getFailureOccurrences(props.eventDetails, props.messages);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const handleErrorDetailsToggle = () => setShowErrorDetails(!showErrorDetails);
   const [isOpen, setIsOpen] = useState(false);
@@ -1065,6 +1086,20 @@ export default function MessageListing(props: IMessageListingProps) {
             )
           )}
           <br />
+          {failureOccurrences.length > 0 && (
+            <div className="space-y-3">
+              {failureOccurrences.map((occurrence, index) => (
+                <IntelligenceCard
+                  key={`${occurrence.eventId}/${occurrence.messageId}`}
+                  endpointId={props.eventDetails?.endpointId!}
+                  eventId={occurrence.eventId}
+                  messageId={occurrence.messageId}
+                  resolutionStatus={props.eventDetails?.resolutionStatus}
+                  occurrenceLabel={`occurrence ${index + 1}`}
+                />
+              ))}
+            </div>
+          )}
         </>
       )}
 

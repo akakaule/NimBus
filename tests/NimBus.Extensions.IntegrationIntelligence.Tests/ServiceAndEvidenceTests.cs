@@ -141,6 +141,24 @@ public sealed class ServiceAndEvidenceTests
     }
 
     [TestMethod]
+    public async Task Invalid_Provider_Response_Is_Sanitized_503_And_Audited_Without_Replay()
+    {
+        var fixture = new ServiceFixture();
+        fixture.Provider.Failure = new NimBus.Extensions.IntegrationIntelligence.Providers.IntelligenceProviderException(
+            "ProviderInvalidResponse", false, "raw provider detail and secret-value");
+
+        var error = await Assert.ThrowsExactlyAsync<ClassificationServiceException>(() =>
+            fixture.Service.AnalyzeAsync("event", "failure", Guid.NewGuid().ToString("D"), false, default));
+
+        Assert.AreEqual(503, error.StatusCode);
+        Assert.AreEqual("ProviderUnavailable", error.Code);
+        Assert.HasCount(1, fixture.Host.Audits);
+        Assert.DoesNotContain("raw provider detail", string.Join(" ", fixture.Host.Audits));
+        StringAssert.Contains(fixture.Host.Audits[0], "ProviderError", StringComparison.Ordinal);
+        Assert.AreEqual(1, fixture.Provider.Calls);
+    }
+
+    [TestMethod]
     public void Extension_Does_Not_Reference_Workflow_Mutation_Assemblies_Or_Contracts()
     {
         var assembly = typeof(FailureClassificationService).Assembly;
@@ -224,20 +242,28 @@ internal sealed class TestIntelligenceHost : IIntegrationIntelligenceHost
     public bool Contributor { get; set; } = true;
     public string? CurrentActor => "operator";
     public List<string> Audits { get; } = [];
+    public bool AuditThrows { get; set; }
     public Task<bool> EndpointExistsAsync(string endpointId, CancellationToken cancellationToken = default) => Task.FromResult(true);
     public Task<bool> HasReaderAsync(string endpointId, CancellationToken cancellationToken = default) => Task.FromResult(Reader);
     public Task<bool> HasContributorAsync(string endpointId, CancellationToken cancellationToken = default) => Task.FromResult(Contributor);
-    public Task AuditAsync(MessageAuditType type, string? eventId, string? endpointId, string data, bool accessDenied, CancellationToken cancellationToken = default) { Audits.Add(data); return Task.CompletedTask; }
+    public Task AuditAsync(MessageAuditType type, string? eventId, string? endpointId, string data, bool accessDenied, CancellationToken cancellationToken = default)
+    {
+        if (AuditThrows) throw new InvalidOperationException("audit unavailable");
+        Audits.Add(data);
+        return Task.CompletedTask;
+    }
 }
 
 internal sealed class TestIntelligenceProvider : IFailureIntelligenceProvider
 {
     public int Calls { get; private set; }
     public bool Throw { get; set; }
+    public Exception? Failure { get; set; }
     public string Name => "TypeSafe";
     public Task<FailureIntelligenceProviderResult> ClassifyAsync(FailureClassificationInput input, CancellationToken cancellationToken = default)
     {
         Calls++;
+        if (Failure is not null) throw Failure;
         if (Throw) throw new TaskCanceledException();
         return Task.FromResult(new FailureIntelligenceProviderResult("test", "unknown", 1, new Dictionary<string, double> { ["unknown"] = 1 }, 0, 0, 0, null, null));
     }

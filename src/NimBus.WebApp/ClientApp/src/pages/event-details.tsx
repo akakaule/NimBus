@@ -9,7 +9,6 @@ import BlockedListing from "components/event-details/blocked-listing";
 import AuditListing from "components/event-details/audit-listing";
 import FlowTimeline from "components/event-details/flow-timeline";
 import { parseBlockedByEventId } from "functions/endpoint.functions";
-import IntelligenceCard from "components/event-details/intelligence-card";
 
 const { useEffect, useState } = React;
 
@@ -321,14 +320,6 @@ const EventDetails = (props: EventDetailsProps) => {
           backUrl={`/Endpoints/Details/${params.endpointId!}`}
           backIndex={params.backindex!}
         >
-          {cosmosEvent.endpointId && cosmosEvent.eventId && cosmosEvent.lastMessageId && (
-            <IntelligenceCard
-              endpointId={cosmosEvent.endpointId}
-              eventId={cosmosEvent.eventId}
-              messageId={cosmosEvent.lastMessageId}
-              resolutionStatus={cosmosEvent.resolutionStatus}
-            />
-          )}
           <TabSelection tabs={tabs()} />
         </Page>
       )}

@@ -131,17 +131,36 @@ public sealed class TypeSafeFailureIntelligenceProvider : IFailureIntelligencePr
         var answers = root.GetProperty("answers");
         var category = answers.GetProperty("failure_category");
         var categoryId = RequiredString(category, "choice");
-        if (!FailureClassificationQuestionSet.Items["failure_category"].Criteria!.ContainsKey(categoryId))
+        var pinnedCategories = FailureClassificationQuestionSet.Items["failure_category"].Criteria!.Keys
+            .ToHashSet(StringComparer.Ordinal);
+        if (!pinnedCategories.Contains(categoryId))
         {
             throw new IntelligenceProviderException("ProviderInvalidResponse", false, "The provider returned an unknown failure category.");
         }
         var confidence = RequiredFinite(category, "confidence");
-        var probabilities = category.GetProperty("probabilities").EnumerateObject()
-            .ToDictionary(property => property.Name, property => property.Value.GetDouble(), StringComparer.Ordinal);
-        if (probabilities.Count == 0 || probabilities.Values.Any(value => value is < 0 or > 1 || double.IsNaN(value) || double.IsInfinity(value))
-            || Math.Abs(probabilities.Values.Sum() - 1d) > 0.01)
+        if (!category.TryGetProperty("probabilities", out var probabilityMap)
+            || probabilityMap.ValueKind != JsonValueKind.Object)
         {
-            throw new IntelligenceProviderException("ProviderInvalidResponse", false, "The provider returned an invalid category distribution.");
+            throw InvalidDistribution();
+        }
+
+        Dictionary<string, double> probabilities;
+        try
+        {
+            probabilities = probabilityMap.EnumerateObject()
+                .ToDictionary(property => property.Name, property => property.Value.GetDouble(), StringComparer.Ordinal);
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or FormatException or OverflowException)
+        {
+            throw InvalidDistribution(exception);
+        }
+
+        if (!probabilities.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(pinnedCategories)
+            || !probabilities.ContainsKey(categoryId)
+            || probabilities.Values.Any(value => value is < 0 or > 1 || double.IsNaN(value) || double.IsInfinity(value))
+            || Math.Abs(probabilities.Values.Sum() - 1d) > 0.001)
+        {
+            throw InvalidDistribution();
         }
 
         var usage = root.TryGetProperty("usage", out var usageElement) ? usageElement : default;
@@ -158,6 +177,9 @@ public sealed class TypeSafeFailureIntelligenceProvider : IFailureIntelligencePr
             inputTokens,
             outputTokens);
     }
+
+    private static IntelligenceProviderException InvalidDistribution(Exception? inner = null)
+        => new("ProviderInvalidResponse", false, "The provider returned an invalid category distribution.", inner);
 
     private static int? ReadUsage(JsonValueKind usageKind, JsonElement usage, string name)
     {

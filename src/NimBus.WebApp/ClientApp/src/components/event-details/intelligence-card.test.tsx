@@ -40,6 +40,42 @@ describe("IntelligenceCard", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
+  it("shows explicit empty state and expandable classification details", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "Ready", canAnalyze: true, contractVersion: 1 })))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+    render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
+    expect(await screen.findByText("No analysis has been performed.")).toBeTruthy();
+
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "Ready", canAnalyze: false, contractVersion: 1 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        category: "business_rule", categoryConfidence: 0.9, retryLikelihood: 0, changeRequiredLikelihood: 1,
+        externalDependencyLikelihood: 0, guidance: "Investigate", revision: 1, model: "test",
+        createdAtUtc: "2026-09-20T00:00:00Z", categoryProbabilities: { business_rule: 0.7, unknown: 0.2, transient_dependency: 0.1 }, questionSetVersion: 1,
+      })));
+    cleanup();
+    render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
+    await screen.findByText("business_rule (90%)");
+    await userEvent.click(screen.getByText("Classification details"));
+    expect(screen.getByText("unknown: 20%")).toBeTruthy();
+    expect(screen.getByText("transient_dependency: 10%")).toBeTruthy();
+    expect(screen.getByText("Question set v1")).toBeTruthy();
+  });
+
+  it("marks a saved result historical while a newer analysis is in progress", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "Ready", canAnalyze: true, contractVersion: 1 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ category: "unknown", categoryConfidence: 0.9, revision: 1 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: "AnalysisInProgress" }), { status: 409 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+    render(<IntelligenceCard endpointId="orders" eventId="event-1" messageId="message-1" resolutionStatus="Failed" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Re-analyze" }));
+    expect(await screen.findByText(/Historical result/)).toBeTruthy();
+    expect(screen.getByText("Analyzing failure…")).toBeTruthy();
+  });
+
   it("forces a new request after an unknown outcome", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: "Ready", canAnalyze: true, contractVersion: 1 })))

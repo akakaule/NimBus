@@ -57,6 +57,7 @@ public sealed class IntegrationIntelligenceController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> PostClassification(string eventId, string messageId, [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] ClassificationRequest? request, CancellationToken cancellationToken)
     {
+        HttpContext.Items[IntegrationIntelligenceRequestMarkers.ControllerEntered] = true;
         return await ExecuteAsync(async () =>
         {
             var result = await _service.AnalyzeAsync(eventId, messageId, Request.Headers["Idempotency-Key"].ToString(), request?.Force ?? false, cancellationToken).ConfigureAwait(false);

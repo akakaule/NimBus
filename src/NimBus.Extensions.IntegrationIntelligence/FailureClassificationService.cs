@@ -59,37 +59,75 @@ public sealed class FailureClassificationService
     public async Task<(FailureClassification Result, bool Cached)> AnalyzeAsync(
         string eventId, string messageId, string idempotencyKey, bool force, CancellationToken cancellationToken)
     {
+        var started = Stopwatch.GetTimestamp();
+        using var activity = NimBusIntelligenceTelemetry.ActivitySource.StartActivity("NimBus.Intelligence.FailureClassification");
         FailureClassification? result = null;
         var cached = false;
-        var outcome = "failed";
+        var outcome = "rejected";
         var denied = false;
         var endpointId = string.Empty;
+        var eventTypeId = string.Empty;
         try
         {
-            await LoadAuthorizedMessageAsync(eventId, messageId, true, endpoint => endpointId = endpoint, cancellationToken).ConfigureAwait(false);
+            await LoadAuthorizedMessageAsync(eventId, messageId, true, input =>
+            {
+                endpointId = input.EndpointId;
+                eventTypeId = input.EventTypeId ?? string.Empty;
+            }, cancellationToken).ConfigureAwait(false);
             if (!Guid.TryParse(idempotencyKey, out var key)) throw new ClassificationServiceException("InvalidIdempotencyKey", 400);
             idempotencyKey = key.ToString("D");
             (result, cached) = await AnalyzeCoreAsync(eventId, messageId, idempotencyKey, force, cancellationToken).ConfigureAwait(false);
-            outcome = cached ? "cached" : "completed";
+            outcome = cached ? "cached" : "ok";
             return (result, cached);
         }
         catch (ClassificationServiceException exception)
         {
-            outcome = exception.Code;
+            outcome = exception.TelemetryOutcome ?? exception.Code switch
+            {
+                "AnalysisInProgress" => "busy",
+                "AnalysisOutcomeUnknown" => "unknown",
+                "ProviderUnavailable" => "provider_error",
+                _ when exception.StatusCode >= 500 => "store_error",
+                _ => "rejected",
+            };
             denied = exception.StatusCode == 403;
             throw;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception exception)
         {
-            throw new ClassificationServiceException("ClassificationUnavailable", 503, inner: exception);
+            outcome = "store_error";
+            throw new ClassificationServiceException("ClassificationUnavailable", 503, inner: exception, telemetryOutcome: "store_error");
         }
         finally
         {
+            NimBusIntelligenceTelemetry.RecordRequest(
+                started,
+                activity,
+                outcome,
+                result?.Provider ?? _provider.Name,
+                result?.Model ?? _options.Model,
+                result?.Category,
+                endpointId,
+                eventTypeId,
+                result?.InputTokens);
             using var auditTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await AuditAsync(eventId, endpointId, messageId, result, cached, outcome, denied, auditTimeout.Token).ConfigureAwait(false);
+            await AuditAsync(eventId, endpointId, messageId, result, cached, AuditOutcome(outcome), denied, auditTimeout.Token).ConfigureAwait(false);
         }
     }
+
+    private static string AuditOutcome(string telemetryOutcome)
+        => telemetryOutcome switch
+        {
+            "ok" => "Completed",
+            "cached" => "Cached",
+            "provider_error" => "ProviderError",
+            "unknown" => "UnknownOutcome",
+            "store_error" => "StoreError",
+            "busy" => "Busy",
+            "rejected" => "Rejected",
+            _ => telemetryOutcome,
+        };
 
     private async Task<(FailureClassification Result, bool Cached)> AnalyzeCoreAsync(
         string eventId,
@@ -98,9 +136,6 @@ public sealed class FailureClassificationService
         bool force,
         CancellationToken cancellationToken)
     {
-        using var activity = NimBusIntelligenceTelemetry.ActivitySource.StartActivity("NimBus.Intelligence.FailureClassification");
-        var started = Stopwatch.GetTimestamp();
-        NimBusIntelligenceTelemetry.Requests.Add(1, new KeyValuePair<string, object?>("nimbus.intelligence.provider", _provider.Name));
         var input = await _evidence.BuildAsync(eventId, messageId, cancellationToken).ConfigureAwait(false)
             ?? throw new ClassificationServiceException("FailureNotEligible", 409);
         if (_options.AllowedEndpoints.Length > 0 && !_options.AllowedEndpoints.Contains(input.EndpointId, StringComparer.OrdinalIgnoreCase))
@@ -108,11 +143,22 @@ public sealed class FailureClassificationService
             throw new ClassificationServiceException("EndpointNotAllowed", 403);
         }
 
-        var reservation = await _store.ReserveAsync(input.MessageId, idempotencyKey, force, _clock.GetUtcNow(),
-            new ClassificationScope(input.MessageId, eventId, input.EndpointId, input.SessionId), cancellationToken).ConfigureAwait(false);
+        ClassificationReservation reservation;
+        try
+        {
+            reservation = await _store.ReserveAsync(input.MessageId, idempotencyKey, force, _clock.GetUtcNow(),
+                new ClassificationScope(input.MessageId, eventId, input.EndpointId, input.SessionId), cancellationToken).ConfigureAwait(false);
+        }
+        catch (ClassificationServiceException exception) when (exception.StatusCode >= 500)
+        {
+            throw new ClassificationServiceException(exception.Code, exception.StatusCode, inner: exception, telemetryOutcome: "store_error");
+        }
+        catch (Exception exception)
+        {
+            throw new ClassificationServiceException("ClassificationUnavailable", 503, inner: exception, telemetryOutcome: "store_error");
+        }
         if (reservation.CachedResult is not null)
         {
-            RecordDuration(started, "cached", reservation.CachedResult.Category, reservation.CachedResult.Model);
             return (reservation.CachedResult, true);
         }
 
@@ -129,18 +175,15 @@ public sealed class FailureClassificationService
         }
         catch (IntelligenceProviderException exception)
         {
-            var errorCode = exception.OutcomeUnknown ? "AnalysisOutcomeUnknown" : exception.Code;
+            var errorCode = exception.OutcomeUnknown ? "AnalysisOutcomeUnknown" : "ProviderUnavailable";
             await MarkFailedAsync(reservation, errorCode).ConfigureAwait(false);
-            NimBusIntelligenceTelemetry.Errors.Add(1, new KeyValuePair<string, object?>("nimbus.intelligence.provider", _provider.Name));
-            RecordDuration(started, "provider_error", null, _options.Model);
-            throw new ClassificationServiceException(errorCode, 503, inner: exception);
+            throw new ClassificationServiceException(errorCode, 503, inner: exception,
+                telemetryOutcome: exception.OutcomeUnknown ? "unknown" : "provider_error");
         }
         catch (Exception exception)
         {
             await MarkFailedAsync(reservation, "AnalysisOutcomeUnknown").ConfigureAwait(false);
-            NimBusIntelligenceTelemetry.Errors.Add(1, new KeyValuePair<string, object?>("nimbus.intelligence.provider", _provider.Name));
-            RecordDuration(started, "provider_error", null, _options.Model);
-            throw new ClassificationServiceException("AnalysisOutcomeUnknown", 503, inner: exception);
+            throw new ClassificationServiceException("AnalysisOutcomeUnknown", 503, inner: exception, telemetryOutcome: "unknown");
         }
 
         var result = new FailureClassification
@@ -179,7 +222,10 @@ public sealed class FailureClassificationService
         {
             await _store.CompleteAsync(reservation.OperationId, result, cancellationToken).ConfigureAwait(false);
         }
-        catch (ClassificationServiceException) { throw; }
+        catch (ClassificationServiceException exception)
+        {
+            throw new ClassificationServiceException(exception.Code, exception.StatusCode, inner: exception, telemetryOutcome: "store_error");
+        }
         catch (Exception exception)
         {
             // A lost acknowledgement must not trigger another paid call or overwrite completion.
@@ -191,20 +237,9 @@ public sealed class FailureClassificationService
             }
             catch { /* Leave the durable reservation unknown if storage remains unavailable. */ }
             await MarkFailedAsync(reservation, "AnalysisOutcomeUnknown").ConfigureAwait(false);
-            throw new ClassificationServiceException("AnalysisOutcomeUnknown", 503, inner: exception);
+            throw new ClassificationServiceException("AnalysisOutcomeUnknown", 503, inner: exception, telemetryOutcome: "unknown");
         }
-        if (result.InputTokens is { } tokens) NimBusIntelligenceTelemetry.InputTokens.Add(tokens, new KeyValuePair<string, object?>("nimbus.intelligence.provider", result.Provider));
-        RecordDuration(started, "ok", result.Category, result.Model);
         return (result, false);
-    }
-
-    private static void RecordDuration(long started, string outcome, string? category, string model)
-    {
-        var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
-        NimBusIntelligenceTelemetry.Duration.Record(elapsed,
-            new KeyValuePair<string, object?>("nimbus.intelligence.outcome", outcome),
-            new KeyValuePair<string, object?>("nimbus.intelligence.category", category),
-            new KeyValuePair<string, object?>("nimbus.intelligence.model", model));
     }
 
     private async Task MarkFailedAsync(ClassificationReservation reservation, string code)
@@ -214,14 +249,14 @@ public sealed class FailureClassificationService
         catch { /* Expiry is an unknown outcome, never permission to replay. */ }
     }
 
-    private async Task<MessageEntity> LoadAuthorizedMessageAsync(string eventId, string messageId, bool requireContributor, Action<string>? loadedEndpoint = null, CancellationToken cancellationToken = default)
+    private async Task<MessageEntity> LoadAuthorizedMessageAsync(string eventId, string messageId, bool requireContributor, Action<MessageEntity>? loadedMessage = null, CancellationToken cancellationToken = default)
     {
         var input = await _messages.GetMessage(eventId, messageId).ConfigureAwait(false);
         if (input is null)
         {
             throw new ClassificationServiceException("FailureNotFound", 404);
         }
-        loadedEndpoint?.Invoke(input.EndpointId);
+        loadedMessage?.Invoke(input);
 
         if (!await _host.EndpointExistsAsync(input.EndpointId, cancellationToken).ConfigureAwait(false)
             || await _messages.GetEvent(input.EndpointId, eventId).ConfigureAwait(false) is null)
@@ -272,11 +307,12 @@ public sealed class FailureClassificationService
 public sealed class ClassificationServiceException : Exception
 {
     /// <summary>Creates a service exception.</summary>
-    public ClassificationServiceException(string code, int statusCode, string? message = null, Exception? inner = null)
+    public ClassificationServiceException(string code, int statusCode, string? message = null, Exception? inner = null, string? telemetryOutcome = null)
         : base(message ?? code, inner)
     {
         Code = code;
         StatusCode = statusCode;
+        TelemetryOutcome = telemetryOutcome;
     }
 
     /// <summary>Error code.</summary>
@@ -284,4 +320,7 @@ public sealed class ClassificationServiceException : Exception
 
     /// <summary>HTTP status code.</summary>
     public int StatusCode { get; }
+
+    /// <summary>Optional low-cardinality telemetry outcome for this failure.</summary>
+    public string? TelemetryOutcome { get; }
 }

@@ -6,6 +6,7 @@ import * as api from "api-client";
 import MessageListing, {
   diffMs,
   getHandoffResult,
+  getFailureOccurrences,
   getHistoryQueueTimeMs,
   getResubmitPayload,
   getRoutingFromTo,
@@ -137,6 +138,28 @@ describe("getHistoryQueueTimeMs (spec 005)", () => {
       msg("deferralResponse", "2026-05-28T16:00:02.000Z"),
     ];
     expect(getHistoryQueueTimeMs(history)).toBe(2_000);
+  });
+});
+
+describe("getFailureOccurrences (Spec 033)", () => {
+  it("returns each stored failure row, including a dead-letter row without error content", () => {
+    const event = { eventId: "event-1", lastMessageId: "last" } as unknown as api.Event;
+    const rows = [
+      { eventId: "event-1", messageId: "failure-1", messageType: "ErrorResponse", errorContent: "details" },
+      { eventId: "event-1", messageId: "failure-2", messageType: "DeadLetter", deadLetterReason: "expired" },
+    ] as unknown as api.Message[];
+
+    expect(getFailureOccurrences(event, rows)).toEqual([
+      { eventId: "event-1", messageId: "failure-1" },
+      { eventId: "event-1", messageId: "failure-2" },
+    ]);
+  });
+
+  it("falls back to the event last message only when no failure row is available", () => {
+    expect(getFailureOccurrences(
+      { eventId: "event-1", lastMessageId: "last", resolutionStatus: "DeadLettered" } as unknown as api.Event,
+      [],
+    )).toEqual([{ eventId: "event-1", messageId: "last" }]);
   });
 });
 

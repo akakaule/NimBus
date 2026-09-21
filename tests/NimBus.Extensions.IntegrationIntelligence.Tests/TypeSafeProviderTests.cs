@@ -19,7 +19,7 @@ public sealed class TypeSafeProviderTests
             new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("""
-                    {"model":"jev-1.13.0","answers":{"failure_category":{"choice":"transient_dependency","confidence":0.91,"probabilities":{"transient_dependency":0.91,"business_rule":0.09}},"retry_likely_to_succeed_unchanged":{"noul":0.82},"change_required_before_success":{"noul":0.12},"external_dependency_involved":{"noul":0.97}},"usage":{"input_tokens":123,"output_tokens":45}}
+                    {"model":"jev-1.13.0","answers":{"failure_category":{"choice":"transient_dependency","confidence":0.91,"probabilities":{"transient_dependency":0.91,"authentication_configuration":0,"contract_schema":0,"business_rule":0.09,"missing_reference_data":0,"application_defect":0,"messaging_platform":0,"unknown":0}},"retry_likely_to_succeed_unchanged":{"noul":0.82},"change_required_before_success":{"noul":0.12},"external_dependency_involved":{"noul":0.97}},"usage":{"input_tokens":123,"output_tokens":45}}
                     """, Encoding.UTF8, "application/json"),
             });
         var options = new FailureClassificationOptions { ApiKey = "test-key", TimeoutSeconds = 2 };
@@ -48,7 +48,7 @@ public sealed class TypeSafeProviderTests
             new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("""
-                    {"model":"jev-1.13.0","answers":{"failure_category":{"choice":"unknown","confidence":0.60,"probabilities":{"unknown":1.0}},"retry_likely_to_succeed_unchanged":{"noul":0.1},"change_required_before_success":{"noul":0.1},"external_dependency_involved":{"noul":0.1}}}
+                    {"model":"jev-1.13.0","answers":{"failure_category":{"choice":"unknown","confidence":0.60,"probabilities":{"transient_dependency":0,"authentication_configuration":0,"contract_schema":0,"business_rule":0,"missing_reference_data":0,"application_defect":0,"messaging_platform":0,"unknown":1.0}},"retry_likely_to_succeed_unchanged":{"noul":0.1},"change_required_before_success":{"noul":0.1},"external_dependency_involved":{"noul":0.1}}}
                     """, Encoding.UTF8, "application/json"),
             });
         var provider = CreateProvider(handler, new FailureClassificationOptions { ApiKey = "test-key", TimeoutSeconds = 5 });
@@ -57,6 +57,25 @@ public sealed class TypeSafeProviderTests
 
         Assert.AreEqual("unknown", result.Category);
         Assert.AreEqual(3, handler.Requests);
+    }
+
+    [TestMethod]
+    [DataRow("{\"transient_dependency\":1}")]
+    [DataRow("{\"transient_dependency\":0.5,\"authentication_configuration\":0.5,\"contract_schema\":0,\"business_rule\":0,\"missing_reference_data\":0,\"application_defect\":0,\"messaging_platform\":0,\"unknown\":0,\"new_category\":0}")]
+    [DataRow("{\"transient_dependency\":0.4,\"authentication_configuration\":0,\"contract_schema\":0,\"business_rule\":0,\"missing_reference_data\":0,\"application_defect\":0,\"messaging_platform\":0,\"unknown\":0}")]
+    public async Task Provider_Rejects_Missing_Unknown_And_Inconsistent_Category_Maps(string probabilities)
+    {
+        var handler = new QueueHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent($"{{\"model\":\"jev-1.13.0\",\"answers\":{{\"failure_category\":{{\"choice\":\"transient_dependency\",\"confidence\":0.91,\"probabilities\":{probabilities}}},\"retry_likely_to_succeed_unchanged\":{{\"noul\":0.82}},\"change_required_before_success\":{{\"noul\":0.12}},\"external_dependency_involved\":{{\"noul\":0.97}}}}}}", Encoding.UTF8, "application/json"),
+        });
+        var provider = CreateProvider(handler, new FailureClassificationOptions { ApiKey = "test-key", TimeoutSeconds = 2 });
+
+        var error = await Assert.ThrowsExactlyAsync<IntelligenceProviderException>(() => provider.ClassifyAsync(CreateInput()));
+
+        Assert.AreEqual("ProviderInvalidResponse", error.Code);
+        Assert.IsFalse(error.Message.Contains("new_category", StringComparison.Ordinal));
+        Assert.AreEqual(1, handler.Requests);
     }
 
     private static TypeSafeFailureIntelligenceProvider CreateProvider(HttpMessageHandler handler, FailureClassificationOptions options)

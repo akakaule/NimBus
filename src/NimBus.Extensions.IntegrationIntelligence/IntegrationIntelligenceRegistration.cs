@@ -36,7 +36,7 @@ public static class IntegrationIntelligenceRegistration
             if (!section.GetValue<bool>("Enabled") || !section.GetValue("FailureClassification:Enabled", true))
             {
                 services.AddControllers().ConfigureApplicationPartManager(manager =>
-                    manager.FeatureProviders.Add(new IntegrationIntelligenceFeatureProvider(false, false)));
+                    manager.FeatureProviders.Add(new IntegrationIntelligenceFeatureProvider(false, false, false)));
                 return services;
             }
             parent = section.Get<IntegrationIntelligenceOptions>();
@@ -58,11 +58,22 @@ public static class IntegrationIntelligenceRegistration
         }
         var validationErrors = bindingErrors.Concat(options.Validate()).ToArray();
         var hasStorage = services.Any(d => d.ServiceType == typeof(IIntegrationIntelligenceStorageSettings) || d.ServiceType == typeof(IFailureClassificationStore));
-        var ready = options.Enabled && validationErrors.Length == 0 && hasStorage;
+        var hasHostAdapter = services.Any(d => d.ServiceType == typeof(IIntegrationIntelligenceHost));
+        var ready = options.Enabled && validationErrors.Length == 0 && hasStorage && hasHostAdapter;
         services.AddSingleton(options);
         services.AddSingleton(new IntegrationIntelligenceActivation(options.Enabled, ready, validationErrors));
         services.AddControllers().ConfigureApplicationPartManager(manager =>
-            manager.FeatureProviders.Add(new IntegrationIntelligenceFeatureProvider(options.Enabled, ready)));
+            manager.FeatureProviders.Add(new IntegrationIntelligenceFeatureProvider(options.Enabled, ready, hasHostAdapter)));
+
+        if (options.Enabled && (validationErrors.Length > 0 || !hasStorage || !hasHostAdapter))
+        {
+            var diagnostics = validationErrors
+                .Concat(hasStorage ? [] : ["Durable classification storage is not configured."])
+                .Concat(hasHostAdapter ? [] : ["Host authorization and audit adapters are not configured."])
+                .ToArray();
+            services.AddSingleton<IHostedService>(sp => new InvalidConfigurationWarning(
+                diagnostics, sp.GetRequiredService<ILoggerFactory>()));
+        }
 
         if (!options.Enabled)
         {
@@ -109,11 +120,11 @@ public static class IntegrationIntelligenceRegistration
         return services;
     }
 
-    private sealed class IntegrationIntelligenceFeatureProvider(bool enabled, bool ready) : IApplicationFeatureProvider<ControllerFeature>
+    private sealed class IntegrationIntelligenceFeatureProvider(bool enabled, bool ready, bool hasHostAdapter) : IApplicationFeatureProvider<ControllerFeature>
     {
         public void PopulateFeature(IEnumerable<ApplicationPart> parts, ControllerFeature feature)
         {
-            if (!enabled)
+            if (!enabled || !hasHostAdapter)
             {
                 for (var index = feature.Controllers.Count - 1; index >= 0; index--)
                 {
@@ -161,6 +172,23 @@ internal sealed class SqlClassificationSchemaInitializer : IHostedService
         {
             SchemaInitializationLog(_logger, exception);
         }
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+internal sealed class InvalidConfigurationWarning(IReadOnlyList<string> diagnostics, ILoggerFactory loggerFactory) : IHostedService
+{
+    private static readonly Action<ILogger, string, Exception?> LogWarning =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(2, "InvalidConfiguration"),
+            "Integration Intelligence is disabled because enabled configuration is invalid or incomplete: {Diagnostics}");
+
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        // Validation messages contain field names and fixed bounds only. Secret
+        // values are never copied into this diagnostic.
+        LogWarning(loggerFactory.CreateLogger("NimBus.IntegrationIntelligence"), string.Join(" ", diagnostics), null);
+        return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

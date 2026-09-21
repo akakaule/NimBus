@@ -26,4 +26,42 @@ public static class NimBusIntelligenceTelemetry
 
     /// <summary>Provider input-token counter.</summary>
     public static readonly Counter<long> InputTokens = Meter.CreateCounter<long>("nimbus.intelligence.failure_classification.input_tokens");
+
+    /// <summary>Records one completed classification request without high-cardinality identifiers.</summary>
+    public static void RecordRequest(
+        long started,
+        System.Diagnostics.Activity? activity,
+        string outcome,
+        string? provider,
+        string? model,
+        string? category,
+        string? endpointId,
+        string? eventTypeId,
+        int? inputTokens = null)
+    {
+        var tags = new TagList();
+        AddTag(ref tags, "nimbus.intelligence.provider", provider);
+        AddTag(ref tags, "nimbus.intelligence.model", model);
+        AddTag(ref tags, "nimbus.intelligence.outcome", outcome);
+        AddTag(ref tags, "nimbus.intelligence.category", category);
+        AddTag(ref tags, "nimbus.endpoint", endpointId);
+        AddTag(ref tags, "nimbus.event_type", eventTypeId);
+
+        activity?.SetTag("nimbus.intelligence.provider", provider);
+        activity?.SetTag("nimbus.intelligence.model", model);
+        activity?.SetTag("nimbus.intelligence.outcome", outcome);
+        activity?.SetTag("nimbus.intelligence.category", category);
+        activity?.SetTag("nimbus.endpoint", endpointId);
+        activity?.SetTag("nimbus.event_type", eventTypeId);
+
+        Requests.Add(1, tags);
+        Duration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds, tags);
+        if (outcome is not "ok" and not "cached") Errors.Add(1, tags);
+        if (inputTokens is { } tokens) InputTokens.Add(tokens, tags);
+    }
+
+    private static void AddTag(ref TagList tags, string name, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value)) tags.Add(name, value);
+    }
 }

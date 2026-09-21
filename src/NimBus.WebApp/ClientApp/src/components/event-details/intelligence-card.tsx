@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "components/ui/card";
 
-type IntelligenceCardProps = { endpointId: string; eventId: string; messageId: string; resolutionStatus?: string };
+type IntelligenceCardProps = { endpointId: string; eventId: string; messageId: string; resolutionStatus?: string; occurrenceLabel?: string };
 type IntelligenceStatus = { status: string; canAnalyze: boolean; contractVersion: number };
 type Classification = {
   category: string; categoryConfidence: number; retryLikelihood: number; changeRequiredLikelihood: number;
   externalDependencyLikelihood: number; guidance: string; revision: number; model: string; createdAtUtc: string; requestedBy?: string;
+  categoryProbabilities?: Record<string, number>; questionSetVersion?: number;
 };
 const headers = { "api-version": "2" };
 const percent = (value: number) => `${Math.round(value * 100)}%`;
@@ -22,6 +23,7 @@ function OccurrenceCard(props: IntelligenceCardProps) {
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string>();
   const [unknownOutcome, setUnknownOutcome] = useState(false);
+  const [analysisActive, setAnalysisActive] = useState(false);
   const [pollVersion, setPollVersion] = useState(0);
   const pending = useRef<{ key: string; force: boolean } | undefined>(undefined);
   const pollAttempt = useRef(0);
@@ -48,12 +50,14 @@ function OccurrenceCard(props: IntelligenceCardProps) {
         if (latest.ok) { setClassification(payload); setError(undefined); setUnknownOutcome(false); }
         else if (payload.code === "AnalysisInProgress") {
           setBusy(true);
+          setAnalysisActive(true);
           setError("Analysis is in progress.");
           if (pollAttempt.current++ < 20)
             timer = setTimeout(() => setPollVersion(value => value + 1), Math.min(1000 * 2 ** pollAttempt.current, 5000));
           else setError("Analysis is still in progress. Refresh to check again.");
         } else if (payload.code === "AnalysisOutcomeUnknown") {
           setUnknownOutcome(true);
+          setAnalysisActive(false);
           setError("The previous analysis outcome is unknown.");
         } else { setError("Classification is temporarily unavailable."); }
       } catch {
@@ -70,6 +74,7 @@ function OccurrenceCard(props: IntelligenceCardProps) {
     if (busy) return;
     setBusy(true);
     setError(undefined);
+    setAnalysisActive(false);
     // Transport retries reuse the same identity; explicit re-analysis gets a new one.
     pending.current ??= { key: crypto.randomUUID(), force: Boolean(classification) || unknownOutcome };
     const request = pending.current;
@@ -81,26 +86,33 @@ function OccurrenceCard(props: IntelligenceCardProps) {
       const payload = await response.json();
       if (!alive.current) return;
       pending.current = undefined;
-      if (response.ok) { setClassification(payload.result); setUnknownOutcome(false); }
+      if (response.ok) { setClassification(payload.result); setUnknownOutcome(false); setAnalysisActive(false); }
       else if (payload.code === "AnalysisOutcomeUnknown") {
         setUnknownOutcome(true);
+        setAnalysisActive(false);
         setError("The previous analysis outcome is unknown.");
       } else if (payload.code === "AnalysisInProgress") {
+        setAnalysisActive(true);
         pollAttempt.current = 0;
         setPollVersion(value => value + 1);
         setError("Analysis is in progress.");
       } else { setError("Classification is temporarily unavailable."); }
     } catch {
-      if (alive.current) setError("Connection interrupted. Retry safely with the same request.");
+      if (alive.current) { setError("Connection interrupted. Retry safely with the same request."); setAnalysisActive(false); }
     } finally { if (alive.current) setBusy(false); }
   };
 
   if (!status || (!eligible && !classification)) return null;
+  const probabilities = Object.entries(classification?.categoryProbabilities ?? {})
+    .filter(([category]) => category !== classification?.category)
+    .sort(([, left], [, right]) => right - left)
+    .slice(0, 2);
+  const historical = Boolean(classification && (analysisActive || unknownOutcome));
   return (
     <Card className="mb-4 border-primary/30">
       <CardHeader className="flex-row items-center justify-between gap-4">
         <div>
-          <CardTitle className="text-base">Failure intelligence</CardTitle>
+          <CardTitle className="text-base">Failure intelligence{props.occurrenceLabel ? ` · ${props.occurrenceLabel}` : ""}</CardTitle>
           <CardDescription>Advisory analysis of this failure occurrence. It never retries or changes the message.</CardDescription>
         </div>
         {status.canAnalyze && eligible && <Button size="sm" onClick={analyze} isLoading={busy} disabled={busy}>
@@ -111,7 +123,11 @@ function OccurrenceCard(props: IntelligenceCardProps) {
         {error && <p role="status" className="text-status-danger">{error}</p>}
         {(unknownOutcome || classification) && status.canAnalyze && eligible &&
           <p>Re-analyzing makes a new provider request and may incur an additional charge.</p>}
+        {analysisActive && <p role="status">Analyzing failure…</p>}
+        {!classification && !analysisActive && !unknownOutcome && !error &&
+          <p>No analysis has been performed.</p>}
         {classification && <>
+          {historical && <p role="status" className="text-muted-foreground">Historical result{analysisActive ? "; a newer analysis is running." : "; the latest analysis outcome is unknown."}</p>}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div><div className="text-muted-foreground">Category</div><strong>{classification.category} ({percent(classification.categoryConfidence)})</strong></div>
             <div><div className="text-muted-foreground">Guidance</div><strong>{classification.guidance}</strong></div>
@@ -120,7 +136,15 @@ function OccurrenceCard(props: IntelligenceCardProps) {
             <div><div className="text-muted-foreground">External dependency</div><strong>{percent(classification.externalDependencyLikelihood)}</strong></div>
           </div>
           <p className="text-muted-foreground">Revision {classification.revision} · {classification.model} · {classification.createdAtUtc} · {classification.requestedBy}</p>
+          <details>
+            <summary className="cursor-pointer">Classification details</summary>
+            <div className="mt-2 space-y-1 text-muted-foreground">
+              {probabilities.map(([category, probability]) => <div key={category}>{category}: {percent(probability)}</div>)}
+              <div>Question set v{classification.questionSetVersion ?? "unknown"}</div>
+            </div>
+          </details>
         </>}
+        <p className="text-muted-foreground">AI-assisted assessment. Advisory only. NimBus processing and recovery decisions are unchanged.</p>
       </CardContent>
     </Card>
   );

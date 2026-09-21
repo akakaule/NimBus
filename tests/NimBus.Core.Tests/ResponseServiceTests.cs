@@ -47,7 +47,7 @@ public class ResponseServiceTests
 
         var msg = sender.SentMessages.Single();
         Assert.AreEqual(MessageType.ResolutionResponse, msg.MessageType);
-        Assert.IsNull(msg.OriginatingFrom);
+        Assert.AreEqual("StorefrontEndpoint", msg.OriginatingFrom, "The originator the request still carries must survive.");
     }
 
     [TestMethod]
@@ -62,7 +62,7 @@ public class ResponseServiceTests
 
         var msg = sender.SentMessages.Single();
         Assert.AreEqual(MessageType.RetryRequest, msg.MessageType);
-        Assert.IsNull(msg.OriginatingFrom);
+        Assert.AreEqual("StorefrontEndpoint", msg.OriginatingFrom);
     }
 
     [TestMethod]
@@ -77,7 +77,23 @@ public class ResponseServiceTests
 
         var msg = sender.SentMessages.Single();
         Assert.AreEqual(Constants.DeferredSubscriptionName, msg.To);
-        Assert.IsNull(msg.From);
+        Assert.AreEqual(Constants.DeferredSubscriptionName, msg.From);
+        Assert.AreEqual("StorefrontEndpoint", msg.OriginatingFrom);
+    }
+
+    [TestMethod]
+    public async Task SendResolutionResponse_DeferredMarkerAsFrom_IsNotRecordedAsTheOriginator()
+    {
+        // A From-less request that was parked replays with the "Deferred" marker as From.
+        // The marker only keeps the forward rules from matching; it is not a sender.
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var ctx = CreateContext();
+        ctx.From = Constants.DeferredSubscriptionName;
+
+        await sut.SendResolutionResponse(ctx);
+
+        Assert.AreEqual("StorefrontEndpoint", sender.SentMessages.Single().OriginatingFrom);
     }
 
     [TestMethod]
@@ -219,7 +235,7 @@ public class ResponseServiceTests
         var msg = sender.SentMessages.Single();
         Assert.AreEqual(MessageType.ErrorResponse, msg.MessageType);
         Assert.AreEqual("Failed to handle message.", msg.DeadLetterReason);
-        Assert.IsNull(msg.OriginatingFrom);
+        Assert.AreEqual("StorefrontEndpoint", msg.OriginatingFrom);
     }
 
     [TestMethod]

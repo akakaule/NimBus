@@ -574,10 +574,11 @@ namespace NimBus.Broker.Services
                 // A request is attributed by To, so From is only recorded. A request put on an
                 // endpoint topic by hand (e.g. resubmitted from a dead-letter queue with a broker
                 // tool) bypasses the forward rule that stamps From; record its audit copy under
-                // the originating endpoint instead of dead-lettering it. A response is attributed
-                // BY From, so there it stays required.
+                // the originating endpoint instead of dead-lettering it (never null: stored rows
+                // have always had a From). A response is attributed BY From, so there it stays
+                // required.
                 From = IsRequest(message.MessageType)
-                    ? message.GetFromOrDefault() ?? message.OriginatingFrom
+                    ? message.GetFromOrDefault() ?? message.OriginatingFrom ?? Constants.Self
                     : message.From,
                 To = message.To,
                 OriginatingFrom = message.OriginatingFrom,

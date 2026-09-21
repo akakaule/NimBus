@@ -42,14 +42,22 @@ namespace NimBus.Core.Messages
         /// <see langword="null"/> or the sender is not defined on the message. <c>From</c> is
         /// stamped by the topology's forward rule, so a message put on a topic by hand (e.g.
         /// resubmitted from a dead-letter queue with a broker tool) arrives without it.
+        /// The <see cref="Constants.DeferredSubscriptionName"/> marker that parking stamps on
+        /// such a request only keeps the forward rules from matching its replay; it names no
+        /// sender, so it reads as unavailable too.
         /// </summary>
         /// <param name="message">The message.</param>
         /// <returns>The sending endpoint identifier, or <see langword="null"/> when unavailable.</returns>
         public static string? GetFromOrDefault(this IMessage? message)
         {
             if (message is null) return null;
-            try { return string.IsNullOrEmpty(message.From) ? null : message.From; }
+            string from;
+            try { from = message.From; }
             catch (InvalidMessageException) { return null; }
+
+            return string.IsNullOrEmpty(from) || from.Equals(Constants.DeferredSubscriptionName, System.StringComparison.OrdinalIgnoreCase)
+                ? null
+                : from;
         }
 
         /// <summary>

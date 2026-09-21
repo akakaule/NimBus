@@ -1,5 +1,14 @@
 # Memory
 
+- Guard PR merges with the exact full head SHA returned by GitHub or git rev-parse; never pad or reconstruct an abbreviated SHA.
+
+- PII redactor tests must register every new event fixture in the test platform catalog; otherwise EventJsonMasker correctly returns its unknown-type fail-closed marker and the test fails while parsing it as JSON.
+- Integration-intelligence operation lookups are keyed by the failure message occurrence, not the endpoint; use the evidence builder's verified MessageId consistently for reservation, operation status, and result history.
+- New class-library registration code still needs explicit MVC/DI namespaces (`System.Reflection.TypeInfo` for `ControllerFeature.Controllers`); framework references do not guarantee the project has the same implicit usings as the WebApp.
+- Credential scrubbing regexes need separate alternatives for `Authorization: Bearer <value>` versus `Name=<value>` formats; a shared separator group can silently fail to match the bearer form.
+
+- Failure-classification spec correction: scope evidence history to the stored endpoint/session and earlier occurrences before limiting. Raw dead-letter descriptions can contain `exception.ToString()` stacks; omit them from external AI input. Existing `IEventJsonMasker.Mask` honors PartialReveal/Hash, so full-redaction export needs an explicit capability. Optional-extension validation must contain errors before host-start validation; capability responses need endpoint context; distributed provider calls need durable reservations, atomic revision allocation and explicit recovery of unknown outcomes rather than an in-process lock.
+
 - Payload-search authorization preference: ordinary Readers may search receiving endpoints whose registered event contracts have no sensitive fields. Classify nested contracts too, retain PiiReader for sensitive or unclassified contracts, and constrain store queries to the verified event types so unknown historical rows cannot bypass classification.
 
 - Cosmos payload-search investigation: the deployed API rejected the search because PiiReader was missing; the user confirmed the same ContactId search succeeds after granting the role. Show search failures explicitly instead of empty matches. Inspect HTTP status/response before diagnosing Cosmos storage or query behavior.
@@ -47,7 +56,8 @@
 - Test-fixture compatibility correction: do not add a same-arity overload whose reference-typed parameters overlap an existing nullable overload; existing `new Fixture(null, null)` calls become ambiguous. Use a clearly named static factory for optional decorator/test modes.
 - Provider-contract correction: match approved public type names and the complete storage DDL, including defaults and indexes, rather than implementing only behaviorally equivalent shorthand. When live provider credentials are optional, run the shared conformance contract unconditionally against the real provider implementation through a faithful fake adapter, and retain the credential-gated live suite as additional proof.
 - Endpoint-count query correction: filter Pending, Deferred, Failed, DeadLettered and Unsupported before grouping in both SQL and Cosmos; retain deleted-row filtering and include pending handoffs. Verify every returned status and endpoint isolation with provider conformance tests, then compare SQL logical reads on terminal-heavy history.
-- Frontend verification correction: under Node 22, the full Vitest suite needs a process-local `--localstorage-file` setting or the unrelated application-shell theme test sees an undefined global `localStorage`. Configure a temporary file for the test process; do not change application code to accommodate the runner.
+- Frontend verification correction (2026-09-20): do not prescribe a Node 22 `--localstorage-file` workaround from old session memory. The current repo has no such runner setting; theme access now tolerates unavailable storage and tests run through jsdom. Use the existing npm commands and require a reproduced failure before adding environment workarounds.
+- Integration-intelligence plan review correction: attach rate-limit metadata through the host convention so its Enabled switch still applies; reuse resolved storage options and the DI CosmosClient through host adapters instead of copying configuration precedence. Test controller suppression across LocalDev, Entra-only, Identity-only and dual auth. Retention must inventory DeleteEventAsync and DeleteAllEventsAsync as well as session/subscription purge and bulk deletion; the named purge methods alone are not the whole deletion surface. Validate publish-output ignore rules before placing artifacts in the worktree.
 - Public-adapter compatibility correction: when adding cancellation support, preserve the provider's existing overload shape, including request-options parameters. A new same-arity overload that substitutes `CancellationToken` can make existing calls with a literal `default` argument source-ambiguous.
 - Telemetry-contract correction: audit an instrument's description against every producer, including background cleanup paths, so published metadata does not describe only a subset of the measurements it receives.
 - MSTest analyzer correction: this repository treats `DataTestMethod` as obsolete (`MSTEST0044`); parameterized tests must use `TestMethod` with `DataRow`. Reuse a `static readonly` expected array when passing it to `CollectionAssert` so new tests do not introduce `CA1861` warnings.
@@ -121,3 +131,31 @@
 - GitHub warning annotations show only a subset of build diagnostics. Inspect the full log before promising a warning-free build. Use Node 24 action releases, nullable types for invalidatable caches, and the documented Aspire CLI bundle opt-in instead of suppressing these warning categories.
 
 - Admin Storage membership correction: list both platform and non-platform Cosmos containers with explicit server-derived membership; highlighting/filtering must not rely on an orphan-only listing. Bulk selection applies only to visible deletable containers and every deletion requires a warning and typed confirmation.
+
+- On-prem NimBus requirements: use SQL Server as the storage baseline. A failed message must block only its own session/entity while unrelated sessions continue, even in the same broker partition. Queue/partition-wide blocking does not satisfy the requirement.
+
+- Integration-platform direction confirmed (2026-09-14): C#/.NET first for integration authoring; the web console is for monitoring and management. Preserve the SQL Server baseline and per-session FIFO/isolation; do not treat C# preference as an unresolved assumption.
+- Integration Intelligence service uses Stopwatch explicitly; implicit usings do not cover System.Diagnostics.
+- Guidance tests must provide a nonzero change-required likelihood when asserting ChangeLikelyRequired; the rule reads that provider signal directly.
+- Integration Intelligence activation must combine parent and child Enabled flags and contain configuration binding errors so malformed optional settings do not prevent host startup.
+- Arrays returned from contained configuration validation expose Length; use it when computing activation readiness.
+- Failure classification Cosmos data uses a dedicated failureclassifications container partitioned by /failureMessageId; deployment keeps it opt-in and default-off.
+- SQL classification schema initialization is hosted and best-effort so ConfigureServices never performs DDL; failed provider outcomes are audited before the API returns.
+- Extension registration files need explicit Microsoft.Extensions.Hosting and Microsoft.Extensions.Logging imports for hosted schema initializers.
+- Keep IntelligenceDataRedactor scrub methods instance methods because FailureEvidenceBuilder receives the registered redactor through DI; analyzer-driven static conversion breaks that call boundary.
+- AdditionalRedactedKeys are applied by the DI-owned IntelligenceDataRedactor so host-specific secret field names are covered without bypassing the redaction boundary.
+- IntelligenceDataRedactor's recursive JSON traversal must remain instance-bound once operator-defined secret keys are supported.
+- IntelligenceDataRedactor free-text scrubbing is static because it has no configured state; JSON scrubbing remains instance-bound for AdditionalRedactedKeys.
+- Classification retention reconciles durable source coordinates every 60 seconds while enabled; never couple already-successful admin purges to an optional store. Tombstone active reservations as well as results to fence late completion. Broker-only purges leave persisted source events intact.
+- The frontend Vitest setup does not load jest-dom matchers; use native null assertions such as toBeNull for absence checks.
+- Malformed nested configuration preserves the raw parent/child Enabled intent when possible, so an enabled invalid feature can expose ProviderNotConfigured status without registering execution services.
+- Provider response parsing validates category IDs against the pinned question set and rejects negative token usage before persistence.
+- C# multi-type exception handling uses an Exception catch with an `is ... or ...` filter; a catch type pattern cannot combine alternatives with a variable declaration.
+- ReadUsage receives JsonElement.ValueKind explicitly; a conditional expression preserves the default JsonElement when usage is absent.
+- Public WebApp constructors must not expose optional extension interfaces; use a WebApp-local contract and an adapter so existing test projects do not need the optional package reference.
+- Unknown provider outcomes must be fenced atomically in every store, including expired reservations: a new non-force key cannot replay them; the UI must request explicit force with a new key for Re-analyze.
+- Request-specific authorization and audit adapters and their consumers must remain scoped. Test real host registration with scope validation and separate request scopes.
+- Classification ownership/result/history/idempotency transitions share one conditional aggregate write (SQL rowversion or Cosmos ETag); first insert has a deterministic identity. Completion and failure updates require the current owner token.
+- Scrub full sensitive values before truncating evidence, withhold unverifiable free text, and assert exact outbound JSON so internal identifiers cannot leak through automatic serialization.
+- CosmosDbMessageStoreOptions carries retention, not a database-name setting; CosmosDbClient currently fixes DatabaseId to MessageDatabase. Describe the host adapter accurately instead of inventing an options property.
+- Classification POST accepts an omitted JSON body as the default non-force request while still requiring the UUID idempotency header.

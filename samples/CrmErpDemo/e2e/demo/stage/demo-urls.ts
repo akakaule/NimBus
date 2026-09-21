@@ -1,6 +1,6 @@
 // Resolves the crm-web / erp-web URLs.
 //
-// Unlike crm-api (5080), erp-api (5090) and nimbus-ops (28376), the two Vite SPAs
+// Unlike crm-api (5080), erp-api (5090) and nimbus-ops (18080), the two Vite SPAs
 // are registered with AddViteApp and get Aspire-assigned ports, so there is
 // nothing stable to hard-code. Resolution order:
 //   1. CRM_WEB_URL / ERP_WEB_URL environment variables (set these to skip probing)

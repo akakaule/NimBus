@@ -8,7 +8,7 @@ dotenv.config({ path: ".env.local", override: true });
 // Separate from playwright.config.ts because the goals conflict: the regression
 // suite wants to be fast and headless, this wants to be slow, pretty and always
 // recorded. Assumes the AppHost is already running.
-const NIMBUS_OPS_URL = process.env.NIMBUS_OPS_URL ?? "http://localhost:28376";
+const NIMBUS_OPS_URL = process.env.NIMBUS_OPS_URL ?? "http://localhost:18080";
 
 // 16:9 at a size where the SPAs' max-w-5xl content still has comfortable margins.
 const FRAME = { width: 1600, height: 900 };

@@ -28,7 +28,7 @@ The dev server proxies:
 - `/login`
 - `/logout`
 
-to the backend URL defined in `vite.config.ts` (Aspire-injected URL when available, otherwise `https://localhost:28375`).
+to the backend URL defined in `vite.config.ts` (Aspire-injected URL when available, otherwise `https://localhost:18443`).
 
 ## Build
 

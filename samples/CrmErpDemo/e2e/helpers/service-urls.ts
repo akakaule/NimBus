@@ -13,7 +13,7 @@ function required(name: string, fallback?: string): string {
 export const ServiceUrls = {
   crmApi: required("CRM_API_URL", "http://localhost:5080"),
   erpApi: required("ERP_API_URL", "http://localhost:5090"),
-  nimbusOps: required("NIMBUS_OPS_URL", "http://localhost:28376"),
+  nimbusOps: required("NIMBUS_OPS_URL", "http://localhost:18080"),
 };
 
 export const Timeouts = {

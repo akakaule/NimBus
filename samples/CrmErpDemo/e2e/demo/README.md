@@ -102,7 +102,7 @@ nothing from a film whose whole argument is in the voice-over.
 
 ## Service URLs
 
-`crm-api` (5080), `erp-api` (5090) and `nimbus-ops` (28376) are pinned by the
+`crm-api` (5080), `erp-api` (5090) and `nimbus-ops` (18080) are pinned by the
 AppHost. The two Vite SPAs are registered with `AddViteApp` and get
 Aspire-assigned ports, so `stage/demo-urls.ts` resolves them in this order:
 

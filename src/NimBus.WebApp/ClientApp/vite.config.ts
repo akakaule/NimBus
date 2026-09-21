@@ -17,7 +17,7 @@ const httpsConfig =
 const apiTarget =
   process.env.services__webapp__https__0 ||
   process.env.services__webapp__http__0 ||
-  'https://localhost:28375';
+  'https://localhost:18443';
 
 export default defineConfig({
   plugins: [

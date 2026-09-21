@@ -9,7 +9,7 @@ dotenv.config({ path: ".env" });
 // Service URLs come from .env.local (created by the operator) or fall back to common
 // Aspire defaults. The base URL points at the NimBus management WebApp because that
 // is what page.goto(...) targets in the failure-recovery specs.
-const NIMBUS_OPS_URL = process.env.NIMBUS_OPS_URL ?? "http://localhost:28376";
+const NIMBUS_OPS_URL = process.env.NIMBUS_OPS_URL ?? "http://localhost:18080";
 
 export default defineConfig({
   testDir: "./tests",

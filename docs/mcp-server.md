@@ -42,7 +42,7 @@ The MCP client launches the server as a stdio subprocess. Example Claude Desktop
       "command": "dotnet",
       "args": ["run", "--project", "src/NimBus.Mcp/NimBus.Mcp.csproj", "-c", "Release"],
       "env": {
-        "NIMBUS_API_BASEURL": "http://localhost:28375",
+        "NIMBUS_API_BASEURL": "http://localhost:18080",
         "NIMBUS_AGENT_ID": "enrichment-agent"
       }
     }

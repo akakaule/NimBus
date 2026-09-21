@@ -116,8 +116,8 @@ var nimbusOps = builder.AddProject<Projects.NimBus_WebApp>("nimbus-ops")
     .WithReference(servicebus)
     .WithEnvironment("NimBus__PlatformType", typeof(CrmErpDemo.Contracts.CrmErpPlatformConfiguration).FullName!)
     .WithEnvironment("NimBus__PlatformAssembly", crmErpContractsPath)
-    .WithEndpoint("http", e => e.Port = 28376)
-    .WithEndpoint("https", e => e.Port = 28375)
+    .WithEndpoint("http", e => e.Port = 18080)
+    .WithEndpoint("https", e => e.Port = 18443)
     .WithExternalHttpEndpoints();
 
 if (identityEnabled)

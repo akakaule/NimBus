@@ -31,7 +31,7 @@ line in that file but no cue, so nothing narrates over footage that doesn't show
 | Service Bus | **Real Azure namespace**, not the emulator. Emulator 2.0.0 drops AMQP connections during warm-up and produces `MessagingEntityNotFound` noise on camera. |
 | Storage provider | SQL Server (default). No Cosmos secret needed. |
 | Warm-up | Create and delete one throwaway account before recording so DbUp migrations, Functions cold starts, and first-JIT latency don't appear in Act 1. |
-| Ports | `crm-api` 5080, `erp-api` 5090, `nimbus-ops` 28376 are pinned. `crm-web`/`erp-web` get Aspire-assigned ports — the harness discovers them by page title. |
+| Ports | `crm-api` 5080, `erp-api` 5090, `nimbus-ops` 18080 are pinned. `crm-web`/`erp-web` get Aspire-assigned ports — the harness discovers them by page title. |
 | Reset state | Error mode OFF, service mode OFF, handoff mode OFF before every take. |
 
 ---

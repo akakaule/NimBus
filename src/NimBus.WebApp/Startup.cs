@@ -80,10 +80,14 @@ namespace NimBus.WebApp
             AddWebPipeline(services);
             AddPlatformCatalog(services);
             AddServiceBusClients(services);
-            var storageProvider = AddStorage(services);
+            var storageProvider = AddStorage(services, Configuration);
             services.AddScoped<IIntegrationIntelligenceHost, WebAppIntegrationIntelligenceHostAdapter>();
             services.AddSingleton<IIntegrationIntelligenceStorageSettings>(sp =>
                 new WebAppIntegrationIntelligenceStorageSettings(storageProvider, sp));
+            services.AddSingleton<IIntelligenceSettingsStore>(sp => IntelligenceSettingsStore.Create(
+                sp.GetRequiredService<IIntegrationIntelligenceStorageSettings>()));
+            services.AddSingleton(IntelligenceSettingsSnapshot.Create(Configuration));
+            services.AddAntiforgery(options => options.HeaderName = "X-NimBus-CSRF");
             AddManagementServices(services);
             AddObservability(services, storageProvider);
             AddAuthorizationAndAuditServices(services);
@@ -493,22 +497,22 @@ namespace NimBus.WebApp
 
         // Selects the storage provider and registers the NimBus message store.
         // The returned provider name also drives the health-check registrations.
-        private string AddStorage(IServiceCollection services)
+        internal static string AddStorage(IServiceCollection services, IConfiguration configuration)
         {
             // Provider selection is configuration-driven (NimBus__StorageProvider /
             // StorageProvider env-var or appsetting, default 'cosmos'). SQL Server
             // is selected when explicitly configured OR when no Cosmos config is
             // present but a SQL connection string is.
-            var storageProvider = Configuration.GetValue<string>("NimBus:StorageProvider")
-                ?? Configuration.GetValue<string>("StorageProvider");
+            var storageProvider = configuration.GetValue<string>("NimBus:StorageProvider")
+                ?? configuration.GetValue<string>("StorageProvider");
             if (string.IsNullOrWhiteSpace(storageProvider))
             {
-                var hasSqlConfig = !string.IsNullOrWhiteSpace(Configuration.GetValue<string>("SqlConnection"))
-                    || !string.IsNullOrWhiteSpace(Configuration.GetConnectionString("sqlserver"))
-                    || !string.IsNullOrWhiteSpace(Configuration.GetValue<string>("SqlServerConnection"));
-                var hasCosmosConfig = !string.IsNullOrWhiteSpace(Configuration.GetValue<string>("CosmosAccountEndpoint"))
-                    || !string.IsNullOrWhiteSpace(Configuration.GetConnectionString("cosmos"))
-                    || !string.IsNullOrWhiteSpace(Configuration.GetValue<string>("CosmosConnection"));
+                var hasSqlConfig = !string.IsNullOrWhiteSpace(configuration.GetValue<string>("SqlConnection"))
+                    || !string.IsNullOrWhiteSpace(configuration.GetConnectionString("sqlserver"))
+                    || !string.IsNullOrWhiteSpace(configuration.GetValue<string>("SqlServerConnection"));
+                var hasCosmosConfig = !string.IsNullOrWhiteSpace(configuration.GetValue<string>("CosmosAccountEndpoint"))
+                    || !string.IsNullOrWhiteSpace(configuration.GetConnectionString("cosmos"))
+                    || !string.IsNullOrWhiteSpace(configuration.GetValue<string>("CosmosConnection"));
                 storageProvider = (hasSqlConfig && !hasCosmosConfig) ? "sqlserver" : "cosmos";
             }
 

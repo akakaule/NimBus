@@ -3107,6 +3107,7 @@ components:
             - deleteStorageContainer
             - reconcileStalePending
             - failureClassified
+            - updateIntelligenceSettings
         comment:
           type: string
           nullable: true
@@ -4154,6 +4155,7 @@ components:
             - deleteStorageContainer
             - reconcileStalePending
             - failureClassified
+            - updateIntelligenceSettings
         createdAtFrom:
           type: string
           format: date-time
@@ -4728,6 +4730,7 @@ components:
             - deleteStorageContainer
             - reconcileStalePending
             - failureClassified
+            - updateIntelligenceSettings
         comment:
           type: string
           nullable: true

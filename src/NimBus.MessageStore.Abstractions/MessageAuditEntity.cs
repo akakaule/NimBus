@@ -135,5 +135,8 @@ namespace NimBus.MessageStore
 
         /// <summary>An advisory failure classification was requested for an event.</summary>
         FailureClassified,
+
+        /// <summary>A site Owner changed shared failure-intelligence configuration.</summary>
+        UpdateIntelligenceSettings,
     }
 }

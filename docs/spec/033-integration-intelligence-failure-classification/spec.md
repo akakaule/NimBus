@@ -8,6 +8,31 @@ AI provider for MVP: TypeSafe **Jev** (System One API, https://docs.typesafe.ai/
 third-party service; a deployment that enables the feature supplies its own API key. NimBus ships
 no licence check and takes no revenue from it.
 Baseline: NimBus 3.7.1 (`master`), WebApp access model from spec 026, audit contract from spec 008.
+
+### 2026-09-21 addendum — administrator-managed settings
+
+The stock WebApp adds an always-discoverable, site-Owner-only Admin settings surface
+independent of optional classification route pruning. Non-secret settings persist in
+the selected SQL/Cosmos backend with conditional revision writes; deployment continues
+to own provider keys and base URLs. Saved settings override deployment defaults only
+after restart. All instances must restart to adopt a shared revision. Active request
+options are never hot-mutated by an Admin save.
+
+The bounded startup settings read occurs before MVC discovery. Missing settings use
+deployment defaults; unavailable/invalid settings fail classification closed without
+failing ordinary WebApp startup. Reads do not create schema, instantiate the provider,
+or make AI calls. This deliberately adds one shared-settings read even when analysis
+is disabled so a previously saved enable/disable decision can be discovered.
+
+SQL owns `dbo.IntelligenceAdminSettings` (created on first Admin save); Cosmos owns
+`intelligencesettings` with `/id`, provisioned with the existing opt-in deployment
+parameter. Settings are not subject to event retention. Protect/back up this record;
+deletion restores deployment defaults. Admin saves require CSRF protection, full
+server validation, an expected revision and explicit payload-sharing consent.
+Payload export remains default-off for new installations. See
+[operator documentation](../../integration-intelligence.md#admin-settings) and the
+[implementation plan](../../plan/2026-09-21-intelligence-admin-settings.md).
+
 Related: ADR-004 (pipeline behaviors), `docs/extensions.md` (extension packages),
 `docs/error-handling.md` (the deterministic retry/DLQ rules this feature must not touch).
 

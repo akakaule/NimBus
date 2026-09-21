@@ -14271,6 +14271,7 @@ export enum MessageAuditAuditType {
     DeleteStorageContainer = "deleteStorageContainer",
     ReconcileStalePending = "reconcileStalePending",
     FailureClassified = "failureClassified",
+    UpdateIntelligenceSettings = "updateIntelligenceSettings",
 }
 
 export class MessageContent implements IMessageContent {
@@ -14398,6 +14399,7 @@ export enum AuditSearchFilterAuditType {
     DeleteStorageContainer = "deleteStorageContainer",
     ReconcileStalePending = "reconcileStalePending",
     FailureClassified = "failureClassified",
+    UpdateIntelligenceSettings = "updateIntelligenceSettings",
 }
 
 export enum StalePendingRowVerdict {
@@ -14461,6 +14463,7 @@ export enum AuditEntryAuditType {
     DeleteStorageContainer = "deleteStorageContainer",
     ReconcileStalePending = "reconcileStalePending",
     FailureClassified = "failureClassified",
+    UpdateIntelligenceSettings = "updateIntelligenceSettings",
 }
 
 export enum AgentSettleRequestOutcome {

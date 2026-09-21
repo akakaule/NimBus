@@ -21,12 +21,26 @@ using NimBus.Extensions.IntegrationIntelligence;
 using NimBus.Extensions.IntegrationIntelligence.Controllers;
 using NimBus.WebApp.RateLimiting;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.IntegrationIntelligence;
 
 namespace NimBus.WebApp.Tests;
 
 [TestClass]
 public sealed class IntelligenceActivationTests
 {
+    [TestMethod]
+    public async Task Saved_Enable_Is_Applied_Before_Controller_Discovery_And_Payload_Construction()
+    {
+        var saved = new IntelligenceAdminSettings { Enabled = true, IncludeEventPayload = true };
+        var overrides = saved.ApplyTo(new ConfigurationBuilder().Build());
+        using var host = await CreateHost("local", false, "20", overrides: overrides);
+        Assert.IsTrue(host.Services.GetRequiredService<IntegrationIntelligenceActivation>().Ready);
+        Assert.IsTrue(host.Services.GetRequiredService<FailureClassificationOptions>().IncludeEventPayload);
+        var routes = host.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>().Select(e => e.RoutePattern.RawText).ToList();
+        Assert.IsTrue(routes.Any(route => route!.Contains("/classification", StringComparison.Ordinal)));
+        CollectionAssert.Contains(routes, "api/admin/failure-intelligence");
+    }
+
     [TestMethod]
     [DataRow("local")]
     [DataRow("identity")]
@@ -89,7 +103,7 @@ public sealed class IntelligenceActivationTests
         Assert.AreEqual(rateLimit ? RateLimitPolicyNames.Intelligence : null, policy);
     }
 
-    private static Task<IHost> CreateHost(string branch, bool enabled, string timeout, Action<IServiceCollection>? inspect = null, bool rateLimit = true, Action<IServiceCollection>? configure = null)
+    private static Task<IHost> CreateHost(string branch, bool enabled, string timeout, Action<IServiceCollection>? inspect = null, bool rateLimit = true, Action<IServiceCollection>? configure = null, IConfiguration? overrides = null)
     {
         var settings = new Dictionary<string, string?>
         {
@@ -109,7 +123,7 @@ public sealed class IntelligenceActivationTests
         }
         return new HostBuilder().UseEnvironment("Development")
             .UseDefaultServiceProvider(options => options.ValidateScopes = true)
-            .ConfigureAppConfiguration(builder => builder.AddInMemoryCollection(settings))
+            .ConfigureAppConfiguration(builder => { builder.AddInMemoryCollection(settings); if (overrides is not null) builder.AddConfiguration(overrides); })
             .ConfigureWebHost(web =>
             {
                 web.UseTestServer();

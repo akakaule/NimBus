@@ -49,7 +49,50 @@ Evidence is bounded and redacted before it leaves the process. Event payload inc
 3. High change-required likelihood → `ChangeLikelyRequired`.
 4. Otherwise → `Investigate`.
 
-For Cosmos deployments, provision the `failureclassifications` container by setting the deployment parameter `integrationIntelligenceEnabled` to `true`. SQL deployments use the message-store connection with extension-owned `dbo.FailureClassifications` and a separate DbUp journal, `dbo.IntelligenceSchemaVersions`. There is no in-memory fallback. Keep the feature disabled while changing provider credentials or storage configuration; invalid provider settings leave the status route available as `ProviderNotConfigured` and do not expose the analysis route.
+For Cosmos deployments, provision the `failureclassifications` and `intelligencesettings` containers by setting the deployment parameter `integrationIntelligenceEnabled` to `true`. SQL deployments use the message-store connection with extension-owned `dbo.FailureClassifications` and a separate DbUp journal, `dbo.IntelligenceSchemaVersions`. There is no in-memory fallback. Keep the feature disabled while changing provider credentials or storage configuration; invalid provider settings leave the status route available as `ProviderNotConfigured` and do not expose the analysis route.
+
+## Admin settings
+
+Site Owners can use **Admin → Failure intelligence** even when classification is
+disabled. The page edits non-secret activation, model, data-sharing, history,
+endpoint allow-list, timeout and guidance settings. Provider keys and the base URL
+remain deployment-managed and are never returned by the settings API.
+
+Use **Review changes**, acknowledge payload sharing when enabled, then **Save settings**.
+Saves do not call TypeSafe or modify active requests. Restart **every WebApp instance**
+to apply the shared revision. The page distinguishes saved settings from the current
+instance's immutable startup settings; it cannot certify other instances restarted.
+A conflicting edit returns 409. Reload before saving again, including after a lost response.
+
+The stock WebApp reads settings in a bounded (15 second) bootstrap before MVC
+controller discovery, reusing storage registration and credential precedence. No
+hosted service or schema creation runs during that read. Saved non-secret values
+replace deployment defaults, including whole allow-list/redaction arrays. The
+bootstrap captures the effective intelligence settings (unrelated configuration
+retains its existing provider/reload behavior); settings and credential changes require
+restart. Custom hosts bypassing `Program.CreateHostBuilder` must explicitly load
+settings before calling `AddNimBusIntegrationIntelligence`.
+
+- SQL: a conditional revision in `dbo.IntelligenceAdminSettings`, created on first
+  save under a transaction/application lock. First use needs permission to create
+  that table. Reads never create it. It is independent of classification migrations.
+- Cosmos: a `failure-classification` item in the separately provisioned
+  `intelligencesettings` container, partition key `/id`, no TTL. Runtime never creates
+  the container. Missing provisioning makes saves unavailable (503).
+- Before settings exist, deployment defaults apply. A failed or invalid settings
+  read disables classification until storage is restored and the WebApp restarts;
+  ordinary management remains available. Back up this record: deleting it restores
+  deployment defaults. Event retention does not delete configuration.
+- `GET/PUT /api/admin/failure-intelligence` require site Owner access. GET issues an
+  antiforgery token; PUT requires its cookie and `X-NimBus-CSRF` header, a complete
+  settings DTO, expected revision, and payload-sharing acknowledgment. The Admin
+  rate-limit policy applies, respecting its kill switch. Changes are audited as
+  `UpdateIntelligenceSettings` with sanitized outcomes, not credentials.
+
+Payload inclusion stays **off by default** for new installations. Enabling it sends
+redacted payload evidence only on deliberately requested analyses, not old results.
+Redaction cannot identify unmarked business information. The form's state example
+is synthetic, not a redaction guarantee for real data.
 
 Reservations and results commit atomically in one per-failure aggregate, fenced by SQL rowversion or Cosmos ETag. Completed revisions are immutable. Expired reservations are unknown outcomes: only explicit `force: true` with a new UUID can supersede them, potentially incurring another charge. Reuse the same UUID after a transport interruption. The aggregate is limited to 1.5 MB; capacity exhaustion returns 503 without discarding history or permitting replay.
 

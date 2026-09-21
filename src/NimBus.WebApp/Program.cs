@@ -20,6 +20,11 @@ namespace NimBus.WebApp
                 .ConfigureAppConfiguration((hostContext, builder) =>
                 {
                     builder.AddUserSecrets<Program>();
+                    // Saved non-secret settings must precede MVC/extension registration.
+                    var configuration = builder.Build();
+                    var effective = Services.IntegrationIntelligence.IntelligenceSettingsBootstrap.Load(configuration);
+                    builder.Sources.Clear();
+                    builder.AddConfiguration(effective);
                 });
     }
 }

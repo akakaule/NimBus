@@ -74,6 +74,20 @@ resource auditsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/con
   }
 }
 
+resource intelligenceSettingsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2021-06-15' = if (createIntelligenceContainer) {
+  parent: sqlDb
+  name: 'intelligencesettings'
+  properties: {
+    resource: {
+      id: 'intelligencesettings'
+      partitionKey: {
+        paths: ['/id']
+        kind: 'Hash'
+      }
+    }
+  }
+}
+
 resource intelligenceContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2021-06-15' = if (createIntelligenceContainer) {
   parent: sqlDb
   name: 'failureclassifications'

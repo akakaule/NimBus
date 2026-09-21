@@ -14172,6 +14172,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"failureClassified")]
         FailureClassified = 26,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"updateIntelligenceSettings")]
+        UpdateIntelligenceSettings = 27,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -14424,6 +14427,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"failureClassified")]
         FailureClassified = 26,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"updateIntelligenceSettings")]
+        UpdateIntelligenceSettings = 27,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -14597,6 +14603,9 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"failureClassified")]
         FailureClassified = 26,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"updateIntelligenceSettings")]
+        UpdateIntelligenceSettings = 27,
 
     }
 

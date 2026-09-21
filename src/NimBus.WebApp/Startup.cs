@@ -39,6 +39,8 @@ using NimBus.WebApp.RateLimiting;
 using System.Text.Json.Serialization;
 using NimBus.Core.Extensions;
 using NimBus.Extensions.Identity;
+using NimBus.Extensions.IntegrationIntelligence;
+using NimBus.WebApp.Services.IntegrationIntelligence;
 using NimBus.Management.ServiceBus;
 using NimBus.MessageStore.SqlServer;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -79,6 +81,10 @@ namespace NimBus.WebApp
             AddPlatformCatalog(services);
             AddServiceBusClients(services);
             var storageProvider = AddStorage(services);
+            services.AddScoped<IIntegrationIntelligenceHost, WebAppIntegrationIntelligenceHostAdapter>();
+            services.AddSingleton<IIntegrationIntelligenceStorageSettings>(sp =>
+                new WebAppIntegrationIntelligenceStorageSettings(storageProvider, sp));
+            services.AddNimBusIntegrationIntelligence(Configuration);
             AddManagementServices(services);
             AddObservability(services, storageProvider);
             AddAuthorizationAndAuditServices(services);
@@ -401,6 +407,10 @@ namespace NimBus.WebApp
                 sp.GetRequiredService<IPlatform>(),
                 sp.GetRequiredService<IConfiguration>()["NimBus:PiiHashSalt"] ?? string.Empty));
 
+            services.AddSingleton<IEventJsonRedactor>(sp =>
+                sp.GetRequiredService<IEventJsonMasker>() as IEventJsonRedactor
+                ?? new NullEventJsonRedactor());
+
             services.AddSingleton<PayloadRedaction>();
         }
 
@@ -578,7 +588,8 @@ namespace NimBus.WebApp
                     metrics.AddAspNetCoreInstrumentation()
                         .AddHttpClientInstrumentation()
                         .AddRuntimeInstrumentation()
-                        .AddNimBusInstrumentation();
+                        .AddNimBusInstrumentation()
+                        .AddMeter(NimBusIntelligenceTelemetry.Name);
                 })
                 .WithTracing(tracing =>
                 {
@@ -586,6 +597,7 @@ namespace NimBus.WebApp
                         .AddHttpClientInstrumentation()
                         .AddSource("Azure.Cosmos.Operation")
                         .AddSource("Azure.Messaging.ServiceBus")
+                        .AddSource(NimBusIntelligenceTelemetry.Name)
                         .AddNimBusInstrumentation();
                 });
 

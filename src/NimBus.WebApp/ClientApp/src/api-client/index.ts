@@ -14270,6 +14270,7 @@ export enum MessageAuditAuditType {
     DisableEndpointHeartbeat = "disableEndpointHeartbeat",
     DeleteStorageContainer = "deleteStorageContainer",
     ReconcileStalePending = "reconcileStalePending",
+    FailureClassified = "failureClassified",
 }
 
 export class MessageContent implements IMessageContent {
@@ -14396,6 +14397,7 @@ export enum AuditSearchFilterAuditType {
     DisableEndpointHeartbeat = "disableEndpointHeartbeat",
     DeleteStorageContainer = "deleteStorageContainer",
     ReconcileStalePending = "reconcileStalePending",
+    FailureClassified = "failureClassified",
 }
 
 export enum StalePendingRowVerdict {
@@ -14458,6 +14460,7 @@ export enum AuditEntryAuditType {
     DisableEndpointHeartbeat = "disableEndpointHeartbeat",
     DeleteStorageContainer = "deleteStorageContainer",
     ReconcileStalePending = "reconcileStalePending",
+    FailureClassified = "failureClassified",
 }
 
 export enum AgentSettleRequestOutcome {

@@ -26,6 +26,11 @@ param resolverFunctionAppLocation string = ''
 ])
 param storageProvider string = 'cosmos'
 
+// Enables provisioning of the optional failure-classification Cosmos container.
+// The WebApp feature remains disabled unless its application configuration is
+// also enabled and valid.
+param integrationIntelligenceEnabled bool = false
+
 @allowed([
   'provision'
   'external'
@@ -162,6 +167,7 @@ module cosmosAccount 'templates/cosmosDB.bicep' = if (storageProvider == 'cosmos
   params: {
     name: cosmosAccountName
     dbname: cosmosDbName
+    createIntelligenceContainer: integrationIntelligenceEnabled
     location: effectiveCosmosLocation
   }
 }

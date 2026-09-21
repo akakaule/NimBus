@@ -1,0 +1,864 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Spec 033: on-demand, advisory AI failure classification for NimBus as an optional, in-repository WebApp extension backed by TypeSafe Jev. Boundary, evidence, redaction, question set, guidance rules, reservations, API, access, tests and open decisions.">
+<title>NimBus Failure Classification</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --paper:#f3f5f7;--surface:#ffffff;--ink:#18232e;--muted:#5d6b78;--line:#d5dde5;--line-strong:#b3bfca;
+  --open:#1b7a63;--open-soft:#d9efe7;
+  --intel:#5346c9;--intel-soft:#e5e2fa;
+  --advise:#a8690f;--advise-soft:#f8ead0;
+  --stop:#b8383b;--stop-soft:#f6dcdc;
+  --code-bg:#e8edf2;--hero:#141c26;--hero-ink:#eef2f6;--hero-muted:#a9b6c3;--hero-line:#3a4756;--hero-panel:#1c2632;
+  --display:"Bricolage Grotesque","Segoe UI",Helvetica,Arial,sans-serif;
+  --body:"Source Sans 3","Segoe UI",Helvetica,Arial,sans-serif;
+  --mono:"JetBrains Mono",Consolas,"Courier New",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0f151c;--surface:#161e27;--ink:#e5ebf1;--muted:#98a6b3;--line:#27333f;--line-strong:#3d4b59;
+    --open:#42b797;--open-soft:#123329;
+    --intel:#9d93f2;--intel-soft:#252048;
+    --advise:#e2a94a;--advise-soft:#3a2a10;
+    --stop:#e07b7b;--stop-soft:#3d1c1c;
+    --code-bg:#1e2934;--hero:#0a0f15;--hero-ink:#eef2f6;--hero-muted:#a9b6c3;--hero-line:#2b3744;--hero-panel:#131b24;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0f151c;--surface:#161e27;--ink:#e5ebf1;--muted:#98a6b3;--line:#27333f;--line-strong:#3d4b59;
+  --open:#42b797;--open-soft:#123329;
+  --intel:#9d93f2;--intel-soft:#252048;
+  --advise:#e2a94a;--advise-soft:#3a2a10;
+  --stop:#e07b7b;--stop-soft:#3d1c1c;
+  --code-bg:#1e2934;--hero:#0a0f15;--hero-ink:#eef2f6;--hero-muted:#a9b6c3;--hero-line:#2b3744;--hero-panel:#131b24;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:24px}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.6 var(--body);-webkit-font-smoothing:antialiased}
+a{color:var(--intel);text-underline-offset:3px}
+a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--intel);outline-offset:2px}
+h1,h2,h3,h4{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.15}
+h2{font-size:30px;font-weight:600;letter-spacing:-.3px}
+h3{font-size:20px;font-weight:600;margin-top:34px}
+h4{font-size:16px;font-weight:600}
+p{margin:12px 0;max-width:68ch}
+ul,ol{margin:10px 0;padding-left:22px;max-width:72ch}
+li{margin:5px 0}
+code{font:.88em/1.4 var(--mono);background:var(--code-bg);padding:1px 5px;border-radius:4px}
+pre{background:var(--code-bg);padding:14px 16px;border-radius:6px;overflow-x:auto;font:13px/1.55 var(--mono);margin:14px 0;max-width:100%}
+pre code{background:none;padding:0;font:inherit}
+table{border-collapse:collapse;width:100%;font-size:15px}
+.tablewrap{overflow-x:auto;margin:14px 0;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--line)}
+th{font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);background:var(--paper)}
+tr:last-child td{border-bottom:0}
+td code{white-space:nowrap}
+.eyebrow{font-family:var(--display);font-size:13px;font-weight:600;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted)}
+.hero{background:var(--hero);color:var(--hero-ink);padding-block:56px 44px;padding-inline:24px}
+.hero .in{max-width:1180px;margin:auto}
+.hero .eyebrow{color:var(--hero-muted)}
+.hero h1{font-size:clamp(40px,6vw,76px);font-weight:700;letter-spacing:-1.5px;margin:10px 0 14px;max-width:14ch}
+.hero .lede{font-size:19px;color:var(--hero-muted);max-width:66ch;margin:0 0 22px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;list-style:none;padding:0;margin:0 0 28px;max-width:none}
+.chips li{font:600 13px/1 var(--display);letter-spacing:.3px;padding:8px 12px;border-radius:999px;border:1px solid var(--hero-line);color:var(--hero-ink);margin:0}
+.invariant{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--hero-line);border:1px solid var(--hero-line);border-radius:10px;overflow:hidden;max-width:1180px}
+.invariant div{background:var(--hero-panel);padding:18px 20px}
+.invariant .who{font:600 12px/1 var(--display);letter-spacing:1.4px;text-transform:uppercase;margin-bottom:8px}
+.invariant .what{font-family:var(--display);font-size:20px;font-weight:600;line-height:1.25}
+.invariant .ai .who{color:#9d93f2}.invariant .code .who{color:#42b797}.invariant .op .who{color:#e2a94a}
+.shell{display:grid;grid-template-columns:210px minmax(0,1fr);gap:56px;max-width:1180px;margin:auto;padding-block:40px 80px;padding-inline:24px}
+nav.toc{position:sticky;top:24px;align-self:start;font-size:14px}
+nav.toc ol{list-style:none;padding:0;margin:0;border-left:2px solid var(--line)}
+nav.toc li{margin:0}
+nav.toc a{display:block;padding:5px 0 5px 12px;color:var(--muted);text-decoration:none;border-left:2px solid transparent;margin-left:-2px}
+nav.toc a:hover{color:var(--ink);border-left-color:var(--line-strong)}
+nav.toc .eyebrow{margin-bottom:10px}
+main{min-width:0}
+section{padding:8px 0 44px;border-bottom:1px solid var(--line);margin-bottom:36px}
+section:last-child{border-bottom:0}
+.secno{font:500 13px/1 var(--mono);color:var(--muted);margin-bottom:8px;display:block}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin:18px 0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:18px 20px;min-width:0}
+.card h4{margin-bottom:6px}
+.card p{font-size:15.5px;margin:6px 0}
+.card pre{font-size:12.5px;margin:10px 0 0}
+.card.open{border-top:3px solid var(--open)}.card.intel{border-top:3px solid var(--intel)}
+.note{border-left:3px solid var(--advise);background:var(--advise-soft);padding:12px 16px;border-radius:0 6px 6px 0;margin:16px 0;font-size:15.5px;max-width:78ch}
+.note.stop{border-left-color:var(--stop);background:var(--stop-soft)}
+.note.intel{border-left-color:var(--intel);background:var(--intel-soft)}
+.note p{margin:4px 0}
+.boundary{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:20px 0}
+.side{border-radius:10px;padding:18px 20px;border:1px solid var(--line);background:var(--surface);min-width:0}
+.side h3{margin:0 0 4px;font-size:18px}
+.side .sub{font-size:14px;color:var(--muted);margin:0 0 12px}
+.side ul{list-style:none;padding:0;margin:0;max-width:none}
+.side li{padding:7px 0;border-top:1px solid var(--line);font-size:15px;margin:0}
+.side li code{font-size:.85em}
+.side.pub{border-top:4px solid var(--open)}.side.com{border-top:4px solid var(--intel)}
+.joint{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;color:var(--muted);font:600 12px/1.2 var(--display);letter-spacing:1px;text-transform:uppercase;text-align:center;padding:0 4px}
+.joint svg{width:44px;height:24px;display:block}
+.pill{display:inline-block;font:600 12px/1 var(--display);letter-spacing:.4px;padding:5px 9px;border-radius:999px;border:1px solid var(--line-strong);color:var(--ink);white-space:nowrap;margin:2px 3px 2px 0}
+.pill.ok{background:var(--open-soft);border-color:var(--open);color:var(--open)}
+.pill.no{background:var(--stop-soft);border-color:var(--stop);color:var(--stop)}
+.pill.warn{background:var(--advise-soft);border-color:var(--advise);color:var(--advise)}
+.pill.intel{background:var(--intel-soft);border-color:var(--intel);color:var(--intel)}
+.pill.mono{font-family:var(--mono);font-weight:500;letter-spacing:0}
+.flow{list-style:none;padding:0;margin:20px 0;counter-reset:step;max-width:none}
+.flow li{display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start;padding:10px 0;border-top:1px solid var(--line);counter-increment:step;margin:0}
+.flow li::before{content:counter(step);font:600 13px/28px var(--display);text-align:center;width:28px;height:28px;border-radius:50%;border:2px solid var(--line-strong);color:var(--muted)}
+.flow li.gate::before{border-color:var(--open);color:var(--open)}
+.flow li.work::before{border-color:var(--intel);color:var(--intel);background:var(--intel-soft)}
+.flow .t{font-weight:600}
+.flow .d{font-size:15px;color:var(--muted)}
+.flow .d code{font-size:.85em}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:14px;color:var(--muted);margin:6px 0 0}
+.legend span::before{content:"";display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid var(--line-strong);vertical-align:-2px;margin-right:6px}
+.legend .g::before{border-color:var(--open)}.legend .w::before{border-color:var(--intel);background:var(--intel-soft)}
+.ladder{list-style:none;padding:0;margin:18px 0;max-width:none;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.ladder li{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:12px;padding:14px 18px;border-top:1px solid var(--line);align-items:center;margin:0}
+.ladder li:first-child{border-top:0}
+.ladder .cond{font:13.5px/1.5 var(--mono);overflow-wrap:anywhere}
+.ladder .cond em{font-style:normal;color:var(--muted)}
+.ladder .out{font-family:var(--display);font-weight:600;font-size:16px;text-align:right}
+.ladder .o1{color:var(--muted)}.ladder .o2{color:var(--open)}.ladder .o3{color:var(--advise)}.ladder .o4{color:var(--intel)}
+.fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px 18px;font:13px/1.5 var(--mono);margin:12px 0;padding:12px 16px;background:var(--code-bg);border-radius:6px}
+.fields span{overflow-wrap:anywhere}
+.fields span b{font-weight:500;color:var(--intel)}
+.fields span i{font-style:normal;color:var(--muted)}
+.diagram{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto;margin:18px 0}
+.diagram svg{display:block;width:100%;max-width:820px;height:auto;margin:auto;font-family:var(--body)}
+.diagram .box{fill:var(--paper);stroke:var(--line-strong);stroke-width:1.2}
+.diagram .box.ip{fill:var(--intel-soft);stroke:var(--intel)}
+.diagram .box.ok{fill:var(--open-soft);stroke:var(--open)}
+.diagram .box.no{fill:var(--stop-soft);stroke:var(--stop)}
+.diagram .box.un{fill:var(--advise-soft);stroke:var(--advise)}
+.diagram .lbl{fill:var(--ink);font-size:14px;font-weight:600;font-family:var(--display)}
+.diagram .sub{fill:var(--muted);font-size:11.5px}
+.diagram .edge{stroke:var(--line-strong);stroke-width:1.4;fill:none}
+.diagram .edge.force{stroke:var(--intel);stroke-dasharray:5 4}
+.diagram .elbl{fill:var(--muted);font-size:11.5px}
+.diagram .elbl.force{fill:var(--intel)}
+.diagram .ah{fill:var(--line-strong)}.diagram .ah.force{fill:var(--intel)}
+.roles{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0;font-family:var(--display);font-weight:600}
+.roles .r{padding:8px 14px;border-radius:6px;border:1px solid var(--line-strong);background:var(--surface)}
+.roles .r.hi{border-color:var(--open);background:var(--open-soft);color:var(--open)}
+.roles .lt{color:var(--muted)}
+.roles .plus{margin-left:auto;padding:8px 14px;border-radius:6px;border:1px dashed var(--line-strong);color:var(--muted);font-weight:500}
+.mock{max-width:560px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:18px 0;box-shadow:0 8px 24px -18px rgba(0,0,0,.35)}
+.mock .hd{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
+.mock .hd h4{font-size:15px}
+.mock .row{display:grid;grid-template-columns:160px 1fr 52px;gap:10px;align-items:center;padding:6px 0;font-size:15px}
+.mock .row .k{color:var(--muted)}
+.mock .row .v{font-weight:600}
+.mock .row .n{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.mock .bar{height:8px;border-radius:4px;background:var(--code-bg);overflow:hidden}
+.mock .bar i{display:block;height:100%;background:var(--intel);border-radius:4px}
+.mock .guide{margin-top:8px;padding:10px 12px;border-radius:6px;background:var(--advise-soft);border:1px solid var(--advise);font-weight:600;font-size:15px}
+.mock .meta{font-size:13px;color:var(--muted);margin:10px 0 4px}
+.mock details{font-size:14px;margin:6px 0}
+.mock details summary{cursor:pointer;color:var(--intel)}
+.mock .disc{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px;margin-top:10px}
+.mock .btn{display:inline-block;margin-top:10px;font:600 14px/1 var(--display);padding:10px 14px;border-radius:6px;background:var(--intel);color:#fff;border:0}
+.states{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:16px 0;max-width:none;list-style:none;padding:0}
+.states li{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-size:15px;margin:0}
+.states li b{display:block;font-family:var(--display);margin-bottom:4px}
+.tests{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;margin:16px 0}
+.tests .card ul{font-size:15px;padding-left:18px}
+.tests .card li b{font-weight:600}
+.accept{counter-reset:ac;list-style:none;padding:0;max-width:none;columns:2;column-gap:32px;margin:16px 0}
+.accept li{break-inside:avoid;display:grid;grid-template-columns:30px 1fr;gap:8px;font-size:15.5px;margin:0 0 10px;counter-increment:ac}
+.accept li::before{content:counter(ac);font:600 13px/1 var(--mono);color:var(--open);padding-top:5px}
+.decision{border-left:3px solid var(--line-strong);padding:4px 0 4px 16px;margin:14px 0;max-width:78ch}
+.decision h4{margin-bottom:4px}
+.decision p{font-size:15.5px}
+.decision .rec{margin:6px 0 0}
+.decision .rec b{color:var(--open)}
+footer{max-width:1180px;margin:auto;padding-block:0 60px;padding-inline:24px;font-size:14px;color:var(--muted)}
+@media (max-width: 900px){
+  .shell{grid-template-columns:1fr;gap:24px;padding-top:24px}
+  nav.toc{position:static}
+  nav.toc ol{display:flex;flex-wrap:wrap;gap:4px 10px;border-left:0}
+  nav.toc a{border-left:0;padding:4px 0;margin:0}
+  .boundary{grid-template-columns:1fr}
+  .joint{flex-direction:row;padding:4px 0}
+  .joint svg{transform:rotate(90deg)}
+  .invariant{grid-template-columns:1fr}
+  .accept{columns:1}
+  .ladder li{grid-template-columns:1fr}
+  .ladder .out{text-align:left}
+  .mock .row{grid-template-columns:120px 1fr 44px}
+  .roles .plus{margin-left:0}
+  h2{font-size:26px}
+}
+</style>
+</head>
+<body>
+<header class="hero">
+<div class="in">
+<p class="eyebrow">Spec 033 · NimBus Integration Intelligence · first module</p>
+<h1>Failure Classification</h1>
+<p class="lede">An operator investigating a Failed or DeadLettered message presses <strong>Analyze</strong> and gets a structured assessment: what kind of failure this is, and whether retrying the unchanged message is likely to help. TypeSafe Jev produces it from evidence NimBus already stores, and it appears as an advisory card on the event-details page. Settlement, session ordering, retry policy, dead-lettering, resubmit and skip are untouched.</p>
+<ul class="chips">
+<li>Proposed 2026-09-19 · corrections and packaging pivot 2026-09-20</li>
+<li>MVP scope</li>
+<li>Optional extension in this repository · MIT · off by default</li>
+<li>Provider: TypeSafe Jev (System One API), bring your own key</li>
+<li>Baseline NimBus 3.7.1</li>
+<li>Builds on spec 026 access model · spec 008 audit</li>
+</ul>
+<div class="invariant">
+<div class="ai"><div class="who">AI</div><div class="what">may evaluate a failure.</div></div>
+<div class="code"><div class="who">Code</div><div class="what">owns the workflow.</div></div>
+<div class="op"><div class="who">The operator</div><div class="what">owns the recovery decision.</div></div>
+</div>
+</div>
+</header>
+
+<div class="shell">
+<nav class="toc" aria-label="Sections">
+<p class="eyebrow">Contents</p>
+<ol>
+<li><a href="#boundary">Extension boundary</a></li>
+<li><a href="#evidence">Evidence &amp; eligibility</a></li>
+<li><a href="#hooks">Platform-side changes</a></li>
+<li><a href="#flow">Analyze request flow</a></li>
+<li><a href="#input">Input &amp; redaction</a></li>
+<li><a href="#provider">Provider &amp; questions</a></li>
+<li><a href="#guidance">Deterministic guidance</a></li>
+<li><a href="#persistence">Result &amp; coordination</a></li>
+<li><a href="#api">HTTP API</a></li>
+<li><a href="#access">Access &amp; activation</a></li>
+<li><a href="#card">The card</a></li>
+<li><a href="#config">Configuration</a></li>
+<li><a href="#failure">Failure &amp; telemetry</a></li>
+<li><a href="#tests">Tests &amp; acceptance</a></li>
+<li><a href="#nongoals">Non-goals</a></li>
+<li><a href="#changes">Changes from the draft</a></li>
+<li><a href="#open">Open decisions</a></li>
+</ol>
+</nav>
+
+<main>
+
+<section id="boundary">
+<span class="secno">§2 · §5</span>
+<h2>One repository, one seam</h2>
+<p>Failure Classification ships in this repository as an optional, MIT-licensed extension project. The seam is a dependency and activation boundary, not a commercial one: only the WebApp references the extension, the way it references <code>NimBus.Extensions.Identity</code>, and it is off by default. While it is off, no service is registered, its controllers are removed, no schema is created and no outbound call is possible. The existing test suite, run with the feature disabled, is the regression gate.</p>
+<div class="boundary">
+<div class="side pub">
+<h3>NimBus platform</h3>
+<p class="sub">Existing projects</p>
+<ul>
+<li>Messaging, ordering, retry, recovery, message history, management WebApp</li>
+<li>WebApp <code>ProjectReference</code> plus <code>AddNimBusIntegrationIntelligence</code>, gated on <code>Enabled</code></li>
+<li>SPA card <code>intelligence-card.tsx</code>, rendered only when the status endpoint answers <code>Ready</code></li>
+<li>Audit value <code>MessageAuditType.FailureClassified</code></li>
+<li>Full-redaction capability <code>IEventJsonRedactor</code></li>
+</ul>
+</div>
+<div class="joint" aria-hidden="true">
+<span>references</span>
+<svg viewBox="0 0 44 24"><path d="M2 12h34" stroke="currentColor" stroke-width="2" fill="none"/><path d="M30 5l8 7-8 7" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+<span>opt-in by config</span>
+</div>
+<div class="side com">
+<h3>Integration Intelligence</h3>
+<p class="sub">New project in <code>NimBus.sln</code> · <code>NimBus.Extensions.IntegrationIntelligence</code> · published as <code>Akaule.NimBus.Extensions.IntegrationIntelligence</code></p>
+<ul>
+<li>Options with contained validation. No licence key, no entitlement check</li>
+<li>Input builder, PII redactor and secret-key scrubber</li>
+<li><code>IFailureIntelligenceProvider</code> with <code>TypeSafeFailureIntelligenceProvider</code></li>
+<li>Question set v1 and deterministic guidance rules</li>
+<li><code>IFailureClassificationStore</code> for SQL Server, Cosmos DB, in-memory</li>
+<li><code>/api/integration-intelligence/*</code> controllers, telemetry</li>
+</ul>
+</div>
+</div>
+<p>The MVP hosts in the <strong>WebApp only</strong>. The Resolver never references the extension: there is no automatic classification, so nothing runs in the processing path and Jev availability cannot touch throughput.</p>
+</section>
+
+<section id="evidence">
+<span class="secno">§3 · §6</span>
+<h2>Evidence NimBus already stores</h2>
+<p>The classification is built from data the message store already holds. Nothing new is captured in the processing path.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Evidence</th><th>Where it lives today</th></tr></thead>
+<tbody>
+<tr><td>Failure occurrence</td><td>A <code>MessageEntity</code> row with <code>MessageType = ErrorResponse</code>, or the dead-letter projection. Its <code>MessageId</code> is unique per attempt.</td></tr>
+<tr><td>Exception type and message</td><td><code>ErrorContent.ErrorType</code>, <code>ErrorContent.ErrorText</code></td></tr>
+<tr><td>Stack trace, source assembly</td><td><code>ErrorContent.ExceptionStackTrace</code>, <code>ErrorContent.ExceptionSource</code></td></tr>
+<tr><td>Dead-letter cause</td><td><code>MessageEntity.DeadLetterReason</code>, <code>DeadLetterErrorDescription</code></td></tr>
+<tr><td>Attempt counters</td><td><code>MessageEntity.RetryCount</code>, <code>RetryLimit</code></td></tr>
+<tr><td>Previous attempts</td><td><code>IMessageTrackingStore.GetEventHistory(eventId)</code>, one row per message on the event</td></tr>
+<tr><td>Current status</td><td><code>ResolutionStatus</code> on the event</td></tr>
+<tr><td>Payload</td><td><code>MessageContent.EventContent</code>, masked by <code>IEventJsonMasker</code> for non-PiiReaders</td></tr>
+</tbody></table></div>
+
+<h3>One failure occurrence, not one event</h3>
+<p>A classification targets a single attempt. The same event fails differently after a resubmit, and the operator wants the assessment of <em>this</em> attempt. Identity is <code>FailureMessageId</code>, the message id of the error row being viewed. The endpoint is derived from that stored row and authorization runs against it; a caller-supplied endpoint never authorizes a row belonging to another endpoint. Coordinates may be loaded before authorization, but no evidence, cached classification or history is returned or sent to the provider before it.</p>
+<p>Eligible only when the row is an error row <strong>and</strong> the event's current status is:</p>
+<p><span class="pill ok">Failed</span> <span class="pill ok">DeadLettered</span></p>
+<p>Rejected with <code>409 Conflict</code>:</p>
+<p><span class="pill no">Pending</span> <span class="pill no">Deferred</span> <span class="pill no">TooManyRequests</span> <span class="pill no">Unsupported</span> <span class="pill no">Published</span> <span class="pill no">Completed</span> <span class="pill no">Skipped</span> <span class="pill no">any non-error row</span></p>
+<p>Retained for querying and display: <code>EventId</code>, <code>EndpointId</code>, <code>SessionId</code>, <code>EventTypeId</code>.</p>
+</section>
+
+<section id="hooks">
+<span class="secno">§4</span>
+<h2>What changes outside the extension project</h2>
+<p>The WebApp is zip-deployed from a published build (<code>nb deploy apps</code>); operators have no host project of their own. Because the extension now lives in this repository, the stock WebApp references it and ships it in that build, exactly as it ships the Identity extension. No dynamic assembly loading, no extension-host contract and no deploy-tool change is needed. Three further integration points live in platform projects because they are reusable regardless of this feature.</p>
+<div class="grid2">
+<div class="card open">
+<h4>4.1 · WebApp wiring</h4>
+<p><code>NimBus.WebApp.csproj</code> gains a <code>ProjectReference</code> to the extension. <code>Startup.ConfigureServices</code> calls <code>AddNimBusIntegrationIntelligence</code> after <code>AddStorage</code>. When <code>Enabled</code> is false the method registers only a controllers-disabled feature provider and returns, following <code>IdentityControllersDisabledFeatureProvider</code>.</p>
+<pre><code>// Startup.ConfigureServices
+var storageProvider = AddStorage(services);
+services.AddNimBusIntegrationIntelligence(
+    Configuration, storageProvider);
+
+// disabled (default): no services, controllers removed,
+// every /api/integration-intelligence/* route answers 404</code></pre>
+<p>It is a plain <code>IServiceCollection</code> method, not an <code>INimBusBuilder</code> extension: the feature adds no pipeline behavior and no lifecycle observer, and the invariant forbids it from doing so.</p>
+</div>
+<div class="card open">
+<h4>4.2 · SPA card</h4>
+<p>The card and its small fetch client live in the WebApp SPA at <code>components/event-details/intelligence-card.tsx</code>. It probes <code>GET /api/integration-intelligence/status?endpointId=…</code> for the endpoint being viewed; a 403, 404 or non-<code>Ready</code> status hides the card. It re-probes on endpoint navigation and discards stale responses.</p>
+<p>The extension's routes are <strong>not</strong> in <code>api-spec.yaml</code>: NSwag generates a server interface the WebApp project itself must implement, which would pull the controllers out of the extension and defeat disabled-means-absent. Identity's <code>/account/*</code> routes follow the same rule. The client is hand-written against the API contract, and the status response carries <code>contractVersion</code> so a mismatched SPA hides the card instead of rendering garbage.</p>
+</div>
+<div class="card open">
+<h4>4.3 · Audit type</h4>
+<p>Append <code>FailureClassified</code> <strong>last</strong> to <code>MessageAuditType</code> (Cosmos persists numeric values) and add <code>failureClassified</code> to all three <code>auditType</code> enum lists in <code>api-spec.yaml</code>. <code>AuditTypeContractTests</code> pins the round-trip. The value is generic, "an analysis ran on this event"; everything provider-specific goes in the audit <code>Data</code> field.</p>
+</div>
+<div class="card open">
+<h4>4.4 · Full payload redaction</h4>
+<p>A separate capability in <code>NimBus.Core.Messages.PII</code>. <code>EventJsonMasker</code> implements it alongside <code>IEventJsonMasker</code>, reusing the contract traversal, but <code>Redact</code> replaces every sensitive leaf with <code>***</code> regardless of its <code>Redact</code>, <code>PartialReveal</code> or <code>Hash</code> mode. Unknown-type and invalid-JSON fail-closed markers are preserved. Existing <code>Mask</code> behaviour and third-party implementations stay compatible.</p>
+<pre><code>public interface IEventJsonRedactor
+{
+    string Redact(string eventTypeId, string eventJson);
+}</code></pre>
+<p>If the capability is unavailable, the extension's input builder omits the payload. Falling back to <code>Mask</code> or raw JSON is forbidden.</p>
+</div>
+</div>
+</section>
+
+<section id="flow">
+<span class="secno">§7 · §14</span>
+<h2>What happens when the operator presses Analyze</h2>
+<p>Classification is <strong>on demand only</strong>. <code>ClassificationMode = OnDemand</code> is the only value in MVP; <code>Automatic</code> is reserved. Zero latency in the processing path, data leaves the environment only when someone decides it should, provider cost accrues only for failures someone investigates, no durable work queue, and real-world accuracy is established before any automatic mode is considered.</p>
+<p>The POST runs these steps in this order. Cached and rejected requests still authorize and audit.</p>
+<div class="legend"><span class="g">Gate: may stop the request</span><span class="w">Work: builds or persists something</span></div>
+<ol class="flow">
+<li class="gate"><div><div class="t">Authenticate</div><div class="d">Anonymous callers get 401.</div></div></li>
+<li class="gate"><div><div class="t">Load message coordinates</div><div class="d"><code>GetMessage(eventId, messageId)</code>, which is why routes carry both ids. Unknown message: 404.</div></div></li>
+<li class="gate"><div><div class="t">Authorize on the stored endpoint</div><div class="d">Contributor on the row's own endpoint (same tier as Resubmit and Skip). Never the caller-supplied endpoint. Otherwise 403.</div></div></li>
+<li class="gate"><div><div class="t">Feature ready</div><div class="d">Enabled and provider configuration valid. Disabled routes never reach this point (404); <code>ProviderNotConfigured</code> means no provider call is possible.</div></div></li>
+<li class="gate"><div><div class="t">Load that endpoint's event status</div><div class="d"><code>GetEvent(endpointId, eventId)</code>.</div></div></li>
+<li class="gate"><div><div class="t">Eligibility</div><div class="d">Error row and status Failed or DeadLettered, else 409.</div></div></li>
+<li class="gate"><div><div class="t">Atomic cache check and reservation</div><div class="d"><code>TryBeginAsync</code> returns Cached, Acquired, InProgress, PreviouslyFailed or OutcomeUnknown. Only Acquired continues to the provider. Store unavailable with no reservation: 503, no provider call.</div></div></li>
+<li class="work"><div><div class="t">Build input</div><div class="d">Exception fields, counters, filtered recent history, optional payload.</div></div></li>
+<li class="work"><div><div class="t">Redact</div><div class="d">PII layer then secret-key scrubbing, both before any truncation.</div></div></li>
+<li class="work"><div><div class="t">Provider call</div><div class="d">One TypeSafe request carrying all four questions. 20-second total budget including retries.</div></div></li>
+<li class="work"><div><div class="t">Derive guidance</div><div class="d">Code composes the signals into <code>FailureGuidance</code>. Jev is never asked what NimBus should do.</div></div></li>
+<li class="work"><div><div class="t">Conditional completion</div><div class="d"><code>CompleteAsync</code> inserts the immutable classification if the reservation's ownership token is still current.</div></div></li>
+<li class="work"><div><div class="t">Audit, then return</div><div class="d">One <code>FailureClassified</code> row via <code>IAuditLogService.LogAuditAsync</code>, best-effort, on success and access-denied branches alike.</div></div></li>
+</ol>
+<p>Request ids are scoped to the failure. The client generates one UUID per deliberate Analyze or Re-analyze action and reuses it for transport retries; a reused id with different force semantics returns 409. An in-process lock may reduce contention but is never the correctness gate. The POST is registered under the WebApp's existing rate-limiting policies with a dedicated policy name, since each call costs provider tokens.</p>
+</section>
+
+<section id="input">
+<span class="secno">§8 · §9</span>
+<h2>What leaves the environment</h2>
+<p>The provider receives the input as a <strong>JSON object state</strong>, not a prompt. Descriptive top-level keys help the model relate parts of the state:</p>
+<pre><code>{
+  "failure": {
+    "eventType": "CustomerUpdated", "endpoint": "DynamicsToERP", "status": "Failed",
+    "retryCount": 3, "retryLimit": 5,
+    "exception": { "type": "CustomerNotFoundException",
+                   "message": "Customer 4711 does not exist", "source": "Erp.Adapter" },
+    "deadLetterReason": null
+  },
+  "recentHistory": [
+    { "attempt": 1, "outcome": "ErrorResponse", "errorType": "CustomerNotFoundException", "errorMessage": "Customer 4711 does not exist" },
+    { "attempt": 2, "outcome": "ErrorResponse", "errorType": "CustomerNotFoundException", "errorMessage": "Customer 4711 does not exist" }
+  ],
+  "eventPayload": null
+}</code></pre>
+<div class="grid2">
+<div class="card">
+<h4>Mapping</h4>
+<p><code>Exception.Type</code> from <code>ErrorContent.ErrorType</code>; <code>Exception.Message</code> from <code>ErrorContent.ErrorText</code>, redacted before truncation to <code>MaximumErrorTextLength</code>; <code>Exception.Source</code> from <code>ExceptionSource</code>, assembly name only.</p>
+<p>Jev's per-request budget is 64k tokens, 32k for state plus the longest question. The builder enforces <code>MaximumStateCharacters</code> after truncation, dropping history first and payload second. Input tokens only are billed, so state size is the cost lever.</p>
+</div>
+<div class="card">
+<h4>Recent history rules</h4>
+<ol>
+<li>Filter by the target row's <code>EndpointId</code> (ordinal, case-insensitive) and <code>SessionId</code> (ordinal); keep only failure rows.</li>
+<li>Exclude the target row and any row enqueued at or after the target's timestamp. Equal timestamps have no proven causal order and are omitted.</li>
+<li>Order by <code>EnqueuedTimeUtc</code>, then <code>MessageId</code>; take the last <code>MaximumHistoryItems</code>, applied only after filtering. <code>Attempt</code> is a 1-based ordinal among earlier failures, not a transport counter.</li>
+<li>Redact before truncating history error text to 500 characters.</li>
+</ol>
+</div>
+</div>
+<div class="note stop">
+<p><strong><code>DeadLetterErrorDescription</code> never leaves.</strong> The existing <code>ResponseService.FormatDeadLetterDescription</code> uses <code>exception.ToString()</code>, which includes stack traces and inner exceptions. It is never parsed or used as a fallback, even when <code>ErrorContent</code> is absent. Only the separately stored, scrubbed <code>DeadLetterReason</code> and safe exception fields are sent; null exception fields are valid evidence for a dead-letter occurrence.</p>
+</div>
+
+<h3>Data minimisation defaults</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Setting</th><th>Default</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td><code>IncludeEventPayload</code></td><td>false</td><td>Opt-in; fully redacted when included</td></tr>
+<tr><td><code>IncludeStackTrace</code></td><td>false</td><td>Not configurable in MVP; always excluded</td></tr>
+<tr><td><code>IncludeRecentFailureHistory</code></td><td>true</td><td>Empty list when disabled</td></tr>
+<tr><td><code>MaximumHistoryItems</code></td><td>5</td><td></td></tr>
+<tr><td><code>MaximumErrorTextLength</code></td><td>4000</td><td>Characters</td></tr>
+<tr><td><code>MaximumStateCharacters</code></td><td>24000</td><td>History dropped first, payload second</td></tr>
+</tbody></table></div>
+
+<h3>Two redaction layers, both before the provider call</h3>
+<div class="grid2">
+<div class="card intel">
+<h4>1 · PII redaction</h4>
+<p>With <code>IncludeEventPayload = true</code>, the target failure's payload goes through <code>IEventJsonRedactor.Redact</code>. Every <code>[Sensitive]</code> leaf is fully redacted, including <code>PartialReveal</code> and <code>Hash</code> fields; the caller's PiiReader capability never changes this. Unknown types, invalid JSON or a missing redactor cause payload omission, never raw fallback. <code>EventPayloadIncluded</code> is set only when a redacted payload survives the final size limit.</p>
+<p>Independently of export, <code>IEventJsonMasker.TryCollectSensitiveValues</code> runs on each source row's payload to scrub quoted sensitive values from its error text and dead-letter reason. If the payload is missing or cannot be analyzed, those free-text fields are withheld. This local inspection does not opt the payload into export.</p>
+</div>
+<div class="card intel">
+<h4>2 · Secret-key scrubbing</h4>
+<p><code>IIntelligenceDataRedactor</code> walks every string-valued field of the input and replaces the <em>value</em> of any object key matching, case-insensitively:</p>
+<p><span class="pill mono">password</span><span class="pill mono">secret</span><span class="pill mono">clientSecret</span><span class="pill mono">token</span><span class="pill mono">accessToken</span><span class="pill mono">refreshToken</span><span class="pill mono">authorization</span><span class="pill mono">apiKey</span><span class="pill mono">connectionString</span><span class="pill mono">cookie</span><span class="pill mono">bearer</span><span class="pill mono">sharedAccessKey</span></p>
+<p>Free text is scanned for <code>Authorization: Bearer …</code>, <code>SharedAccessKey=…</code>, <code>Password=…</code> and <code>AccountKey=…</code>; the matched value becomes <code>[redacted]</code>. The list is extensible via configuration.</p>
+</div>
+</div>
+<p>Both layers run before length truncation so a cut cannot hide a secret pattern from the scanner. If an error-text field contains an embedded exception dump or stack frames, the whole field is omitted rather than trimmed. Host secrets, NimBus auth tokens, connection strings, Service Bus credentials, the TypeSafe API key, Entra tokens and cookies are never read from configuration into evidence. Scrubbing is defence in depth, not a guarantee that arbitrary unlabelled secrets are recognised.</p>
+</section>
+
+<section id="provider">
+<span class="secno">§10 · §11</span>
+<h2>One request, four narrow questions</h2>
+<div class="grid2">
+<div class="card intel">
+<h4>TypeSafe System One call</h4>
+<p><code>POST https://api.typesafe.ai/v1/systemone</code> with <code>Authorization: Bearer &lt;ApiKey&gt;</code>. Body: <code>{ model, state, questions }</code>. All four questions go in one request; Jev evaluates them in parallel. Response: <code>{ model, answers, usage }</code> with <code>input_tokens</code> and <code>output_tokens</code>.</p>
+<ul>
+<li>A <code>choice</code> answer carries <code>choice</code>, <code>probabilities</code> (sum 1.0) and <code>confidence</code> (0–1). A <code>noul</code> answer carries only <code>noul</code>, the probability of "yes".</li>
+<li>Errors: 401 bad key, 422 validation, 429 rate limited, 529 overloaded. Only 429 and 529 are retried, bounded exponential backoff, at most 2 retries. 4xx never.</li>
+<li>Model default <code>jev-1.13.0</code>, not <code>jev-latest</code>: aliases move on release and would silently change stored results. The response <code>model</code> field is what gets persisted.</li>
+<li><code>IHttpClientFactory</code> named client with the standard <code>Microsoft.Extensions.Http.Resilience</code> handler. <code>TimeoutSeconds</code> defaults to 20 and is the total budget including backoff, validated in 1–20 seconds, below the 60-second reservation. No Python, Node or sidecar.</li>
+</ul>
+</div>
+<div class="card intel">
+<h4>Provider abstraction</h4>
+<pre><code>public interface IFailureIntelligenceProvider
+{
+    string Name { get; }               // "TypeSafe"
+    Task&lt;FailureIntelligenceProviderResult&gt; ClassifyAsync(
+        FailureClassificationInput input,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record FailureIntelligenceProviderResult(
+    string Model,                      // versioned id echoed back
+    string Category,
+    double CategoryConfidence,
+    IReadOnlyDictionary&lt;string, double&gt; CategoryProbabilities,
+    double RetryLikelihood,
+    double ChangeRequiredLikelihood,
+    double ExternalDependencyLikelihood,
+    int? InputTokens, int? OutputTokens);</code></pre>
+</div>
+</div>
+
+<h3>Question set, version 1</h3>
+<p>Centralised in <code>FailureClassificationQuestionSet</code> with <code>Version = 1</code>, persisted with every classification. Four independent questions, never one broad "what should we do". The set is unit-tested as data: option ids, instruction text and criteria are pinned so any change bumps the version.</p>
+<h4><code>failure_category</code> · type <code>choice</code></h4>
+<div class="tablewrap"><table>
+<thead><tr><th>Option</th><th>What</th><th>Examples</th></tr></thead>
+<tbody>
+<tr><td><code>transient_dependency</code></td><td>A temporary downstream or infrastructure condition that may clear without changing message, config or code</td><td>timeout, connection reset, HTTP 429, temporary 5xx, throttling, deadlock, DNS or network blip</td></tr>
+<tr><td><code>authentication_configuration</code></td><td>Credentials, permissions, endpoint URLs, certificates or environment settings are wrong or expired</td><td>401/403, expired secret, wrong host, missing setting</td></tr>
+<tr><td><code>contract_schema</code></td><td>The data does not satisfy the technical contract</td><td>malformed JSON, (de)serialisation error, missing required property, wrong type, unsupported version</td></tr>
+<tr><td><code>business_rule</code></td><td>Technically valid, rejected by a domain rule</td><td>invalid state transition, credit limit, closed account</td></tr>
+<tr><td><code>missing_reference_data</code></td><td>A referenced business record does not exist</td><td>customer, order or account not found, missing master data</td></tr>
+<tr><td><code>application_defect</code></td><td>Evidence points at a programming error</td><td>NullReferenceException, IndexOutOfRange, unexpected internal exception</td></tr>
+<tr><td><code>messaging_platform</code></td><td>NimBus, Service Bus, topology, sessions or transport behaviour</td><td>lock lost, session unavailable, entity not found, message too large</td></tr>
+<tr><td><code>unknown</code></td><td>Insufficient evidence or none of the above fits. Always present so the model is never forced into a wrong category.</td><td></td></tr>
+</tbody></table></div>
+<div class="grid2">
+<div class="card"><h4><code>retry_likely_to_succeed_unchanged</code> · noul</h4><p>Given the supplied failure evidence, is processing the same message again, without changing its payload, configuration, application code or dependent data, likely to succeed?</p></div>
+<div class="card"><h4><code>change_required_before_success</code> · noul</h4><p>Does the evidence indicate that data, configuration, permissions, application code or another persistent condition must change before this message can succeed?</p></div>
+<div class="card"><h4><code>external_dependency_involved</code> · noul</h4><p>Does the evidence indicate that the failure originates primarily in an external dependency rather than in the handler's own logic?</p></div>
+</div>
+<p>Noul answers are used directly as probabilities.</p>
+</section>
+
+<section id="guidance">
+<span class="secno">§12 · §19</span>
+<h2>Code turns signals into guidance</h2>
+<p>Jev is never asked whether NimBus should retry, skip or dead-letter. Code composes the four signals into one of four values, evaluated top to bottom:</p>
+<ol class="ladder">
+<li><div class="cond">categoryConfidence &lt; MinimumCategoryConfidence <em>(0.60)</em></div><div class="out o1">Uncertain</div></li>
+<li><div class="cond">category == transient_dependency<br>&amp;&amp; retryLikelihood ≥ RetryLikely <em>(0.75)</em></div><div class="out o2">RetryMayHelp</div></li>
+<li><div class="cond">changeRequiredLikelihood ≥ ChangeRequired <em>(0.75)</em></div><div class="out o3">ChangeLikelyRequired</div></li>
+<li><div class="cond">otherwise</div><div class="out o4">Investigate</div></li>
+</ol>
+<p>Thresholds are configuration, because they must be tuned against real NimBus failures. <code>categoryConfidence</code> is the provider's <code>confidence</code> field for the Choice answer, not the top probability; both are stored. TypeSafe's published bands, below 0.5 "don't guess" and 0.5 to 0.9 "proceed with caution", are why the default floor is 0.60 rather than lower.</p>
+<div class="note intel">
+<p><strong>Architectural invariant, protected by tests.</strong> No code path calls Resubmit, Skip, Complete, Abandon or DeadLetter from these values. Sharing a repository puts this one <code>ProjectReference</code> away from breaking, so architecture tests assert that only the WebApp references the extension, and that the extension assembly does not reference <code>NimBus.ServiceBus</code>, <code>NimBus.Resolver</code>, <code>NimBus.Manager</code> or <code>NimBus.SDK</code>, the only public routes to Resubmit, Skip and handoff settlement, and that no type implements <code>IFailureDispositionClassifier</code> or a pipeline behavior. The guidance tests assert the output type is <code>FailureGuidance</code>, never a message control operation. The invariant is also stated in the XML doc of <code>FailureGuidance</code>.</p>
+</div>
+</section>
+
+<section id="persistence">
+<span class="secno">§13</span>
+<h2>Immutable revisions, durable reservations</h2>
+<p>Every completed analysis is an append-only <code>FailureClassification</code> revision, keyed <code>"{FailureMessageId}:{Revision}"</code>. The full probability distribution is stored for later calibration, threshold tuning and model comparison. Nothing is overwritten.</p>
+<div class="fields">
+<span><b>Id</b> <i>string</i></span><span><b>FailureMessageId</b> <i>string</i></span><span><b>Revision</b> <i>int, monotonic, gaps allowed</i></span>
+<span><b>EventId</b> <i>string</i></span><span><b>EventTypeId</b> <i>string</i></span><span><b>EndpointId</b> <i>string</i></span><span><b>SessionId</b> <i>string?</i></span>
+<span><b>Provider</b> <i>string</i></span><span><b>Model</b> <i>versioned id from response</i></span><span><b>QuestionSetVersion</b> <i>int</i></span>
+<span><b>Category</b> <i>string</i></span><span><b>CategoryConfidence</b> <i>double</i></span><span><b>CategoryProbabilities</b> <i>dictionary</i></span>
+<span><b>RetryLikelihood</b> <i>double</i></span><span><b>ChangeRequiredLikelihood</b> <i>double</i></span><span><b>ExternalDependencyLikelihood</b> <i>double</i></span>
+<span><b>Guidance</b> <i>FailureGuidance</i></span><span><b>InputTokens</b> <i>int?</i></span><span><b>OutputTokens</b> <i>int?</i></span>
+<span><b>EventPayloadIncluded</b> <i>bool</i></span><span><b>RequestedBy</b> <i>string</i></span><span><b>CreatedAtUtc</b> <i>DateTimeOffset</i></span><span><b>SchemaVersion</b> <i>int = 1</i></span>
+</div>
+
+<h3>Store contract</h3>
+<pre><code>public interface IFailureClassificationStore
+{
+    Task&lt;FailureClassification?&gt; GetLatestAsync(string failureMessageId, CancellationToken ct);
+    Task&lt;IReadOnlyList&lt;FailureClassification&gt;&gt; GetHistoryAsync(string failureMessageId, CancellationToken ct);
+    Task&lt;ClassificationOperationState&gt; GetOperationStateAsync(string failureMessageId, CancellationToken ct);
+    Task&lt;ClassificationBeginResult&gt; TryBeginAsync(string failureMessageId, string requestId, bool force, CancellationToken ct);
+    Task CompleteAsync(ClassificationReservation reservation, FailureClassification classification, CancellationToken ct);
+    Task FailAsync(ClassificationReservation reservation, bool outcomeUnknown, CancellationToken ct);
+}</code></pre>
+<p><code>ClassificationBeginResult</code> is a discriminated result: Cached, Acquired (with a reservation), InProgress, PreviouslyFailed or OutcomeUnknown. A reservation carries the failure id, request id, allocated revision, an unguessable ownership token and an expiry. No unguarded save or upsert exists. Reads return completed results only.</p>
+
+<h3>Operation state per failure, shared by every WebApp instance</h3>
+<div class="diagram">
+<svg viewBox="0 0 780 345" role="img" aria-label="Classification operation state machine: None to InProgress via TryBeginAsync; InProgress to Completed, Failed or OutcomeUnknown; any terminal state back to InProgress only with force and a new idempotency key">
+<defs>
+<marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L8,4 L0,8 z" class="ah"/></marker>
+<marker id="ahf" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L8,4 L0,8 z" class="ah force"/></marker>
+</defs>
+<rect x="20" y="120" width="120" height="60" rx="8" class="box"/>
+<text x="80" y="146" text-anchor="middle" class="lbl">None</text>
+<text x="80" y="164" text-anchor="middle" class="sub">no operation yet</text>
+
+<rect x="250" y="120" width="150" height="60" rx="8" class="box ip"/>
+<text x="325" y="146" text-anchor="middle" class="lbl">InProgress</text>
+<text x="325" y="164" text-anchor="middle" class="sub">reservation · expires 60 s</text>
+
+<rect x="560" y="24" width="180" height="60" rx="8" class="box ok"/>
+<text x="650" y="50" text-anchor="middle" class="lbl">Completed</text>
+<text x="650" y="68" text-anchor="middle" class="sub">non-force → cached result</text>
+
+<rect x="560" y="120" width="180" height="60" rx="8" class="box no"/>
+<text x="650" y="146" text-anchor="middle" class="lbl">Failed</text>
+<text x="650" y="164" text-anchor="middle" class="sub">non-force → 503 replay, no call</text>
+
+<rect x="560" y="216" width="180" height="60" rx="8" class="box un"/>
+<text x="650" y="242" text-anchor="middle" class="lbl">OutcomeUnknown</text>
+<text x="650" y="260" text-anchor="middle" class="sub">non-force → 409, no call</text>
+
+<path d="M140 150 H248" class="edge" marker-end="url(#ah)"/>
+<text x="194" y="138" text-anchor="middle" class="elbl">TryBeginAsync</text>
+<text x="194" y="171" text-anchor="middle" class="elbl">reserve revision n</text>
+
+<path d="M400 140 C470 140 490 54 558 54" class="edge" marker-end="url(#ah)"/>
+<text x="466" y="112" text-anchor="end" class="elbl">CompleteAsync, token still current</text>
+
+<path d="M400 150 H558" class="edge" marker-end="url(#ah)"/>
+<text x="480" y="143" text-anchor="middle" class="elbl">FailAsync · definitive</text>
+
+<path d="M400 160 C470 160 490 246 558 246" class="edge" marker-end="url(#ah)"/>
+<text x="466" y="200" text-anchor="end" class="elbl">timeout · crash · ambiguous write · expiry</text>
+
+<path d="M740 54 H760 V310 H325 V182" class="edge force" marker-end="url(#ahf)"/>
+<path d="M740 150 H760" class="edge force"/>
+<path d="M740 246 H760" class="edge force"/>
+<text x="542" y="330" text-anchor="middle" class="elbl force">force + new Idempotency-Key → revision n+1, previous ownership token invalidated</text>
+</svg>
+</div>
+<ul>
+<li><code>TryBeginAsync</code> atomically checks the cache and operation state and, if eligible, reserves the next revision before any provider call. Only one unexpired reservation may exist per failure. A repeated request id returns its original result or state and never creates another provider call, even with force. An active reservation returns InProgress to every other caller, force included.</li>
+<li>Expiry is an ambiguity boundary, not permission to replay. A timeout, connection loss after sending, process crash or uncertain completion write produces OutcomeUnknown. A non-force request must surface that state without another provider call, even when an older classification exists.</li>
+<li>Only an explicit force request with a new request id may supersede an expired or unknown operation. The UI warns that the previous request may have incurred provider cost. Reserving a new revision atomically invalidates the old ownership token, so a late completion from the old owner cannot persist a result or release the new reservation. Definitively failed calls may release their reservation.</li>
+<li><code>CompleteAsync</code> atomically inserts the classification and marks the operation complete, conditional on the current, unexpired token; repeating an acknowledged completion with the same reservation and result is idempotent. <code>FailAsync</code> is also conditional and never downgrades a completed operation. Revisions are never reused; failed or superseded operations may leave gaps.</li>
+</ul>
+<p>This prevents competing instances from calling the provider for the same active operation. It does not promise exactly-once provider billing after a crash or an explicit re-analysis.</p>
+
+<h3>Storage, owned by the package</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Provider</th><th>Shape</th><th>Guarantees</th></tr></thead>
+<tbody>
+<tr><td>SQL Server</td><td>Table <code>dbo.FailureClassifications</code> (PK <code>Id</code>, unique index on <code>FailureMessageId, Revision desc</code>, probabilities as JSON) plus operation and head tables keyed by failure and request id. Own DbUp journal <code>dbo.IntelligenceSchemaVersions</code> on the same connection; never a script in the public <code>Schema/00NN_*.sql</code> sequence.</td><td>Short serializable transactions for reservation, monotonic revision allocation and completion, including the first-reservation race. Never a transaction across HTTP.</td></tr>
+<tr><td>Cosmos DB</td><td>Container <code>failureclassifications</code>, partition key <code>/failureMessageId</code>, same database as the message store. Head, operation and result documents share the partition with distinct id prefixes.</td><td>Conditional creates, head ETags and transactional batches. Result writes use create, never upsert.</td></tr>
+<tr><td>In-memory</td><td>For tests, with a conformance suite mirroring the <code>NimBus.Testing</code> pattern.</td><td>Same contract.</td></tr>
+</tbody></table></div>
+<p>Provider selection follows the WebApp's resolved <code>storageProvider</code>, so a SQL-backed site never needs a Cosmos account.</p>
+<p><strong>Audit.</strong> Every POST writes one <code>FailureClassified</code> row with <code>Data</code> = <code>{ messageId, provider, model, questionSetVersion, category, categoryConfidence, guidance, inputTokens, eventPayloadIncluded, revision, cached }</code>. The API key is never in <code>Data</code>.</p>
+</section>
+
+<section id="api">
+<span class="secno">§14</span>
+<h2>HTTP API</h2>
+<p>All routes are served by controllers in the extension assembly and answer 404 when the feature is disabled. Error bodies carry a stable <code>code</code> matching the names below.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Route</th><th>Purpose</th><th>Responses</th></tr></thead>
+<tbody>
+<tr><td><span class="pill ok">GET</span><br><code>/api/integration-intelligence/status?endpointId=…</code></td><td>Feature status and capability for this endpoint. Requires Reader on the verified endpoint; <code>canAnalyze = status == Ready &amp;&amp; HasRoleAsync(Contributor, endpointId)</code>. Omitted endpoint context never falls back to site-wide capability. Non-Ready handling uses host authorization only, without constructing provider or store services.</td><td><span class="pill ok">200</span> <code>{ status: Ready | ProviderNotConfigured, provider, model, contractVersion, endpointId, canAnalyze }</code><br><span class="pill warn">400</span> missing endpoint · <span class="pill warn">401</span> · <span class="pill warn">403</span> no Reader role · <span class="pill warn">404</span> unknown endpoint or feature disabled</td></tr>
+<tr><td><span class="pill ok">GET</span><br><code>…/failures/{eventId}/{messageId}/classification</code></td><td>Latest classification; also the progress refresh. Checks operation state first so an in-flight re-analysis is never mistaken for an older revision. Never reserves work or calls the provider. Poll with bounded backoff; stop on completion, unknown outcome, failure or navigation.</td><td><span class="pill ok">200</span> · <span class="pill warn">404</span> none yet · <span class="pill warn">403</span> no Reader · <span class="pill warn">409</span> <code>AnalysisInProgress</code> / <code>AnalysisOutcomeUnknown</code> · <span class="pill no">503</span> latest operation failed</td></tr>
+<tr><td><span class="pill ok">GET</span><br><code>…/classification/history</code></td><td>All completed revisions.</td><td><span class="pill ok">200</span> <code>[]</code></td></tr>
+<tr><td><span class="pill intel">POST</span><br><code>…/classification</code><br>body <code>{ "force": false }</code><br>header <code>Idempotency-Key: &lt;UUID&gt;</code></td><td>Analyze, cached unless <code>force</code>. Contributor on the stored endpoint. Follows the request flow above.</td><td><span class="pill ok">200</span> classification with <code>cached: true|false</code> · <span class="pill warn">400</span> missing or invalid key · <span class="pill warn">401</span> · <span class="pill warn">403</span> · <span class="pill warn">404</span> unknown message · <span class="pill warn">409</span> ineligible / <code>AnalysisInProgress</code> / <code>AnalysisOutcomeUnknown</code> · <span class="pill no">503</span> provider or store unavailable</td></tr>
+</tbody></table></div>
+<p>Routes carry <code>eventId</code> because <code>GetMessage(eventId, messageId)</code> needs both; the draft's <code>/failures/{messageId}</code> alone cannot load the row.</p>
+</section>
+
+<section id="access">
+<span class="secno">§15</span>
+<h2>Who may look, who may ask</h2>
+<p>The spec 026 ladder applies unchanged, via <code>IEndpointAuthorizationService.HasRoleAsync</code>:</p>
+<div class="roles">
+<span class="r">None</span><span class="lt">&lt;</span><span class="r hi">Reader</span><span class="lt">&lt;</span><span class="r hi">Contributor</span><span class="lt">&lt;</span><span class="r">Owner</span><span class="plus">PiiReader, orthogonal capability</span>
+</div>
+<ul>
+<li><strong>Reader</strong> on the endpoint: GET classification, history and status. Same as viewing the failure.</li>
+<li><strong>Contributor</strong> on the endpoint: POST analyze and re-analyze. Same tier as Resubmit and Skip.</li>
+<li><strong>PiiReader</strong> is not required for <code>IncludeEventPayload = true</code>, because the payload is fully redacted before it leaves. The response never echoes the payload back.</li>
+</ul>
+<h3>Activation replaces entitlement</h3>
+<p>There is no licence key, no signed token and no entitlement check. The feature is open source, and the only gate is deliberate deployment configuration. <code>Enabled</code> is not a WebApp setting: turning on an outbound data flow to a third party is an operator decision, so the MVP has no UI toggle or admin API for it. The operator's own TypeSafe API key is the only credential; provider cost and TypeSafe's terms are between the operator and TypeSafe.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Configuration</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><code>Enabled = false</code> (default)</td><td><span class="pill no">404</span> nothing registered, controllers removed, no schema</td></tr>
+<tr><td>Enabled, provider options invalid or API key missing</td><td><span class="pill warn">ProviderNotConfigured</span> status handling only</td></tr>
+<tr><td>Enabled and valid</td><td><span class="pill ok">Ready</span></td></tr>
+</tbody></table></div>
+<p>In every non-Ready state no provider call can happen. Validation failures log one sanitized warning at startup and never prevent the WebApp from starting.</p>
+</section>
+
+<section id="card">
+<span class="secno">§16</span>
+<h2>The advisory card</h2>
+<p>An <strong>Integration Intelligence</strong> card sits with the error section of a Failed or DeadLettered message on the event-details page, where <code>message-listing.tsx</code> renders <code>errorContent</code> today. No Retry or Skip buttons live inside it; the existing recovery controls stay where they are. The disclaimer line is always rendered.</p>
+<div class="mock" aria-label="Mock of the card in its result state">
+<div class="hd"><h4>Integration Intelligence</h4><span class="pill intel">Advisory</span></div>
+<div class="row"><span class="k">Likely category</span><span class="v">Missing reference data</span><span class="n">91 %</span></div>
+<div class="row"><span class="k">Retry unchanged</span><span class="bar"><i style="width:14%"></i></span><span class="n">14 %</span></div>
+<div class="row"><span class="k">Change likely required</span><span class="bar"><i style="width:92%"></i></span><span class="n">92 %</span></div>
+<div class="row"><span class="k">External dependency</span><span class="bar"><i style="width:67%"></i></span><span class="n">67 %</span></div>
+<div class="guide">Guidance · Change likely required before retry</div>
+<p class="meta">Analyzed with TypeSafe jev-1.13.0 · revision 2 · 2026-09-19 10:42 UTC · by a.operator</p>
+<details><summary>Classification details</summary><p>Next two categories with probabilities · question set v1</p></details>
+<p class="disc">AI-assisted assessment. Advisory only. NimBus processing and recovery decisions are unchanged.</p>
+<span class="btn">Re-analyze</span>
+</div>
+<p>The category line shows the provider's confidence; the three bars are the noul probabilities. Example values are the spec's illustration, not real output.</p>
+<h3>Card states</h3>
+<ul class="states">
+<li><b>Extension absent or status not Ready</b>Card not rendered.</li>
+<li><b>Ready, not analysed</b>"No analysis has been performed." plus <strong>Analyze failure</strong>, visible only when <code>canAnalyze</code>.</li>
+<li><b>Running</b>"Analyzing failure…" with the button disabled.</li>
+<li><b>AnalysisInProgress</b>"Analysis is already in progress." Refresh with GET; never issue another POST automatically.</li>
+<li><b>AnalysisOutcomeUnknown</b>Explain that the previous analysis may have incurred cost; a Contributor may explicitly Re-analyze with a new request id.</li>
+<li><b>Provider failure</b>"Failure analysis is temporarily unavailable. The NimBus message and its processing state are unchanged."</li>
+</ul>
+<p>Both Analyze and Re-analyze use the current endpoint's <code>canAnalyze</code> value.</p>
+</section>
+
+<section id="config">
+<span class="secno">§17</span>
+<h2>Configuration</h2>
+<pre><code>{
+  "NimBus": {
+    "IntegrationIntelligence": {
+      "Enabled": false,
+      "FailureClassification": {
+        "Enabled": true,
+        "Provider": "TypeSafe",
+        "TypeSafe": { "ApiKey": "", "Model": "jev-1.13.0", "BaseUrl": "https://api.typesafe.ai", "TimeoutSeconds": 20 },
+        "Data": {
+          "IncludeEventPayload": false,
+          "IncludeRecentFailureHistory": true,
+          "MaximumHistoryItems": 5,
+          "MaximumErrorTextLength": 4000,
+          "MaximumStateCharacters": 24000,
+          "AdditionalRedactedKeys": []
+        },
+        "Thresholds": { "MinimumCategoryConfidence": 0.60, "RetryLikely": 0.75, "ChangeRequired": 0.75 }
+      }
+    }
+  }
+}</code></pre>
+<ul>
+<li><code>Enabled</code> defaults to <code>false</code>, and the committed <code>appsettings</code>, the Aspire AppHost and the CrmErpDemo sample all leave it off, so nothing in the repository calls TypeSafe by default. <code>ApiKey</code> comes from normal configuration providers (environment variable <code>NimBus__IntegrationIntelligence__FailureClassification__TypeSafe__ApiKey</code>, Key Vault, user secrets) and is never committed.</li>
+<li>Bind and validate an extension-owned immutable options snapshot inside a contained initialization step before registering provider or store services. Binding or validation failures log a sanitized warning and register only status handling with <code>ProviderNotConfigured</code>.</li>
+<li>No <code>ValidateOnStart</code> or other throwing host startup validator for these optional options: an exception caught in <code>ConfigureServices</code> would not contain the later host-start validation phase.</li>
+<li>Validate numeric limits, thresholds and provider settings without echoing secret values in diagnostics. The disabled state is resolved before provider options are read, so invalid options on a disabled feature are never bound. Changes require a WebApp restart in MVP.</li>
+</ul>
+</section>
+
+<section id="failure">
+<span class="secno">§18</span>
+<h2>When the provider fails, nothing else happens</h2>
+<p>Provider timeout, 429 or 529 after retries, 5xx, 401 or 403, malformed response or network failure: the POST returns 503 with the card's unavailable message. No status change, no resubmit, no Resolver involvement, no session impact. The classification is not persisted; an audit row is still written with <code>outcome = ProviderError</code>, and the reservation is marked definitively failed or outcome unknown. A timeout or ambiguous persistence failure never silently makes the request eligible for automatic replay. On an ambiguous completion write, the operation is read back first: success if committed, otherwise unavailability with the reservation preserved.</p>
+<h3>Telemetry</h3>
+<p>Follows the existing naming: meter and ActivitySource <code>NimBus.Intelligence</code>, span <code>NimBus.Intelligence.FailureClassification</code>.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Instrument</th><th>Kind</th></tr></thead>
+<tbody>
+<tr><td><code>nimbus.intelligence.failure_classification.requests</code></td><td>counter</td></tr>
+<tr><td><code>nimbus.intelligence.failure_classification.duration</code></td><td>histogram, ms</td></tr>
+<tr><td><code>nimbus.intelligence.failure_classification.errors</code></td><td>counter</td></tr>
+<tr><td><code>nimbus.intelligence.failure_classification.input_tokens</code></td><td>counter</td></tr>
+</tbody></table></div>
+<p>Tags: <code>nimbus.intelligence.provider</code>, <code>.model</code>, <code>.outcome</code> (<code>ok | cached | provider_error | rejected</code>), <code>.category</code>, plus the existing <code>nimbus.endpoint</code> and <code>nimbus.event_type</code>. Never <code>EventId</code>, <code>MessageId</code> or <code>SessionId</code> (cardinality), never payload or exception text.</p>
+</section>
+
+<section id="tests">
+<span class="secno">§20 · §21</span>
+<h2>Tests and acceptance</h2>
+<h3>Acceptance criteria</h3>
+<ol class="accept">
+<li><span>Standard NimBus behaves exactly as before with the package absent; the public suite stays green.</span></li>
+<li><span><code>IntegrationIntelligence.Enabled</code> defaults to false; disabled means no services, no controllers (404) and no calls. Invalid extension options never prevent host startup or existing management operations.</span></li>
+<li><span>The extension is an MIT project in <code>NimBus.sln</code> with no licence or entitlement check, referenced only by the WebApp. Non-Ready states never call the provider.</span></li>
+<li><span>A Contributor on the endpoint can open a Failed or DeadLettered message and request analysis; Readers can view an existing result. Capability and both buttons are endpoint-specific.</span></li>
+<li><span>One TypeSafe request evaluates all four questions.</span></li>
+<li><span>The stored result contains category, provider confidence, full distribution, the three likelihoods, model, question-set version and tokens.</span></li>
+<li><span>Repeated opens and non-force POSTs reuse a completed result unless a newer active or unknown operation requires its explicit state. Across instances, at most one reservation owns each analysis; repeated request ids never initiate another provider call.</span></li>
+<li><span>Payloads are absent by default; opted-in payloads fully redact every annotation mode and are secret-scrubbed. Stack traces and raw dead-letter descriptions are always omitted. History contains only authorized, strictly earlier target-endpoint and session failures.</span></li>
+<li><span>Re-analyze creates a new atomically allocated revision; history is immutable. Crashes never trigger automatic replay; explicit recovery warns about prior cost; late owners cannot persist stale results.</span></li>
+<li><span>Provider failures never touch NimBus message state.</span></li>
+<li><span>No code path from a Jev answer to Resubmit, Skip, Complete, Abandon or DeadLetter.</span></li>
+<li><span>Existing recovery controls unchanged.</span></li>
+<li><span>The card is labelled advisory.</span></li>
+<li><span>Token usage and request metrics are recorded under <code>NimBus.Intelligence</code>.</span></li>
+<li><span>All tests below pass.</span></li>
+</ol>
+<div class="tests">
+<div class="card intel">
+<h4>Extension test project · <code>tests/NimBus.Extensions.IntegrationIntelligence.Tests</code></h4>
+<ul>
+<li><b>Activation:</b> default configuration registers nothing and every route returns 404; enabled and valid is Ready; missing API key is <code>ProviderNotConfigured</code>; each non-Ready state makes zero provider calls and creates no schema; a bad option never throws out of <code>AddNimBusIntegrationIntelligence</code>.</li>
+<li><b>Host startup:</b> a real WebApp host with malformed timeout, invalid threshold, missing API key and invalid provider. The host starts, an authorized management request succeeds, status is <code>ProviderNotConfigured</code>, no execution services are constructed, diagnostics carry no secrets.</li>
+<li><b>Input builder:</b> Failed and DeadLettered rows; history limit; ineligible statuses 409; payload absent by default; state limit drops history before payload; one event shared by endpoints A and B with Contributor on A only yields no B rows; other session, later resubmit and equal-timestamp rows excluded before the limit; exact outbound state asserted.</li>
+<li><b>Redaction:</b> every listed key and free-text pattern; all three annotation modes, nested and collections; missing redactor, unknown type and invalid JSON omit the payload; scrubbing precedes truncation; a real dead-letter description built through <code>SendDeadLetterResponse</code> with a sentinel secret never reaches HTTP; embedded exception dump omits the field.</li>
+<li><b>TypeSafe client (mocked HTTP):</b> one request, four questions; configured model sent, response model stored; choice and noul deserialise; usage captured; timeout, 401, 422, 429 retried then surfaced, 529, malformed body.</li>
+<li><b>Guidance:</b> 0.59 Uncertain, 0.60 eligible; transient with retry 0.75 RetryMayHelp, 0.74 Investigate; change 0.75 ChangeLikelyRequired; non-transient with high retry Investigate.</li>
+<li><b>Store conformance:</b> in-memory, SQL container, Cosmos emulator. Save only through a valid reservation; racing initial and force reservations, exactly one acquires; atomic completion and allocation; idempotent repeat; stale owners fenced; revisions never reused; expiry, ambiguous read-back, repeated request ids, cache checks inside the atomic operation.</li>
+<li><b>API and endpoint capability:</b> 401, 403 no role, 403 Reader on POST, 404, 409, 200 first call, 200 cached second, force gives revision 2, provider 503 leaves the message row byte-identical, audit Data as expected; Contributor on A and Reader on B gets <code>canAnalyze</code> true for A only; another endpoint supplied to status grants nothing.</li>
+<li><b>Cross-instance:</b> two WebApp instances sharing SQL, then Cosmos, with a counting fake provider. Racing non-force requests, same idempotency key, force requests; owner crash and lost acknowledgment; no automatic replay; late owner cannot commit; unique increasing revisions with gaps; GET refresh reports active, unknown or failed state and makes zero provider calls.</li>
+<li><b>Architecture:</b> the invariant tests, in both directions. No test contacts TypeSafe.</li>
+</ul>
+</div>
+<div class="card open">
+<h4>Platform projects · existing test projects</h4>
+<ul>
+<li><b>Audit:</b> <code>AuditTypeContractTests</code> covers <code>FailureClassified</code>.</li>
+<li><b>Full redaction:</b> all annotation modes become <code>***</code>; nested and collection traversal; unknown-type and malformed-JSON behaviour match the fail-closed contract; existing <code>Mask</code> behaviour and third-party implementations unchanged.</li>
+<li><b>SPA:</b> card hidden on 404, 403 and non-Ready; Analyze hidden when <code>canAnalyze</code> is false; disclaimer always present; Contributor on A and Reader on B; navigation while A's probe is in flight; both buttons gated; stable request id on transport retry; progress refresh via GET only; explicit recovery from unknown outcome.</li>
+<li><b>Regression:</b> the full existing suite with the feature at its default (disabled), unchanged.</li>
+</ul>
+</div>
+</div>
+</section>
+
+<section id="nongoals">
+<span class="secno">§22</span>
+<h2>Out of scope for the MVP</h2>
+<p><span class="pill">Automatic classification</span><span class="pill">Automatic retry, skip or dead-letter</span><span class="pill">Changes to IFailureDispositionClassifier or retry policies</span><span class="pill">Semantic message validation</span><span class="pill">Anomaly detection</span><span class="pill">Sequence analysis beyond the history window</span><span class="pill">Incident or ticket creation</span><span class="pill">Provider selection UI</span><span class="pill">Customer-specific training</span><span class="pill">Natural-language explanations</span><span class="pill">An autonomous agent</span><span class="pill">Resolver-side hosting</span><span class="pill">An nb CLI verb</span></p>
+<h3>What this module leaves room for</h3>
+<p>Future modules: Semantic Message Validation, Message Anomaly Detection, Event-Sequence Analysis, Recovery Advisor, Incident Correlation, Intelligent Alert Routing. Failure Classification establishes the reusable pieces they will share: config-gated activation, provider abstraction, AI-safe state construction, redaction, probability results, intelligence persistence, the card pattern and telemetry.</p>
+</section>
+
+<section id="changes">
+<span class="secno">§23</span>
+<h2>What changed from the original draft, and why</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>Draft</th><th>Refined</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Commercial package "references NimBus contracts" and is added to the host</td><td>Superseded by the packaging pivot: in-repo project referenced by the WebApp, enabled by configuration</td><td>See the pivot table below.</td></tr>
+<tr><td>Classification API "added to the WebApp"</td><td>Routes live in the extension assembly; the SPA probes a status endpoint; routes are not in <code>api-spec.yaml</code></td><td>NSwag generates a server interface the WebApp project must implement, which would move the controllers out of the extension and break disabled-means-absent.</td></tr>
+<tr><td><code>GET /failures/{messageId}/classification</code></td><td><code>/failures/{eventId}/{messageId}/…</code></td><td><code>GetMessage</code> needs both ids.</td></tr>
+<tr><td>Audit type <code>IntegrationIntelligenceFailureClassified</code></td><td><code>MessageAuditType.FailureClassified</code>, appended last, plus the three <code>api-spec.yaml</code> enum lists</td><td>Enum values persist numerically in Cosmos and round-trip through generated API enums; this bit spec 026.</td></tr>
+<tr><td>Do not classify Pending, Completed, Deferred, Skipped, Unsupported</td><td>Also <code>TooManyRequests</code>, <code>Published</code></td><td>Those states exist in <code>ResolutionStatus</code>.</td></tr>
+<tr><td>Exception Type and Message</td><td>Mapped from <code>ErrorContent</code> plus <code>ExceptionSource</code>; raw dead-letter description omitted</td><td>The description can contain <code>exception.ToString()</code> and stack traces.</td></tr>
+<tr><td>New redactor with a key list</td><td><code>IEventJsonRedactor</code> using the existing traversal with unconditional full redaction; key-list scrubber on top</td><td>Existing <code>Mask</code> honours PartialReveal and Hash and cannot enforce the export policy.</td></tr>
+<tr><td>Model <code>jev-latest</code></td><td>Default <code>jev-1.13.0</code>, response model persisted</td><td>Aliases move on release and would silently change stored results.</td></tr>
+<tr><td>"Category confidence" undefined</td><td>Provider <code>confidence</code> field of the Choice answer, stored alongside probabilities</td><td>TypeSafe reports confidence separately; Noul answers carry none.</td></tr>
+<tr><td>Retry on any provider error</td><td>Retry only 429 and 529, bounded</td><td>TypeSafe's documented retryable statuses.</td></tr>
+<tr><td>Own tables "may" be separate</td><td>Own DbUp journal and own Cosmos container, never in the message store's <code>Schema/</code> sequence</td><td>A deployment that never enables the feature must not acquire its schema.</td></tr>
+<tr><td>Authorization "Contributor or equivalent"</td><td>Concrete <code>AccessRole</code> mapping via <code>HasRoleAsync</code>; PiiReader interaction defined</td><td>Spec 026 is the existing model.</td></tr>
+<tr><td>Resolver start-up must survive licence failure</td><td>Resolver never references the extension in MVP; no licence exists</td><td>On-demand only; nothing runs in the processing path.</td></tr>
+<tr><td>Metrics named ad hoc</td><td><code>NimBus.Intelligence</code> meter, <code>nimbus.intelligence.*</code> instruments, existing endpoint and event-type tags</td><td>Matches <code>NimBusActivitySources</code> and existing naming.</td></tr>
+<tr><td>Broad tests list</td><td>Split into extension-project and platform-project tests, plus architecture tests</td><td>Different test projects own different guarantees.</td></tr>
+<tr><td>Event-wide recent history</td><td>Filter endpoint and session and strictly earlier failures before limiting</td><td>Keeps unauthorized endpoint evidence and later attempts out of an occurrence's assessment.</td></tr>
+<tr><td>Global status capability</td><td>Required endpoint context and endpoint-specific <code>canAnalyze</code></td><td>Endpoint-only Contributors must analyze their endpoint without gaining access to another.</td></tr>
+<tr><td><code>ValidateOnStart</code> for optional options</td><td>Contained snapshot binding and validation before service registration</td><td>Host-start validation exceptions would prevent the entire WebApp from starting.</td></tr>
+<tr><td>In-process request lock</td><td>Durable reservations, idempotency keys and atomic revision allocation</td><td>Coordinates multiple instances and fences late owners; unknown external outcomes require explicit recovery.</td></tr>
+</tbody></table></div>
+<h3>Packaging pivot · 2026-09-20</h3>
+<p>Failure Classification is <strong>not</strong> a commercial package in a private repository. It is an optional, MIT-licensed extension project in this repository, off by default. Everything else in this spec is unchanged: on-demand execution, evidence and redaction rules, the question set, deterministic guidance, durable reservations, authorization, the separate schema journal, telemetry and the invariant.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Removed</th><th>Replaced by</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>Separate private repository and private NuGet feed</td><td><code>src/NimBus.Extensions.IntegrationIntelligence</code> in <code>NimBus.sln</code>, published with the other <code>Akaule.NimBus.*</code> packages</td><td>One build, one CI gate, one release train.</td></tr>
+<tr><td>Licence entitlement: JWS token, embedded key, <code>Unlicensed</code> and <code>Expired</code> states, entitlement tests</td><td>Nothing. <code>Enabled</code> plus valid provider configuration is the whole gate</td><td>Status shrinks to <code>Ready | ProviderNotConfigured</code>; disabled is a 404.</td></tr>
+<tr><td>WebApp extension host: <code>IWebAppExtension</code>, <code>Assembly.LoadFrom</code>, application-part loading</td><td>A <code>ProjectReference</code> plus <code>AddNimBusIntegrationIntelligence</code>, controllers removed when disabled</td><td>No reflection loading, no new public contract to version.</td></tr>
+<tr><td><code>nb deploy apps --webapp-extension</code> and the manual zip step</td><td>Nothing; the extension is in the published WebApp build</td><td>No deploy-tool change.</td></tr>
+<tr><td>Two test suites in two repositories</td><td>One extension test project here, plus additions to existing projects</td><td>The architecture test gains a reverse check.</td></tr>
+</tbody></table></div>
+<p><strong>New obligation.</strong> The repository now contains code whose purpose is to send operational data to a third party. <code>docs/integration-intelligence.md</code> must say so up front, list exactly which fields leave, and state that nothing is sent unless an operator enables the feature and supplies their own key.</p>
+</section>
+
+<section id="open">
+<span class="secno">§24</span>
+<h2>Open decisions</h2>
+<div class="decision">
+<h4>1 · Cosmos container creation under Entra data-plane RBAC</h4>
+<p>Creating <code>failureclassifications</code> is a control-plane operation. Confirm how the public store creates its containers on an RBAC-only deployment and ship a Bicep snippet if provisioning must own it.</p>
+</div>
+<div class="decision">
+<h4>2 · One package or storage satellites</h4>
+<p>A single extension package carries both <code>Microsoft.Data.SqlClient</code> and <code>Microsoft.Azure.Cosmos</code>.</p>
+<p class="rec"><b>Recommendation:</b> single package for MVP; the WebApp already ships both SDKs, and splitting into <code>.SqlServer</code> and <code>.CosmosDb</code> satellites is mechanical later.</p>
+</div>
+<div class="decision">
+<h4>3 · ADR for the precedent</h4>
+<p>The pivot sets a pattern: AI-assisted features ship in-repo, off by default, bring-your-own provider key, advisory only.</p>
+<p class="rec"><b>Recommendation:</b> record it as ADR-016 with the implementation PR and cross-reference ADR-015.</p>
+</div>
+<div class="decision">
+<h4>4 · Per-endpoint allow-list</h4>
+<p>With no licence gate, <code>Enabled</code> exposes Analyze on every endpoint to its Contributors. An optional <code>AllowedEndpoints</code> list (empty means all) keeps sensitive endpoints' evidence in-house.</p>
+<p class="rec"><b>Recommendation:</b> include it; it is one filter in the status and POST path.</p>
+</div>
+<div class="decision">
+<h4>5 · Storage scope for MVP</h4>
+<p>Both SQL Server and Cosmos, or SQL first, since the dev environment is SQL-backed.</p>
+<p class="rec"><b>Recommendation:</b> both, because the in-memory conformance suite makes the second provider cheap and the Cosmos emulator recipe exists.</p>
+</div>
+<div class="decision">
+<h4>6 · Retention</h4>
+<p>Purge classifications with the event, an existing admin action, or keep them for calibration.</p>
+<p class="rec"><b>Recommendation:</b> purge with the event; calibration exports are a later module.</p>
+</div>
+</section>
+
+</main>
+</div>
+<footer>Source: <code>docs/spec/033-integration-intelligence-failure-classification/spec.md</code> · Related: ADR-004 pipeline behaviors, <code>docs/extensions.md</code>, <code>docs/error-handling.md</code> (the deterministic retry and DLQ rules this feature must not touch).</footer>
+</body>
+</html>

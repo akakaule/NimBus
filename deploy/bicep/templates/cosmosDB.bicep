@@ -1,6 +1,7 @@
 param name string
 param location string = resourceGroup().location
 param dbname string
+param createIntelligenceContainer bool = false
 
 resource cosmosDbAccount 'Microsoft.DocumentDB/databaseAccounts@2022-05-15' = {
   name: name
@@ -69,6 +70,20 @@ resource auditsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/con
         kind: 'Hash'
       }
       defaultTtl: 31536000 // 1 year
+    }
+  }
+}
+
+resource intelligenceContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2021-06-15' = if (createIntelligenceContainer) {
+  parent: sqlDb
+  name: 'failureclassifications'
+  properties: {
+    resource: {
+      id: 'failureclassifications'
+      partitionKey: {
+        paths: ['/failureMessageId']
+        kind: 'Hash'
+      }
     }
   }
 }

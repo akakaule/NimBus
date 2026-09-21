@@ -1,0 +1,54 @@
+# Integration Intelligence
+
+Integration Intelligence is an optional, advisory failure-classification module for the management WebApp. It analyzes one persisted failed or dead-lettered message occurrence on operator request and stores the result with a revision history. It never retries, skips, resubmits, changes message state, or publishes a message.
+
+The feature is disabled by default. Enable it only when the host has configured a provider, durable classification storage, and the required endpoint roles:
+
+```json
+{
+  "NimBus": {
+    "IntegrationIntelligence": {
+      "Enabled": true,
+      "FailureClassification": {
+        "Enabled": true,
+        "Provider": "TypeSafe",
+        "TypeSafe": {
+          "ApiKey": "${TYPESAFE_API_KEY}",
+          "Model": "jev-1.13.0",
+          "BaseUrl": "https://api.typesafe.ai",
+          "TimeoutSeconds": 20
+        },
+        "Data": {
+          "IncludeEventPayload": false,
+          "IncludeRecentFailureHistory": true,
+          "MaximumHistoryItems": 5,
+          "MaximumErrorTextLength": 4000,
+          "MaximumStateCharacters": 24000
+        },
+        "Thresholds": {
+          "MinimumCategoryConfidence": 0.60,
+          "RetryLikely": 0.75,
+          "ChangeRequired": 0.75
+        }
+      }
+    }
+  }
+}
+```
+
+The API exposes an endpoint capability check at `GET /api/integration-intelligence/status?endpointId=...`, the latest result at `GET /api/integration-intelligence/failures/{eventId}/{messageId}/classification`, revision history at `/history`, and on-demand analysis through `POST` on the classification route. Every POST requires a UUID `Idempotency-Key`; repeated requests return the same completed result, while `force: true` creates a new revision. The WebApp applies its intelligence rate-limit policy to the POST route.
+
+Only users with Reader access can view results. Contributor access is required to start analysis. The target endpoint comes from the stored message occurrence, and access is checked against that endpoint. Every request is audited with `MessageAuditType.FailureClassified`, including access denials and provider errors.
+
+Evidence is bounded and redacted before it leaves the process. Event payload inclusion is opt-in. The full redaction path replaces values marked as sensitive by event metadata, including values that were previously configured for partial reveal or hashing. Free-text credential patterns and embedded exception dumps are removed or omitted. Provider responses are validated before persistence, and guidance is deterministic:
+
+1. Low category confidence → `Uncertain`.
+2. A transient dependency with high retry likelihood → `RetryMayHelp`.
+3. High change-required likelihood → `ChangeLikelyRequired`.
+4. Otherwise → `Investigate`.
+
+For Cosmos deployments, provision the `failureclassifications` container by setting the deployment parameter `integrationIntelligenceEnabled` to `true`. SQL deployments use the message-store connection with extension-owned `dbo.FailureClassifications` and a separate DbUp journal, `dbo.IntelligenceSchemaVersions`. There is no in-memory fallback. Keep the feature disabled while changing provider credentials or storage configuration; invalid provider settings leave the status route available as `ProviderNotConfigured` and do not expose the analysis route.
+
+Reservations and results commit atomically in one per-failure aggregate, fenced by SQL rowversion or Cosmos ETag. Completed revisions are immutable. Expired reservations are unknown outcomes: only explicit `force: true` with a new UUID can supersede them, potentially incurring another charge. Reuse the same UUID after a transport interruption. The aggregate is limited to 1.5 MB; capacity exhaustion returns 503 without discarding history or permitting replay.
+
+Retention follows source-event existence, with no independent Cosmos TTL. While enabled, a background reconciler runs every 60 seconds and removes classifications for deleted events/endpoints. It retries storage outages without affecting successful admin purges. Active reservations have durable source coordinates too; cleanup tombstones fence late completions. Minimal failure-ID tombstones remain to prevent resurrection, without event/session coordinates, classification data or actor. Cleanup is eventual, pauses while disabled, and resumes on activation. GET and completion also check source existence; no classification can be read after its source is gone. Broker-only purges do not delete persisted events or their classifications.

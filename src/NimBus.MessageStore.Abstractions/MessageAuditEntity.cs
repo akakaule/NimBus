@@ -132,5 +132,8 @@ namespace NimBus.MessageStore
 
         /// <summary>Operator reconciled stale Pending rows from stored Resolver responses.</summary>
         ReconcileStalePending,
+
+        /// <summary>An advisory failure classification was requested for an event.</summary>
+        FailureClassified,
     }
 }

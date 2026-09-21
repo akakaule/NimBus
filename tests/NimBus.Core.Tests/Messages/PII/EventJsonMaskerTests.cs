@@ -84,6 +84,7 @@ namespace NimBus.Core.Tests.Messages.PII
                 Produces<NestedEvent>();
                 Produces<CollectionEvent>();
                 Produces<JsonRenamedEvent>();
+                Produces<CombinedSensitiveEvent>();
             }
         }
 
@@ -107,6 +108,44 @@ namespace NimBus.Core.Tests.Messages.PII
 
             Assert.AreEqual("***", (string)parsed["Cpr"]);
             Assert.AreEqual("E1", (string)parsed["EmployeeNumber"]);
+        }
+
+        [TestMethod]
+        public void Full_Redaction_Overrides_Partial_And_Hash_Modes()
+        {
+            var json = JsonConvert.SerializeObject(new CombinedSensitiveEvent
+            {
+                Phone = "12345678",
+                Email = "a@b.dk",
+                Nested = new PrivateAddress { Street = "Vej 1", City = "Aarhus", Zip = "8000" },
+            });
+
+            var redacted = NewMasker("salt").Redact(nameof(CombinedSensitiveEvent), json);
+            var parsed = JObject.Parse(redacted);
+
+            Assert.AreEqual("***", (string)parsed["Phone"]);
+            Assert.AreEqual("***", (string)parsed["Email"]);
+            Assert.AreEqual("***", (string)parsed["Nested"]["Street"]);
+        }
+
+        [TestMethod]
+        public void Full_Redaction_Fails_Closed_For_Unknown_And_Invalid_Input()
+        {
+            var masker = NewMasker();
+
+            Assert.AreEqual(EventJsonMasker.UnknownTypeMarker, masker.Redact("missing", "{\"secret\":\"value\"}"));
+            Assert.AreEqual(EventJsonMasker.InvalidJsonMarker, masker.Redact(nameof(SimpleEvent), "{bad"));
+        }
+
+        private class CombinedSensitiveEvent : Event
+        {
+            [Sensitive(Mode = MaskMode.PartialReveal, Reveal = 4)]
+            public string Phone { get; set; }
+
+            [Sensitive(Mode = MaskMode.Hash)]
+            public string Email { get; set; }
+
+            public PrivateAddress Nested { get; set; }
         }
 
         [TestMethod]

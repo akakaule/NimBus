@@ -1,0 +1,52 @@
+using System.Net;
+using System.Runtime.CompilerServices;
+using Microsoft.Azure.Cosmos;
+
+namespace NimBus.Extensions.IntegrationIntelligence.Storage;
+
+/// <summary>Atomic per-failure state and results using Cosmos conditional writes.</summary>
+public sealed class CosmosClassificationStore : AtomicClassificationStore
+{
+    private readonly Container _container;
+
+    public CosmosClassificationStore(CosmosClient client, string databaseName, string containerName = "failureclassifications", TimeProvider? clock = null) : base(clock)
+        => _container = client.GetContainer(databaseName, containerName);
+
+    protected override async Task<(ClassificationDocument Document, string? Version)> ReadAsync(string failureId, CancellationToken ct)
+    {
+        try
+        {
+            var response = await _container.ReadItemAsync<ClassificationDocument>("state", new PartitionKey(failureId), cancellationToken: ct).ConfigureAwait(false);
+            return (response.Resource, response.ETag);
+        }
+        catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
+        {
+            await _container.ReadContainerAsync(cancellationToken: ct).ConfigureAwait(false);
+            return (new ClassificationDocument { FailureMessageId = failureId }, null);
+        }
+    }
+
+    protected override async Task<bool> TryWriteAsync(ClassificationDocument document, string? version, CancellationToken ct)
+    {
+        try
+        {
+            if (version is null)
+                await _container.CreateItemAsync(document, new PartitionKey(document.FailureMessageId), cancellationToken: ct).ConfigureAwait(false);
+            else
+                await _container.ReplaceItemAsync(document, "state", new PartitionKey(document.FailureMessageId), new ItemRequestOptions { IfMatchEtag = version }, ct).ConfigureAwait(false);
+            return true;
+        }
+        catch (CosmosException exception) when (exception.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.PreconditionFailed)
+        {
+            return false;
+        }
+    }
+
+    protected override async IAsyncEnumerable<ClassificationDocument> EnumerateAsync([EnumeratorCancellation] CancellationToken ct)
+    {
+        using var iterator = _container.GetItemQueryIterator<ClassificationDocument>("SELECT * FROM c WHERE c.id='state' AND c.Deleted=false",
+            requestOptions: new QueryRequestOptions { MaxItemCount = 100 });
+        while (iterator.HasMoreResults)
+            foreach (var document in await iterator.ReadNextAsync(ct).ConfigureAwait(false)) yield return document;
+    }
+}

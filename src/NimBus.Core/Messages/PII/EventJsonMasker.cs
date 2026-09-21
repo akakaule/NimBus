@@ -17,7 +17,7 @@ namespace NimBus.Core.Messages.PII
     /// leaving every other field readable. The event type id is resolved to its CLR type via
     /// <see cref="IPlatform.EventTypes"/>; a type that cannot be resolved fails closed.
     /// </summary>
-    public class EventJsonMasker : IEventJsonMasker
+    public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
     {
         public const string UnknownTypeMarker = "[REDACTED:unknown-type]";
         public const string InvalidJsonMarker = "[REDACTED:invalid-json]";
@@ -72,6 +72,40 @@ namespace NimBus.Core.Messages.PII
             {
                 root[PiiMaskedMarker] = true;
             }
+            return root.ToString(Formatting.None);
+        }
+
+        /// <inheritdoc />
+        public string Redact(string eventTypeId, string eventJson)
+        {
+            if (string.IsNullOrEmpty(eventJson))
+            {
+                return eventJson;
+            }
+
+            var clrType = ResolveType(eventTypeId);
+            if (clrType == null)
+            {
+                return UnknownTypeMarker;
+            }
+
+            JObject root;
+            try
+            {
+                root = JObject.Parse(eventJson);
+            }
+            catch (JsonException)
+            {
+                return InvalidJsonMarker;
+            }
+
+            var redactedAny = false;
+            RedactObject(root, clrType, inheritedSensitive: null, ref redactedAny);
+            if (redactedAny)
+            {
+                root[PiiMaskedMarker] = true;
+            }
+
             return root.ToString(Formatting.None);
         }
 
@@ -425,6 +459,95 @@ namespace NimBus.Core.Messages.PII
                     }
                 }
             }
+        }
+
+        private void RedactObject(JObject obj, Type clrType, SensitiveAttribute inheritedSensitive, ref bool redactedAny)
+        {
+            if (obj == null || clrType == null)
+            {
+                return;
+            }
+
+            var classAttr = inheritedSensitive ?? clrType.GetCustomAttribute<SensitiveAttribute>(inherit: true);
+            JsonObjectContract contract = null;
+            try
+            {
+                contract = _contractResolver.ResolveContract(clrType) as JsonObjectContract;
+            }
+            catch
+            {
+                contract = null;
+            }
+
+            foreach (var jProp in obj.Properties().ToList())
+            {
+                if (jProp.Name == PiiMaskedMarker)
+                {
+                    continue;
+                }
+
+                var jsonProp = contract?.Properties.GetClosestMatchProperty(jProp.Name);
+                var clrProp = jsonProp?.UnderlyingName is { } underlyingName
+                    ? clrType.GetProperty(underlyingName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)
+                    : null;
+                clrProp ??= clrType.GetProperty(jProp.Name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+
+                var propAttr = clrProp?.GetCustomAttribute<SensitiveAttribute>(inherit: true);
+                var effective = propAttr ?? classAttr;
+                if (effective != null)
+                {
+                    jProp.Value = RedactToken(jProp.Value, ref redactedAny);
+                }
+                else if (clrProp != null)
+                {
+                    if (jProp.Value is JObject nested)
+                    {
+                        RedactObject(nested, clrProp.PropertyType, inheritedSensitive: null, ref redactedAny);
+                    }
+                    else if (jProp.Value is JArray array)
+                    {
+                        var elementType = GetEnumerableElementType(clrProp.PropertyType);
+                        if (elementType != null)
+                        {
+                            foreach (var item in array.OfType<JObject>())
+                            {
+                                RedactObject(item, elementType, inheritedSensitive: null, ref redactedAny);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private static JToken RedactToken(JToken token, ref bool redactedAny)
+        {
+            if (token == null || token.Type == JTokenType.Null)
+            {
+                return token;
+            }
+
+            if (token is JObject obj)
+            {
+                foreach (var child in obj.Properties().ToList())
+                {
+                    child.Value = RedactToken(child.Value, ref redactedAny);
+                }
+
+                return obj;
+            }
+
+            if (token is JArray array)
+            {
+                for (var i = 0; i < array.Count; i++)
+                {
+                    array[i] = RedactToken(array[i], ref redactedAny);
+                }
+
+                return array;
+            }
+
+            redactedAny = true;
+            return new JValue(DefaultRedactToken);
         }
 
         private void ApplyMaskRecursive(JProperty jProp, SensitiveAttribute attr, ref bool maskedAny)

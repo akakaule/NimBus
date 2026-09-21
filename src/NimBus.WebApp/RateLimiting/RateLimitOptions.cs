@@ -36,6 +36,9 @@ public sealed class RateLimitOptions
     /// <summary>Fixed-window limits for <c>POST /account/login</c>.</summary>
     public LoginLimits Login { get; set; } = new();
 
+    /// <summary>Fixed-window limits for provider-backed intelligence requests.</summary>
+    public WindowLimits Intelligence { get; set; } = new() { PermitLimit = 10, WindowSeconds = 60 };
+
     /// <summary>Permit count and queue depth for a concurrency limiter.</summary>
     public sealed class AgentReceiveLimits
     {

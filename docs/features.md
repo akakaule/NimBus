@@ -45,3 +45,4 @@ This document is a concise catalog of the current NimBus feature set, grouped in
 |---|---|---|
 | Notifications | Sends configurable notifications on lifecycle events (failure/dead-letter by default) through pluggable channels (`INotificationChannel`). | `NimBus.Extensions.Notifications` |
 | Identity | Adds ASP.NET Core Identity username/password auth for WebApp, with email confirmation/reset flow and optional dual-login with Entra ID. | `NimBus.Extensions.Identity` |
+| Integration Intelligence | On-demand, idempotent, audited classification of a persisted failed or dead-lettered occurrence with bounded redacted evidence and deterministic operator guidance. | `Akaule.NimBus.Extensions.IntegrationIntelligence`, `NimBus.WebApp` |

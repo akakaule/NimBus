@@ -1,0 +1,127 @@
+import { useEffect, useRef, useState } from "react";
+import { Button } from "components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "components/ui/card";
+
+type IntelligenceCardProps = { endpointId: string; eventId: string; messageId: string; resolutionStatus?: string };
+type IntelligenceStatus = { status: string; canAnalyze: boolean; contractVersion: number };
+type Classification = {
+  category: string; categoryConfidence: number; retryLikelihood: number; changeRequiredLikelihood: number;
+  externalDependencyLikelihood: number; guidance: string; revision: number; model: string; createdAtUtc: string; requestedBy?: string;
+};
+const headers = { "api-version": "2" };
+const percent = (value: number) => `${Math.round(value * 100)}%`;
+
+export default function IntelligenceCard(props: IntelligenceCardProps) {
+  // A distinct component instance isolates in-flight responses when navigating between occurrences.
+  return <OccurrenceCard key={`${props.endpointId}/${props.eventId}/${props.messageId}`} {...props} />;
+}
+
+function OccurrenceCard(props: IntelligenceCardProps) {
+  const [status, setStatus] = useState<IntelligenceStatus>();
+  const [classification, setClassification] = useState<Classification>();
+  const [busy, setBusy] = useState(true);
+  const [error, setError] = useState<string>();
+  const [unknownOutcome, setUnknownOutcome] = useState(false);
+  const [pollVersion, setPollVersion] = useState(0);
+  const pending = useRef<{ key: string; force: boolean } | undefined>(undefined);
+  const pollAttempt = useRef(0);
+  const alive = useRef(true);
+  const eligible = ["failed", "deadlettered"].includes((props.resolutionStatus ?? "").toLowerCase());
+  const baseUrl = `/api/integration-intelligence/failures/${encodeURIComponent(props.eventId)}/${encodeURIComponent(props.messageId)}/classification`;
+
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = async () => {
+      try {
+        const response = await fetch(`/api/integration-intelligence/status?endpointId=${encodeURIComponent(props.endpointId)}`, { headers, signal: controller.signal });
+        if (!response.ok) return;
+        const capability = await response.json() as IntelligenceStatus;
+        if (controller.signal.aborted) return;
+        if (capability.status !== "Ready" || capability.contractVersion !== 1) return;
+        setStatus(capability);
+        const latest = await fetch(baseUrl, { headers, signal: controller.signal });
+        if (latest.status === 404) return;
+        const payload = await latest.json();
+        if (controller.signal.aborted) return;
+        if (latest.ok) { setClassification(payload); setError(undefined); setUnknownOutcome(false); }
+        else if (payload.code === "AnalysisInProgress") {
+          setBusy(true);
+          setError("Analysis is in progress.");
+          if (pollAttempt.current++ < 20)
+            timer = setTimeout(() => setPollVersion(value => value + 1), Math.min(1000 * 2 ** pollAttempt.current, 5000));
+          else setError("Analysis is still in progress. Refresh to check again.");
+        } else if (payload.code === "AnalysisOutcomeUnknown") {
+          setUnknownOutcome(true);
+          setError("The previous analysis outcome is unknown.");
+        } else { setError("Classification is temporarily unavailable."); }
+      } catch {
+        if (!controller.signal.aborted) setError("Classification is temporarily unavailable.");
+      } finally {
+        if (!controller.signal.aborted && timer === undefined) setBusy(false);
+      }
+    };
+    void load();
+    return () => { controller.abort(); if (timer !== undefined) clearTimeout(timer); };
+  }, [props.endpointId, baseUrl, pollVersion]);
+
+  const analyze = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(undefined);
+    // Transport retries reuse the same identity; explicit re-analysis gets a new one.
+    pending.current ??= { key: crypto.randomUUID(), force: Boolean(classification) || unknownOutcome };
+    const request = pending.current;
+    try {
+      const response = await fetch(baseUrl, {
+        method: "POST", headers: { ...headers, "Content-Type": "application/json", "Idempotency-Key": request.key },
+        body: JSON.stringify({ force: request.force }),
+      });
+      const payload = await response.json();
+      if (!alive.current) return;
+      pending.current = undefined;
+      if (response.ok) { setClassification(payload.result); setUnknownOutcome(false); }
+      else if (payload.code === "AnalysisOutcomeUnknown") {
+        setUnknownOutcome(true);
+        setError("The previous analysis outcome is unknown.");
+      } else if (payload.code === "AnalysisInProgress") {
+        pollAttempt.current = 0;
+        setPollVersion(value => value + 1);
+        setError("Analysis is in progress.");
+      } else { setError("Classification is temporarily unavailable."); }
+    } catch {
+      if (alive.current) setError("Connection interrupted. Retry safely with the same request.");
+    } finally { if (alive.current) setBusy(false); }
+  };
+
+  if (!status || (!eligible && !classification)) return null;
+  return (
+    <Card className="mb-4 border-primary/30">
+      <CardHeader className="flex-row items-center justify-between gap-4">
+        <div>
+          <CardTitle className="text-base">Failure intelligence</CardTitle>
+          <CardDescription>Advisory analysis of this failure occurrence. It never retries or changes the message.</CardDescription>
+        </div>
+        {status.canAnalyze && eligible && <Button size="sm" onClick={analyze} isLoading={busy} disabled={busy}>
+          {classification || unknownOutcome ? "Re-analyze" : "Analyze failure"}
+        </Button>}
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {error && <p role="status" className="text-status-danger">{error}</p>}
+        {(unknownOutcome || classification) && status.canAnalyze && eligible &&
+          <p>Re-analyzing makes a new provider request and may incur an additional charge.</p>}
+        {classification && <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div><div className="text-muted-foreground">Category</div><strong>{classification.category} ({percent(classification.categoryConfidence)})</strong></div>
+            <div><div className="text-muted-foreground">Guidance</div><strong>{classification.guidance}</strong></div>
+            <div><div className="text-muted-foreground">Retry likely</div><strong>{percent(classification.retryLikelihood)}</strong></div>
+            <div><div className="text-muted-foreground">Change required</div><strong>{percent(classification.changeRequiredLikelihood)}</strong></div>
+            <div><div className="text-muted-foreground">External dependency</div><strong>{percent(classification.externalDependencyLikelihood)}</strong></div>
+          </div>
+          <p className="text-muted-foreground">Revision {classification.revision} · {classification.model} · {classification.createdAtUtc} · {classification.requestedBy}</p>
+        </>}
+      </CardContent>
+    </Card>
+  );
+}

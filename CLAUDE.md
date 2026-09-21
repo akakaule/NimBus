@@ -126,8 +126,8 @@ What the gates ACTUALLY enforce (verified 2026-08; don't assume stricter):
 
 ## WebApp Frontend
 
-- **Stack**: React 18 + TypeScript + Vite + Tailwind CSS
-- **State**: React Router v6, TanStack Table, SignalR for real-time
+- **Stack**: React 19 + TypeScript + Vite 8 + Tailwind CSS
+- **State**: React Router v7, TanStack Table, SignalR for real-time
 - **Scripts**: `npm run dev` (dev server), `npm run build` (production), `npm test` (vitest)
 - **Path**: `src/NimBus.WebApp/ClientApp/`
 

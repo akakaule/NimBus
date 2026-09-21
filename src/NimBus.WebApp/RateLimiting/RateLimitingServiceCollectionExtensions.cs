@@ -77,6 +77,9 @@ public static class RateLimitingServiceCollectionExtensions
             limiter.AddPolicy(RateLimitPolicyNames.Login, context =>
                 FixedWindow("ip:" + ClientIpPartitionKey.Resolve(context, options), options.Login));
 
+            limiter.AddPolicy(RateLimitPolicyNames.Intelligence, context =>
+                FixedWindow(UserPartitionKey(context, options), options.Intelligence));
+
             // GlobalLimiter stays null on purpose: everything not explicitly
             // listed above — the SignalR hub, health probes, static files, the
             // SPA fallback, every other /api route — carries no rate-limiting

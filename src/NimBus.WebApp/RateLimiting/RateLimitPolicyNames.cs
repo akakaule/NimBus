@@ -19,4 +19,7 @@ public static class RateLimitPolicyNames
 
     /// <summary>Per-client-IP fixed-window limiter guarding <c>POST /account/login</c>.</summary>
     public const string Login = "nimbus-login";
+
+    /// <summary>Fixed-window limiter guarding provider-backed intelligence requests.</summary>
+    public const string Intelligence = "nimbus-intelligence";
 }

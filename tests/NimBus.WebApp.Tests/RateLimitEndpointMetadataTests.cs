@@ -222,6 +222,7 @@ public class RateLimitEndpointMetadataTests
                     // hop under test, so a broken registration is RED here rather
                     // than shipping an unattached convention.
                     services.AddNimBusRateLimiting(configuration);
+                    NimBus.Extensions.IntegrationIntelligence.IntegrationIntelligenceRegistration.AddNimBusIntegrationIntelligence(services, configuration);
 
                     // MVC resolves application parts from the entry assembly,
                     // which under `dotnet test` is the test host — so both parts

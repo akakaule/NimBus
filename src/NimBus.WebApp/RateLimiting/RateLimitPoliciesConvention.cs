@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.ApplicationModels;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using NimBus.Extensions.Identity.Controllers;
+using NimBus.Extensions.IntegrationIntelligence.Controllers;
 using NimBus.WebApp.ManagementApi;
 
 namespace NimBus.WebApp.RateLimiting;
@@ -95,6 +96,12 @@ internal sealed class RateLimitPoliciesConvention : IApplicationModelConvention
             && action.ActionMethod.Name == nameof(AccountController.Login))
         {
             return RateLimitPolicyNames.Login;
+        }
+
+        if (type == typeof(IntegrationIntelligenceController)
+            && action.ActionMethod.Name == nameof(IntegrationIntelligenceController.PostClassification))
+        {
+            return RateLimitPolicyNames.Intelligence;
         }
 
         return null;

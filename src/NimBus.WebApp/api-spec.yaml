@@ -3106,6 +3106,7 @@ components:
             - disableEndpointHeartbeat
             - deleteStorageContainer
             - reconcileStalePending
+            - failureClassified
         comment:
           type: string
           nullable: true
@@ -4152,6 +4153,7 @@ components:
             - disableEndpointHeartbeat
             - deleteStorageContainer
             - reconcileStalePending
+            - failureClassified
         createdAtFrom:
           type: string
           format: date-time
@@ -4725,6 +4727,7 @@ components:
             - disableEndpointHeartbeat
             - deleteStorageContainer
             - reconcileStalePending
+            - failureClassified
         comment:
           type: string
           nullable: true

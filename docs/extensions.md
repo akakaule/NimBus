@@ -19,7 +19,11 @@ When adding a feature to NimBus, ask whether it belongs in core or in an extensi
 
 **Optional platform services** (not core but ship with the repo): `NimBus.MessageStore`, `NimBus.Resolver`, `NimBus.Manager`, `NimBus.WebApp`.
 
-**Extensions** (separate NuGet packages): `NimBus.Extensions.Notifications`, and any future `NimBus.Extensions.*` packages.
+**Extensions** (separate NuGet packages): `NimBus.Extensions.Notifications`, `Akaule.NimBus.Extensions.IntegrationIntelligence`, and any future `NimBus.Extensions.*` packages.
+
+### Integration Intelligence
+
+`Akaule.NimBus.Extensions.IntegrationIntelligence` adds the optional WebApp failure-classification API and provider boundary. It is registered with `services.AddNimBusIntegrationIntelligence(configuration)` and stays inactive unless the nested `NimBus:IntegrationIntelligence` configuration is enabled and valid. See [Integration Intelligence](integration-intelligence.md) for configuration, authorization, redaction, storage, and deployment details.
 
 ## Using extensions
 

@@ -5,27 +5,33 @@ namespace Erp.Adapter.Functions.Clients;
 
 public sealed class ServiceModeClient(HttpClient http, ILogger<ServiceModeClient> logger) : IServiceModeClient
 {
-    public Task<bool> IsServiceModeEnabledAsync(CancellationToken cancellationToken) =>
-        IsEnabledAsync("/api/admin/service-mode", "service mode", cancellationToken);
+    public async Task<bool> IsServiceModeEnabledAsync(CancellationToken cancellationToken)
+    {
+        var mode = await ReadAsync("/api/admin/service-mode", "service mode", cancellationToken);
+        return mode?.Enabled ?? false;
+    }
 
-    public Task<bool> IsErrorModeEnabledAsync(CancellationToken cancellationToken) =>
-        IsEnabledAsync("/api/admin/error-mode", "error mode", cancellationToken);
+    public async Task<ErrorModeSnapshot> GetErrorModeAsync(CancellationToken cancellationToken)
+    {
+        var mode = await ReadAsync("/api/admin/error-mode", "error mode", cancellationToken);
+        return mode is null ? ErrorModeSnapshot.Disabled : new ErrorModeSnapshot(mode.Enabled, mode.Reason);
+    }
 
-    private async Task<bool> IsEnabledAsync(string path, string modeName, CancellationToken cancellationToken)
+    private async Task<ModeResponse?> ReadAsync(string path, string modeName, CancellationToken cancellationToken)
     {
         try
         {
-            var response = await http.GetFromJsonAsync<ModeResponse>(path, cancellationToken);
-            return response?.Enabled ?? false;
+            return await http.GetFromJsonAsync<ModeResponse>(path, cancellationToken);
         }
         catch (Exception ex)
         {
             // If the flag can't be read (e.g. erp-api unreachable), default to off — the
             // downstream call will fail on its own and surface the real cause.
             logger.LogDebug(ex, "Could not read {ModeName} flag — assuming disabled.", modeName);
-            return false;
+            return null;
         }
     }
 
-    private sealed record ModeResponse(bool Enabled, DateTimeOffset ChangedAt);
+    // Reason is only present on the error-mode response; service-mode leaves it null.
+    private sealed record ModeResponse(bool Enabled, string? Reason, DateTimeOffset ChangedAt);
 }

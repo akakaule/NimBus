@@ -42,6 +42,22 @@ export interface ModeState {
   changedAt: string;
 }
 
+export interface ErrorModeState extends ModeState {
+  /** Id of the selected failure reason; see `getErrorModeReasons`. */
+  reason: string;
+}
+
+/** One selectable failure the ERP adapter simulates while error mode is on. */
+export interface FailureReason {
+  id: string;
+  title: string;
+  description: string;
+  /** The Integration Intelligence category this failure is designed to be classified as. */
+  expectedCategory: string;
+  /** How NimBus treats it: `Failed` (retryable, resubmit) or `DeadLettered`. */
+  disposition: 'Failed' | 'DeadLettered' | string;
+}
+
 export interface HandoffMode {
   enabled: boolean;
   durationSeconds: number;
@@ -121,13 +137,14 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }).then(json<ModeState>),
 
-  getErrorMode: () => fetch('/api/admin/error-mode').then(json<ModeState>),
-  setErrorMode: (enabled: boolean) =>
+  getErrorMode: () => fetch('/api/admin/error-mode').then(json<ErrorModeState>),
+  setErrorMode: (enabled: boolean, reason?: string) =>
     fetch('/api/admin/error-mode', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled }),
-    }).then(json<ModeState>),
+      body: JSON.stringify(reason === undefined ? { enabled } : { enabled, reason }),
+    }).then(json<ErrorModeState>),
+  getErrorModeReasons: () => fetch('/api/admin/error-mode/reasons').then(json<FailureReason[]>),
 
   getHandoffMode: () => fetch('/api/admin/handoff-mode').then(json<HandoffMode>),
   setHandoffMode: (m: { enabled: boolean; durationSeconds: number; failureRate: number }) =>

@@ -444,10 +444,40 @@ erp-web (Error mode / Service mode toggle)
 1. AppHost up → open **erp-web**.
 2. Open **crm-web** → create an account (e.g. "Acme GmbH") to start CRM → ERP traffic.
 3. In **erp-web**, flip **Error mode** ON (header toggle): every inbound ERP handler now throws.
+   The dropdown next to it picks *which* failure is simulated (see [Failure reasons](#failure-reasons-integration-intelligence-showcase)).
 4. Within a few seconds the **Notification alerts** panel shows an **Error** alert
    ("Message failed: …") and, once retries are exhausted, a **Critical** **dead-lettered** alert.
    Flipping **Service mode** ON instead produces **Error** alerts as inbound messages are rejected.
 5. Turn the toggles OFF to stop new alerts; click **Clear** to empty the panel.
+
+### Failure reasons (Integration Intelligence showcase)
+
+Error mode throws a *selectable* failure so the NimBus WebApp's
+[Integration Intelligence](../../docs/integration-intelligence.md) card has something realistic to
+classify. NimBus stores only the exception's type name and message as failure evidence (no stack
+trace), so each reason's message carries the cues a real failure of that kind would: status codes,
+identifiers, the downstream system, and what would have to change.
+
+| Dropdown entry | Throws | NimBus outcome | Designed to classify as |
+|---|---|---|---|
+| Generic handler exception (default) | `HandlerErrorModeException` | Failed | `unknown` — the control case with no usable evidence |
+| Downstream timeout (transient) | `TimeoutException` 503 + connection reset | Failed | `transient_dependency` |
+| Expired credentials (auth/config) | `UnauthorizedAccessException` 401, expired secret | Failed | `authentication_configuration` |
+| Schema mismatch (contract) | `FormatException` on `CountryCode` | **DeadLettered** | `contract_schema` |
+| Customer closed (business rule) | `InvalidOperationException` rule ERP-CUST-017 | Failed | `business_rule` |
+| Customer not found (missing reference) | `KeyNotFoundException` for the CRM account | Failed | `missing_reference_data` |
+| Null reference (application defect) | `NullReferenceException` in the mapper | Failed | `application_defect` |
+
+The catalog lives in `CrmErpDemo.Contracts/Demo/ErpFailureReasons.cs` and is shared by `Erp.Api`
+(stores and validates the selection, `GET/PUT /api/admin/error-mode` with `reason`,
+`GET /api/admin/error-mode/reasons`), `Erp.Adapter.Functions` (`ErrorModeGuard` throws the
+matching exception from every handler) and the erp-web dropdown, so the three cannot drift.
+
+To run the showcase: enable Integration Intelligence in the WebApp (user secrets, see the guide),
+pick a reason, flip error mode ON, create or edit a CRM account or contact, open the failed
+message in the NimBus WebApp and click **Analyze failure**. Switch reasons and repeat to compare
+categories and guidance. `PUT /api/admin/error-mode` still accepts a bare `{ "enabled": true }`,
+so the e2e suite and the demo film keep the generic failure.
 
 ## Showcase: Circuit breaker (outage → pause → probe → recover)
 

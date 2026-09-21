@@ -163,8 +163,13 @@ export class ErpApiClient {
     return (await res.json()) as ServiceModeState;
   }
 
-  async setErrorMode(enabled: boolean): Promise<ServiceModeState> {
-    const res = await this.api.put("/api/admin/error-mode", { data: { enabled } });
+  /**
+   * @param reason Optional failure-reason id from `GET /api/admin/error-mode/reasons`
+   * (e.g. `transient_dependency`); omitted keeps the currently selected reason.
+   */
+  async setErrorMode(enabled: boolean, reason?: string): Promise<ServiceModeState> {
+    const data = reason === undefined ? { enabled } : { enabled, reason };
+    const res = await this.api.put("/api/admin/error-mode", { data });
     if (!res.ok()) throw new Error(`ERP PUT error-mode → ${res.status()}`);
     return (await res.json()) as ServiceModeState;
   }

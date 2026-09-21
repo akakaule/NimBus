@@ -1,3 +1,4 @@
+using CrmErpDemo.Contracts.Demo;
 using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Api.Endpoints;
@@ -22,15 +23,29 @@ public static class AdminEndpoints
 
         group.MapGet("/error-mode", (ErrorModeState state) =>
         {
-            var (enabled, changedAt) = state.Snapshot();
-            return Results.Ok(new ErrorModeResponse(enabled, changedAt));
+            var (enabled, reason, changedAt) = state.Snapshot();
+            return Results.Ok(new ErrorModeResponse(enabled, reason, changedAt));
         });
 
+        // Reason is optional so existing callers (e2e helpers, the demo film) that only
+        // send { enabled } keep working; when given it must be a catalog id.
         group.MapPut("/error-mode", (ErrorModeRequest request, ErrorModeState state) =>
         {
-            var (enabled, changedAt) = state.Set(request.Enabled);
-            return Results.Ok(new ErrorModeResponse(enabled, changedAt));
+            if (request.Reason is not null && ErpFailureReasons.Find(request.Reason) is null)
+            {
+                return Results.BadRequest(new
+                {
+                    error = $"Unknown failure reason '{request.Reason}'. Known: {string.Join(", ", ErpFailureReasons.All.Select(r => r.Id))}.",
+                });
+            }
+
+            var (enabled, reason, changedAt) = state.Set(request.Enabled, request.Reason);
+            return Results.Ok(new ErrorModeResponse(enabled, reason, changedAt));
         });
+
+        // The failure catalog behind the erp-web dropdown; shared with the adapter through
+        // CrmErpDemo.Contracts so the API, the thrown exception and the UI cannot drift.
+        group.MapGet("/error-mode/reasons", () => Results.Ok(ErpFailureReasons.All));
 
         group.MapGet("/processing-delay", (ProcessingDelayState state) =>
         {
@@ -70,8 +85,8 @@ public static class AdminEndpoints
 
 public record ServiceModeRequest(bool Enabled);
 public record ServiceModeResponse(bool Enabled, DateTimeOffset ChangedAt);
-public record ErrorModeRequest(bool Enabled);
-public record ErrorModeResponse(bool Enabled, DateTimeOffset ChangedAt);
+public record ErrorModeRequest(bool Enabled, string? Reason = null);
+public record ErrorModeResponse(bool Enabled, string Reason, DateTimeOffset ChangedAt);
 public record ProcessingDelayRequest(bool Enabled, int DelayMs);
 public record ProcessingDelayResponse(bool Enabled, int DelayMs, DateTimeOffset ChangedAt);
 public record DataResetResponse(int Customers, int Contacts, int Audits, int OutboxRows);

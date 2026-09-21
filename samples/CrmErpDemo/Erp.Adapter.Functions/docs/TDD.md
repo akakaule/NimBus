@@ -280,7 +280,7 @@ public sealed class CrmAccountUpdatedHandler(
 Notable points:
 
 - Constructor-injected `HttpClient`-typed client (`IErpApiClient`), demo-mode probe (`IServiceModeClient`), and `ILogger<T>`.
-- `ErrorModeGuard.ThrowIfEnabledAsync` is the first call inside every handler — when `Erp.Api` reports error mode ON, the handler throws `HandlerErrorModeException` before doing any work, exercising NimBus's redelivery + dead-letter path.
+- `ErrorModeGuard.ThrowIfEnabledAsync` is the first call inside every handler — when `Erp.Api` reports error mode ON, the handler throws before doing any work, exercising NimBus's redelivery + dead-letter path. Which exception it throws follows the failure reason selected in erp-web (`CrmErpDemo.Contracts.Demo.ErpFailureReasons`): the default is `HandlerErrorModeException`; the other reasons throw `TimeoutException`, `UnauthorizedAccessException`, `FormatException` (dead-letters), `InvalidOperationException`, `KeyNotFoundException` or `NullReferenceException` with realistic messages, so the WebApp's Integration Intelligence card has distinct evidence per category.
 - The handler signature matches the NimBus `IEventHandler<T>` contract: `(T message, IEventHandlerContext context, CancellationToken)`.
 
 `CrmAccountCreatedHandler` is the only handler with a branch: it checks `IHandoffModeClient.GetAsync()` first and, if handoff mode is on, registers a job with `Erp.Api` and calls `context.MarkPendingHandoff(...)` instead of upserting directly. See §5.

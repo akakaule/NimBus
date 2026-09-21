@@ -226,7 +226,7 @@ namespace NimBus.Core.Messages
                 OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageId,
                 ParentMessageId = messageId,
                 RetryCount = messageContext.RetryCount ?? null,
-                OriginatingFrom = messageContext.From,
+                OriginatingFrom = GetOriginator(messageContext),
                 EventTypeId = messageContext.EventTypeId,
                 MessageType = responseType,
                 MessageContent = responseContent,
@@ -256,6 +256,15 @@ namespace NimBus.Core.Messages
         }
 
 
+        // The request's sender becomes the response's originator. From is stamped by the
+        // topology's forward rule, so a request put on the topic by hand (e.g. resubmitted from
+        // a dead-letter queue with a broker tool) arrives without it and the Service Bus context
+        // throws on access. It is only recorded, so fall back to the originator the request
+        // still carries: throwing here would dead-letter a message whose handler side effect
+        // already landed.
+        private static string GetOriginator(IMessageContext messageContext) =>
+            messageContext.GetFromOrDefault() ?? messageContext.OriginatingFrom;
+
         private IMessage CreateRetryResponse(IMessageContext messageContext, MessageType responseType, MessageContent responseContent) =>
             new Message()
             {
@@ -266,7 +275,7 @@ namespace NimBus.Core.Messages
                 OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
                 ParentMessageId = messageContext.MessageId,
                 RetryCount = messageContext.RetryCount.HasValue ? messageContext.RetryCount + 1 : 1,
-                OriginatingFrom = messageContext.From,
+                OriginatingFrom = GetOriginator(messageContext),
                 EventTypeId = messageContext.EventTypeId,
                 MessageType = MessageType.RetryRequest,
                 MessageContent = responseContent,
@@ -298,21 +307,21 @@ namespace NimBus.Core.Messages
 
         public async Task SendToDeferredSubscription(IMessageContext messageContext, int deferralSequence, CancellationToken cancellationToken = default)
         {
+            var from = messageContext.GetFromOrDefault();
             IMessage deferredMessage = new Message()
             {
                 To = Constants.DeferredSubscriptionName,
-                // Preserve the publisher endpoint name. When this parked message is later
-                // republished by DeferredMessageProcessor and the receiver picks it back up,
-                // StrictMessageHandler reads messageContext.From and throws InvalidMessageException
-                // if the property is missing.
-                From = messageContext.From,
+                // Preserve the publisher when known. Otherwise mark this as deferred traffic:
+                // the forward rules treat a missing From as a fresh publish. The replay processor
+                // keeps this marker so neither parking nor replay fans out another event copy.
+                From = from ?? Constants.DeferredSubscriptionName,
                 CorrelationId = messageContext.CorrelationId,
                 SessionId = messageContext.SessionId,           // Session-enabled deferred subscription
                 EventId = messageContext.EventId,
                 OriginatingMessageId = !messageContext.OriginatingMessageId.Equals(Constants.Self, StringComparison.OrdinalIgnoreCase) ? messageContext.OriginatingMessageId : messageContext.MessageId,
                 ParentMessageId = messageContext.MessageId,
                 RetryCount = messageContext.RetryCount ?? null,
-                OriginatingFrom = messageContext.From,
+                OriginatingFrom = from ?? messageContext.OriginatingFrom,
                 EventTypeId = messageContext.EventTypeId,
                 MessageType = messageContext.MessageType,
                 MessageContent = messageContext.MessageContent,

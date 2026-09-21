@@ -4,6 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
+using NimBus.Testing;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -103,6 +104,55 @@ public class DeferredMessageProcessorTests
     }
 
     // ── Processing ──────────────────────────────────────────────────────
+
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow("")]
+    [DataRow("StorefrontEndpoint")]
+    public async Task ParkAndReplay_PreservesFromMarkerToPreventForwarding(string? from)
+    {
+        var message = new Message
+        {
+            From = from!,
+            To = "BillingEndpoint",
+            MessageId = "message-1",
+            EventId = "event-1",
+            SessionId = "session-1",
+            OriginatingMessageId = Constants.Self,
+            EventTypeId = "OrderPlaced",
+            MessageType = MessageType.EventRequest,
+            MessageContent = new MessageContent(),
+        };
+        var context = new InMemoryMessageContext(message, new InMemorySessionState());
+        var parkingSender = new RecordingServiceBusSender();
+        var responses = new ResponseService(new Sender(parkingSender));
+
+        await responses.SendToDeferredSubscription(context, deferralSequence: 1);
+
+        var parked = parkingSender.SentMessages.Single();
+        var client = new RecordingServiceBusClient();
+        client.SessionReceiver.ReceiveBatches.Add(new List<ServiceBusReceivedMessage>
+        {
+            ServiceBusModelFactory.ServiceBusReceivedMessage(
+                body: parked.Body,
+                sessionId: parked.SessionId,
+                properties: new Dictionary<string, object>(parked.ApplicationProperties)),
+        });
+
+        await new DeferredMessageProcessor(client).ProcessDeferredMessagesAsync("session-1", "BillingEndpoint");
+
+        var replayed = client.Sender.SentMessages.Single();
+        Assert.AreEqual(Constants.DeferredSubscriptionName, parked.ApplicationProperties["To"]);
+        Assert.AreEqual("BillingEndpoint", replayed.ApplicationProperties["To"]);
+        foreach (var copy in new[] { parked, replayed })
+        {
+            Assert.AreEqual("OrderPlaced", copy.ApplicationProperties["EventTypeId"]);
+            Assert.AreEqual("event-1", copy.ApplicationProperties["EventId"]);
+            Assert.IsTrue(copy.ApplicationProperties.TryGetValue("From", out var marker),
+                "Parking and replay must not match the forwarder's user.From IS NULL predicate.");
+            Assert.AreEqual(string.IsNullOrEmpty(from) ? Constants.DeferredSubscriptionName : from, marker);
+        }
+    }
 
     [TestMethod]
     public async Task ProcessDeferredMessagesAsync_SingleBatch_SortsByDeferralSequenceAndRepublishes()

@@ -69,7 +69,17 @@ internal sealed class FakeMessageContext : IMessageContext, IMessageDeliveryCont
     public string OriginalSessionId { get; set; } = string.Empty;
     public int? DeferralSequence { get; set; }
     public DateTime EnqueuedTimeUtc { get; set; }
-    public string From { get; set; } = string.Empty;
+    private string _from = string.Empty;
+
+    // Mirrors the Service Bus MessageContext, which throws when From is absent on the wire.
+    public bool FromIsMissing { get; set; }
+
+    public string From
+    {
+        get => FromIsMissing ? throw new InvalidMessageException("Message.UserProperties[From] is not defined.") : _from;
+        set => _from = value;
+    }
+
     public string DeadLetterReason { get; set; } = null!;
     public string DeadLetterErrorDescription { get; set; } = null!;
     public string HandoffReason { get; set; }

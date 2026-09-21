@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="To slides til integrationsteamet og udviklingschefen: en ny integrationsplatform som erstatning for BizTalk, bygget som kode, og hvad vi konkret beder om.">
+<title>Ny integrationsplatform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --paper:#f3f5f7;--surface:#ffffff;--ink:#1b2a3a;--muted:#5b6b7b;--line:#d6dee6;--line-strong:#b8c4d0;
+  --legacy:#b0621c;--legacy-soft:#f6e6d3;
+  --platform:#157a6e;--platform-soft:#d9efe9;
+  --gateway:#2c5aa0;--gateway-soft:#dde6f5;
+  --risk:#b23b3b;--risk-soft:#f5dcdc;
+  --display:"IBM Plex Sans Condensed","Arial Narrow","Helvetica Neue",Arial,sans-serif;
+  --body:"IBM Plex Sans","Segoe UI",Helvetica,Arial,sans-serif;
+  --mono:"IBM Plex Mono",Consolas,"Courier New",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0f161e;--surface:#171f29;--ink:#e6ecf2;--muted:#9aa8b5;--line:#26333f;--line-strong:#3a4a59;
+    --legacy:#e39a4d;--legacy-soft:#3a2a17;--platform:#3fb3a2;--platform-soft:#153630;
+    --gateway:#7aa6e8;--gateway-soft:#1a2a45;--risk:#e07a7a;--risk-soft:#3d1f1f;color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0f161e;--surface:#171f29;--ink:#e6ecf2;--muted:#9aa8b5;--line:#26333f;--line-strong:#3a4a59;
+  --legacy:#e39a4d;--legacy-soft:#3a2a17;--platform:#3fb3a2;--platform-soft:#153630;
+  --gateway:#7aa6e8;--gateway-soft:#1a2a45;--risk:#e07a7a;--risk-soft:#3d1f1f;color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 var(--body);-webkit-font-smoothing:antialiased}
+.deck{height:100%;overflow-y:auto;scroll-snap-type:y mandatory;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){.deck{scroll-behavior:auto}}
+.slide{min-height:100%;scroll-snap-align:start;display:flex;flex-direction:column;padding-inline:clamp(16px,5vw,72px);padding-block:clamp(20px,4vh,48px);border-bottom:1px solid var(--line)}
+.slide-inner{max-width:1180px;width:100%;margin:auto;display:flex;flex-direction:column;gap:clamp(14px,2.2vh,26px)}
+.eyebrow{font-family:var(--mono);font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+h1,h2,h3{font-family:var(--display);font-weight:600;line-height:1.1;text-wrap:balance;margin:0}
+h1{font-size:clamp(1.9rem,4.2vw,3.2rem);letter-spacing:-.01em;max-width:24ch}
+h2{font-size:clamp(1.7rem,3.6vw,2.8rem);letter-spacing:-.01em;max-width:26ch}
+h3{font-size:1.05rem}
+p{margin:0}
+.lede{font-size:clamp(1rem,1.4vw,1.2rem);max-width:64ch;color:var(--ink)}
+.cols{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 16px;border-top:4px solid var(--line-strong)}
+.card.legacy{border-top-color:var(--legacy)}
+.card.platform{border-top-color:var(--platform)}
+.card.gateway{border-top-color:var(--gateway)}
+.card.risk{border-top-color:var(--risk)}
+.card h3{margin-bottom:6px}
+.card p,.card li{font-size:.95rem}
+.card ul{margin:6px 0 0;padding-left:1.1rem}
+.card li{margin:.2rem 0}
+.tag{display:inline-block;font-family:var(--mono);font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:999px;margin-bottom:6px}
+.tag.legacy{background:var(--legacy-soft);color:var(--legacy)}
+.tag.platform{background:var(--platform-soft);color:var(--platform)}
+.tag.gateway{background:var(--gateway-soft);color:var(--gateway)}
+.tag.risk{background:var(--risk-soft);color:var(--risk)}
+.facts{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.fact{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px}
+.fact b{display:block;font-family:var(--display);font-size:clamp(1.5rem,2.6vw,2.1rem);font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
+.fact span{font-size:.85rem;color:var(--muted)}
+figure{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px}
+figure svg{display:block;width:100%;height:auto}
+figcaption{font-size:.82rem;color:var(--muted);margin-top:6px}
+.ask{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.steps li{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:start;font-size:.95rem}
+.steps li::before{content:counter(step);counter-increment:step;font-family:var(--display);font-weight:600;font-size:1.3rem;color:var(--platform);line-height:1.1;font-variant-numeric:tabular-nums}
+.steps{counter-reset:step}
+.decision{border-left:4px solid var(--platform);background:var(--surface);padding:14px 18px;border-radius:0 6px 6px 0;display:flex;flex-wrap:wrap;gap:8px 24px;align-items:baseline;justify-content:space-between}
+.decision strong{font-family:var(--display);font-size:1.25rem;font-weight:600}
+.decision span{font-size:.92rem;color:var(--muted)}
+a{color:var(--gateway)}
+.foot{font-size:.8rem;color:var(--muted);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:auto;padding-top:8px}
+.nav{position:fixed;right:clamp(12px,2vw,24px);bottom:calc(env(safe-area-inset-bottom,0px) + 14px);display:flex;gap:6px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px 6px;font-family:var(--mono);font-size:.78rem}
+.nav button{font:inherit;border:0;background:transparent;color:var(--ink);cursor:pointer;padding:4px 10px;border-radius:999px}
+.nav button:hover{background:var(--paper)}
+.nav button:focus-visible{outline:2px solid var(--gateway)}
+.nav span{padding:0 4px;color:var(--muted);font-variant-numeric:tabular-nums}
+@media print{
+  html,body,.deck{height:auto;overflow:visible}
+  .slide{min-height:0;page-break-after:always;break-after:page;border:0}
+  .nav{display:none}
+}
+@media (max-width:640px){
+  .slide{min-height:0}
+  .deck{scroll-snap-type:none}
+}
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+<section class="slide" id="s1" aria-label="Slide 1 af 2">
+  <div class="slide-inner">
+    <div class="eyebrow"><span>IP · Integrationsplatform · oplæg til fælles forundersøgelse</span><span>1 / 2</span></div>
+    <h1>Ny integrationsplatform som erstatning for BizTalk</h1>
+    <p class="lede">Adaptere, porte, filudveksling og XML-transformation som kode med tests, i stedet for konfiguration i et designværktøj. Vi har allerede mønstret i drift: WF Proxyen holder de gamle SOAP-kontrakter i luften med SoapCore og sender hver operation til det rigtige system bag facaden. Forslaget er at gøre det samme med BizTalk, én port ad gangen.</p>
+
+    <div class="facts">
+      <div class="fact"><b>Udgående</b><span>orkestreringer på <code>bts-01</code>, som WF2 kalder synkront: Medlem, Virksomhed, Navnebase, SendOutput, UM, IIS m.fl.</span></div>
+      <div class="fact"><b>Indgående</b><span>forbrugere, der kalder WF via BizTalk: LivNet, IIS, Ekstern Portal, dele af HIP, GDPR-slettemotor</span></div>
+      <div class="fact"><b>C#</b><span>forretningslogik ligger i dag inde i BizTalk som kode. Den skal ud og leve som egne services.</span></div>
+      <div class="fact"><b>Uændret</b><span>for forbrugerne: SOAP-facaderne beholder WSDL, URL og header-konvention</span></div>
+    </div>
+
+    <div class="cols">
+      <article class="card gateway"><span class="tag gateway">API-gateway</span><h3>Én indgang for synkrone kald</h3><p>YARP i en ASP.NET Core-host på IIS eller som Windows Service, som WF2 kører i dag. TLS, adgangspolitik og rate limits pr. rute, korrelations-id hele vejen igennem. Ingen containere, ingen cloud-kontrolplan.</p></article>
+      <article class="card legacy"><span class="tag legacy">SOAP-facader</span><h3>Strangler med SoapCore</h3><p>Samme bibliotek og samme SOAP-plumbing som WF Proxyen. Indgående kontrakter serveres fra de eksporterede WSDL'er og oversættes til REST. Udgående får hver <code>Ser*Url</code> peget på en adapter, når den er klar. Rollback er en URL.</p></article>
+      <article class="card platform"><span class="tag platform">Adaptere, filer &amp; XML</span><h3>Porte og transformation som C#</h3><p>Ét adapter-projekt pr. bagvedliggende system: REST, SOAP og filudveksling over FTP/SFTP med kvittering og dubletkontrol. XML-transformationer skrives som kode med fixture-tests i stedet for maps. Kontrakt-tests seedes fra optaget BizTalk-trafik.</p></article>
+      <article class="card platform"><span class="tag platform">Egne services &amp; messaging</span><h3>Logikken ud af BizTalk</h3><p>Det, der i dag er C#-kode inde i orkestreringerne, flyttes ud som selvstændige (mikro)services, der taler med platformen via API og en messaging service. Messaging bærer de asynkrone flows (DHS-notifikationer, breve, medlemshændelser) med rækkefølge pr. sag og genkørsel fra en konsol.</p></article>
+    </div>
+
+    <figure aria-labelledby="fig-planes">
+      <svg viewBox="0 0 960 150" role="img" aria-describedby="fig-planes">
+        <title id="fig-planes">Forbrugere går gennem gatewayen til SOAP-facader og WF2; WF2 kalder adaptere direkte; egne services og en messaging service bærer asynkrone flows.</title>
+        <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--muted)"/></marker></defs>
+        <g font-family="IBM Plex Sans, Segoe UI, sans-serif" font-size="13" fill="var(--ink)">
+          <rect x="10" y="40" width="140" height="70" rx="6" fill="var(--surface)" stroke="var(--line-strong)"/>
+          <text x="80" y="70" text-anchor="middle" font-weight="600">Forbrugere</text>
+          <text x="80" y="90" text-anchor="middle" font-size="11" fill="var(--muted)">SOAP i dag, REST senere</text>
+          <rect x="190" y="20" width="130" height="110" rx="6" fill="var(--gateway-soft)" stroke="var(--gateway)"/>
+          <text x="255" y="70" text-anchor="middle" font-weight="600">Gateway</text>
+          <text x="255" y="90" text-anchor="middle" font-size="11" fill="var(--muted)">YARP</text>
+          <rect x="360" y="20" width="170" height="50" rx="6" fill="var(--legacy-soft)" stroke="var(--legacy)"/>
+          <text x="445" y="50" text-anchor="middle" font-weight="600">SOAP-facader</text>
+          <rect x="360" y="80" width="170" height="50" rx="6" fill="var(--platform-soft)" stroke="var(--platform)"/>
+          <text x="445" y="102" text-anchor="middle" font-weight="600">Adaptere</text>
+          <text x="445" y="120" text-anchor="middle" font-size="10" fill="var(--muted)">REST · SOAP · FTP · XML i kode</text>
+          <rect x="570" y="80" width="120" height="50" rx="6" fill="var(--surface)" stroke="var(--platform)" stroke-dasharray="4 3"/>
+          <text x="630" y="102" text-anchor="middle" font-weight="600">Messaging</text>
+          <text x="630" y="120" text-anchor="middle" font-size="10" fill="var(--muted)">+ egne services</text>
+          <rect x="730" y="20" width="110" height="50" rx="6" fill="var(--surface)" stroke="var(--line-strong)"/>
+          <text x="785" y="50" text-anchor="middle" font-weight="600">WF2</text>
+          <rect x="730" y="80" width="220" height="50" rx="6" fill="var(--surface)" stroke="var(--line-strong)"/>
+          <text x="840" y="105" text-anchor="middle" font-weight="600">Fagsystemer</text>
+          <text x="840" y="121" text-anchor="middle" font-size="10" fill="var(--muted)">IISYS · UM · Navision · OM · Signicat</text>
+          <g stroke="var(--muted)" stroke-width="1.6" fill="none" marker-end="url(#arr)">
+            <path d="M150 75 L188 75"/><path d="M320 45 L358 45"/><path d="M530 45 L728 45"/>
+            <path d="M530 105 L568 105"/><path d="M690 105 L728 105"/><path d="M785 70 C 785 95, 600 95, 532 95" stroke-dasharray="3 3"/>
+          </g>
+        </g>
+      </svg>
+      <figcaption>WF2 kalder de kontrakter, den kender i dag. Kun adressen bag hver kontrakt flytter fra <code>bts-01</code> til en adapter. Den stiplede pil er slutbilledet, når facaderne er pensioneret.</figcaption>
+    </figure>
+
+    <div class="foot"><span>Kilder: IP.WF2.0 (ADR-002, ADR-005, wiki Integrationer), SoapCore/YARP-dokumentation. Detaljer i det fulde forslag.</span><span>Oplæg til drøftelse</span></div>
+  </div>
+</section>
+
+<section class="slide" id="s2" aria-label="Slide 2 af 2">
+  <div class="slide-inner">
+    <div class="eyebrow"><span>IP · Integrationsplatform · det vi beder om</span><span>2 / 2</span></div>
+    <h2>En fælles forundersøgelse først. Ingen forpligtelse til mere, før vi har set tallene.</h2>
+    <p class="lede">Det eneste, ingen af os ved i dag, er hvad orkestreringerne faktisk gør, hvor meget C#-logik der ligger i dem, og hvilke filflows der går gennem BizTalk. Det kan kun afdækkes med integrationsteamets BizTalk-viden og WF-teamets kendskab til kaldene. Derfor beder vi om én bølge sammen, ikke et projekt.</p>
+
+    <div class="ask">
+      <article class="card platform">
+        <span class="tag platform">Bølge 0 · hvad vi gør</span>
+        <h3>Opdagelse og kontraktopsamling</h3>
+        <ol class="steps">
+          <li>Eksport af BizTalk-applikationerne: bindings, orkestreringer, maps, pipelines, porte og den C#-kode, der ligger i dem.</li>
+          <li>Inventar over WSDL'er på <code>bts-01</code>, FTP-lokationer og hvem der kalder eller leverer hvad.</li>
+          <li>Trafikopsamling pr. port og pr. filflow, med CPR/CVR maskeret fra dag ét.</li>
+          <li>Én tabel: hver port og hvert filflow, dens forbruger eller fagsystem, volumen, sideeffekter og foreslået skæbne: facade, adapter, egen service eller messaging.</li>
+          <li>Pilot bagefter, hvis tabellen holder: SerNavnebase, kun læsning, høj volumen, rollback ved URL-skift.</li>
+        </ol>
+      </article>
+      <article class="card gateway">
+        <span class="tag gateway">Hvem bidrager med hvad</span>
+        <h3>Tre roller, ét bord</h3>
+        <ul>
+          <li><strong>Integrationsteamet:</strong> BizTalk-eksport, kontrakternes og filflowenes historik, den C#-logik der ligger i orkestreringerne, driftskrav, kontakt til systemejerne bag IISYS, UM, Navision og Output Manager.</li>
+          <li><strong>WF-teamet:</strong> SoapCore-proxyens mønster, adapter-skabelon, kontrakt-tests seedet fra emulatorerne, WF2's kaldeflader.</li>
+          <li><strong>Udviklingschefen:</strong> mandat til bølge 0, tid i begge teams, og åbning for servicekonti hos systemejerne, som i dag stoler på BizTalk's Windows-identitet.</li>
+        </ul>
+      </article>
+      <article class="card legacy">
+        <span class="tag legacy">Hvorfor sådan</span>
+        <h3>Læring pr. port og lav risiko</h3>
+        <ul>
+          <li>Vi lærer pr. port i stedet for at satse alt på ét skift. Læsning først, skrivning når idempotens er bevist, forbrugerne til sidst.</li>
+          <li>Logik og transformationer bliver kode med tests, som både udviklere og kodende agenter kan bygge videre på og verificere.</li>
+          <li>Microsofts egen anbefaling er iterativ migrering. Vi følger den, men med C# og tests som mål i stedet for et designværktøj.</li>
+          <li>Kontaktpunkterne findes allerede: URL-nøgle pr. service, <code>UseSer*Emulator</code>-toggles, <code>ProxyRouting</code>.</li>
+        </ul>
+      </article>
+    </div>
+
+    <div class="decision">
+      <strong>Beslutning vi beder om: ja til bølge 0 og en workshop med begge teams.</strong>
+      <span>Resultatet er en port- og filflowtabel og et go/no-go på piloten. Det fulde forslag med arkitektur, bølgeplan og risici: <a href="ip-biztalk-strangler-platform.html">IP After BizTalk</a>.</span>
+    </div>
+
+    <div class="foot"><span>Intet er implementeret. Ingen BizTalk-artefakter er set endnu; tallene ovenfor kommer fra WF2's kode og wiki og skal bekræftes i bølge 0.</span><span>Kontakt: WF-teamet</span></div>
+  </div>
+</section>
+
+</div>
+
+<div class="nav" aria-label="Slide-navigation">
+  <button type="button" id="prev" aria-label="Forrige slide">←</button>
+  <span id="counter">1 / 2</span>
+  <button type="button" id="next" aria-label="Næste slide">→</button>
+</div>
+
+<script>
+(function(){
+  var deck=document.getElementById('deck');
+  var slides=Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var counter=document.getElementById('counter');
+  function current(){
+    var top=deck.scrollTop, best=0;
+    slides.forEach(function(s,i){ if (s.offsetTop - 10 <= top) best=i; });
+    return best;
+  }
+  function go(i){
+    i=Math.max(0,Math.min(slides.length-1,i));
+    slides[i].scrollIntoView({block:'start'});
+    counter.textContent=(i+1)+' / '+slides.length;
+  }
+  document.getElementById('prev').addEventListener('click',function(){ go(current()-1); });
+  document.getElementById('next').addEventListener('click',function(){ go(current()+1); });
+  document.addEventListener('keydown',function(e){
+    if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    if (e.key==='ArrowRight'||e.key==='PageDown'||e.key===' ') { e.preventDefault(); go(current()+1); }
+    if (e.key==='ArrowLeft'||e.key==='PageUp') { e.preventDefault(); go(current()-1); }
+  });
+  deck.addEventListener('scroll',function(){ counter.textContent=(current()+1)+' / '+slides.length; },{passive:true});
+})();
+</script>
+</body>
+</html>

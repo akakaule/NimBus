@@ -74,6 +74,32 @@ public class ErrorPatternNormalizerTests
     }
 
     [TestMethod]
+    public void Normalize_GroupsErrorsThatDifferOnlyByTrailingUnquotedValue()
+    {
+        const string prefix =
+            "[CRM API ERROR] Failed to update Contact 'a4b1c2d3-1111-2222-3333-444455556666': A contact with the same email address already exists. Please use a different email or update the existing contact: ";
+
+        var first = ErrorPatternNormalizer.Normalize(prefix + "james.burton");
+        var second = ErrorPatternNormalizer.Normalize(prefix + "Isabel Gsaller");
+        var third = ErrorPatternNormalizer.Normalize(prefix + "support");
+
+        Assert.AreEqual(first, second);
+        Assert.AreEqual(first, third);
+        Assert.AreEqual(
+            "[CRM API ERROR] Failed to update Contact '<id>': A contact with the same email address already exists. Please use a different email or update the existing contact: <value>",
+            first);
+    }
+
+    [TestMethod]
+    public void Normalize_KeepsReasonAfterSingleCategoryColon()
+    {
+        Assert.AreEqual("Order rejected: timeout", ErrorPatternNormalizer.Normalize("Order rejected: timeout"));
+        Assert.AreEqual(
+            "Order rejected: invalid credentials",
+            ErrorPatternNormalizer.Normalize("Order rejected: invalid credentials"));
+    }
+
+    [TestMethod]
     public void Normalize_StripsActionSuffix()
     {
         Assert.AreEqual(

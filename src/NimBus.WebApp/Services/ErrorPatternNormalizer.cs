@@ -43,6 +43,13 @@ public static class ErrorPatternNormalizer
         @"\.?\s*Action:.*$",
         RegexOptions.Compiled);
 
+    // A short unquoted value appended after the last ": " (e.g. "... update the
+    // existing contact: james.burton"). Only applies when an earlier ": " exists,
+    // so the reason after a single category colon ("Order rejected: timeout") is kept.
+    private static readonly Regex TrailingValuePattern = new(
+        @"^(.*:\s.*:\s+)[^:\s]+(?:\s+[^:\s]+){0,2}$",
+        RegexOptions.Compiled);
+
     /// <summary>
     /// Extracts a short, stable category from an error text. The text is
     /// normalized first so errors that differ only by an embedded id or value
@@ -75,8 +82,9 @@ public static class ErrorPatternNormalizer
 
     /// <summary>
     /// Replaces volatile fragments (timestamps, GUIDs, dimension values, quoted
-    /// identifiers, long numbers) with placeholders and strips any trailing
-    /// "Action:" advice so equivalent errors yield an identical pattern string.
+    /// identifiers, long numbers, a short trailing value after the last colon)
+    /// with placeholders and strips any trailing "Action:" advice so equivalent
+    /// errors yield an identical pattern string.
     /// </summary>
     /// <param name="errorText">The raw error text; may be null or empty.</param>
     /// <returns>The normalized pattern, or "Unknown" when the input is null or empty.</returns>
@@ -90,7 +98,7 @@ public static class ErrorPatternNormalizer
         normalized = JobIdPattern.Replace(normalized, "JobID [<id>]");
         normalized = QuotedIdentifierPattern.Replace(normalized, "$1<value>$1");
         normalized = LongNumberPattern.Replace(normalized, "<number>");
-        normalized = ActionSuffix.Replace(normalized, string.Empty);
-        return normalized.TrimEnd(' ', '.');
+        normalized = ActionSuffix.Replace(normalized, string.Empty).TrimEnd(' ', '.');
+        return TrailingValuePattern.Replace(normalized, "$1<value>");
     }
 }

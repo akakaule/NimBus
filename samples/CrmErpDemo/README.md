@@ -335,15 +335,20 @@ npm --prefix samples/CrmErpDemo/Crm.Web install
 npm --prefix samples/CrmErpDemo/Erp.Web install
 
 # Run the demo (emulator and SQL Server are the defaults)
-dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost
+aspire run --apphost samples/CrmErpDemo/CrmErpDemo.AppHost/CrmErpDemo.AppHost.csproj
 ```
+
+Alternatively, run `aspire run` from `samples/CrmErpDemo`. The local
+`aspire.config.json` selects this demo instead of the repository's default NimBus
+AppHost. Its HTTPS dashboard is at `https://localhost:17080`; use the login link
+printed by Aspire, which includes the token for the current run.
 
 The Aspire dashboard opens automatically. Wait for `provisioner` to complete, then everything else turns green. On first start the SQL Server provider's DbUp migrations create the `nimbus` schema (`Messages`, `UnresolvedEvents`, `MessageAudits`, `EndpointSubscriptions`, `EndpointMetadata`, `Heartbeats`, `BlockedMessages`, `InvalidMessages` + metrics views). DbGate is on the dashboard if you want to browse them.
 
 To be explicit about the provider:
 
 ```bash
-dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost -- --StorageProvider sqlserver
+aspire run --apphost samples/CrmErpDemo/CrmErpDemo.AppHost/CrmErpDemo.AppHost.csproj -- --StorageProvider sqlserver
 ```
 
 ## Running locally — Cosmos DB
@@ -353,7 +358,7 @@ dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost -- --StorageProvider 
 dotnet user-secrets --project samples/CrmErpDemo/CrmErpDemo.AppHost set ConnectionStrings:cosmos "AccountEndpoint=https://...;AccountKey=..."
 
 # Run with the cosmos flag
-dotnet run --project samples/CrmErpDemo/CrmErpDemo.AppHost -- --StorageProvider cosmos
+aspire run --apphost samples/CrmErpDemo/CrmErpDemo.AppHost/CrmErpDemo.AppHost.csproj -- --StorageProvider cosmos
 ```
 
 In Cosmos mode Aspire skips provisioning the `nimbus` SQL database; the Resolver and WebApp call `AddCosmosDbMessageStore()` instead.

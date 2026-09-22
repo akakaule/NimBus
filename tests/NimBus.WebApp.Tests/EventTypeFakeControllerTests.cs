@@ -71,6 +71,26 @@ namespace NimBus.WebApp.Tests
         }
 
         [TestMethod]
+        public async Task GetDetails_WithoutRepositoryUrl_Returns200WithCatalogData()
+        {
+            var impl = new EventTypeImplementation(
+                new FakePlatform(typeof(IntegrationEvent)),
+                new CodeRepoService(null),
+                new FakeEventPayloadGenerator(),
+                new AllowAllAuthorizationService());
+
+            var result = await impl.GetEventtypesEventtypeidAsync(nameof(IntegrationEvent));
+
+            var ok = result.Result as OkObjectResult;
+            Assert.IsNotNull(ok);
+            var details = ok.Value as EventTypeDetails;
+            Assert.IsNotNull(details);
+            Assert.AreEqual(nameof(IntegrationEvent), details.EventType.Id);
+            Assert.IsNull(details.CodeRepoLink);
+            Assert.IsFalse(string.IsNullOrEmpty(details.EventType.ExamplePayload));
+        }
+
+        [TestMethod]
         public async Task GetFake_Returns404_ForUnknownId()
         {
             var impl = BuildImplementation(typeof(IntegrationEvent));

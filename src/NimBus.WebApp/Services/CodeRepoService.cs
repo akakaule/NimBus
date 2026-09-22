@@ -4,22 +4,22 @@ namespace NimBus.WebApp.Services
 {
     public interface ICodeRepoService
     {
-        string GetSearchUrl(string className, string namespaceName);
-        string CodeRepoUrl { get; }
+        string? GetSearchUrl(string className, string namespaceName);
+        string? CodeRepoUrl { get; }
     }
 
     internal sealed class CodeRepoService : ICodeRepoService
     {
-        public CodeRepoService(string codeRepoUrl)
+        public CodeRepoService(string? codeRepoUrl)
         {
             CodeRepoUrl = codeRepoUrl;
         }
 
-        public string CodeRepoUrl { get; }
+        public string? CodeRepoUrl { get; }
 
-        public string GetSearchUrl(string className, string namespaceName) =>
-            $"{GetCodeRepoSearchBaseUrl()} class:{className} AND namespace:{namespaceName}";
-
-        private string GetCodeRepoSearchBaseUrl() => $"{CodeRepoUrl.TrimEnd('/')}/_search?type=code&text=";
+        public string? GetSearchUrl(string className, string namespaceName) =>
+            string.IsNullOrWhiteSpace(CodeRepoUrl)
+                ? null
+                : $"{CodeRepoUrl.TrimEnd('/')}/_search?type=code&text= class:{className} AND namespace:{namespaceName}";
     }
 }

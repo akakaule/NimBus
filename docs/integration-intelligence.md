@@ -54,9 +54,41 @@ For Cosmos deployments, provision the `failureclassifications` and `intelligence
 ## Admin settings
 
 Site Owners can use **Admin → Failure intelligence** even when classification is
-disabled. The page edits non-secret activation, model, data-sharing, history,
-endpoint allow-list, timeout and guidance settings. Provider keys and the base URL
-remain deployment-managed and are never returned by the settings API.
+disabled. The page edits activation, model, data-sharing, history, endpoint
+allow-list, timeout and guidance settings, and can save the TypeSafe API key. The
+provider base URL remains deployment-managed. No secret is ever returned by the
+settings API.
+
+### Provider API key
+
+The `jev-*` models need a TypeSafe API key. Supply it either through deployment
+configuration (`NimBus__IntegrationIntelligence__FailureClassification__TypeSafe__ApiKey`,
+a Key Vault reference or user secrets) or from the Admin page:
+
+- **API key** is a write-only password field. Leave it blank to keep the saved key;
+  paste a new one to replace it. The value is trimmed and must be a single token of
+  1–512 characters without whitespace. The page never displays a saved key.
+- **Remove the saved key** deletes it from the shared record. The deployment key, if
+  any, applies again after restart.
+- The header shows where the running instance's key came from (`saved settings`,
+  `deployment` or `not configured`), and the field shows whether the shared record
+  holds a key. A saved key overrides the deployment key after restart.
+- The key is sealed with ASP.NET Core Data Protection (application name
+  `NimBus.WebApp`) before it is written to `dbo.IntelligenceAdminSettings` or the
+  `intelligencesettings` Cosmos item, and is unsealed only during the startup
+  bootstrap. Anyone who can read the settings store still cannot read the key. On
+  Azure App Service the key ring lives in `%HOME%\ASP.NET\DataProtection-Keys` and is
+  shared by every instance; locally it is the user's `%LOCALAPPDATA%` key ring, so a
+  key saved on one developer machine is unreadable on another.
+- If the key ring changes (new hosting plan, cleared key folder, a second
+  environment reading the same database), the page reports the saved key as
+  **unreadable**: the deployment key applies, other saved settings still load, and
+  classification is not failed closed. Enter the key again or remove it.
+- Every save is audited as `UpdateIntelligenceSettings` with
+  `"apiKey": "replaced" | "cleared" | "unchanged"`. The value itself is never audited,
+  logged, returned or echoed in error responses; a rejected key returns `InvalidApiKey`.
+- Upgrading to a WebApp that sets the Data Protection application name invalidates
+  existing sign-in cookies and antiforgery tokens once; users sign in again.
 
 Use **Review changes**, acknowledge payload sharing when enabled, then **Save settings**.
 Saves do not call TypeSafe or modify active requests. Restart **every WebApp instance**
@@ -85,9 +117,13 @@ settings before calling `AddNimBusIntegrationIntelligence`.
   deployment defaults. Event retention does not delete configuration.
 - `GET/PUT /api/admin/failure-intelligence` require site Owner access. GET issues an
   antiforgery token; PUT requires its cookie and `X-NimBus-CSRF` header, a complete
-  settings DTO, expected revision, and payload-sharing acknowledgment. The Admin
-  rate-limit policy applies, respecting its kill switch. Changes are audited as
-  `UpdateIntelligenceSettings` with sanitized outcomes, not credentials.
+  settings DTO, expected revision, and payload-sharing acknowledgment. PUT may also
+  carry `apiKey` (replace) or `clearApiKey: true` (remove), never both; omitting
+  both keeps the sealed key. Responses add `credentialSource` (`saved`, `deployment`,
+  `none`) for the running instance and `savedApiKey` (`none`, `configured`,
+  `unreadable`) for the shared record. The Admin rate-limit policy applies,
+  respecting its kill switch. Changes are audited as `UpdateIntelligenceSettings`
+  with sanitized outcomes, not credentials.
 
 Payload inclusion stays **off by default** for new installations. Enabling it sends
 redacted payload evidence only on deliberately requested analyses, not old results.

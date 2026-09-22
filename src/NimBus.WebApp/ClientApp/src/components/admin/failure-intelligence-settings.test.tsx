@@ -8,7 +8,7 @@ const settings = { enabled: true, model: "jev-1.13.0", includeEventPayload: fals
   maximumHistoryItems: 5, additionalRedactedKeys: [], allowedEndpoints: [], timeoutSeconds: 20,
   minimumCategoryConfidence: 0.6, retryLikely: 0.75, changeRequired: 0.75 };
 const state = { active: settings, saved: settings, revision: "none", activeRevision: "none", restartRequired: false,
-  startupLoadFailed: false, credentialConfigured: true, csrfToken: "csrf-test" };
+  startupLoadFailed: false, credentialConfigured: true, credentialSource: "deployment", savedApiKey: "none", csrfToken: "csrf-test" };
 afterEach(() => { cleanup(); globalThis.fetch = originalFetch; });
 
 describe("Failure intelligence settings", () => {
@@ -27,8 +27,45 @@ describe("Failure intelligence settings", () => {
     await screen.findByText(/Settings saved. Restart all WebApp instances/);
     const request = fetchMock.mock.calls[1][1];
     expect(request.headers["X-NimBus-CSRF"]).toBe("csrf-test");
-    expect(JSON.parse(request.body)).toMatchObject({ revision: "none", payloadSharingAcknowledged: true, settings: { includeEventPayload: true } });
-    expect(screen.getByText(/Active on this instance: enabled · payload excluded/)).toBeTruthy();
+    expect(JSON.parse(request.body)).toMatchObject({ revision: "none", payloadSharingAcknowledged: true, apiKey: null, clearApiKey: false, settings: { includeEventPayload: true } });
+    expect(screen.getByText(/Active on this instance: enabled · payload excluded · API key configured by deployment/)).toBeTruthy();
+  });
+
+  it("sends a new API key as a masked write-only field and clears it after saving", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ ...state, credentialConfigured: false, credentialSource: "none" }))
+      .mockResolvedValueOnce(Response.json({ ...state, credentialConfigured: false, credentialSource: "none", savedApiKey: "configured", revision: "rev-1", restartRequired: true }));
+    globalThis.fetch = fetchMock as typeof fetch;
+    render(<FailureIntelligenceSettings />);
+    await screen.findByText(/Provider key is missing. Save one below/);
+    const key = screen.getByLabelText(/API key/) as HTMLInputElement;
+    expect(key.type).toBe("password");
+    expect(key.autocomplete).toBe("new-password");
+    await userEvent.type(key, " ts-live-key-123 ");
+    await userEvent.click(screen.getByRole("button", { name: "Review changes" }));
+    expect(screen.getByText(/API key replaced\./)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await screen.findByText(/Settings saved/);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ apiKey: "ts-live-key-123", clearApiKey: false });
+    expect((screen.getByLabelText(/New API key/) as HTMLInputElement).value).toBe("");
+    expect(screen.getByText(/Saved key: configured/)).toBeTruthy();
+    expect(screen.queryByText(/Provider key is missing/)).toBeNull();
+    expect(document.body.textContent).not.toContain("ts-live-key-123");
+  });
+
+  it("removes a saved key without sending a value and warns when the saved key is unreadable", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ ...state, credentialSource: "saved", savedApiKey: "unreadable", revision: "rev-1" }))
+      .mockResolvedValueOnce(Response.json({ ...state, credentialSource: "saved", savedApiKey: "none", revision: "rev-2", restartRequired: true }));
+    globalThis.fetch = fetchMock as typeof fetch;
+    render(<FailureIntelligenceSettings />);
+    await screen.findByText(/cannot be used here/);
+    await userEvent.click(screen.getByRole("checkbox", { name: /Remove the saved key/ }));
+    expect((screen.getByLabelText(/New API key/) as HTMLInputElement).disabled).toBe(true);
+    await userEvent.click(screen.getByRole("button", { name: "Review changes" }));
+    expect(screen.getByText(/API key removed\./)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await screen.findByText(/Settings saved/);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ revision: "rev-1", apiKey: null, clearApiKey: true });
+    expect(screen.queryByRole("checkbox", { name: /Remove the saved key/ })).toBeNull();
   });
 
   it("shows forbidden without rendering editable controls", async () => {

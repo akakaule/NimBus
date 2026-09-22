@@ -51,14 +51,22 @@ public sealed class IntelligenceAdminSettings
         return errors;
     }
 
+    /// <summary>Accepts a trimmed provider key: 1–512 visible characters, no whitespace or control characters. Never logs the value.</summary>
+    public static bool IsValidApiKey(string? value)
+        => value is { Length: >= 1 and <= 512 } && !value.Any(c => char.IsWhiteSpace(c) || char.IsControl(c));
+
     private static bool Probability(double value) => double.IsFinite(value) && value is >= 0 and <= 1;
     private static bool Names(string[]? values) => values is not null && values.Length <= 100
         && values.All(v => !string.IsNullOrWhiteSpace(v) && v.Length <= 200 && !v.Any(char.IsControl));
 
-    /// <summary>Builds an independent configuration snapshot, replacing arrays rather than merging their tails.</summary>
-    public IConfiguration ApplyTo(IConfiguration configuration)
+    /// <summary>
+    /// Builds an independent configuration snapshot, replacing arrays rather than merging their tails.
+    /// A non-null <paramref name="apiKey"/> (the unsealed administrator-saved key) overrides the deployment key.
+    /// </summary>
+    public IConfiguration ApplyTo(IConfiguration configuration, string? apiKey = null)
     {
         var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        if (apiKey is not null) values[Module + "TypeSafe:ApiKey"] = apiKey;
         values[Prefix + "Enabled"] = Enabled.ToString();
         values[Module + "Enabled"] = Enabled.ToString();
         values[Module + "TypeSafe:Model"] = Model;
@@ -97,8 +105,12 @@ public sealed class IntelligenceAdminSettings
     }
 }
 
-/// <summary>Durable configuration revision. The initial, absent revision is "none".</summary>
-public sealed record IntelligenceSettingsDocument(IntelligenceAdminSettings Settings, string Revision);
+/// <summary>
+/// Durable configuration revision. The initial, absent revision is "none".
+/// <paramref name="ProtectedApiKey"/> is the Data Protection payload of the administrator-saved provider key,
+/// or null when deployment configuration supplies it. Records saved before this field existed deserialize with null.
+/// </summary>
+public sealed record IntelligenceSettingsDocument(IntelligenceAdminSettings Settings, string Revision, string? ProtectedApiKey = null);
 
 /// <summary>Shared configuration persistence, independent from classification results.</summary>
 public interface IIntelligenceSettingsStore

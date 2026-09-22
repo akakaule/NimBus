@@ -12,10 +12,18 @@ type Settings = {
 };
 type SettingsState = {
   active: Settings; saved: Settings; revision: string; activeRevision: string; restartRequired: boolean;
-  startupLoadFailed: boolean; credentialConfigured: boolean; csrfToken: string;
+  startupLoadFailed: boolean; credentialConfigured: boolean;
+  /** Where the running instance's key came from. */
+  credentialSource: "saved" | "deployment" | "none";
+  /** Whether the shared record holds a key; "unreadable" means it was sealed by another key ring. */
+  savedApiKey: "none" | "configured" | "unreadable";
+  csrfToken: string;
 };
 const url = "/api/admin/failure-intelligence";
 const names = (value: string) => value.split(",").map(item => item.trim()).filter(Boolean);
+const credentialText: Record<SettingsState["credentialSource"], string> = {
+  saved: "configured from saved settings", deployment: "configured by deployment", none: "not configured",
+};
 
 export default function FailureIntelligenceSettings() {
   const [state, setState] = useState<SettingsState>();
@@ -23,6 +31,8 @@ export default function FailureIntelligenceSettings() {
   const [redactedKeys, setRedactedKeys] = useState("");
   const [endpoints, setEndpoints] = useState("");
   const [selected, setSelected] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+  const [clearApiKey, setClearApiKey] = useState(false);
   const [error, setError] = useState<string>();
   const [message, setMessage] = useState<string>();
   const [saving, setSaving] = useState(false);
@@ -35,7 +45,7 @@ export default function FailureIntelligenceSettings() {
   function accept(next: SettingsState) {
     setState(next); setDraft(next.saved); setRedactedKeys(next.saved.additionalRedactedKeys.join(", "));
     setEndpoints(next.saved.allowedEndpoints.join(", ")); setSelected(next.saved.allowedEndpoints.length > 0);
-    setReview(false); setConsent(false);
+    setApiKey(""); setClearApiKey(false); setReview(false); setConsent(false);
   }
   useEffect(() => {
     alive.current = true;
@@ -60,6 +70,7 @@ export default function FailureIntelligenceSettings() {
     setDraft(current => current ? { ...current, [key]: value } : current);
     setReview(false); setConsent(false); setMessage(undefined);
   };
+  const keyAction = clearApiKey ? "removed" : apiKey.trim() ? "replaced" : "unchanged";
   async function save() {
     if (!draft || !state || saving || loading) return;
     setSaving(true); setError(undefined);
@@ -69,11 +80,12 @@ export default function FailureIntelligenceSettings() {
         method: "PUT", credentials: "same-origin", signal: controller.signal,
         headers: { "Content-Type": "application/json", "X-NimBus-CSRF": state.csrfToken },
         body: JSON.stringify({ revision: state.revision, payloadSharingAcknowledged: consent,
+          apiKey: clearApiKey ? null : apiKey.trim() || null, clearApiKey,
           settings: { ...draft, additionalRedactedKeys: names(redactedKeys), allowedEndpoints: selected ? names(endpoints) : [] } }),
       });
       if (!response.ok) throw new Error(response.status === 409
         ? "Another administrator changed these settings. Reload saved settings before reviewing your edits again."
-        : response.status === 400 ? "Settings were rejected. Check values and reload if your security token has expired."
+        : response.status === 400 ? "Settings were rejected. Check values (an API key must be a single token without spaces) and reload if your security token has expired."
           : response.status === 401 || response.status === 403 ? "Only site Owners can save settings."
             : "Save could not be confirmed. Reload saved settings before retrying.");
       const next = await response.json() as SettingsState;
@@ -93,16 +105,19 @@ export default function FailureIntelligenceSettings() {
     eventPayload: draft.includeEventPayload ? Object.fromEntries(Object.entries({ AccountId: "[redacted]", LegalName: "Example Company", TaxId: "[redacted]", CountryCode: "ES" })
       .map(([key, value]) => [key, names(redactedKeys).some(name => name.toLowerCase() === key.toLowerCase()) ? "[redacted]" : value])) : null,
   };
+  const keyMissingAfterSave = draft.enabled && keyAction !== "replaced"
+    && (clearApiKey ? state.credentialSource !== "deployment" : state.savedApiKey !== "configured" && !state.credentialConfigured);
   return <form className="w-full min-w-0 space-y-6 max-sm:fixed max-sm:inset-0 max-sm:z-40 max-sm:overflow-y-auto max-sm:bg-background max-sm:p-4" onSubmit={event => {
     event.preventDefault();
     if (selected && names(endpoints).length === 0) { setError("Enter at least one endpoint ID, or select all authorized endpoints."); return; }
+    if (apiKey.trim() && /\s/.test(apiKey.trim())) { setError("The API key must be a single token without spaces."); return; }
     setReview(true); setError(undefined);
   }}>
     <header><a href="/Admin" className="mb-4 inline-block text-sm text-primary sm:hidden">← Back to Admin</a><h2 className="text-xl font-semibold">Failure intelligence</h2><p className="text-muted-foreground">On-demand advisory analysis. You control the provider, evidence and endpoint scope.</p>
-      <p className="mt-2 text-sm">Active on this instance: {state.active.enabled ? "enabled" : "disabled"} · payload {state.active.includeEventPayload ? "included" : "excluded"}</p>
+      <p className="mt-2 text-sm">Active on this instance: {state.active.enabled ? "enabled" : "disabled"} · payload {state.active.includeEventPayload ? "included" : "excluded"} · API key {credentialText[state.credentialSource]}</p>
       {state.restartRequired && <p role="status" className="mt-2 text-status-warning">Saved settings differ from this instance. Restart all WebApp instances to apply.</p>}
       {state.startupLoadFailed && <p role="alert">Startup settings could not be loaded. Classification is disabled until storage is restored and the WebApp restarts.</p>}
-      {!state.credentialConfigured && <p role="status">Provider key is missing. Configure it through deployment before enabling analysis.</p>}
+      {!state.credentialConfigured && state.savedApiKey !== "configured" && <p role="status">Provider key is missing. Save one below, or configure it through deployment, before enabling analysis.</p>}
     </header>
     {error && <p role="alert" className="text-status-danger">{error}</p>}
     {message && <p role="status" className="text-status-success">{message}</p>}
@@ -112,7 +127,15 @@ export default function FailureIntelligenceSettings() {
           <SettingToggle label="Enable failure intelligence" description="Contributors can request analysis. Nothing runs automatically." checked={draft.enabled} onChange={value => edit("enabled", value)} />
           <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm">Provider<Input value="TypeSafe" readOnly /></label>
             <label className="text-sm">Model<Input value={draft.model} required maxLength={100} pattern="[a-zA-Z0-9_.\-]+" onChange={event => edit("model", event.target.value)} /></label></div>
-          <p className="text-sm text-muted-foreground">API key: {state.credentialConfigured ? "configured" : "not configured"}. Credentials and the provider URL are managed through deployment and never displayed here.</p>
+          <label className="block text-sm">{state.savedApiKey === "none" ? "API key" : "New API key"}
+            <Input type="password" autoComplete="new-password" spellCheck={false} maxLength={512} value={apiKey} disabled={clearApiKey}
+              placeholder={state.savedApiKey === "configured" ? "Leave blank to keep the saved key" : "Paste the TypeSafe API key"}
+              onChange={event => { setApiKey(event.target.value); setReview(false); setMessage(undefined); }} />
+            <span className="text-xs text-muted-foreground">Saved key: {state.savedApiKey === "configured" ? "configured" : state.savedApiKey === "unreadable" ? "cannot be read on this instance" : "none"}. Stored encrypted in shared settings and never shown again. A saved key overrides the deployment key after restart. The provider URL stays deployment-managed.</span>
+          </label>
+          {state.savedApiKey === "unreadable" && <p role="alert" className="text-sm text-status-danger">The saved key was encrypted by a different data-protection key ring and cannot be used here. Enter it again or remove it; the deployment key applies meanwhile.</p>}
+          {state.savedApiKey !== "none" && <label className="flex gap-2 text-sm"><input type="checkbox" checked={clearApiKey} onChange={event => { setClearApiKey(event.target.checked); if (event.target.checked) setApiKey(""); setReview(false); setMessage(undefined); }} />Remove the saved key{state.credentialSource === "deployment" ? " and use the deployment-configured key" : ""}</label>}
+          {keyMissingAfterSave && <p role="status" className="text-sm text-status-warning">Analysis stays unavailable until an API key is configured.</p>}
         </CardContent></Card>
         <Card><CardHeader><CardTitle>02 · Evidence sent to Jev</CardTitle></CardHeader><CardContent className="space-y-4">
           <SettingToggle label="Include redacted event payload" description="Data.IncludeEventPayload — business context from this failure occurrence." checked={draft.includeEventPayload} onChange={value => edit("includeEventPayload", value)} />
@@ -137,7 +160,7 @@ export default function FailureIntelligenceSettings() {
       </CardContent></Card><Card><CardContent className="pt-5 text-sm text-muted-foreground">Saving creates a shared configuration revision. Active requests and this instance’s settings stay unchanged until restart. Restart every instance; this page cannot verify other instances. Disabling does not delete saved classifications.</CardContent></Card></aside>
     </div>
     {review && <section aria-label="Review settings" className="space-y-4 rounded-md border border-primary/40 p-5">
-      <h3 className="font-semibold">Review changes</h3><p className="text-sm">{draft.enabled ? "Enable" : "Disable"} analysis · {draft.model} · payload {draft.includeEventPayload ? "included after redaction" : "excluded"} · {selected ? endpoints : "all authorized endpoints"}.</p>
+      <h3 className="font-semibold">Review changes</h3><p className="text-sm">{draft.enabled ? "Enable" : "Disable"} analysis · {draft.model} · payload {draft.includeEventPayload ? "included after redaction" : "excluded"} · {selected ? endpoints : "all authorized endpoints"} · API key {keyAction}.</p>
       {draft.includeEventPayload && <label className="flex gap-2 text-sm"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} />I authorize sending redacted event payloads to TypeSafe; unmarked business data may remain.</label>}
       <div className="flex gap-2"><Button type="button" variant="outline" disabled={saving || loading} onClick={() => setReview(false)}>Back</Button><Button type="button" disabled={saving || loading || (draft.includeEventPayload && !consent)} onClick={() => void save()}>{saving ? "Saving…" : "Save settings"}</Button></div>
     </section>}

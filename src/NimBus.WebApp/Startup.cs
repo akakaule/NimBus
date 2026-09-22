@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
@@ -87,6 +88,10 @@ namespace NimBus.WebApp
             services.AddSingleton<IIntelligenceSettingsStore>(sp => IntelligenceSettingsStore.Create(
                 sp.GetRequiredService<IIntegrationIntelligenceStorageSettings>()));
             services.AddSingleton(IntelligenceSettingsSnapshot.Create(Configuration));
+            // The same application name is set in IntelligenceSettingsBootstrap so the pre-host
+            // settings read can unseal an Admin-saved provider key.
+            services.AddDataProtection().SetApplicationName(IntelligenceSecretProtector.ApplicationName);
+            services.AddSingleton<IIntelligenceSecretProtector, DataProtectionSecretProtector>();
             services.AddAntiforgery(options => options.HeaderName = "X-NimBus-CSRF");
             AddManagementServices(services);
             AddObservability(services, storageProvider);

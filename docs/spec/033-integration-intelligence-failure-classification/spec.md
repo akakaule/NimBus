@@ -33,6 +33,21 @@ Payload export remains default-off for new installations. See
 [operator documentation](../../integration-intelligence.md#admin-settings) and the
 [implementation plan](../../plan/2026-09-21-intelligence-admin-settings.md).
 
+### 2026-09-22 addendum — administrator-saved provider key
+
+The Admin page may also save the TypeSafe API key (issue #134). The key is sealed with
+ASP.NET Core Data Protection (application name `NimBus.WebApp`, purpose
+`NimBus.IntegrationIntelligence.AdminSettings.ProviderApiKey.v1`) and stored as
+`ProtectedApiKey` in the same revision-fenced settings record; readers of the store
+cannot recover it. The bootstrap registers Data Protection with the same application
+name and unseals the key before `AddNimBusIntegrationIntelligence`; a saved key
+overrides the deployment key, an unreadable one is ignored in favour of the deployment
+key and surfaced as `unreadable` so a rotated key ring never fails classification
+closed. `PUT` accepts write-only `apiKey` / `clearApiKey`; no response, audit row or
+log carries the value. The base URL stays deployment-managed. Setting the application
+name invalidates existing cookies and antiforgery tokens once at upgrade. See the
+[implementation plan](../../plan/2026-09-22-intelligence-admin-api-key.md).
+
 Related: ADR-004 (pipeline behaviors), `docs/extensions.md` (extension packages),
 `docs/error-handling.md` (the deterministic retry/DLQ rules this feature must not touch).
 

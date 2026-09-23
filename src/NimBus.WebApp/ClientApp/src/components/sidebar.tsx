@@ -4,6 +4,7 @@ import { cn } from "lib/utils";
 import { useEnv } from "hooks/app-status";
 import { useAccess } from "hooks/use-access";
 import SidebarUserFooter from "components/sidebar-user-footer";
+import { useSimulationStatus } from "components/simulate/simulation-utils";
 
 interface NavItem {
   name: string;
@@ -159,6 +160,22 @@ const Icon = {
       />
     </svg>
   ),
+  simulate: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
+      <path
+        d="M4 3l9 5-9 5z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M1.5 5.5v5"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  ),
   access: (
     <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
       <rect
@@ -229,6 +246,7 @@ const NAV: NavGroup[] = [
     label: "Manage",
     items: [
       { name: "Admin", path: "/Admin", icon: Icon.admin },
+      { name: "Simulate", path: "/Simulate", icon: Icon.simulate },
       { name: "Access Control", path: "/AccessControl", icon: Icon.access },
     ],
   },
@@ -246,15 +264,48 @@ const useVisibleNav = (): NavGroup[] => {
       (r) => r.role === api.EndpointRoleInfoRole.Owner,
     ) ?? false;
 
+  // The simulator's status is fetched only for site Owners; everyone else
+  // never calls the admin API from the sidebar.
+  const { status: simulation } = useSimulationStatus({
+    enabled: canManageSite,
+    pollMs: SIMULATION_POLL_MS,
+  });
+  const showSimulate =
+    canManageSite && !!simulation?.allowed && !!simulation?.enabled;
+
   return NAV.map((group) => {
     if (group.label !== "Manage") return group;
     return {
       ...group,
-      items: group.items.filter((item) =>
-        item.path === "/Admin" ? canManageSite : canManageSite || ownsEndpoint,
-      ),
+      items: group.items
+        .filter((item) => {
+          if (item.path === "/Admin") return canManageSite;
+          if (item.path === "/Simulate") return showSimulate;
+          return canManageSite || ownsEndpoint;
+        })
+        .map((item) =>
+          item.path === "/Simulate"
+            ? { ...item, badge: simulationBadge(simulation?.state) }
+            : item,
+        ),
     };
   }).filter((group) => group.items.length > 0);
+};
+
+const SIMULATION_POLL_MS = 15_000;
+
+const simulationBadge = (state?: string): string => {
+  switch ((state ?? "").toLowerCase()) {
+    case "running":
+      return "run";
+    case "paused":
+      return "paused";
+    case "pausing":
+    case "stopping":
+      return "…";
+    default:
+      return "idle";
+  }
 };
 
 // Logo mark — soft cloud silhouette + coral droplet (design system §01).

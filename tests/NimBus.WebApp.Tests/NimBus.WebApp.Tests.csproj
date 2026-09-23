@@ -29,6 +29,15 @@
     <ProjectReference Include="..\..\src\NimBus.WebApp\NimBus.WebApp.csproj" />
     <ProjectReference Include="..\..\src\NimBus.Testing\NimBus.Testing.csproj" />
     <ProjectReference Include="..\..\src\NimBus.Extensions.Identity\NimBus.Extensions.Identity.csproj" />
+    <!-- Simulation end-to-end tests (Simulation/SimulationEmulatorTests.cs) host the Resolver
+         in-process and drive the local Service Bus emulator. The emulator is only launched
+         (dotnet run no-build), never loaded, so it is built but not referenced. -->
+    <ProjectReference Include="..\..\src\NimBus.Resolver\NimBus.Resolver.csproj" />
+    <ProjectReference Include="..\..\src\NimBus.ServiceBusEmulator\NimBus.ServiceBusEmulator.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\NimBus.ServiceBusEmulator.Tests\Infrastructure\EmulatorProcess.cs" Link="Simulation\EmulatorProcess.cs" />
   </ItemGroup>
 
 </Project>

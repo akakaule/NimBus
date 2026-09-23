@@ -161,6 +161,9 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
     /// <summary>The current config.</summary>
     public SimulationConfig Config => _config;
 
+    /// <summary>Deliveries currently inside a simulated handler, across endpoints.</summary>
+    internal int InFlightDeliveries => _behaviors.Values.Sum(b => b.InFlight);
+
     /// <inheritdoc />
     public (bool Allowed, SimulationBlockedReason? Reason) EvaluateEnvironment() =>
         SimulationEnvironmentPolicy.Evaluate(_configuration["Environment"], _options.AllowedEnvironments);

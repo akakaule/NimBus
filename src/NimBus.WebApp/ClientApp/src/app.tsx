@@ -27,6 +27,7 @@ const Heartbeat = lazy(() => import("pages/heartbeat"));
 const Insights = lazy(() => import("pages/insights"));
 const Monitor = lazy(() => import("pages/monitor"));
 const AuditsList = lazy(() => import("pages/audits-list"));
+const Simulate = lazy(() => import("pages/simulate"));
 
 const navigation: Navigation = [
   {
@@ -112,6 +113,12 @@ const navigation: Navigation = [
     path: "/Admin",
     header: true,
     render: () => <Admin />,
+  },
+  {
+    name: "Simulate",
+    path: "/Simulate",
+    header: true,
+    render: () => <Simulate />,
   },
   {
     name: "Access Control",

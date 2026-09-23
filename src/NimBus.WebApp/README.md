@@ -57,6 +57,12 @@ To add endpoints:
 2. Implement generated interfaces in `Controllers/ApiContract/*Implementation.cs`
 3. Build/run to regenerate NSwag outputs
 
+## Simulating traffic
+
+Admin → Simulation switches on a traffic simulator that publishes generated events and hosts
+the handlers of endpoints an Owner hands to it. It runs only in allowed, non-production
+environments. See [docs/webapp-simulate.md](../../docs/webapp-simulate.md).
+
 ## Frontend notes
 
 The client app is React + TypeScript + Vite. See `ClientApp/README.md` for frontend-specific commands and structure.

@@ -22,6 +22,16 @@ var identityEnabled = string.Equals(
     "true",
     StringComparison.OrdinalIgnoreCase);
 
+// Optional: the WebApp's traffic simulator replaces the sample processes. Off by
+// default — set NIMBUS_SIMULATION=true (or pass --NIMBUS_SIMULATION true). The
+// simulator then owns BillingEndpoint and WarehouseEndpoint and hosts their
+// handlers inside the WebApp, so the sample publisher/subscribers are left out
+// instead of competing with it for the same subscriptions.
+var simulationEnabled = string.Equals(
+    Environment.GetEnvironmentVariable("NIMBUS_SIMULATION") ?? builder.Configuration["NIMBUS_SIMULATION"],
+    "true",
+    StringComparison.OrdinalIgnoreCase);
+
 var useServiceBusEmulator = string.Equals(
     Environment.GetEnvironmentVariable("NIMBUS_SB_EMULATOR") ?? builder.Configuration["UseEmulator"],
     "true",
@@ -151,24 +161,39 @@ if (identityEnabled)
         "(override with NIMBUS_IDENTITY_ADMIN_EMAIL / NIMBUS_IDENTITY_ADMIN_PASSWORD).");
 }
 
-// Sample Publisher (HTTP API for publishing events)
-var publisher = builder.AddProject<Projects.AspirePubSub_Publisher>("publisher")
-    .WithReference(servicebus)
-    .WithExternalHttpEndpoints()
-    .WaitForCompletion(provisioner);
+if (simulationEnabled)
+{
+    // The owned list is never empty, so the configuration binder cannot drop it.
+    webapp
+        .WithEnvironment("NimBus__Simulation__EnabledByDefault", "true")
+        .WithEnvironment("NimBus__Simulation__OwnedEndpoints__0", "BillingEndpoint")
+        .WithEnvironment("NimBus__Simulation__OwnedEndpoints__1", "WarehouseEndpoint");
 
-// Sample Subscriber (handles events + separated DeferredProcessor)
-var subscriber = builder.AddProject<Projects.AspirePubSub_Subscriber>("subscriber")
-    .WithReference(servicebus)
-    .WaitForCompletion(provisioner);
+    Console.WriteLine(
+        "Traffic simulation: enabled. The WebApp simulates BillingEndpoint and WarehouseEndpoint; " +
+        "the sample publisher and subscribers are not started. Open Admin → Simulation, then Simulate.");
+}
+else
+{
+    // Sample Publisher (HTTP API for publishing events)
+    builder.AddProject<Projects.AspirePubSub_Publisher>("publisher")
+        .WithReference(servicebus)
+        .WithExternalHttpEndpoints()
+        .WaitForCompletion(provisioner);
 
-// Warehouse adapter — its own process because a container hosts one subscriber
-// endpoint. Deliberately fails ~30% of what it handles, so the sample always has
-// failures to retry, resubmit and group next to a healthy Billing endpoint. It
-// also keeps WarehouseEndpoint answering heartbeat probes, which only a running
-// subscriber can do.
-var warehouseSubscriber = builder.AddProject<Projects.AspirePubSub_WarehouseSubscriber>("warehouse-subscriber")
-    .WithReference(servicebus)
-    .WaitForCompletion(provisioner);
+    // Sample Subscriber (handles events + separated DeferredProcessor)
+    builder.AddProject<Projects.AspirePubSub_Subscriber>("subscriber")
+        .WithReference(servicebus)
+        .WaitForCompletion(provisioner);
+
+    // Warehouse adapter — its own process because a container hosts one subscriber
+    // endpoint. Deliberately fails ~30% of what it handles, so the sample always has
+    // failures to retry, resubmit and group next to a healthy Billing endpoint. It
+    // also keeps WarehouseEndpoint answering heartbeat probes, which only a running
+    // subscriber can do.
+    builder.AddProject<Projects.AspirePubSub_WarehouseSubscriber>("warehouse-subscriber")
+        .WithReference(servicebus)
+        .WaitForCompletion(provisioner);
+}
 
 builder.Build().Run();

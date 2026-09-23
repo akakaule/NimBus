@@ -104,6 +104,22 @@ public sealed class SimulationOptionsValidatorTests
     }
 
     [TestMethod]
+    public void Configured_allowed_environments_add_to_the_defaults()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[] { new System.Collections.Generic.KeyValuePair<string, string?>("NimBus:Simulation:AllowedEnvironments:0", "test") })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddSingleton<IPlatform>(SimulationTestPlatform.Create());
+        services.AddNimBusSimulation(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        var allowed = provider.GetRequiredService<IOptions<SimulationOptions>>().Value.AllowedEnvironments;
+
+        CollectionAssert.IsSubsetOf(new[] { "dev", "development", "test" }, allowed, "docs/webapp-simulate.md documents that the list appends.");
+    }
+
+    [TestMethod]
     public void ValidateOnStart_rejects_a_production_name_from_configuration()
     {
         var configuration = new ConfigurationBuilder()

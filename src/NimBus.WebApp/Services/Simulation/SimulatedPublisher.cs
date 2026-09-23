@@ -342,16 +342,19 @@ public sealed class SimulatedPublisher
             return;
 
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var released = 0;
+        // 0 = arming, 1 = counted as waiting, 2 = released. The loop counts as waiting only once
+        // its timer is armed, so a stepped clock never advances past a timer not yet created.
+        var state = 0;
         void Release()
         {
-            if (Interlocked.Exchange(ref released, 1) == 0)
+            if (Interlocked.Exchange(ref state, 2) == 1)
                 Interlocked.Decrement(ref _waiting);
         }
 
-        Interlocked.Increment(ref _waiting);
         using var timer = _timeProvider.CreateTimer(_ => { Release(); completion.TrySetResult(); }, null, delay, Timeout.InfiniteTimeSpan);
         using var registration = cancellationToken.Register(() => { Release(); completion.TrySetCanceled(cancellationToken); });
+        if (Interlocked.CompareExchange(ref state, 1, 0) == 0)
+            Interlocked.Increment(ref _waiting);
         await completion.Task.ConfigureAwait(false);
     }
 }

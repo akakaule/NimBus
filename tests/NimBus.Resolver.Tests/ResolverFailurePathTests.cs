@@ -298,7 +298,7 @@ public class ResolverFailurePathTests
     }
 
     private static ResolverService CreateHeartbeatService(FakeCosmosDbClient store, IMessageStateChangeNotifier? notifier = null) =>
-        new(store, notifier ?? new NoopMessageStateChangeNotifier(), logger: null, metadataStore: store, serviceHealthStore: store);
+        new(store, notifier ?? new NoopMessageStateChangeNotifier(), logger: null!, metadataStore: store, serviceHealthStore: store);
 
     private static FakeMessageContext CreateProbe(CoreHeartbeat payload)
     {

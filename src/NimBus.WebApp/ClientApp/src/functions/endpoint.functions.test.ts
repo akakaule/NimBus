@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
+import moment from "moment";
 import {
+  formatMoment,
   formatResolutionStatus,
   parseBlockedByEventId,
 } from "./endpoint.functions";
@@ -96,5 +98,17 @@ describe("parseBlockedByEventId", () => {
       `Custom adapter said: session unavailable, please retry.`,
     );
     expect(result).toBeUndefined();
+  });
+});
+
+describe("formatMoment", () => {
+  const ts = moment.utc("2026-05-28T10:04:05.123Z");
+
+  it("omits milliseconds in the slim format used by message listings", () => {
+    expect(formatMoment(ts, true)).toBe("28/05/26 10:04:05");
+  });
+
+  it("keeps milliseconds in the full format", () => {
+    expect(formatMoment(ts)).toBe("28/05/2026 10:04:05.123");
   });
 });

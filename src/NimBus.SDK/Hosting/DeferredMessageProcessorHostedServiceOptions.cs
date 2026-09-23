@@ -1,9 +1,9 @@
 namespace NimBus.SDK.Hosting
 {
     /// <summary>
-    /// DI-resolved configuration for <see cref="DeferredMessageProcessorHostedService"/>.
-    /// Registered as a singleton by <c>AddNimBusSubscriber</c> with values pulled
-    /// from <see cref="Extensions.NimBusSubscriberOptions"/>.
+    /// Configuration for <see cref="DeferredMessageProcessorHostedService"/>.
+    /// Registered as a singleton by <c>AddNimBusDeferredProcessorHostedService</c>,
+    /// or passed directly when a host constructs the service itself.
     /// </summary>
     /// <param name="TopicName">Endpoint (topic) whose deferred subscription is drained.</param>
     /// <param name="SubscriptionName">Name of the non-session trigger subscription.</param>
@@ -14,7 +14,7 @@ namespace NimBus.SDK.Hosting
     /// only when the endpoint tolerates deferred triggers replaying out of
     /// order (e.g. session-independent workloads).
     /// </param>
-    internal sealed record DeferredMessageProcessorHostedServiceOptions(
+    public sealed record DeferredMessageProcessorHostedServiceOptions(
         string TopicName,
         string SubscriptionName,
         int MaxConcurrentCalls = 1);

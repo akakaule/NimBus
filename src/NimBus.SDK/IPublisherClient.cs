@@ -23,6 +23,27 @@ namespace NimBus.SDK
         Task Publish(IEvent @event, string sessionId, string correlationId, string messageId);
 
         /// <summary>
+        /// Publishes an event like <see cref="Publish(IEvent, string, string, string)"/>, and
+        /// passes <paramref name="cancellationToken"/> to the underlying send so a caller can
+        /// abandon a publish that is still in flight.
+        /// </summary>
+        /// <param name="event">The event to publish.</param>
+        /// <param name="sessionId">Session id for the message.</param>
+        /// <param name="correlationId">Correlation id for the message.</param>
+        /// <param name="messageId">Message id, or <c>null</c> to derive the deterministic id.</param>
+        /// <param name="cancellationToken">Cancels the publish.</param>
+        /// <remarks>
+        /// The default implementation checks the token and then delegates to the overload
+        /// without a token, so existing implementers keep compiling; it cannot cancel a send
+        /// that has already started. <see cref="PublisherClient"/> passes the token to the send.
+        /// </remarks>
+        Task Publish(IEvent @event, string sessionId, string correlationId, string messageId, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Publish(@event, sessionId, correlationId, messageId);
+        }
+
+        /// <summary>
         /// Publishes a workflow follow-up using the inbound handler context's session,
         /// correlation, and lineage metadata. The outgoing parent is the inbound
         /// <see cref="IEventHandlerContext.MessageId"/>. The originating message is

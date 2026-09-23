@@ -68,6 +68,27 @@ pins `MaxConcurrentCalls = 1`. That is the replay path's *only* ordering
 mechanism. Raising it trades ordered replay for throughput — a real option for
 endpoints that do not need ordered replay, but make it a conscious decision.
 
+#### Hosting it yourself
+
+`AddNimBusDeferredProcessorHostedService` registers one deferred processor per
+process. A host that runs several endpoints in one process (the WebApp traffic
+simulator does) can construct `DeferredMessageProcessorHostedService` directly,
+one instance per endpoint, and call `StartAsync` / `StopAsync` itself:
+
+```csharp
+var deferred = new DeferredMessageProcessorHostedService(
+    serviceBusClient,
+    new DeferredMessageProcessor(serviceBusClient),
+    new DeferredMessageProcessorHostedServiceOptions(TopicName: endpoint, SubscriptionName: "deferredprocessor"),
+    loggerFactory.CreateLogger<DeferredMessageProcessorHostedService>());
+await deferred.StartAsync(cancellationToken);
+```
+
+The constructor rejects a blank topic or subscription and a
+`MaxConcurrentCalls` below 1. Leave `MaxConcurrentCalls` at 1 unless the
+endpoint tolerates out-of-order replay: the trigger subscription is
+non-session, so single concurrency is its only ordering mechanism.
+
 ### Topology (`ServiceBusTopologyProvisioner`)
 
 | Entity | Setting | Value |

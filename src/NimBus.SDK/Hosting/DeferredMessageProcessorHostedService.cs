@@ -13,18 +13,35 @@ namespace NimBus.SDK.Hosting
     /// <see cref="ServiceBusProcessor"/> on the <c>deferredprocessor</c>
     /// subscription and delegates each trigger to
     /// <see cref="DeferredMessageDispatcher"/>. Registered by
-    /// <c>AddNimBusSubscriber</c> via <c>TryAddEnumerable</c>; suppress with
-    /// <c>NimBusSubscriberOptions.DisableDeferredProcessorHostedService = true</c>
-    /// when the host owns the trigger directly (e.g. Azure Functions
-    /// <c>[ServiceBusTrigger]</c>).
+    /// <c>AddNimBusDeferredProcessorHostedService</c> via <c>TryAddEnumerable</c>;
+    /// Azure Functions hosts that own the trigger through a
+    /// <c>[ServiceBusTrigger]</c> function class do not register it.
+    ///
+    /// <para>Hosts that run several endpoints in one process (for example the
+    /// WebApp's traffic simulator) can construct it directly, one instance per
+    /// endpoint, and drive <see cref="BackgroundService.StartAsync"/> /
+    /// <see cref="BackgroundService.StopAsync"/> themselves. Keep
+    /// <see cref="DeferredMessageProcessorHostedServiceOptions.MaxConcurrentCalls"/>
+    /// at 1 unless out-of-order replay is acceptable: the trigger subscription is
+    /// non-session, so serial processing is its only ordering mechanism.</para>
     /// </summary>
-    internal sealed class DeferredMessageProcessorHostedService : BackgroundService
+    public sealed class DeferredMessageProcessorHostedService : BackgroundService
     {
         private readonly ServiceBusClient _serviceBusClient;
         private readonly IDeferredMessageProcessor _deferredMessageProcessor;
         private readonly DeferredMessageProcessorHostedServiceOptions _options;
         private readonly ILogger<DeferredMessageProcessorHostedService> _logger;
 
+        /// <summary>
+        /// Creates the hosted service.
+        /// </summary>
+        /// <param name="serviceBusClient">Client used to create the trigger processor.</param>
+        /// <param name="deferredMessageProcessor">Processor that replays the deferred session.</param>
+        /// <param name="options">Topic, trigger subscription and concurrency.</param>
+        /// <param name="logger">Logger.</param>
+        /// <exception cref="ArgumentNullException">An argument is null.</exception>
+        /// <exception cref="ArgumentException"><c>TopicName</c> or <c>SubscriptionName</c> is blank.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><c>MaxConcurrentCalls</c> is less than 1.</exception>
         public DeferredMessageProcessorHostedService(
             ServiceBusClient serviceBusClient,
             IDeferredMessageProcessor deferredMessageProcessor,
@@ -35,8 +52,16 @@ namespace NimBus.SDK.Hosting
             _deferredMessageProcessor = deferredMessageProcessor ?? throw new ArgumentNullException(nameof(deferredMessageProcessor));
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+            if (string.IsNullOrWhiteSpace(options.TopicName))
+                throw new ArgumentException("TopicName must be specified.", nameof(options));
+            if (string.IsNullOrWhiteSpace(options.SubscriptionName))
+                throw new ArgumentException("SubscriptionName must be specified.", nameof(options));
+            if (options.MaxConcurrentCalls < 1)
+                throw new ArgumentOutOfRangeException(nameof(options), options.MaxConcurrentCalls, "MaxConcurrentCalls must be at least 1.");
         }
 
+        /// <inheritdoc />
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation(

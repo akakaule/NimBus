@@ -1,4 +1,4 @@
-using Azure.Messaging.ServiceBus;
+﻿using Azure.Messaging.ServiceBus;
 using NimBus.Core.CloudEvents;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Events;
@@ -112,6 +112,14 @@ public class PublisherClient : IPublisherClient
         // canonical messaging.* attributes and parents to Activity.Current.
         var message = GetMessage(@event, correlationId, messageId, sessionId);
         await _sender.Send(message);
+    }
+
+    /// <inheritdoc/>
+    public async Task Publish(IEvent @event, string sessionId, string correlationId, string messageId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var message = GetMessage(@event, correlationId, messageId, sessionId);
+        await _sender.Send(message, 0, cancellationToken);
     }
 
     /// <inheritdoc/>

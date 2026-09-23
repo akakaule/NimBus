@@ -17,7 +17,7 @@ namespace NimBus.SDK.Tests;
 /// instance per endpoint without going through DI.
 /// </summary>
 [TestClass]
-public class DeferredMessageProcessorHostedServiceTests
+public partial class DeferredMessageProcessorHostedServiceTests
 {
     [TestMethod]
     public void Direct_construction_succeeds()
@@ -188,6 +188,15 @@ public class DeferredMessageProcessorHostedServiceTests
         public void BlockStop() => _stopCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public void ReleaseStop() => _stopCompletion?.TrySetResult();
+
+        /// <summary>Drives the processor's real message callback, as a received trigger would.</summary>
+        public Task RaiseMessageAsync(ServiceBusReceivedMessage message, ServiceBusReceiver receiver) =>
+            OnProcessMessageAsync(new ProcessMessageEventArgs(message, receiver, CancellationToken.None));
+
+        /// <summary>Drives the processor's real error callback.</summary>
+        public Task RaiseErrorAsync(Exception exception) =>
+            OnProcessErrorAsync(new ProcessErrorEventArgs(
+                exception, ServiceBusErrorSource.Receive, "test.servicebus.windows.net", "orders/subscriptions/deferredprocessor", "test", CancellationToken.None));
 
         public override Task StartProcessingAsync(CancellationToken cancellationToken = default)
         {

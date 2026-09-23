@@ -15,7 +15,7 @@ using NimBus.ServiceBus;
 namespace NimBus.SDK.Tests
 {
     [TestClass]
-    public class NimBusReceiverHostedServiceTests
+    public partial class NimBusReceiverHostedServiceTests
     {
         [TestMethod]
         public async Task Open_pauses_then_half_open_and_closed_recreate_at_expected_concurrency()
@@ -599,6 +599,7 @@ namespace NimBus.SDK.Tests
             public string TopicName { get; private set; } = string.Empty;
             public string SubscriptionName { get; private set; } = string.Empty;
             public ServiceBusSessionProcessorOptions Options { get; private set; } = new ServiceBusSessionProcessorOptions();
+            public Exception? StartException { get; set; }
 
             public override ServiceBusSessionProcessor CreateSessionProcessor(
                 string topicName,
@@ -610,7 +611,10 @@ namespace NimBus.SDK.Tests
                 Options = options;
                 ProcessorOptions.Add(options);
 
-                var processor = new RecordingServiceBusSessionProcessor(this, topicName, subscriptionName, options);
+                var processor = new RecordingServiceBusSessionProcessor(this, topicName, subscriptionName, options)
+                {
+                    StartException = StartException,
+                };
                 Processors.Add(processor);
                 return processor;
             }
@@ -720,6 +724,7 @@ namespace NimBus.SDK.Tests
 
             public int WarningCalls => Volatile.Read(ref _warningCalls);
             public Exception? LastWarningException { get; private set; }
+            public System.Collections.Concurrent.ConcurrentQueue<Exception?> WarningExceptions { get; } = new();
 
             public IDisposable? BeginScope<TState>(TState state)
                 where TState : notnull => null;
@@ -739,6 +744,7 @@ namespace NimBus.SDK.Tests
                 }
 
                 LastWarningException = exception;
+                WarningExceptions.Enqueue(exception);
                 Interlocked.Increment(ref _warningCalls);
             }
         }
@@ -759,6 +765,15 @@ namespace NimBus.SDK.Tests
             public int StartCalls { get; private set; }
             public int StopCalls { get; private set; }
             public bool CancelStop { get; set; }
+            public Exception? StartException { get; set; }
+            public Exception? StopException { get; set; }
+
+            /// <summary>Drives the processor's real message callback, as a received message would.</summary>
+            public Task RaiseMessageAsync() =>
+                OnProcessSessionMessageAsync(new ProcessSessionMessageEventArgs(
+                    ServiceBusModelFactory.ServiceBusReceivedMessage(sessionId: "session-1"),
+                    receiver: null!,
+                    CancellationToken.None));
 
             public void BlockStop()
             {
@@ -773,12 +788,17 @@ namespace NimBus.SDK.Tests
             public override Task StartProcessingAsync(CancellationToken cancellationToken = default)
             {
                 StartCalls++;
-                return Task.CompletedTask;
+                return StartException is null ? Task.CompletedTask : Task.FromException(StartException);
             }
 
             public override Task StopProcessingAsync(CancellationToken cancellationToken = default)
             {
                 StopCalls++;
+                if (StopException is not null)
+                {
+                    return Task.FromException(StopException);
+                }
+
                 if (CancelStop)
                 {
                     return Task.FromCanceled(cancellationToken);

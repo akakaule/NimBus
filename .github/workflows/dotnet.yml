@@ -78,7 +78,32 @@ jobs:
     - name: Test
       run: |
         dotnet test src/NimBus.sln --no-build --configuration Release --verbosity normal \
-          --logger trx --results-directory TestResults
+          --logger trx --results-directory TestResults \
+          --collect "Code Coverage;Format=cobertura"
+    - name: Resolver and SDK coverage report
+      # Informational, not a gate (issue #136): merges the Cobertura files every test
+      # project wrote — Resolver and SDK code is exercised from several of them — and
+      # publishes the Resolver/SDK summary to the job page plus the full report as an
+      # artifact.
+      if: always()
+      continue-on-error: true
+      run: |
+        dotnet tool install dotnet-reportgenerator-globaltool --version 5.5.11 --tool-path .tools
+        .tools/reportgenerator \
+          -reports:"TestResults/**/*.cobertura.xml" \
+          -targetdir:CoverageReport \
+          -reporttypes:"MarkdownSummaryGithub;HtmlInline" \
+          "-assemblyfilters:+NimBus.Resolver;+NimBus.SDK" \
+          "-filefilters:-*.g.cs"
+        cat CoverageReport/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+    - name: Upload coverage report
+      if: always()
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-resolver-sdk
+        path: CoverageReport
+        if-no-files-found: ignore
     - name: Cosmos DB conformance must not skip
       # The evidence gate for the Cosmos provider: a suite that skips itself reports green
       # without having conformed to anything. It reads the trx the run above already

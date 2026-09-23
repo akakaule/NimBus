@@ -1,6 +1,6 @@
 # Resolver and client SDK test coverage
 
-Status: proposed (2026-09-24)
+Status: implemented (2026-09-24), see [Results](#results)
 
 The Resolver (`src/NimBus.Resolver`) and the client SDK (`src/NimBus.SDK`) are the core of
 NimBus: every audited message goes through `ResolverService`, and every publisher and
@@ -162,3 +162,30 @@ and passes `dotnet build src/NimBus.sln -c Release` before pushing.
 - `dotnet build src/NimBus.sln -c Release` and `dotnet test src/NimBus.sln -c Release --no-build`.
 - These PRs need no live SQL/Cosmos configuration. Report any skipped conformance tests as
   skipped.
+
+## Results
+
+All six PRs landed as commits on master. Coverage, merged across the same seven test
+projects as the baseline:
+
+| Scope | Baseline lines / branches | Now | Target |
+|---|---|---|---|
+| `ResolverService.cs` | 96% / 72% | 99% / 86% | 98% / 90% |
+| NimBus.Resolver, excluding generated Functions code | 78% / 59%* | 95% / 87% | 90% / 80% |
+| NimBus.SDK | 87% / 71% | 97% / 82% | 93% / 85% |
+
+\* The baseline included the generated Functions code.
+
+Every target is met except two branch targets. On `ResolverService`, the remaining
+branches are mostly `activity?.` null-conditionals on the tracing path. On the SDK, they
+are argument guards and null-conditionals spread across the DI extensions. What remains
+uncovered in the Resolver is the Functions host bootstrap (`Program.cs`, `Functions.cs`),
+which only runs inside a Functions host. The provider selection moved out of it into
+`ResolverStorageProvider` and is covered.
+
+Each new test class was mutation-checked: the production branch it protects was broken on
+purpose, and at least one test failed.
+
+CI now collects coverage on every run. The `Resolver and SDK coverage report` step writes
+the summary to the job page and uploads the report as the `coverage-resolver-sdk`
+artifact. It is informational, not a gate.

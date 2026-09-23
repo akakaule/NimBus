@@ -8,6 +8,8 @@ Release notes template. Copy the body below into notes.md, fill it in, then:
 Title is exactly `NimBus vX.Y.Z`. Read the two previous releases first and match
 them (`gh release view v<prev>`). Full guidance: docs/versioning.md#cutting-a-release.
 Keep it about the length of v3.6.0; one bullet per user-visible change, not per commit.
+Every section is required, patches included. Omit the PRs line only when nothing
+went through a PR; the Commits line is always present.
 Delete this comment.
 -->
 
@@ -27,4 +29,6 @@ moved config defaults, renamed metrics. Or: "No schema migration, topology chang
 This release was validated with the full .NET Release build and test suite, <N> frontend tests,
 the frontend production build, <and the Cosmos DB / SQL Server conformance suites run live>.
 
-PR: https://github.com/akakaule/NimBus/pull/<N>
+PRs: https://github.com/akakaule/NimBus/pull/<N>, https://github.com/akakaule/NimBus/pull/<M>
+
+Commits: https://github.com/akakaule/NimBus/compare/v<prev>...vX.Y.Z

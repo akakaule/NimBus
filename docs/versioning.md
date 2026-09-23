@@ -62,11 +62,19 @@ below, which is the one the release history actually uses (3.6.0 onward).
   section with the breaking changes.
 - **Validation paragraph:** `This release was validated with …` — the build,
   the test counts, the suites that ran live, and any manual check.
-- **`PR:` / `PRs:`** — links to the merged pull requests, or the commit range
-  when work landed directly.
+- **Footer**, always in this order:
+  - `PR:` / `PRs:` — the merged pull requests in the release, comma-separated.
+    Omit the line only when every change landed directly on `master`.
+  - `Commits:` — always present: the compare link from the previous
+    *release* (`compare/v<prev>...vX.Y.Z`).
 
-Aim for the length of v3.6.0 — about twenty lines for a ten-item minor. A
-patch release is a sentence, one or two bullets, compatibility, validation.
+Every release uses every section, patches included — a patch is a sentence,
+one or two Highlights bullets, Compatibility, validation and the footer. Aim
+for the length of v3.6.0 — about twenty lines for a ten-item minor.
+
+All published releases, back to 0.1.0-alpha, follow this pattern (rewritten
+2026-09-23). Do not revive the pre-3.6.0 form (`## What's New`, emoji
+sections, `**Full Changelog**`).
 
 **Note for maintainers:** several DI registrations assume their service type has
 a single public constructor (e.g. `AddSingleton<IManagerClient, ManagerClient>()`).

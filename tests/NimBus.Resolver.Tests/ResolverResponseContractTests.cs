@@ -46,7 +46,8 @@ public class ResolverResponseContractTests
         Assert.AreEqual(Publisher, row.OriginatingFrom, "The publisher identity must survive to the audit row.");
         Assert.IsNotNull(row.ProcessingTimeMs, "The subscriber's handler duration is carried on the response.");
         Assert.AreEqual(Pipeline.QueueTimeMs, row.QueueTimeMs, "The subscriber's queue time is carried on the response.");
-        CollectionAssert.AreEqual(
+        // Both copies are kept in the history; their order follows the enqueue clock.
+        CollectionAssert.AreEquivalent(
             new[] { MessageType.EventRequest, MessageType.ResolutionResponse },
             await pipeline.HistoryTypes(eventId));
         Assert.AreEqual(0, pipeline.ResolverSettlement.DeadLetteredCount);

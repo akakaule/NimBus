@@ -564,7 +564,7 @@ Keep this list to ≤5 bullets. File-level defects do not belong here; they belo
 |---|---|
 | `{ContractsProject}/Endpoints/{Adapter}Endpoint.cs` | Authoritative event contract |
 | [`{Adapter}-review.md`](./{Adapter}-review.md) | Code review feeding §8 (full defect list, priorities, fixes) |
-| [`../CLAUDE.md`](../CLAUDE.md) | Repo conventions for AI agents |
+| [`../AGENTS.md`](../AGENTS.md) | Repo conventions for AI agents |
 
 ---
 

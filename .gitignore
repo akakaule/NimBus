@@ -121,7 +121,6 @@ src/Workflow/IP.Workflow.Web/.idea/.idea.IP.Workflow.dir/.idea/
 /.claude/settings.local.json
 /GitReset.bat
 /nul
-/AGENTS.md
 *stackdump
 **/.aspire/
 # Compiled ARM templates emitted by `bicep build` — sources of truth are *.bicep.

@@ -436,7 +436,8 @@ namespace NimBus.SDK.Extensions
                     throw new InvalidOperationException(
                         $"Multiple handlers were discovered for event type '{eventType.FullName}': " +
                         $"'{existing.HandlerType?.FullName ?? "<dynamic>"}' and '{handlerType.FullName}'. " +
-                        "Register one handler explicitly with AddHandler<TEvent,THandler>() to choose the handler.");
+                        "Register the chosen handler explicitly with AddHandler<TEvent,THandler>() before scanning the assembly; " +
+                        "an explicit registration made after the scan is too late to resolve the conflict.");
                 }
             }
 

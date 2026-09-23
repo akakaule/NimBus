@@ -346,6 +346,7 @@ public class ResolverHeartbeatTests
         public List<string> HeartbeatIds { get; } = new();
         public List<string> ServiceIds { get; } = new();
         public Exception? HeartbeatException { get; set; }
+        public Exception? ServiceHealthException { get; set; }
 
         public Task NotifyEndpointStateChangedAsync(string endpointId, CancellationToken cancellationToken = default)
         {
@@ -362,7 +363,7 @@ public class ResolverHeartbeatTests
         public Task NotifyServiceHealthChangedAsync(string serviceId, CancellationToken cancellationToken = default)
         {
             ServiceIds.Add(serviceId);
-            return Task.CompletedTask;
+            return ServiceHealthException is null ? Task.CompletedTask : Task.FromException(ServiceHealthException);
         }
     }
 }

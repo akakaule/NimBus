@@ -33,7 +33,9 @@ The production names are hard-coded and no setting can allow them. Putting one i
 Outside the gate every simulation endpoint except `GET /api/admin/simulation` returns 403,
 and the `GET` reports `allowed: false` with the reason.
 
-All simulation endpoints require the site Owner role. Every change is audited
+All simulation endpoints require the site Owner role and share the admin rate limit (60
+requests a minute per user by default, see [rate-limiting.md](rate-limiting.md)). The Simulate
+page polls every 2 seconds, so keep one Simulate tab open per user. Every change is audited
 (`UpdateSimulationSettings`, `ControlSimulation`, `UpdateSimulationConfig`), including denied
 attempts.
 

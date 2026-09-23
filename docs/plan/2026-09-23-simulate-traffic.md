@@ -1,6 +1,10 @@
 # Simulate traffic (WebApp)
 
-Status: planned, revision 2 (2026-09-23). Not started.
+Status: implemented (2026-09-23) on branch `feat/simulate-traffic`; revision 2 of the plan.
+
+Implementation notes: the Resolver-hosting emulator tests live in `NimBus.WebApp.Tests` (the
+fallback project was not needed). The release-notes line for the new public SDK API (Tasks 1
+and 2) goes in the next minor's GitHub release; the repo keeps no release-notes file.
 
 Mockup: [NimBus Simulate Traffic](https://claude.ai/artifact/VSXHouNjRsAbyLKoXvse2a) —
 three boards: Admin → Simulation tab, Simulate page (running), failure-mode editor.

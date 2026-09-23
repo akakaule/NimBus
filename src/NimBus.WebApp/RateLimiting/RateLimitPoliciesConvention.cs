@@ -69,7 +69,9 @@ internal sealed class RateLimitPoliciesConvention : IApplicationModelConvention
         // controller scope deliberately, and asserted in both directions by
         // RateLimitEndpointMetadataTests so a future route move breaks the test
         // instead of silently widening or narrowing the policy.
-        if (type == typeof(AdminApiController) || type == typeof(NimBus.WebApp.Controllers.IntelligenceSettingsController))
+        if (type == typeof(AdminApiController)
+            || type == typeof(SimulationApiController)
+            || type == typeof(NimBus.WebApp.Controllers.IntelligenceSettingsController))
         {
             return RateLimitPolicyNames.Admin;
         }

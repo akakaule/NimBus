@@ -135,6 +135,59 @@ public class HttpEndpointStateChangeNotifierTests
         Assert.IsFalse(handler.Sent, "No request should be sent for an empty id.");
     }
 
+    [TestMethod]
+    public async Task Notify_NonSuccessStatus_IsSwallowed()
+    {
+        // A 401/500 from the WebApp is logged, never thrown: the pages reconcile via polling.
+        var handler = new CapturingHandler(HttpStatusCode.InternalServerError);
+        using var client = new HttpClient(handler) { BaseAddress = WebAppBase };
+        var notifier = new HttpEndpointStateChangeNotifier(client, webhookKey: null);
+
+        await notifier.NotifyEndpointStateChangedAsync("BillingEndpoint");
+
+        Assert.IsTrue(handler.Sent);
+    }
+
+    [TestMethod]
+    public async Task Notify_CallerCancellation_Propagates()
+    {
+        // Host shutdown must reach the Resolver, which leaves the message unsettled.
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        using var client = new HttpClient(new CancellingHandler()) { BaseAddress = WebAppBase };
+        var notifier = new HttpEndpointStateChangeNotifier(client, webhookKey: null);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => notifier.NotifyEndpointStateChangedAsync("BillingEndpoint", cancellation.Token));
+    }
+
+    [TestMethod]
+    public async Task Notify_ClientTimeout_IsSwallowed()
+    {
+        // HttpClient.Timeout surfaces as a TaskCanceledException the caller did not ask for.
+        using var client = new HttpClient(new CancellingHandler()) { BaseAddress = WebAppBase };
+        var notifier = new HttpEndpointStateChangeNotifier(client, webhookKey: null);
+
+        await notifier.NotifyEndpointStateChangedAsync("BillingEndpoint");
+    }
+
+    [TestMethod]
+    public void Dispose_DisposesTheOwnedHttpClient()
+    {
+        var client = new HttpClient(new CapturingHandler(HttpStatusCode.OK)) { BaseAddress = WebAppBase };
+        var notifier = new HttpEndpointStateChangeNotifier(client, webhookKey: null);
+
+        notifier.Dispose();
+
+        Assert.ThrowsExactly<ObjectDisposedException>(() => client.CancelPendingRequests());
+    }
+
+    private sealed class CancellingHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => throw new TaskCanceledException("timed out");
+    }
+
     private sealed class CapturingHandler : HttpMessageHandler
     {
         private readonly HttpStatusCode _status;

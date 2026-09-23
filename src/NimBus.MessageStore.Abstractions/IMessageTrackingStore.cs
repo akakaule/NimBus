@@ -92,6 +92,16 @@ public interface IMessageTrackingStore
         return await UploadCompletedMessage(eventId, sessionId, endpointId, content).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Atomically marks an existing Deferred row Skipped only if its last message ID and
+    /// update timestamp still match the inspected version. Preserves message content and
+    /// identity. Returns false on a missing, changed, deleted, or non-Deferred row.
+    /// External providers must implement an atomic operation before supporting recovery.
+    /// </summary>
+    Task<bool> TrySkipDeferredMessage(string eventId, string sessionId, string endpointId,
+        string? expectedLastMessageId, DateTime expectedUpdatedAt) =>
+        throw new NotSupportedException("This provider does not support conditional deferred recovery.");
+
     // Single-event lookups
     Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId);
     Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId);

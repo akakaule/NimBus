@@ -184,6 +184,44 @@ public abstract class MessageTrackingStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task TrySkipDeferredMessage_preserves_identity_and_rejects_stale_versions()
+    {
+        var store = CreateStore();
+        var endpoint = Id("deferred-recovery");
+        var eventId = Id("deferred-event");
+        var row = SampleEvent(endpoint, eventId, "s1");
+        row.LastMessageId = "deferral-response";
+        await store.UploadDeferredMessage(eventId, "s1", endpoint, row);
+        var stored = await store.GetEvent(endpoint, eventId);
+
+        Assert.IsFalse(await store.TrySkipDeferredMessage(eventId, "s1", endpoint, "wrong", stored.UpdatedAt));
+        Assert.IsFalse(await store.TrySkipDeferredMessage(eventId, "s1", endpoint, stored.LastMessageId, stored.UpdatedAt.AddSeconds(-1)));
+        Assert.IsFalse(await store.TrySkipDeferredMessage(eventId, "other-session", endpoint, stored.LastMessageId, stored.UpdatedAt));
+        Assert.IsFalse(await store.TrySkipDeferredMessage(eventId, "s1", Id("other-endpoint"), stored.LastMessageId, stored.UpdatedAt));
+        Assert.IsTrue(await store.TrySkipDeferredMessage(eventId, "s1", endpoint, stored.LastMessageId, stored.UpdatedAt));
+        var skipped = await store.GetEvent(endpoint, eventId);
+        Assert.AreEqual(ResolutionStatus.Skipped, skipped.ResolutionStatus);
+        Assert.AreEqual(stored.LastMessageId, skipped.LastMessageId);
+        Assert.AreEqual(stored.MessageType, skipped.MessageType);
+        Assert.AreEqual(stored.EventTypeId, skipped.EventTypeId);
+        Assert.AreEqual(0, (await store.DownloadEndpointStateCount(endpoint)).DeferredCount);
+        Assert.IsFalse(await store.TrySkipDeferredMessage(eventId, "s1", endpoint, stored.LastMessageId, stored.UpdatedAt));
+    }
+
+    [TestMethod]
+    public async Task TrySkipDeferredMessage_never_overwrites_completed_outcome()
+    {
+        var store = CreateStore();
+        var endpoint = Id("deferred-race");
+        var eventId = Id("deferred-event");
+        await store.UploadDeferredMessage(eventId, "s1", endpoint, SampleEvent(endpoint, eventId, "s1"));
+        var inspected = await store.GetEvent(endpoint, eventId);
+        await store.UploadCompletedMessage(eventId, "s1", endpoint, SampleEvent(endpoint, eventId, "s1"));
+        Assert.IsFalse(await store.TrySkipDeferredMessage(eventId, "s1", endpoint, inspected.LastMessageId, inspected.UpdatedAt));
+        Assert.AreEqual(ResolutionStatus.Completed, (await store.GetEvent(endpoint, eventId)).ResolutionStatus);
+    }
+
+    [TestMethod]
     public async Task TryCompletePendingMessage_replaces_matching_pending_row_and_guard_refuses_late_copy()
     {
         var store = CreateStore();

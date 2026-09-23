@@ -49,6 +49,31 @@ internal sealed class SqlServerMessageTrackingStore : IMessageTrackingStore
     public Task<bool> UploadCompletedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content)
         => UpsertStatus(eventId, sessionId, endpointId, "Completed", content);
 
+    public async Task<bool> TrySkipDeferredMessage(string eventId, string sessionId, string endpointId,
+        string? expectedLastMessageId, DateTime expectedUpdatedAt)
+    {
+        var sql = $@"
+UPDATE {T("UnresolvedEvents")}
+SET Status = 'Skipped', UpdatedAtUtc = @Now
+WHERE EndpointId = @EndpointId AND EventId = @EventId
+  AND ((SessionId IS NULL AND @SessionId IS NULL) OR SessionId = @SessionId)
+  AND Status = 'Deferred' AND Deleted = 0 AND UpdatedAtUtc = @ExpectedUpdatedAt
+  AND ((LastMessageId IS NULL AND @ExpectedLastMessageId IS NULL)
+       OR LastMessageId COLLATE Latin1_General_BIN2 = @ExpectedLastMessageId COLLATE Latin1_General_BIN2);
+SELECT @@ROWCOUNT;";
+        await using var connection = await OpenAsync();
+        var parameters = new DynamicParameters(new
+        {
+            EventId = eventId, SessionId = sessionId, EndpointId = endpointId,
+            ExpectedLastMessageId = expectedLastMessageId,
+        });
+        // The row version is DATETIME2. A DateTime parameter can round it to SQL
+        // datetime precision and spuriously reject the very row that was inspected.
+        parameters.Add("ExpectedUpdatedAt", expectedUpdatedAt, System.Data.DbType.DateTime2);
+        parameters.Add("Now", DateTime.UtcNow, System.Data.DbType.DateTime2);
+        return await connection.QuerySingleAsync<int>(sql, parameters, commandTimeout: _context.CommandTimeout) == 1;
+    }
+
     public async Task<bool> TryCompletePendingMessage(
         string eventId,
         string sessionId,

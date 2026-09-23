@@ -130,6 +130,9 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task<bool> TryCompletePendingMessage(string eventId, string sessionId, string endpointId, string? expectedLastMessageId, UnresolvedEvent content) =>
         InstrumentAsync(nameof(TryCompletePendingMessage), () => _inner.TryCompletePendingMessage(eventId, sessionId, endpointId, expectedLastMessageId, content));
 
+    public Task<bool> TrySkipDeferredMessage(string eventId, string sessionId, string endpointId, string? expectedLastMessageId, DateTime expectedUpdatedAt) =>
+        InstrumentAsync(nameof(TrySkipDeferredMessage), () => _inner.TrySkipDeferredMessage(eventId, sessionId, endpointId, expectedLastMessageId, expectedUpdatedAt));
+
     // ── Single-event lookups ────────────────────────────────────────────
 
     public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId) =>

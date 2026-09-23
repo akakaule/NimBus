@@ -712,6 +712,46 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/MessageAudit'
+  '/api/event/deferred/{endpointId}/{eventId}':
+    get:
+      summary: Inspect deferred tracking and broker presence
+      operationId: get-deferred-inspection
+      tags: [Event]
+      parameters:
+        - { name: endpointId, in: path, required: true, schema: { type: string } }
+        - { name: eventId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Point-in-time broker inspection and stored processing evidence
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeferredInspection' }
+        '403': { description: Reader permission required }
+        '404': { description: Endpoint or event not found }
+  '/api/event/deferred/{endpointId}/{eventId}/skip-tracking':
+    post:
+      summary: Skip a stale deferred tracking record without publishing or settling messages
+      operationId: post-skip-deferred-tracking
+      tags: [Event]
+      parameters:
+        - { name: endpointId, in: path, required: true, schema: { type: string } }
+        - { name: eventId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeferredSkipRequest' }
+      responses:
+        '200':
+          description: Tracking row skipped; audit persistence is reported separately
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeferredSkipResult' }
+        '400': { description: Reason and inspected row version required }
+        '403': { description: Contributor permission required }
+        '404': { description: Endpoint or event not found }
+        '409': { description: Row changed or broker inspection does not permit skipping }
+        '501': { description: Storage provider does not support conditional recovery }
   '/api/event/reprocess-deferred/{endpointId}/{sessionId}':
     post:
       summary: Reprocess deferred messages for a session
@@ -4390,6 +4430,37 @@ components:
           type: integer
         messagesCopied:
           type: integer
+    DeferredInspection:
+      type: object
+      properties:
+        rowVersion: { type: string }
+        resolutionStatus: { type: string }
+        historyOutcome: { type: string }
+        historyDetail: { type: string }
+        terminalMessageId: { type: string, nullable: true }
+        terminalTime: { type: string, format: date-time, nullable: true }
+        hasLaterAttempt: { type: boolean }
+        canSkip: { type: boolean }
+        skipDetail: { type: string }
+        brokerChecks:
+          type: array
+          items: { $ref: '#/components/schemas/DeferredBrokerCheck' }
+    DeferredBrokerCheck:
+      type: object
+      properties:
+        location: { type: string }
+        status: { type: string, enum: [Present, NotFound, Unknown] }
+        scanned: { type: integer }
+        detail: { type: string }
+    DeferredSkipRequest:
+      type: object
+      properties:
+        rowVersion: { type: string }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    DeferredSkipResult:
+      type: object
+      properties:
+        auditRecorded: { type: boolean }
     DeferredReprocessResult:
       title: DeferredReprocessResult
       type: object

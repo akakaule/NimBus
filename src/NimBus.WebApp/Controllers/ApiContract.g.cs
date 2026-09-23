@@ -598,6 +598,25 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> PostMessageAuditAsync(MessageAudit body, string eventId);
 
         /// <summary>
+        /// Inspect deferred tracking and broker presence
+        /// </summary>
+
+
+        /// <returns>Point-in-time broker inspection and stored processing evidence</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<DeferredInspection>> GetDeferredInspectionAsync(string endpointId, string eventId);
+
+        /// <summary>
+        /// Skip a stale deferred tracking record without publishing or settling messages
+        /// </summary>
+
+
+
+        /// <returns>Tracking row skipped; audit persistence is reported separately</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<DeferredSkipResult>> PostSkipDeferredTrackingAsync(string endpointId, string eventId, DeferredSkipRequest body);
+
+        /// <summary>
         /// Reprocess deferred messages for a session
         /// </summary>
 
@@ -838,6 +857,28 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.PostMessageAuditAsync(body, eventId);
+        }
+
+        /// <summary>
+        /// Inspect deferred tracking and broker presence
+        /// </summary>
+        /// <returns>Point-in-time broker inspection and stored processing evidence</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/event/deferred/{endpointId}/{eventId}")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<DeferredInspection>> GetDeferredInspection(string endpointId, string eventId)
+        {
+
+            return _implementation.GetDeferredInspectionAsync(endpointId, eventId);
+        }
+
+        /// <summary>
+        /// Skip a stale deferred tracking record without publishing or settling messages
+        /// </summary>
+        /// <returns>Tracking row skipped; audit persistence is reported separately</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/event/deferred/{endpointId}/{eventId}/skip-tracking")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<DeferredSkipResult>> PostSkipDeferredTracking(string endpointId, string eventId, [Microsoft.AspNetCore.Mvc.FromBody] DeferredSkipRequest body)
+        {
+
+            return _implementation.PostSkipDeferredTrackingAsync(endpointId, eventId, body);
         }
 
         /// <summary>
@@ -11453,6 +11494,386 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DeferredInspection : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _rowVersion;
+        private string _resolutionStatus;
+        private string _historyOutcome;
+        private string _historyDetail;
+        private string _terminalMessageId;
+        private System.DateTime? _terminalTime;
+        private bool _hasLaterAttempt;
+        private bool _canSkip;
+        private string _skipDetail;
+        private System.Collections.Generic.List<DeferredBrokerCheck> _brokerChecks;
+
+        [Newtonsoft.Json.JsonProperty("rowVersion", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string RowVersion    {
+            get { return _rowVersion; }
+            set
+            {
+                if (_rowVersion != value)
+                {
+                    _rowVersion = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("resolutionStatus", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ResolutionStatus    {
+            get { return _resolutionStatus; }
+            set
+            {
+                if (_resolutionStatus != value)
+                {
+                    _resolutionStatus = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("historyOutcome", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string HistoryOutcome    {
+            get { return _historyOutcome; }
+            set
+            {
+                if (_historyOutcome != value)
+                {
+                    _historyOutcome = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("historyDetail", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string HistoryDetail    {
+            get { return _historyDetail; }
+            set
+            {
+                if (_historyDetail != value)
+                {
+                    _historyDetail = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("terminalMessageId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string TerminalMessageId    {
+            get { return _terminalMessageId; }
+            set
+            {
+                if (_terminalMessageId != value)
+                {
+                    _terminalMessageId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("terminalTime", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? TerminalTime    {
+            get { return _terminalTime; }
+            set
+            {
+                if (_terminalTime != value)
+                {
+                    _terminalTime = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("hasLaterAttempt", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool HasLaterAttempt    {
+            get { return _hasLaterAttempt; }
+            set
+            {
+                if (_hasLaterAttempt != value)
+                {
+                    _hasLaterAttempt = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("canSkip", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool CanSkip    {
+            get { return _canSkip; }
+            set
+            {
+                if (_canSkip != value)
+                {
+                    _canSkip = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("skipDetail", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SkipDetail    {
+            get { return _skipDetail; }
+            set
+            {
+                if (_skipDetail != value)
+                {
+                    _skipDetail = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("brokerChecks", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<DeferredBrokerCheck> BrokerChecks    {
+            get { return _brokerChecks; }
+            set
+            {
+                if (_brokerChecks != value)
+                {
+                    _brokerChecks = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static DeferredInspection FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<DeferredInspection>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DeferredBrokerCheck : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _location;
+        private DeferredBrokerCheckStatus _status;
+        private int _scanned;
+        private string _detail;
+
+        [Newtonsoft.Json.JsonProperty("location", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Location    {
+            get { return _location; }
+            set
+            {
+                if (_location != value)
+                {
+                    _location = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("status", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public DeferredBrokerCheckStatus Status    {
+            get { return _status; }
+            set
+            {
+                if (_status != value)
+                {
+                    _status = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("scanned", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Scanned    {
+            get { return _scanned; }
+            set
+            {
+                if (_scanned != value)
+                {
+                    _scanned = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("detail", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Detail    {
+            get { return _detail; }
+            set
+            {
+                if (_detail != value)
+                {
+                    _detail = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static DeferredBrokerCheck FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<DeferredBrokerCheck>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DeferredSkipRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _rowVersion;
+        private string _reason;
+
+        [Newtonsoft.Json.JsonProperty("rowVersion", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string RowVersion    {
+            get { return _rowVersion; }
+            set
+            {
+                if (_rowVersion != value)
+                {
+                    _rowVersion = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("reason", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [System.ComponentModel.DataAnnotations.StringLength(1000, MinimumLength = 1)]
+        public string Reason    {
+            get { return _reason; }
+            set
+            {
+                if (_reason != value)
+                {
+                    _reason = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static DeferredSkipRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<DeferredSkipRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class DeferredSkipResult : System.ComponentModel.INotifyPropertyChanged
+    {
+        private bool _auditRecorded;
+
+        [Newtonsoft.Json.JsonProperty("auditRecorded", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool AuditRecorded    {
+            get { return _auditRecorded; }
+            set
+            {
+                if (_auditRecorded != value)
+                {
+                    _auditRecorded = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static DeferredSkipResult FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<DeferredSkipResult>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class DeferredReprocessResult : System.ComponentModel.INotifyPropertyChanged
     {
         private string _sessionId;
@@ -14462,6 +14883,21 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"LaterRequestCopy")]
         LaterRequestCopy = 8,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum DeferredBrokerCheckStatus
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Present")]
+        Present = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"NotFound")]
+        NotFound = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"Unknown")]
+        Unknown = 2,
 
     }
 

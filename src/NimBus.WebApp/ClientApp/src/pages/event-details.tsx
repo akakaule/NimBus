@@ -2,6 +2,7 @@ import * as React from "react";
 import * as api from "api-client";
 import Page from "components/page";
 import MessageListing from "components/event-details/message-listing";
+import DeferredRecovery from "components/event-details/deferred-recovery";
 import { useParams, useNavigate } from "react-router-dom";
 import TabSelection from "components/tab-selection";
 import Loading from "components/loading/loading";
@@ -10,7 +11,7 @@ import AuditListing from "components/event-details/audit-listing";
 import FlowTimeline from "components/event-details/flow-timeline";
 import { parseBlockedByEventId } from "functions/endpoint.functions";
 
-const { useEffect, useState } = React;
+const { useEffect, useState, useRef } = React;
 
 export interface BlockedEvent {
   message: api.Message;
@@ -39,10 +40,15 @@ export const enrichBlockedItems = async (
   items: api.BlockedEvent[],
 ): Promise<BlockedEvent[]> => {
   const messages = await Promise.all(
-    items.map((event) => client.getEventIds(event.eventId!, event.originatingId!)),
+    items.map((event) =>
+      client.getEventIds(event.eventId!, event.originatingId!),
+    ),
   );
   return items
-    .map((event, index) => ({ message: messages[index], status: event.status! }))
+    .map((event, index) => ({
+      message: messages[index],
+      status: event.status!,
+    }))
     .filter((entry) => Boolean(entry.message));
 };
 
@@ -61,8 +67,11 @@ const EventDetails = (props: EventDetailsProps) => {
   // its own data, so remounting it on this key is what makes a just-added
   // comment appear without a page reload.
   const [auditReloadKey, setAuditReloadKey] = useState(0);
+  const routeGeneration = useRef(0);
 
   useEffect(() => {
+    const generation = ++routeGeneration.current;
+    const current = () => generation === routeGeneration.current;
     // Reset before re-fetch so clicking a blocked row doesn't render the
     // previous event's data while the new fetch is in flight. The Loading
     // splash below keys off `cosmosEvent === undefined`.
@@ -79,15 +88,15 @@ const EventDetails = (props: EventDetailsProps) => {
       client
         .getEventDetailsHistoryId(params.id!, params.endpointId!)
         .then((res) => {
-          setHistories(res);
+          if (current()) setHistories(res);
         });
 
       client.getMessageAuditsEventId(params.id!).then((res) => {
-        setAudits(res);
+        if (current()) setAudits(res);
       });
 
       client.getEventTypes().then((res) => {
-        setEventTypes(res);
+        if (current()) setEventTypes(res);
       });
 
       const tempCosmosEvent = await client.getEventId(
@@ -95,6 +104,7 @@ const EventDetails = (props: EventDetailsProps) => {
         params.endpointId!,
       );
 
+      if (!current()) return;
       setCosmosEvent(tempCosmosEvent);
 
       // Only the blocked-siblings fetch depends on the resolved event (its
@@ -113,11 +123,15 @@ const EventDetails = (props: EventDetailsProps) => {
           )
           .then(async (page) => {
             const enriched = await enrichBlockedItems(client, page.items ?? []);
+            if (!current()) return;
             setBlockedEvents(enriched);
             setBlockedTotal(page.total ?? enriched.length);
           });
     };
     fetchData();
+    return () => {
+      routeGeneration.current++;
+    };
     // Re-run when the route params change (e.g. clicking a row in the Blocked
     // tab navigates to /Message/Index/{endpointId}/{eventId}/0 while keeping
     // the same EventDetails component instance mounted — without these deps
@@ -139,8 +153,9 @@ const EventDetails = (props: EventDetailsProps) => {
   };
 
   const reloadEvent = async () => {
+    const generation = routeGeneration.current;
     const updated = await client.getEventId(params.id!, params.endpointId!);
-    setCosmosEvent(updated);
+    if (generation === routeGeneration.current) setCosmosEvent(updated);
   };
 
   const skipEvent = async (eventId: string, messageId: string) => {
@@ -163,8 +178,9 @@ const EventDetails = (props: EventDetailsProps) => {
   };
 
   const reloadAudits = () => {
+    const generation = routeGeneration.current;
     client.getMessageAuditsEventId(params.id!).then((res) => {
-      setAudits(res);
+      if (generation === routeGeneration.current) setAudits(res);
     });
     setAuditReloadKey((k) => k + 1);
   };
@@ -250,31 +266,46 @@ const EventDetails = (props: EventDetailsProps) => {
         name: `Message`,
         isEnabled: true,
         content: (
-          <MessageListing
-            resubmitEventWithChanges={resubmitEventWithChanges}
-            resubmitEvent={resubmitEvent}
-            skipEvent={skipEvent}
-            deleteEvent={deleteEvent}
-            reprocessDeferred={reprocessDeferred}
-            completeHandoff={completeHandoff}
-            failHandoff={failHandoff}
-            onCommentAdded={reloadAudits}
-            eventTypes={eventTypes}
-            eventDetails={cosmosEvent}
-            // Spec 005 (FR-016): the same `histories` array already fed to
-            // `FlowTimeline` is forwarded here so MessageListing can derive a
-            // lifecycle-aware Queue value for deferred / pending-handoff
-            // events.
-            messages={histories}
-            blockedByEventId={blockedByEventId}
-            key="Message"
-          />
+          <div className="w-full min-w-0">
+            {cosmosEvent?.resolutionStatus?.toLowerCase() === "deferred" && (
+              <DeferredRecovery
+                key={`${params.endpointId}:${params.id}`}
+                endpointId={params.endpointId!}
+                eventId={params.id!}
+                onResolved={async () => {
+                  await reloadEvent();
+                  reloadAudits();
+                }}
+              />
+            )}
+            <MessageListing
+              resubmitEventWithChanges={resubmitEventWithChanges}
+              resubmitEvent={resubmitEvent}
+              skipEvent={skipEvent}
+              deleteEvent={deleteEvent}
+              reprocessDeferred={reprocessDeferred}
+              completeHandoff={completeHandoff}
+              failHandoff={failHandoff}
+              onCommentAdded={reloadAudits}
+              eventTypes={eventTypes}
+              eventDetails={cosmosEvent}
+              // Spec 005 (FR-016): the same `histories` array already fed to
+              // `FlowTimeline` is forwarded here so MessageListing can derive a
+              // lifecycle-aware Queue value for deferred / pending-handoff
+              // events.
+              messages={histories}
+              blockedByEventId={blockedByEventId}
+              key="Message"
+            />
+          </div>
         ),
       },
       {
         name: `Flow (${histories.length + audits.length})`,
         isEnabled: histories.length > 0,
-        content: <FlowTimeline messages={histories} audits={audits} key="Flow" />,
+        content: (
+          <FlowTimeline messages={histories} audits={audits} key="Flow" />
+        ),
       },
       {
         // Fetches its own rows from /api/audits/search rather than reusing the

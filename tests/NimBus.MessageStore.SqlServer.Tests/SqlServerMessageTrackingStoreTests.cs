@@ -1,5 +1,7 @@
 #pragma warning disable CA1707, CA2007
 using System.Threading.Tasks;
+using System;
+using Microsoft.Data.SqlClient;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.MessageStore.Abstractions;
 using NimBus.Testing.Conformance;
@@ -25,4 +27,23 @@ public sealed class SqlServerMessageTrackingStoreTests : MessageTrackingStoreCon
 
     protected override IMessageTrackingStore CreateStore()
         => SqlServerStoreTestHarness.CreateStore(typeof(SqlServerMessageTrackingStoreTests));
+
+    [TestMethod]
+    public async Task TrySkipDeferredMessage_preserves_datetime2_version_precision()
+    {
+        var store = CreateStore();
+        await store.UploadDeferredMessage("precision-event", "session", "endpoint", new UnresolvedEvent
+        {
+            EventId = "precision-event", SessionId = "session", EndpointId = "endpoint",
+            LastMessageId = "deferral", EnqueuedTimeUtc = DateTime.UtcNow,
+        });
+        await using var connection = new SqlConnection(SqlServerStoreTestHarness.GetConnectionString());
+        await connection.OpenAsync();
+        var schema = SqlServerStoreTestHarness.GetSchema(typeof(SqlServerMessageTrackingStoreTests));
+        await using var command = new SqlCommand($"UPDATE [{schema}].[UnresolvedEvents] SET UpdatedAtUtc = CAST('2026-09-23T00:00:00.1234567' AS datetime2) WHERE EventId = @EventId", connection);
+        command.Parameters.AddWithValue("@EventId", "precision-event");
+        await command.ExecuteNonQueryAsync();
+        var inspected = await store.GetEvent("endpoint", "precision-event");
+        Assert.IsTrue(await store.TrySkipDeferredMessage("precision-event", "session", "endpoint", "deferral", inspected.UpdatedAt));
+    }
 }

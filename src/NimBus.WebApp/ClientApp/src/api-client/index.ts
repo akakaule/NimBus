@@ -1513,6 +1513,130 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Inspect deferred tracking and broker presence
+     * @return Point-in-time broker inspection and stored processing evidence
+     */
+    getDeferredInspection(endpointId: string, eventId: string): Promise<DeferredInspection> {
+        let url_ = this.baseUrl + "/api/event/deferred/{endpointId}/{eventId}";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        if (eventId === undefined || eventId === null)
+            throw new globalThis.Error("The parameter 'eventId' must be defined.");
+        url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetDeferredInspection(_response);
+        });
+    }
+
+    protected processGetDeferredInspection(response: Response): Promise<DeferredInspection> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = DeferredInspection.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Reader permission required", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint or event not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<DeferredInspection>(null as any);
+    }
+
+    /**
+     * Skip a stale deferred tracking record without publishing or settling messages
+     * @return Tracking row skipped; audit persistence is reported separately
+     */
+    postSkipDeferredTracking(endpointId: string, eventId: string, body: DeferredSkipRequest): Promise<DeferredSkipResult> {
+        let url_ = this.baseUrl + "/api/event/deferred/{endpointId}/{eventId}/skip-tracking";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        if (eventId === undefined || eventId === null)
+            throw new globalThis.Error("The parameter 'eventId' must be defined.");
+        url_ = url_.replace("{eventId}", encodeURIComponent("" + eventId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostSkipDeferredTracking(_response);
+        });
+    }
+
+    protected processPostSkipDeferredTracking(response: Response): Promise<DeferredSkipResult> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = DeferredSkipResult.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Reason and inspected row version required", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Contributor permission required", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint or event not found", status, _responseText, _headers);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            return throwException("Row changed or broker inspection does not permit skipping", status, _responseText, _headers);
+            });
+        } else if (status === 501) {
+            return response.text().then((_responseText) => {
+            return throwException("Storage provider does not support conditional recovery", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<DeferredSkipResult>(null as any);
+    }
+
+    /**
      * Reprocess deferred messages for a session
      * @return OK
      */
@@ -12279,6 +12403,286 @@ export interface ICopyResult {
     [key: string]: any;
 }
 
+export class DeferredInspection implements IDeferredInspection {
+    rowVersion?: string;
+    resolutionStatus?: string;
+    historyOutcome?: string;
+    historyDetail?: string;
+    terminalMessageId?: string | undefined;
+    terminalTime?: moment.Moment | undefined;
+    hasLaterAttempt?: boolean;
+    canSkip?: boolean;
+    skipDetail?: string;
+    brokerChecks?: DeferredBrokerCheck[];
+
+    [key: string]: any;
+
+    constructor(data?: IDeferredInspection) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.rowVersion = _data["rowVersion"];
+            this.resolutionStatus = _data["resolutionStatus"];
+            this.historyOutcome = _data["historyOutcome"];
+            this.historyDetail = _data["historyDetail"];
+            this.terminalMessageId = _data["terminalMessageId"];
+            this.terminalTime = _data["terminalTime"] ? moment(_data["terminalTime"].toString()) : undefined as any;
+            this.hasLaterAttempt = _data["hasLaterAttempt"];
+            this.canSkip = _data["canSkip"];
+            this.skipDetail = _data["skipDetail"];
+            if (Array.isArray(_data["brokerChecks"])) {
+                this.brokerChecks = [] as any;
+                for (let item of _data["brokerChecks"])
+                    this.brokerChecks!.push(DeferredBrokerCheck.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): DeferredInspection {
+        data = typeof data === 'object' ? data : {};
+        let result = new DeferredInspection();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["rowVersion"] = this.rowVersion;
+        data["resolutionStatus"] = this.resolutionStatus;
+        data["historyOutcome"] = this.historyOutcome;
+        data["historyDetail"] = this.historyDetail;
+        data["terminalMessageId"] = this.terminalMessageId;
+        data["terminalTime"] = this.terminalTime ? this.terminalTime.toISOString() : undefined as any;
+        data["hasLaterAttempt"] = this.hasLaterAttempt;
+        data["canSkip"] = this.canSkip;
+        data["skipDetail"] = this.skipDetail;
+        if (Array.isArray(this.brokerChecks)) {
+            data["brokerChecks"] = [];
+            for (let item of this.brokerChecks)
+                data["brokerChecks"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): DeferredInspection {
+        const json = this.toJSON();
+        let result = new DeferredInspection();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDeferredInspection {
+    rowVersion?: string;
+    resolutionStatus?: string;
+    historyOutcome?: string;
+    historyDetail?: string;
+    terminalMessageId?: string | undefined;
+    terminalTime?: moment.Moment | undefined;
+    hasLaterAttempt?: boolean;
+    canSkip?: boolean;
+    skipDetail?: string;
+    brokerChecks?: DeferredBrokerCheck[];
+
+    [key: string]: any;
+}
+
+export class DeferredBrokerCheck implements IDeferredBrokerCheck {
+    location?: string;
+    status?: DeferredBrokerCheckStatus;
+    scanned?: number;
+    detail?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IDeferredBrokerCheck) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.location = _data["location"];
+            this.status = _data["status"];
+            this.scanned = _data["scanned"];
+            this.detail = _data["detail"];
+        }
+    }
+
+    static fromJS(data: any): DeferredBrokerCheck {
+        data = typeof data === 'object' ? data : {};
+        let result = new DeferredBrokerCheck();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["location"] = this.location;
+        data["status"] = this.status;
+        data["scanned"] = this.scanned;
+        data["detail"] = this.detail;
+        return data;
+    }
+
+    clone(): DeferredBrokerCheck {
+        const json = this.toJSON();
+        let result = new DeferredBrokerCheck();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDeferredBrokerCheck {
+    location?: string;
+    status?: DeferredBrokerCheckStatus;
+    scanned?: number;
+    detail?: string;
+
+    [key: string]: any;
+}
+
+export class DeferredSkipRequest implements IDeferredSkipRequest {
+    rowVersion?: string;
+    reason?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IDeferredSkipRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.rowVersion = _data["rowVersion"];
+            this.reason = _data["reason"];
+        }
+    }
+
+    static fromJS(data: any): DeferredSkipRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new DeferredSkipRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["rowVersion"] = this.rowVersion;
+        data["reason"] = this.reason;
+        return data;
+    }
+
+    clone(): DeferredSkipRequest {
+        const json = this.toJSON();
+        let result = new DeferredSkipRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDeferredSkipRequest {
+    rowVersion?: string;
+    reason?: string;
+
+    [key: string]: any;
+}
+
+export class DeferredSkipResult implements IDeferredSkipResult {
+    auditRecorded?: boolean;
+
+    [key: string]: any;
+
+    constructor(data?: IDeferredSkipResult) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.auditRecorded = _data["auditRecorded"];
+        }
+    }
+
+    static fromJS(data: any): DeferredSkipResult {
+        data = typeof data === 'object' ? data : {};
+        let result = new DeferredSkipResult();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["auditRecorded"] = this.auditRecorded;
+        return data;
+    }
+
+    clone(): DeferredSkipResult {
+        const json = this.toJSON();
+        let result = new DeferredSkipResult();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IDeferredSkipResult {
+    auditRecorded?: boolean;
+
+    [key: string]: any;
+}
+
 export class DeferredReprocessResult implements IDeferredReprocessResult {
     sessionId?: string;
     sessionStateCleared?: boolean;
@@ -14412,6 +14816,12 @@ export enum StalePendingRowVerdict {
     ResponseNotBeforeRow = "ResponseNotBeforeRow",
     LaterControlMessage = "LaterControlMessage",
     LaterRequestCopy = "LaterRequestCopy",
+}
+
+export enum DeferredBrokerCheckStatus {
+    Present = "Present",
+    NotFound = "NotFound",
+    Unknown = "Unknown",
 }
 
 export enum RoleEntryRole {

@@ -136,6 +136,35 @@ public sealed class StoreDecoratorTests
         Assert.AreEqual(typeof(InvalidOperationException).FullName, span.GetTagItem(MessagingAttributes.ErrorType));
     }
 
+    [TestMethod]
+    public void Decorator_forwards_every_default_interface_method()
+    {
+        // A default interface method the decorator does not override silently
+        // bypasses the inner store (e.g. a provider-supported operation throws
+        // the interface's NotSupportedException fallback instead).
+        var decoratorType = NimBusOpenTelemetryDecorators
+            .InstrumentMessageTrackingStore(new InMemoryMessageStore(), "test").GetType();
+        var map = decoratorType.GetInterfaceMap(typeof(IMessageTrackingStore));
+
+        var notForwarded = map.TargetMethods
+            .Where(m => m.DeclaringType != decoratorType)
+            .Select(m => m.Name)
+            .ToList();
+
+        Assert.AreEqual(0, notForwarded.Count, "Not forwarded: " + string.Join(", ", notForwarded));
+    }
+
+    [TestMethod]
+    public async Task Decorator_forwards_TrySkipDeferredMessage_to_inner_store()
+    {
+        var inner = new InMemoryMessageStore();
+        var sut = NimBusOpenTelemetryDecorators.InstrumentMessageTrackingStore(inner, "test");
+
+        // No such row: the inner store answers false rather than the interface's
+        // NotSupportedException fallback.
+        Assert.IsFalse(await sut.TrySkipDeferredMessage("missing", "s1", "ep-1", null, DateTime.UtcNow));
+    }
+
     private static MetricPoint First(Metric metric)
     {
         foreach (ref readonly var point in metric.GetMetricPoints())

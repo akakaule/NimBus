@@ -172,6 +172,33 @@ When the failed event is resolved (resubmit, retry, or skip succeeds):
 
 Re-published messages then flow through normal processing in their original order.
 
+## A tracking row is Deferred but the broker message is missing
+
+Open the event details page and choose **Check deferred message**. The recovery panel
+shows two independent observations:
+
+- **Recorded outcome**: the latest stored terminal response for this event, endpoint,
+  and session, including its message ID and time. A later attempt or deferral is flagged;
+  an earlier completion does not prove that the later attempt completed.
+- **Broker presence**: a read-only peek of the endpoint and Deferred subscriptions,
+  including their ordinary and transfer dead-letter queues. An explicit zero transfer
+  dead-letter count from the administration API also establishes an empty queue,
+  supporting emulators that cannot peek that subqueue. Each scan is bounded to
+  2,000 messages, with a 20-second budget for the inspection. Errors and incomplete scans
+  are **Unknown**, never proof of absence.
+
+If no match is found and the Deferred record has been unchanged for at least 15 minutes,
+an endpoint Contributor can choose **Skip tracking record**, enter a reason, and confirm.
+The server repeats the inspection and conditionally changes the inspected row to Skipped.
+If another writer has changed the row, the skip is refused. The event disappears from the
+Deferred list while its history and an operator audit remain available under normal
+retention rules. An audit-write failure is reported separately from the successful skip.
+
+This action changes tracking only: it does not send a SkipRequest, remove broker messages,
+unblock a session, or cancel a running handler. Peeking is a point-in-time observation;
+scheduled topic messages and future replays can still arrive. Missing broker messages alone
+do not establish successful business processing. See [Service Bus message browsing](https://learn.microsoft.com/en-us/azure/service-bus-messaging/message-browsing).
+
 ## Legacy vs Modern Pattern
 
 The codebase supports two deferral approaches for backward compatibility:

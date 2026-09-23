@@ -350,6 +350,34 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
         UnresolvedEvent content) =>
         UploadCompletedMessage(eventId, sessionId, endpointId, content, CompletedStatus);
 
+    public async Task<bool> TrySkipDeferredMessage(string eventId, string sessionId, string endpointId,
+        string? expectedLastMessageId, DateTime expectedUpdatedAt)
+    {
+        var container = await _getEndpointContainer(endpointId);
+        var id = $"{eventId}_{sessionId}";
+        try
+        {
+            var current = await container.ReadItemAsync<EventDbo>(id, new PartitionKey(id));
+            if (current.Resource.Status != DeferredStatus || current.Resource.Deleted == true
+                || current.Resource.Event?.UpdatedAt != expectedUpdatedAt
+                || !string.Equals(current.Resource.Event?.LastMessageId, expectedLastMessageId, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            current.Resource.Event.ResolutionStatus = ResolutionStatus.Skipped;
+            current.Resource.Event.UpdatedAt = DateTime.UtcNow;
+            var replacement = CreateCompletedDbo(eventId, sessionId, current.Resource.Event, SkippedStatus);
+            await container.ReplaceItemAsync(replacement, id, new PartitionKey(id),
+                new ItemRequestOptions { IfMatchEtag = current.ETag, EnableContentResponseOnWrite = false });
+            return true;
+        }
+        catch (CosmosException exception) when (exception.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.PreconditionFailed)
+        {
+            return false;
+        }
+    }
+
     public async Task<bool> TryCompletePendingMessage(
         string eventId,
         string sessionId,

@@ -98,6 +98,9 @@ public interface ICosmosContainerAdapter
     }
 
     Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions requestOptions = null);
+    /// <summary>Replaces an existing item with request preconditions; never creates a missing item.</summary>
+    Task<ItemResponse<T>> ReplaceItemAsync<T>(T item, string id, PartitionKey partitionKey, ItemRequestOptions requestOptions) =>
+        throw new NotSupportedException("This adapter does not support conditional replacements.");
     Task<ItemResponse<T>> DeleteItemAsync<T>(string id, PartitionKey partitionKey);
 
     /// <summary>
@@ -313,6 +316,10 @@ internal sealed class TransientTranslatingCosmosContainerAdapter : ICosmosContai
             () => _inner.UpsertItemAsync(item, partitionKey, requestOptions),
             _logger);
 
+    public Task<ItemResponse<T>> ReplaceItemAsync<T>(T item, string id, PartitionKey partitionKey, ItemRequestOptions requestOptions) =>
+        CosmosExceptionTranslation.TranslateTransientAsync(
+            () => _inner.ReplaceItemAsync(item, id, partitionKey, requestOptions), _logger);
+
     /// <inheritdoc />
     public Task<ItemResponse<T>> DeleteItemAsync<T>(
         string id,
@@ -527,6 +534,9 @@ public sealed class CosmosContainerAdapter : ICosmosContainerAdapter
 
     public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions requestOptions = null) =>
         CosmosExceptionTranslation.TranslateTransientAsync(() => _container.UpsertItemAsync(item, partitionKey, requestOptions), _logger);
+
+    public Task<ItemResponse<T>> ReplaceItemAsync<T>(T item, string id, PartitionKey partitionKey, ItemRequestOptions requestOptions) =>
+        CosmosExceptionTranslation.TranslateTransientAsync(() => _container.ReplaceItemAsync(item, id, partitionKey, requestOptions), _logger);
 
     public Task<ItemResponse<T>> DeleteItemAsync<T>(string id, PartitionKey partitionKey) =>
         CosmosExceptionTranslation.TranslateTransientAsync(() => _container.DeleteItemAsync<T>(id, partitionKey), _logger);

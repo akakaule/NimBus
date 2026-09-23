@@ -94,6 +94,24 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
     public Task<bool> UploadSkippedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => Upsert(eventId, sessionId, endpointId, ResolutionStatus.Skipped, content);
     public Task<bool> UploadCompletedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => Upsert(eventId, sessionId, endpointId, ResolutionStatus.Completed, content);
 
+    public Task<bool> TrySkipDeferredMessage(string eventId, string sessionId, string endpointId,
+        string? expectedLastMessageId, DateTime expectedUpdatedAt)
+    {
+        var key = Key(endpointId, eventId, sessionId);
+        if (!_events.TryGetValue(key, out var current)
+            || current.ResolutionStatus != ResolutionStatus.Deferred
+            || current.UpdatedAt != expectedUpdatedAt
+            || !string.Equals(current.LastMessageId, expectedLastMessageId, StringComparison.Ordinal))
+        {
+            return Task.FromResult(false);
+        }
+
+        var replacement = Clone(current);
+        replacement.ResolutionStatus = ResolutionStatus.Skipped;
+        replacement.UpdatedAt = DateTime.UtcNow;
+        return Task.FromResult(_events.TryUpdate(key, replacement, current));
+    }
+
     public Task<bool> TryCompletePendingMessage(
         string eventId,
         string sessionId,

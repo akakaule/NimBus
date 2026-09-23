@@ -1,4 +1,5 @@
 using Azure.Messaging.ServiceBus;
+using Azure.Messaging.ServiceBus.Administration;
 using NimBus.Core;
 using NimBus.Core.Messages.PII;
 using NimBus.Manager;
@@ -22,7 +23,7 @@ using System.Threading.Tasks;
 
 namespace NimBus.WebApp.Controllers.ApiContract
 {
-    public class EventImplementation : IEventApiController
+    public partial class EventImplementation : IEventApiController
     {
         // Payload-carrying request message types — the ones that actually carry
         // the original event JSON to be re-delivered on resubmit. Handoff control
@@ -48,6 +49,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
         private readonly IEndpointAuthorizationService authorizationService;
         private readonly IAdminService adminService;
         private readonly ServiceBusClient serviceBusClient;
+        private readonly ServiceBusAdministrationClient? serviceBusAdministrationClient;
         private readonly IAuditLogService auditLogService;
         private readonly IHandoffSettlementService handoffSettlement;
         private readonly IHttpContextAccessor httpContextAccessor;
@@ -68,7 +70,8 @@ namespace NimBus.WebApp.Controllers.ApiContract
             IHandoffSettlementService handoffSettlement,
             IHttpContextAccessor httpContextAccessor,
             PayloadRedaction payloadRedaction,
-            IEventJsonMasker masker)
+            IEventJsonMasker masker,
+            ServiceBusAdministrationClient? serviceBusAdministrationClient = null)
         {
             this.payloadRedaction = payloadRedaction;
             this.masker = masker ?? NullEventJsonMasker.Instance;
@@ -81,6 +84,7 @@ namespace NimBus.WebApp.Controllers.ApiContract
             this.authorizationService = authorizationService;
             this.adminService = adminService;
             this.serviceBusClient = serviceBusClient;
+            this.serviceBusAdministrationClient = serviceBusAdministrationClient;
             this.auditLogService = auditLogService;
             this.handoffSettlement = handoffSettlement;
             this.httpContextAccessor = httpContextAccessor;

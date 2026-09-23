@@ -88,6 +88,14 @@ internal sealed class LegacyCosmosClientAdapter : ICosmosClientAdapter, ICosmosD
 
 internal sealed class RecordingCosmosContainerAdapter : ICosmosContainerAdapter
 {
+    public List<string> ReplacedIds { get; } = new();
+
+    public Task<ItemResponse<T>> ReplaceItemAsync<T>(T item, string id, PartitionKey partitionKey, ItemRequestOptions requestOptions)
+    {
+        ReplacedIds.Add(id);
+        return UpsertItemAsync(item, partitionKey, requestOptions);
+    }
+
     /// <summary>Every upserted document, in order.</summary>
     public List<object?> UpsertedItems { get; } = new();
 

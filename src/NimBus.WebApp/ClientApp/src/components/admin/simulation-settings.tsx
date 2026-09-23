@@ -211,17 +211,17 @@ export default function SimulationSettings() {
                   const id = endpoint.endpointId ?? "";
                   const owned = draft.ownedEndpoints.includes(id);
                   return (
-                    <li key={id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                      <div className="min-w-0">
+                    <li key={id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0 flex-1">
                         <p className="font-mono text-sm">{id}</p>
-                        <p className="text-xs text-muted-foreground">Consumes {(endpoint.consumes ?? []).join(", ")}</p>
+                        <p className="break-words text-xs text-muted-foreground">Consumes {(endpoint.consumes ?? []).join(", ")}</p>
                         {endpoint.liveInstanceWarning && (
                           <p className="text-xs text-status-warning">
                             A live instance answered a heartbeat recently and may be competing for this subscription.
                           </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex shrink-0 items-center gap-3 whitespace-nowrap">
                         <Badge variant={owned ? "primary" : "secondary"}>{owned ? "Simulated" : "External"}</Badge>
                         <label className="flex items-center gap-2 text-sm">
                           <input

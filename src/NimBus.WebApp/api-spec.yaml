@@ -2713,8 +2713,416 @@ paths:
           description: Forbidden
         '404':
           description: Endpoint not found
+  /api/admin/simulation:
+    get:
+      summary: Traffic simulator status
+      description: >-
+        Environment gate, settings, config, run state, counters, the last 100 deliveries
+        and the endpoints the simulator can publish from or host. Outside an allowed
+        environment it still answers, with allowed false and a blockedReason.
+      operationId: get-admin-simulation
+      tags:
+        - Simulation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationStatus'
+        '403':
+          description: Forbidden
+  /api/admin/simulation/settings:
+    put:
+      summary: Update the traffic simulator settings
+      description: >-
+        Enabled flag, auto-stop, the global rate ceiling and the consuming endpoints the
+        simulator owns. Ownership cannot change while a run is active (409). Disabling
+        stops a run.
+      operationId: put-admin-simulation-settings
+      tags:
+        - Simulation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulationSettings'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationStatus'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationProblem'
+        '403':
+          description: Forbidden
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationProblem'
+  /api/admin/simulation/config:
+    put:
+      summary: Replace the traffic simulator config
+      description: >-
+        Speed, publisher rates and per-endpoint failure modes, replaced whole. A running
+        simulation picks the change up on its next publish or delivery.
+      operationId: put-admin-simulation-config
+      tags:
+        - Simulation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulationConfig'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationStatus'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationProblem'
+        '403':
+          description: Forbidden
+  /api/admin/simulation/start:
+    post:
+      summary: Start or resume the traffic simulator
+      operationId: post-admin-simulation-start
+      tags:
+        - Simulation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationStatus'
+        '403':
+          description: Forbidden
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationProblem'
+  /api/admin/simulation/pause:
+    post:
+      summary: Pause the traffic simulator
+      operationId: post-admin-simulation-pause
+      tags:
+        - Simulation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationStatus'
+        '403':
+          description: Forbidden
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationProblem'
+  /api/admin/simulation/stop:
+    post:
+      summary: Stop the traffic simulator
+      description: Stops publishers, drains simulated subscribers within the drain window, then stops them.
+      operationId: post-admin-simulation-stop
+      tags:
+        - Simulation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationStatus'
+        '403':
+          description: Forbidden
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationProblem'
 components:
   schemas:
+    SimulationRunState:
+      title: SimulationRunState
+      type: string
+      enum:
+        - stopped
+        - running
+        - pausing
+        - paused
+        - stopping
+    SimulationBlockReason:
+      title: SimulationBlockReason
+      type: string
+      enum:
+        - environmentMissing
+        - notAllowed
+        - production
+    SimulationFailureMode:
+      title: SimulationFailureMode
+      type: string
+      enum:
+        - healthy
+        - random
+        - transient
+        - slow
+        - poison
+        - noHandler
+    SimulationDeliveryOutcome:
+      title: SimulationDeliveryOutcome
+      type: string
+      enum:
+        - completed
+        - threw
+        - poisoned
+        - unsupported
+    SimulationProblem:
+      title: SimulationProblem
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: string
+    SimulationSettings:
+      title: SimulationSettings
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        autoStopMinutes:
+          type: integer
+          description: Minutes after Start before the run stops itself, 1 to 240.
+        rateCeilingPerMinute:
+          type: integer
+          description: Global publish ceiling shared by every publisher loop, 1 to maxRateCeilingPerMinute.
+        ownedEndpoints:
+          type: array
+          description: Consuming endpoints whose handlers the simulator hosts. Every other consuming endpoint is External.
+          items:
+            type: string
+    SimulationEventTypeConfig:
+      title: SimulationEventTypeConfig
+      type: object
+      properties:
+        eventTypeId:
+          type: string
+        enabled:
+          type: boolean
+        ratePerMinute:
+          type: integer
+          description: 1 to rateCeilingPerMinute, before the speed multiplier.
+    SimulationPublisherConfig:
+      title: SimulationPublisherConfig
+      type: object
+      properties:
+        endpointId:
+          type: string
+        eventTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SimulationEventTypeConfig'
+    SimulationFailure:
+      title: SimulationFailure
+      type: object
+      properties:
+        mode:
+          $ref: '#/components/schemas/SimulationFailureMode'
+        rate:
+          type: integer
+          description: Random mode failure probability in percent, 1 to 100.
+        failAttempts:
+          type: integer
+          description: Transient mode failing attempts, 1 to 3.
+        latencyMinMs:
+          type: integer
+        latencyMaxMs:
+          type: integer
+        exceptionMessage:
+          type: string
+          nullable: true
+        eventTypeIds:
+          type: array
+          description: Event types the mode applies to. Empty means all consumed types.
+          items:
+            type: string
+        sessionPattern:
+          type: string
+          nullable: true
+          description: Optional glob over the session id. Asterisk and question mark are the only wildcards.
+        revertAfterMinutes:
+          type: integer
+          nullable: true
+    SimulationSubscriberConfig:
+      title: SimulationSubscriberConfig
+      type: object
+      properties:
+        endpointId:
+          type: string
+        failure:
+          $ref: '#/components/schemas/SimulationFailure'
+    SimulationConfig:
+      title: SimulationConfig
+      type: object
+      properties:
+        speed:
+          type: number
+          format: double
+          description: One of 0.5, 1, 2, 5, 10 or 20.
+        publishers:
+          type: array
+          items:
+            $ref: '#/components/schemas/SimulationPublisherConfig'
+        subscribers:
+          type: array
+          items:
+            $ref: '#/components/schemas/SimulationSubscriberConfig'
+    SimulationCounters:
+      title: SimulationCounters
+      type: object
+      properties:
+        published:
+          type: integer
+          format: int64
+        handledOk:
+          type: integer
+          format: int64
+        handlerErrors:
+          type: integer
+          format: int64
+        poisoned:
+          type: integer
+          format: int64
+        publishErrors:
+          type: integer
+          format: int64
+        abandonedSends:
+          type: integer
+          format: int64
+        throughputPerMinute:
+          type: integer
+    SimulationDelivery:
+      title: SimulationDelivery
+      type: object
+      properties:
+        at:
+          type: string
+          format: date-time
+        endpointId:
+          type: string
+        eventTypeId:
+          type: string
+        sessionId:
+          type: string
+        messageId:
+          type: string
+        outcome:
+          $ref: '#/components/schemas/SimulationDeliveryOutcome'
+        attempt:
+          type: integer
+        latencyMs:
+          type: integer
+          format: int64
+        error:
+          type: string
+          nullable: true
+    SimulationEndpoint:
+      title: SimulationEndpoint
+      type: object
+      properties:
+        endpointId:
+          type: string
+        produces:
+          type: array
+          items:
+            type: string
+        consumes:
+          type: array
+          items:
+            type: string
+        owned:
+          type: boolean
+        liveInstanceWarning:
+          type: boolean
+          description: Advisory. An owned endpoint answered a heartbeat recently while the simulator was not hosting it.
+        effectiveMode:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/SimulationFailureMode'
+    SimulationStatus:
+      title: SimulationStatus
+      type: object
+      properties:
+        allowed:
+          type: boolean
+        blockedReason:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/SimulationBlockReason'
+        environment:
+          type: string
+          nullable: true
+        productionNames:
+          type: array
+          items:
+            type: string
+        allowedEnvironments:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+        state:
+          $ref: '#/components/schemas/SimulationRunState'
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        autoStopAt:
+          type: string
+          format: date-time
+          nullable: true
+        capped:
+          type: boolean
+        maxRateCeilingPerMinute:
+          type: integer
+        sessionPrefix:
+          type: string
+        settings:
+          $ref: '#/components/schemas/SimulationSettings'
+        config:
+          $ref: '#/components/schemas/SimulationConfig'
+        counters:
+          $ref: '#/components/schemas/SimulationCounters'
+        recent:
+          type: array
+          items:
+            $ref: '#/components/schemas/SimulationDelivery'
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/SimulationEndpoint'
     OldEvent:
       type: object
       properties:
@@ -3148,6 +3556,9 @@ components:
             - reconcileStalePending
             - failureClassified
             - updateIntelligenceSettings
+            - updateSimulationSettings
+            - controlSimulation
+            - updateSimulationConfig
         comment:
           type: string
           nullable: true
@@ -4196,6 +4607,9 @@ components:
             - reconcileStalePending
             - failureClassified
             - updateIntelligenceSettings
+            - updateSimulationSettings
+            - controlSimulation
+            - updateSimulationConfig
         createdAtFrom:
           type: string
           format: date-time
@@ -4802,6 +5216,9 @@ components:
             - reconcileStalePending
             - failureClassified
             - updateIntelligenceSettings
+            - updateSimulationSettings
+            - controlSimulation
+            - updateSimulationConfig
         comment:
           type: string
           nullable: true
@@ -4940,3 +5357,4 @@ tags:
   - name: Audit
   - name: Metrics
   - name: Agent
+  - name: Simulation

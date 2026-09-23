@@ -18,6 +18,7 @@ using NimBus;
 using NimBus.WebApp.Hubs;
 using NimBus.WebApp.Services.ApplicationInsights;
 using NimBus.WebApp.Services.Heartbeat;
+using NimBus.WebApp.Services.Simulation;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Net.Http.Headers;
 using NSwag.AspNetCore;
@@ -94,6 +95,7 @@ namespace NimBus.WebApp
             services.AddSingleton<IIntelligenceSecretProtector, DataProtectionSecretProtector>();
             services.AddAntiforgery(options => options.HeaderName = "X-NimBus-CSRF");
             AddManagementServices(services);
+            AddSimulation(services);
             AddObservability(services, storageProvider);
             AddAuthorizationAndAuditServices(services);
             // The intelligence adapter depends on the scoped authorization and
@@ -561,6 +563,13 @@ namespace NimBus.WebApp
                 sp.GetRequiredService<ServiceBusAdministrationClient>()));
         }
 
+        // Traffic simulator (Admin → Simulation, /Simulate). Singleton, in-memory state per
+        // instance; options are validated at startup, including the production-name exclusion.
+        private void AddSimulation(IServiceCollection services)
+        {
+            services.AddNimBusSimulation(Configuration);
+        }
+
         private void AddObservability(IServiceCollection services, string storageProvider)
         {
             // Typed HttpClient via IHttpClientFactory — pools the underlying
@@ -684,6 +693,7 @@ namespace NimBus.WebApp
             services.AddTransient<IAuditApiController, AuditImplementation>();
             services.AddTransient<IAccessControlApiController, AccessControlImplementation>();
             services.AddTransient<IAgentApiController, AgentImplementation>();
+            services.AddTransient<ISimulationApiController, SimulationImplementation>();
             services.AddSingleton<IAgentEventPublisher, AgentEventPublisher>();
             services.AddSingleton<IAgentSubscriptionRegistry, AgentSubscriptionRegistry>();
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -138,5 +138,14 @@ namespace NimBus.MessageStore
 
         /// <summary>A site Owner changed shared failure-intelligence configuration.</summary>
         UpdateIntelligenceSettings,
+
+        /// <summary>A site Owner changed the traffic simulator's settings, including endpoint ownership (recorded as Data).</summary>
+        UpdateSimulationSettings,
+
+        /// <summary>A site Owner started, paused or stopped the traffic simulator (the action is recorded as Data).</summary>
+        ControlSimulation,
+
+        /// <summary>A site Owner replaced the traffic simulator's publisher and failure-mode config (recorded as Data).</summary>
+        UpdateSimulationConfig,
     }
 }

@@ -5894,6 +5894,1281 @@ export class Client extends ApiClientBase {
         }
         return Promise.resolve<AccessControlSet>(null as any);
     }
+
+    /**
+     * Traffic simulator status
+     * @return OK
+     */
+    getAdminSimulation(): Promise<SimulationStatus> {
+        let url_ = this.baseUrl + "/api/admin/simulation";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminSimulation(_response);
+        });
+    }
+
+    protected processGetAdminSimulation(response: Response): Promise<SimulationStatus> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SimulationStatus.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SimulationStatus>(null as any);
+    }
+
+    /**
+     * Update the traffic simulator settings
+     * @param body (optional) 
+     * @return OK
+     */
+    putAdminSimulationSettings(body?: SimulationSettings | undefined): Promise<SimulationStatus> {
+        let url_ = this.baseUrl + "/api/admin/simulation/settings";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPutAdminSimulationSettings(_response);
+        });
+    }
+
+    protected processPutAdminSimulationSettings(response: Response): Promise<SimulationStatus> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SimulationStatus.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = SimulationProblem.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = SimulationProblem.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SimulationStatus>(null as any);
+    }
+
+    /**
+     * Replace the traffic simulator config
+     * @param body (optional) 
+     * @return OK
+     */
+    putAdminSimulationConfig(body?: SimulationConfig | undefined): Promise<SimulationStatus> {
+        let url_ = this.baseUrl + "/api/admin/simulation/config";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPutAdminSimulationConfig(_response);
+        });
+    }
+
+    protected processPutAdminSimulationConfig(response: Response): Promise<SimulationStatus> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SimulationStatus.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = SimulationProblem.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SimulationStatus>(null as any);
+    }
+
+    /**
+     * Start or resume the traffic simulator
+     * @return OK
+     */
+    postAdminSimulationStart(): Promise<SimulationStatus> {
+        let url_ = this.baseUrl + "/api/admin/simulation/start";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminSimulationStart(_response);
+        });
+    }
+
+    protected processPostAdminSimulationStart(response: Response): Promise<SimulationStatus> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SimulationStatus.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = SimulationProblem.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SimulationStatus>(null as any);
+    }
+
+    /**
+     * Pause the traffic simulator
+     * @return OK
+     */
+    postAdminSimulationPause(): Promise<SimulationStatus> {
+        let url_ = this.baseUrl + "/api/admin/simulation/pause";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminSimulationPause(_response);
+        });
+    }
+
+    protected processPostAdminSimulationPause(response: Response): Promise<SimulationStatus> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SimulationStatus.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = SimulationProblem.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SimulationStatus>(null as any);
+    }
+
+    /**
+     * Stop the traffic simulator
+     * @return OK
+     */
+    postAdminSimulationStop(): Promise<SimulationStatus> {
+        let url_ = this.baseUrl + "/api/admin/simulation/stop";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminSimulationStop(_response);
+        });
+    }
+
+    protected processPostAdminSimulationStop(response: Response): Promise<SimulationStatus> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SimulationStatus.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = SimulationProblem.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SimulationStatus>(null as any);
+    }
+}
+
+export enum SimulationRunState {
+    Stopped = "stopped",
+    Running = "running",
+    Pausing = "pausing",
+    Paused = "paused",
+    Stopping = "stopping",
+}
+
+export enum SimulationBlockReason {
+    EnvironmentMissing = "environmentMissing",
+    NotAllowed = "notAllowed",
+    Production = "production",
+}
+
+export enum SimulationFailureMode {
+    Healthy = "healthy",
+    Random = "random",
+    Transient = "transient",
+    Slow = "slow",
+    Poison = "poison",
+    NoHandler = "noHandler",
+}
+
+export enum SimulationDeliveryOutcome {
+    Completed = "completed",
+    Threw = "threw",
+    Poisoned = "poisoned",
+    Unsupported = "unsupported",
+}
+
+export class SimulationProblem implements ISimulationProblem {
+    errors?: string[];
+
+    [key: string]: any;
+
+    constructor(data?: ISimulationProblem) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["errors"])) {
+                this.errors = [] as any;
+                for (let item of _data["errors"])
+                    this.errors!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): SimulationProblem {
+        data = typeof data === 'object' ? data : {};
+        let result = new SimulationProblem();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.errors)) {
+            data["errors"] = [];
+            for (let item of this.errors)
+                data["errors"].push(item);
+        }
+        return data;
+    }
+
+    clone(): SimulationProblem {
+        const json = this.toJSON();
+        let result = new SimulationProblem();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISimulationProblem {
+    errors?: string[];
+
+    [key: string]: any;
+}
+
+export class SimulationSettings implements ISimulationSettings {
+    enabled?: boolean;
+    /** Minutes after Start before the run stops itself, 1 to 240. */
+    autoStopMinutes?: number;
+    /** Global publish ceiling shared by every publisher loop, 1 to maxRateCeilingPerMinute. */
+    rateCeilingPerMinute?: number;
+    /** Consuming endpoints whose handlers the simulator hosts. Every other consuming endpoint is External. */
+    ownedEndpoints?: string[];
+
+    [key: string]: any;
+
+    constructor(data?: ISimulationSettings) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.enabled = _data["enabled"];
+            this.autoStopMinutes = _data["autoStopMinutes"];
+            this.rateCeilingPerMinute = _data["rateCeilingPerMinute"];
+            if (Array.isArray(_data["ownedEndpoints"])) {
+                this.ownedEndpoints = [] as any;
+                for (let item of _data["ownedEndpoints"])
+                    this.ownedEndpoints!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): SimulationSettings {
+        data = typeof data === 'object' ? data : {};
+        let result = new SimulationSettings();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["enabled"] = this.enabled;
+        data["autoStopMinutes"] = this.autoStopMinutes;
+        data["rateCeilingPerMinute"] = this.rateCeilingPerMinute;
+        if (Array.isArray(this.ownedEndpoints)) {
+            data["ownedEndpoints"] = [];
+            for (let item of this.ownedEndpoints)
+                data["ownedEndpoints"].push(item);
+        }
+        return data;
+    }
+
+    clone(): SimulationSettings {
+        const json = this.toJSON();
+        let result = new SimulationSettings();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISimulationSettings {
+    enabled?: boolean;
+    /** Minutes after Start before the run stops itself, 1 to 240. */
+    autoStopMinutes?: number;
+    /** Global publish ceiling shared by every publisher loop, 1 to maxRateCeilingPerMinute. */
+    rateCeilingPerMinute?: number;
+    /** Consuming endpoints whose handlers the simulator hosts. Every other consuming endpoint is External. */
+    ownedEndpoints?: string[];
+
+    [key: string]: any;
+}
+
+export class SimulationEventTypeConfig implements ISimulationEventTypeConfig {
+    eventTypeId?: string;
+    enabled?: boolean;
+    /** 1 to rateCeilingPerMinute, before the speed multiplier. */
+    ratePerMinute?: number;
+
+    [key: string]: any;
+
+    constructor(data?: ISimulationEventTypeConfig) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.eventTypeId = _data["eventTypeId"];
+            this.enabled = _data["enabled"];
+            this.ratePerMinute = _data["ratePerMinute"];
+        }
+    }
+
+    static fromJS(data: any): SimulationEventTypeConfig {
+        data = typeof data === 'object' ? data : {};
+        let result = new SimulationEventTypeConfig();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["eventTypeId"] = this.eventTypeId;
+        data["enabled"] = this.enabled;
+        data["ratePerMinute"] = this.ratePerMinute;
+        return data;
+    }
+
+    clone(): SimulationEventTypeConfig {
+        const json = this.toJSON();
+        let result = new SimulationEventTypeConfig();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISimulationEventTypeConfig {
+    eventTypeId?: string;
+    enabled?: boolean;
+    /** 1 to rateCeilingPerMinute, before the speed multiplier. */
+    ratePerMinute?: number;
+
+    [key: string]: any;
+}
+
+export class SimulationPublisherConfig implements ISimulationPublisherConfig {
+    endpointId?: string;
+    eventTypes?: SimulationEventTypeConfig[];
+
+    [key: string]: any;
+
+    constructor(data?: ISimulationPublisherConfig) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.endpointId = _data["endpointId"];
+            if (Array.isArray(_data["eventTypes"])) {
+                this.eventTypes = [] as any;
+                for (let item of _data["eventTypes"])
+                    this.eventTypes!.push(SimulationEventTypeConfig.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): SimulationPublisherConfig {
+        data = typeof data === 'object' ? data : {};
+        let result = new SimulationPublisherConfig();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["endpointId"] = this.endpointId;
+        if (Array.isArray(this.eventTypes)) {
+            data["eventTypes"] = [];
+            for (let item of this.eventTypes)
+                data["eventTypes"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): SimulationPublisherConfig {
+        const json = this.toJSON();
+        let result = new SimulationPublisherConfig();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISimulationPublisherConfig {
+    endpointId?: string;
+    eventTypes?: SimulationEventTypeConfig[];
+
+    [key: string]: any;
+}
+
+export class SimulationFailure implements ISimulationFailure {
+    mode?: SimulationFailureMode;
+    /** Random mode failure probability in percent, 1 to 100. */
+    rate?: number;
+    /** Transient mode failing attempts, 1 to 3. */
+    failAttempts?: number;
+    latencyMinMs?: number;
+    latencyMaxMs?: number;
+    exceptionMessage?: string | undefined;
+    /** Event types the mode applies to. Empty means all consumed types. */
+    eventTypeIds?: string[];
+    /** Optional glob over the session id. Asterisk and question mark are the only wildcards. */
+    sessionPattern?: string | undefined;
+    revertAfterMinutes?: number | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: ISimulationFailure) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.mode = _data["mode"];
+            this.rate = _data["rate"];
+            this.failAttempts = _data["failAttempts"];
+            this.latencyMinMs = _data["latencyMinMs"];
+            this.latencyMaxMs = _data["latencyMaxMs"];
+            this.exceptionMessage = _data["exceptionMessage"];
+            if (Array.isArray(_data["eventTypeIds"])) {
+                this.eventTypeIds = [] as any;
+                for (let item of _data["eventTypeIds"])
+                    this.eventTypeIds!.push(item);
+            }
+            this.sessionPattern = _data["sessionPattern"];
+            this.revertAfterMinutes = _data["revertAfterMinutes"];
+        }
+    }
+
+    static fromJS(data: any): SimulationFailure {
+        data = typeof data === 'object' ? data : {};
+        let result = new SimulationFailure();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["mode"] = this.mode;
+        data["rate"] = this.rate;
+        data["failAttempts"] = this.failAttempts;
+        data["latencyMinMs"] = this.latencyMinMs;
+        data["latencyMaxMs"] = this.latencyMaxMs;
+        data["exceptionMessage"] = this.exceptionMessage;
+        if (Array.isArray(this.eventTypeIds)) {
+            data["eventTypeIds"] = [];
+            for (let item of this.eventTypeIds)
+                data["eventTypeIds"].push(item);
+        }
+        data["sessionPattern"] = this.sessionPattern;
+        data["revertAfterMinutes"] = this.revertAfterMinutes;
+        return data;
+    }
+
+    clone(): SimulationFailure {
+        const json = this.toJSON();
+        let result = new SimulationFailure();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISimulationFailure {
+    mode?: SimulationFailureMode;
+    /** Random mode failure probability in percent, 1 to 100. */
+    rate?: number;
+    /** Transient mode failing attempts, 1 to 3. */
+    failAttempts?: number;
+    latencyMinMs?: number;
+    latencyMaxMs?: number;
+    exceptionMessage?: string | undefined;
+    /** Event types the mode applies to. Empty means all consumed types. */
+    eventTypeIds?: string[];
+    /** Optional glob over the session id. Asterisk and question mark are the only wildcards. */
+    sessionPattern?: string | undefined;
+    revertAfterMinutes?: number | undefined;
+
+    [key: string]: any;
+}
+
+export class SimulationSubscriberConfig implements ISimulationSubscriberConfig {
+    endpointId?: string;
+    failure?: SimulationFailure;
+
+    [key: string]: any;
+
+    constructor(data?: ISimulationSubscriberConfig) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.endpointId = _data["endpointId"];
+            this.failure = _data["failure"] ? SimulationFailure.fromJS(_data["failure"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): SimulationSubscriberConfig {
+        data = typeof data === 'object' ? data : {};
+        let result = new SimulationSubscriberConfig();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["endpointId"] = this.endpointId;
+        data["failure"] = this.failure ? this.failure.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): SimulationSubscriberConfig {
+        const json = this.toJSON();
+        let result = new SimulationSubscriberConfig();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISimulationSubscriberConfig {
+    endpointId?: string;
+    failure?: SimulationFailure;
+
+    [key: string]: any;
+}
+
+export class SimulationConfig implements ISimulationConfig {
+    /** One of 0.5, 1, 2, 5, 10 or 20. */
+    speed?: number;
+    publishers?: SimulationPublisherConfig[];
+    subscribers?: SimulationSubscriberConfig[];
+
+    [key: string]: any;
+
+    constructor(data?: ISimulationConfig) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.speed = _data["speed"];
+            if (Array.isArray(_data["publishers"])) {
+                this.publishers = [] as any;
+                for (let item of _data["publishers"])
+                    this.publishers!.push(SimulationPublisherConfig.fromJS(item));
+            }
+            if (Array.isArray(_data["subscribers"])) {
+                this.subscribers = [] as any;
+                for (let item of _data["subscribers"])
+                    this.subscribers!.push(SimulationSubscriberConfig.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): SimulationConfig {
+        data = typeof data === 'object' ? data : {};
+        let result = new SimulationConfig();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["speed"] = this.speed;
+        if (Array.isArray(this.publishers)) {
+            data["publishers"] = [];
+            for (let item of this.publishers)
+                data["publishers"].push(item ? item.toJSON() : undefined as any);
+        }
+        if (Array.isArray(this.subscribers)) {
+            data["subscribers"] = [];
+            for (let item of this.subscribers)
+                data["subscribers"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): SimulationConfig {
+        const json = this.toJSON();
+        let result = new SimulationConfig();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISimulationConfig {
+    /** One of 0.5, 1, 2, 5, 10 or 20. */
+    speed?: number;
+    publishers?: SimulationPublisherConfig[];
+    subscribers?: SimulationSubscriberConfig[];
+
+    [key: string]: any;
+}
+
+export class SimulationCounters implements ISimulationCounters {
+    published?: number;
+    handledOk?: number;
+    handlerErrors?: number;
+    poisoned?: number;
+    publishErrors?: number;
+    abandonedSends?: number;
+    throughputPerMinute?: number;
+
+    [key: string]: any;
+
+    constructor(data?: ISimulationCounters) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.published = _data["published"];
+            this.handledOk = _data["handledOk"];
+            this.handlerErrors = _data["handlerErrors"];
+            this.poisoned = _data["poisoned"];
+            this.publishErrors = _data["publishErrors"];
+            this.abandonedSends = _data["abandonedSends"];
+            this.throughputPerMinute = _data["throughputPerMinute"];
+        }
+    }
+
+    static fromJS(data: any): SimulationCounters {
+        data = typeof data === 'object' ? data : {};
+        let result = new SimulationCounters();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["published"] = this.published;
+        data["handledOk"] = this.handledOk;
+        data["handlerErrors"] = this.handlerErrors;
+        data["poisoned"] = this.poisoned;
+        data["publishErrors"] = this.publishErrors;
+        data["abandonedSends"] = this.abandonedSends;
+        data["throughputPerMinute"] = this.throughputPerMinute;
+        return data;
+    }
+
+    clone(): SimulationCounters {
+        const json = this.toJSON();
+        let result = new SimulationCounters();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISimulationCounters {
+    published?: number;
+    handledOk?: number;
+    handlerErrors?: number;
+    poisoned?: number;
+    publishErrors?: number;
+    abandonedSends?: number;
+    throughputPerMinute?: number;
+
+    [key: string]: any;
+}
+
+export class SimulationDelivery implements ISimulationDelivery {
+    at?: moment.Moment;
+    endpointId?: string;
+    eventTypeId?: string;
+    sessionId?: string;
+    messageId?: string;
+    outcome?: SimulationDeliveryOutcome;
+    attempt?: number;
+    latencyMs?: number;
+    error?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: ISimulationDelivery) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.at = _data["at"] ? moment(_data["at"].toString()) : undefined as any;
+            this.endpointId = _data["endpointId"];
+            this.eventTypeId = _data["eventTypeId"];
+            this.sessionId = _data["sessionId"];
+            this.messageId = _data["messageId"];
+            this.outcome = _data["outcome"];
+            this.attempt = _data["attempt"];
+            this.latencyMs = _data["latencyMs"];
+            this.error = _data["error"];
+        }
+    }
+
+    static fromJS(data: any): SimulationDelivery {
+        data = typeof data === 'object' ? data : {};
+        let result = new SimulationDelivery();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["at"] = this.at ? this.at.toISOString() : undefined as any;
+        data["endpointId"] = this.endpointId;
+        data["eventTypeId"] = this.eventTypeId;
+        data["sessionId"] = this.sessionId;
+        data["messageId"] = this.messageId;
+        data["outcome"] = this.outcome;
+        data["attempt"] = this.attempt;
+        data["latencyMs"] = this.latencyMs;
+        data["error"] = this.error;
+        return data;
+    }
+
+    clone(): SimulationDelivery {
+        const json = this.toJSON();
+        let result = new SimulationDelivery();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISimulationDelivery {
+    at?: moment.Moment;
+    endpointId?: string;
+    eventTypeId?: string;
+    sessionId?: string;
+    messageId?: string;
+    outcome?: SimulationDeliveryOutcome;
+    attempt?: number;
+    latencyMs?: number;
+    error?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class SimulationEndpoint implements ISimulationEndpoint {
+    endpointId?: string;
+    produces?: string[];
+    consumes?: string[];
+    owned?: boolean;
+    /** Advisory. An owned endpoint answered a heartbeat recently while the simulator was not hosting it. */
+    liveInstanceWarning?: boolean;
+    effectiveMode?: SimulationFailureMode | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: ISimulationEndpoint) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.endpointId = _data["endpointId"];
+            if (Array.isArray(_data["produces"])) {
+                this.produces = [] as any;
+                for (let item of _data["produces"])
+                    this.produces!.push(item);
+            }
+            if (Array.isArray(_data["consumes"])) {
+                this.consumes = [] as any;
+                for (let item of _data["consumes"])
+                    this.consumes!.push(item);
+            }
+            this.owned = _data["owned"];
+            this.liveInstanceWarning = _data["liveInstanceWarning"];
+            this.effectiveMode = _data["effectiveMode"];
+        }
+    }
+
+    static fromJS(data: any): SimulationEndpoint {
+        data = typeof data === 'object' ? data : {};
+        let result = new SimulationEndpoint();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["endpointId"] = this.endpointId;
+        if (Array.isArray(this.produces)) {
+            data["produces"] = [];
+            for (let item of this.produces)
+                data["produces"].push(item);
+        }
+        if (Array.isArray(this.consumes)) {
+            data["consumes"] = [];
+            for (let item of this.consumes)
+                data["consumes"].push(item);
+        }
+        data["owned"] = this.owned;
+        data["liveInstanceWarning"] = this.liveInstanceWarning;
+        data["effectiveMode"] = this.effectiveMode;
+        return data;
+    }
+
+    clone(): SimulationEndpoint {
+        const json = this.toJSON();
+        let result = new SimulationEndpoint();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISimulationEndpoint {
+    endpointId?: string;
+    produces?: string[];
+    consumes?: string[];
+    owned?: boolean;
+    /** Advisory. An owned endpoint answered a heartbeat recently while the simulator was not hosting it. */
+    liveInstanceWarning?: boolean;
+    effectiveMode?: SimulationFailureMode | undefined;
+
+    [key: string]: any;
+}
+
+export class SimulationStatus implements ISimulationStatus {
+    allowed?: boolean;
+    blockedReason?: SimulationBlockReason | undefined;
+    environment?: string | undefined;
+    productionNames?: string[];
+    allowedEnvironments?: string[];
+    enabled?: boolean;
+    state?: SimulationRunState;
+    startedAt?: moment.Moment | undefined;
+    autoStopAt?: moment.Moment | undefined;
+    capped?: boolean;
+    maxRateCeilingPerMinute?: number;
+    sessionPrefix?: string;
+    settings?: SimulationSettings;
+    config?: SimulationConfig;
+    counters?: SimulationCounters;
+    recent?: SimulationDelivery[];
+    endpoints?: SimulationEndpoint[];
+
+    [key: string]: any;
+
+    constructor(data?: ISimulationStatus) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.allowed = _data["allowed"];
+            this.blockedReason = _data["blockedReason"];
+            this.environment = _data["environment"];
+            if (Array.isArray(_data["productionNames"])) {
+                this.productionNames = [] as any;
+                for (let item of _data["productionNames"])
+                    this.productionNames!.push(item);
+            }
+            if (Array.isArray(_data["allowedEnvironments"])) {
+                this.allowedEnvironments = [] as any;
+                for (let item of _data["allowedEnvironments"])
+                    this.allowedEnvironments!.push(item);
+            }
+            this.enabled = _data["enabled"];
+            this.state = _data["state"];
+            this.startedAt = _data["startedAt"] ? moment(_data["startedAt"].toString()) : undefined as any;
+            this.autoStopAt = _data["autoStopAt"] ? moment(_data["autoStopAt"].toString()) : undefined as any;
+            this.capped = _data["capped"];
+            this.maxRateCeilingPerMinute = _data["maxRateCeilingPerMinute"];
+            this.sessionPrefix = _data["sessionPrefix"];
+            this.settings = _data["settings"] ? SimulationSettings.fromJS(_data["settings"]) : undefined as any;
+            this.config = _data["config"] ? SimulationConfig.fromJS(_data["config"]) : undefined as any;
+            this.counters = _data["counters"] ? SimulationCounters.fromJS(_data["counters"]) : undefined as any;
+            if (Array.isArray(_data["recent"])) {
+                this.recent = [] as any;
+                for (let item of _data["recent"])
+                    this.recent!.push(SimulationDelivery.fromJS(item));
+            }
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(SimulationEndpoint.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): SimulationStatus {
+        data = typeof data === 'object' ? data : {};
+        let result = new SimulationStatus();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["allowed"] = this.allowed;
+        data["blockedReason"] = this.blockedReason;
+        data["environment"] = this.environment;
+        if (Array.isArray(this.productionNames)) {
+            data["productionNames"] = [];
+            for (let item of this.productionNames)
+                data["productionNames"].push(item);
+        }
+        if (Array.isArray(this.allowedEnvironments)) {
+            data["allowedEnvironments"] = [];
+            for (let item of this.allowedEnvironments)
+                data["allowedEnvironments"].push(item);
+        }
+        data["enabled"] = this.enabled;
+        data["state"] = this.state;
+        data["startedAt"] = this.startedAt ? this.startedAt.toISOString() : undefined as any;
+        data["autoStopAt"] = this.autoStopAt ? this.autoStopAt.toISOString() : undefined as any;
+        data["capped"] = this.capped;
+        data["maxRateCeilingPerMinute"] = this.maxRateCeilingPerMinute;
+        data["sessionPrefix"] = this.sessionPrefix;
+        data["settings"] = this.settings ? this.settings.toJSON() : undefined as any;
+        data["config"] = this.config ? this.config.toJSON() : undefined as any;
+        data["counters"] = this.counters ? this.counters.toJSON() : undefined as any;
+        if (Array.isArray(this.recent)) {
+            data["recent"] = [];
+            for (let item of this.recent)
+                data["recent"].push(item ? item.toJSON() : undefined as any);
+        }
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): SimulationStatus {
+        const json = this.toJSON();
+        let result = new SimulationStatus();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface ISimulationStatus {
+    allowed?: boolean;
+    blockedReason?: SimulationBlockReason | undefined;
+    environment?: string | undefined;
+    productionNames?: string[];
+    allowedEnvironments?: string[];
+    enabled?: boolean;
+    state?: SimulationRunState;
+    startedAt?: moment.Moment | undefined;
+    autoStopAt?: moment.Moment | undefined;
+    capped?: boolean;
+    maxRateCeilingPerMinute?: number;
+    sessionPrefix?: string;
+    settings?: SimulationSettings;
+    config?: SimulationConfig;
+    counters?: SimulationCounters;
+    recent?: SimulationDelivery[];
+    endpoints?: SimulationEndpoint[];
+
+    [key: string]: any;
 }
 
 export class OldEvent implements IOldEvent {
@@ -14676,6 +15951,9 @@ export enum MessageAuditAuditType {
     ReconcileStalePending = "reconcileStalePending",
     FailureClassified = "failureClassified",
     UpdateIntelligenceSettings = "updateIntelligenceSettings",
+    UpdateSimulationSettings = "updateSimulationSettings",
+    ControlSimulation = "controlSimulation",
+    UpdateSimulationConfig = "updateSimulationConfig",
 }
 
 export class MessageContent implements IMessageContent {
@@ -14804,6 +16082,9 @@ export enum AuditSearchFilterAuditType {
     ReconcileStalePending = "reconcileStalePending",
     FailureClassified = "failureClassified",
     UpdateIntelligenceSettings = "updateIntelligenceSettings",
+    UpdateSimulationSettings = "updateSimulationSettings",
+    ControlSimulation = "controlSimulation",
+    UpdateSimulationConfig = "updateSimulationConfig",
 }
 
 export enum StalePendingRowVerdict {
@@ -14874,6 +16155,9 @@ export enum AuditEntryAuditType {
     ReconcileStalePending = "reconcileStalePending",
     FailureClassified = "failureClassified",
     UpdateIntelligenceSettings = "updateIntelligenceSettings",
+    UpdateSimulationSettings = "updateSimulationSettings",
+    ControlSimulation = "controlSimulation",
+    UpdateSimulationConfig = "updateSimulationConfig",
 }
 
 export enum AgentSettleRequestOutcome {

@@ -18,7 +18,25 @@ var appsettings = concat(settings, secretAppSettings, [
   }
 ])
 
-resource webApplication 'Microsoft.Web/sites@2022-03-01' = {
+// Private networking (spec 034). Empty keeps the app off the VNet, as in public mode.
+param virtualNetworkSubnetId string = ''
+
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+param publicNetworkAccess string = 'Enabled'
+
+// allTraffic, not the legacy vnetRouteAllEnabled: it also routes configuration traffic,
+// including managed-identity token requests, through the customer's firewall.
+var vnetProperties = empty(virtualNetworkSubnetId) ? {} : {
+  virtualNetworkSubnetId: virtualNetworkSubnetId
+  outboundVnetRouting: {
+    allTraffic: true
+  }
+}
+
+resource webApplication 'Microsoft.Web/sites@2024-11-01' = {
   name: appName
   location: location
   kind: 'web'
@@ -28,7 +46,7 @@ resource webApplication 'Microsoft.Web/sites@2022-03-01' = {
   tags: {
     'hidden-related:${resourceGroup().id}/providers/Microsoft.Web/serverfarms/appServicePlan': 'Resource'
   }
-  properties: {    
+  properties: union({
     serverFarmId: appServicePlanId
     siteConfig: {
       alwaysOn: alwaysOn
@@ -39,9 +57,11 @@ resource webApplication 'Microsoft.Web/sites@2022-03-01' = {
       use32BitWorkerProcess: false
       appSettings:appsettings
     }
-    httpsOnly: true    
-  }
+    httpsOnly: true
+    publicNetworkAccess: publicNetworkAccess
+  }, vnetProperties)
 }
 
+output id string = webApplication.id
 output name string = webApplication.name
 output identity string = webApplication.identity.principalId

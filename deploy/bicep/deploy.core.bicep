@@ -86,6 +86,67 @@ param resolverMaxInstances int = 0
 param resolverFlexMaximumInstanceCount int = 100
 
 //##############################################
+// Private networking (spec 034). 'public' deploys what NimBus always deployed.
+//##############################################
+
+@allowed([
+  'public'
+  'private'
+])
+param networkMode string = 'public'
+
+// With networkMode 'private': add private endpoints, DNS and VNet integration but keep
+// every public path open (the private-transition state, spec 034 §5.13). Existing
+// deployments pass through this state so nothing is locked before the apps reach it
+// privately.
+param allowPublicAccess bool = false
+
+// Customer-owned subnets. Private endpoints take their addresses from the first; the
+// resolver's outbound traffic uses the second (Flex: delegated to
+// Microsoft.App/environments; Elastic Premium: Microsoft.Web/serverFarms).
+param privateEndpointSubnetId string = ''
+param resolverSubnetId string = ''
+
+// Region of the private-endpoint subnet's virtual network. Empty means locationParam.
+param privateEndpointLocation string = ''
+
+// 'create': NimBus creates the privatelink zones and links them to
+// privateDnsLinkVnetIds. 'existing': the zones live in the resource group given by
+// privateDnsZoneScope. 'external': no zone groups; customer policy or DNS writes records.
+@allowed([
+  ''
+  'create'
+  'existing'
+  'external'
+])
+param privateDnsMode string = ''
+param privateDnsZoneScope string = ''
+param privateDnsLinkVnetIds array = []
+
+// Service Bus tier. Empty means Standard in public mode and Premium in private mode;
+// the CLI passes the existing namespace's tier so a Premium namespace is never sent
+// Standard. Premium is required for private endpoints.
+@allowed([
+  ''
+  'Standard'
+  'Premium'
+])
+param serviceBusSku string = ''
+
+@allowed([
+  1
+  2
+  4
+  8
+  16
+])
+param serviceBusCapacity int = 1
+
+// Override for the namespace name, e.g. a new Premium namespace next to the Standard
+// one it replaces (spec 034 §6, option A). Empty means sb-{solutionId}-{environment}.
+param serviceBusNamespaceName string = ''
+
+//##############################################
 // Define names Azure resource names
 //##############################################
 var location = locationParam
@@ -104,7 +165,7 @@ var effectiveManagementAppServicePlanLocation = empty(managementAppServicePlanLo
 var effectiveCoreAppServicePlanLocation = empty(coreAppServicePlanLocation) ? location : coreAppServicePlanLocation
 var effectiveResolverFunctionAppLocation = empty(resolverFunctionAppLocation) ? effectiveCoreAppServicePlanLocation : resolverFunctionAppLocation
 
-var sbNamespace = 'sb-${toLower(solutionId)}-${toLower(environment)}'
+var sbNamespace = empty(serviceBusNamespaceName) ? 'sb-${toLower(solutionId)}-${toLower(environment)}' : serviceBusNamespaceName
 
 var managementAppServicePlanName = 'asp-${toLower(solutionId)}-${toLower(environment)}-management'
 
@@ -135,14 +196,93 @@ var effectiveManagementPlanSku = empty(managementPlanSku)
   : managementPlanSku
 
 //##############################################
+// Private networking: network state, DNS zones, validation
+//##############################################
+
+// public, private-transition (endpoints and VNet integration, public still open) or
+// private (public access off everywhere). Spec 034 §5.13 has the full state table.
+var isPrivate = networkMode == 'private'
+var publicAccess = isPrivate && !allowPublicAccess ? 'Disabled' : 'Enabled'
+var effectiveServiceBusSku = serviceBusSku == 'Premium' || (empty(serviceBusSku) && isPrivate) ? 'Premium' : 'Standard'
+var effectivePrivateEndpointLocation = empty(privateEndpointLocation) ? location : privateEndpointLocation
+
+// Every network resource NimBus creates carries this tag; the rollback cleanup deletes
+// only resources that do (spec 034 §5.13).
+var networkTags = {
+  'nimbus-deployment': '${toLower(solutionId)}-${toLower(environment)}'
+}
+
+var dnsZonePrefix = privateDnsMode == 'create'
+  ? '${resourceGroup().id}/providers/Microsoft.Network/privateDnsZones/'
+  : '${privateDnsZoneScope}/providers/Microsoft.Network/privateDnsZones/'
+var registersDns = isPrivate && privateDnsMode != 'external'
+var dnsZoneNames = {
+  serviceBus: 'privatelink.servicebus.windows.net'
+  cosmos: 'privatelink.documents.azure.com'
+  sql: 'privatelink${az.environment().suffixes.sqlServerHostname}'
+  blob: 'privatelink.blob.${az.environment().suffixes.storage}'
+  queue: 'privatelink.queue.${az.environment().suffixes.storage}'
+  table: 'privatelink.table.${az.environment().suffixes.storage}'
+  file: 'privatelink.file.${az.environment().suffixes.storage}'
+  sites: 'privatelink.azurewebsites.net'
+}
+
+// Zones this deployment's endpoints need; the WebApp template reuses the sites zone.
+var requiredDnsZoneNames = concat(
+  [
+    dnsZoneNames.serviceBus
+    dnsZoneNames.blob
+    dnsZoneNames.queue
+    dnsZoneNames.table
+    dnsZoneNames.sites
+  ],
+  storageProvider == 'cosmos' ? [dnsZoneNames.cosmos] : [],
+  storageProvider == 'sqlserver' && sqlMode == 'provision' ? [dnsZoneNames.sql] : [],
+  resolverPlan == 'ElasticPremium' ? [dnsZoneNames.file] : [])
+
+// Evaluated in a module name below, so invalid input fails at template validation
+// instead of halfway through the deployment.
+var networkValidation = !isPrivate
+  ? ''
+  : empty(privateEndpointSubnetId)
+      ? fail('privateEndpointSubnetId is required when networkMode is private.')
+      : empty(resolverSubnetId)
+          ? fail('resolverSubnetId is required when networkMode is private.')
+          : empty(privateDnsMode)
+              ? fail('privateDnsMode (create, existing or external) is required when networkMode is private.')
+              : privateDnsMode == 'existing' && empty(privateDnsZoneScope)
+                  ? fail('privateDnsZoneScope is required when privateDnsMode is existing.')
+                  : effectiveServiceBusSku != 'Premium'
+                      ? fail('Private networking needs a Premium Service Bus namespace; Standard has no private endpoints.')
+                      : ''
+
+//##############################################
 //# Create Service Bus namespace
 //##############################################
 
 module serviceBusNamespace 'templates/servicebusNamespace.bicep' = {
-  name : 'ServicebusNamespaceDeploy'
+  name : 'ServicebusNamespaceDeploy${networkValidation}'
   params : {
     name: sbNamespace
     location: effectiveServiceBusLocation
+    sku: effectiveServiceBusSku
+    capacity: serviceBusCapacity
+    publicNetworkAccess: publicAccess
+  }
+}
+
+//##############################################
+//# Private DNS zones (privateDnsMode 'create' only)
+//##############################################
+
+module privateDnsZones 'templates/privateDnsZones.bicep' = if (isPrivate && privateDnsMode == 'create') {
+  name: 'privateDnsZonesDeploy'
+  params: {
+    zoneNames: requiredDnsZoneNames
+    vnetIds: empty(privateDnsLinkVnetIds)
+      ? [substring(privateEndpointSubnetId, 0, indexOf(privateEndpointSubnetId, '/subnets/'))]
+      : privateDnsLinkVnetIds
+    tags: networkTags
   }
 }
 
@@ -168,6 +308,7 @@ module cosmosAccount 'templates/cosmosDB.bicep' = if (storageProvider == 'cosmos
     name: cosmosAccountName
     dbname: cosmosDbName
     createIntelligenceContainer: integrationIntelligenceEnabled
+    publicNetworkAccess: publicAccess
     location: effectiveCosmosLocation
   }
 }
@@ -184,6 +325,7 @@ module azureSql 'templates/azureSql.bicep' = if (storageProvider == 'sqlserver' 
     location: effectiveSqlLocation
     administratorLogin: sqlAdminLogin
     administratorPassword: sqlAdminPassword
+    publicNetworkAccess: publicAccess
   }
 }
 
@@ -200,6 +342,10 @@ module funcstorageaccount 'templates/storageaccount.bicep' = {
     // from the Function App via SystemAssignedIdentity. Provision it inline so
     // the container exists before resolverFunctionFlex tries to bind to it.
     createDeploymentContainer: resolverPlan == 'FlexConsumption'
+    publicNetworkAccess: publicAccess
+    // Once the account is private, the platform can no longer create the Elastic
+    // Premium content share itself.
+    contentShareName: isPrivate && resolverPlan == 'ElasticPremium' ? resolverContentShareName : ''
   }
 }
 
@@ -248,10 +394,12 @@ var sharedResolverSettings = [
 
 // Elastic Premium needs the Windows host to know where its content share lives.
 // Flex Consumption rejects these settings.
+var resolverContentShareName = '${toLower(resolverFunctionAppName)}${uniqueString(uniqueDeploy)}'
+
 var elasticPremiumExtraSettings = resolverPlan == 'ElasticPremium' ? [
   {
     name: 'WEBSITE_CONTENTSHARE'
-    value: '${toLower(resolverFunctionAppName)}${uniqueString(uniqueDeploy)}'
+    value: resolverContentShareName
   }
 ] : []
 
@@ -291,6 +439,82 @@ var resolverSecretSettings = union(
   sqlResolverSecretSettings)
 
 //##############################################
+//# Private endpoints for the data services (private mode only)
+//##############################################
+
+// Created after the services and before the Resolver joins the VNet (the dependsOn on
+// both Resolver modules), so the app never starts in a network where its dependencies
+// don't resolve (spec 034 §5.13).
+module peServiceBus 'templates/privateEndpoint.bicep' = if (isPrivate) {
+  name: 'peServiceBusDeploy'
+  params: {
+    name: 'pe-${sbNamespace}-namespace'
+    location: effectivePrivateEndpointLocation
+    subnetId: privateEndpointSubnetId
+    privateLinkServiceId: serviceBusNamespace.outputs.id
+    groupId: 'namespace'
+    privateDnsZoneIds: registersDns ? ['${dnsZonePrefix}${dnsZoneNames.serviceBus}'] : []
+    tags: networkTags
+  }
+  dependsOn: [
+    privateDnsZones
+  ]
+}
+
+module peCosmos 'templates/privateEndpoint.bicep' = if (isPrivate && storageProvider == 'cosmos') {
+  name: 'peCosmosDeploy'
+  params: {
+    name: 'pe-${cosmosAccountName}-sql'
+    location: effectivePrivateEndpointLocation
+    subnetId: privateEndpointSubnetId
+    privateLinkServiceId: cosmosAccount!.outputs.id
+    groupId: 'Sql'
+    privateDnsZoneIds: registersDns ? ['${dnsZonePrefix}${dnsZoneNames.cosmos}'] : []
+    tags: networkTags
+  }
+  dependsOn: [
+    privateDnsZones
+  ]
+}
+
+// An 'external' SQL server is the customer's; its private endpoint is theirs too.
+module peSql 'templates/privateEndpoint.bicep' = if (isPrivate && storageProvider == 'sqlserver' && sqlMode == 'provision') {
+  name: 'peSqlDeploy'
+  params: {
+    name: 'pe-${effectiveSqlServerName}-sqlserver'
+    location: effectivePrivateEndpointLocation
+    subnetId: privateEndpointSubnetId
+    privateLinkServiceId: azureSql!.outputs.id
+    groupId: 'sqlServer'
+    privateDnsZoneIds: registersDns ? ['${dnsZonePrefix}${dnsZoneNames.sql}'] : []
+    tags: networkTags
+  }
+  dependsOn: [
+    privateDnsZones
+  ]
+}
+
+// The Functions host uses blob, queue and table; Elastic Premium also mounts its
+// content share from Azure Files.
+var storageGroupIds = concat(['blob', 'queue', 'table'], resolverPlan == 'ElasticPremium' ? ['file'] : [])
+
+module peStorage 'templates/privateEndpoint.bicep' = [for groupId in storageGroupIds: if (isPrivate) {
+  name: 'peStorage-${groupId}-Deploy'
+  params: {
+    name: 'pe-${funcStorageAccountName}-${groupId}'
+    location: effectivePrivateEndpointLocation
+    subnetId: privateEndpointSubnetId
+    privateLinkServiceId: funcstorageaccount.outputs.storageId
+    groupId: groupId
+    privateDnsZoneIds: registersDns ? ['${dnsZonePrefix}${dnsZoneNames[groupId]}'] : []
+    tags: networkTags
+  }
+  dependsOn: [
+    privateDnsZones
+  ]
+}]
+
+//##############################################
 //# Resolver: Hosting plan + Function App (Elastic Premium branch)
 //##############################################
 
@@ -315,7 +539,15 @@ module resolverFunctionElastic 'templates/functionApp.bicep' = if (resolverPlan 
     settings: resolverappsettings
     secretSettings: resolverSecretSettings
     functionAppScaleLimit: resolverMaxInstances
+    virtualNetworkSubnetId: isPrivate ? resolverSubnetId : ''
+    publicNetworkAccess: publicAccess
   }
+  dependsOn: [
+    peServiceBus
+    peCosmos
+    peSql
+    peStorage
+  ]
 }
 
 //##############################################
@@ -341,13 +573,43 @@ module resolverFunctionFlex 'templates/flexConsumptionFunctionApp.bicep' = if (r
     settings: resolverappsettings
     secretSettings: resolverSecretSettings
     maximumInstanceCount: resolverFlexMaximumInstanceCount
+    virtualNetworkSubnetId: isPrivate ? resolverSubnetId : ''
+    publicNetworkAccess: publicAccess
   }
+  dependsOn: [
+    peServiceBus
+    peCosmos
+    peSql
+    peStorage
+  ]
 }
 
 // Branch-aware principal id; one of the two modules deploys, the other is skipped.
 var resolverPrincipalId = resolverPlan == 'FlexConsumption'
   ? resolverFunctionFlex.outputs.principalId
   : resolverFunctionElastic.outputs.principalId
+
+var resolverSiteId = resolverPlan == 'FlexConsumption'
+  ? resolverFunctionFlex!.outputs.id
+  : resolverFunctionElastic!.outputs.id
+
+// The Resolver has no HTTP triggers; this endpoint exists so an in-network runner can
+// reach its Kudu/scm site to deploy once public access is off.
+module peResolver 'templates/privateEndpoint.bicep' = if (isPrivate) {
+  name: 'peResolverDeploy'
+  params: {
+    name: 'pe-${resolverFunctionAppName}-sites'
+    location: effectivePrivateEndpointLocation
+    subnetId: privateEndpointSubnetId
+    privateLinkServiceId: resolverSiteId
+    groupId: 'sites'
+    privateDnsZoneIds: registersDns ? ['${dnsZonePrefix}${dnsZoneNames.sites}'] : []
+    tags: networkTags
+  }
+  dependsOn: [
+    privateDnsZones
+  ]
+}
 
 //##############################################
 //# Resolver: RBAC role assignments

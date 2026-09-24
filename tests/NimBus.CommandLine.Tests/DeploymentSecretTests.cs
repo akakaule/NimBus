@@ -193,7 +193,10 @@ public sealed class DeploymentSecretTests
         Assert.Contains("@secure()\noutput instrumentationKey string", appInsights, StringComparison.Ordinal);
         Assert.Contains("@secure()\noutput connectionString string", appInsights, StringComparison.Ordinal);
         Assert.Contains("@secure()\noutput connectionString string", storageAccount, StringComparison.Ordinal);
-        Assert.Contains("@secure()\noutput connectionString string", cosmos, StringComparison.Ordinal);
+        // The Cosmos module no longer produces a connection string at all (spec 034): the
+        // apps use Entra RBAC, and nothing may read the account keys into outputs.
+        Assert.DoesNotContain("listConnectionStrings", cosmos, StringComparison.Ordinal);
+        Assert.DoesNotContain("output connectionString", cosmos, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

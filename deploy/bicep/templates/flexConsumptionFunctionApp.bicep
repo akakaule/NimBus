@@ -17,6 +17,18 @@ param deploymentStorageBlobUri string
 param instanceMemoryMB int = 2048
 param maximumInstanceCount int = 100
 
+// Private networking (spec 034). Empty keeps the app off the VNet, as in public mode.
+// Flex Consumption routes all outbound traffic into the integrated VNet by itself and
+// scales on VNet-restricted triggers natively, so no routing or scale-monitoring
+// setting is needed. The subnet must be delegated to Microsoft.App/environments.
+param virtualNetworkSubnetId string = ''
+
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+param publicNetworkAccess string = 'Enabled'
+
 // Flex Consumption-specific layout: runtime, scaling, and the deployment package
 // container live under properties.functionAppConfig — NOT siteConfig.
 // Required app settings (no FUNCTIONS_WORKER_RUNTIME / FUNCTIONS_EXTENSION_VERSION
@@ -41,8 +53,9 @@ resource azureFunction 'Microsoft.Web/sites@2024-04-01' = {
   identity: {
     type: 'SystemAssigned'
   }
-  properties: {
+  properties: union({
     serverFarmId: appServicePlanId
+    publicNetworkAccess: publicNetworkAccess
     functionAppConfig: {
       deployment: {
         storage: {
@@ -69,8 +82,11 @@ resource azureFunction 'Microsoft.Web/sites@2024-04-01' = {
       minTlsVersion: '1.2'
     }
     httpsOnly: true
-  }
+  }, empty(virtualNetworkSubnetId) ? {} : {
+    virtualNetworkSubnetId: virtualNetworkSubnetId
+  })
 }
 
 output webAppUri string = azureFunction.properties.hostNames[0]
 output principalId string = azureFunction.identity.principalId
+output id string = azureFunction.id

@@ -125,6 +125,7 @@ internal static class Program
                 var resolverMaxSessions = applyCommand.Option("--resolver-max-sessions <N>", "Resolver Service Bus session concurrency per instance (1-200). Defaults to the template value (16). Applied as a template-owned host override.", CommandOptionType.SingleValue);
                 var resolverMaxInstances = applyCommand.Option("--resolver-max-instances <N>", "Resolver Function App instance ceiling. Elastic Premium: 0 (no cap, default) to 10, applied as functionAppScaleLimit. Flex Consumption: 1-1000, applied as maximumInstanceCount (default 100).", CommandOptionType.SingleValue);
                 var managementPlanSku = applyCommand.Option("--management-plan-sku <SKU>", "SKU for the management App Service Plan hosting the WebApp. Defaults to the existing plan's SKU when one is deployed, otherwise 'B1' for dev/development and 'S1' for other environments.", CommandOptionType.SingleValue);
+                var networkOptions = NetworkCommandOptions.Register(applyCommand);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
@@ -137,6 +138,8 @@ internal static class Program
                     var resolverPlanChoice = PlanSelection.ParseResolverPlanOption(resolverPlan.Value());
                     var resolverMaxSessionsValue = PlanSelection.ParseResolverMaxSessionsOption(resolverMaxSessions.Value());
                     var resolverMaxInstancesValue = PlanSelection.ParseResolverMaxInstancesOption(resolverMaxInstances.Value());
+                    var network = networkOptions.Build();
+                    var serviceBusCapacity = networkOptions.ServiceBusCapacity;
                     var secrets = DeploymentSecrets.Load();
 
                     if (providerChoice == StorageProviderChoice.SqlServer)
@@ -164,7 +167,10 @@ internal static class Program
                         resolverPlanChoice,
                         ManagementPlanSku: managementPlanSku.Value(),
                         ResolverMaxConcurrentSessions: resolverMaxSessionsValue,
-                        ResolverMaxInstances: resolverMaxInstancesValue);
+                        ResolverMaxInstances: resolverMaxInstancesValue,
+                        Network: network,
+                        ServiceBusCapacity: serviceBusCapacity,
+                        ServiceBusNamespaceName: networkOptions.ServiceBusNamespaceName);
 
                     await deployer.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
                     return 0;
@@ -232,9 +238,17 @@ internal static class Program
                 var topologyPlatform = applyCommand.Option("--platform <TYPE>",
                     "IPlatform type name when the assembly or package exposes more than one",
                     CommandOptionType.SingleValue);
+                var topologyNamespaceName = applyCommand.Option("--service-bus-namespace-name <NAME>",
+                    "Override the Service Bus namespace name (default: 'sb-{solution-id}-{environment}'). Use the value passed to 'nb infra apply'.",
+                    CommandOptionType.SingleValue);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
+                    if (!string.IsNullOrWhiteSpace(topologyNamespaceName.Value()))
+                    {
+                        NetworkSelection.ValidateServiceBusNamespaceName(topologyNamespaceName.Value()!.Trim());
+                    }
+
                     var az = new AzureCliRunner();
                     var platformFactory = await ResolvePlatformFactoryAsync(
                         topologyAssembly.Value(), topologyPackage.Value(), topologyFeed.Value(), topologyPlatform.Value(), cancellationToken).ConfigureAwait(false);
@@ -259,7 +273,7 @@ internal static class Program
                         }
 
                         provisioner = new ServiceBusTopologyProvisioner(az, platformFactory);
-                        options = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!);
+                        options = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!, topologyNamespaceName.Value());
                     }
 
                     await provisioner.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
@@ -373,15 +387,19 @@ internal static class Program
             var setupPlatform = setupCommand.Option("--platform <TYPE>",
                 "IPlatform type name when the assembly or package exposes more than one",
                 CommandOptionType.SingleValue);
+            var setupNetworkOptions = NetworkCommandOptions.Register(setupCommand);
 
             setupCommand.OnExecuteAsync(async cancellationToken =>
             {
                 var context = CommandContext.Create(repoRoot.Value());
                 var az = new AzureCliRunner();
-                // Parse the capacity options before the platform package download so a
-                // malformed value fails before any network work.
+                // Parse the capacity and network options before the platform package
+                // download so a malformed value fails before any network work.
                 var setupResolverMaxSessionsValue = PlanSelection.ParseResolverMaxSessionsOption(setupResolverMaxSessions.Value());
                 var setupResolverMaxInstancesValue = PlanSelection.ParseResolverMaxInstancesOption(setupResolverMaxInstances.Value());
+                var setupNetwork = setupNetworkOptions.Build();
+                var setupServiceBusCapacity = setupNetworkOptions.ServiceBusCapacity;
+                NetworkSelection.ValidateOptions(setupNetwork);
                 var setupPlatformPackage = setupPackage.HasValue()
                     ? await PlatformPackage.ResolveAsync(PlatformHttpClient, setupPackage.Value()!, setupFeed.Value(), setupPlatform.Value(), cancellationToken).ConfigureAwait(false)
                     : null;
@@ -433,9 +451,12 @@ internal static class Program
                     secrets.IdentityAdminPassword,
                     setupManagementPlanSku.Value(),
                     ResolverMaxConcurrentSessions: setupResolverMaxSessionsValue,
-                    ResolverMaxInstances: setupResolverMaxInstancesValue);
+                    ResolverMaxInstances: setupResolverMaxInstancesValue,
+                    Network: setupNetwork,
+                    ServiceBusCapacity: setupServiceBusCapacity,
+                    ServiceBusNamespaceName: setupNetworkOptions.ServiceBusNamespaceName);
 
-                var topologyOptions = new TopologyOptions(solutionId.Value(), environment.Value(), resourceGroup.Value());
+                var topologyOptions = new TopologyOptions(solutionId.Value(), environment.Value(), resourceGroup.Value(), setupNetworkOptions.ServiceBusNamespaceName);
                 var appOptions = new AppDeploymentOptions(
                     solutionId.Value(),
                     environment.Value(),

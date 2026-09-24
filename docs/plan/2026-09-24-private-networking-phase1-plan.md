@@ -44,7 +44,10 @@ The spec's recommendations for its open decisions (§12):
      management SKU; providers.
    - Parameter pass-through.
    - Service Bus SKU pin: refuse private mode on an existing Standard namespace.
-   - `--service-bus-namespace-name` on `infra apply`, `topology apply`, `deploy apps` and `setup`.
+   - `--service-bus-namespace-name` on `infra apply`, `topology apply` and `setup`. Not on
+     `deploy apps`: it never addresses the namespace. The spec listed it by mistake.
+   - Interim guard until slice 3: without `--network-mode`, a namespace whose public access
+     is Disabled stops the run instead of silently reopening it.
 3. **Recorded intent (§5.13).**
    - The resource-group tag `nimbus-network-mode`, written before deploying.
    - Precedence: flag, then tag, then observed state, then public.

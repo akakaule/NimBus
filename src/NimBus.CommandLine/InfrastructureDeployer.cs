@@ -16,7 +16,7 @@ internal sealed class InfrastructureDeployer
 
     public async Task ApplyAsync(InfrastructureOptions options, CancellationToken cancellationToken)
     {
-        var names = NamingConventions.Build(options.SolutionId, options.Environment);
+        var names = NamingConventions.Build(options.SolutionId, options.Environment, options.ServiceBusNamespaceName);
 
         // Fail fast on a plan-specific --resolver-max-instances range error when the plan is
         // explicit, before the login and provider-registration side effects. An auto-pinned
@@ -25,6 +25,15 @@ internal sealed class InfrastructureDeployer
         if (options.ResolverPlan is { } explicitPlan)
         {
             _ = PlanSelection.ResolveResolverMaxInstances(options.ResolverMaxInstances, explicitPlan);
+        }
+
+        // Private networking options (spec 034) are checked the same way: a combination
+        // that can never work fails before login or any Azure call.
+        var network = options.Network ?? NetworkOptions.None;
+        NetworkSelection.ValidateOptions(network);
+        if (!string.IsNullOrWhiteSpace(options.ServiceBusNamespaceName))
+        {
+            NetworkSelection.ValidateServiceBusNamespaceName(options.ServiceBusNamespaceName.Trim());
         }
 
         await _az.EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false);
@@ -67,8 +76,31 @@ internal sealed class InfrastructureDeployer
             CliOutput.WriteLine($"Pinning management plan SKU to the existing '{names.ManagementAppServicePlanName}' SKU ({managementPlanSku}).");
         }
 
+        // The existing namespace decides the Service Bus tier (Azure cannot convert Standard
+        // to Premium in place) and guards against silently reopening a private deployment.
+        var existingServiceBus = await DiscoverServiceBusAsync(options.ResourceGroupName, names.ServiceBusNamespace, cancellationToken).ConfigureAwait(false);
+        var networkMode = NetworkSelection.ResolveNetworkMode(network.Mode, existingServiceBus, names.ServiceBusNamespace);
+        var isPrivate = networkMode == NetworkModeChoice.Private;
+        var (serviceBusSku, serviceBusCapacity) = NetworkSelection.ResolveServiceBusSku(isPrivate, existingServiceBus, options.ServiceBusCapacity, names.ServiceBusNamespace);
+        if (existingServiceBus is { IsPremium: true } && !isPrivate)
+        {
+            CliOutput.WriteLine($"Keeping the existing Premium Service Bus namespace '{names.ServiceBusNamespace}' ({serviceBusCapacity} messaging unit(s)).");
+        }
+
+        ResolvedNetwork? privateNetwork = null;
+        if (isPrivate)
+        {
+            NetworkSelection.ValidateManagementPlanSku(managementPlanSku);
+            privateNetwork = await ResolvePrivateNetworkAsync(options, network, names, resolverPlan, existingLocations, cancellationToken).ConfigureAwait(false);
+            CliOutput.WriteLine(network.AllowPublicAccess
+                ? "Network mode: private-transition (private endpoints and VNet integration; public access stays on)."
+                : "Network mode: private (public network access off).");
+        }
+
+        var serviceBus = new ServiceBusDeployment(serviceBusSku, serviceBusCapacity, options.ServiceBusNamespaceName?.Trim());
+
         CliOutput.WriteLine("Deploying core infrastructure...");
-        await DeployCoreInfrastructureAsync(options, names, resolverPlan, managementPlanSku, existingLocations, cancellationToken).ConfigureAwait(false);
+        await DeployCoreInfrastructureAsync(options, names, resolverPlan, managementPlanSku, existingLocations, serviceBus, privateNetwork, cancellationToken).ConfigureAwait(false);
 
         CliOutput.WriteLine("Preparing web app infrastructure inputs...");
         await _az.EnsureExtensionAsync("application-insights", cancellationToken).ConfigureAwait(false);
@@ -116,6 +148,8 @@ internal sealed class InfrastructureDeployer
             serviceBusFullyQualifiedNamespace,
             PlanSelection.SupportsAlwaysOn(managementPlanSku),
             existingLocations,
+            serviceBus,
+            privateNetwork,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -244,7 +278,15 @@ internal sealed class InfrastructureDeployer
             ? names.SqlServerName
             : options.SqlServerName!.ToLowerInvariant();
 
-    private async Task DeployCoreInfrastructureAsync(InfrastructureOptions options, DeploymentNames names, ResolverPlanChoice resolverPlan, string managementPlanSku, IReadOnlyDictionary<string, string> existingLocations, CancellationToken cancellationToken)
+    private async Task DeployCoreInfrastructureAsync(
+        InfrastructureOptions options,
+        DeploymentNames names,
+        ResolverPlanChoice resolverPlan,
+        string managementPlanSku,
+        IReadOnlyDictionary<string, string> existingLocations,
+        ServiceBusDeployment serviceBus,
+        ResolvedNetwork? privateNetwork,
+        CancellationToken cancellationToken)
     {
         var storageProviderParam = options.StorageProvider == StorageProviderChoice.SqlServer ? "sqlserver" : "cosmos";
         var sqlModeParam = options.SqlMode == SqlProvisioningMode.External ? "external" : "provision";
@@ -293,6 +335,17 @@ internal sealed class InfrastructureDeployer
             arguments.Add(FormattableString.Invariant($"{resolverMaxInstances.ParameterName}={resolverMaxInstances.Value}"));
         }
 
+        AddServiceBusParameters(arguments, serviceBus);
+        if (privateNetwork is not null)
+        {
+            AddSharedNetworkParameters(arguments, privateNetwork);
+            arguments.Add($"resolverSubnetId={privateNetwork.ResolverSubnetId}");
+            if (privateNetwork.DnsMode == PrivateDnsModeChoice.Create && privateNetwork.DnsLinkVnetIds.Count > 0)
+            {
+                arguments.Add($"privateDnsLinkVnetIds={JsonSerializer.Serialize(privateNetwork.DnsLinkVnetIds)}");
+            }
+        }
+
         var pinned = new List<(string Name, string Location)>();
         AddPinnedLocation(arguments, existingLocations, names.ServiceBusNamespace, "serviceBusLocation", pinned);
         AddPinnedLocation(arguments, existingLocations, names.AppInsightsName, "appInsightsLocation", pinned);
@@ -335,6 +388,8 @@ internal sealed class InfrastructureDeployer
         string serviceBusFullyQualifiedNamespace,
         bool alwaysOnEnabled,
         IReadOnlyDictionary<string, string> existingLocations,
+        ServiceBusDeployment serviceBus,
+        ResolvedNetwork? privateNetwork,
         CancellationToken cancellationToken)
     {
         var arguments = new List<string>
@@ -364,6 +419,17 @@ internal sealed class InfrastructureDeployer
         if (!string.IsNullOrWhiteSpace(options.Location))
         {
             arguments.Add($"locationParam={options.Location}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(serviceBus.NamespaceName))
+        {
+            arguments.Add($"serviceBusNamespaceName={serviceBus.NamespaceName}");
+        }
+
+        if (privateNetwork is not null)
+        {
+            AddSharedNetworkParameters(arguments, privateNetwork);
+            arguments.Add($"managementSubnetId={privateNetwork.WebAppSubnetId}");
         }
 
         var pinned = new List<(string Name, string Location)>();
@@ -401,5 +467,198 @@ internal sealed class InfrastructureDeployer
     private static string GetServiceBusFullyQualifiedNamespace(string namespaceName) =>
         $"{namespaceName}.servicebus.windows.net";
 
+    // Mirrors the locationParam default in both entry templates.
+    private const string DefaultLocation = "westeurope";
+
+    private async Task<ExistingServiceBus?> DiscoverServiceBusAsync(string resourceGroupName, string namespaceName, CancellationToken cancellationToken)
+    {
+        var result = await _az.TryRunAsync(
+            new[]
+            {
+                "servicebus", "namespace", "show",
+                "--resource-group", resourceGroupName,
+                "--name", namespaceName,
+                "--query", "{tier:sku.tier, capacity:sku.capacity, publicNetworkAccess:publicNetworkAccess}",
+                "--output", "json",
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        // A missing namespace (a fresh deployment) fails the show call.
+        if (!result.Succeeded || string.IsNullOrWhiteSpace(result.StandardOutput))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(result.StandardOutput);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("tier", out var tier) || tier.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            var capacity = root.TryGetProperty("capacity", out var capacityElement) && capacityElement.ValueKind == JsonValueKind.Number
+                ? capacityElement.GetInt32()
+                : 0;
+            var publicNetworkAccess = root.TryGetProperty("publicNetworkAccess", out var access) && access.ValueKind == JsonValueKind.String
+                ? access.GetString()
+                : null;
+
+            return new ExistingServiceBus(tier.GetString()!, capacity, publicNetworkAccess);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads the three customer subnets and checks them against their roles before anything
+    /// deploys: a wrong delegation or region otherwise fails minutes into the deployment.
+    /// </summary>
+    private async Task<ResolvedNetwork> ResolvePrivateNetworkAsync(
+        InfrastructureOptions options,
+        NetworkOptions network,
+        DeploymentNames names,
+        ResolverPlanChoice resolverPlan,
+        IReadOnlyDictionary<string, string> existingLocations,
+        CancellationToken cancellationToken)
+    {
+        var vnetLocations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var privateEndpointSubnet = await DescribeSubnetAsync(network.PrivateEndpointSubnetId!, vnetLocations, cancellationToken).ConfigureAwait(false);
+        var resolverSubnet = await DescribeSubnetAsync(network.ResolverSubnetId!, vnetLocations, cancellationToken).ConfigureAwait(false);
+        var webAppSubnet = await DescribeSubnetAsync(network.WebAppSubnetId!, vnetLocations, cancellationToken).ConfigureAwait(false);
+
+        // Each app stays where it is (or where its plan is); a new one goes to --location.
+        var resolverLocation = LocationOf(existingLocations, names.ResolverFunctionAppName)
+            ?? LocationOf(existingLocations, names.CoreAppServicePlanName)
+            ?? options.Location
+            ?? DefaultLocation;
+        var webAppLocation = LocationOf(existingLocations, names.WebAppName)
+            ?? LocationOf(existingLocations, names.ManagementAppServicePlanName)
+            ?? options.Location
+            ?? DefaultLocation;
+
+        NetworkSelection.ValidateSubnet(privateEndpointSubnet, SubnetRole.PrivateEndpoints, resolverPlan, appLocation: null);
+        NetworkSelection.ValidateSubnet(resolverSubnet, SubnetRole.Resolver, resolverPlan, resolverLocation);
+        NetworkSelection.ValidateSubnet(webAppSubnet, SubnetRole.WebApp, resolverPlan, webAppLocation);
+
+        await WarnIfProviderNotRegisteredAsync("Microsoft.Network", "private endpoints and DNS zones", cancellationToken).ConfigureAwait(false);
+        if (resolverPlan == ResolverPlanChoice.FlexConsumption)
+        {
+            await WarnIfProviderNotRegisteredAsync("Microsoft.App", "the Flex Consumption subnet delegation", cancellationToken).ConfigureAwait(false);
+        }
+
+        return new ResolvedNetwork(
+            network.AllowPublicAccess,
+            privateEndpointSubnet.Id,
+            resolverSubnet.Id,
+            webAppSubnet.Id,
+            // A private endpoint lives in its subnet's region, which can differ from the
+            // region of the resource it connects to.
+            privateEndpointSubnet.VnetLocation,
+            network.DnsMode!.Value,
+            network.DnsZoneScope?.Trim().TrimEnd('/'),
+            network.DnsLinkVnetIds ?? Array.Empty<string>());
+    }
+
+    private async Task<SubnetInfo> DescribeSubnetAsync(string subnetId, Dictionary<string, string> vnetLocations, CancellationToken cancellationToken)
+    {
+        using var subnet = await _az.CaptureJsonAsync(
+            new[]
+            {
+                "network", "vnet", "subnet", "show",
+                "--ids", subnetId,
+                "--query", "{name:name, delegations:delegations[].serviceName}",
+                "--output", "json",
+            },
+            cancellationToken,
+            $"Could not read the subnet '{subnetId}'. Check that it exists and that the deploying identity can read it.").ConfigureAwait(false);
+
+        var root = subnet.RootElement;
+        var name = root.TryGetProperty("name", out var nameElement) && nameElement.ValueKind == JsonValueKind.String
+            ? nameElement.GetString()!
+            : NetworkSelection.SubnetNameOf(subnetId);
+        var delegations = root.TryGetProperty("delegations", out var delegationElement) && delegationElement.ValueKind == JsonValueKind.Array
+            ? delegationElement.EnumerateArray().Select(d => d.GetString()).OfType<string>().ToList()
+            : new List<string>();
+
+        var vnetId = NetworkSelection.VnetIdOf(subnetId);
+        if (!vnetLocations.TryGetValue(vnetId, out var vnetLocation))
+        {
+            vnetLocation = await _az.CaptureValueAsync(
+                new[] { "network", "vnet", "show", "--ids", vnetId, "--query", "location", "--output", "tsv" },
+                cancellationToken,
+                $"Could not read the virtual network '{vnetId}'.").ConfigureAwait(false);
+            vnetLocations[vnetId] = vnetLocation;
+        }
+
+        return new SubnetInfo(subnetId, name, vnetLocation, delegations);
+    }
+
+    private async Task WarnIfProviderNotRegisteredAsync(string providerNamespace, string neededFor, CancellationToken cancellationToken)
+    {
+        var result = await _az.TryRunAsync(
+            new[] { "provider", "show", "--namespace", providerNamespace, "--query", "registrationState", "--output", "tsv" },
+            cancellationToken).ConfigureAwait(false);
+
+        if (!result.Succeeded || !string.Equals(result.StandardOutput.Trim(), "Registered", StringComparison.OrdinalIgnoreCase))
+        {
+            CliOutput.WriteLine(
+                $"Warning: the {providerNamespace} resource provider does not report as registered; {neededFor} need it. " +
+                $"Run 'az provider register --namespace {providerNamespace}' once per subscription if the deployment fails.");
+        }
+    }
+
+    private static string? LocationOf(IReadOnlyDictionary<string, string> existingLocations, string resourceName) =>
+        existingLocations.TryGetValue(resourceName, out var location) && !string.IsNullOrWhiteSpace(location) ? location : null;
+
+    private static void AddServiceBusParameters(List<string> arguments, ServiceBusDeployment serviceBus)
+    {
+        // Public deployments of a Standard namespace pass nothing, so their parameters stay
+        // exactly as before; the template default is Standard.
+        if (serviceBus.Sku is { } sku)
+        {
+            arguments.Add($"serviceBusSku={sku}");
+        }
+
+        if (serviceBus.Capacity is { } capacity)
+        {
+            arguments.Add(FormattableString.Invariant($"serviceBusCapacity={capacity}"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(serviceBus.NamespaceName))
+        {
+            arguments.Add($"serviceBusNamespaceName={serviceBus.NamespaceName}");
+        }
+    }
+
+    // Parameters both entry templates declare with the same meaning.
+    private static void AddSharedNetworkParameters(List<string> arguments, ResolvedNetwork network)
+    {
+        arguments.Add("networkMode=private");
+        arguments.Add($"allowPublicAccess={(network.AllowPublicAccess ? "true" : "false")}");
+        arguments.Add($"privateEndpointSubnetId={network.PrivateEndpointSubnetId}");
+        arguments.Add($"privateEndpointLocation={network.PrivateEndpointLocation}");
+        arguments.Add($"privateDnsMode={NetworkSelection.ToParameterValue(network.DnsMode)}");
+        if (network.DnsMode == PrivateDnsModeChoice.Existing)
+        {
+            arguments.Add($"privateDnsZoneScope={network.DnsZoneScope}");
+        }
+    }
+
     private sealed record ExistingAppServicePlan(string SkuName, string Tier);
+
+    private sealed record ServiceBusDeployment(string? Sku, int? Capacity, string? NamespaceName);
+
+    private sealed record ResolvedNetwork(
+        bool AllowPublicAccess,
+        string PrivateEndpointSubnetId,
+        string ResolverSubnetId,
+        string WebAppSubnetId,
+        string PrivateEndpointLocation,
+        PrivateDnsModeChoice DnsMode,
+        string? DnsZoneScope,
+        IReadOnlyList<string> DnsLinkVnetIds);
 }

@@ -20,10 +20,16 @@ internal sealed class RecordingAzureCliRunner : IAzureCliRunner
 
     public List<RecordedDeployment> Deployments { get; } = new();
 
+    /// <summary>
+    /// Optional scripted answers: return the standard output for a command, or null to fall
+    /// back to the defaults above. Lets a test describe existing Azure resources.
+    /// </summary>
+    public Func<IReadOnlyList<string>, string?>? Responder { get; set; }
+
     public Task<JsonDocument> CaptureJsonAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string failureMessage)
     {
         Commands.Add(arguments.ToArray());
-        return Task.FromResult(JsonDocument.Parse("{}"));
+        return Task.FromResult(JsonDocument.Parse(Responder?.Invoke(arguments) ?? "{}"));
     }
 
     public Task EnsureLoggedInAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -42,9 +48,10 @@ internal sealed class RecordingAzureCliRunner : IAzureCliRunner
     public Task<ProcessResult> TryRunAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
         Commands.Add(arguments.ToArray());
-        var output = arguments.Contains("list", StringComparer.Ordinal) || arguments.Contains("show", StringComparer.Ordinal)
-            ? "[]"
-            : string.Empty;
+        var output = Responder?.Invoke(arguments)
+            ?? (arguments.Contains("list", StringComparer.Ordinal) || arguments.Contains("show", StringComparer.Ordinal)
+                ? "[]"
+                : string.Empty);
         return Task.FromResult(new ProcessResult(0, output, string.Empty));
     }
 
@@ -54,6 +61,11 @@ internal sealed class RecordingAzureCliRunner : IAzureCliRunner
         string failureMessage)
     {
         Commands.Add(arguments.ToArray());
+        if (Responder?.Invoke(arguments) is { } scripted)
+        {
+            return Task.FromResult(scripted);
+        }
+
         var queryIndex = Array.IndexOf(arguments.ToArray(), "--query");
         var query = queryIndex >= 0 ? arguments[queryIndex + 1] : string.Empty;
         return Task.FromResult(query switch

@@ -67,7 +67,7 @@ internal sealed class ServiceBusTopologyProvisioner
 
     private static async Task<string> ReadConnectionStringAsync(AzureCliRunner az, TopologyOptions options, CancellationToken cancellationToken)
     {
-        var names = NamingConventions.Build(options.SolutionId, options.Environment);
+        var names = NamingConventions.Build(options.SolutionId, options.Environment, options.ServiceBusNamespaceName);
 
         await az.EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false);
 

@@ -12,6 +12,8 @@ This directory coordinates five independently executable refactoring plans. Each
 4. [Modularize CLI composition](04-modularize-cli-composition.md)
 5. [Harden `StrictMessageHandler` lifecycle ordering](05-decompose-strict-message-handler.md) — complete
 
+Plan 4's Phases 1, 2 and 4 are carried out by the [v4.0.0 code-quality plan](2026-09-24-v4-code-quality.md).
+
 ## Recommended sequence
 
 Plan 1 must precede Plan 2 so consumers narrow their dependencies before provider internals move. Plans 3 and 4 are independent of the storage work and may run in parallel in separate worktrees. Plan 5's ordering-test work is also independent. Its optional deferred-sequence extraction requires the explicit trigger and decision gate defined in that plan rather than completion of the other refactors.

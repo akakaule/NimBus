@@ -9,6 +9,7 @@ namespace NimBus.CommandLine.Tests;
 /// no Bicep compiler, so these are text checks on the templates the CLI ships; compile
 /// them with `az bicep build` when changing them.
 /// </summary>
+[Collection(ExtractedTemplatesCollection.Name)]
 public class PrivateNetworkingTemplateTests
 {
     private static readonly CommandContext Context = new(null);

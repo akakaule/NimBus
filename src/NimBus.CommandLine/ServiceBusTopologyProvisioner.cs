@@ -71,6 +71,17 @@ internal sealed class ServiceBusTopologyProvisioner
 
         var names = await ResolveNamesAsync(az, options, cancellationToken).ConfigureAwait(false);
 
+        // Topology goes through the Service Bus data plane, which a private deployment only
+        // exposes through its private endpoint (spec 034 §5.7).
+        await PrivateNetworkPreflight.RunIfPrivateAsync(
+            az,
+            new PrivateEndpointDnsCheck(az),
+            options.ResourceGroupName,
+            new[] { PrivateEndpointNames.ServiceBus(names.ServiceBusNamespace) },
+            options.DnsWait,
+            "provisioning the Service Bus topology",
+            cancellationToken).ConfigureAwait(false);
+
         return await az.CaptureValueAsync(
             new[]
             {

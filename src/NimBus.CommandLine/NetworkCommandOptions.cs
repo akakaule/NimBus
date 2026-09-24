@@ -20,9 +20,11 @@ internal sealed class NetworkCommandOptions
     private readonly CommandOption _serviceBusCapacity;
     private readonly CommandOption _serviceBusNamespaceName;
     private readonly CommandOption _skipTransition;
+    private readonly CommandOption _dnsWait;
 
     private NetworkCommandOptions(CommandLineApplication command)
     {
+        _dnsWait = command.Option(NetworkSelection.DnsWaitOptionTemplate, NetworkSelection.DnsWaitOptionDescription, CommandOptionType.SingleValue);
         _networkMode = command.Option("--network-mode <MODE>",
             "public | private. 'private' puts every NimBus endpoint behind a private endpoint in your subnets and turns public network access off. " +
             "Defaults to the setup recorded on the resource group by an earlier run, otherwise 'public'. Every network option below is recorded the same way.",
@@ -67,6 +69,8 @@ internal sealed class NetworkCommandOptions
     public int? ServiceBusCapacity => NetworkSelection.ParseServiceBusCapacityOption(_serviceBusCapacity.Value());
 
     public string? ServiceBusNamespaceName => _serviceBusNamespaceName.Value();
+
+    public TimeSpan? DnsWait => NetworkSelection.ParseDnsWaitOption(_dnsWait.Value());
 
     public NetworkOptions Build() => new(
         NetworkSelection.ParseNetworkModeOption(_networkMode.Value()),

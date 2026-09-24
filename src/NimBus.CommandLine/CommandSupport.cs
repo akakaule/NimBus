@@ -184,7 +184,8 @@ internal sealed record InfrastructureOptions(
     int? ResolverMaxInstances = null,
     NetworkOptions? Network = null,
     int? ServiceBusCapacity = null,
-    string? ServiceBusNamespaceName = null);
+    string? ServiceBusNamespaceName = null,
+    TimeSpan? DnsWait = null);
 
 internal enum StorageProviderChoice
 {
@@ -208,14 +209,16 @@ internal sealed record TopologyOptions(
     string SolutionId,
     string Environment,
     string ResourceGroupName,
-    string? ServiceBusNamespaceName = null);
+    string? ServiceBusNamespaceName = null,
+    TimeSpan? DnsWait = null);
 
 internal sealed record AppDeploymentOptions(
     string SolutionId,
     string Environment,
     string ResourceGroupName,
     string Configuration,
-    AppDeploymentTarget Target = AppDeploymentTarget.All);
+    AppDeploymentTarget Target = AppDeploymentTarget.All,
+    TimeSpan? DnsWait = null);
 
 /// <summary>Which application(s) `nb deploy apps` builds and deploys.</summary>
 internal enum AppDeploymentTarget

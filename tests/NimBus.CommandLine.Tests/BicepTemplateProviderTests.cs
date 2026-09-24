@@ -4,6 +4,7 @@ using Xunit;
 
 namespace NimBus.CommandLine.Tests;
 
+[Collection(ExtractedTemplatesCollection.Name)]
 public class BicepTemplateProviderTests
 {
     private static readonly Regex ModuleReference = new(

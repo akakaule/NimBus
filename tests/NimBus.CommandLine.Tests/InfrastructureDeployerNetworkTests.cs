@@ -245,10 +245,34 @@ public sealed class InfrastructureDeployerNetworkTests
             existingServiceBus: """{"tier":"Premium","capacity":1,"publicNetworkAccess":"Enabled"}""",
             recordedTags: recorded);
 
-        await Deployer(azureCli).ApplyAsync(Options(new NetworkOptions(Mode: NetworkModeChoice.Private)), CancellationToken.None);
+        await Deployer(azureCli, resolvesPrivately: true).ApplyAsync(Options(new NetworkOptions(Mode: NetworkModeChoice.Private)), CancellationToken.None);
 
         Assert.Contains("allowPublicAccess=false", azureCli.Deployments[0].Arguments);
         Assert.Contains(azureCli.Commands, c => c.Contains("Merge", StringComparer.Ordinal) && c.Contains("nimbus-network-mode=private", StringComparer.Ordinal));
+        Assert.Contains(azureCli.Commands, c => c.Contains("private-endpoint", StringComparer.Ordinal) && c.Contains("pe-sb-nimbus-dev-namespace", StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// A runner that cannot resolve the private endpoints must not lock the deployment: it
+    /// would lock itself out of the topology and app deployment steps that follow.
+    /// </summary>
+    [Fact]
+    public async Task ApplyAsync_DoesNotLockWhenThisMachineCannotResolveTheEndpoints()
+    {
+        var recorded = NetworkIntent.ToTags(PrivateNetwork with { AllowPublicAccess = true }, serviceBusNamespaceName: null);
+        var azureCli = CustomerNetwork(
+            existingServiceBus: """{"tier":"Premium","capacity":1,"publicNetworkAccess":"Enabled"}""",
+            recordedTags: recorded);
+
+        var error = await Assert.ThrowsAsync<CommandException>(() =>
+            Deployer(azureCli, resolvesPrivately: false).ApplyAsync(
+                Options(new NetworkOptions(Mode: NetworkModeChoice.Private)) with { DnsWait = TimeSpan.Zero },
+                CancellationToken.None));
+
+        Assert.Contains("turning public access off", error.Message, StringComparison.Ordinal);
+        Assert.Contains("sb-nimbus-dev.servicebus.windows.net", error.Message, StringComparison.Ordinal);
+        Assert.Empty(azureCli.Deployments);
+        Assert.DoesNotContain(azureCli.Commands, c => c.Contains("tag", StringComparer.Ordinal));
     }
 
     [Fact]
@@ -318,8 +342,23 @@ public sealed class InfrastructureDeployerNetworkTests
         Assert.Contains("serviceBusNamespaceName=sb-nimbus-dev-premium", azureCli.Deployments[0].Arguments);
     }
 
-    private static InfrastructureDeployer Deployer(RecordingAzureCliRunner azureCli) =>
-        new(new CommandContext(Path.GetTempPath()), azureCli);
+    private static InfrastructureDeployer Deployer(RecordingAzureCliRunner azureCli, bool resolvesPrivately = true) =>
+        new(
+            new CommandContext(Path.GetTempPath()),
+            azureCli,
+            new PrivateEndpointDnsCheck(
+                azureCli,
+                (host, _) => Task.FromResult(new[]
+                {
+                    resolvesPrivately ? EndpointAddress(host) : System.Net.IPAddress.Parse("20.38.116.190"),
+                }),
+                (_, _) => Task.CompletedTask));
+
+    // One address per endpoint, as the fake network interfaces report them.
+    private static System.Net.IPAddress EndpointAddress(string host) => System.Net.IPAddress.Parse(
+        host.Contains("servicebus", StringComparison.Ordinal) ? "10.20.0.4"
+        : host.Contains("func-", StringComparison.Ordinal) ? "10.20.0.5"
+        : "10.20.0.6");
 
     private static InfrastructureOptions Options(NetworkOptions network) =>
         new(
@@ -383,6 +422,24 @@ public sealed class InfrastructureDeployerNetworkTests
                 if (arguments.Contains("provider") && arguments.Contains("show"))
                 {
                     return "Registered";
+                }
+
+                // Private endpoints: the NIC id carries the endpoint name, and the NIC lists
+                // the host names the endpoint serves with its address.
+                if (arguments.Contains("private-endpoint") && arguments.Contains("show"))
+                {
+                    return $"/subscriptions/x/resourceGroups/rg-nimbus-dev/providers/Microsoft.Network/networkInterfaces/{ValueOf("--name")}.nic";
+                }
+
+                if (arguments.Contains("nic") && arguments.Contains("show"))
+                {
+                    var nic = ValueOf("--ids") ?? string.Empty;
+                    var (fqdns, ip) = nic.Contains("pe-sb-", StringComparison.Ordinal)
+                        ? (new[] { "sb-nimbus-dev.servicebus.windows.net" }, "10.20.0.4")
+                        : nic.Contains("pe-func-", StringComparison.Ordinal)
+                            ? (new[] { "func-nimbus-dev-resolver.azurewebsites.net", "func-nimbus-dev-resolver.scm.azurewebsites.net" }, "10.20.0.5")
+                            : (new[] { "webapp-nimbus-dev-management.azurewebsites.net", "webapp-nimbus-dev-management.scm.azurewebsites.net" }, "10.20.0.6");
+                    return System.Text.Json.JsonSerializer.Serialize(new[] { new { ip, fqdns } });
                 }
 
                 return null;

@@ -62,11 +62,19 @@ The spec's recommendations for its open decisions (§12):
    - `--skip-transition` guards a direct public → private switch of an existing deployment.
    - `nb topology apply` follows the recorded namespace override.
 4. **Pre-flight DNS check (§5.7).**
-   - Compare each resolved address with the private endpoint's `customDnsConfigs`.
-   - Retry with backoff for up to `--dns-wait` minutes.
+   - Expected addresses come from each private endpoint's network interface
+     (`ipConfigurations[].privateLinkConnectionProperties.fqdns` plus its private IP),
+     not from `customDnsConfigs`. The NIC carries them in every DNS mode.
+   - Retry with backoff (10 s doubling to 60 s) for up to `--dns-wait` minutes, default 10,
+     0 to 120.
    - Three diagnoses: public address, no record, stale record.
-   - Placement: after infra in `setup`; at the start of `topology apply` and `deploy apps`;
-     before locking on the transition → private step.
+   - Placement: inside the topology step (Service Bus endpoint) and the app deployment step
+     (the scm endpoints of the apps being deployed), so `setup` checks after its infra step
+     by construction. Also in `infra apply`, before locking on the transition → private
+     step, as a hard failure that records nothing.
+   - The recorded state decides severity: public skips, transition warns, private fails.
+     The state read is soft (a failed read means public), so public deployments see no new
+     failure mode.
 5. **Rollback cleanup (§5.13).**
    - Reopen public access first.
    - Remove VNet integration from both apps.

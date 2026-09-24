@@ -136,6 +136,23 @@ internal static class NetworkSelection
         throw new CommandException($"Invalid --service-bus-capacity value '{value}'. Premium namespaces take 1, 2, 4, 8 or 16 messaging units.");
     }
 
+    public const string DnsWaitOptionTemplate = "--dns-wait <MINUTES>";
+
+    public const string DnsWaitOptionDescription =
+        "Private deployments only: how long to wait for this machine to resolve the private endpoints before giving up. Default 10; 0 checks once.";
+
+    /// <summary>Parses --dns-wait in whole minutes. Null/blank means the default.</summary>
+    public static TimeSpan? ParseDnsWaitOption(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (int.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var minutes) && minutes is >= 0 and <= 120)
+        {
+            return TimeSpan.FromMinutes(minutes);
+        }
+
+        throw new CommandException($"Invalid --dns-wait value '{value}'. Expected whole minutes from 0 to 120.");
+    }
+
     public static void ValidateServiceBusNamespaceName(string name)
     {
         if (!ServiceBusNamespacePattern.IsMatch(name))

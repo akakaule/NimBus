@@ -170,7 +170,8 @@ internal static class Program
                         ResolverMaxInstances: resolverMaxInstancesValue,
                         Network: network,
                         ServiceBusCapacity: serviceBusCapacity,
-                        ServiceBusNamespaceName: networkOptions.ServiceBusNamespaceName);
+                        ServiceBusNamespaceName: networkOptions.ServiceBusNamespaceName,
+                        DnsWait: networkOptions.DnsWait);
 
                     await deployer.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
                     return 0;
@@ -242,12 +243,16 @@ internal static class Program
                     "Override the Service Bus namespace name (default: 'sb-{solution-id}-{environment}'). Use the value passed to 'nb infra apply'.",
                     CommandOptionType.SingleValue);
 
+                var topologyDnsWait = applyCommand.Option(NetworkSelection.DnsWaitOptionTemplate, NetworkSelection.DnsWaitOptionDescription, CommandOptionType.SingleValue);
+
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
                     if (!string.IsNullOrWhiteSpace(topologyNamespaceName.Value()))
                     {
                         NetworkSelection.ValidateServiceBusNamespaceName(topologyNamespaceName.Value()!.Trim());
                     }
+
+                    var dnsWait = NetworkSelection.ParseDnsWaitOption(topologyDnsWait.Value());
 
                     var az = new AzureCliRunner();
                     var platformFactory = await ResolvePlatformFactoryAsync(
@@ -273,7 +278,7 @@ internal static class Program
                         }
 
                         provisioner = new ServiceBusTopologyProvisioner(az, platformFactory);
-                        options = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!, topologyNamespaceName.Value());
+                        options = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!, topologyNamespaceName.Value(), dnsWait);
                     }
 
                     await provisioner.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
@@ -312,6 +317,7 @@ internal static class Program
                 var fromSource = appsCommand.Option("--from-source", "Build the applications from a repository clone instead of deploying the published release artifacts.", CommandOptionType.NoValue);
                 var configuration = appsCommand.Option("--configuration <NAME>", "Build configuration passed to dotnet publish. Source builds only.", CommandOptionType.SingleValue);
                 var only = appsCommand.Option("--only <APP>", "Deploy a single application: resolver | webapp. Defaults to both.", CommandOptionType.SingleValue);
+                var appsDnsWait = appsCommand.Option(NetworkSelection.DnsWaitOptionTemplate, NetworkSelection.DnsWaitOptionDescription, CommandOptionType.SingleValue);
                 var appsPackage = appsCommand.Option("--platform-package <ID@VERSION>",
                     "NuGet package containing your IPlatform catalog, e.g. Acme.Contracts@1.4.0. Its assemblies are deployed with the WebApp so Endpoints, Event Types and PII masking show your platform instead of the built-in one.",
                     CommandOptionType.SingleValue);
@@ -341,7 +347,8 @@ internal static class Program
                         environment.Value(),
                         resourceGroup.Value(),
                         configuration.HasValue() ? configuration.Value()! : "Release",
-                        DeployTargetSelection.ParseOnlyOption(only.Value()));
+                        DeployTargetSelection.ParseOnlyOption(only.Value()),
+                        NetworkSelection.ParseDnsWaitOption(appsDnsWait.Value()));
 
                     await deployer.DeployAsync(options, cancellationToken).ConfigureAwait(false);
                     return 0;
@@ -399,6 +406,7 @@ internal static class Program
                 var setupResolverMaxInstancesValue = PlanSelection.ParseResolverMaxInstancesOption(setupResolverMaxInstances.Value());
                 var setupNetwork = setupNetworkOptions.Build();
                 var setupServiceBusCapacity = setupNetworkOptions.ServiceBusCapacity;
+                var setupDnsWait = setupNetworkOptions.DnsWait;
                 NetworkSelection.ValidateSyntax(setupNetwork);
                 var setupPlatformPackage = setupPackage.HasValue()
                     ? await PlatformPackage.ResolveAsync(PlatformHttpClient, setupPackage.Value()!, setupFeed.Value(), setupPlatform.Value(), cancellationToken).ConfigureAwait(false)
@@ -454,14 +462,16 @@ internal static class Program
                     ResolverMaxInstances: setupResolverMaxInstancesValue,
                     Network: setupNetwork,
                     ServiceBusCapacity: setupServiceBusCapacity,
-                    ServiceBusNamespaceName: setupNetworkOptions.ServiceBusNamespaceName);
+                    ServiceBusNamespaceName: setupNetworkOptions.ServiceBusNamespaceName,
+                    DnsWait: setupDnsWait);
 
-                var topologyOptions = new TopologyOptions(solutionId.Value(), environment.Value(), resourceGroup.Value(), setupNetworkOptions.ServiceBusNamespaceName);
+                var topologyOptions = new TopologyOptions(solutionId.Value(), environment.Value(), resourceGroup.Value(), setupNetworkOptions.ServiceBusNamespaceName, setupDnsWait);
                 var appOptions = new AppDeploymentOptions(
                     solutionId.Value(),
                     environment.Value(),
                     resourceGroup.Value(),
-                    configuration.HasValue() ? configuration.Value()! : "Release");
+                    configuration.HasValue() ? configuration.Value()! : "Release",
+                    DnsWait: setupDnsWait);
 
                 await infra.ApplyAsync(infraOptions, cancellationToken).ConfigureAwait(false);
                 await topology.ApplyAsync(topologyOptions, cancellationToken).ConfigureAwait(false);

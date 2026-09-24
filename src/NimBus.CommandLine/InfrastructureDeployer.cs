@@ -7,11 +7,13 @@ internal sealed class InfrastructureDeployer
 {
     private readonly CommandContext _context;
     private readonly IAzureCliRunner _az;
+    private readonly PrivateEndpointDnsCheck _dnsCheck;
 
-    public InfrastructureDeployer(CommandContext context, IAzureCliRunner az)
+    public InfrastructureDeployer(CommandContext context, IAzureCliRunner az, PrivateEndpointDnsCheck? dnsCheck = null)
     {
         _context = context;
         _az = az;
+        _dnsCheck = dnsCheck ?? new PrivateEndpointDnsCheck(az);
     }
 
     public async Task ApplyAsync(InfrastructureOptions options, CancellationToken cancellationToken)
@@ -55,7 +57,7 @@ internal sealed class InfrastructureDeployer
         }
 
         // The recorded setup completes whatever the command line leaves out (spec 034 §5.13).
-        var resourceGroup = await ReadResourceGroupAsync(options.ResourceGroupName, cancellationToken).ConfigureAwait(false);
+        var resourceGroup = await ResourceGroupTags.ReadAsync(_az, options.ResourceGroupName, cancellationToken).ConfigureAwait(false);
         var stored = NetworkIntent.FromTags(resourceGroup.Tags);
         var (network, serviceBusNamespaceName) = NetworkIntent.Merge(explicitNetwork, options.ServiceBusNamespaceName, stored);
         if (stored is { State: not NetworkState.Public } && explicitNetwork.Mode is null)
@@ -104,11 +106,29 @@ internal sealed class InfrastructureDeployer
         var deploymentExists = existingServiceBus is not null
             || existingLocations.ContainsKey(names.ResolverFunctionAppName)
             || existingLocations.ContainsKey(names.WebAppName);
-        NetworkIntent.ValidateTransition(
-            NetworkIntent.CurrentState(stored, existingServiceBus),
-            NetworkIntent.TargetState(networkMode, network.AllowPublicAccess),
-            deploymentExists,
-            network.SkipTransition);
+        var currentState = NetworkIntent.CurrentState(stored, existingServiceBus);
+        var targetState = NetworkIntent.TargetState(networkMode, network.AllowPublicAccess);
+        NetworkIntent.ValidateTransition(currentState, targetState, deploymentExists, network.SkipTransition);
+
+        // Pass 2 locks everything, so this is the last chance to stop: the endpoints exist
+        // from pass 1, and a runner that does not resolve them now would lock itself out of
+        // the topology and app deployment steps that follow (spec 034 §5.7).
+        if (currentState == NetworkState.PrivateTransition && targetState == NetworkState.Private)
+        {
+            await PrivateNetworkPreflight.RunAsync(
+                _dnsCheck,
+                options.ResourceGroupName,
+                new[]
+                {
+                    PrivateEndpointNames.ServiceBus(names.ServiceBusNamespace),
+                    PrivateEndpointNames.Site(names.ResolverFunctionAppName),
+                    PrivateEndpointNames.Site(names.WebAppName),
+                },
+                options.DnsWait,
+                failOnMismatch: true,
+                "turning public access off",
+                cancellationToken).ConfigureAwait(false);
+        }
         if (existingServiceBus is { IsPremium: true } && !isPrivate)
         {
             CliOutput.WriteLine($"Keeping the existing Premium Service Bus namespace '{names.ServiceBusNamespace}' ({serviceBusCapacity} messaging unit(s)).");
@@ -505,30 +525,6 @@ internal sealed class InfrastructureDeployer
     // Mirrors the locationParam default in both entry templates.
     private const string DefaultLocation = "westeurope";
 
-    private async Task<ResourceGroupInfo> ReadResourceGroupAsync(string resourceGroupName, CancellationToken cancellationToken)
-    {
-        using var document = await _az.CaptureJsonAsync(
-            new[] { "group", "show", "--name", resourceGroupName, "--query", "{id:id, tags:tags}", "--output", "json" },
-            cancellationToken,
-            $"Could not read the resource group '{resourceGroupName}'. Create it first and check that the deploying identity can read it.").ConfigureAwait(false);
-
-        var root = document.RootElement;
-        var id = root.TryGetProperty("id", out var idElement) && idElement.ValueKind == JsonValueKind.String
-            ? idElement.GetString()!
-            : throw new CommandException($"Could not read the id of resource group '{resourceGroupName}'.");
-
-        var tags = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (root.TryGetProperty("tags", out var tagsElement) && tagsElement.ValueKind == JsonValueKind.Object)
-        {
-            foreach (var tag in tagsElement.EnumerateObject())
-            {
-                tags[tag.Name] = tag.Value.ValueKind == JsonValueKind.String ? tag.Value.GetString() ?? string.Empty : tag.Value.ToString();
-            }
-        }
-
-        return new ResourceGroupInfo(id, tags);
-    }
-
     /// <summary>
     /// Writes the desired network tags and removes stale NimBus network tags. Merge and
     /// delete touch only the named tags, so the customer's own tags stay as they are.
@@ -745,8 +741,6 @@ internal sealed class InfrastructureDeployer
     private sealed record ExistingAppServicePlan(string SkuName, string Tier);
 
     private sealed record ServiceBusDeployment(string? Sku, int? Capacity, string? NamespaceName);
-
-    private sealed record ResourceGroupInfo(string Id, IReadOnlyDictionary<string, string> Tags);
 
     private sealed record ResolvedNetwork(
         bool AllowPublicAccess,

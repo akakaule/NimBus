@@ -1,11 +1,10 @@
 ﻿using System;
 
-namespace NimBus.Core.Messages.Exceptions
+namespace NimBus.Core.Messages.Exceptions;
+
+public class UnsupportedMessageTypeException : Exception
 {
-    public class UnsupportedMessageTypeException : Exception
+    public UnsupportedMessageTypeException(MessageType messageType) : base($"Unsupported MessageType: '{messageType}'.")
     {
-        public UnsupportedMessageTypeException(MessageType messageType) : base($"Unsupported MessageType: '{messageType}'.")
-        {
-        }
     }
 }

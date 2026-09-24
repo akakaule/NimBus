@@ -2,25 +2,24 @@ using NimBus.Core.Endpoints;
 using NimBus.Events.Customers;
 using NimBus.Events.Orders;
 
-namespace NimBus.Endpoints.Storefront
+namespace NimBus.Endpoints.Storefront;
+
+public class StorefrontEndpoint : Endpoint
 {
-    public class StorefrontEndpoint : Endpoint
+    public StorefrontEndpoint()
     {
-        public StorefrontEndpoint()
-        {
-            Produces<OrderPlaced>();
-            Produces<OrderDeliveryDetailsCaptured>();
-            Produces<PlaceCustomerOnCreditHold>();
-        }
-
-        public override ISystem System => new StorefrontSystem();
-
-        public override string Description =>
-            "Publisher endpoint that produces order events when customers place orders, supply delivery details, or trigger a credit review.";
+        Produces<OrderPlaced>();
+        Produces<OrderDeliveryDetailsCaptured>();
+        Produces<PlaceCustomerOnCreditHold>();
     }
 
-    internal sealed class StorefrontSystem : ISystem
-    {
-        public string SystemId => "Storefront";
-    }
+    public override ISystem System => new StorefrontSystem();
+
+    public override string Description =>
+        "Publisher endpoint that produces order events when customers place orders, supply delivery details, or trigger a credit review.";
+}
+
+internal sealed class StorefrontSystem : ISystem
+{
+    public string SystemId => "Storefront";
 }

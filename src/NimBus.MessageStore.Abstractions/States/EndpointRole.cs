@@ -1,8 +1,7 @@
-﻿namespace NimBus.MessageStore
+﻿namespace NimBus.MessageStore;
+
+public enum EndpointRole
 {
-    public enum EndpointRole
-    {
-        Publisher,
-        Subscriber,
-    }
+    Publisher,
+    Subscriber,
 }

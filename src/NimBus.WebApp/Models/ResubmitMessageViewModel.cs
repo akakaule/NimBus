@@ -2,10 +2,9 @@
 using NimBus.Core.Events;
 using NimBus.WebApp.Constants;
 
-namespace NimBus.WebApp.Models
+namespace NimBus.WebApp.Models;
+
+public class ResubmitMessageViewModel : ComposeNewMessageViewModel
 {
-    public class ResubmitMessageViewModel : ComposeNewMessageViewModel
-    {
-        public string ErrorMessageId { get; set; }
-    }
+    public string ErrorMessageId { get; set; }
 }

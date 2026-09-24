@@ -12,20 +12,19 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace NimBus.WebApp.Controllers
-{
-    public class MonitorController : Controller
-    {
-        private readonly IPlatform platform;
-        public MonitorController(IPlatform platform)
-        {
-            this.platform = platform;
-        }
+namespace NimBus.WebApp.Controllers;
 
-        [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
-        public IActionResult Error()
-        {
-            return View("Error", new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
-        }
+public class MonitorController : Controller
+{
+    private readonly IPlatform platform;
+    public MonitorController(IPlatform platform)
+    {
+        this.platform = platform;
+    }
+
+    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
+    public IActionResult Error()
+    {
+        return View("Error", new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
     }
 }

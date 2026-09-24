@@ -1,8 +1,7 @@
-﻿namespace NimBus.Core.Messages
+﻿namespace NimBus.Core.Messages;
+
+public class MessageContent
 {
-    public class MessageContent
-    {
-        public EventContent EventContent { get; set; }
-        public ErrorContent ErrorContent { get; set; }
-    }
+    public EventContent EventContent { get; set; }
+    public ErrorContent ErrorContent { get; set; }
 }

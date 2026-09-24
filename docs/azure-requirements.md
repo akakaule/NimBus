@@ -55,7 +55,7 @@ For governance review — the Bicep grants the two system-assigned managed ident
 | Cosmos DB Built-in Data Contributor *(Cosmos data-plane `sqlRoleAssignments`)* | `00000000-0000-0000-0000-000000000002` | Cosmos account | Resolver + WebApp identities | Cosmos provider |
 | Cosmos DB Operator *(Azure control plane; account keys remain inaccessible)* | `230815da-be43-4aae-9cb4-875f7bd000aa` | `MessageDatabase` | WebApp identity | Cosmos provider; required by Admin storage cleanup |
 | Storage Blob Data Owner | `b7e6dc6d-f1e8-4753-8033-0f276bb0955b` | Functions storage account | Resolver identity | Flex Consumption plan (identity-based host storage + deployment package) |
-| Reader | `acdd72a7-3385-48ef-bd42-f606fba81ae7` | Application Insights component | WebApp identity | When `appInsightsAppId` is set (always through `nb`); the event-details log view queries Application Insights with Microsoft Entra ([details](authentication.md#application-insights-log-queries)) |
+| Reader | `acdd72a7-3385-48ef-bd42-f606fba81ae7` | Application Insights component | WebApp identity | When `appInsightsAppId` is set (always through `nb`); the event logs endpoint queries Application Insights with Microsoft Entra ([details](authentication.md#application-insights-log-queries)) |
 
 No secrets are distributed to the apps on the Cosmos path — everything is managed identity. The provisioned-SQL path passes a SQL connection string as app settings instead.
 

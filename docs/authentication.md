@@ -221,8 +221,9 @@ otherwise Entra.
 
 ## Application Insights log queries
 
-The **Logs** section of the event details reads traces through the
-Application Insights query API
+The management API's event logs endpoint
+(`GET /api/event/details/{endpointId}/{id}/logs`) reads an event's traces
+through the Application Insights query API
 (`https://api.applicationinsights.io/v1/apps/{AppInsights:ApplicationId}/query`).
 Microsoft retired API keys for that API on 2026-03-31
 ([announcement](https://learn.microsoft.com/answers/questions/2260881/api-keys-for-querying-data-from-azure-monitor-appl)),
@@ -240,7 +241,7 @@ Reader is the role Microsoft documents for
 Monitoring Reader works too, but it adds permissions the WebApp doesn't need.
 
 - With `AppInsights:ApplicationId` empty (the local default), the WebApp
-  requests no token and the section shows no logs.
+  requests no token and the endpoint returns no logs.
 - Locally, if the token request fails with `ManagedIdentityCredential
   authentication failed`, set `AZURE_TOKEN_CREDENTIALS=dev` so
   `DefaultAzureCredential` skips managed identity and uses your developer
@@ -253,7 +254,7 @@ Monitoring Reader works too, but it adds permissions the WebApp doesn't need.
   now leaves it in place. To remove it, run
   `az monitor app-insights api-key delete --app <component> --resource-group <rg> --api-key management-app`.
 - When a query fails, the WebApp logs a `GetEventDetailsLogsIdAsync` warning
-  and shows no logs. A 403 usually means the role assignment is missing or
+  and the endpoint returns an empty list. A 403 usually means the role assignment is missing or
   hasn't propagated yet (allow a few minutes after the deployment). If the
   component is workspace-based and its Log Analytics workspace uses the
   *Require workspace permissions* access control mode, Reader on the

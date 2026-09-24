@@ -252,7 +252,7 @@ module webAppRoleAssignments 'templates/roleAssignments.bicep' = {
     principalId: webAppModule.outputs.identity
     storageProvider: hasCosmos ? 'cosmos' : 'sqlserver'
     grantCosmosControlPlaneAccess: hasCosmos
-    // The log view queries Application Insights as the site's managed identity.
+    // The event logs endpoint queries Application Insights as the site's managed identity.
     appInsightsName: appInsightsName
     grantAppInsightsQueryAccess: !empty(appInsightsAppId)
   }

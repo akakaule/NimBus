@@ -20,8 +20,8 @@ param grantFuncStorageBlobAccess bool = false
 // containers. Resolver and adapter deployments leave this disabled.
 param grantCosmosControlPlaneAccess bool = false
 
-// The management WebApp's log view queries Application Insights with its managed
-// identity. Resolver and adapter deployments leave this disabled.
+// The management WebApp's event logs endpoint queries Application Insights with its
+// managed identity. Resolver and adapter deployments leave this disabled.
 param appInsightsName string = ''
 param grantAppInsightsQueryAccess bool = false
 

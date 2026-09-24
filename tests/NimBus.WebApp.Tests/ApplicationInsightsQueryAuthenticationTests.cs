@@ -69,7 +69,7 @@ public sealed class ApplicationInsightsQueryAuthenticationTests
         var service = host.Services.GetRequiredService<IApplicationInsightsService>();
 
         // Unchanged: with no base address HttpClient rejects the relative query URI, and the
-        // event-details caller logs that and shows no logs.
+        // event logs endpoint logs that and returns no logs.
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => service.GetLogs(new Filter { EventId = "event-1" }));
 

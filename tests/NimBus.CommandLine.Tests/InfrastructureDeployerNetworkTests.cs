@@ -329,6 +329,58 @@ public sealed class InfrastructureDeployerNetworkTests
         Assert.DoesNotContain("networkMode=private", azureCli.Deployments[0].Arguments);
     }
 
+    /// <summary>Public access is back on both deployments before any private resource is taken down.</summary>
+    [Fact]
+    public async Task ApplyAsync_LeavingPrivateModeCleansUpOnlyAfterBothDeployments()
+    {
+        var recorded = NetworkIntent.ToTags(PrivateNetwork, serviceBusNamespaceName: null);
+        var azureCli = CustomerNetwork(
+            existingServiceBus: """{"tier":"Premium","capacity":1,"publicNetworkAccess":"Disabled"}""",
+            recordedTags: recorded);
+
+        await Deployer(azureCli).ApplyAsync(Options(new NetworkOptions(Mode: NetworkModeChoice.Public)), CancellationToken.None);
+
+        var lastDeployment = azureCli.Commands.FindLastIndex(c => c.Contains("deployment", StringComparer.Ordinal) && c.Contains("create", StringComparer.Ordinal));
+        var endpointList = azureCli.Commands.FindIndex(c => c.Contains("private-endpoint", StringComparer.Ordinal) && c.Contains("list", StringComparer.Ordinal));
+        Assert.Equal(2, azureCli.Deployments.Count);
+        Assert.True(endpointList > lastDeployment, "cleanup must follow both deployments");
+        Assert.Contains("[?tags.\"nimbus-deployment\"=='nimbus-dev'].id", azureCli.Commands[endpointList]);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_PublicDeploymentWithoutHistoryRunsNoCleanup()
+    {
+        var azureCli = CustomerNetwork(existingServiceBus: null);
+
+        await Deployer(azureCli).ApplyAsync(Options(NetworkOptions.None), CancellationToken.None);
+
+        Assert.DoesNotContain(azureCli.Commands, c => c.Contains("private-endpoint", StringComparer.Ordinal));
+        Assert.DoesNotContain(azureCli.Commands, c => c.Contains("vnet-integration", StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_DeletesTheSqlAllowAzureRuleWhenTheServerGoesPrivate()
+    {
+        var azureCli = CustomerNetwork(existingServiceBus: null, sqlRuleExists: true);
+
+        await Deployer(azureCli).ApplyAsync(SqlOptions(PrivateNetwork), CancellationToken.None);
+
+        var delete = Assert.Single(azureCli.Commands, c => c.Contains("firewall-rule", StringComparer.Ordinal) && c.Contains("delete", StringComparer.Ordinal));
+        Assert.Contains("AllowAllWindowsAzureIps", delete);
+        Assert.Contains("sql-nimbus-dev", delete);
+    }
+
+    /// <summary>During the transition public access, and so the rule, stay.</summary>
+    [Fact]
+    public async Task ApplyAsync_KeepsTheSqlAllowAzureRuleDuringTheTransition()
+    {
+        var azureCli = CustomerNetwork(existingServiceBus: null, sqlRuleExists: true);
+
+        await Deployer(azureCli).ApplyAsync(SqlOptions(PrivateNetwork with { AllowPublicAccess = true }), CancellationToken.None);
+
+        Assert.DoesNotContain(azureCli.Commands, c => c.Contains("firewall-rule", StringComparer.Ordinal));
+    }
+
     [Fact]
     public async Task ApplyAsync_RecordedNamespaceOverrideIsReused()
     {
@@ -375,14 +427,29 @@ public sealed class InfrastructureDeployerNetworkTests
     /// A customer VNet in West Europe whose private-endpoint subnet sits in a peered VNet in
     /// Sweden Central, so the endpoint location must come from the subnet, not the app.
     /// </summary>
+    private static InfrastructureOptions SqlOptions(NetworkOptions network) =>
+        Options(network) with
+        {
+            StorageProvider = StorageProviderChoice.SqlServer,
+            SqlMode = SqlProvisioningMode.Provision,
+            SqlAdminLogin = "nimbusadmin",
+            SqlAdminPassword = "not-a-real-password",
+        };
+
     private static RecordingAzureCliRunner CustomerNetwork(
         string? existingServiceBus,
         string resolverDelegation = "Microsoft.App/environments",
-        IReadOnlyDictionary<string, string>? recordedTags = null) =>
+        IReadOnlyDictionary<string, string>? recordedTags = null,
+        bool sqlRuleExists = false) =>
         new()
         {
             Responder = arguments =>
             {
+                if (arguments.Contains("firewall-rule") && arguments.Contains("show"))
+                {
+                    return sqlRuleExists ? """{"name":"AllowAllWindowsAzureIps"}""" : "[]";
+                }
+
                 string? ValueOf(string option)
                 {
                     var index = arguments.ToList().IndexOf(option);

@@ -76,10 +76,19 @@ The spec's recommendations for its open decisions (§12):
      The state read is soft (a failed read means public), so public deployments see no new
      failure mode.
 5. **Rollback cleanup (§5.13).**
-   - Reopen public access first.
-   - Remove VNet integration from both apps.
-   - Delete NimBus-owned private endpoints, then, in `create` mode only, the zones and links.
-   - Delete the SQL allow-all rule on the switch to `private`.
+   - Runs after both public deployments have reopened access, on every public run that has a
+     record, so an interrupted cleanup continues on the next run.
+   - Remove VNet integration from each app that has it.
+   - Delete the private endpoints carrying `nimbus-deployment=<solution>-<env>`. The tag filter
+     runs server-side.
+   - Delete the NimBus-tagged VNet links, then each NimBus-tagged zone that has no other
+     links left. Ownership, not the recorded DNS mode, decides: a completed switch to
+     public no longer records the mode.
+   - With external DNS, remind the customer to remove manual records.
+   - Delete the SQL allow-all rule after the core deployment when a NimBus-provisioned server
+     moves to `private`. It is kept during the transition.
+   - Every az command and flag used in slices 2 to 5 was checked against the local az CLI's
+     help.
 6. **Pipelines and docs.**
    - `deploy.yml`: `runs-on` input and environment variables for the network options.
    - ADO pipeline: `pool` parameter.

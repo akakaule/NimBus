@@ -157,6 +157,15 @@ internal sealed class InfrastructureDeployer
         CliOutput.WriteLine("Deploying core infrastructure...");
         await DeployCoreInfrastructureAsync(options, names, resolverPlan, managementPlanSku, existingLocations, serviceBus, privateNetwork, cancellationToken).ConfigureAwait(false);
 
+        // The template stops declaring the allow-all-Azure rule once a server is private, but
+        // an incremental deployment does not delete it (spec 034 §5.13).
+        if (targetState == NetworkState.Private
+            && options.StorageProvider == StorageProviderChoice.SqlServer
+            && options.SqlMode == SqlProvisioningMode.Provision)
+        {
+            await DeleteSqlAllowAzureRuleAsync(options.ResourceGroupName, EffectiveSqlServerName(options, names), cancellationToken).ConfigureAwait(false);
+        }
+
         CliOutput.WriteLine("Preparing web app infrastructure inputs...");
         await _az.EnsureExtensionAsync("application-insights", cancellationToken).ConfigureAwait(false);
 
@@ -206,6 +215,38 @@ internal sealed class InfrastructureDeployer
             serviceBus,
             privateNetwork,
             cancellationToken).ConfigureAwait(false);
+
+        // Leaving private mode: both deployments above reopened public access while the
+        // private endpoints and VNet integration still existed, so clients kept working on
+        // either path. Only now is the private network taken down (spec 034 §5.13). Runs on
+        // every public deployment that has a record, so an interrupted cleanup continues.
+        if (targetState == NetworkState.Public && stored is not null)
+        {
+            await new PrivateNetworkCleanup(_az).RunAsync(
+                options.ResourceGroupName,
+                PrivateNetworkCleanup.OwnerValue(names),
+                names,
+                stored.Network.DnsMode,
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task DeleteSqlAllowAzureRuleAsync(string resourceGroupName, string serverName, CancellationToken cancellationToken)
+    {
+        const string ruleName = "AllowAllWindowsAzureIps";
+        var existing = await _az.TryRunAsync(
+            new[] { "sql", "server", "firewall-rule", "show", "--resource-group", resourceGroupName, "--server", serverName, "--name", ruleName, "--output", "json" },
+            cancellationToken).ConfigureAwait(false);
+        if (!existing.Succeeded || string.IsNullOrWhiteSpace(existing.StandardOutput) || existing.StandardOutput.TrimStart().StartsWith('['))
+        {
+            return;
+        }
+
+        CliOutput.WriteLine($"Deleting the '{ruleName}' firewall rule from '{serverName}': it admits every Azure tenant and has no place on a private server.");
+        await _az.EnsureSuccessAsync(
+            new[] { "sql", "server", "firewall-rule", "delete", "--resource-group", resourceGroupName, "--server", serverName, "--name", ruleName },
+            cancellationToken,
+            $"Could not delete the '{ruleName}' firewall rule from '{serverName}'. Public access is already off; delete the rule manually.").ConfigureAwait(false);
     }
 
     private async Task<Dictionary<string, string>> DiscoverExistingLocationsAsync(string resourceGroupName, CancellationToken cancellationToken)

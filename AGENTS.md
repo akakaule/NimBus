@@ -4,13 +4,28 @@ NimBus is an Azure-native event-driven integration platform on Azure Service Bus
 Cosmos DB or SQL Server storage: session-ordered processing, a centralized Resolver with a
 full audit trail, a management WebApp (resubmit/skip), and declarative topology provisioning.
 
+## Workflow
+
+- Plan before implementing architectural changes, changes involving 5+ files, or work with
+  uncertain scope. Do not use Superpowers skills or workflows. Store plans in `docs/plan/`
+  and design specs in `docs/spec/`.
+- Branch from `master` and submit changes through pull requests; follow
+  [CONTRIBUTING.md](CONTRIBUTING.md).
+- Add regression tests for bug fixes and verify changed behavior before declaring work
+  complete. Report the checks run and any skipped integration tests explicitly.
+- For PRs changing the WebApp's design or layout, or adding a WebApp feature, capture a
+  representative screenshot of the finished UI and include it in the PR description.
+
 ## Build & test
 
 ```bash
 dotnet build src/NimBus.sln                    # .NET 10
 dotnet test src/NimBus.sln
 dotnet build src/NimBus.sln -c Release         # what CI runs — do this before pushing
-cd src/NimBus.WebApp/ClientApp && npm install && npm test && npm run build   # Node.js 22
+dotnet test src/NimBus.sln -c Release --no-build
+npm --prefix src/NimBus.WebApp/ClientApp install   # Node.js 22
+npm --prefix src/NimBus.WebApp/ClientApp run test:ci
+npm --prefix src/NimBus.WebApp/ClientApp run build
 dotnet run --project src/NimBus.AppHost        # local Aspire stack
 ```
 
@@ -19,8 +34,14 @@ dotnet run --project src/NimBus.AppHost        # local Aspire stack
   while Debug stays green.
 - Several src projects opt out of `EnforceCodeStyleInBuild`. Tightening them is a backlog
   item, not something to "fix" in passing.
-- The Cosmos DB and SQL Server conformance suites are env-gated: they skip locally and run
-  live in CI.
+- Use `npm run test:ci` (or `npm test -- --run`) for a terminating frontend test run;
+  `npm test` can enter watch mode.
+- Live SQL Server conformance tests require `NIMBUS_SQL_TEST_CONNECTION`. Live Cosmos DB
+  tests require `NIMBUS_COSMOS_TEST_CONNECTION`, or both `NIMBUS_COSMOS_TEST_ENDPOINT` and
+  `NIMBUS_COSMOS_TEST_KEY`. They skip when configuration is absent, except that
+  `NIMBUS_COSMOS_TEST_REQUIRED=1` makes missing Cosmos configuration fail. The Cosmos
+  emulator uses `NIMBUS_COSMOS_TEST_GATEWAY=1`. CI supplies both providers and rejects
+  skipped conformance tests; see `.github/workflows/dotnet.yml`.
 
 ## Where things live
 
@@ -39,9 +60,14 @@ dotnet run --project src/NimBus.AppHost        # local Aspire stack
 
 - C# latest: file-scoped namespaces, nullable enabled, namespaces `NimBus[.Project][.Folder]`.
 - MSTest (`[TestClass]`, `[TestMethod]`); test files start with
-  `#pragma warning disable CA1707, CA2007`.
-- Newtonsoft.Json for serialization, `Microsoft.Extensions.Logging` for logging (ADR-006),
-  features register through `services.AddNimBus*()` extension methods.
+  `#pragma warning disable CA1707, CA2007`. Parameterized tests use `[TestMethod]` with
+  `[DataRow]`; `[DataTestMethod]` is obsolete (`MSTEST0044`).
+- Newtonsoft.Json for core message serialization. WebApp MVC uses System.Text.Json;
+  Newtonsoft attributes alone do not enforce its request contracts.
+- `Microsoft.Extensions.Logging` for logging (ADR-006); features register through
+  `services.AddNimBus*()` extension methods.
+- Dependency versions belong in individual `.csproj` files. `Directory.Packages.props`
+  provides shared analyzer references but disables central package version management.
 - XML doc comments on public types and members.
 - Never delete public API outright: mark it `[Obsolete]` with a backward-compatible bridge
   and remove it in the next major (`docs/versioning.md`).
@@ -51,6 +77,8 @@ dotnet run --project src/NimBus.AppHost        # local Aspire stack
 
 - The WebApp API is generated from `src/NimBus.WebApp/api-spec.yaml` by NSwag at build time.
   Edit the spec, not `Controllers/ApiContract.g.cs` or `ClientApp/src/api-client/index.ts`.
+  `SkipSpaBuild=true` also skips NSwag generation; validate API-spec changes with a build
+  that leaves generation enabled.
 - A new storage interface member must be implemented in every provider (Cosmos DB, SQL
   Server, in-memory), covered by the conformance suite, and forwarded by
   `InstrumentingMessageTrackingStoreDecorator` (OpenTelemetry). An unforwarded default

@@ -234,15 +234,15 @@ public sealed class NetworkSelectionTests
     {
         var locked = new ExistingServiceBus("Premium", 1, "Disabled");
 
-        Assert.Equal(NetworkModeChoice.Public, NetworkSelection.ResolveNetworkMode(NetworkModeChoice.Public, locked, "sb-x"));
-        Assert.Equal(NetworkModeChoice.Private, NetworkSelection.ResolveNetworkMode(NetworkModeChoice.Private, null, "sb-x"));
+        Assert.Equal(NetworkModeChoice.Public, NetworkSelection.ResolveNetworkMode(NetworkModeChoice.Public, explicitlyRequested: true, false, locked, "sb-x"));
+        Assert.Equal(NetworkModeChoice.Private, NetworkSelection.ResolveNetworkMode(NetworkModeChoice.Private, explicitlyRequested: true, false, null, "sb-x"));
     }
 
     [Fact]
     public void ResolveNetworkMode_DefaultsToPublic()
     {
-        Assert.Equal(NetworkModeChoice.Public, NetworkSelection.ResolveNetworkMode(null, null, "sb-x"));
-        Assert.Equal(NetworkModeChoice.Public, NetworkSelection.ResolveNetworkMode(null, new ExistingServiceBus("Standard", 0, null), "sb-x"));
+        Assert.Equal(NetworkModeChoice.Public, NetworkSelection.ResolveNetworkMode(null, explicitlyRequested: false, false, null, "sb-x"));
+        Assert.Equal(NetworkModeChoice.Public, NetworkSelection.ResolveNetworkMode(null, explicitlyRequested: false, false, new ExistingServiceBus("Standard", 0, null), "sb-x"));
     }
 
     /// <summary>A rerun without flags must never silently reopen a locked deployment.</summary>
@@ -250,9 +250,44 @@ public sealed class NetworkSelectionTests
     public void ResolveNetworkMode_RefusesToGuessForALockedNamespace()
     {
         var error = Assert.Throws<CommandException>(() =>
-            NetworkSelection.ResolveNetworkMode(null, new ExistingServiceBus("Premium", 1, "Disabled"), "sb-nimbus-prod"));
+            NetworkSelection.ResolveNetworkMode(null, explicitlyRequested: false, false, new ExistingServiceBus("Premium", 1, "Disabled"), "sb-nimbus-prod"));
 
         Assert.Contains("--network-mode", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ResolveNetworkMode_RecordedPrivateModeMatchesALockedNamespace()
+    {
+        var locked = new ExistingServiceBus("Premium", 1, "Disabled");
+
+        Assert.Equal(NetworkModeChoice.Private, NetworkSelection.ResolveNetworkMode(NetworkModeChoice.Private, explicitlyRequested: false, false, locked, "sb-x"));
+    }
+
+    /// <summary>The namespace is more locked down than the recorded transition: stop, don't reopen.</summary>
+    [Fact]
+    public void ResolveNetworkMode_RefusesWhenTheNamespaceIsMoreLockedThanRecorded()
+    {
+        var locked = new ExistingServiceBus("Premium", 1, "Disabled");
+
+        var error = Assert.Throws<CommandException>(() =>
+            NetworkSelection.ResolveNetworkMode(NetworkModeChoice.Private, explicitlyRequested: false, allowPublicAccess: true, locked, "sb-x"));
+
+        Assert.Contains("private-transition", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ValidateSyntax_AcceptsPartialOptionsThatARecordedSetupMayComplete()
+    {
+        NetworkSelection.ValidateSyntax(new NetworkOptions(ResolverSubnetId: ResolverSubnet));
+        NetworkSelection.ValidateSyntax(new NetworkOptions(Mode: NetworkModeChoice.Private));
+    }
+
+    [Fact]
+    public void ValidateSyntax_RejectsMalformedIdsAndContradictions()
+    {
+        Assert.Throws<CommandException>(() => NetworkSelection.ValidateSyntax(new NetworkOptions(ResolverSubnetId: "snet-resolver")));
+        Assert.Throws<CommandException>(() => NetworkSelection.ValidateSyntax(new NetworkOptions(Mode: NetworkModeChoice.Public, AllowPublicAccess: true)));
+        Assert.Throws<CommandException>(() => NetworkSelection.ValidateSyntax(new NetworkOptions(MonitorPrivateLink: MonitorPrivateLinkChoice.Create)));
     }
 
     [Fact]

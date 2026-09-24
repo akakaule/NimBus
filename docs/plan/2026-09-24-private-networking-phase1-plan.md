@@ -48,11 +48,19 @@ The spec's recommendations for its open decisions (§12):
      `deploy apps`: it never addresses the namespace. The spec listed it by mistake.
    - Interim guard until slice 3: without `--network-mode`, a namespace whose public access
      is Disabled stops the run instead of silently reopening it.
-3. **Recorded intent (§5.13).**
-   - The resource-group tag `nimbus-network-mode`, written before deploying.
-   - Precedence: flag, then tag, then observed state, then public.
-   - Stop when the observed state is more locked down than the tag.
-   - `--skip-transition` guard for a direct public → private switch.
+3. **Recorded intent (§5.13).** Decided 2026-09-24: record the full setup, not only the mode.
+   - Tags on the resource group, one per setting: `nimbus-network-mode`, the three subnet
+     ids, the DNS mode and zone scope, `nimbus-network-dns-link-vnet-<n>` per linked VNet,
+     the monitoring choice, and `nimbus-service-bus-namespace` for the override.
+   - Written after validation and before deploying, so an interrupted run converges and a
+     failed validation never records anything.
+   - A deployment that never used private mode or an override gets no tags.
+   - Precedence per setting: explicit flag, then the tag, then observed state, then public.
+     `--network-mode private` alone ends a recorded transition; `--network-mode public`
+     records public and deletes the stale network tags. Customer tags are never touched.
+   - Stop when the namespace is more locked down than the record.
+   - `--skip-transition` guards a direct public → private switch of an existing deployment.
+   - `nb topology apply` follows the recorded namespace override.
 4. **Pre-flight DNS check (§5.7).**
    - Compare each resolved address with the private endpoint's `customDnsConfigs`.
    - Retry with backoff for up to `--dns-wait` minutes.

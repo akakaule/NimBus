@@ -19,12 +19,17 @@ internal sealed class NetworkCommandOptions
     private readonly CommandOption _monitorPrivateLink;
     private readonly CommandOption _serviceBusCapacity;
     private readonly CommandOption _serviceBusNamespaceName;
+    private readonly CommandOption _skipTransition;
 
     private NetworkCommandOptions(CommandLineApplication command)
     {
         _networkMode = command.Option("--network-mode <MODE>",
-            "public | private. 'private' puts every NimBus endpoint behind a private endpoint in your subnets and turns public network access off. Defaults to 'public'.",
+            "public | private. 'private' puts every NimBus endpoint behind a private endpoint in your subnets and turns public network access off. " +
+            "Defaults to the setup recorded on the resource group by an earlier run, otherwise 'public'. Every network option below is recorded the same way.",
             CommandOptionType.SingleValue);
+        _skipTransition = command.Option("--skip-transition",
+            "Switch an existing public deployment straight to private without the --allow-public-access pass, accepting downtime while the apps join the VNet.",
+            CommandOptionType.NoValue);
         _allowPublicAccess = command.Option("--allow-public-access",
             "With --network-mode private: add private endpoints, DNS and VNet integration but keep public access on (the transition pass for an existing deployment).",
             CommandOptionType.NoValue);
@@ -72,5 +77,6 @@ internal sealed class NetworkCommandOptions
         NetworkSelection.ParsePrivateDnsOption(_privateDns.Value()),
         _privateDnsZoneScope.Value(),
         _privateDnsLinkVnetIds.Values.Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value!.Trim()).ToList(),
-        NetworkSelection.ParseMonitorPrivateLinkOption(_monitorPrivateLink.Value()));
+        NetworkSelection.ParseMonitorPrivateLinkOption(_monitorPrivateLink.Value()),
+        _skipTransition.HasValue());
 }

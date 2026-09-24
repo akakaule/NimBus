@@ -51,7 +51,8 @@ internal sealed record NetworkOptions(
     PrivateDnsModeChoice? DnsMode = null,
     string? DnsZoneScope = null,
     IReadOnlyList<string>? DnsLinkVnetIds = null,
-    MonitorPrivateLinkChoice? MonitorPrivateLink = null)
+    MonitorPrivateLinkChoice? MonitorPrivateLink = null,
+    bool SkipTransition = false)
 {
     public static NetworkOptions None { get; } = new();
 }
@@ -145,8 +146,29 @@ internal static class NetworkSelection
     }
 
     /// <summary>
-    /// Checks that need no Azure call, so a bad combination fails before login or any
-    /// deployment side effect.
+    /// Checks that hold whatever the resource group has recorded, so they run before login:
+    /// malformed ids, private-only options next to an explicit public mode, and settings
+    /// this version cannot deliver. Completeness is checked by <see cref="ValidateOptions"/>
+    /// once the command line is merged with the recorded setup.
+    /// </summary>
+    public static void ValidateSyntax(NetworkOptions network)
+    {
+        ArgumentNullException.ThrowIfNull(network);
+
+        if (network.Mode == NetworkModeChoice.Public)
+        {
+            RejectPrivateOnlyOptions(network);
+        }
+
+        CheckSubnetIdFormat(network.PrivateEndpointSubnetId, "--private-endpoint-subnet-id");
+        CheckSubnetIdFormat(network.ResolverSubnetId, "--resolver-subnet-id");
+        CheckSubnetIdFormat(network.WebAppSubnetId, "--webapp-subnet-id");
+        CheckMonitorPrivateLinkSupported(network.MonitorPrivateLink);
+    }
+
+    /// <summary>
+    /// Checks the effective network options (command line merged with the recorded setup)
+    /// before any deployment side effect.
     /// </summary>
     public static void ValidateOptions(NetworkOptions network)
     {
@@ -154,13 +176,7 @@ internal static class NetworkSelection
 
         if (network.Mode != NetworkModeChoice.Private)
         {
-            var privateOnly = PrivateOnlyOptionsGiven(network).ToList();
-            if (privateOnly.Count > 0)
-            {
-                throw new CommandException(
-                    $"{string.Join(", ", privateOnly)} {(privateOnly.Count == 1 ? "applies" : "apply")} only with --network-mode private.");
-            }
-
+            RejectPrivateOnlyOptions(network);
             return;
         }
 
@@ -209,36 +225,71 @@ internal static class NetworkSelection
             }
         }
 
-        switch (network.MonitorPrivateLink)
+        if (network.MonitorPrivateLink is null)
         {
-            case null:
-                throw new CommandException(
-                    "--monitor-private-link is required with --network-mode private. This version supports 'none': telemetry leaves through " +
-                    "your firewall to the public Azure Monitor endpoints. Private monitoring ('existing', 'create') arrives in a later release.");
-            case MonitorPrivateLinkChoice.Existing or MonitorPrivateLinkChoice.Create:
-                throw new CommandException(
-                    $"--monitor-private-link {network.MonitorPrivateLink.Value.ToString().ToLowerInvariant()} is not available yet; pass 'none'. " +
-                    "Telemetry then leaves through your firewall to the public Azure Monitor endpoints.");
+            throw new CommandException(
+                "--monitor-private-link is required with --network-mode private. This version supports 'none': telemetry leaves through " +
+                "your firewall to the public Azure Monitor endpoints. Private monitoring ('existing', 'create') arrives in a later release.");
+        }
+
+        CheckMonitorPrivateLinkSupported(network.MonitorPrivateLink);
+    }
+
+    private static void RejectPrivateOnlyOptions(NetworkOptions network)
+    {
+        var privateOnly = PrivateOnlyOptionsGiven(network).ToList();
+        if (privateOnly.Count > 0)
+        {
+            throw new CommandException(
+                $"{string.Join(", ", privateOnly)} {(privateOnly.Count == 1 ? "applies" : "apply")} only with --network-mode private.");
+        }
+    }
+
+    private static void CheckMonitorPrivateLinkSupported(MonitorPrivateLinkChoice? choice)
+    {
+        if (choice is MonitorPrivateLinkChoice.Existing or MonitorPrivateLinkChoice.Create)
+        {
+            throw new CommandException(
+                $"--monitor-private-link {choice.Value.ToString().ToLowerInvariant()} is not available yet; pass 'none'. " +
+                "Telemetry then leaves through your firewall to the public Azure Monitor endpoints.");
+        }
+    }
+
+    private static void CheckSubnetIdFormat(string? value, string option)
+    {
+        if (!string.IsNullOrWhiteSpace(value) && !SubnetIdPattern.IsMatch(value))
+        {
+            throw new CommandException(
+                $"Invalid {option} '{value}'. Expected a subnet id: /subscriptions/<id>/resourceGroups/<rg>/providers/Microsoft.Network/virtualNetworks/<vnet>/subnets/<subnet>.");
         }
     }
 
     /// <summary>
-    /// Decides the network mode. An explicit flag wins. Without one, a namespace whose
-    /// public access is already disabled means the deployment is private, and the CLI will
-    /// not guess the missing network options or silently reopen it.
+    /// Decides the network mode from the merged options (command line over the recorded
+    /// setup). An explicit <c>--network-mode</c> wins. Otherwise the CLI never silently
+    /// opens a resource: a namespace that is more locked down than the recorded state (or
+    /// locked with nothing recorded) stops the run until the operator states the mode.
     /// </summary>
-    public static NetworkModeChoice ResolveNetworkMode(NetworkModeChoice? requested, ExistingServiceBus? existing, string namespaceName)
+    public static NetworkModeChoice ResolveNetworkMode(
+        NetworkModeChoice? mode,
+        bool explicitlyRequested,
+        bool allowPublicAccess,
+        ExistingServiceBus? existing,
+        string namespaceName)
     {
-        if (requested is { } explicitMode) return explicitMode;
+        var resolved = mode ?? NetworkModeChoice.Public;
+        if (explicitlyRequested) return resolved;
 
-        if (existing is { IsPublicAccessDisabled: true })
+        var fullyPrivate = resolved == NetworkModeChoice.Private && !allowPublicAccess;
+        if (existing is { IsPublicAccessDisabled: true } && !fullyPrivate)
         {
             throw new CommandException(
-                $"The Service Bus namespace '{namespaceName}' has public network access disabled, so this deployment is private. " +
-                "Pass --network-mode private with its network options, or --network-mode public to reopen it.");
+                $"The Service Bus namespace '{namespaceName}' has public network access disabled, but the recorded network mode " +
+                $"is {(mode is null ? "missing" : NetworkIntent.ToTagValue(NetworkIntent.TargetState(resolved, allowPublicAccess)))}. " +
+                "Pass --network-mode private (with its network options if none are recorded) to keep it private, or --network-mode public to reopen it.");
         }
 
-        return NetworkModeChoice.Public;
+        return resolved;
     }
 
     /// <summary>
@@ -355,6 +406,7 @@ internal static class NetworkSelection
         if (!string.IsNullOrWhiteSpace(network.DnsZoneScope)) yield return "--private-dns-zone-scope";
         if (network.DnsLinkVnetIds is { Count: > 0 }) yield return "--private-dns-link-vnet-id";
         if (network.MonitorPrivateLink is not null) yield return "--monitor-private-link";
+        if (network.SkipTransition) yield return "--skip-transition";
     }
 
     private static void RequireSubnetId(string? value, string option)
@@ -364,11 +416,7 @@ internal static class NetworkSelection
             throw new CommandException($"{option} is required with --network-mode private.");
         }
 
-        if (!SubnetIdPattern.IsMatch(value))
-        {
-            throw new CommandException(
-                $"Invalid {option} '{value}'. Expected a subnet id: /subscriptions/<id>/resourceGroups/<rg>/providers/Microsoft.Network/virtualNetworks/<vnet>/subnets/<subnet>.");
-        }
+        CheckSubnetIdFormat(value, option);
     }
 
     // Azure reports regions both as names ("westeurope") and display names ("West Europe").

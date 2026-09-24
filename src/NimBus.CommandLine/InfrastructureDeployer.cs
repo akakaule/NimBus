@@ -16,8 +16,6 @@ internal sealed class InfrastructureDeployer
 
     public async Task ApplyAsync(InfrastructureOptions options, CancellationToken cancellationToken)
     {
-        var names = NamingConventions.Build(options.SolutionId, options.Environment, options.ServiceBusNamespaceName);
-
         // Fail fast on a plan-specific --resolver-max-instances range error when the plan is
         // explicit, before the login and provider-registration side effects. An auto-pinned
         // plan is only known after discovery, so that case is validated in
@@ -27,10 +25,11 @@ internal sealed class InfrastructureDeployer
             _ = PlanSelection.ResolveResolverMaxInstances(options.ResolverMaxInstances, explicitPlan);
         }
 
-        // Private networking options (spec 034) are checked the same way: a combination
-        // that can never work fails before login or any Azure call.
-        var network = options.Network ?? NetworkOptions.None;
-        NetworkSelection.ValidateOptions(network);
+        // Private networking options (spec 034) are checked the same way as far as they can
+        // be before the recorded setup is read: malformed or contradictory values fail
+        // before login or any Azure call.
+        var explicitNetwork = options.Network ?? NetworkOptions.None;
+        NetworkSelection.ValidateSyntax(explicitNetwork);
         if (!string.IsNullOrWhiteSpace(options.ServiceBusNamespaceName))
         {
             NetworkSelection.ValidateServiceBusNamespaceName(options.ServiceBusNamespaceName.Trim());
@@ -54,6 +53,17 @@ internal sealed class InfrastructureDeployer
         {
             CliOutput.WriteLine($"Ignoring --resource-name-postfix '{options.ResourceNamePostFix}' because the current bicep templates do not consume it.");
         }
+
+        // The recorded setup completes whatever the command line leaves out (spec 034 §5.13).
+        var resourceGroup = await ReadResourceGroupAsync(options.ResourceGroupName, cancellationToken).ConfigureAwait(false);
+        var stored = NetworkIntent.FromTags(resourceGroup.Tags);
+        var (network, serviceBusNamespaceName) = NetworkIntent.Merge(explicitNetwork, options.ServiceBusNamespaceName, stored);
+        if (stored is { State: not NetworkState.Public } && explicitNetwork.Mode is null)
+        {
+            CliOutput.WriteLine($"Using the network setup recorded on '{options.ResourceGroupName}' ({NetworkIntent.ToTagValue(stored.State)}).");
+        }
+
+        var names = NamingConventions.Build(options.SolutionId, options.Environment, serviceBusNamespaceName);
 
         var existingLocations = await DiscoverExistingLocationsAsync(options.ResourceGroupName, cancellationToken).ConfigureAwait(false);
         var existingPlans = await DiscoverExistingPlansAsync(options.ResourceGroupName, cancellationToken).ConfigureAwait(false);
@@ -79,9 +89,26 @@ internal sealed class InfrastructureDeployer
         // The existing namespace decides the Service Bus tier (Azure cannot convert Standard
         // to Premium in place) and guards against silently reopening a private deployment.
         var existingServiceBus = await DiscoverServiceBusAsync(options.ResourceGroupName, names.ServiceBusNamespace, cancellationToken).ConfigureAwait(false);
-        var networkMode = NetworkSelection.ResolveNetworkMode(network.Mode, existingServiceBus, names.ServiceBusNamespace);
+        var networkMode = NetworkSelection.ResolveNetworkMode(
+            network.Mode,
+            explicitlyRequested: explicitNetwork.Mode is not null,
+            network.AllowPublicAccess,
+            existingServiceBus,
+            names.ServiceBusNamespace);
+        network = network with { Mode = networkMode };
+        NetworkSelection.ValidateOptions(network);
+
         var isPrivate = networkMode == NetworkModeChoice.Private;
         var (serviceBusSku, serviceBusCapacity) = NetworkSelection.ResolveServiceBusSku(isPrivate, existingServiceBus, options.ServiceBusCapacity, names.ServiceBusNamespace);
+
+        var deploymentExists = existingServiceBus is not null
+            || existingLocations.ContainsKey(names.ResolverFunctionAppName)
+            || existingLocations.ContainsKey(names.WebAppName);
+        NetworkIntent.ValidateTransition(
+            NetworkIntent.CurrentState(stored, existingServiceBus),
+            NetworkIntent.TargetState(networkMode, network.AllowPublicAccess),
+            deploymentExists,
+            network.SkipTransition);
         if (existingServiceBus is { IsPremium: true } && !isPrivate)
         {
             CliOutput.WriteLine($"Keeping the existing Premium Service Bus namespace '{names.ServiceBusNamespace}' ({serviceBusCapacity} messaging unit(s)).");
@@ -97,7 +124,15 @@ internal sealed class InfrastructureDeployer
                 : "Network mode: private (public network access off).");
         }
 
-        var serviceBus = new ServiceBusDeployment(serviceBusSku, serviceBusCapacity, options.ServiceBusNamespaceName?.Trim());
+        var serviceBus = new ServiceBusDeployment(serviceBusSku, serviceBusCapacity, serviceBusNamespaceName);
+
+        // Record the intent before deploying: an interrupted run then converges on the next
+        // one, and a validation failure above never records a setup that cannot deploy. A
+        // deployment that never used private mode or a namespace override gets no tags.
+        if (stored is not null || isPrivate || !string.IsNullOrWhiteSpace(serviceBusNamespaceName))
+        {
+            await RecordNetworkIntentAsync(resourceGroup, NetworkIntent.ToTags(network, serviceBusNamespaceName), cancellationToken).ConfigureAwait(false);
+        }
 
         CliOutput.WriteLine("Deploying core infrastructure...");
         await DeployCoreInfrastructureAsync(options, names, resolverPlan, managementPlanSku, existingLocations, serviceBus, privateNetwork, cancellationToken).ConfigureAwait(false);
@@ -470,6 +505,65 @@ internal sealed class InfrastructureDeployer
     // Mirrors the locationParam default in both entry templates.
     private const string DefaultLocation = "westeurope";
 
+    private async Task<ResourceGroupInfo> ReadResourceGroupAsync(string resourceGroupName, CancellationToken cancellationToken)
+    {
+        using var document = await _az.CaptureJsonAsync(
+            new[] { "group", "show", "--name", resourceGroupName, "--query", "{id:id, tags:tags}", "--output", "json" },
+            cancellationToken,
+            $"Could not read the resource group '{resourceGroupName}'. Create it first and check that the deploying identity can read it.").ConfigureAwait(false);
+
+        var root = document.RootElement;
+        var id = root.TryGetProperty("id", out var idElement) && idElement.ValueKind == JsonValueKind.String
+            ? idElement.GetString()!
+            : throw new CommandException($"Could not read the id of resource group '{resourceGroupName}'.");
+
+        var tags = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (root.TryGetProperty("tags", out var tagsElement) && tagsElement.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var tag in tagsElement.EnumerateObject())
+            {
+                tags[tag.Name] = tag.Value.ValueKind == JsonValueKind.String ? tag.Value.GetString() ?? string.Empty : tag.Value.ToString();
+            }
+        }
+
+        return new ResourceGroupInfo(id, tags);
+    }
+
+    /// <summary>
+    /// Writes the desired network tags and removes stale NimBus network tags. Merge and
+    /// delete touch only the named tags, so the customer's own tags stay as they are.
+    /// </summary>
+    private async Task RecordNetworkIntentAsync(ResourceGroupInfo resourceGroup, IReadOnlyDictionary<string, string> desired, CancellationToken cancellationToken)
+    {
+        var (merge, delete) = NetworkIntent.TagChanges(resourceGroup.Tags, desired);
+        const string failure =
+            "Could not record the network setup as tags on the resource group; an Azure Policy may forbid tag changes there. " +
+            "Allow the nimbus-network-* tags, or pass the full set of network options on every run.";
+
+        if (merge.Count > 0)
+        {
+            await _az.EnsureSuccessAsync(
+                TagUpdateArguments(resourceGroup.Id, "Merge", merge),
+                cancellationToken,
+                failure).ConfigureAwait(false);
+        }
+
+        if (delete.Count > 0)
+        {
+            await _az.EnsureSuccessAsync(
+                TagUpdateArguments(resourceGroup.Id, "Delete", delete),
+                cancellationToken,
+                failure).ConfigureAwait(false);
+        }
+    }
+
+    private static List<string> TagUpdateArguments(string resourceId, string operation, IReadOnlyDictionary<string, string> tags)
+    {
+        var arguments = new List<string> { "tag", "update", "--resource-id", resourceId, "--operation", operation, "--tags" };
+        arguments.AddRange(tags.OrderBy(tag => tag.Key, StringComparer.Ordinal).Select(tag => $"{tag.Key}={tag.Value}"));
+        return arguments;
+    }
+
     private async Task<ExistingServiceBus?> DiscoverServiceBusAsync(string resourceGroupName, string namespaceName, CancellationToken cancellationToken)
     {
         var result = await _az.TryRunAsync(
@@ -651,6 +745,8 @@ internal sealed class InfrastructureDeployer
     private sealed record ExistingAppServicePlan(string SkuName, string Tier);
 
     private sealed record ServiceBusDeployment(string? Sku, int? Capacity, string? NamespaceName);
+
+    private sealed record ResourceGroupInfo(string Id, IReadOnlyDictionary<string, string> Tags);
 
     private sealed record ResolvedNetwork(
         bool AllowPublicAccess,

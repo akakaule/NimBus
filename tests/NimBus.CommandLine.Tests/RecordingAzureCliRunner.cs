@@ -15,6 +15,7 @@ internal sealed class RecordingAzureCliRunner : IAzureCliRunner
 {
     internal const string InstrumentationKey = "instrumentation-key-marker";
     internal const string CosmosEndpoint = "https://cosmos.example.test:443/";
+    internal const string ResourceGroupIdPrefix = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/";
 
     public List<IReadOnlyList<string>> Commands { get; } = new();
 
@@ -29,7 +30,10 @@ internal sealed class RecordingAzureCliRunner : IAzureCliRunner
     public Task<JsonDocument> CaptureJsonAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string failureMessage)
     {
         Commands.Add(arguments.ToArray());
-        return Task.FromResult(JsonDocument.Parse(Responder?.Invoke(arguments) ?? "{}"));
+        var fallback = arguments.Contains("group", StringComparer.Ordinal) && arguments.Contains("show", StringComparer.Ordinal)
+            ? $$"""{"id":"{{ResourceGroupIdPrefix}}{{arguments[Array.IndexOf(arguments.ToArray(), "--name") + 1]}}","tags":null}"""
+            : "{}";
+        return Task.FromResult(JsonDocument.Parse(Responder?.Invoke(arguments) ?? fallback));
     }
 
     public Task EnsureLoggedInAsync(CancellationToken cancellationToken) => Task.CompletedTask;

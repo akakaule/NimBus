@@ -399,7 +399,7 @@ internal static class Program
                 var setupResolverMaxInstancesValue = PlanSelection.ParseResolverMaxInstancesOption(setupResolverMaxInstances.Value());
                 var setupNetwork = setupNetworkOptions.Build();
                 var setupServiceBusCapacity = setupNetworkOptions.ServiceBusCapacity;
-                NetworkSelection.ValidateOptions(setupNetwork);
+                NetworkSelection.ValidateSyntax(setupNetwork);
                 var setupPlatformPackage = setupPackage.HasValue()
                     ? await PlatformPackage.ResolveAsync(PlatformHttpClient, setupPackage.Value()!, setupFeed.Value(), setupPlatform.Value(), cancellationToken).ConfigureAwait(false)
                     : null;

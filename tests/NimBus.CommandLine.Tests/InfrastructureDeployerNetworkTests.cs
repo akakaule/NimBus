@@ -161,16 +161,161 @@ public sealed class InfrastructureDeployerNetworkTests
         Assert.Empty(azureCli.Deployments);
     }
 
-    /// <summary>Option combinations that can never work fail before login or any Azure call.</summary>
+    /// <summary>Malformed or contradictory values fail before login or any Azure call.</summary>
     [Fact]
-    public async Task ApplyAsync_InvalidNetworkOptionsFailBeforeAnyAzureCall()
+    public async Task ApplyAsync_MalformedNetworkOptionsFailBeforeAnyAzureCall()
     {
         var azureCli = CustomerNetwork(existingServiceBus: null);
 
         await Assert.ThrowsAsync<CommandException>(() =>
-            Deployer(azureCli).ApplyAsync(Options(PrivateNetwork with { DnsMode = null }), CancellationToken.None));
+            Deployer(azureCli).ApplyAsync(Options(PrivateNetwork with { ResolverSubnetId = "snet-resolver" }), CancellationToken.None));
 
         Assert.Empty(azureCli.Commands);
+    }
+
+    /// <summary>Completeness is judged after the recorded setup is merged in, still before deploying.</summary>
+    [Fact]
+    public async Task ApplyAsync_IncompletePrivateOptionsFailBeforeDeploying()
+    {
+        var azureCli = CustomerNetwork(existingServiceBus: null);
+
+        var error = await Assert.ThrowsAsync<CommandException>(() =>
+            Deployer(azureCli).ApplyAsync(Options(PrivateNetwork with { DnsMode = null, DnsZoneScope = null }), CancellationToken.None));
+
+        Assert.Contains("--private-dns", error.Message, StringComparison.Ordinal);
+        Assert.Empty(azureCli.Deployments);
+        Assert.DoesNotContain(azureCli.Commands, c => c.Contains("tag", StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_PublicDeploymentWithoutHistoryWritesNoTags()
+    {
+        var azureCli = CustomerNetwork(existingServiceBus: null);
+
+        await Deployer(azureCli).ApplyAsync(Options(NetworkOptions.None), CancellationToken.None);
+
+        Assert.DoesNotContain(azureCli.Commands, c => c.Contains("tag", StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_RecordsTheSetupBeforeDeploying()
+    {
+        var azureCli = CustomerNetwork(existingServiceBus: null);
+
+        await Deployer(azureCli).ApplyAsync(Options(PrivateNetwork), CancellationToken.None);
+
+        var tagIndex = azureCli.Commands.FindIndex(c => c.Contains("tag", StringComparer.Ordinal) && c.Contains("Merge", StringComparer.Ordinal));
+        var deployIndex = azureCli.Commands.FindIndex(c => c.Contains("deployment", StringComparer.Ordinal));
+        Assert.InRange(tagIndex, 0, deployIndex - 1);
+
+        var tags = azureCli.Commands[tagIndex];
+        Assert.Contains($"--resource-id", tags);
+        Assert.Contains($"{RecordingAzureCliRunner.ResourceGroupIdPrefix}rg-nimbus-dev", tags);
+        Assert.Contains("nimbus-network-mode=private", tags);
+        Assert.Contains($"nimbus-network-resolver-subnet={ResolverSubnet}", tags);
+        Assert.Contains("nimbus-network-dns=existing", tags);
+        Assert.Contains($"nimbus-network-dns-zone-scope={DnsScope}", tags);
+        Assert.Contains("nimbus-network-monitor=none", tags);
+    }
+
+    /// <summary>A rerun without flags after pass 1 stays in the transition.</summary>
+    [Fact]
+    public async Task ApplyAsync_RerunWithoutFlagsReproducesTheRecordedTransition()
+    {
+        var recorded = NetworkIntent.ToTags(PrivateNetwork with { AllowPublicAccess = true }, serviceBusNamespaceName: null);
+        var azureCli = CustomerNetwork(
+            existingServiceBus: """{"tier":"Premium","capacity":1,"publicNetworkAccess":"Enabled"}""",
+            recordedTags: recorded);
+
+        await Deployer(azureCli).ApplyAsync(Options(NetworkOptions.None), CancellationToken.None);
+
+        var core = azureCli.Deployments[0].Arguments;
+        Assert.Contains("networkMode=private", core);
+        Assert.Contains("allowPublicAccess=true", core);
+        Assert.Contains($"resolverSubnetId={ResolverSubnet}", core);
+        Assert.DoesNotContain(azureCli.Commands, c => c.Contains("tag", StringComparer.Ordinal));
+    }
+
+    /// <summary>Pass 2: the mode alone locks the deployment with the recorded subnets.</summary>
+    [Fact]
+    public async Task ApplyAsync_ExplicitPrivateModeEndsTheRecordedTransition()
+    {
+        var recorded = NetworkIntent.ToTags(PrivateNetwork with { AllowPublicAccess = true }, serviceBusNamespaceName: null);
+        var azureCli = CustomerNetwork(
+            existingServiceBus: """{"tier":"Premium","capacity":1,"publicNetworkAccess":"Enabled"}""",
+            recordedTags: recorded);
+
+        await Deployer(azureCli).ApplyAsync(Options(new NetworkOptions(Mode: NetworkModeChoice.Private)), CancellationToken.None);
+
+        Assert.Contains("allowPublicAccess=false", azureCli.Deployments[0].Arguments);
+        Assert.Contains(azureCli.Commands, c => c.Contains("Merge", StringComparer.Ordinal) && c.Contains("nimbus-network-mode=private", StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_RefusesADirectSwitchOfAnExistingPublicDeployment()
+    {
+        var azureCli = CustomerNetwork(existingServiceBus: """{"tier":"Premium","capacity":1,"publicNetworkAccess":"Enabled"}""");
+
+        var error = await Assert.ThrowsAsync<CommandException>(() =>
+            Deployer(azureCli).ApplyAsync(Options(PrivateNetwork), CancellationToken.None));
+
+        Assert.Contains("--skip-transition", error.Message, StringComparison.Ordinal);
+        Assert.Empty(azureCli.Deployments);
+        Assert.DoesNotContain(azureCli.Commands, c => c.Contains("tag", StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_SkipTransitionAllowsTheDirectSwitch()
+    {
+        var azureCli = CustomerNetwork(existingServiceBus: """{"tier":"Premium","capacity":1,"publicNetworkAccess":"Enabled"}""");
+
+        await Deployer(azureCli).ApplyAsync(Options(PrivateNetwork with { SkipTransition = true }), CancellationToken.None);
+
+        Assert.Contains("allowPublicAccess=false", azureCli.Deployments[0].Arguments);
+    }
+
+    /// <summary>The namespace is locked but the record says transition: never silently reopen.</summary>
+    [Fact]
+    public async Task ApplyAsync_StopsWhenTheNamespaceIsMoreLockedThanRecorded()
+    {
+        var recorded = NetworkIntent.ToTags(PrivateNetwork with { AllowPublicAccess = true }, serviceBusNamespaceName: null);
+        var azureCli = CustomerNetwork(
+            existingServiceBus: """{"tier":"Premium","capacity":1,"publicNetworkAccess":"Disabled"}""",
+            recordedTags: recorded);
+
+        await Assert.ThrowsAsync<CommandException>(() =>
+            Deployer(azureCli).ApplyAsync(Options(NetworkOptions.None), CancellationToken.None));
+
+        Assert.Empty(azureCli.Deployments);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_LeavingPrivateModeRecordsPublicAndDropsTheNetworkTags()
+    {
+        var recorded = NetworkIntent.ToTags(PrivateNetwork, serviceBusNamespaceName: null);
+        var azureCli = CustomerNetwork(
+            existingServiceBus: """{"tier":"Premium","capacity":1,"publicNetworkAccess":"Disabled"}""",
+            recordedTags: recorded);
+
+        await Deployer(azureCli).ApplyAsync(Options(new NetworkOptions(Mode: NetworkModeChoice.Public)), CancellationToken.None);
+
+        Assert.Contains(azureCli.Commands, c => c.Contains("Merge", StringComparer.Ordinal) && c.Contains("nimbus-network-mode=public", StringComparer.Ordinal));
+        var delete = Assert.Single(azureCli.Commands, c => c.Contains("tag", StringComparer.Ordinal) && c.Contains("Delete", StringComparer.Ordinal));
+        Assert.Contains($"nimbus-network-resolver-subnet={ResolverSubnet}", delete);
+        Assert.DoesNotContain("networkMode=private", azureCli.Deployments[0].Arguments);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_RecordedNamespaceOverrideIsReused()
+    {
+        var recorded = NetworkIntent.ToTags(PrivateNetwork, serviceBusNamespaceName: "sb-nimbus-dev-premium");
+        var azureCli = CustomerNetwork(
+            existingServiceBus: """{"tier":"Premium","capacity":1,"publicNetworkAccess":"Disabled"}""",
+            recordedTags: recorded);
+
+        await Deployer(azureCli).ApplyAsync(Options(NetworkOptions.None), CancellationToken.None);
+
+        Assert.Contains("serviceBusNamespaceName=sb-nimbus-dev-premium", azureCli.Deployments[0].Arguments);
     }
 
     private static InfrastructureDeployer Deployer(RecordingAzureCliRunner azureCli) =>
@@ -191,7 +336,10 @@ public sealed class InfrastructureDeployerNetworkTests
     /// A customer VNet in West Europe whose private-endpoint subnet sits in a peered VNet in
     /// Sweden Central, so the endpoint location must come from the subnet, not the app.
     /// </summary>
-    private static RecordingAzureCliRunner CustomerNetwork(string? existingServiceBus, string resolverDelegation = "Microsoft.App/environments") =>
+    private static RecordingAzureCliRunner CustomerNetwork(
+        string? existingServiceBus,
+        string resolverDelegation = "Microsoft.App/environments",
+        IReadOnlyDictionary<string, string>? recordedTags = null) =>
         new()
         {
             Responder = arguments =>
@@ -200,6 +348,15 @@ public sealed class InfrastructureDeployerNetworkTests
                 {
                     var index = arguments.ToList().IndexOf(option);
                     return index >= 0 && index + 1 < arguments.Count ? arguments[index + 1] : null;
+                }
+
+                if (arguments.Contains("group") && arguments.Contains("show") && recordedTags is not null)
+                {
+                    return System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        id = RecordingAzureCliRunner.ResourceGroupIdPrefix + ValueOf("--name"),
+                        tags = recordedTags,
+                    });
                 }
 
                 if (arguments.Contains("subnet") && arguments.Contains("show"))

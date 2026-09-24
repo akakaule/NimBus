@@ -255,7 +255,37 @@ public class ResolverServiceTests
     }
 
     [TestMethod]
-    public async Task Handle_RetryRequest_StoresAuditBeforePersistingMessage()
+    [DataRow(true, DisplayName = "StoreMessage throttled")]
+    [DataRow(false, DisplayName = "Pending upload throttled")]
+    public async Task Handle_RetryRequest_ThrottledThenRedelivered_WritesRetryAuditOnce(bool failStoreMessage)
+    {
+        // StoreMessageAudit is a plain insert. A retry audit written before the event writes
+        // succeed is written again by the rescheduled copy, doubling the Retry row per throttle.
+        var throttle = new RequestLimitException(TimeSpan.FromSeconds(1));
+        var cosmos = new FakeCosmosDbClient();
+        if (failStoreMessage) cosmos.StoreMessageException = throttle;
+        else cosmos.UploadException = throttle;
+        var service = CreateService(cosmos);
+
+        var firstDelivery = CreateMessageContext(messageType: MessageType.RetryRequest, to: "BillingEndpoint", from: "Manager");
+        await service.Handle(firstDelivery);
+
+        Assert.AreEqual(1, firstDelivery.ScheduleRedeliveryCalls);
+        Assert.AreEqual(0, cosmos.StoredAudits.Count, "No retry audit may be written while the event writes are failing.");
+
+        cosmos.StoreMessageException = null;
+        cosmos.UploadException = null;
+        var redelivered = CreateMessageContext(messageType: MessageType.RetryRequest, to: "BillingEndpoint", from: "Manager",
+            eventId: firstDelivery.EventId, messageId: firstDelivery.MessageId, throttleRetryCount: 1);
+        await service.Handle(redelivered);
+
+        Assert.AreEqual(1, cosmos.StoredAudits.Count);
+        Assert.AreEqual(MessageAuditType.Retry, cosmos.StoredAudits[0].Audit.AuditType);
+        Assert.AreEqual(1, redelivered.CompletedCalls);
+    }
+
+    [TestMethod]
+    public async Task Handle_RetryRequest_StoresRetryAudit()
     {
         var cosmos = new FakeCosmosDbClient();
         var message = CreateMessageContext(messageType: MessageType.RetryRequest, to: "BillingEndpoint", from: "Manager");

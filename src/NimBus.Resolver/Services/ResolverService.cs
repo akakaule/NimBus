@@ -116,11 +116,19 @@ namespace NimBus.Broker.Services
                     return;
                 }
 
-                MessageEntity messageEntity = await CreateMessageEntity(messageContext);
+                MessageEntity messageEntity = CreateMessageEntity(messageContext);
 
                 await _store.StoreMessage(messageEntity);
 
                 var (status, applied) = await UpdateState(messageEntity);
+
+                // Written only after the event writes succeed: the audit is a plain insert, so
+                // writing it first would repeat it on every copy a store failure reschedules.
+                if (messageEntity.MessageType == MessageType.RetryRequest)
+                {
+                    var messageAudit = new MessageAuditEntity() { AuditorName = Constants.ManagerId, AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Retry };
+                    await InstrumentAuditWrite(messageContext, messageAudit);
+                }
 
                 if (applied)
                 {
@@ -553,15 +561,9 @@ namespace NimBus.Broker.Services
         private static DateTime TimestampOrDefault(DateTime value, DateTime fallback) =>
             value == default ? fallback : value;
 
-        private async Task<MessageEntity> CreateMessageEntity(IReceivedMessage message)
+        private MessageEntity CreateMessageEntity(IReceivedMessage message)
         {
             ArgumentNullException.ThrowIfNull(message);
-
-            if (message.MessageType == MessageType.RetryRequest)
-            {
-                var messageAudit = new MessageAuditEntity() { AuditorName = Constants.ManagerId, AuditTimestamp = DateTime.UtcNow, AuditType = MessageAuditType.Retry };
-                await InstrumentAuditWrite(message, messageAudit);
-            }
 
             var (endpointId, endpointRole) = DetermineEndpoint(message);
 

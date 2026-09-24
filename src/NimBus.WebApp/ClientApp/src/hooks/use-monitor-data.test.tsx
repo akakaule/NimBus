@@ -1,10 +1,15 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useMonitorData, STALE_AFTER_MS } from "./use-monitor-data";
+import {
+  useMonitorData,
+  STALE_AFTER_MS,
+  TELEMETRY_LEN,
+} from "./use-monitor-data";
 
 // Call counters shared with the api-client mock below.
 const statusCountCalls = vi.fn();
 let failRequests = false;
+let failedCount = 0;
 
 vi.mock("api-client", () => {
   class Client {
@@ -19,9 +24,9 @@ vi.mock("api-client", () => {
       return Promise.resolve(
         ids.map((id) => ({
           endpointId: id,
-          failedCount: 0,
-          pendingCount: 0,
-          deferredCount: 0,
+          failedCount,
+          pendingCount: 7,
+          deferredCount: 3,
         })),
       );
     }
@@ -52,6 +57,7 @@ describe("useMonitorData visibility-aware polling", () => {
     vi.useFakeTimers();
     statusCountCalls.mockClear();
     failRequests = false;
+    failedCount = 0;
     setDocumentHidden(false);
     // Node 25's experimental localStorage can leave the global undefined in
     // jsdom runs; the hook guards its own access, so just clear when present.
@@ -143,6 +149,89 @@ describe("useMonitorData visibility-aware polling", () => {
     });
 
     expect(result.current.isStale).toBe(true);
+    unmount();
+  });
+});
+
+describe("useMonitorData fleet telemetry", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    failRequests = false;
+    failedCount = 0;
+    setDocumentHidden(false);
+    window.localStorage?.clear?.();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function poll() {
+    await act(async () => {
+      vi.advanceTimersByTime(REFRESH_MS);
+    });
+    await flushAsync();
+  }
+
+  it("records one fleet sample per poll with failed and backlog totals", async () => {
+    const { result, unmount } = renderHook(() => useMonitorData());
+    await flushAsync();
+    failedCount = 4;
+    await poll();
+
+    const telemetry = result.current.telemetry;
+    expect(telemetry).toHaveLength(2);
+    expect(telemetry[0]).toMatchObject({ failed: 0, backlog: 10 });
+    expect(telemetry[1]).toMatchObject({ failed: 4, backlog: 10 });
+    expect(telemetry[1].t - telemetry[0].t).toBe(REFRESH_MS);
+    unmount();
+  });
+
+  it("keeps at most TELEMETRY_LEN samples (10 minutes at 5 s)", async () => {
+    expect(TELEMETRY_LEN).toBe(120);
+    const { result, unmount } = renderHook(() => useMonitorData());
+    await flushAsync();
+    for (let i = 0; i < TELEMETRY_LEN + 3; i++) {
+      await poll();
+    }
+
+    expect(result.current.telemetry).toHaveLength(TELEMETRY_LEN);
+    unmount();
+  });
+});
+
+describe("useMonitorData fresh failures", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    failRequests = false;
+    failedCount = 0;
+    setDocumentHidden(false);
+    window.localStorage?.clear?.();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("does not flag failures that already existed when the page loaded", async () => {
+    failedCount = 5;
+    const { result, unmount } = renderHook(() => useMonitorData());
+    await flushAsync();
+
+    expect(result.current.endpoints[0].isFreshFailure).toBe(false);
+    unmount();
+  });
+
+  it("flags a failure the page saw start", async () => {
+    const { result, unmount } = renderHook(() => useMonitorData());
+    await flushAsync();
+    failedCount = 5;
+    await act(async () => {
+      vi.advanceTimersByTime(REFRESH_MS);
+    });
+    await flushAsync();
+
+    expect(result.current.endpoints[0].isFreshFailure).toBe(true);
     unmount();
   });
 });

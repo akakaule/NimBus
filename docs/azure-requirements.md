@@ -8,16 +8,22 @@ One resource group holds everything for a `{solutionId}` + `{environment}` pair.
 
 | Resource | Name convention | Default SKU / configuration | Purpose |
 |---|---|---|---|
-| Service Bus namespace | `sb-{solutionId}-{environment}` | **Standard** (topics are required; the Basic tier has no topics) | Messaging backbone — one topic per endpoint plus the Resolver topic |
-| Application Insights | `ai-{solutionId}-{environment}-global-tracelog` | `kind: web` component | Telemetry; the WebApp queries traces through an API key created at deploy time |
+| Service Bus namespace | `sb-{solutionId}-{environment}` (override: `--service-bus-namespace-name`) | **Standard** (topics are required; the Basic tier has no topics). **Premium** (1 messaging unit by default) with `--network-mode private` | Messaging backbone — one topic per endpoint plus the Resolver topic |
+| Application Insights | `ai-{solutionId}-{environment}-global-tracelog` | `kind: web` component | Telemetry; the WebApp queries traces with its managed identity (Reader on the component) |
 | Cosmos DB account *(default storage provider)* | `cosmos-{solutionId}-{environment}` | Standard offer (provisioned throughput), Session consistency, single region; database `MessageDatabase` with containers `messages` (partition `/eventId`, TTL 90 days) and `audits` (TTL 1 year). Per-endpoint containers are created **at runtime** by the apps (see [ADR-008](adr/)) | Message store + audit trail |
-| Azure SQL server + database *(only `--storage-provider sqlserver --sql-mode provision`)* | `sql-{solutionId}-{environment}` / `MessageDatabase` | **S0** (allowed: Basic/S0/S1/S2), TLS ≥ 1.2, public network access **enabled** with the `AllowAllWindowsAzureIps` (0.0.0.0) firewall rule | Message store alternative. ⚠ Enterprises should replace the open Azure-services firewall rule with private endpoints |
+| Azure SQL server + database *(only `--storage-provider sqlserver --sql-mode provision`)* | `sql-{solutionId}-{environment}` / `MessageDatabase` | **S0** (allowed: Basic/S0/S1/S2), TLS ≥ 1.2, public network access **enabled** with the `AllowAllWindowsAzureIps` (0.0.0.0) firewall rule | Message store alternative. The open Azure-services rule admits every Azure tenant; `--network-mode private` replaces it with a private endpoint ([Private networking](private-networking.md)) |
 | Storage account | `st{solutionId}{environment}func` | StorageV2, `Standard_LRS`, HTTPS-only; blob container `app-package-resolver` added on Flex Consumption | Functions host storage + Flex deployment package |
 | App Service Plan (core) | `asp-{solutionId}-{environment}-core` | **FC1 Flex Consumption (Linux)** by default, or EP1 Elastic Premium (Windows) via `--resolver-plan` | Hosts the resolver Function App |
 | App Service Plan (management) | `asp-{solutionId}-{environment}-management` | **B1** for `dev`/`development`, **S1** otherwise (override via `--management-plan-sku`) | Hosts the management WebApp |
 | Function App | `func-{solutionId}-{environment}-resolver` | .NET 10 isolated worker, FTPS-only, system-assigned managed identity | The NimBus Resolver |
 | Web App | `webapp-{solutionId}-{environment}-management` | HTTPS-only, FTPS-only, run-from-package, Always On (Basic+), system-assigned managed identity | Management UI |
 | Role assignments | (deterministic GUIDs) | See [Role assignments created by the deployment](#role-assignments-created-by-the-deployment) | Managed-identity data-plane access |
+| Private endpoints *(only `--network-mode private`)* | `pe-{resource}-{groupId}` | 5–8 endpoints in your subnet: Service Bus, store (none for an external SQL server), storage (blob, queue, table, plus file on Elastic Premium), Resolver and WebApp sites. Tagged `nimbus-deployment={solutionId}-{environment}` | Private access to every NimBus endpoint |
+| Private DNS zones *(only `--private-dns create`)* | `privatelink.*` | One per service type, linked to your VNet with fallback to internet | Resolve the private endpoints |
+
+With `--network-mode private` the Cosmos DB account, SQL server, storage account, Service Bus
+namespace and both apps are created with public network access disabled, and both apps are
+VNet-integrated. Subnets, DNS, egress and runners: [Private networking](private-networking.md).
 
 Naming constraint: the storage account name `st{solutionId}{environment}func` must be ≤ 24 lowercase alphanumeric characters — keep `solutionId` + `environment` within 17 characters combined.
 
@@ -34,6 +40,8 @@ The deployment uses these resource providers:
 | `Microsoft.DocumentDB` | Cosmos DB | `--storage-provider cosmos` (default) |
 | `Microsoft.Sql` | Azure SQL | `--storage-provider sqlserver --sql-mode provision` |
 | `Microsoft.EventGrid` | Optional storage-hook webhooks | Only if you use Event Grid storage hooks — nothing in the Bicep deploys Event Grid resources |
+| `Microsoft.Network` | Private endpoints, private DNS zones | `--network-mode private` |
+| `Microsoft.App` | Flex Consumption subnet delegation | `--network-mode private` with the Flex Consumption Resolver |
 
 ARM registers a provider automatically on first use **only when the deploying identity holds the subscription-scoped `.../register/action` permission** (included in Contributor/Owner *at subscription scope*). A resource-group-scoped pipeline identity cannot register providers, so on a fresh subscription have an administrator pre-register once:
 
@@ -87,6 +95,11 @@ Everything else the CLI does is covered by resource-group Contributor:
 
 Subscription-scope permissions are **not** required, provided the resource providers are pre-registered (previous section).
 
+Private mode additionally needs rights outside the resource group: joining your subnets
+(`Microsoft.Network/virtualNetworks/subnets/join/action`, for example Network Contributor on
+the VNet) and, with `--private-dns existing`, Private DNS Zone Contributor on the hub DNS
+resource group. See [Private networking › Permissions](private-networking.md#permissions-for-the-deploying-identity).
+
 ## Operator and developer access (after deployment)
 
 | Who | Needs | Why |
@@ -105,4 +118,4 @@ Subscription-scope permissions are **not** required, provided the resource provi
 | Region consistency | Apps must live in the same region as their plans; the CLI pins existing resources to their current region automatically |
 | Plan-type immutability | ElasticPremium (Windows) ↔ FlexConsumption (Linux) cannot be converted in place — delete the resolver Function App *and* the core plan to switch |
 | Azure SQL DNS cooldown | A deleted SQL server's name is held globally for 24–72 h; use `--sql-server-name` to redeploy sooner |
-| Service Bus tier | Standard minimum (topics). Upgrade to Premium for predictable throughput/isolation if required — the topology is tier-agnostic |
+| Service Bus tier | Standard minimum (topics). Premium for private networking (private endpoints are Premium-only) or predictable throughput — the topology is tier-agnostic. Azure cannot convert Standard to Premium in place; `nb` keeps an existing Premium namespace Premium |

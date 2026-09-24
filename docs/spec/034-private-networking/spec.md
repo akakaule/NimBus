@@ -1,7 +1,10 @@
 # Spec 034 — Private networking deployment mode (VNet-only NimBus)
 
-Status: Draft for review (2026-09-24). Phase 0 (§5.6) implemented in `fd2a578a`; Phases 1–4 not
-started. Topology visual: `topology.html` in this folder.
+Status: Phase 0 (§5.6) implemented in `fd2a578a`. Phase 1 implemented (2026-09-25) per
+`docs/plan/2026-09-24-private-networking-phase1-plan.md`, verified by unit tests and Bicep
+compilation; not yet verified against a live private deployment (§8). Phases 2–4 not started.
+User guide: `docs/private-networking.md`; decision: ADR-016. Topology visual: `topology.html`
+in this folder.
 Baseline: master `c9d1a723`.
 Scope: `deploy/bicep`, the `nb` CLI (`infra apply`, `setup`, `topology apply`, `deploy apps`), the
 two deploy pipelines, two small WebApp changes, docs. No change to the transport, the storage
@@ -262,7 +265,7 @@ capacity options are:
 | `--allow-public-access` | flag | Off. Selects `private-transition` (§5.13, §6) |
 | `--skip-transition` | flag | Off. Allows a direct public → private switch, accepting downtime (§5.13) |
 | `--dns-wait` | minutes | 10. Retry window of the pre-flight check (§5.7) |
-| `--service-bus-namespace-name` | name | `sb-{solution}-{env}`. Also on `topology apply`, `deploy apps` and `setup` (§6, option A) |
+| `--service-bus-namespace-name` | name | `sb-{solution}-{env}`. Also on `topology apply` (which otherwise follows the recorded name) and `setup` (§6, option A). Not on `deploy apps`, which never addresses the namespace |
 
 Validation runs before any side effect, in the style of `PlanSelection`:
 

@@ -11,6 +11,11 @@ How to stand up the NimBus platform (Service Bus, message store, resolver Functi
 | [Azure DevOps](#path-3-azure-devops) | Enterprises on Azure DevOps | The included `pipelines/azure-pipelines-deploy.yml` |
 | [Raw Bicep](#path-4-raw-bicep-self-service) | Platform teams with their own IaC tooling | `az deployment group create` + the sample `.bicepparam` files |
 
+Every path can deploy NimBus **inside your virtual network** (private endpoints, no public
+access, Service Bus Premium) with `--network-mode private` or the equivalent pipeline
+settings. It needs your subnets, a DNS decision and a runner inside the network: see
+[Private networking](private-networking.md).
+
 ## What a deployment consists of
 
 Every path ultimately performs the same three layers, in order:
@@ -125,7 +130,7 @@ Environment-level variables override repository-level ones, so dev and prod can 
 
 ### 2.4 Run it
 
-**Actions → Deploy NimBus → Run workflow** with your solution id, environment, and resource group. Optional inputs: `resolver-plan` (ElasticPremium | FlexConsumption), `management-plan-sku` (e.g. B1, S1, P1v3), and `location` — leave empty for the defaults and existing-plan pinning.
+**Actions → Deploy NimBus → Run workflow** with your solution id, environment, and resource group. Optional inputs: `resolver-plan` (ElasticPremium | FlexConsumption), `management-plan-sku` (e.g. B1, S1, P1v3), and `location` — leave empty for the defaults and existing-plan pinning. For a private deployment, set `runs-on` to a runner inside the network and the `NB_*` network variables on the GitHub environment ([Private networking › Pipelines](private-networking.md#pipelines)).
 
 ## Path 3: Azure DevOps
 
@@ -133,7 +138,7 @@ The repository ships [pipelines/azure-pipelines-deploy.yml](../pipelines/azure-p
 
 1. **Create a service connection** — Project settings → Service connections → New service connection → **Azure Resource Manager** → *App registration (automatic)* with credential **Workload identity federation** (the recommended, secret-free default; the built-in `AzureCLI@2` task works with it unchanged). Scope it to the subscription or directly to the target resource group, then grant the generated identity the RBAC from [Prerequisites](#prerequisites-all-paths). The automatic flow requires sufficient permissions in Entra; orgs that block app registrations can use the *Managed identity* option instead. (The `az devops` CLI cannot create workload-identity connections — use the portal.)
 2. **Import the pipeline** — Pipelines → New pipeline → select your repo → Existing Azure Pipelines YAML file → `pipelines/azure-pipelines-deploy.yml`.
-3. **Run it** with your solution id, environment, resource group, and the service connection name. The same optional `resolverPlan` / `managementPlanSku` / `location` parameters are available.
+3. **Run it** with your solution id, environment, resource group, and the service connection name. The same optional `resolverPlan` / `managementPlanSku` / `location` parameters are available. For a private deployment, set `agentPool` to an agent pool inside the network and fill in the network parameters ([Private networking › Pipelines](private-networking.md#pipelines)).
 
 ## Path 4: Raw Bicep (self-service)
 
@@ -238,4 +243,5 @@ Both must run from a repository clone (`nb deploy apps` publishes the resolver a
 | Resolver zip deploy reports failure on Flex Consumption | Update the Azure CLI (≥ 2.70 recommended). Do not stop the app before deploying — the CLI health-checks the running host after publishing. |
 | Role assignment errors during Bicep deployment | The deploying identity lacks `Microsoft.Authorization/roleAssignments/write`, or an ABAC condition on its grant doesn't list the role being assigned (Reader is the most recent addition). See [Prerequisites](#prerequisites-all-paths). |
 | `RoleAssignmentExists` from the WebApp role assignments | The identity already holds that role from a grant made outside the template, for example a manual Reader grant on Application Insights. Delete the manual assignment and re-run; the template then owns it. |
+| Private-mode errors: Standard namespace, subnet delegation, pre-flight DNS check, recorded network mode | See [Private networking › Troubleshooting](private-networking.md#troubleshooting). |
 | The event logs endpoint returns no entries | The WebApp queries Application Insights with its managed identity. Check that `AppInsights:ApplicationId` is set and that the identity has Reader on the component. See [Authentication](authentication.md#application-insights-log-queries). |

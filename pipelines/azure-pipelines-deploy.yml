@@ -33,9 +33,66 @@ parameters:
     displayName: "Azure region for new resources (empty = westeurope; existing resources keep their region)"
     type: string
     default: ""
+  # Private networking (docs/private-networking.md). All optional: nb records the setup on
+  # the resource group, so later runs need only the per-run switches.
+  - name: agentPool
+    displayName: "Agent pool (empty = Microsoft-hosted ubuntu-latest). Private deployments need an agent inside the network"
+    type: string
+    default: ""
+  - name: networkMode
+    displayName: "Network mode: public | private (empty = the recorded mode, else public)"
+    type: string
+    default: ""
+  - name: allowPublicAccess
+    displayName: "Private mode only: pass 1 of moving an existing deployment (public access kept on)"
+    type: boolean
+    default: false
+  - name: skipTransition
+    displayName: "Private mode only: switch an existing public deployment straight to private, accepting downtime"
+    type: boolean
+    default: false
+  - name: privateEndpointSubnetId
+    displayName: "Subnet id for the private endpoints"
+    type: string
+    default: ""
+  - name: resolverSubnetId
+    displayName: "Subnet id for the Resolver's VNet integration"
+    type: string
+    default: ""
+  - name: webAppSubnetId
+    displayName: "Subnet id for the WebApp's VNet integration"
+    type: string
+    default: ""
+  - name: privateDns
+    displayName: "Private DNS: create | existing | external"
+    type: string
+    default: ""
+  - name: privateDnsZoneScope
+    displayName: "With privateDns existing: resource group id holding the privatelink zones"
+    type: string
+    default: ""
+  - name: monitorPrivateLink
+    displayName: "Monitoring in private mode: none"
+    type: string
+    default: ""
+  - name: serviceBusCapacity
+    displayName: "Service Bus Premium messaging units: 1, 2, 4, 8, 16 (empty = existing, else 1)"
+    type: string
+    default: ""
+  - name: serviceBusNamespaceName
+    displayName: "Service Bus namespace name override (empty = sb-{solution}-{environment} or the recorded one)"
+    type: string
+    default: ""
+  - name: dnsWait
+    displayName: "Minutes to wait for the private endpoints to resolve (empty = 10)"
+    type: string
+    default: ""
 
 pool:
-  vmImage: ubuntu-latest
+  ${{ if eq(parameters.agentPool, '') }}:
+    vmImage: ubuntu-latest
+  ${{ else }}:
+    name: ${{ parameters.agentPool }}
 
 steps:
   - task: UseDotNet@2
@@ -60,12 +117,36 @@ steps:
       NB_RESOLVER_MAX_INSTANCES: ${{ parameters.resolverMaxInstances }}
       NB_MANAGEMENT_PLAN_SKU: ${{ parameters.managementPlanSku }}
       NB_LOCATION: ${{ parameters.location }}
+      NB_NETWORK_MODE: ${{ parameters.networkMode }}
+      NB_ALLOW_PUBLIC_ACCESS: ${{ parameters.allowPublicAccess }}
+      NB_SKIP_TRANSITION: ${{ parameters.skipTransition }}
+      NB_PRIVATE_ENDPOINT_SUBNET_ID: ${{ parameters.privateEndpointSubnetId }}
+      NB_RESOLVER_SUBNET_ID: ${{ parameters.resolverSubnetId }}
+      NB_WEBAPP_SUBNET_ID: ${{ parameters.webAppSubnetId }}
+      NB_PRIVATE_DNS: ${{ parameters.privateDns }}
+      NB_PRIVATE_DNS_ZONE_SCOPE: ${{ parameters.privateDnsZoneScope }}
+      NB_MONITOR_PRIVATE_LINK: ${{ parameters.monitorPrivateLink }}
+      NB_SERVICE_BUS_CAPACITY: ${{ parameters.serviceBusCapacity }}
+      NB_SERVICE_BUS_NAMESPACE_NAME: ${{ parameters.serviceBusNamespaceName }}
+      NB_DNS_WAIT: ${{ parameters.dnsWait }}
     inputs:
       azureSubscription: ${{ parameters.azureServiceConnection }}
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
         EXTRA_ARGS=()
+        if [ -n "$NB_NETWORK_MODE" ]; then EXTRA_ARGS+=(--network-mode "$NB_NETWORK_MODE"); fi
+        if [ "$NB_ALLOW_PUBLIC_ACCESS" = "True" ]; then EXTRA_ARGS+=(--allow-public-access); fi
+        if [ "$NB_SKIP_TRANSITION" = "True" ]; then EXTRA_ARGS+=(--skip-transition); fi
+        if [ -n "$NB_PRIVATE_ENDPOINT_SUBNET_ID" ]; then EXTRA_ARGS+=(--private-endpoint-subnet-id "$NB_PRIVATE_ENDPOINT_SUBNET_ID"); fi
+        if [ -n "$NB_RESOLVER_SUBNET_ID" ]; then EXTRA_ARGS+=(--resolver-subnet-id "$NB_RESOLVER_SUBNET_ID"); fi
+        if [ -n "$NB_WEBAPP_SUBNET_ID" ]; then EXTRA_ARGS+=(--webapp-subnet-id "$NB_WEBAPP_SUBNET_ID"); fi
+        if [ -n "$NB_PRIVATE_DNS" ]; then EXTRA_ARGS+=(--private-dns "$NB_PRIVATE_DNS"); fi
+        if [ -n "$NB_PRIVATE_DNS_ZONE_SCOPE" ]; then EXTRA_ARGS+=(--private-dns-zone-scope "$NB_PRIVATE_DNS_ZONE_SCOPE"); fi
+        if [ -n "$NB_MONITOR_PRIVATE_LINK" ]; then EXTRA_ARGS+=(--monitor-private-link "$NB_MONITOR_PRIVATE_LINK"); fi
+        if [ -n "$NB_SERVICE_BUS_CAPACITY" ]; then EXTRA_ARGS+=(--service-bus-capacity "$NB_SERVICE_BUS_CAPACITY"); fi
+        if [ -n "$NB_SERVICE_BUS_NAMESPACE_NAME" ]; then EXTRA_ARGS+=(--service-bus-namespace-name "$NB_SERVICE_BUS_NAMESPACE_NAME"); fi
+        if [ -n "$NB_DNS_WAIT" ]; then EXTRA_ARGS+=(--dns-wait "$NB_DNS_WAIT"); fi
         if [ -n "$NB_RESOLVER_PLAN" ]; then EXTRA_ARGS+=(--resolver-plan "$NB_RESOLVER_PLAN"); fi
         if [ -n "$NB_RESOLVER_MAX_SESSIONS" ]; then EXTRA_ARGS+=(--resolver-max-sessions "$NB_RESOLVER_MAX_SESSIONS"); fi
         if [ -n "$NB_RESOLVER_MAX_INSTANCES" ]; then EXTRA_ARGS+=(--resolver-max-instances "$NB_RESOLVER_MAX_INSTANCES"); fi

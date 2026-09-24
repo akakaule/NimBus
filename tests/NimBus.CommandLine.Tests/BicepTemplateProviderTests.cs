@@ -100,6 +100,31 @@ public class BicepTemplateProviderTests
     }
 
     /// <summary>
+    /// The Application Insights query API stopped accepting API keys on 2026-03-31. The WebApp
+    /// queries with its managed identity, which needs Reader on the component (the role
+    /// Microsoft documents for Entra-authenticated queries). The Resolver never queries. The
+    /// deprecated apiKey parameter must stay optional, because the CLI no longer passes it.
+    /// </summary>
+    [Fact]
+    public void WebApp_identity_queries_Application_Insights_with_Reader_instead_of_an_api_key()
+    {
+        var context = new CommandContext(null);
+        var webApp = File.ReadAllText(context.WebAppBicepPath);
+        var core = File.ReadAllText(context.CoreBicepPath);
+        var roleAssignments = File.ReadAllText(Path.Combine(
+            Path.GetDirectoryName(context.WebAppBicepPath)!,
+            "templates",
+            "roleAssignments.bicep"));
+
+        Assert.Contains("var readerRoleId = 'acdd72a7-3385-48ef-bd42-f606fba81ae7'", roleAssignments, StringComparison.Ordinal);
+        Assert.Contains("scope: appInsightsComponent", roleAssignments, StringComparison.Ordinal);
+        Assert.Contains("grantAppInsightsQueryAccess: ", webApp, StringComparison.Ordinal);
+        Assert.DoesNotContain("grantAppInsightsQueryAccess", core, StringComparison.Ordinal);
+        Assert.DoesNotContain("AppInsights:ApiKey", webApp, StringComparison.Ordinal);
+        Assert.Contains("param apiKey string = ''", webApp, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The Resolver's app settings are template-owned and replaced on every deploy, so the one
     /// tunable consumer bound (session concurrency) is expressed as a host override in the core
     /// template. The fixed bounds (prefetch, session idle timeout, dynamic concurrency) ship in

@@ -52,6 +52,8 @@ using Azure.Messaging.ServiceBus.Administration;
 using NimBus.ServiceBus.HealthChecks;
 using NimBus.MessageStore.HealthChecks;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Azure.Core;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -575,20 +577,21 @@ namespace NimBus.WebApp
             // Typed HttpClient via IHttpClientFactory — pools the underlying
             // SocketsHttpHandler across calls, hooks into AddHttpClientInstrumentation
             // for OpenTelemetry, and leaves room for a future Polly retry policy.
+            // The query API has accepted only Microsoft Entra tokens since API keys were
+            // retired on 2026-03-31. DefaultAzureCredential resolves to the site's managed
+            // identity when deployed and to the developer's credential locally; a leftover
+            // AppInsights:ApiKey setting is ignored.
+            services.TryAddSingleton<TokenCredential>(_ => new DefaultAzureCredential());
             services.AddHttpClient<IApplicationInsightsService, ApplicationInsightsService>((sp, http) =>
             {
                 var cfg = sp.GetRequiredService<IConfiguration>();
                 var appId = cfg.GetValue<string>("AppInsights:ApplicationId");
-                var apiKey = cfg.GetValue<string>("AppInsights:ApiKey");
                 if (!string.IsNullOrWhiteSpace(appId))
                 {
                     http.BaseAddress = new Uri($"https://api.applicationinsights.io/v1/apps/{appId}/");
                 }
-                if (!string.IsNullOrWhiteSpace(apiKey))
-                {
-                    http.DefaultRequestHeaders.Add("x-api-key", apiKey);
-                }
-            });
+            })
+            .AddHttpMessageHandler(sp => new ApplicationInsightsAuthenticationHandler(sp.GetRequiredService<TokenCredential>()));
 
             // Telemetry is optional and always has been: the app runs locally and in
             // any environment that simply doesn't configure it. Application Insights

@@ -55,6 +55,7 @@ For governance review — the Bicep grants the two system-assigned managed ident
 | Cosmos DB Built-in Data Contributor *(Cosmos data-plane `sqlRoleAssignments`)* | `00000000-0000-0000-0000-000000000002` | Cosmos account | Resolver + WebApp identities | Cosmos provider |
 | Cosmos DB Operator *(Azure control plane; account keys remain inaccessible)* | `230815da-be43-4aae-9cb4-875f7bd000aa` | `MessageDatabase` | WebApp identity | Cosmos provider; required by Admin storage cleanup |
 | Storage Blob Data Owner | `b7e6dc6d-f1e8-4753-8033-0f276bb0955b` | Functions storage account | Resolver identity | Flex Consumption plan (identity-based host storage + deployment package) |
+| Reader | `acdd72a7-3385-48ef-bd42-f606fba81ae7` | Application Insights component | WebApp identity | When `appInsightsAppId` is set (always through `nb`); the event-details log view queries Application Insights with Microsoft Entra ([details](authentication.md#application-insights-log-queries)) |
 
 No secrets are distributed to the apps on the Cosmos path — everything is managed identity. The provisioned-SQL path passes a SQL connection string as app settings instead.
 
@@ -67,7 +68,7 @@ The identity running `nb infra apply` / the pipelines needs, **on the target res
 
 Why Contributor alone is not enough: the table above is written as `Microsoft.Authorization/roleAssignments`, and Contributor's `NotActions` explicitly exclude `Microsoft.Authorization/*/Write`. The Cosmos entries are the exception — they are `Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments` resources and **are** covered by Contributor.
 
-Hardening the RBAC Administrator grant with an [ABAC condition](https://learn.microsoft.com/azure/role-based-access-control/delegate-role-assignments-overview) restricting assignable roles to the three IDs the deployment needs:
+Hardening the RBAC Administrator grant with an [ABAC condition](https://learn.microsoft.com/azure/role-based-access-control/delegate-role-assignments-overview) restricting assignable roles to the four IDs the deployment needs. A condition written before the WebApp's Reader grant lists only the first three; add Reader, or the WebApp deployment fails when it assigns Reader:
 
 ```bash
 az role assignment create \
@@ -75,7 +76,7 @@ az role assignment create \
   --assignee-object-id <SP_OBJECT_ID> --assignee-principal-type ServicePrincipal \
   --scope /subscriptions/<SUB_ID>/resourceGroups/<RG> \
   --condition-version 2.0 \
-  --condition "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {090c5cfd-751d-490a-894a-3ce6f1109419, b7e6dc6d-f1e8-4753-8033-0f276bb0955b, 230815da-be43-4aae-9cb4-875f7bd000aa}))"
+  --condition "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {090c5cfd-751d-490a-894a-3ce6f1109419, b7e6dc6d-f1e8-4753-8033-0f276bb0955b, 230815da-be43-4aae-9cb4-875f7bd000aa, acdd72a7-3385-48ef-bd42-f606fba81ae7}))"
 ```
 
 Everything else the CLI does is covered by resource-group Contributor:
@@ -83,7 +84,6 @@ Everything else the CLI does is covered by resource-group Contributor:
 - `az deployment group create` for both Bicep templates
 - `nb topology apply` reads the Service Bus root connection string (`listKeys`) to create topics/subscriptions/rules
 - `nb deploy apps` zip-deploys the Function App and Web App
-- App Insights API key management (`az monitor app-insights api-key create/delete`)
 
 Subscription-scope permissions are **not** required, provided the resource providers are pre-registered (previous section).
 

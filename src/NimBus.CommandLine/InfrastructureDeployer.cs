@@ -73,7 +73,9 @@ internal sealed class InfrastructureDeployer
         CliOutput.WriteLine("Preparing web app infrastructure inputs...");
         await _az.EnsureExtensionAsync("application-insights", cancellationToken).ConfigureAwait(false);
 
-        var appInsightsApiKey = await EnsureAppInsightsApiKeyAsync(options.ResourceGroupName, names.AppInsightsName, cancellationToken).ConfigureAwait(false);
+        // No Application Insights API key: the query API stopped accepting them on 2026-03-31.
+        // The WebApp queries with its managed identity, which deploy.webapp.bicep grants Reader
+        // on the component.
         var cosmosAccountEndpoint = options.StorageProvider == StorageProviderChoice.Cosmos
             ? await GetCosmosAccountEndpointAsync(options.ResourceGroupName, names.CosmosAccountName, cancellationToken).ConfigureAwait(false)
             : string.Empty;
@@ -107,7 +109,6 @@ internal sealed class InfrastructureDeployer
         await DeployWebAppInfrastructureAsync(
             options,
             names,
-            appInsightsApiKey,
             appInsightsAppId,
             instrumentationKey,
             cosmosAccountEndpoint,
@@ -327,7 +328,6 @@ internal sealed class InfrastructureDeployer
     private async Task DeployWebAppInfrastructureAsync(
         InfrastructureOptions options,
         DeploymentNames names,
-        string appInsightsApiKey,
         string appInsightsAppId,
         string instrumentationKey,
         string cosmosAccountEndpoint,
@@ -371,7 +371,6 @@ internal sealed class InfrastructureDeployer
         AddPinnedLocation(arguments, existingLocations, names.ManagementAppServicePlanName, "managementAppServicePlanLocation", pinned);
 
         using var command = new AzureDeploymentCommand(arguments);
-        command.AddSecureParameter("apiKey", appInsightsApiKey);
         command.AddSecureParameter("instrumentationKey", instrumentationKey);
         command.AddSecureParameter("sqlConnectionString", sqlConnectionString);
         if (!string.IsNullOrWhiteSpace(options.IdentityAdminEmail))
@@ -384,53 +383,6 @@ internal sealed class InfrastructureDeployer
             _context.DeployDirectory,
             cancellationToken,
             "Web app infrastructure deployment failed.").ConfigureAwait(false);
-    }
-
-    private async Task<string> EnsureAppInsightsApiKeyAsync(string resourceGroupName, string appInsightsName, CancellationToken cancellationToken)
-    {
-        var existingKey = await _az.TryRunAsync(
-            new[]
-            {
-                "monitor", "app-insights", "api-key", "show",
-                "--app", appInsightsName,
-                "--resource-group", resourceGroupName,
-                "--api-key", "management-app",
-            },
-            cancellationToken).ConfigureAwait(false);
-
-        if (existingKey.Succeeded && !string.IsNullOrWhiteSpace(existingKey.StandardOutput) && !existingKey.StandardOutput.TrimStart().StartsWith("[]", StringComparison.Ordinal))
-        {
-            await _az.EnsureSuccessAsync(
-                new[]
-                {
-                    "monitor", "app-insights", "api-key", "delete",
-                    "--app", appInsightsName,
-                    "--resource-group", resourceGroupName,
-                    "--api-key", "management-app",
-
-                    // Without --yes the command prompts for confirmation, which fails with
-                    // EOFError wherever stdin is not a terminal (CI/CD, background shells).
-                    // Only re-deployments reach this branch, so a fresh deploy never sees it.
-                    "--yes",
-                },
-                cancellationToken,
-                $"Failed to delete the existing Application Insights API key for '{appInsightsName}'.").ConfigureAwait(false);
-        }
-
-        return await _az.CaptureValueAsync(
-            new[]
-            {
-                "monitor", "app-insights", "api-key", "create",
-                "--app", appInsightsName,
-                "--resource-group", resourceGroupName,
-                "--api-key", "management-app",
-                "--read-properties", "ReadTelemetry",
-                "--write-properties", "WriteAnnotations",
-                "--query", "apiKey",
-                "--output", "tsv",
-            },
-            cancellationToken,
-            $"Failed to create the Application Insights API key for '{appInsightsName}'.").ConfigureAwait(false);
     }
 
     private Task<string> GetCosmosAccountEndpointAsync(string resourceGroupName, string cosmosAccountName, CancellationToken cancellationToken) =>

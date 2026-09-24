@@ -14,8 +14,8 @@ param environment = 'dev'
 // Free-form version string surfaced in the WebApp UI/settings.
 param webAppVersion = 'manual'
 
-// Application Insights values (az monitor app-insights api-key create / component show).
-param apiKey = '<app-insights-api-key>'
+// Application Insights values (az monitor app-insights component show). No API key:
+// the WebApp queries Application Insights with its managed identity.
 param appInsightsAppId = '<app-insights-app-id>'
 param instrumentationKey = '<app-insights-instrumentation-key>'
 

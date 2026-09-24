@@ -161,7 +161,9 @@ public sealed class DeploymentSecretTests
         var bicep = File.ReadAllText(Path.Combine(repositoryRoot, "deploy", "bicep", "deploy.webapp.bicep"))
             .ReplaceLineEndings("\n");
 
-        Assert.Contains("@secure()\nparam apiKey string", bicep, StringComparison.Ordinal);
+        // The deprecated apiKey keeps its deprecation note and lint suppression between the
+        // decorator and the declaration. It stays secure for callers that still pass a key.
+        Assert.Matches(@"@secure\(\)\n(?:[@#].*\n)*param apiKey string", bicep);
         Assert.Contains("@secure()\nparam instrumentationKey string", bicep, StringComparison.Ordinal);
         Assert.Contains("@secure()\nparam sqlConnectionString string", bicep, StringComparison.Ordinal);
         Assert.Contains("@secure()\nparam identityAdminPassword string", bicep, StringComparison.Ordinal);

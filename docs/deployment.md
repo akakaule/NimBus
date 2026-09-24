@@ -31,10 +31,10 @@ Every path ultimately performs the same three layers, in order:
 - Bicep CLI ≥ 0.35.1 **required for every deployment path** because the templates use secure outputs. Check with `az bicep version` and update with `az bicep upgrade` ([secure-output requirement](https://learn.microsoft.com/azure/azure-resource-manager/bicep/outputs#secure-outputs))
 - .NET 10 SDK wherever `nb` runs. Node.js 22 is needed **only** for source builds (`nb deploy apps --from-source`); the released artifacts ship the WebApp SPA already built
 
-**RBAC for the deploying identity.** The Bicep creates role assignments (`Microsoft.Authorization/roleAssignments`: Azure Service Bus Data Owner and, on Flex Consumption, Storage Blob Data Owner), and plain **Contributor cannot write role assignments**. On the target resource group, grant the pipeline/service principal either:
+**RBAC for the deploying identity.** The Bicep creates role assignments (`Microsoft.Authorization/roleAssignments`: Azure Service Bus Data Owner, Reader on Application Insights for the WebApp and, on Flex Consumption, Storage Blob Data Owner), and plain **Contributor cannot write role assignments**. On the target resource group, grant the pipeline/service principal either:
 
 - **Owner**, or
-- least-privilege: **Contributor + Role Based Access Control Administrator** (role id `f58310d9-a9f6-439a-9e8d-f62e7b41a168`), ideally with an [ABAC condition](https://learn.microsoft.com/azure/role-based-access-control/delegate-role-assignments-overview) restricting assignable roles to Azure Service Bus Data Owner (`090c5cfd-751d-490a-894a-3ce6f1109419`), Storage Blob Data Owner (`b7e6dc6d-f1e8-4753-8033-0f276bb0955b`), and Cosmos DB Operator (`230815da-be43-4aae-9cb4-875f7bd000aa`).
+- least-privilege: **Contributor + Role Based Access Control Administrator** (role id `f58310d9-a9f6-439a-9e8d-f62e7b41a168`), ideally with an [ABAC condition](https://learn.microsoft.com/azure/role-based-access-control/delegate-role-assignments-overview) restricting assignable roles to Azure Service Bus Data Owner (`090c5cfd-751d-490a-894a-3ce6f1109419`), Storage Blob Data Owner (`b7e6dc6d-f1e8-4753-8033-0f276bb0955b`), Cosmos DB Operator (`230815da-be43-4aae-9cb4-875f7bd000aa`), and Reader (`acdd72a7-3385-48ef-bd42-f606fba81ae7`). A condition written before the WebApp's Reader grant lacks Reader; add it, or the WebApp deployment fails when it assigns Reader.
 
 Cosmos data-plane role assignments (`Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments`) live under the DocumentDB provider and are covered by Contributor.
 
@@ -164,13 +164,6 @@ Parameter notes (see the comments in the sample files):
 ```bash
 az extension add --name application-insights --upgrade
 
-# App Insights API key (recreate if it already exists — keys are shown once)
-APIKEY=$(az monitor app-insights api-key create \
-  --app ai-nimbus-dev-global-tracelog --resource-group rg-nimbus-dev \
-  --api-key management-app \
-  --read-properties ReadTelemetry --write-properties WriteAnnotations \
-  --query apiKey -o tsv)
-
 APP_ID=$(az monitor app-insights component show \
   --app ai-nimbus-dev-global-tracelog --resource-group rg-nimbus-dev --query appId -o tsv)
 IKEY=$(az monitor app-insights component show \
@@ -189,7 +182,6 @@ cat > "$SECURE_PARAMETERS" <<EOF
   "\$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "apiKey": { "value": "$APIKEY" },
     "instrumentationKey": { "value": "$IKEY" }
   }
 }
@@ -209,6 +201,8 @@ trap - EXIT
 The Service Bus namespace follows the convention `sb-{solutionId}-{environment}.servicebus.windows.net`.
 
 For Cosmos deployments, the template also configures `CosmosAccountResourceId` and grants the WebApp's managed identity Cosmos DB Operator on `MessageDatabase`. The Admin **Storage** tab uses that ARM access to list and delete containers outside the current platform catalog; Cosmos data-plane Entra authentication cannot perform container deletion.
+
+The template also grants the WebApp's managed identity Reader on the Application Insights component (`ai-{solutionId}-{environment}-global-tracelog`), because the event-details log view queries Application Insights with that identity ([details](authentication.md#application-insights-log-queries)). No API key is involved: the `apiKey` parameter is deprecated and ignored, so leave it out.
 
 **Re-running against an existing WebApp?** Pass `webAppExists=true`. The app-settings deployment is a full replace, and several settings are configured out of band — `webAppExists=true` makes the template read the site's current settings and carry those keys forward instead of wiping them (which, for the auth settings, takes authentication down). Four prefixes are preserved:
 
@@ -242,4 +236,6 @@ Both must run from a repository clone (`nb deploy apps` publishes the resolver a
 | SQL server name conflict after deleting an environment | Azure SQL server DNS names are held globally for 24–72 h after deletion. Use `--sql-server-name` (or the `sqlServerName` param) to pick a fresh name. |
 | Flex Consumption zip deploy fails with `SSLEOFError` / "Certificate verification failed … behind a proxy" against `<app>.scm.azurewebsites.net` | The local Azure CLI is < 2.60.0 and pushed to the legacy Kudu zipdeploy endpoint — the proxy/certificate hint is a red herring. Run `az upgrade` (or `winget upgrade Microsoft.AzureCLI`) and retry. `nb` fails fast on this before publishing. |
 | Resolver zip deploy reports failure on Flex Consumption | Update the Azure CLI (≥ 2.70 recommended). Do not stop the app before deploying — the CLI health-checks the running host after publishing. |
-| Role assignment errors during Bicep deployment | The deploying identity lacks `Microsoft.Authorization/roleAssignments/write`. See [Prerequisites](#prerequisites-all-paths). |
+| Role assignment errors during Bicep deployment | The deploying identity lacks `Microsoft.Authorization/roleAssignments/write`, or an ABAC condition on its grant doesn't list the role being assigned (Reader is the most recent addition). See [Prerequisites](#prerequisites-all-paths). |
+| `RoleAssignmentExists` from the WebApp role assignments | The identity already holds that role from a grant made outside the template, for example a manual Reader grant on Application Insights. Delete the manual assignment and re-run; the template then owns it. |
+| Event details show no logs | The WebApp queries Application Insights with its managed identity. Check that `AppInsights:ApplicationId` is set and that the identity has Reader on the component. See [Authentication](authentication.md#application-insights-log-queries). |

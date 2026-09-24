@@ -6,21 +6,25 @@ using Xunit;
 namespace NimBus.CommandLine.Tests;
 
 /// <summary>
-/// Fake Azure CLI that records every deployment the <see cref="InfrastructureDeployer"/> issues.
-/// list/show calls return "[]", so no existing plan or resource is ever detected and an explicit
+/// Fake Azure CLI that records every command and every deployment the <see cref="InfrastructureDeployer"/>
+/// issues. list/show calls return "[]", so no existing plan or resource is ever detected and an explicit
 /// plan choice resolves as requested; value captures answer the App Insights and Cosmos lookups
 /// with fixed markers.
 /// </summary>
 internal sealed class RecordingAzureCliRunner : IAzureCliRunner
 {
-    internal const string ApiKey = "app-insights-api-key-marker";
     internal const string InstrumentationKey = "instrumentation-key-marker";
     internal const string CosmosEndpoint = "https://cosmos.example.test:443/";
 
+    public List<IReadOnlyList<string>> Commands { get; } = new();
+
     public List<RecordedDeployment> Deployments { get; } = new();
 
-    public Task<JsonDocument> CaptureJsonAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string failureMessage) =>
-        Task.FromResult(JsonDocument.Parse("{}"));
+    public Task<JsonDocument> CaptureJsonAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string failureMessage)
+    {
+        Commands.Add(arguments.ToArray());
+        return Task.FromResult(JsonDocument.Parse("{}"));
+    }
 
     public Task EnsureLoggedInAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -29,10 +33,15 @@ internal sealed class RecordingAzureCliRunner : IAzureCliRunner
     public Task EnsureSuccessAsync(
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken,
-        string failureMessage) => Task.CompletedTask;
+        string failureMessage)
+    {
+        Commands.Add(arguments.ToArray());
+        return Task.CompletedTask;
+    }
 
     public Task<ProcessResult> TryRunAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
+        Commands.Add(arguments.ToArray());
         var output = arguments.Contains("list", StringComparer.Ordinal) || arguments.Contains("show", StringComparer.Ordinal)
             ? "[]"
             : string.Empty;
@@ -44,11 +53,7 @@ internal sealed class RecordingAzureCliRunner : IAzureCliRunner
         CancellationToken cancellationToken,
         string failureMessage)
     {
-        if (arguments.Contains("api-key", StringComparer.Ordinal) && arguments.Contains("create", StringComparer.Ordinal))
-        {
-            return Task.FromResult(ApiKey);
-        }
-
+        Commands.Add(arguments.ToArray());
         var queryIndex = Array.IndexOf(arguments.ToArray(), "--query");
         var query = queryIndex >= 0 ? arguments[queryIndex + 1] : string.Empty;
         return Task.FromResult(query switch
@@ -66,6 +71,8 @@ internal sealed class RecordingAzureCliRunner : IAzureCliRunner
         CancellationToken cancellationToken,
         string failureMessage)
     {
+        Commands.Add(arguments.ToArray());
+
         // A deployment with no secure parameters carries no @file reference at all.
         var parameterFileReferences = arguments.Where(argument => argument.StartsWith('@')).ToList();
         Assert.True(parameterFileReferences.Count <= 1, "expected at most one secure parameter file");

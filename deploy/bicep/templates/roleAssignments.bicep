@@ -20,6 +20,11 @@ param grantFuncStorageBlobAccess bool = false
 // containers. Resolver and adapter deployments leave this disabled.
 param grantCosmosControlPlaneAccess bool = false
 
+// The management WebApp's log view queries Application Insights with its managed
+// identity. Resolver and adapter deployments leave this disabled.
+param appInsightsName string = ''
+param grantAppInsightsQueryAccess bool = false
+
 // ----------------------------------------------------------------------------
 // Service Bus Data Owner — required regardless of storage provider so the
 // resolver identity can receive and complete messages via managed identity.
@@ -99,6 +104,30 @@ resource funcStorageBlobRoleAssignment 'Microsoft.Authorization/roleAssignments@
   scope: funcStorageAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataOwnerRoleId)
+    principalId: principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Reader on the Application Insights component — only for the management WebApp.
+// The query API (api.applicationinsights.io) stopped accepting API keys on
+// 2026-03-31. A Microsoft Entra query needs Microsoft.Insights/components/query/read,
+// and Reader is the role Microsoft documents for it. Scoped to the component, it
+// reads that one resource and its telemetry, nothing else.
+// ----------------------------------------------------------------------------
+
+var readerRoleId = 'acdd72a7-3385-48ef-bd42-f606fba81ae7'
+
+resource appInsightsComponent 'Microsoft.Insights/components@2020-02-02' existing = if (grantAppInsightsQueryAccess) {
+  name: appInsightsName
+}
+
+resource appInsightsReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (grantAppInsightsQueryAccess) {
+  name: guid(appInsightsComponent.id, principalId, readerRoleId)
+  scope: appInsightsComponent
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', readerRoleId)
     principalId: principalId
     principalType: 'ServicePrincipal'
   }

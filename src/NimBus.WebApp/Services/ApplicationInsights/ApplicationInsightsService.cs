@@ -14,8 +14,9 @@ namespace NimBus.WebApp.Services.ApplicationInsights
     public class ApplicationInsightsService : IApplicationInsightsService
     {
         // HttpClient is owned by IHttpClientFactory — the typed-client
-        // registration in Startup.cs sets BaseAddress + x-api-key. Don't
-        // dispose it here; the factory recycles handlers for us.
+        // registration in Startup.cs sets BaseAddress and adds the Entra
+        // bearer-token handler. Don't dispose it here; the factory recycles
+        // handlers for us.
         private readonly HttpClient client;
 
         public ApplicationInsightsService(HttpClient client)

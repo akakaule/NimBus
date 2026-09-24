@@ -40,14 +40,36 @@ public sealed class InfrastructureDeployerSecretTests
             {
                 Assert.DoesNotContain(deployment.Arguments, argument => argument.Contains(sqlPassword, StringComparison.Ordinal));
                 Assert.DoesNotContain(deployment.Arguments, argument => argument.Contains(identityPassword, StringComparison.Ordinal));
-                Assert.DoesNotContain(deployment.Arguments, argument => argument.Contains(RecordingAzureCliRunner.ApiKey, StringComparison.Ordinal));
                 Assert.DoesNotContain(deployment.Arguments, argument => argument.Contains(RecordingAzureCliRunner.InstrumentationKey, StringComparison.Ordinal));
             });
 
         Assert.Equal(sqlPassword, azureCli.Deployments[0].SecureParameters["sqlAdminPassword"]);
-        Assert.Equal(RecordingAzureCliRunner.ApiKey, azureCli.Deployments[1].SecureParameters["apiKey"]);
         Assert.Equal(RecordingAzureCliRunner.InstrumentationKey, azureCli.Deployments[1].SecureParameters["instrumentationKey"]);
         Assert.Contains(sqlPassword, azureCli.Deployments[1].SecureParameters["sqlConnectionString"], StringComparison.Ordinal);
         Assert.Equal(identityPassword, azureCli.Deployments[1].SecureParameters["identityAdminPassword"]);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_LeavesApplicationInsightsApiKeysAlone()
+    {
+        // The Application Insights query API stopped accepting API keys on 2026-03-31. The
+        // WebApp queries with its managed identity, so the CLI neither creates nor deletes keys
+        // and no longer passes the deprecated apiKey template parameter.
+        var azureCli = new RecordingAzureCliRunner();
+        var deployer = new InfrastructureDeployer(new CommandContext(Path.GetTempPath()), azureCli);
+        var options = new InfrastructureOptions(
+            "nimbus",
+            "dev",
+            "rg-nimbus-dev",
+            ResourceNamePostFix: null,
+            Location: null,
+            WebAppVersion: "test");
+
+        await deployer.ApplyAsync(options, CancellationToken.None);
+
+        Assert.DoesNotContain(azureCli.Commands, command => command.Contains("api-key", StringComparer.Ordinal));
+        var webAppDeployment = azureCli.Deployments[1];
+        Assert.False(webAppDeployment.SecureParameters.ContainsKey("apiKey"));
+        Assert.DoesNotContain(webAppDeployment.Arguments, argument => argument.StartsWith("apiKey=", StringComparison.Ordinal));
     }
 }

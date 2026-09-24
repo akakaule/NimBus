@@ -2,8 +2,14 @@
 param solutionId string
 param environment string = 'dev'
 param webAppVersion string
+// Deprecated and ignored; removed in the next major version (docs/versioning.md). The
+// Application Insights query API stopped accepting API keys on 2026-03-31, so the WebApp
+// queries with its managed identity (Reader on the component, granted below). Still
+// accepted, and still secure, so callers that pass a key keep deploying.
 @secure()
-param apiKey string
+@description('Deprecated and ignored. The WebApp queries Application Insights with its managed identity.')
+#disable-next-line no-unused-params
+param apiKey string = ''
 param appInsightsAppId string
 @secure()
 param instrumentationKey string
@@ -62,6 +68,8 @@ var appServicePlanName = 'asp-${toLower(solutionId)}-${toLower(environment)}-man
 var managementWebAppName = 'webapp-${toLower(solutionId)}-${toLower(environment)}-management'
 
 var cosmosAccountName = 'cosmos-${toLower(solutionId)}-${toLower(environment)}'
+
+var appInsightsName = 'ai-${toLower(solutionId)}-${toLower(environment)}-global-tracelog'
 
 var isDevelopmentEnvironment = contains([
   'dev'
@@ -153,7 +161,6 @@ var baseWebAppSettings = concat(coreWebAppSettings, cosmosSetting, identitySetti
 // they were folded into the ordinary settings array, Azure deployment history
 // could retain their literal values even though the top-level params are secure.
 var coreWebAppSecretSettings = {
-  'AppInsights:ApiKey': apiKey
   APPINSIGHTS_INSTRUMENTATIONKEY: instrumentationKey
 }
 
@@ -245,5 +252,8 @@ module webAppRoleAssignments 'templates/roleAssignments.bicep' = {
     principalId: webAppModule.outputs.identity
     storageProvider: hasCosmos ? 'cosmos' : 'sqlserver'
     grantCosmosControlPlaneAccess: hasCosmos
+    // The log view queries Application Insights as the site's managed identity.
+    appInsightsName: appInsightsName
+    grantAppInsightsQueryAccess: !empty(appInsightsAppId)
   }
 }

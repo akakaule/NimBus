@@ -219,6 +219,47 @@ option must be provided`. The fix is to configure one provider — pick
 Identity for SQL-backed deployments without an Entra registration,
 otherwise Entra.
 
+## Application Insights log queries
+
+The **Logs** section of the event details reads traces through the
+Application Insights query API
+(`https://api.applicationinsights.io/v1/apps/{AppInsights:ApplicationId}/query`).
+Microsoft retired API keys for that API on 2026-03-31
+([announcement](https://learn.microsoft.com/answers/questions/2260881/api-keys-for-querying-data-from-azure-monitor-appl)),
+so the WebApp sends a Microsoft Entra bearer token instead. It gets the
+token from `DefaultAzureCredential` for the scope
+`https://api.applicationinsights.io/.default`.
+
+| Where the WebApp runs | Identity | Access it needs |
+|---|---|---|
+| App Service | The site's system-assigned managed identity | **Reader** on the Application Insights component. `deploy.webapp.bicep` grants it whenever `appInsightsAppId` is set, which `nb infra apply` always does |
+| Locally | Your developer credential (Azure CLI, Visual Studio, …) | Reader, or any role with `Microsoft.Insights/components/query/read`, on the component |
+
+Reader is the role Microsoft documents for
+[Entra-authenticated queries](https://learn.microsoft.com/azure/azure-monitor/app/azure-ad-authentication#query-application-insights-by-using-microsoft-entra-authentication).
+Monitoring Reader works too, but it adds permissions the WebApp doesn't need.
+
+- With `AppInsights:ApplicationId` empty (the local default), the WebApp
+  requests no token and the section shows no logs.
+- Locally, if the token request fails with `ManagedIdentityCredential
+  authentication failed`, set `AZURE_TOKEN_CREDENTIALS=dev` so
+  `DefaultAzureCredential` skips managed identity and uses your developer
+  credential.
+- `AppInsights:ApiKey` is no longer read. `nb infra apply` no longer creates
+  or deletes the `management-app` API key. `deploy.webapp.bicep` still accepts
+  its `apiKey` parameter but ignores it; the parameter is deprecated and is
+  removed in the next major version.
+- An existing `management-app` key can't query any more, and `nb infra apply`
+  now leaves it in place. To remove it, run
+  `az monitor app-insights api-key delete --app <component> --resource-group <rg> --api-key management-app`.
+- When a query fails, the WebApp logs a `GetEventDetailsLogsIdAsync` warning
+  and shows no logs. A 403 usually means the role assignment is missing or
+  hasn't propagated yet (allow a few minutes after the deployment). If the
+  component is workspace-based and its Log Analytics workspace uses the
+  *Require workspace permissions* access control mode, Reader on the
+  component isn't enough: also grant the identity read access to the
+  workspace ([access control modes](https://learn.microsoft.com/azure/azure-monitor/logs/manage-access#access-control-mode)).
+
 ## Where things live (source pointers)
 
 | Concern | File |
@@ -232,6 +273,8 @@ otherwise Entra.
 | Sidebar user footer + sign-out | `src/NimBus.WebApp/ClientApp/src/components/sidebar-user-footer.tsx` |
 | Aspire opt-in (`NIMBUS_IDENTITY`) | `src/NimBus.AppHost/Program.cs` |
 | Bicep app-setting wiring | `deploy/bicep/deploy.webapp.bicep` |
+| Application Insights query token | `src/NimBus.WebApp/Services/ApplicationInsights/ApplicationInsightsAuthenticationHandler.cs` |
+| WebApp role assignments (incl. Reader on Application Insights) | `deploy/bicep/templates/roleAssignments.bicep` |
 | CLI flags for the bootstrap admin | `src/NimBus.CommandLine/Program.cs` (search `--identity-admin-`) |
 
 ## See also

@@ -1,5 +1,7 @@
 # Memory
 
+- Agent-guidance correction: use terminating frontend test commands (`test:ci` or `--run`), pair Release builds with Release tests, and remember that `SkipSpaBuild=true` also disables NSwag generation. Keep durable workflow rules in AGENTS.md and verify tool/configuration claims against repository sources.
+
 - Guard PR merges with the exact full head SHA returned by GitHub or git rev-parse; never pad or reconstruct an abbreviated SHA.
 
 - PII redactor tests must register every new event fixture in the test platform catalog; otherwise EventJsonMasker correctly returns its unknown-type fail-closed marker and the test fails while parsing it as JSON.

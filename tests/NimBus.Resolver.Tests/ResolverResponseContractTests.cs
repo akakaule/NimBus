@@ -2,7 +2,7 @@
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using NimBus.Broker.Services;
+using NimBus.Resolver.Services;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using NimBus.MessageStore;

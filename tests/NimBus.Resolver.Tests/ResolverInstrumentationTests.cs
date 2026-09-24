@@ -2,7 +2,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using NimBus.Broker.Services;
+using NimBus.Resolver.Services;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;

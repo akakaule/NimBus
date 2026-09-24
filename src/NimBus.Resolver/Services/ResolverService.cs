@@ -15,7 +15,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CoreHeartbeat = NimBus.Core.Events.Heartbeat;
 
-namespace NimBus.Broker.Services;
+namespace NimBus.Resolver.Services;
 
 public class ResolverService : IMessageHandler
 {

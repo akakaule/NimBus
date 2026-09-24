@@ -2,7 +2,7 @@ using System;
 using System.Net.Http;
 using Azure.Identity;
 using Azure.Messaging.ServiceBus;
-using NimBus.Broker.Services;
+using NimBus.Resolver.Services;
 using NimBus.Core.Messages;
 using NimBus.MessageStore.Abstractions;
 using NimBus.ServiceBus;

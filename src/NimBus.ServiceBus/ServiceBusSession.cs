@@ -13,10 +13,6 @@ public interface IServiceBusSession
 {
     Task CompleteAsync(IServiceBusMessage message, CancellationToken cancellationToken = default);
     Task DeadLetterAsync(IServiceBusMessage message, string reason, string v, CancellationToken cancellationToken = default);
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead.")]
-    Task DeferAsync(IServiceBusMessage message, CancellationToken cancellationToken = default);
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
-    Task<IServiceBusMessage> ReceiveDeferredMessageAsync(long nextSequenceNumber, CancellationToken cancellationToken = default);
     Task SetStateAsync(SessionState sessionState, CancellationToken cancellationToken = default);
     Task<SessionState> GetStateAsync(CancellationToken cancellationToken = default);
     Task SendScheduledMessageAsync(Azure.Messaging.ServiceBus.ServiceBusMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default);
@@ -30,16 +26,12 @@ public class ServiceBusSession : IServiceBusSession
     private readonly ProcessSessionMessageEventArgs _processSessionArgs;
     private readonly ServiceBusClient _serviceBusClient;
     private readonly string _entityPath;
-    private readonly string _sessionId;
-    private ServiceBusSessionReceiver _lazySessionReceiver;
-    private readonly SemaphoreSlim _receiverLock = new SemaphoreSlim(1, 1);
 
     public ServiceBusSession(ServiceBusSessionMessageActions sessionActions, ServiceBusClient serviceBusClient = null, string entityPath = null, string sessionId = null)
     {
         _sessionActions = sessionActions ?? throw new ArgumentNullException(nameof(sessionActions));
         _serviceBusClient = serviceBusClient;
         _entityPath = entityPath;
-        _sessionId = sessionId;
     }
 
     public ServiceBusSession(ServiceBusMessageActions messageActions, ServiceBusSessionMessageActions sessionActions, ServiceBusClient serviceBusClient, string entityPath, string sessionId)
@@ -48,7 +40,6 @@ public class ServiceBusSession : IServiceBusSession
         _sessionActions = sessionActions ?? throw new ArgumentNullException(nameof(sessionActions));
         _serviceBusClient = serviceBusClient;
         _entityPath = entityPath;
-        _sessionId = sessionId;
     }
 
     public ServiceBusSession(ServiceBusSessionReceiver sessionReceiver)
@@ -61,7 +52,6 @@ public class ServiceBusSession : IServiceBusSession
         _processSessionArgs = processSessionArgs ?? throw new ArgumentNullException(nameof(processSessionArgs));
         _serviceBusClient = serviceBusClient;
         _entityPath = entityPath;
-        _sessionId = processSessionArgs.SessionId;
     }
 
     public Task CompleteAsync(IServiceBusMessage message, CancellationToken cancellationToken = default)
@@ -100,26 +90,6 @@ public class ServiceBusSession : IServiceBusSession
 
         throw new InvalidOperationException(
             "Cannot dead-letter message: no ServiceBusMessageActions, ServiceBusSessionReceiver, or ProcessSessionMessageEventArgs available.");
-    }
-
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead.")]
-    public Task DeferAsync(IServiceBusMessage message, CancellationToken cancellationToken = default)
-    {
-        if (_messageActions != null)
-        {
-            return _messageActions.DeferMessageAsync(message.Message, null, cancellationToken);
-        }
-        if (_sessionReceiver != null)
-        {
-            return _sessionReceiver.DeferMessageAsync(message.Message, cancellationToken: cancellationToken);
-        }
-        if (_processSessionArgs != null)
-        {
-            return _processSessionArgs.DeferMessageAsync(message.Message, null, cancellationToken);
-        }
-
-        throw new InvalidOperationException(
-            "Cannot defer message: no ServiceBusMessageActions, ServiceBusSessionReceiver, or ProcessSessionMessageEventArgs available.");
     }
 
     public async Task<SessionState> GetStateAsync(CancellationToken cancellationToken = default)
@@ -175,36 +145,6 @@ public class ServiceBusSession : IServiceBusSession
         }
     }
 
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
-    public async Task<IServiceBusMessage> ReceiveDeferredMessageAsync(long nextSequenceNumber, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            ServiceBusSessionReceiver receiver;
-
-            if (_sessionReceiver != null)
-            {
-                receiver = _sessionReceiver;
-            }
-            else
-            {
-                receiver = await GetOrCreateSessionReceiverAsync(cancellationToken);
-            }
-
-            var deferredMessages = await receiver.ReceiveDeferredMessagesAsync(new long[] { nextSequenceNumber }, cancellationToken);
-            var deferredMessage = deferredMessages.Count > 0 ? deferredMessages[0] : null;
-
-            if (deferredMessage == null)
-                return null;
-
-            return new ServiceBusMessage(deferredMessage);
-        }
-        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessageNotFound)
-        {
-            throw new ServiceBusException(isTransient: true, "Failed to retrieve deferred message. It might be locked by another process.");
-        }
-    }
-
     public async Task SendScheduledMessageAsync(Azure.Messaging.ServiceBus.ServiceBusMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
     {
         if (_serviceBusClient == null || string.IsNullOrEmpty(_entityPath))
@@ -217,36 +157,6 @@ public class ServiceBusSession : IServiceBusSession
         var (topicName, _) = ParseEntityPath();
         await using var sender = _serviceBusClient.CreateSender(topicName);
         await sender.ScheduleMessageAsync(message, scheduledEnqueueTime, cancellationToken);
-    }
-
-    private async Task<ServiceBusSessionReceiver> GetOrCreateSessionReceiverAsync(CancellationToken cancellationToken = default)
-    {
-        if (_lazySessionReceiver != null)
-            return _lazySessionReceiver;
-
-        if (_serviceBusClient == null || string.IsNullOrEmpty(_entityPath) || string.IsNullOrEmpty(_sessionId))
-        {
-            throw new InvalidOperationException(
-                "ReceiveDeferredMessageAsync requires a ServiceBusClient and entityPath to be provided. " +
-                "Inject ServiceBusClient via dependency injection and pass it to the ServiceBusAdapter.");
-        }
-
-        await _receiverLock.WaitAsync(cancellationToken);
-        try
-        {
-            if (_lazySessionReceiver == null)
-            {
-                var (topicName, subscriptionName) = ParseEntityPath();
-                _lazySessionReceiver = subscriptionName != null
-                    ? await _serviceBusClient.AcceptSessionAsync(topicName, subscriptionName, _sessionId, cancellationToken: cancellationToken)
-                    : await _serviceBusClient.AcceptSessionAsync(topicName, _sessionId, cancellationToken: cancellationToken);
-            }
-            return _lazySessionReceiver;
-        }
-        finally
-        {
-            _receiverLock.Release();
-        }
     }
 
     private (string topicName, string subscriptionName) ParseEntityPath()

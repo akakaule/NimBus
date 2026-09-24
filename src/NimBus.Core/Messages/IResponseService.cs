@@ -53,6 +53,10 @@ public interface IResponseService
     /// </summary>
     Task SendDeadLetterResponse(IMessageContext messageContext, string reason, Exception exception, CancellationToken cancellationToken = default);
     Task SendDeferralResponse(IMessageContext messageContext, SessionBlockedException exception, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Sends a ContinuationRequest for a message parked with the legacy Service Bus defer API.
+    /// </summary>
+    [Obsolete("Only the legacy Service Bus defer drain sent ContinuationRequests, and it was removed in v4 (spec 027 §3). Removed in the next major version.")]
     Task SendContinuationRequestToSelf(IMessageContext deferredMessageContext, CancellationToken cancellationToken = default);
 
     /// <summary>

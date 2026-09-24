@@ -5,12 +5,12 @@ using System.Linq;
 namespace NimBus.Core.Messages;
 
 /// <summary>
-/// Default implementation that classifies common .NET exception types as permanent failures.
-/// Extend via <see cref="AddPermanentExceptionType{T}"/> or <see cref="AddPermanentExceptionNamePattern"/>.
+/// Failure disposition classifier that dead-letters common permanent .NET exception types and
+/// retries everything else. Extend via <see cref="AddPermanentExceptionType{T}"/> or
+/// <see cref="AddPermanentExceptionNamePattern"/>, and register it with
+/// <c>ConfigurePermanentFailureClassifier</c> or <c>WithFailureDispositions</c>.
 /// </summary>
-#pragma warning disable CS0618
-public class DefaultPermanentFailureClassifier : IPermanentFailureClassifier
-#pragma warning restore CS0618
+public class DefaultPermanentFailureClassifier : IFailureDispositionClassifier
 {
     private readonly List<Type> _permanentTypes = new()
     {
@@ -27,8 +27,18 @@ public class DefaultPermanentFailureClassifier : IPermanentFailureClassifier
         "Validation",         // ValidationException, FluentValidation, etc.
     };
 
+    /// <inheritdoc />
+    public FailureDisposition Classify(Exception exception, string eventTypeId, string? endpointName)
+        => IsPermanentFailure(exception) ? FailureDisposition.DeadLetter : FailureDisposition.Retry;
+
+    /// <summary>
+    /// Returns true if the exception represents a permanent failure that will never succeed on
+    /// retry (for example deserialization, validation or argument errors).
+    /// </summary>
     public bool IsPermanentFailure(Exception exception)
     {
+        ArgumentNullException.ThrowIfNull(exception);
+
         var exType = exception.GetType();
 
         if (_permanentTypes.Any(t => t.IsAssignableFrom(exType)))

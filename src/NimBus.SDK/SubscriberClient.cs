@@ -35,8 +35,8 @@ public class SubscriberClient : ISubscriberClient
     /// </summary>
     /// <param name="client">The ServiceBusClient to use for sending responses.</param>
     /// <param name="endpoint">The endpoint (topic name) to send responses to.</param>
-    /// <param name="entityPath">Optional entity path (queue name or topic/subscription) for receiving deferred messages.
-    /// Required if using ReceiveDeferredMessageAsync in isolated worker model.</param>
+    /// <param name="entityPath">Optional entity path (queue name or topic/subscription). Required in the
+    /// isolated worker model for scheduling retries.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A new SubscriberClient instance.</returns>
     public static Task<SubscriberClient> CreateAsync(

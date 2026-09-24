@@ -320,55 +320,10 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
         }
     }
 
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead.")]
-    public async Task Defer(CancellationToken cancellationToken = default)
-    {
-        if (IsDeferred)
-            throw new NotSupportedException("Is already deferred.");
-
-        SessionState state = await GetSessionState(cancellationToken);
-        state.DeferredSequenceNumbers.Add(_sbMessage.SequenceNumber);
-        await UpdateSessionState(state, cancellationToken);
-
-        try
-        {
-            await _sbSession.DeferAsync(_sbMessage, cancellationToken);
-        }
-        catch (ServiceBusException e) when (e.Reason == ServiceBusFailureReason.SessionLockLost)
-        {
-            throw new TransientException("SessionLockLost exception.", e);
-        }
-        catch (ServiceBusException e) when (e.IsTransient)
-        {
-            throw new TransientException("ServiceBus SDK threw transient exception", e);
-        }
-    }
-
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead.")]
-    public async Task DeferOnly(CancellationToken cancellationToken = default)
-    {
-        if (IsDeferred)
-            throw new NotSupportedException("Is already deferred.");
-
-        try
-        {
-            await _sbSession.DeferAsync(_sbMessage, cancellationToken);
-        }
-        catch (ServiceBusException e) when (e.Reason == ServiceBusFailureReason.SessionLockLost)
-        {
-            throw new TransientException("SessionLockLost exception.", e);
-        }
-        catch (ServiceBusException e) when (e.IsTransient)
-        {
-            throw new TransientException("ServiceBus SDK threw transient exception", e);
-        }
-    }
-
     public async Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default)
     {
         SessionState state = await GetSessionState(cancellationToken);
-        return !string.IsNullOrEmpty(state.BlockedByEventId)
-            || state.DeferredSequenceNumbers.Any();
+        return !string.IsNullOrEmpty(state.BlockedByEventId);
     }
 
     public async Task<bool> IsSessionBlockedByEventId(CancellationToken cancellationToken = default)
@@ -387,103 +342,6 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     {
         SessionState state = await GetSessionState(cancellationToken);
         return state.BlockedByEventId;
-    }
-
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
-    public async Task<IMessageContext> ReceiveNextDeferred(CancellationToken cancellationToken = default)
-    {
-        SessionState state = await GetSessionState(cancellationToken);
-        while (state.DeferredSequenceNumbers.Any() && !cancellationToken.IsCancellationRequested)
-        {
-            long nextSequenceNumber = state.DeferredSequenceNumbers.First();
-
-            try
-            {
-                IServiceBusMessage deferred = await _sbSession.ReceiveDeferredMessageAsync(nextSequenceNumber, cancellationToken);
-                if (deferred == null)
-                {
-                    // Deferred message does not exist.
-                    // Update session state by removing the "null reference".
-                    state.DeferredSequenceNumbers.RemoveRange(index: 0, count: 1);
-                    await UpdateSessionState(state, cancellationToken);
-
-                    continue;
-                }
-                return new MessageContext(deferred, _sbSession, isDeferred: true, _cloudEventReadOptions);
-            }
-            catch (ServiceBusException e) when (e.Reason == ServiceBusFailureReason.SessionLockLost)
-            {
-                throw new TransientException("SessionLockLost exception.", e);
-            }
-            catch (ServiceBusException e) when (e.IsTransient)
-            {
-                throw new TransientException("ServiceBus SDK threw transient exception", e);
-            }
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        return null;
-    }
-
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
-    public async Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken cancellationToken = default)
-    {
-        SessionState state = await GetSessionState(cancellationToken);
-        while (state.DeferredSequenceNumbers.Any() && !cancellationToken.IsCancellationRequested)
-        {
-            long nextSequenceNumber = state.DeferredSequenceNumbers.First();
-
-            try
-            {
-                IServiceBusMessage deferred = await _sbSession.ReceiveDeferredMessageAsync(nextSequenceNumber, cancellationToken);
-                if (deferred == null)
-                {
-                    // Deferred message does not exist.
-                    // Update session state by removing the "null reference".
-                    state.DeferredSequenceNumbers.RemoveRange(index: 0, count: 1);
-                    await UpdateSessionState(state, cancellationToken);
-
-                    continue;
-                }
-                else
-                {
-                    state.DeferredSequenceNumbers.RemoveRange(index: 0, count: 1);
-                    await UpdateSessionState(state, cancellationToken);
-                }
-
-                return new MessageContext(deferred, _sbSession, isDeferred: true, _cloudEventReadOptions);
-            }
-            catch (ServiceBusException e) when (e.Reason == ServiceBusFailureReason.SessionLockLost)
-            {
-                throw new TransientException("SessionLockLost exception.", e);
-            }
-            catch (ServiceBusException e) when (e.IsTransient)
-            {
-                throw new TransientException("ServiceBus SDK threw transient exception", e);
-            }
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        return null;
-    }
-
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
-    public async Task RestoreNextDeferred(IMessageContext deferredMessage, CancellationToken cancellationToken = default)
-    {
-        if (deferredMessage == null)
-            throw new ArgumentNullException(nameof(deferredMessage));
-        if (deferredMessage is not MessageContext deferredContext)
-            throw new ArgumentException($"Expected a {nameof(MessageContext)} produced by {nameof(ReceiveNextDeferredWithPop)}.", nameof(deferredMessage));
-
-        long sequenceNumber = deferredContext._sbMessage.SequenceNumber;
-        SessionState state = await GetSessionState(cancellationToken);
-        if (state.DeferredSequenceNumbers.Contains(sequenceNumber))
-            return;
-
-        // Front of the list: ReceiveNextDeferred(WithPop) always takes the first
-        // entry, so restoring anywhere else would break session ordering.
-        state.DeferredSequenceNumbers.Insert(0, sequenceNumber);
-        await UpdateSessionState(state, cancellationToken);
     }
 
     private string GetUserProperty(UserPropertyName userPropertyName)

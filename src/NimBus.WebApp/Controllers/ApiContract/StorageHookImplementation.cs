@@ -52,15 +52,9 @@ public class StorageHookImplementation : IStorageHookApiController
         _webhookKey = configuration.GetValue<string>("EventGrid:WebhookKey") ?? string.Empty;
     }
 
-    // The storage-hook webhook is currently a Cosmos-only mechanism (Cosmos Change
-    // Feed → Event Grid → here). The route name retains "Cosmos" for backwards
-    // compatibility with the OpenAPI spec; the implementation delegates to a
-    // provider-neutral handler that pushes the SignalR update. SQL deployments
-    // receive the same SignalR pushes via the Resolver write-path notifier.
-    [Obsolete("Renamed semantically to StoragehookReceiveAsync. The route name is kept for OpenAPI back-compat; future cleanup will rename both.")]
-    public Task<IActionResult> StoragehookReceiveCosmosAsync(string endpointId)
-        => StoragehookReceiveAsync(endpointId);
-
+    // Cosmos deployments reach this through Change Feed → Event Grid; SQL deployments through
+    // the Resolver write-path notifier. The route keeps its historical "cosmos" segment so
+    // existing Event Grid subscriptions keep working.
     public async Task<IActionResult> StoragehookReceiveAsync(string endpointId)
     {
         if (!ValidateWebhookKey())

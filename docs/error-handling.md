@@ -17,8 +17,7 @@ Two distinct call sites can throw inside the subscriber:
 - **Event handler** — your `IEventHandler<TEvent>.Handle(...)`. Exceptions here
   are caught inside `StrictMessageHandler.HandleEventContent` and either
   re-thrown (`TransientException`, `EventHandlerNotFoundException`) or wrapped
-  according to the configured `IFailureDispositionClassifier`. The obsolete
-  `IPermanentFailureClassifier` remains supported as a compatibility bridge.
+  according to the configured `IFailureDispositionClassifier`.
 
 ## Decision tree
 
@@ -117,11 +116,10 @@ sequenceDiagram
 ### Permanent failure (`DeadLetter` → dead-letter)
 
 The handler throws an exception that the `IFailureDispositionClassifier` maps
-to `DeadLetter`. For backward compatibility, a registered
-`IPermanentFailureClassifier` is bridged to the same disposition (the default
-legacy classifier matches `FormatException`,
+to `DeadLetter`. The built-in `DefaultPermanentFailureClassifier` (registered with
+`ConfigurePermanentFailureClassifier`) does this for `FormatException`,
 `InvalidCastException`, `ArgumentException`, `NotSupportedException`, plus
-type names containing `Serialization` / `Deserialization` / `Validation`).
+type names containing `Serialization` / `Deserialization` / `Validation`.
 `StrictMessageHandler.HandleEventContent` wraps it in
 `PermanentFailureException`. The base `MessageHandler` dead-letters the
 inbound message and notifies the Resolver — there is no retry.
@@ -272,9 +270,11 @@ sealed class AdapterFailureDispositionClassifier : IFailureDispositionClassifier
 }
 ```
 
-`IPermanentFailureClassifier` is obsolete but remains functional. When no new
-classifier is registered, its `true` result maps to `DeadLetter`; `false` maps
-to `Retry`. Registering `IFailureDispositionClassifier` takes precedence.
+`ConfigurePermanentFailureClassifier` registers a `DefaultPermanentFailureClassifier`
+as the disposition classifier: permanent exceptions map to `DeadLetter`, everything
+else to `Retry`. A classifier registered with `WithFailureDispositions` takes
+precedence. The `IPermanentFailureClassifier` interface was removed in v4.0.0;
+implement `IFailureDispositionClassifier` instead.
 
 ### Configuring retry
 

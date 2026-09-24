@@ -29,31 +29,6 @@ public interface IMessageContext : IReceivedMessage
 
     Task DeadLetter(string reason, Exception exception = null, CancellationToken cancellationToken = default);
 
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead.")]
-    Task Defer(CancellationToken cancellationToken = default);
-
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead.")]
-    Task DeferOnly(CancellationToken cancellationToken = default);
-
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
-    Task<IMessageContext> ReceiveNextDeferred(CancellationToken cancellationToken = default);
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
-    Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Re-inserts a deferred message previously removed by
-    /// <see cref="ReceiveNextDeferredWithPop"/> at the FRONT of the session's deferred
-    /// order, so a message that could not reach settlement (for example because an
-    /// inbox-store outage aborted its dispatch) keeps a recoverable sequence reference
-    /// instead of being orphaned in the broker's deferred state. Implementations must
-    /// not duplicate a reference that is still present. The default implementation is
-    /// a no-op so existing transport/test implementers are forward-compatible.
-    /// </summary>
-    /// <param name="deferredMessage">The context returned by <see cref="ReceiveNextDeferredWithPop"/>.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
-    Task RestoreNextDeferred(IMessageContext deferredMessage, CancellationToken cancellationToken = default) => Task.CompletedTask;
-
     Task BlockSession(CancellationToken cancellationToken = default);
     Task UnblockSession(CancellationToken cancellationToken = default);
     Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default);

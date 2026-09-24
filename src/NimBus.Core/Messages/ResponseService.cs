@@ -185,6 +185,8 @@ public class ResponseService : IResponseService
         await _sender.ScheduleMessage(response, DateTimeOffset.UtcNow + messageDelay, cancellationToken);
     }
 
+    /// <inheritdoc />
+    [Obsolete("Only the legacy Service Bus defer drain sent ContinuationRequests, and it was removed in v4 (spec 027 §3). Removed in the next major version.")]
     public async Task SendContinuationRequestToSelf(IMessageContext deferredMessageContext, CancellationToken cancellationToken = default)
     {
         await _sender.Send(new Message()

@@ -180,10 +180,6 @@ public abstract class InstrumentationConformanceTests
         public Task Complete(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task Abandon(NimBus.Core.Messages.Exceptions.TransientException exception) => Task.CompletedTask;
         public Task DeadLetter(string reason, Exception exception = null!, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task Defer(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task DeferOnly(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<IMessageContext> ReceiveNextDeferred(CancellationToken cancellationToken = default) => Task.FromResult<IMessageContext>(this);
-        public Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken cancellationToken = default) => Task.FromResult<IMessageContext>(this);
         public Task BlockSession(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task UnblockSession(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default) => Task.FromResult(false);

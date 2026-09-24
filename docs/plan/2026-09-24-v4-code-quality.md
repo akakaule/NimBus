@@ -118,24 +118,30 @@ Commits: `test(storage): pin not-found and absent-field contract`,
    `RestoreDeferredBestEffort`).
    - `HandleContinuationRequest`: the only producer of a ContinuationRequest is
      the legacy drain (`StrictMessageHandler` calls
-     `IResponseService.SendContinuationRequestToSelf`), so that method is
-     removed too. In v4 an incoming ContinuationRequest is logged at warning
-     level and completed, so one still in flight at upgrade is not
-     dead-lettered. `MessageType.ContinuationRequest` stays because it is part
-     of the wire format and the Resolver's audit history.
-   - `SessionState.DeferredSequenceNumbers` is removed from the model.
-     Serialized session state that still contains it deserializes without error
-     because Newtonsoft ignores unknown members, and a regression test pins
-     this. Release notes: a namespace that ever used the Service Bus defer API
-     must drain legacy deferred messages with `nb` before upgrading.
+     `IResponseService.SendContinuationRequestToSelf`). In v4 an incoming
+     ContinuationRequest is logged at warning level and completed, so one still in
+     flight at upgrade is not dead-lettered. `MessageType.ContinuationRequest` stays
+     because it is part of the wire format and the Resolver's audit history.
+   - *As implemented:* `SendContinuationRequestToSelf` and
+     `SessionState.DeferredSequenceNumbers` were never marked `[Obsolete]`, so the
+     versioning policy does not allow deleting them in this major. v4 marks both
+     `[Obsolete]` and stops using them; they are deleted in v5. The legacy
+     sequences still round-trip, so the data is not lost, but they no longer block
+     the session (pinned by `IsSessionBlocked_IgnoresLegacyDeferredSequences`).
+     Release notes: a namespace that ever used the Service Bus defer API should
+     drain legacy deferred messages with `nb` before upgrading.
    - The CLI's direct `ReceiveDeferredMessageAsync` admin paths (`Endpoint.cs`)
      stay, because they are operator recovery tools that talk to Service Bus
      directly.
-2. **`IPermanentFailureClassifier`** and **`DefaultPermanentFailureClassifier`**:
-   delete them. `DefaultFailureDispositionClassifier` loses its legacy adapter,
-   and `NimBusSubscriberBuilder` and the SDK/Testing registration drop the
-   legacy resolution. Update `docs/error-handling.md`,
-   `docs/sdk-api-reference.md` and the sample TDDs.
+2. **`IPermanentFailureClassifier`**: delete it. *As implemented:*
+   `DefaultPermanentFailureClassifier` and the builder's
+   `ConfigurePermanentFailureClassifier` were never deprecated and carry real
+   behavior, so they stay. The classifier now implements
+   `IFailureDispositionClassifier` directly (permanent → DeadLetter, otherwise
+   Retry), and the builder registers it as the disposition classifier. A
+   `WithFailureDispositions` classifier still wins, whichever is called first.
+   `DefaultFailureDispositionClassifier` loses its legacy adapter. Update
+   `docs/error-handling.md`, `docs/sdk-api-reference.md` and the sample TDDs.
 3. **`StrictMessageHandler` constructors:** keep one public constructor:
    `(IEventContextHandler, IResponseService, ILogger? logger = null,
    IRetryPolicyProvider? retryPolicyProvider = null, MessagePipeline? pipeline = null,
@@ -144,19 +150,19 @@ Commits: `test(storage): pin not-found and absent-field contract`,
    InboxDuplicateDetector? inboxDuplicateDetector = null)`. Optional parameters
    cover every former arity that did not use the classifier, and DI builds it
    through the factory registrations. Remove every `#pragma warning disable CS0618`.
-4. **WebApp storage-hook route:** rename `/api/storagehook/cosmos/{endpointId}` to
-   `/api/storagehook/endpoint/{endpointId}` (operationId `storagehook-receive`)
-   in `api-spec.yaml`. Delete `StoragehookReceiveCosmosAsync`, and point
-   `HttpEndpointStateChangeNotifier` at the new route. Release notes: deploy the
-   WebApp and Resolver together, because a v3 Resolver's refresh hook would get
-   404 (SignalR refresh only; no data is affected).
+4. **WebApp storage hook:** *As implemented:* the path
+   `/api/storagehook/cosmos/{endpointId}` stays, because Cosmos Change Feed →
+   Event Grid subscriptions configured outside this repo post to it. Only the
+   `operationId` changes to `storagehook-receive`, so the generated method is
+   `StoragehookReceiveAsync` and the obsolete `StoragehookReceiveCosmosAsync`
+   bridge is deleted. There is no wire change.
 5. Remove `CS0618` from `WarningsNotAsErrors`, so that from now on, calling an
    obsolete member from first-party code fails the Release build.
 
 Commits: `refactor(core)!: remove dead Service Bus defer API`,
 `refactor(core)!: remove IPermanentFailureClassifier`,
 `refactor(core)!: collapse StrictMessageHandler constructors`,
-`refactor(webapp)!: rename storage-hook route`.
+`refactor(webapp): drop obsolete storage-hook bridge`.
 
 ### WS-D: nullable hygiene
 
@@ -216,12 +222,18 @@ dotnet test src/NimBus.sln -c Release --no-build
   provider; `GetEventById` matches the stored id on every provider.
 - SQL Server returns `null` for NULL endpoint-owner, subscription, heartbeat
   `SdkVersion` and service-health `Version` columns.
-- `IMessageContext` defer members, `IServiceBusSession.DeferAsync`/receive-deferred
-  and `SessionState.DeferredSequenceNumbers` are removed. Drain legacy
-  SB-deferred messages before upgrading.
-- `IPermanentFailureClassifier` / `DefaultPermanentFailureClassifier` are removed;
-  use `IFailureDispositionClassifier`.
-- `StrictMessageHandler` has a single constructor with optional parameters.
-- WebApp route `/api/storagehook/cosmos/{endpointId}` is now
-  `/api/storagehook/endpoint/{endpointId}`. Deploy the WebApp and Resolver together.
+- `IMessageContext` defer members (`Defer`, `DeferOnly`, `ReceiveNextDeferred`,
+  `ReceiveNextDeferredWithPop`, `RestoreNextDeferred`) and
+  `IServiceBusSession.DeferAsync`/`ReceiveDeferredMessageAsync` are removed. The
+  legacy drain is gone: legacy `DeferredSequenceNumbers` no longer block a session,
+  and a `ContinuationRequest` is completed without processing. Drain legacy
+  SB-deferred messages with `nb` before upgrading.
+- `IPermanentFailureClassifier` is removed; implement `IFailureDispositionClassifier`.
+  `DefaultPermanentFailureClassifier` is now an `IFailureDispositionClassifier`.
+- `StrictMessageHandler` has a single constructor with optional parameters; the
+  three constructors that took `IPermanentFailureClassifier` are gone.
+- Newly obsolete (removed in v5): `IResponseService.SendContinuationRequestToSelf`,
+  `SessionState.DeferredSequenceNumbers`.
+- WebApp: the generated storage-hook action is `StoragehookReceiveAsync`; the route
+  is unchanged.
 - The Resolver namespace `NimBus.Broker.Services` is now `NimBus.Resolver.Services`.

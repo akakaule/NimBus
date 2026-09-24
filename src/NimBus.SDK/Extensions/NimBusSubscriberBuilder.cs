@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NimBus.Core.Events;
 using NimBus.Core.CircuitBreaker;
 using NimBus.Core.Inbox;
@@ -366,14 +367,21 @@ public class NimBusSubscriberBuilder
     }
 
     /// <summary>
-    /// Configures the permanent failure classifier. Exceptions classified as permanent
-    /// are dead-lettered immediately without consuming retry budget.
+    /// Configures a <see cref="DefaultPermanentFailureClassifier"/> as this subscriber's failure
+    /// disposition classifier. Exceptions classified as permanent are dead-lettered immediately
+    /// without consuming retry budget; every other failure is retried. A classifier registered
+    /// with <see cref="WithFailureDispositions"/> takes precedence, whichever is called first.
     /// </summary>
     public NimBusSubscriberBuilder ConfigurePermanentFailureClassifier(Action<DefaultPermanentFailureClassifier> configure)
     {
         var classifier = new DefaultPermanentFailureClassifier();
         (configure ?? throw new ArgumentNullException(nameof(configure)))(classifier);
-        Services.AddSingleton<IPermanentFailureClassifier>(classifier);
+
+        var existing = Services.LastOrDefault(d => d.ServiceType == typeof(IFailureDispositionClassifier));
+        if (existing is null)
+            Services.AddSingleton<IFailureDispositionClassifier>(classifier);
+        else if (existing.ImplementationInstance is DefaultPermanentFailureClassifier)
+            Services.Replace(ServiceDescriptor.Singleton<IFailureDispositionClassifier>(classifier));
         return this;
     }
 

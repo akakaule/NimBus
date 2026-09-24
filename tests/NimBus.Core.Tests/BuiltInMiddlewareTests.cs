@@ -53,10 +53,6 @@ file sealed class TestMessageContext : IMessageContext
     public Task Complete(CancellationToken ct = default) { CompleteCalls++; return Task.CompletedTask; }
     public Task Abandon(NimBus.Core.Messages.Exceptions.TransientException ex) => Task.CompletedTask;
     public Task DeadLetter(string reason, Exception ex = null, CancellationToken ct = default) { DeadLetterCalls++; return Task.CompletedTask; }
-    public Task Defer(CancellationToken ct = default) => Task.CompletedTask;
-    public Task DeferOnly(CancellationToken ct = default) => Task.CompletedTask;
-    public Task<IMessageContext> ReceiveNextDeferred(CancellationToken ct = default) => Task.FromResult<IMessageContext>(null);
-    public Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken ct = default) => Task.FromResult<IMessageContext>(null);
     public Task BlockSession(CancellationToken ct = default) => Task.CompletedTask;
     public Task UnblockSession(CancellationToken ct = default) => Task.CompletedTask;
     public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(false);

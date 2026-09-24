@@ -1154,11 +1154,13 @@ namespace NimBus.WebApp.ManagementApi
     public interface IStorageHookApiController
     {
 
-
+        /// <remarks>
+        /// Storage-hook webhook for endpoint state changes. The path keeps its historical "cosmos" segment because Event Grid subscriptions and the Resolver notifier post to it; it serves every storage provider.
+        /// </remarks>
 
         /// <returns>OK</returns>
 
-        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> StoragehookReceiveCosmosAsync(string endpointId);
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> StoragehookReceiveAsync(string endpointId);
 
         /// <summary>
         /// Notify operators that an endpoint's heartbeat state changed
@@ -1196,12 +1198,15 @@ namespace NimBus.WebApp.ManagementApi
             _implementation = implementation;
         }
 
+        /// <remarks>
+        /// Storage-hook webhook for endpoint state changes. The path keeps its historical "cosmos" segment because Event Grid subscriptions and the Resolver notifier post to it; it serves every storage provider.
+        /// </remarks>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/storagehook/cosmos/{endpointId}")]
-        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> StoragehookReceiveCosmos(string endpointId)
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> StoragehookReceive(string endpointId)
         {
 
-            return _implementation.StoragehookReceiveCosmosAsync(endpointId);
+            return _implementation.StoragehookReceiveAsync(endpointId);
         }
 
         /// <summary>

@@ -129,10 +129,6 @@ internal sealed class FakeMessageContext : IMessageContext, IMessageDeliveryCont
         return Task.CompletedTask;
     }
 
-    public Task Defer(CancellationToken cancellationToken = default) => Task.CompletedTask;
-    public Task DeferOnly(CancellationToken cancellationToken = default) => Task.CompletedTask;
-    public Task<IMessageContext> ReceiveNextDeferred(CancellationToken cancellationToken = default) => Task.FromResult<IMessageContext>(this);
-    public Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken cancellationToken = default) => Task.FromResult<IMessageContext>(this);
     public Task BlockSession(CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task UnblockSession(CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default) => Task.FromResult(false);

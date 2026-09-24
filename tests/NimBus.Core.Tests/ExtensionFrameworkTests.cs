@@ -167,10 +167,6 @@ public class MessagePipelineTests
         public Task Complete(CancellationToken ct = default) => Task.CompletedTask;
         public Task Abandon(TransientException ex) => Task.CompletedTask;
         public Task DeadLetter(string reason, Exception ex = null, CancellationToken ct = default) => Task.CompletedTask;
-        public Task Defer(CancellationToken ct = default) => Task.CompletedTask;
-        public Task DeferOnly(CancellationToken ct = default) => Task.CompletedTask;
-        public Task<IMessageContext> ReceiveNextDeferred(CancellationToken ct = default) => Task.FromResult<IMessageContext>(null);
-        public Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken ct = default) => Task.FromResult<IMessageContext>(null);
         public Task BlockSession(CancellationToken ct = default) => Task.CompletedTask;
         public Task UnblockSession(CancellationToken ct = default) => Task.CompletedTask;
         public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(false);

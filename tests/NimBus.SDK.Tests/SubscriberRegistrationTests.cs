@@ -179,30 +179,48 @@ public class SubscriberRegistrationTests
     }
 
     [TestMethod]
-    public void AddNimBusSubscriber_wires_registered_PermanentFailureClassifier_without_pipeline_or_lifecycle()
+    public void ConfigurePermanentFailureClassifier_wires_it_as_the_disposition_classifier()
     {
-        // Regression: a registered IPermanentFailureClassifier used to be silently
-        // dropped when no MessagePipeline and no MessageLifecycleNotifier were
-        // registered — the subscriber factory fell into a narrower StrictMessageHandler
-        // ctor that never forwarded the classifier. Wire it unconditionally instead.
-        var classifier = new SpyPermanentFailureClassifier();
         var services = new ServiceCollection();
         services.AddSingleton(new ServiceBusClient(FakeConnection));
-        services.AddSingleton<IPermanentFailureClassifier>(classifier);
-        services.AddNimBusSubscriber("EndpointA", _ => { });
+        services.AddNimBusSubscriber(
+            "EndpointA",
+            builder => builder.ConfigurePermanentFailureClassifier(c => c.AddPermanentExceptionType<TimeoutException>()));
 
+        var wired = WiredDispositionClassifier(services);
+
+        var permanent = wired as DefaultPermanentFailureClassifier;
+        Assert.IsNotNull(permanent, "ConfigurePermanentFailureClassifier must wire a DefaultPermanentFailureClassifier.");
+        Assert.AreEqual(FailureDisposition.DeadLetter, permanent.Classify(new TimeoutException(), "E", "EndpointA"));
+        Assert.AreEqual(FailureDisposition.Retry, permanent.Classify(new InvalidOperationException(), "E", "EndpointA"));
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void WithFailureDispositions_takes_precedence_over_ConfigurePermanentFailureClassifier(bool explicitFirst)
+    {
+        var explicitClassifier = new SpyFailureDispositionClassifier();
+        var services = new ServiceCollection();
+        services.AddSingleton(new ServiceBusClient(FakeConnection));
+        services.AddNimBusSubscriber("EndpointA", builder =>
+        {
+            if (explicitFirst)
+                builder.WithFailureDispositions(explicitClassifier).ConfigurePermanentFailureClassifier(_ => { });
+            else
+                builder.ConfigurePermanentFailureClassifier(_ => { }).WithFailureDispositions(explicitClassifier);
+        });
+
+        Assert.AreSame(explicitClassifier, WiredDispositionClassifier(services));
+    }
+
+    private static object WiredDispositionClassifier(ServiceCollection services)
+    {
         using var provider = services.BuildServiceProvider();
         var subscriber = provider.GetRequiredService<ISubscriberClient>();
-
-        // Observe the wiring through the object graph the factory builds:
-        // SubscriberClient -> ServiceBusAdapter -> StrictMessageHandler.
         var adapter = GetPrivateField(subscriber, "_serviceBusAdapter");
         var handler = GetPrivateField(adapter, "_messageHandler");
-        var wired = GetPrivateField(handler, "_permanentFailureClassifier");
-
-        Assert.AreSame(classifier, wired,
-            "A registered IPermanentFailureClassifier must be wired into StrictMessageHandler " +
-            "even when no pipeline or lifecycle notifier is registered.");
+        return GetPrivateField(handler, "_failureDispositionClassifier");
     }
 
     [TestMethod]
@@ -263,11 +281,6 @@ public class SubscriberRegistrationTests
         var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.IsNotNull(field, $"Expected private field '{fieldName}' on {target.GetType().Name}.");
         return field.GetValue(target);
-    }
-
-    private sealed class SpyPermanentFailureClassifier : IPermanentFailureClassifier
-    {
-        public bool IsPermanentFailure(Exception exception) => false;
     }
 
     private sealed class SpyFailureDispositionClassifier : IFailureDispositionClassifier

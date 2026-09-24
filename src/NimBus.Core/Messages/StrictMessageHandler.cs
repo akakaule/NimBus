@@ -12,115 +12,27 @@ namespace NimBus.Core.Messages;
 
 public class StrictMessageHandler : MessageHandler
 {
-    // Upper bound for the best-effort deferred-sequence restore, which must run even
-    // when the caller's token is already cancelled and so cannot inherit its lifetime.
-    private static readonly TimeSpan DeferredRestoreTimeout = TimeSpan.FromSeconds(30);
-
     private readonly IEventContextHandler _eventContextHandler;
     private readonly IResponseService _responseService;
     private readonly IRetryPolicyProvider? _retryPolicyProvider;
-#pragma warning disable CS0618
-    private readonly IPermanentFailureClassifier? _permanentFailureClassifier;
-#pragma warning restore CS0618
     private readonly IFailureDispositionClassifier _failureDispositionClassifier;
     private readonly InboxDuplicateDetector? _inboxDuplicateDetector;
     private readonly ILogger _logger;
 
-    public StrictMessageHandler(IEventContextHandler eventContextHandler, IResponseService responseService, ILogger logger = null)
-        : this(
-            eventContextHandler,
-            responseService,
-            logger,
-            retryPolicyProvider: null,
-            pipeline: null,
-            lifecycleNotifier: null,
-            permanentFailureClassifier: null,
-            failureDispositionClassifier: null)
-    {
-    }
-
-#pragma warning disable CS0618
-    public StrictMessageHandler(
-        IEventContextHandler eventContextHandler,
-        IResponseService responseService,
-        ILogger logger,
-        IRetryPolicyProvider? retryPolicyProvider)
-        : this(
-            eventContextHandler,
-            responseService,
-            logger,
-            retryPolicyProvider,
-            pipeline: null,
-            lifecycleNotifier: null,
-            permanentFailureClassifier: null,
-            failureDispositionClassifier: null)
-    {
-    }
-
-    public StrictMessageHandler(
-        IEventContextHandler eventContextHandler,
-        IResponseService responseService,
-        ILogger logger,
-        IRetryPolicyProvider? retryPolicyProvider,
-        MessagePipeline pipeline,
-        MessageLifecycleNotifier lifecycleNotifier,
-        IPermanentFailureClassifier permanentFailureClassifier = null)
-        : this(
-            eventContextHandler,
-            responseService,
-            logger,
-            retryPolicyProvider,
-            pipeline,
-            lifecycleNotifier,
-            permanentFailureClassifier,
-            failureDispositionClassifier: null)
-    {
-    }
-
     /// <summary>
     /// Initializes a new instance of the <see cref="StrictMessageHandler"/> class.
+    /// Only the event context handler and response service are required; every other
+    /// dependency is optional and defaults to "not configured".
     /// </summary>
     /// <param name="eventContextHandler">The event context handler.</param>
     /// <param name="responseService">The response service.</param>
-    /// <param name="logger">The logger.</param>
-    /// <param name="retryPolicyProvider">The retry policy provider.</param>
+    /// <param name="logger">The logger; a no-op logger when omitted.</param>
+    /// <param name="retryPolicyProvider">The retry policy provider; no retries when omitted.</param>
     /// <param name="pipeline">The message pipeline.</param>
     /// <param name="lifecycleNotifier">The message lifecycle notifier.</param>
-    /// <param name="permanentFailureClassifier">The legacy permanent-failure classifier.</param>
-    /// <param name="failureDispositionClassifier">The failure disposition classifier.</param>
-    public StrictMessageHandler(
-        IEventContextHandler eventContextHandler,
-        IResponseService responseService,
-        ILogger? logger,
-        IRetryPolicyProvider? retryPolicyProvider,
-        MessagePipeline? pipeline,
-        MessageLifecycleNotifier? lifecycleNotifier,
-        IPermanentFailureClassifier? permanentFailureClassifier,
-        IFailureDispositionClassifier? failureDispositionClassifier)
-        : this(
-            eventContextHandler,
-            responseService,
-            logger,
-            retryPolicyProvider,
-            pipeline,
-            lifecycleNotifier,
-            permanentFailureClassifier,
-            failureDispositionClassifier,
-            inboxDuplicateDetector: null)
-    {
-    }
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="StrictMessageHandler"/> class.
-    /// </summary>
-    /// <param name="eventContextHandler">The event context handler.</param>
-    /// <param name="responseService">The response service.</param>
-    /// <param name="logger">The logger.</param>
-    /// <param name="retryPolicyProvider">The retry policy provider.</param>
-    /// <param name="pipeline">The message pipeline.</param>
-    /// <param name="lifecycleNotifier">The message lifecycle notifier.</param>
-    /// <param name="permanentFailureClassifier">The legacy permanent-failure classifier.</param>
-    /// <param name="failureDispositionClassifier">The failure disposition classifier.</param>
+    /// <param name="failureDispositionClassifier">
+    /// The failure disposition classifier; every handler failure is retried when omitted.
+    /// </param>
     /// <param name="inboxDuplicateDetector">
     /// The optional inbox duplicate detector, consulted before the session-state guards so a
     /// redelivered duplicate is surfaced as a duplicate even when session state moved on.
@@ -128,24 +40,21 @@ public class StrictMessageHandler : MessageHandler
     public StrictMessageHandler(
         IEventContextHandler eventContextHandler,
         IResponseService responseService,
-        ILogger? logger,
-        IRetryPolicyProvider? retryPolicyProvider,
-        MessagePipeline? pipeline,
-        MessageLifecycleNotifier? lifecycleNotifier,
-        IPermanentFailureClassifier? permanentFailureClassifier,
-        IFailureDispositionClassifier? failureDispositionClassifier,
-        InboxDuplicateDetector? inboxDuplicateDetector) : base(logger ?? NullLogger.Instance, pipeline!, lifecycleNotifier!, responseService)
+        ILogger? logger = null,
+        IRetryPolicyProvider? retryPolicyProvider = null,
+        MessagePipeline? pipeline = null,
+        MessageLifecycleNotifier? lifecycleNotifier = null,
+        IFailureDispositionClassifier? failureDispositionClassifier = null,
+        InboxDuplicateDetector? inboxDuplicateDetector = null)
+        : base(logger ?? NullLogger.Instance, pipeline!, lifecycleNotifier!, responseService)
     {
         _eventContextHandler = eventContextHandler;
         _responseService = responseService;
         _retryPolicyProvider = retryPolicyProvider;
-        _permanentFailureClassifier = permanentFailureClassifier;
-        _failureDispositionClassifier = failureDispositionClassifier
-            ?? new DefaultFailureDispositionClassifier(_permanentFailureClassifier);
+        _failureDispositionClassifier = failureDispositionClassifier ?? new DefaultFailureDispositionClassifier();
         _inboxDuplicateDetector = inboxDuplicateDetector;
         _logger = logger ?? NullLogger.Instance;
     }
-#pragma warning restore CS0618
 
     public override async Task HandleEventRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
     {
@@ -467,55 +376,19 @@ public class StrictMessageHandler : MessageHandler
         }
     }
 
+    /// <summary>
+    /// A ContinuationRequest was only ever produced by the legacy Service Bus defer drain,
+    /// which NimBus no longer runs (spec 027 §3). One still in flight from an older version
+    /// is logged and completed rather than dead-lettered.
+    /// </summary>
     public override async Task HandleContinuationRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            LogInfo(messageContext, "Handle (Continuation)");
-
-            AuthorizeContinuationRequest(messageContext);
-            IMessageContext deferredMessageContext = await ReceiveNextDeferredAndVerifyEventId(messageContext, true, cancellationToken);
-            try
-            {
-                await HandleEventRequest(deferredMessageContext, cancellationToken);
-            }
-            catch (EventContextHandlerException)
-            {
-                // The nested dispatch settled the deferred message itself (error
-                // response sent, session blocked, message completed) — its sequence
-                // must stay popped.
-                throw;
-            }
-            catch (SessionBlockedException)
-            {
-                // The nested dispatch re-deferred the message to the Deferred
-                // subscription and completed it — its reference lives there now.
-                throw;
-            }
-            catch (Exception)
-            {
-                // Anything else (inbox check/record outage, transient handler
-                // failure, cancellation, unexpected) left the deferred message
-                // broker-deferred and unsettled after its only sequence reference
-                // was popped. Restore the reference so the redelivered
-                // continuation — or a later drain — can still reach it.
-                await RestoreDeferredBestEffort(messageContext, deferredMessageContext);
-                throw;
-            }
-
-            await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
-        }
-        catch (EventContextHandlerException)
-        {
-            await CompleteMessage(messageContext, cancellationToken);
-        }
-        catch (NextDeferredException)
-        {
-            await CompleteMessage(messageContext, cancellationToken);
-        }
-
-        LogInfo(messageContext, "Successfully processed (Continuation)");
+        _logger.LogWarning(
+            "Completing a legacy ContinuationRequest without processing it; the Service Bus defer drain was removed in v4. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
+            messageContext.GetEventIdOrDefault(),
+            messageContext.GetMessageIdOrDefault(),
+            messageContext.GetSessionIdOrDefault());
+        await CompleteMessage(messageContext, cancellationToken);
     }
 
     // HandleProcessDeferredRequest is intentionally NOT overridden here.
@@ -605,68 +478,10 @@ public class StrictMessageHandler : MessageHandler
     private Task SendUnsupportedResponse(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
         _responseService.SendUnsupportedResponse(messageContext, cancellationToken);
 
-    private async Task<IMessageContext> ReceiveNextDeferredAndVerifyEventId(IMessageContext messageContext, bool removeFromQueue = false, CancellationToken cancellationToken = default)
-    {
-        IMessageContext nextDeferred;
-#pragma warning disable CS0618
-        if (removeFromQueue)
-        {
-            nextDeferred = await messageContext.ReceiveNextDeferredWithPop(cancellationToken);
-        }
-        else
-        {
-            nextDeferred = await messageContext.ReceiveNextDeferred(cancellationToken);
-        }
-#pragma warning restore CS0618
-
-        if (!messageContext.EventId.Equals(nextDeferred?.EventId, StringComparison.OrdinalIgnoreCase))
-        {
-            // A popped mismatch was never dispatched; put its sequence back so a
-            // later drain can still reach it instead of orphaning it.
-            if (removeFromQueue && nextDeferred != null)
-                await RestoreDeferredBestEffort(messageContext, nextDeferred);
-            throw new NextDeferredException($"Unable to continue with {messageContext.EventId}, because it is not the next deferred event request in this session.");
-        }
-
-        return nextDeferred;
-    }
-
-    private async Task RestoreDeferredBestEffort(
-        IMessageContext messageContext,
-        IMessageContext deferredMessageContext)
-    {
-        try
-        {
-            // Cancellation is itself one of the failure modes that leaves the popped
-            // message unsettled, so the caller's token is typically already cancelled
-            // here — reusing it would cancel the session-state write and silently skip
-            // the restore. The recovery I/O runs under its own bounded token instead;
-            // the original failure still owns settlement and rethrows unchanged.
-            using var restoreCancellation = new CancellationTokenSource(DeferredRestoreTimeout);
-#pragma warning disable CS0618
-            await messageContext.RestoreNextDeferred(deferredMessageContext, restoreCancellation.Token);
-#pragma warning restore CS0618
-        }
-        catch (Exception restoreException)
-        {
-            // Best-effort: the original failure still owns settlement of the outer
-            // message; losing the restore only degrades to today's behaviour, so it
-            // must never mask that failure.
-            LogError(messageContext, "Failed to restore the popped deferred sequence; the deferred message may need operator recovery", restoreException);
-        }
-    }
-
     private void AuthorizeManagerRequest(IMessageContext messageContext)
     {
         if (!messageContext.From.Equals(Constants.ManagerId, StringComparison.OrdinalIgnoreCase))
             throw new UnauthorizedAccessException($"Only {Constants.ManagerId} is authorized to send {messageContext.MessageType} messages.");
-    }
-
-    private void AuthorizeContinuationRequest(IMessageContext messageContext)
-    {
-        if (!messageContext.From.Equals(Constants.ContinuationId, StringComparison.OrdinalIgnoreCase) &&
-            !messageContext.From.Equals(Constants.ManagerId, StringComparison.OrdinalIgnoreCase))
-            throw new UnauthorizedAccessException($"{messageContext.From} is not authorized to send {MessageType.ContinuationRequest} messages to this messaging entity.");
     }
 
     private async Task VerifySessionIsBlockedByThis(IMessageContext messageContext, CancellationToken cancellationToken = default)
@@ -770,16 +585,6 @@ public class StrictMessageHandler : MessageHandler
 
     private async Task ContinueWithAnyDeferredMessages(IMessageContext messageContext, CancellationToken cancellationToken = default)
     {
-#pragma warning disable CS0618
-        var next = await messageContext.ReceiveNextDeferred(cancellationToken);
-#pragma warning restore CS0618
-        if (next != null)
-        {
-            await _responseService.SendContinuationRequestToSelf(next, cancellationToken);
-            LogInfo(messageContext, "Send ContinuationRequest (legacy)");
-            return;
-        }
-
         var deferredCount = await messageContext.GetDeferredCount(cancellationToken);
         if (deferredCount > 0)
         {

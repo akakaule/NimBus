@@ -29,9 +29,9 @@ public class ServiceBusAdapter : IServiceBusAdapter
     /// Creates a new ServiceBusAdapter.
     /// </summary>
     /// <param name="messageHandler">The message handler to process messages.</param>
-    /// <param name="serviceBusClient">Optional ServiceBusClient for receiving deferred messages in isolated worker model.
-    /// Inject via dependency injection if you need to use ReceiveDeferredMessageAsync.</param>
-    /// <param name="entityPath">Optional entity path (queue name or topic/subscription path) for receiving deferred messages.</param>
+    /// <param name="serviceBusClient">Optional ServiceBusClient used to schedule retries in the isolated worker model.
+    /// Inject it via dependency injection.</param>
+    /// <param name="entityPath">Optional entity path (queue name or topic/subscription path) used to schedule retries.</param>
     /// <param name="cloudEventReadOptions">Optional CloudEvents consume options. When set, inbound
     /// CloudEvents are detected and normalized; when null (default) the adapter is pure native NimBus.</param>
     public ServiceBusAdapter(IMessageHandler messageHandler, ServiceBusClient serviceBusClient = null, string entityPath = null, CloudEventReadOptions cloudEventReadOptions = null)

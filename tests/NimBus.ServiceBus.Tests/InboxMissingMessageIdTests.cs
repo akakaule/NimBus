@@ -62,7 +62,6 @@ public class InboxMissingMessageIdTests
             retryPolicyProvider: null,
             pipeline: null,
             lifecycleNotifier: notifier,
-            permanentFailureClassifier: null,
             failureDispositionClassifier: null,
             inboxDuplicateDetector: new InboxDuplicateDetector(store, notifier));
         var context = new MessageContext(CreateMessageWithoutMessageId(), session);
@@ -204,11 +203,6 @@ public class InboxMissingMessageIdTests
             DeadLetterCalls++;
             return Task.CompletedTask;
         }
-
-        public Task DeferAsync(IServiceBusMessage message, CancellationToken ct = default) => Task.CompletedTask;
-
-        public Task<IServiceBusMessage> ReceiveDeferredMessageAsync(long seq, CancellationToken ct = default) =>
-            Task.FromResult<IServiceBusMessage>(null!);
 
         public Task SetStateAsync(SessionState state, CancellationToken ct = default)
         {

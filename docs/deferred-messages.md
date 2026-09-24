@@ -155,9 +155,8 @@ When the next message arrives for the blocked session:
 When the failed event is resolved (resubmit, retry, or skip succeeds):
 
 1. `UnblockSession()` clears `BlockedByEventId`
-2. `ContinueWithAnyDeferredMessages()` checks:
-   - **Legacy path**: Are there `DeferredSequenceNumbers` in session state? Send `ContinuationRequest`
-   - **Modern path**: Is `DeferredCount > 0`? Send `ProcessDeferredRequest`
+2. `ContinueWithAnyDeferredMessages()` checks whether `DeferredCount > 0` and, if so,
+   sends a `ProcessDeferredRequest`
 
 ### 4. Deferred Messages Are Re-Published
 
@@ -199,18 +198,18 @@ unblock a session, or cancel a running handler. Peeking is a point-in-time obser
 scheduled topic messages and future replays can still arrive. Missing broker messages alone
 do not establish successful business processing. See [Service Bus message browsing](https://learn.microsoft.com/en-us/azure/service-bus-messaging/message-browsing).
 
-## Legacy vs Modern Pattern
+## Legacy Service Bus deferral (removed in v4.0.0)
 
-The codebase supports two deferral approaches for backward compatibility:
+Before the Deferred subscription existed, NimBus parked blocked messages with the Azure
+Service Bus defer API and recorded their sequence numbers in session state
+(`DeferredSequenceNumbers`), draining them one at a time with a `ContinuationRequest`
+chain. v4.0.0 removed that drain (spec 027 §3):
 
-| | Legacy (ContinuationRequest) | Modern (ProcessDeferredRequest) |
-|---|---|---|
-| **Storage** | Deferred in-session (Service Bus native defer) | Separate "Deferred" subscription |
-| **Re-processing** | One message at a time via `ContinuationRequest` chain | Batch via `DeferredMessageProcessor` |
-| **Ordering** | Session state `DeferredSequenceNumbers` | `DeferralSequence` message property |
-| **Tracked by** | `DeferredSequenceNumbers` in session state | `DeferredCount` in session state |
-
-`ContinueWithAnyDeferredMessages()` checks the legacy path first, then falls back to the modern path.
+- `SessionState.DeferredSequenceNumbers` is obsolete. It still round-trips, but it no
+  longer blocks the session.
+- An incoming `ContinuationRequest` is logged and completed without processing.
+- A namespace that ever used the old defer API should drain any legacy Service Bus
+  deferred messages with the `nb` CLI before upgrading.
 
 ## Key Source Files
 
@@ -236,7 +235,7 @@ The deferred message flow is covered by dedicated tests:
 | Deferral sequencing | `HandleEventRequest_WhenSessionBlocked_GetsDeferralSequence` |
 | Deferred count tracking | `HandleEventRequest_WhenSessionBlocked_IncrementsDeferredCount` |
 | Unblocking | `HandleSkipRequest_WhenSessionIsBlockedByThis_UnblocksSession` |
-| Legacy continuation | `HandleContinuationRequest_WhenEventIsNextDeferred_InvokesEventHandler` |
+| Legacy continuation | `HandleContinuationRequest_CompletesLegacyRequestWithoutProcessing` |
 | Modern batch processing | `HandleProcessDeferredRequest_WhenCalled_ProcessesDeferredAndResetsCount` |
 | Recovery triggers | `HandleResubmissionRequest_WhenSucceedsAndDeferredCountGtZero_SendsProcessDeferredRequest` |
 

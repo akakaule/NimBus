@@ -400,4 +400,39 @@ public abstract class EndpointMetadataStoreConformanceTests
         },
         SubscriptionStatus = true,
     };
+
+    // Single-row lookups return null for a missing row; optional strings round-trip exactly.
+
+    [TestMethod]
+    public async Task GetEndpointMetadata_returns_null_for_an_endpoint_without_metadata()
+    {
+        var store = CreateStore();
+
+        Assert.IsNull(await store.GetEndpointMetadata(Id("no-metadata")));
+    }
+
+    [TestMethod]
+    public async Task Optional_metadata_and_heartbeat_fields_round_trip_null()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-null-owner");
+        await store.SetEndpointMetadata(new EndpointMetadata
+        {
+            EndpointId = endpointId,
+            EndpointOwner = null,
+            EndpointOwnerTeam = null,
+            EndpointOwnerEmail = null,
+            TechnicalContacts = new List<TechnicalContact>(),
+        });
+        await store.SetHeartbeat(Probe("probe-null-sdk", HeartbeatStatus.Pending, T0), endpointId);
+
+        var fetched = await store.GetEndpointMetadata(endpointId);
+
+        Assert.IsNotNull(fetched);
+        Assert.IsNull(fetched.EndpointOwner);
+        Assert.IsNull(fetched.EndpointOwnerTeam);
+        Assert.IsNull(fetched.EndpointOwnerEmail);
+        Assert.AreEqual(1, fetched.Heartbeats.Count);
+        Assert.IsNull(fetched.Heartbeats[0].SdkVersion, "a probe that has not been answered carries no SDK version");
+    }
 }

@@ -84,6 +84,29 @@ statement: Cosmos DB an `IfMatchEtag` upsert after a point read (412 → `false`
 store a `ConcurrentDictionary.TryUpdate`. The shared conformance suite pins the behaviour for all
 of them.
 
+## Lookups: missing rows and absent fields
+
+Every provider answers single-row lookups the same way. The shared conformance suites pin
+these rules:
+
+- **A missing row is `null`, never an exception.** This covers `GetPendingEvent`,
+  `GetFailedEvent`, `GetDeferredEvent`, `GetDeadletteredEvent`, `GetUnsupportedEvent`,
+  `GetEvent`, `GetEventById`, `GetPendingHandoffByExternalJobId`, `GetMessage`,
+  `GetLatestEventRequestMessage`, `GetFailedMessage`, `GetDeadletteredMessage` and
+  `GetEndpointMetadata`. A row in another status or session, or one that was removed or
+  archived, is also missing. `EndpointNotFoundException` means only that the endpoint's
+  storage does not exist.
+- **Optional strings round-trip exactly.** A field written as `null` reads back as `null`,
+  and one written as `""` reads back as `""`.
+- `GetEvent(endpointId, eventId)` returns the most recently updated row across sessions.
+- `GetEventById` matches the stored id `{EventId}_{SessionId}`.
+- `GetFailedMessage` returns the newest message on the endpoint that carries
+  `ErrorContent`. `GetDeadletteredMessage` returns the newest message of any type.
+
+Before v4.0.0, SQL Server and the in-memory store threw `EndpointNotFoundException` or
+`MessageNotFoundException` where Cosmos DB returned `null`, and SQL Server read NULL text
+columns back as `""`.
+
 ## Cosmos DB
 
 Add the package and register:

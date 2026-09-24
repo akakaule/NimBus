@@ -576,10 +576,15 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
         return dbo?.Event;
     }
 
-    public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId) =>
+    // Completed and Skipped rows carry deleted=true by design (see CreateCompletedDbo); a
+    // deleted row in any other status was removed or archived.
+    private static bool IsRemoved(EventDbo dbo)
+        => (dbo.Deleted ?? false) && dbo.Status is not (CompletedStatus or SkippedStatus);
+
+    public Task<UnresolvedEvent?> GetPendingEvent(string endpointId, string eventId, string sessionId) =>
         GetEvent(endpointId, eventId, sessionId, PendingStatus);
 
-    public async Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default)
+    public async Task<UnresolvedEvent?> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(externalJobId)) return null;
         var container = await _getEndpointContainer(endpointId);
@@ -642,33 +647,43 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
         return null;
     }
 
-    public Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId) =>
+    public Task<UnresolvedEvent?> GetFailedEvent(string endpointId, string eventId, string sessionId) =>
         GetEvent(endpointId, eventId, sessionId, FailedStatus);
 
-    public Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId) =>
+    public Task<UnresolvedEvent?> GetDeferredEvent(string endpointId, string eventId, string sessionId) =>
         GetEvent(endpointId, eventId, sessionId, DeferredStatus);
 
-    public Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) =>
+    public Task<UnresolvedEvent?> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) =>
         GetEvent(endpointId, eventId, sessionId, DLQStatus);
 
-    public Task<UnresolvedEvent> GetUnsupportedEvent(string endpointId, string eventId, string sessionId) =>
+    public Task<UnresolvedEvent?> GetUnsupportedEvent(string endpointId, string eventId, string sessionId) =>
         GetEvent(endpointId, eventId, sessionId, UnsupportedStatus);
 
 
-    public async Task<UnresolvedEvent> GetEvent(string endpointId, string eventId)
+    public async Task<UnresolvedEvent?> GetEvent(string endpointId, string eventId)
     {
         var container = await _getEndpointContainer(endpointId);
-        var queryDefinition = new QueryDefinition("SELECT * FROM c WHERE c.event.EventId = @eventId")
-            .WithParameter("@eventId", eventId);
+        // Removed and archived rows are invisible, and the most recently updated session row
+        // wins, matching the SQL Server and in-memory providers (conformance-pinned). Completed
+        // and Skipped rows are also written with deleted=true (to leave the counts and expire
+        // by TTL), so only a deleted row in a non-terminal status counts as removed.
+        var queryDefinition = new QueryDefinition(
+                "SELECT * FROM c WHERE c.event.EventId = @eventId " +
+                "AND (NOT IS_DEFINED(c.deleted) OR c.deleted != true OR c.status IN (@completedStatus, @skippedStatus)) " +
+                "ORDER BY c.event.UpdatedAt DESC")
+            .WithParameter("@eventId", eventId)
+            .WithParameter("@completedStatus", CompletedStatus)
+            .WithParameter("@skippedStatus", SkippedStatus);
         // Lookup-by-eventId on a container partitioned by /id (eventId_sessionId), so it
-        // necessarily fans across partitions; event.EventId is already covered by the
-        // default range index (a composite index can't improve a single equality with no
-        // ORDER BY). Cap the fetch to the single document the caller actually reads so RU
-        // and payload don't scale with how many session-events share the eventId.
+        // necessarily fans across partitions. Cap the fetch to the single document the
+        // caller actually reads so RU and payload don't scale with how many session-events
+        // share the eventId.
         var result = container.GetItemQueryIterator<EventDbo>(queryDefinition, null,
             new QueryRequestOptions { MaxItemCount = 1 });
 
-        if (result.HasMoreResults)
+        // A filtered cross-partition query can return empty pages before the first match,
+        // so keep reading until a page carries a document or the feed is exhausted.
+        while (result.HasMoreResults)
         {
             var eventDbo = await result.ReadNextAsync();
             if (eventDbo.Any())
@@ -681,7 +696,7 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
     }
 
 
-    private async Task<UnresolvedEvent> GetEvent(string endpointId, string eventId, string sessionId, string status)
+    private async Task<UnresolvedEvent?> GetEvent(string endpointId, string eventId, string sessionId, string status)
     {
         var container = await _getEndpointContainer(endpointId);
         var id = $"{eventId}_{sessionId}";
@@ -706,13 +721,13 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
         }
     }
 
-    public async Task<UnresolvedEvent> GetEventById(string endpointId, string id)
+    public async Task<UnresolvedEvent?> GetEventById(string endpointId, string id)
     {
         var container = await _getEndpointContainer(endpointId);
         try
         {
             var rel = await container.ReadItemAsync<EventDbo>(id, new PartitionKey(id), new ItemRequestOptions() { });
-            return HydrateResolutionStatus(rel.Resource);
+            return IsRemoved(rel.Resource) ? null : HydrateResolutionStatus(rel.Resource);
         }
         catch (CosmosException e)
         {
@@ -1292,7 +1307,7 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
         }
     }
 
-    public async Task<MessageEntity> GetMessage(string eventId, string messageId)
+    public async Task<MessageEntity?> GetMessage(string eventId, string messageId)
     {
         var container = await _getMessagesContainer();
         try
@@ -1332,7 +1347,7 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
         return messages;
     }
 
-    public async Task<MessageEntity> GetLatestEventRequestMessage(string eventId)
+    public async Task<MessageEntity?> GetLatestEventRequestMessage(string eventId)
     {
         var container = await _getMessagesContainer();
         // Single-partition (the messages container is partitioned by /eventId) TOP 1:
@@ -1357,7 +1372,7 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
         return null;
     }
 
-    public async Task<MessageEntity> GetFailedMessage(string eventId, string endpointId)
+    public async Task<MessageEntity?> GetFailedMessage(string eventId, string endpointId)
     {
         var messages = await GetMessagesByEventAndEndpoint(eventId, endpointId);
 
@@ -1367,7 +1382,7 @@ internal sealed class CosmosDbMessageTrackingStore : IMessageTrackingStore
             .LastOrDefault();
     }
 
-    public async Task<MessageEntity> GetDeadletteredMessage(string eventId, string endpointId)
+    public async Task<MessageEntity?> GetDeadletteredMessage(string eventId, string endpointId)
     {
         var messages = await GetMessagesByEventAndEndpoint(eventId, endpointId);
 

@@ -12,8 +12,8 @@ public class UnresolvedEvent
 
     //Identifiers
     public string EventId { get; set; }
-    public string SessionId { get; set; }
-    public string CorrelationId { get; set; }
+    public string? SessionId { get; set; }
+    public string? CorrelationId { get; set; }
 
     //Servicebus related Fields
     [JsonConverter(typeof(StringEnumConverter))]
@@ -27,20 +27,20 @@ public class UnresolvedEvent
 
     [JsonConverter(typeof(StringEnumConverter))]
     public MessageType MessageType { get; set; }
-    public string DeadLetterReason { get; set; }
-    public string DeadLetterErrorDescription { get; set; }
+    public string? DeadLetterReason { get; set; }
+    public string? DeadLetterErrorDescription { get; set; }
 
     //References
-    public string LastMessageId { get; set; }
-    public string OriginatingMessageId { get; set; }
-    public string ParentMessageId { get; set; }
-    public string Reason { get; set; }
-    public string OriginatingFrom {  get; set; }
+    public string? LastMessageId { get; set; }
+    public string? OriginatingMessageId { get; set; }
+    public string? ParentMessageId { get; set; }
+    public string? Reason { get; set; }
+    public string? OriginatingFrom {  get; set; }
 
     //Event
-    public string EventTypeId { get; set; }
-    public string To { get; set; }
-    public string From { get; set; }
+    public string? EventTypeId { get; set; }
+    public string? To { get; set; }
+    public string? From { get; set; }
     public MessageContent MessageContent { get; set; }
 
     // Per-message timings carried on the response message (subscriber →
@@ -53,16 +53,16 @@ public class UnresolvedEvent
     // entries; "Handoff" when the row was projected from a
     // PendingHandoffResponse so the WebApp can render an "Awaiting external"
     // badge without changing the ResolutionStatus enum.
-    public string PendingSubStatus { get; set; }
-    public string HandoffReason { get; set; }
-    public string ExternalJobId { get; set; }
+    public string? PendingSubStatus { get; set; }
+    public string? HandoffReason { get; set; }
+    public string? ExternalJobId { get; set; }
     public DateTime? ExpectedBy { get; set; }
 
     // CloudEvents identity of the inbound CloudEvent (null for native messages).
     // Populated by the Resolver from the response message so CloudEvents identity
     // surfaces in the message store / management UI alongside the native fields.
-    public string CloudEventId { get; set; }
-    public string CloudEventSource { get; set; }
-    public string CloudEventType { get; set; }
-    public string CloudEventSubject { get; set; }
+    public string? CloudEventId { get; set; }
+    public string? CloudEventSource { get; set; }
+    public string? CloudEventType { get; set; }
+    public string? CloudEventSubject { get; set; }
 }

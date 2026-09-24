@@ -129,6 +129,8 @@ public partial class EventImplementation : IEventApiController
         try
         {
             var unresolvedEvent = await messageStore.GetFailedEvent(endpointId, eventId, sessionId);
+            if (unresolvedEvent is null)
+                return new NotFoundObjectResult("Unresolved failed not found");
             var result = Mapper.EventFromMessageStoreEvent(unresolvedEvent);
             if (!await authorizationService.CanReadPiiAsync())
                 payloadRedaction.Redact(result);
@@ -881,6 +883,8 @@ public partial class EventImplementation : IEventApiController
         try
         {
             var result = await messageStore.GetUnsupportedEvent(endpointId, eventId, sessionId);
+            if (result is null)
+                return new NotFoundObjectResult("Event not found");
             var mapped = Mapper.EventFromMessageStoreEvent(result);
             if (!await authorizationService.CanReadPiiAsync())
                 payloadRedaction.Redact(mapped);
@@ -910,6 +914,8 @@ public partial class EventImplementation : IEventApiController
         try
         {
             var result = await messageStore.GetDeadletteredEvent(endpointId, eventId, sessionId);
+            if (result is null)
+                return new NotFoundObjectResult("Event not found");
             var mapped = Mapper.EventFromMessageStoreEvent(result);
             if (!await authorizationService.CanReadPiiAsync())
                 payloadRedaction.Redact(mapped);

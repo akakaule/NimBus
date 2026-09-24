@@ -300,15 +300,13 @@ VALUES (
         }, commandTimeout: _context.CommandTimeout);
     }
 
-    public async Task<MessageEntity> GetMessage(string eventId, string messageId)
+    public async Task<MessageEntity?> GetMessage(string eventId, string messageId)
     {
         await using var conn = await OpenAsync();
         var row = await conn.QueryFirstOrDefaultAsync(
             $"SELECT * FROM {T("Messages")} WHERE EventId = @EventId AND MessageId = @MessageId",
             new { EventId = eventId, MessageId = messageId }, commandTimeout: _context.CommandTimeout);
-        return row == null
-            ? throw new MessageNotFoundException(eventId, messageId)
-            : MapMessageRow(row);
+        return row == null ? null : MapMessageRow(row);
     }
 
     public async Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId)
@@ -320,7 +318,7 @@ VALUES (
         return rows.Select(MapMessageRow).ToList();
     }
 
-    public async Task<MessageEntity> GetLatestEventRequestMessage(string eventId)
+    public async Task<MessageEntity?> GetLatestEventRequestMessage(string eventId)
     {
         await using var conn = await OpenAsync();
         // Narrow to the request-bearing message types in SQL and order newest-first.
@@ -347,7 +345,30 @@ VALUES (
         return null;
     }
 
-    public async Task<MessageEntity> GetFailedMessage(string eventId, string endpointId)
+    public async Task<MessageEntity?> GetFailedMessage(string eventId, string endpointId)
+    {
+        await using var conn = await OpenAsync();
+        // ErrorContent lives inside the serialized MessageContent column, so the check
+        // happens after mapping. Stream newest-first and stop at the first match.
+        var rows = conn.QueryUnbufferedAsync(
+            $@"SELECT m.* FROM {T("Messages")} m
+                WHERE m.EventId = @EventId AND m.EndpointId = @EndpointId
+                ORDER BY m.EnqueuedTimeUtc DESC",
+            new { EventId = eventId, EndpointId = endpointId }, commandTimeout: _context.CommandTimeout);
+
+        await foreach (var row in rows)
+        {
+            var message = (MessageEntity)MapMessageRow(row);
+            if (message.MessageContent?.ErrorContent != null)
+            {
+                return message;
+            }
+        }
+
+        return null;
+    }
+
+    public async Task<MessageEntity?> GetDeadletteredMessage(string eventId, string endpointId)
     {
         await using var conn = await OpenAsync();
         var row = await conn.QueryFirstOrDefaultAsync(
@@ -355,11 +376,8 @@ VALUES (
                 WHERE m.EventId = @EventId AND m.EndpointId = @EndpointId
                 ORDER BY m.EnqueuedTimeUtc DESC",
             new { EventId = eventId, EndpointId = endpointId }, commandTimeout: _context.CommandTimeout);
-        return row == null ? throw new MessageNotFoundException(eventId) : MapMessageRow(row);
+        return row == null ? null : MapMessageRow(row);
     }
-
-    public Task<MessageEntity> GetDeadletteredMessage(string eventId, string endpointId)
-        => GetFailedMessage(eventId, endpointId);
 
     public async Task RemoveStoredMessage(string eventId, string messageId)
     {
@@ -376,15 +394,15 @@ VALUES (
             EventId = row.EventId,
             MessageId = row.MessageId,
             EndpointId = row.EndpointId,
-            SessionId = row.SessionId ?? string.Empty,
-            CorrelationId = row.CorrelationId ?? string.Empty,
-            EventTypeId = row.EventTypeId ?? string.Empty,
-            OriginatingMessageId = row.OriginatingMessageId ?? string.Empty,
-            ParentMessageId = row.ParentMessageId ?? string.Empty,
-            From = row.FromAddress ?? string.Empty,
-            To = row.ToAddress ?? string.Empty,
-            OriginatingFrom = row.OriginatingFrom ?? string.Empty,
-            OriginalSessionId = row.OriginalSessionId ?? string.Empty,
+            SessionId = row.SessionId,
+            CorrelationId = row.CorrelationId,
+            EventTypeId = row.EventTypeId,
+            OriginatingMessageId = row.OriginatingMessageId,
+            ParentMessageId = row.ParentMessageId,
+            From = row.FromAddress,
+            To = row.ToAddress,
+            OriginatingFrom = row.OriginatingFrom,
+            OriginalSessionId = row.OriginalSessionId,
             MessageType = Enum.TryParse((string?)row.MessageType, out MessageType mt) ? mt : MessageType.EventRequest,
             EndpointRole = Enum.TryParse((string?)row.EndpointRole, out EndpointRole er) ? er : EndpointRole.Subscriber,
             EnqueuedTimeUtc = row.EnqueuedTimeUtc,
@@ -397,8 +415,8 @@ VALUES (
             CloudEventSource = TryReadString(row, "CloudEventSource"),
             CloudEventType = TryReadString(row, "CloudEventType"),
             CloudEventSubject = TryReadString(row, "CloudEventSubject"),
-            DeadLetterReason = row.DeadLetterReason ?? string.Empty,
-            DeadLetterErrorDescription = row.DeadLetterErrorDescription ?? string.Empty,
+            DeadLetterReason = row.DeadLetterReason,
+            DeadLetterErrorDescription = row.DeadLetterErrorDescription,
             MessageContent = JsonConvert.DeserializeObject<MessageContent>((string)row.MessageContentJson) ?? new MessageContent(),
         };
     }
@@ -754,40 +772,40 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 
     // ───────── Single-event lookups ─────────
 
-    public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId)
+    public Task<UnresolvedEvent?> GetPendingEvent(string endpointId, string eventId, string sessionId)
         => GetEventByStatus(endpointId, eventId, sessionId, "Pending");
 
-    public Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId)
+    public Task<UnresolvedEvent?> GetFailedEvent(string endpointId, string eventId, string sessionId)
         => GetEventByStatus(endpointId, eventId, sessionId, "Failed");
 
-    public Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId)
+    public Task<UnresolvedEvent?> GetDeferredEvent(string endpointId, string eventId, string sessionId)
         => GetEventByStatus(endpointId, eventId, sessionId, "Deferred");
 
-    public Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId)
+    public Task<UnresolvedEvent?> GetDeadletteredEvent(string endpointId, string eventId, string sessionId)
         => GetEventByStatus(endpointId, eventId, sessionId, "DeadLettered");
 
-    public Task<UnresolvedEvent> GetUnsupportedEvent(string endpointId, string eventId, string sessionId)
+    public Task<UnresolvedEvent?> GetUnsupportedEvent(string endpointId, string eventId, string sessionId)
         => GetEventByStatus(endpointId, eventId, sessionId, "Unsupported");
 
-    private async Task<UnresolvedEvent> GetEventByStatus(string endpointId, string eventId, string sessionId, string status)
+    private async Task<UnresolvedEvent?> GetEventByStatus(string endpointId, string eventId, string sessionId, string status)
     {
         await using var conn = await OpenAsync();
         var row = await conn.QueryFirstOrDefaultAsync(
             $"SELECT * FROM {T("UnresolvedEvents")} WHERE EndpointId = @E AND EventId = @V AND SessionId = @S AND Status = @St AND Deleted = 0",
             new { E = endpointId, V = eventId, S = sessionId, St = status }, commandTimeout: _context.CommandTimeout);
-        return row == null ? throw new EndpointNotFoundException(endpointId) : MapUnresolvedEventRow(row);
+        return row == null ? null : MapUnresolvedEventRow(row);
     }
 
-    public async Task<UnresolvedEvent> GetEvent(string endpointId, string eventId)
+    public async Task<UnresolvedEvent?> GetEvent(string endpointId, string eventId)
     {
         await using var conn = await OpenAsync();
         var row = await conn.QueryFirstOrDefaultAsync(
             $"SELECT TOP 1 * FROM {T("UnresolvedEvents")} WHERE EndpointId = @E AND EventId = @V AND Deleted = 0 ORDER BY UpdatedAtUtc DESC",
             new { E = endpointId, V = eventId }, commandTimeout: _context.CommandTimeout);
-        return row == null ? throw new EndpointNotFoundException(endpointId) : MapUnresolvedEventRow(row);
+        return row == null ? null : MapUnresolvedEventRow(row);
     }
 
-    public async Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default)
+    public async Task<UnresolvedEvent?> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(externalJobId)) return null;
         await using var conn = await OpenAsync();
@@ -834,8 +852,19 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         return row == null ? null : MapUnresolvedEventRow(row);
     }
 
-    public Task<UnresolvedEvent> GetEventById(string endpointId, string id)
-        => GetEvent(endpointId, id);
+    public async Task<UnresolvedEvent?> GetEventById(string endpointId, string id)
+    {
+        // The stored id is "{EventId}_{SessionId}" (Cosmos document id); match it the same
+        // way GetEventsByIds does.
+        await using var conn = await OpenAsync();
+        var row = await conn.QueryFirstOrDefaultAsync(
+            $@"SELECT TOP 1 * FROM {T("UnresolvedEvents")}
+               WHERE EndpointId = @E
+                 AND CONCAT(EventId, '_', ISNULL(SessionId, '')) = @Id
+                 AND Deleted = 0",
+            new { E = endpointId, Id = id }, commandTimeout: _context.CommandTimeout);
+        return row == null ? null : MapUnresolvedEventRow(row);
+    }
 
     public async Task<List<UnresolvedEvent>> GetEventsByIds(string endpointId, IEnumerable<string> eventIds)
     {
@@ -1024,26 +1053,26 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
         return new UnresolvedEvent
         {
             EventId = row.EventId,
-            SessionId = row.SessionId ?? string.Empty,
+            SessionId = row.SessionId,
             EndpointId = row.EndpointId,
             ResolutionStatus = Enum.TryParse((string)row.Status, out ResolutionStatus rs) ? rs : ResolutionStatus.Pending,
             UpdatedAt = row.UpdatedAtUtc,
             EnqueuedTimeUtc = row.EnqueuedTimeUtc,
-            CorrelationId = row.CorrelationId ?? string.Empty,
+            CorrelationId = row.CorrelationId,
             EndpointRole = Enum.TryParse((string?)row.EndpointRole, out EndpointRole er) ? er : EndpointRole.Subscriber,
             MessageType = Enum.TryParse((string?)row.MessageType, out MessageType mt) ? mt : MessageType.EventRequest,
             RetryCount = row.RetryCount,
             RetryLimit = row.RetryLimit,
-            LastMessageId = row.LastMessageId ?? string.Empty,
-            OriginatingMessageId = row.OriginatingMessageId ?? string.Empty,
-            ParentMessageId = row.ParentMessageId ?? string.Empty,
-            OriginatingFrom = row.OriginatingFrom ?? string.Empty,
-            Reason = row.Reason ?? string.Empty,
-            DeadLetterReason = row.DeadLetterReason ?? string.Empty,
-            DeadLetterErrorDescription = row.DeadLetterErrorDescription ?? string.Empty,
-            EventTypeId = row.EventTypeId ?? string.Empty,
-            To = row.ToAddress ?? string.Empty,
-            From = row.FromAddress ?? string.Empty,
+            LastMessageId = row.LastMessageId,
+            OriginatingMessageId = row.OriginatingMessageId,
+            ParentMessageId = row.ParentMessageId,
+            OriginatingFrom = row.OriginatingFrom,
+            Reason = row.Reason,
+            DeadLetterReason = row.DeadLetterReason,
+            DeadLetterErrorDescription = row.DeadLetterErrorDescription,
+            EventTypeId = row.EventTypeId,
+            To = row.ToAddress,
+            From = row.FromAddress,
             QueueTimeMs = row.QueueTimeMs,
             ProcessingTimeMs = row.ProcessingTimeMs,
             CloudEventId = TryReadString(row, "CloudEventId"),

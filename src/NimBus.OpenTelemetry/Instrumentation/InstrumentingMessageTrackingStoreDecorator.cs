@@ -135,31 +135,31 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
 
     // ── Single-event lookups ────────────────────────────────────────────
 
-    public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId) =>
+    public Task<UnresolvedEvent?> GetPendingEvent(string endpointId, string eventId, string sessionId) =>
         InstrumentAsync(nameof(GetPendingEvent), () => _inner.GetPendingEvent(endpointId, eventId, sessionId));
 
-    public Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default) =>
+    public Task<UnresolvedEvent?> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default) =>
         InstrumentAsync(nameof(GetPendingHandoffByExternalJobId), () => _inner.GetPendingHandoffByExternalJobId(endpointId, externalJobId, cancellationToken));
 
     public Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds) =>
         InstrumentAsync(nameof(GetNextPendingHandoffEvent), () => _inner.GetNextPendingHandoffEvent(endpointId, eventTypeIds));
 
-    public Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId) =>
+    public Task<UnresolvedEvent?> GetFailedEvent(string endpointId, string eventId, string sessionId) =>
         InstrumentAsync(nameof(GetFailedEvent), () => _inner.GetFailedEvent(endpointId, eventId, sessionId));
 
-    public Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId) =>
+    public Task<UnresolvedEvent?> GetDeferredEvent(string endpointId, string eventId, string sessionId) =>
         InstrumentAsync(nameof(GetDeferredEvent), () => _inner.GetDeferredEvent(endpointId, eventId, sessionId));
 
-    public Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) =>
+    public Task<UnresolvedEvent?> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) =>
         InstrumentAsync(nameof(GetDeadletteredEvent), () => _inner.GetDeadletteredEvent(endpointId, eventId, sessionId));
 
-    public Task<UnresolvedEvent> GetUnsupportedEvent(string endpointId, string eventId, string sessionId) =>
+    public Task<UnresolvedEvent?> GetUnsupportedEvent(string endpointId, string eventId, string sessionId) =>
         InstrumentAsync(nameof(GetUnsupportedEvent), () => _inner.GetUnsupportedEvent(endpointId, eventId, sessionId));
 
-    public Task<UnresolvedEvent> GetEvent(string endpointId, string eventId) =>
+    public Task<UnresolvedEvent?> GetEvent(string endpointId, string eventId) =>
         InstrumentAsync(nameof(GetEvent), () => _inner.GetEvent(endpointId, eventId));
 
-    public Task<UnresolvedEvent> GetEventById(string endpointId, string id) =>
+    public Task<UnresolvedEvent?> GetEventById(string endpointId, string id) =>
         InstrumentAsync(nameof(GetEventById), () => _inner.GetEventById(endpointId, id));
 
     public Task<List<UnresolvedEvent>> GetEventsByIds(string endpointId, IEnumerable<string> eventIds) =>
@@ -217,19 +217,19 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task StoreMessage(MessageEntity message) =>
         InstrumentAsync(nameof(StoreMessage), () => _inner.StoreMessage(message));
 
-    public Task<MessageEntity> GetMessage(string eventId, string messageId) =>
+    public Task<MessageEntity?> GetMessage(string eventId, string messageId) =>
         InstrumentAsync(nameof(GetMessage), () => _inner.GetMessage(eventId, messageId));
 
     public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId) =>
         InstrumentAsync(nameof(GetEventHistory), () => _inner.GetEventHistory(eventId));
 
-    public Task<MessageEntity> GetLatestEventRequestMessage(string eventId) =>
+    public Task<MessageEntity?> GetLatestEventRequestMessage(string eventId) =>
         InstrumentAsync(nameof(GetLatestEventRequestMessage), () => _inner.GetLatestEventRequestMessage(eventId));
 
-    public Task<MessageEntity> GetFailedMessage(string eventId, string endpointId) =>
+    public Task<MessageEntity?> GetFailedMessage(string eventId, string endpointId) =>
         InstrumentAsync(nameof(GetFailedMessage), () => _inner.GetFailedMessage(eventId, endpointId));
 
-    public Task<MessageEntity> GetDeadletteredMessage(string eventId, string endpointId) =>
+    public Task<MessageEntity?> GetDeadletteredMessage(string eventId, string endpointId) =>
         InstrumentAsync(nameof(GetDeadletteredMessage), () => _inner.GetDeadletteredMessage(eventId, endpointId));
 
     public Task RemoveStoredMessage(string eventId, string messageId) =>

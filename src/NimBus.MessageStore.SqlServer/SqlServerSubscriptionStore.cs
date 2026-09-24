@@ -106,17 +106,17 @@ WHERE Id = @Id";
     {
         Id = row.Id,
         EndpointId = row.EndpointId,
-        Type = row.Type ?? string.Empty,
-        NotificationSeverity = row.NotificationSeverity ?? string.Empty,
-        Mail = row.Mail ?? string.Empty,
-        AuthorId = row.AuthorId ?? string.Empty,
-        NotifiedAt = row.NotifiedAt ?? string.Empty,
-        ErrorList = row.ErrorList ?? string.Empty,
-        Url = row.Url ?? string.Empty,
+        Type = row.Type,
+        NotificationSeverity = row.NotificationSeverity,
+        Mail = row.Mail,
+        AuthorId = row.AuthorId,
+        NotifiedAt = row.NotifiedAt,
+        ErrorList = row.ErrorList,
+        Url = row.Url,
         EventTypes = string.IsNullOrEmpty((string?)row.EventTypesJson)
             ? new List<string>()
             : JsonConvert.DeserializeObject<List<string>>((string)row.EventTypesJson) ?? new List<string>(),
-        Payload = row.Payload ?? string.Empty,
+        Payload = row.Payload,
         Frequency = row.Frequency,
     };
 

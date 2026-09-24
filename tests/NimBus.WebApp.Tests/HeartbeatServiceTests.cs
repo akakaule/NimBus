@@ -59,8 +59,7 @@ public class HeartbeatServiceTests
         // Never written to at all: the store only knows endpoints something has
         // stored against. A pending row here would be settled to missing by the
         // next sweep, which is the outage the skip exists to avoid.
-        await Assert.ThrowsExactlyAsync<EndpointNotFoundException>(
-            () => store.GetEndpointMetadata("PublisherOnlyEndpoint"));
+        Assert.IsNull(await store.GetEndpointMetadata("PublisherOnlyEndpoint"));
     }
 
     [TestMethod]

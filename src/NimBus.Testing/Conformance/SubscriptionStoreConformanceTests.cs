@@ -145,4 +145,30 @@ public abstract class SubscriptionStoreConformanceTests
         var subscriptions = (await store.GetSubscriptionsOnEndpoint(endpointId)).ToList();
         Assert.AreEqual(0, subscriptions.Count);
     }
+
+    [TestMethod]
+    public async Task Optional_subscription_fields_round_trip_null()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-sub-nulls");
+
+        await store.SubscribeToEndpointNotification(
+            endpointId: endpointId,
+            mail: "ops@example.com",
+            type: "mail",
+            author: null!,
+            url: null!,
+            eventTypes: new List<string>(),
+            payload: null!,
+            frequency: 0);
+
+        var fetched = (await store.GetSubscriptionsOnEndpoint(endpointId)).Single();
+
+        Assert.IsNull(fetched.AuthorId);
+        Assert.IsNull(fetched.Url);
+        Assert.IsNull(fetched.Payload);
+        Assert.IsNull(fetched.NotificationSeverity);
+        Assert.IsNull(fetched.NotifiedAt);
+        Assert.IsNull(fetched.ErrorList);
+    }
 }

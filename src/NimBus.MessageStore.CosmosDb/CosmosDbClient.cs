@@ -286,15 +286,15 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public Task<bool> RemoveMessage(string eventId, string sessionId, string endpointId) => _messageTracking.RemoveMessage(eventId, sessionId, endpointId);
     public Task<bool> PurgeMessages(string endpointId, string sessionId) => _messageTracking.PurgeMessages(endpointId, sessionId);
     public Task<bool> PurgeMessages(string endpointId) => _messageTracking.PurgeMessages(endpointId);
-    public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetPendingEvent(endpointId, eventId, sessionId);
-    public Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetFailedEvent(endpointId, eventId, sessionId);
-    public Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetDeferredEvent(endpointId, eventId, sessionId);
-    public Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetDeadletteredEvent(endpointId, eventId, sessionId);
-    public Task<UnresolvedEvent> GetUnsupportedEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetUnsupportedEvent(endpointId, eventId, sessionId);
-    public Task<UnresolvedEvent> GetEvent(string endpointId, string eventId) => _messageTracking.GetEvent(endpointId, eventId);
-    public Task<UnresolvedEvent> GetEventById(string endpointId, string id) => _messageTracking.GetEventById(endpointId, id);
+    public Task<UnresolvedEvent?> GetPendingEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetPendingEvent(endpointId, eventId, sessionId);
+    public Task<UnresolvedEvent?> GetFailedEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetFailedEvent(endpointId, eventId, sessionId);
+    public Task<UnresolvedEvent?> GetDeferredEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetDeferredEvent(endpointId, eventId, sessionId);
+    public Task<UnresolvedEvent?> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetDeadletteredEvent(endpointId, eventId, sessionId);
+    public Task<UnresolvedEvent?> GetUnsupportedEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetUnsupportedEvent(endpointId, eventId, sessionId);
+    public Task<UnresolvedEvent?> GetEvent(string endpointId, string eventId) => _messageTracking.GetEvent(endpointId, eventId);
+    public Task<UnresolvedEvent?> GetEventById(string endpointId, string id) => _messageTracking.GetEventById(endpointId, id);
     public Task<List<UnresolvedEvent>> GetEventsByIds(string endpointId, IEnumerable<string> eventIds) => _messageTracking.GetEventsByIds(endpointId, eventIds);
-    public Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default) => _messageTracking.GetPendingHandoffByExternalJobId(endpointId, externalJobId, cancellationToken);
+    public Task<UnresolvedEvent?> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default) => _messageTracking.GetPendingHandoffByExternalJobId(endpointId, externalJobId, cancellationToken);
     public Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds) => _messageTracking.GetNextPendingHandoffEvent(endpointId, eventTypeIds);
     public Task<IEnumerable<UnresolvedEvent>> GetCompletedEventsOnEndpoint(string endpointId) => _messageTracking.GetCompletedEventsOnEndpoint(endpointId);
     public Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount) => _messageTracking.GetEventsByFilter(filter, continuationToken, maxSearchItemsCount);
@@ -304,11 +304,11 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount) => _messageTracking.SearchMessages(filter, continuationToken, maxItemCount);
     public Task StoreMessage(MessageEntity message) => _messageTracking.StoreMessage(message);
     public Task RemoveStoredMessage(string eventId, string messageId) => _messageTracking.RemoveStoredMessage(eventId, messageId);
-    public Task<MessageEntity> GetMessage(string eventId, string messageId) => _messageTracking.GetMessage(eventId, messageId);
+    public Task<MessageEntity?> GetMessage(string eventId, string messageId) => _messageTracking.GetMessage(eventId, messageId);
     public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId) => _messageTracking.GetEventHistory(eventId);
-    public Task<MessageEntity> GetLatestEventRequestMessage(string eventId) => _messageTracking.GetLatestEventRequestMessage(eventId);
-    public Task<MessageEntity> GetFailedMessage(string eventId, string endpointId) => _messageTracking.GetFailedMessage(eventId, endpointId);
-    public Task<MessageEntity> GetDeadletteredMessage(string eventId, string endpointId) => _messageTracking.GetDeadletteredMessage(eventId, endpointId);
+    public Task<MessageEntity?> GetLatestEventRequestMessage(string eventId) => _messageTracking.GetLatestEventRequestMessage(eventId);
+    public Task<MessageEntity?> GetFailedMessage(string eventId, string endpointId) => _messageTracking.GetFailedMessage(eventId, endpointId);
+    public Task<MessageEntity?> GetDeadletteredMessage(string eventId, string endpointId) => _messageTracking.GetDeadletteredMessage(eventId, endpointId);
     public Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity, string? endpointId = null, string? eventTypeId = null) => _messageTracking.StoreMessageAudit(eventId, auditEntity, endpointId, eventTypeId);
     public Task<IEnumerable<MessageAuditEntity>> GetMessageAudits(string eventId) => _messageTracking.GetMessageAudits(eventId);
     public Task<AuditSearchResult> SearchAudits(AuditFilter filter, string? continuationToken, int maxItemCount) => _messageTracking.SearchAudits(filter, continuationToken, maxItemCount);
@@ -320,7 +320,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
 
     internal const string MessageSearchProjection = CosmosDbMessageTrackingStore.MessageSearchProjection;
     // ── IEndpointMetadataStore — implementation in CosmosDbEndpointMetadataStore ──
-    public Task<EndpointMetadata> GetEndpointMetadata(string endpointId) => _endpointMetadata.GetEndpointMetadata(endpointId);
+    public Task<EndpointMetadata?> GetEndpointMetadata(string endpointId) => _endpointMetadata.GetEndpointMetadata(endpointId);
     public Task<List<EndpointMetadata>>? GetMetadatas(IEnumerable<string> endpointIds) => _endpointMetadata.GetMetadatas(endpointIds);
     public Task<List<EndpointMetadata>> GetMetadatas() => _endpointMetadata.GetMetadatas();
     public Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata) => _endpointMetadata.SetEndpointMetadata(endpointMetadata);

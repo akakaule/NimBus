@@ -671,7 +671,7 @@ public class AgentImplementationTests
     // mistaken for "handoff gone" (404) — they must propagate to a 500.
     private sealed class ThrowingGetEventStore : InMemoryMessageStore
     {
-        public override Task<UnresolvedEvent> GetEvent(string endpointId, string eventId)
+        public override Task<UnresolvedEvent?> GetEvent(string endpointId, string eventId)
             => throw new InvalidOperationException("transient store fault");
     }
 

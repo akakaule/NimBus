@@ -48,14 +48,21 @@ Commit: `style: convert to file-scoped namespaces`, `refactor(resolver): rename 
 **Contract (documented on `IMessageTrackingStore`):**
 - `GetPendingEvent`, `GetFailedEvent`, `GetDeferredEvent`,
   `GetDeadletteredEvent`, `GetUnsupportedEvent`, `GetEvent`, `GetEventById`,
-  `GetPendingHandoffByExternalJobId`, `GetMessage` and
-  `GetLatestEventRequestMessage` return `null` for a missing row. The return
-  types become `Task<T?>`.
+  `GetPendingHandoffByExternalJobId`, `GetMessage`,
+  `GetLatestEventRequestMessage`, `GetFailedMessage`, `GetDeadletteredMessage`
+  and `IEndpointMetadataStore.GetEndpointMetadata` return `null` for a missing
+  row. The return types become `Task<T?>`.
+- `GetFailedMessage` returns the newest message carrying `ErrorContent` (Cosmos
+  behavior). SQL Server returned the newest message of any type and in-memory an
+  arbitrary one. `GetDeadletteredMessage` returns the newest message of any type.
 - Optional string fields round-trip exactly: a field written as `null` reads
   back as `null`, and one written as `""` reads back as `""`.
 - `GetEvent(endpointId, eventId)` returns the most recently updated row that is
-  not soft-deleted. SQL Server and in-memory already do this. Cosmos returns an
-  arbitrary match and ignores `Deleted`, so it has to change.
+  not removed or archived. SQL Server and in-memory already do this. Cosmos
+  returned an arbitrary match including removed rows, so it has to change. Cosmos
+  also writes Completed and Skipped rows with `deleted = true` (to leave the counts
+  and expire by TTL), so there only a deleted row in a non-terminal status counts
+  as removed.
 - `GetEventById` looks up by stored document id (`{eventId}_{sessionId}`) on
   every provider. In-memory currently treats the id as an eventId.
 
@@ -84,10 +91,17 @@ Commit: `style: convert to file-scoped namespaces`, `refactor(resolver): rename 
    and in the default `TryCompletePendingMessage` implementation. Delete
    `AdminService.GetPendingRowOrNullAsync`. Anywhere read-back strings are
    compared with `!= null` or `== ""`, use `string.IsNullOrEmpty`.
-6. Annotate the optional string properties on `UnresolvedEvent` and
-   `MessageEntity` as `string?`.
-7. `EndpointNotFoundException` keeps its real meaning. Endpoint-metadata lookups
-   keep throwing it when the endpoint itself is unknown.
+6. Annotate the optional string properties on `UnresolvedEvent` as `string?`.
+   `MessageEntity` stays as it is: it implements the core `IMessage` /
+   `IReceivedMessage` contracts, and annotating it would ripple through the
+   messaging model. Its null round-trip is still pinned by the conformance suite.
+7. `EndpointNotFoundException` keeps one meaning: the endpoint's storage does not
+   exist (Cosmos container translation). A missing metadata row is `null`.
+8. Apply the same round-trip rule to the SQL Server metadata owner fields,
+   heartbeat rows, subscription fields and service-health `Version`. The heartbeat
+   overview keeps `""` for "no probe yet", because every provider projects it
+   through the shared `HeartbeatRollup.BuildOverviewItem`.
+9. Document the contract in `docs/storage-providers.md`.
 
 Commits: `test(storage): pin not-found and absent-field contract`,
 `fix(storage)!: return null for missing rows on every provider`,
@@ -195,7 +209,13 @@ dotnet test src/NimBus.sln -c Release --no-build
 - `IMessageTrackingStore` single-row getters return `null` for a missing row on
   every provider. SQL Server and in-memory used to throw `EndpointNotFoundException`.
 - SQL Server returns `null` (not `""`) for optional string fields stored as NULL.
-- `GetEvent` on Cosmos ignores soft-deleted rows and returns the latest update.
+- `GetEvent` on Cosmos ignores removed and archived rows and returns the latest update.
+- `IEndpointMetadataStore.GetEndpointMetadata` returns `null` when no metadata is
+  stored (SQL Server and in-memory used to throw `EndpointNotFoundException`).
+- `GetFailedMessage` returns the newest message carrying `ErrorContent` on every
+  provider; `GetEventById` matches the stored id on every provider.
+- SQL Server returns `null` for NULL endpoint-owner, subscription, heartbeat
+  `SdkVersion` and service-health `Version` columns.
 - `IMessageContext` defer members, `IServiceBusSession.DeferAsync`/receive-deferred
   and `SessionState.DeferredSequenceNumbers` are removed. Drain legacy
   SB-deferred messages before upgrading.

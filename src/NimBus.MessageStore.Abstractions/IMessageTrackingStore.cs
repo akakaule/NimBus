@@ -74,15 +74,7 @@ public interface IMessageTrackingStore
         string? expectedLastMessageId,
         UnresolvedEvent content)
     {
-        UnresolvedEvent? current;
-        try
-        {
-            current = await GetPendingEvent(endpointId, eventId, sessionId).ConfigureAwait(false);
-        }
-        catch (EndpointNotFoundException)
-        {
-            return false;
-        }
+        var current = await GetPendingEvent(endpointId, eventId, sessionId).ConfigureAwait(false);
         if (current is null
             || !string.Equals(current.LastMessageId, expectedLastMessageId, StringComparison.Ordinal))
         {
@@ -102,14 +94,34 @@ public interface IMessageTrackingStore
         string? expectedLastMessageId, DateTime expectedUpdatedAt) =>
         throw new NotSupportedException("This provider does not support conditional deferred recovery.");
 
-    // Single-event lookups
-    Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId);
-    Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId);
-    Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId);
-    Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId);
-    Task<UnresolvedEvent> GetUnsupportedEvent(string endpointId, string eventId, string sessionId);
-    Task<UnresolvedEvent> GetEvent(string endpointId, string eventId);
-    Task<UnresolvedEvent> GetEventById(string endpointId, string id);
+    // Single-event lookups.
+    //
+    // Every single-row lookup (events and messages) returns null when the row does not exist,
+    // has another status or session, or was removed or archived. None of them throws for a
+    // missing row; EndpointNotFoundException is reserved for an unknown endpoint. Optional
+    // string fields round-trip exactly: null reads back as null and "" as "". The conformance
+    // suite pins this for every provider.
+
+    /// <summary>Returns the Pending row for the event on the session, or null.</summary>
+    Task<UnresolvedEvent?> GetPendingEvent(string endpointId, string eventId, string sessionId);
+    /// <summary>Returns the Failed row for the event on the session, or null.</summary>
+    Task<UnresolvedEvent?> GetFailedEvent(string endpointId, string eventId, string sessionId);
+    /// <summary>Returns the Deferred row for the event on the session, or null.</summary>
+    Task<UnresolvedEvent?> GetDeferredEvent(string endpointId, string eventId, string sessionId);
+    /// <summary>Returns the DeadLettered row for the event on the session, or null.</summary>
+    Task<UnresolvedEvent?> GetDeadletteredEvent(string endpointId, string eventId, string sessionId);
+    /// <summary>Returns the Unsupported row for the event on the session, or null.</summary>
+    Task<UnresolvedEvent?> GetUnsupportedEvent(string endpointId, string eventId, string sessionId);
+    /// <summary>
+    /// Returns the most recently updated row for the event on the endpoint, whatever its
+    /// status or session, or null.
+    /// </summary>
+    Task<UnresolvedEvent?> GetEvent(string endpointId, string eventId);
+    /// <summary>
+    /// Returns the row whose stored id (<c>{EventId}_{SessionId}</c>) matches
+    /// <paramref name="id"/>, or null.
+    /// </summary>
+    Task<UnresolvedEvent?> GetEventById(string endpointId, string id);
     Task<List<UnresolvedEvent>> GetEventsByIds(string endpointId, IEnumerable<string> eventIds);
     Task<IEnumerable<UnresolvedEvent>> GetCompletedEventsOnEndpoint(string endpointId);
 
@@ -129,7 +141,7 @@ public interface IMessageTrackingStore
     /// Cosmos partitioning correct and lets SQL Server hit a filtered index
     /// (see 0011_HandoffLookup.sql).</para>
     /// </summary>
-    Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default);
+    Task<UnresolvedEvent?> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns the single oldest (or, for providers that cannot cheaply order, any) pending
@@ -178,7 +190,8 @@ public interface IMessageTrackingStore
 
     // Per-message history records
     Task StoreMessage(MessageEntity message);
-    Task<MessageEntity> GetMessage(string eventId, string messageId);
+    /// <summary>Returns the stored message, or null.</summary>
+    Task<MessageEntity?> GetMessage(string eventId, string messageId);
     Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId);
     /// <summary>
     /// Returns the most recent message that carries event content (an
@@ -186,9 +199,14 @@ public interface IMessageTrackingStore
     /// <c>EventJson</c>), or <c>null</c> when none exists. Lets callers obtain the
     /// "current request payload" without materialising the whole event history.
     /// </summary>
-    Task<MessageEntity> GetLatestEventRequestMessage(string eventId);
-    Task<MessageEntity> GetFailedMessage(string eventId, string endpointId);
-    Task<MessageEntity> GetDeadletteredMessage(string eventId, string endpointId);
+    Task<MessageEntity?> GetLatestEventRequestMessage(string eventId);
+    /// <summary>
+    /// Returns the newest message for the event on the endpoint that carries
+    /// <c>ErrorContent</c>, or null.
+    /// </summary>
+    Task<MessageEntity?> GetFailedMessage(string eventId, string endpointId);
+    /// <summary>Returns the newest message for the event on the endpoint, or null.</summary>
+    Task<MessageEntity?> GetDeadletteredMessage(string eventId, string endpointId);
     Task RemoveStoredMessage(string eventId, string messageId);
 
     /// <summary>

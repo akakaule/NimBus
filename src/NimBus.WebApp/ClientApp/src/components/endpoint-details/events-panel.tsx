@@ -8,7 +8,7 @@ import DataTable, {
   ITableHeadCell,
 } from "components/data-table";
 import ColumnChooser from "components/data-table/column-chooser";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   formatMoment,
   formatResolutionStatus,
@@ -286,6 +286,7 @@ const EventsPanel = (props: EventsPanelProps) => {
   // keystroke/render. Never add it to a dependency array.
   const client = React.useMemo(() => new api.Client(api.CookieAuth()), []);
   const params = useParams();
+  const navigate = useNavigate();
   const endpointId = props.endpointId || params.id!;
 
   // Filters live in the URL (shareable, Back/forward-safe) and are mirrored to
@@ -1161,6 +1162,11 @@ const EventsPanel = (props: EventsPanelProps) => {
         <StatRow columns={3}>
           <StatTile
             label="Failed"
+            // Opens the cross-endpoint Failed page scoped to this endpoint:
+            // its chart and error grouping cover the whole backlog, not one page.
+            onClick={() =>
+              navigate(`/Failed?endpointId=${encodeURIComponent(endpointId)}`)
+            }
             value={isLoading ? "—" : counts.failed.toLocaleString()}
             tone={counts.failed > 0 ? "danger" : "muted"}
             delta={

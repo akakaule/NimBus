@@ -72,14 +72,14 @@ internal sealed class McpTestHost : IAsyncDisposable
             ["EnableLocalDevAuthentication"] = "true",
         }, configureServices);
 
-    public static Task<McpTestHost> StartEntraAsync()
+    public static Task<McpTestHost> StartEntraAsync(Action<IServiceCollection>? configureServices = null)
         => StartAsync("Production", new Dictionary<string, string?>
         {
             ["NimBus:Mcp:Enabled"] = "true",
             ["NimBus:Mcp:Entra:TenantId"] = TenantId,
             ["NimBus:Mcp:Entra:ClientId"] = ClientId,
             ["NimBus:Mcp:AllowedOrigins:0"] = "https://agents.example",
-        });
+        }, configureServices);
 
     /// <summary>The setting the Aspire AppHost passes, with or without the local-dev bypass.</summary>
     public static Task<McpTestHost> StartAspireAsync(bool localDevBypass)
@@ -105,6 +105,7 @@ internal sealed class McpTestHost : IAsyncDisposable
                     services.AddRouting();
                     services.AddHttpContextAccessor();
                     services.AddSingleton<IPlatform>(new TestCatalog());
+                    services.AddSingleton(new StubAccess());
                     services.AddScoped<IEndpointAuthorizationService, StubAuthorization>();
 
                     // The REST implementations the read tools delegate to. Unconfigured
@@ -112,6 +113,8 @@ internal sealed class McpTestHost : IAsyncDisposable
                     services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IEndpointApiController>.Create().Instance);
                     services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IEventApiController>.Create().Instance);
                     services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IMonitorApiController>.Create().Instance);
+                    services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IMessageApiController>.Create().Instance);
+                    services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IMetricsApiController>.Create().Instance);
 
                     // Mirrors the local-dev branch of Startup.AddAuthenticationStack.
                     var authentication = services.AddAuthentication();
@@ -245,18 +248,33 @@ internal sealed class McpTestHost : IAsyncDisposable
 
     private sealed class BillingEndpoint : CoreEndpoint { }
 
-    private sealed class StubAuthorization : IEndpointAuthorizationService
+    private sealed class StubAuthorization(StubAccess access) : IEndpointAuthorizationService
     {
         public Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null)
-            => Task.FromResult(required <= AccessRole.Reader
-                && endpointId is not null
-                && ReadableEndpoints.Contains(endpointId, StringComparer.OrdinalIgnoreCase));
+            => Task.FromResult(required <= AccessRole.Reader && (endpointId is null
+                ? access.SiteReader
+                : ReadableEndpoints.Contains(endpointId, StringComparer.OrdinalIgnoreCase)));
 
-        public Task<bool> CanReadPiiAsync() => Task.FromResult(false);
+        public Task<bool> CanReadPiiAsync() => Task.FromResult(access.PiiReader);
 
         public Task<CurrentUserAccess> GetCurrentUserAccessAsync()
-            => Task.FromResult(new CurrentUserAccess { ObjectId = "33333333-3333-3333-3333-333333333333" });
+            => Task.FromResult(new CurrentUserAccess
+            {
+                ObjectId = "33333333-3333-3333-3333-333333333333",
+                SiteRole = access.SiteReader ? AccessRole.Reader : AccessRole.None,
+                IsPiiReader = access.PiiReader,
+            });
 
         public string? GetCurrentUserName() => "Agent Operator";
+    }
+
+    /// <summary>What the stub authorization grants beyond Reader on <see cref="ReadableEndpoints"/>.</summary>
+    public sealed class StubAccess
+    {
+        /// <summary>Site-wide Reader, the floor for cross-endpoint search and metrics.</summary>
+        public bool SiteReader { get; init; }
+
+        /// <summary>PiiReader: may see raw payloads.</summary>
+        public bool PiiReader { get; init; }
     }
 }

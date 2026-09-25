@@ -25,6 +25,14 @@ public static class OperatorToolErrors
     public static McpException InvalidCursor()
         => new("[InvalidCursor] The cursor does not belong to this query. Repeat the query without a cursor.");
 
+    /// <summary>The caller lacks a site-wide role or capability the tool requires.</summary>
+    public static McpException PermissionDenied(string detail)
+        => new($"[PermissionDenied] {detail}");
+
+    /// <summary>An optional feature is not enabled in this deployment.</summary>
+    public static McpException FeatureUnavailable(string detail)
+        => new($"[FeatureUnavailable] {detail}");
+
     /// <summary>The data source could not answer.</summary>
     public static McpException SourceUnavailable(string detail)
         => new($"[SourceUnavailable] {detail}");

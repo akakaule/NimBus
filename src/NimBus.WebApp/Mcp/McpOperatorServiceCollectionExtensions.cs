@@ -63,10 +63,13 @@ public static class McpOperatorServiceCollectionExtensions
             })
             .WithHttpTransport(http => http.Stateless = true)
             .WithTools<OperatorDiscoveryTools>()
-            .WithTools<OperatorMessageTools>();
+            .WithTools<OperatorMessageTools>()
+            .WithTools<OperatorInsightTools>();
 
         services.AddScoped<OperatorEndpointCatalog>();
         services.AddScoped<OperatorQueries>();
+        services.AddScoped<OperatorPayloadAccess>();
+        services.AddScoped<IOperatorClassificationSource, OperatorClassificationSource>();
 
         return services;
     }
@@ -135,7 +138,11 @@ public static class McpOperatorServiceCollectionExtensions
                     {
                         Resource = $"{request.Scheme}://{request.Host}{request.PathBase}{McpOperatorOptions.Path}",
                         AuthorizationServers = [authority],
-                        ScopesSupported = [$"{applicationIdUri}/{McpOperatorPermissions.ObserveScope}"],
+                        ScopesSupported =
+                        [
+                            $"{applicationIdUri}/{McpOperatorPermissions.ObserveScope}",
+                            $"{applicationIdUri}/{McpOperatorPermissions.PayloadReadScope}",
+                        ],
                         ResourceName = "NimBus operator MCP",
                     };
                     return Task.CompletedTask;

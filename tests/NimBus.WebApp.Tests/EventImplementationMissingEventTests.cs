@@ -4,9 +4,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core;
+using NimBus.Manager;
 using NimBus.MessageStore;
 using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
+using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
 
 namespace NimBus.WebApp.Tests;
@@ -43,9 +45,72 @@ public sealed class EventImplementationMissingEventTests
         Assert.AreEqual("Event not found", notFound.Value);
     }
 
-    private static EventImplementation Create() =>
-        new(null!, new Catalog(), null!, null!, NullLogger<EventImplementation>.Instance,
-            new InMemoryMessageStore(), new Authorization(), null!, new DeferredMessageInspectorTests.FakeClient(), new Audit(), null!,
+    [TestMethod]
+    public async Task Resubmit_of_unknown_message_is_not_found()
+    {
+        var sut = Create();
+
+        var result = await sut.PostResubmitEventIdsAsync("missing", "missing-message");
+
+        AssertMessageNotFound(result);
+    }
+
+    [TestMethod]
+    public async Task Skip_of_unknown_message_is_not_found()
+    {
+        var sut = Create();
+
+        var result = await sut.PostSkipEventIdsAsync("missing", "missing-message");
+
+        AssertMessageNotFound(result);
+    }
+
+    [TestMethod]
+    public async Task Resubmit_with_changes_of_unknown_message_is_not_found()
+    {
+        var sut = Create();
+
+        var result = await sut.PostResubmitWithChangesEventIdsAsync(
+            new ResubmitWithChanges { EventTypeId = "CrmAccountCreated", EventContent = "{}" }, "missing", "missing-message");
+
+        AssertMessageNotFound(result);
+    }
+
+    [TestMethod]
+    public async Task Skip_proceeds_when_the_originating_request_is_missing()
+    {
+        // An ErrorResponse without its own event type whose originating request is
+        // gone: skip routes on To and does not need the event type, so it must not NRE.
+        var store = new InMemoryMessageStore();
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = "evt-1",
+            MessageId = "term-1",
+            SessionId = "sess-1",
+            MessageType = NimBus.Core.Messages.MessageType.ErrorResponse,
+            From = "Crm",
+            To = "Resolver",
+            OriginatingMessageId = "req-gone",
+        });
+        var manager = new SkipCapturingManagerClient();
+
+        var result = await Create(store, manager).PostSkipEventIdsAsync("evt-1", "term-1");
+
+        Assert.IsInstanceOfType<OkResult>(result);
+        Assert.AreEqual("Crm", manager.Endpoint);
+        Assert.IsNull(manager.EventTypeId);
+    }
+
+    private static void AssertMessageNotFound(IActionResult result)
+    {
+        var notFound = result as NotFoundObjectResult;
+        Assert.IsNotNull(notFound, $"Expected 404, got {result?.GetType().Name}");
+        Assert.AreEqual("Message not found", notFound.Value);
+    }
+
+    private static EventImplementation Create(InMemoryMessageStore? store = null, IManagerClient? manager = null) =>
+        new(null!, new Catalog(), manager!, null!, NullLogger<EventImplementation>.Instance,
+            store ?? new InMemoryMessageStore(), new Authorization(), null!, new DeferredMessageInspectorTests.FakeClient(), new Audit(), null!,
             new HttpContextAccessor { HttpContext = new DefaultHttpContext() }, PayloadRedactionTests.NewRedaction(),
             NimBus.Core.Messages.PII.NullEventJsonMasker.Instance);
 
@@ -57,6 +122,21 @@ public sealed class EventImplementationMissingEventTests
         public Task<bool> CanReadPiiAsync() => Task.FromResult(true);
         public Task<CurrentUserAccess> GetCurrentUserAccessAsync() => Task.FromResult(new CurrentUserAccess());
         public string GetCurrentUserName() => "operator";
+    }
+    private sealed class SkipCapturingManagerClient : IManagerClient
+    {
+        public string? Endpoint { get; private set; }
+        public string? EventTypeId { get; private set; }
+
+        public Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson) =>
+            throw new NotSupportedException();
+
+        public Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId)
+        {
+            Endpoint = endpoint;
+            EventTypeId = eventTypeId;
+            return Task.CompletedTask;
+        }
     }
     private sealed class Audit : IAuditLogService
     {

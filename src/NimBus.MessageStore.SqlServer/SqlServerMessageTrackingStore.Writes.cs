@@ -195,7 +195,11 @@ SELECT @@ROWCOUNT;";
         parameters.Add("SessionId", sessionId);
         parameters.Add("EndpointId", endpointId);
         parameters.Add("Status", status);
-        parameters.Add("UpdatedAt", DateTime.UtcNow);
+        // A DateTime parameter defaults to legacy datetime (1/300 s), which lets back-to-back
+        // writes tie on UpdatedAtUtc so "latest row" reads such as GetEvent pick arbitrarily.
+        // EnqueuedTimeUtc deliberately keeps the default: StalePendingReconciler compares it with
+        // Messages.EnqueuedTimeUtc, which is stored at the same datetime precision.
+        parameters.Add("UpdatedAt", DateTime.UtcNow, System.Data.DbType.DateTime2);
         parameters.Add("EnqueuedTimeUtc", content.EnqueuedTimeUtc);
         parameters.Add("CorrelationId", content.CorrelationId);
         parameters.Add("EndpointRole", content.EndpointRole.ToString());

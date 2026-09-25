@@ -197,11 +197,19 @@ Each split relocates members into `partial` files (or extension classes for
 | `CosmosDbMessageTrackingStore.cs` (1,866) | `partial` files: `.EndpointState.cs` (counts/paging), `.Writes.cs` (Upload*/Try*/Remove/Purge/UploadGuarded), `.Lookups.cs` (Get*Event, handoff), `.Search.cs` (filter/search/blocked/pending/invalid/error list), `.Messages.cs` (StoreMessage/history), `.Audits.cs`, `.Reports.cs` (resubmit counts, reports, archive) |
 | `SqlServerMessageTrackingStore.cs` (1,194) | Same partial layout, so the two providers can be compared file by file |
 | `EventImplementation.cs` (1,167) | `partial` files by concern: `.Queries.cs`, `.OperatorActions.cs` (resubmit/skip/compose/resubmit-with-changes), `.Handoff.cs`, `.Search.cs`, alongside the existing `.Deferred.cs` |
-| WebApp `Startup.cs` (861) | Each `Add*` section moves to `Startup/*ServiceCollectionExtensions.cs` (`Authentication`, `WebPipeline`, `PlatformCatalog`, `ServiceBusClients`, `Storage`, `Management`, `Observability`, `AuthorizationAndAudit`, `ApiControllers`). `Startup` keeps orchestration and `Configure`. |
+| WebApp `Startup.cs` (861) | `partial` files: `.Security.cs` (production-safety checks, authentication, authorization/audit), `.Web.cs` (web pipeline services, API controllers), `.Platform.cs` (catalog, Service Bus clients, storage, management, simulation), `.Observability.cs`, `.Pipeline.cs` (`Configure`). `Startup.cs` keeps the constructor and `ConfigureServices`. |
 | CLI `Program.cs` (1,005) | Plan 4 Phases 1, 2 and 4: characterization tests, then `CliApplicationFactory`, then the eight `Configure*Commands` methods move into `Commands/*.cs`. Phases 3 and 5 (parser centralization, dependency injection) remain Plan 4 follow-ups. |
 
 Commits: one `refactor(<scope>): split <file> by concern` per file, plus
 `test(cli): characterize command graph and validation`.
+
+*As implemented:* `Startup` became `partial` files (Security, Web, Platform,
+Observability, Pipeline) rather than extension classes, because its `Add*`
+methods read instance state (`Configuration`, the environment); partials keep
+the change move-only like the other splits. The WebApp tests that check
+middleware order by reading source now read `Startup.Pipeline.cs`. Resulting
+main-file sizes: Cosmos store 104 lines, SQL Server store 113,
+`EventImplementation` 99, `Startup` 110, CLI `Program` 31.
 
 ## Verification
 
@@ -247,4 +255,14 @@ dotnet test src/NimBus.sln -c Release --no-build
   `SessionState.DeferredSequenceNumbers`.
 - WebApp: the generated storage-hook action is `StoragehookReceiveAsync`; the route
   is unchanged.
+- Nullable annotations on public surface (source-compatible, but implementers
+  with nullable enabled see CS8767 until they match): `IPublisherClient.Publish`
+  `messageId`, `IServiceBusManagement.CreateCustomRule` `action` and
+  `UpdateSubscription` `forwardTo`, `IEventJsonMasker.TryCollectSensitiveValues`
+  (`[NotNullWhen(true)] out`), and `IMessageContext.DeadLetter` `exception`.
+  Model properties now `string?`: `UnresolvedEvent` optional fields,
+  `EventContent.EventJson`, `ErrorContent.ExceptionStackTrace`, `EndpointMetadata`
+  owner fields, `ServiceHealth.LastProbeMessageId`, `SessionState.BlockedByEventId`,
+  `CloudEvent.SpecVersion`.
+- Build: CS0618 and CS8625 are Release errors.
 - The Resolver namespace `NimBus.Broker.Services` is now `NimBus.Resolver.Services`.

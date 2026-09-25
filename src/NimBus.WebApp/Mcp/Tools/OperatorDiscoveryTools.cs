@@ -21,6 +21,7 @@ public sealed class OperatorDiscoveryTools
     private readonly IEndpointAuthorizationService _authorization;
     private readonly OperatorEndpointCatalog _catalog;
     private readonly McpOperatorRuntime _runtime;
+    private readonly OperatorPayloadAccess _payloadAccess;
     private readonly RateLimitOptions _rateLimits;
     private readonly bool _classificationEnabled;
 
@@ -30,6 +31,7 @@ public sealed class OperatorDiscoveryTools
         IEndpointAuthorizationService authorization,
         OperatorEndpointCatalog catalog,
         McpOperatorRuntime runtime,
+        OperatorPayloadAccess payloadAccess,
         IOptions<RateLimitOptions> rateLimits,
         IEnumerable<IntegrationIntelligenceActivation> intelligence)
     {
@@ -37,6 +39,7 @@ public sealed class OperatorDiscoveryTools
         _authorization = authorization;
         _catalog = catalog;
         _runtime = runtime;
+        _payloadAccess = payloadAccess;
         _rateLimits = rateLimits.Value;
         _classificationEnabled = intelligence.Any(activation => activation.Enabled);
     }
@@ -54,7 +57,7 @@ public sealed class OperatorDiscoveryTools
         return new CapabilitiesResult(
             _catalog.Environment,
             DateTimeOffset.UtcNow,
-            new CallerInfo(_authorization.GetCurrentUserName(), access.ObjectId, access.SiteRole.ToString(), access.IsPiiReader),
+            new CallerInfo(_authorization.GetCurrentUserName(), access.ObjectId, access.SiteRole.ToString(), await _payloadAccess.CanReadPayloadsAsync().ConfigureAwait(false)),
             _runtime.Mode.ToString(),
             await _catalog.GetReadableEndpointIdsAsync().ConfigureAwait(false),
             [],
@@ -107,7 +110,7 @@ public sealed record CapabilitiesResult(
 /// <param name="Name">Display name, when known.</param>
 /// <param name="ObjectId">Entra object id, when the caller is an Entra principal.</param>
 /// <param name="SiteRole">Site-wide role: None, Reader, Contributor or Owner.</param>
-/// <param name="CanReadPayloads">Whether the caller holds PiiReader.</param>
+/// <param name="CanReadPayloads">Whether nimbus_get_message may return payloads to this caller: PiiReader and, for Entra, the nimbus.payload.read scope.</param>
 public sealed record CallerInfo(string? Name, string? ObjectId, string SiteRole, bool CanReadPayloads);
 
 /// <summary>A fixed-window request limit.</summary>

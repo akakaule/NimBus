@@ -103,6 +103,17 @@ and blocked-message detail in sessions.
 (via `IIntegrationIntelligenceHost`), plus the payload-reveal path: `PiiReader` plus the
 `nimbus.payload.read` scope, off by default.
 
+As built: search and metrics go through the REST implementations like PR 2; a site-level 403
+is reported as `[PermissionDenied]`. `nimbus_get_metrics` takes `view` (throughput, latency,
+failures) and `period` (1h to 30d). `nimbus_get_classification` reads through
+`IOperatorClassificationSource` over `FailureClassificationService`, which applies its own
+Reader check; it reports `[FeatureUnavailable]` when classification is off, never starts an
+analysis, and defaults to the latest attempt. `nimbus_get_message` returns the payload only with
+`includePayload=true`, PiiReader and, for Entra callers, the delegated `nimbus.payload.read`
+scope (no app role, so workloads never qualify); the reveal goes through the audited event-details
+read and is logged. Payloads are capped at 64 KB. The protected-resource metadata advertises the
+payload scope.
+
 ## PR 4: Azure deployment and NimBus.Mcp retirement
 
 Bicep app settings for `NimBus__Mcp__*` preserved by the deployment, an Entra app registration

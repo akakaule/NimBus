@@ -35,15 +35,30 @@ public static class McpOperatorPermissions
     /// <summary>Application role for workloads using the read-only tools.</summary>
     public const string ObserveRole = "Nimbus.Observe";
 
+    /// <summary>
+    /// Delegated scope for raw payloads. It adds to, and never replaces, the PiiReader grant;
+    /// there is deliberately no workload app role for payloads.
+    /// </summary>
+    public const string PayloadReadScope = "nimbus.payload.read";
+
     /// <summary>True when <paramref name="user"/> holds the observe scope or app role.</summary>
     public static bool CanObserve(ClaimsPrincipal user)
     {
         ArgumentNullException.ThrowIfNull(user);
 
-        var hasScope = user.FindAll("scp")
-            .SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-            .Contains(ObserveScope, StringComparer.Ordinal);
-
-        return hasScope || user.FindAll("roles").Any(claim => string.Equals(claim.Value, ObserveRole, StringComparison.Ordinal));
+        return HasScope(user, ObserveScope)
+            || user.FindAll("roles").Any(claim => string.Equals(claim.Value, ObserveRole, StringComparison.Ordinal));
     }
+
+    /// <summary>True when <paramref name="user"/> holds the delegated payload scope.</summary>
+    public static bool HasPayloadScope(ClaimsPrincipal user)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+        return HasScope(user, PayloadReadScope);
+    }
+
+    private static bool HasScope(ClaimsPrincipal user, string scope)
+        => user.FindAll("scp")
+            .SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Contains(scope, StringComparer.Ordinal);
 }

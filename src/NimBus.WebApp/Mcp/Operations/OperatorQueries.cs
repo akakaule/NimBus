@@ -14,13 +14,22 @@ public sealed class OperatorQueries
     private readonly IEndpointApiController _endpoints;
     private readonly IEventApiController _events;
     private readonly IMonitorApiController _monitor;
+    private readonly IMessageApiController _messages;
+    private readonly IMetricsApiController _metrics;
 
     /// <summary>Creates the queries for one request.</summary>
-    public OperatorQueries(IEndpointApiController endpoints, IEventApiController events, IMonitorApiController monitor)
+    public OperatorQueries(
+        IEndpointApiController endpoints,
+        IEventApiController events,
+        IMonitorApiController monitor,
+        IMessageApiController messages,
+        IMetricsApiController metrics)
     {
         _endpoints = endpoints;
         _events = events;
         _monitor = monitor;
+        _messages = messages;
+        _metrics = metrics;
     }
 
     /// <summary>Status counts for every endpoint the caller can read.</summary>
@@ -70,6 +79,30 @@ public sealed class OperatorQueries
     public async Task<SessionStatus> GetSessionAsync(string endpointId, string sessionId)
         => Unwrap(await _endpoints.GetEndpointSessionIdAsync(endpointId, sessionId).ConfigureAwait(false),
             () => OperatorToolErrors.MessageNotFound(endpointId, sessionId));
+
+    /// <summary>One page of processing messages across all endpoints. Requires site Reader.</summary>
+    public async Task<MessageSearchResponse> SearchMessagesAsync(MessageSearchFilter filter, int limit, string? continuationToken)
+    {
+        var request = new MessageSearchRequest { Filter = filter, MaxItemCount = limit, ContinuationToken = continuationToken };
+        return Unwrap(await _messages.PostMessagesSearchAsync(request).ConfigureAwait(false), SiteReaderRequired);
+    }
+
+    /// <summary>Published, handled and failed counts per endpoint and event type. Requires site Reader.</summary>
+    public async Task<MetricsOverview> GetThroughputAsync(Period period)
+        => Unwrap(await _metrics.GetMetricsOverviewAsync(period).ConfigureAwait(false), SiteReaderRequired);
+
+    /// <summary>Queue and processing latency per endpoint and event type. Requires site Reader.</summary>
+    public async Task<LatencyOverview> GetLatencyAsync(Period period)
+        => Unwrap(await _metrics.GetMetricsLatencyAsync(period).ConfigureAwait(false), SiteReaderRequired);
+
+    /// <summary>Failures grouped by error pattern. Requires site Reader.</summary>
+    public async Task<FailedInsightsOverview> GetFailureInsightsAsync(Period period)
+        => Unwrap(await _metrics.GetMetricsFailedInsightsAsync(period).ConfigureAwait(false), SiteReaderRequired);
+
+    // Cross-endpoint reads keep the REST site-Reader floor; a refusal is about the caller's
+    // role, not about a resource, so it is reported as such.
+    private static Exception SiteReaderRequired()
+        => OperatorToolErrors.PermissionDenied("Cross-endpoint search and metrics require a site-wide Reader role.");
 
     // Success returns the value. A 400 is surfaced as an invalid argument; every other
     // failure, including 403, becomes the caller's not-found error, so a tool never reveals

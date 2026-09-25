@@ -19,6 +19,7 @@ public class McpOperatorEndpointTests
     [
         "nimbus_get_capabilities", "nimbus_list_endpoints", "nimbus_get_overview", "nimbus_get_endpoint",
         "nimbus_find_messages", "nimbus_get_message", "nimbus_get_message_history", "nimbus_get_session",
+        "nimbus_search_messages", "nimbus_get_metrics", "nimbus_get_classification",
     ];
 
     [TestMethod]

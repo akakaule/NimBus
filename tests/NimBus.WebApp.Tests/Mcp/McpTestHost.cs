@@ -81,6 +81,14 @@ internal sealed class McpTestHost : IAsyncDisposable
             ["NimBus:Mcp:AllowedOrigins:0"] = "https://agents.example",
         });
 
+    /// <summary>The setting the Aspire AppHost passes, with or without the local-dev bypass.</summary>
+    public static Task<McpTestHost> StartAspireAsync(bool localDevBypass)
+        => StartAsync("Development", new Dictionary<string, string?>
+        {
+            ["NimBus:Mcp:EnableForLocalDevelopment"] = "true",
+            ["EnableLocalDevAuthentication"] = localDevBypass ? "true" : "false",
+        });
+
     private static async Task<McpTestHost> StartAsync(string environment, Dictionary<string, string?> settings)
     {
         settings["Environment"] = "test";

@@ -21,8 +21,10 @@ public static class McpAuthenticationModeResolver
 {
     /// <summary>
     /// Resolves the mode. The local-dev bypass wins whenever it is active, matching the
-    /// WebApp's own authentication ladder. An enabled endpoint with neither the bypass nor
-    /// an Entra registration fails startup rather than running unauthenticated.
+    /// WebApp's own authentication ladder. <see cref="McpOperatorOptions.EnableForLocalDevelopment"/>
+    /// enables only that mode and is otherwise a no-op. An endpoint enabled through
+    /// <see cref="McpOperatorOptions.Enabled"/> with neither the bypass nor an Entra
+    /// registration fails startup rather than running unauthenticated.
     /// </summary>
     /// <param name="options">The bound <c>NimBus:Mcp</c> options.</param>
     /// <param name="isDevelopment">Whether the host environment is Development.</param>
@@ -35,11 +37,14 @@ public static class McpAuthenticationModeResolver
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        if (!options.Enabled)
+        if (!options.Enabled && !options.EnableForLocalDevelopment)
             return McpAuthenticationMode.Disabled;
 
         if (isDevelopment && localDevAuthenticationEnabled)
             return McpAuthenticationMode.LocalDevelopment;
+
+        if (!options.Enabled)
+            return McpAuthenticationMode.Disabled;
 
         if (options.Entra.IsConfigured)
             return McpAuthenticationMode.Entra;

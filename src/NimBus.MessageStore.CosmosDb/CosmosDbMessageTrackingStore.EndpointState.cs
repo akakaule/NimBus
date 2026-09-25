@@ -13,7 +13,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
     {
         var container = await _getEndpointContainer(endpointId);
         const string sqlQuery =
-            "SELECT COUNT(1) AS EventCount, c.status FROM c WHERE (NOT IS_DEFINED(c.deleted) or c.deleted != true) " +
+            "SELECT COUNT(1) AS EventCount, MIN(c.event.UpdatedAt) AS OldestUpdatedAt, c.status FROM c WHERE (NOT IS_DEFINED(c.deleted) or c.deleted != true) " +
             "AND c.status IN (@pendingStatus, @deferredStatus, @failedStatus, @deadletterStatus, @unsupportedStatus) GROUP BY c.status";
         var queryDefinition = new QueryDefinition(sqlQuery)
             .WithParameter("@pendingStatus", PendingStatus)
@@ -24,12 +24,19 @@ internal sealed partial class CosmosDbMessageTrackingStore
 
         var result = container.GetItemQueryIterator<StatusQueryResult>(queryDefinition);
         var resultDict = new Dictionary<string, int>();
+        DateTime? oldestFailure = null;
         while (result.HasMoreResults)
         {
             var currentResultSet = await result.ReadNextAsync();
             foreach (var queryResult in currentResultSet)
             {
                 resultDict.Add(queryResult.Status, queryResult.EventCount);
+                if (queryResult.Status is FailedStatus or DLQStatus && queryResult.OldestUpdatedAt is { } oldest)
+                {
+                    oldest = AsUtc(oldest);
+                    if (oldestFailure is null || oldest < oldestFailure)
+                        oldestFailure = oldest;
+                }
             }
         }
 
@@ -37,6 +44,7 @@ internal sealed partial class CosmosDbMessageTrackingStore
         {
             EndpointId = endpointId,
             EventTime = DateTime.UtcNow,
+            OldestFailureAt = oldestFailure,
             DeferredCount = resultDict.ContainsKey(DeferredStatus) ? resultDict[DeferredStatus] : 0,
             PendingCount = resultDict.ContainsKey(PendingStatus) ? resultDict[PendingStatus] : 0,
             FailedCount = resultDict.ContainsKey(FailedStatus) ? resultDict[FailedStatus] : 0,
@@ -44,6 +52,15 @@ internal sealed partial class CosmosDbMessageTrackingStore
             UnsupportedCount = resultDict.ContainsKey(UnsupportedStatus) ? resultDict[UnsupportedStatus] : 0,
         };
     }
+
+    // UpdatedAt is written from DateTime.UtcNow and round-trips with a "Z" suffix; guard
+    // documents written without one so the API never emits a local-offset instant.
+    private static DateTime AsUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Local => value.ToUniversalTime(),
+        DateTimeKind.Unspecified => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+        _ => value,
+    };
 
     public async Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId)
     {

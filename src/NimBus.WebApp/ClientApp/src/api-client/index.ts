@@ -5261,6 +5261,160 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * List the Monitor acknowledgements the caller can see
+     * @return OK
+     */
+    getMonitorAcknowledgements(): Promise<MonitorAcknowledgement[]> {
+        let url_ = this.baseUrl + "/api/monitor/acknowledgements";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetMonitorAcknowledgements(_response);
+        });
+    }
+
+    protected processGetMonitorAcknowledgements(response: Response): Promise<MonitorAcknowledgement[]> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            if (Array.isArray(resultData200)) {
+                result200 = [] as any;
+                for (let item of resultData200)
+                    result200!.push(MonitorAcknowledgement.fromJS(item));
+            }
+            else {
+                result200 = null as any;
+            }
+            return result200;
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<MonitorAcknowledgement[]>(null as any);
+    }
+
+    /**
+     * Acknowledge an endpoint's current failures
+     * @param body (optional) 
+     * @return OK
+     */
+    putMonitorAcknowledgement(endpointId: string, body?: MonitorAcknowledgementRequest | undefined): Promise<MonitorAcknowledgement> {
+        let url_ = this.baseUrl + "/api/monitor/acknowledgements/{endpointId}";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPutMonitorAcknowledgement(_response);
+        });
+    }
+
+    protected processPutMonitorAcknowledgement(response: Response): Promise<MonitorAcknowledgement> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = MonitorAcknowledgement.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Bad Request", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<MonitorAcknowledgement>(null as any);
+    }
+
+    /**
+     * Clear an endpoint's acknowledgement
+     * @return Cleared
+     */
+    deleteMonitorAcknowledgement(endpointId: string): Promise<void> {
+        let url_ = this.baseUrl + "/api/monitor/acknowledgements/{endpointId}";
+        if (endpointId === undefined || endpointId === null)
+            throw new globalThis.Error("The parameter 'endpointId' must be defined.");
+        url_ = url_.replace("{endpointId}", encodeURIComponent("" + endpointId));
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "DELETE",
+            headers: {
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processDeleteMonitorAcknowledgement(_response);
+        });
+    }
+
+    protected processDeleteMonitorAcknowledgement(response: Response): Promise<void> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 204) {
+            return response.text().then((_responseText) => {
+            return;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 404) {
+            return response.text().then((_responseText) => {
+            return throwException("Endpoint not found", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<void>(null as any);
+    }
+
+    /**
      * Get agent catalog
      * @return OK
      */
@@ -8290,6 +8444,9 @@ export class EndpointStatusCount implements IEndpointStatusCount {
  */
     storageStatus?: string;
     eventTime?: moment.Moment;
+    /** When the longest-standing open failure was recorded: the earliest last-updated time of a message currently Failed or DeadLettered. Null when the endpoint has no open failures or storage is unavailable.
+ */
+    oldestFailureAt?: moment.Moment | undefined;
     failedCount?: number;
     deferredCount?: number;
     pendingCount?: number;
@@ -8317,6 +8474,7 @@ export class EndpointStatusCount implements IEndpointStatusCount {
             this.subscriptionStatus = _data["subscriptionStatus"];
             this.storageStatus = _data["storageStatus"];
             this.eventTime = _data["eventTime"] ? moment(_data["eventTime"].toString()) : undefined as any;
+            this.oldestFailureAt = _data["oldestFailureAt"] ? moment(_data["oldestFailureAt"].toString()) : undefined as any;
             this.failedCount = _data["failedCount"];
             this.deferredCount = _data["deferredCount"];
             this.pendingCount = _data["pendingCount"];
@@ -8342,6 +8500,7 @@ export class EndpointStatusCount implements IEndpointStatusCount {
         data["subscriptionStatus"] = this.subscriptionStatus;
         data["storageStatus"] = this.storageStatus;
         data["eventTime"] = this.eventTime ? this.eventTime.toISOString() : undefined as any;
+        data["oldestFailureAt"] = this.oldestFailureAt ? this.oldestFailureAt.toISOString() : undefined as any;
         data["failedCount"] = this.failedCount;
         data["deferredCount"] = this.deferredCount;
         data["pendingCount"] = this.pendingCount;
@@ -8365,11 +8524,158 @@ export interface IEndpointStatusCount {
  */
     storageStatus?: string;
     eventTime?: moment.Moment;
+    /** When the longest-standing open failure was recorded: the earliest last-updated time of a message currently Failed or DeadLettered. Null when the endpoint has no open failures or storage is unavailable.
+ */
+    oldestFailureAt?: moment.Moment | undefined;
     failedCount?: number;
     deferredCount?: number;
     pendingCount?: number;
     unsupportedCount?: number;
     deadletterCount?: number;
+
+    [key: string]: any;
+}
+
+/** An operator's shared acknowledgement of an endpoint's failures on the Monitor. */
+export class MonitorAcknowledgement implements IMonitorAcknowledgement {
+    endpointId?: string;
+    /** Identifies this acknowledgement; changes whenever the endpoint is acknowledged again. */
+    acknowledgementId?: string;
+    /** Operator-supplied reason; empty when none was given. */
+    reason?: string;
+    acknowledgedBy?: string | undefined;
+    acknowledgedAt?: moment.Moment;
+    expiresAt?: moment.Moment;
+    /** Failed plus dead-lettered messages when acknowledged. */
+    failedCountAtAcknowledgement?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorAcknowledgement) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.endpointId = _data["endpointId"];
+            this.acknowledgementId = _data["acknowledgementId"];
+            this.reason = _data["reason"];
+            this.acknowledgedBy = _data["acknowledgedBy"];
+            this.acknowledgedAt = _data["acknowledgedAt"] ? moment(_data["acknowledgedAt"].toString()) : undefined as any;
+            this.expiresAt = _data["expiresAt"] ? moment(_data["expiresAt"].toString()) : undefined as any;
+            this.failedCountAtAcknowledgement = _data["failedCountAtAcknowledgement"];
+        }
+    }
+
+    static fromJS(data: any): MonitorAcknowledgement {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorAcknowledgement();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["endpointId"] = this.endpointId;
+        data["acknowledgementId"] = this.acknowledgementId;
+        data["reason"] = this.reason;
+        data["acknowledgedBy"] = this.acknowledgedBy;
+        data["acknowledgedAt"] = this.acknowledgedAt ? this.acknowledgedAt.toISOString() : undefined as any;
+        data["expiresAt"] = this.expiresAt ? this.expiresAt.toISOString() : undefined as any;
+        data["failedCountAtAcknowledgement"] = this.failedCountAtAcknowledgement;
+        return data;
+    }
+
+    clone(): MonitorAcknowledgement {
+        const json = this.toJSON();
+        let result = new MonitorAcknowledgement();
+        result.init(json);
+        return result;
+    }
+}
+
+/** An operator's shared acknowledgement of an endpoint's failures on the Monitor. */
+export interface IMonitorAcknowledgement {
+    endpointId?: string;
+    /** Identifies this acknowledgement; changes whenever the endpoint is acknowledged again. */
+    acknowledgementId?: string;
+    /** Operator-supplied reason; empty when none was given. */
+    reason?: string;
+    acknowledgedBy?: string | undefined;
+    acknowledgedAt?: moment.Moment;
+    expiresAt?: moment.Moment;
+    /** Failed plus dead-lettered messages when acknowledged. */
+    failedCountAtAcknowledgement?: number;
+
+    [key: string]: any;
+}
+
+export class MonitorAcknowledgementRequest implements IMonitorAcknowledgementRequest {
+    /** Optional free-text reason, at most 500 characters. */
+    reason?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IMonitorAcknowledgementRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.reason = _data["reason"];
+        }
+    }
+
+    static fromJS(data: any): MonitorAcknowledgementRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new MonitorAcknowledgementRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["reason"] = this.reason;
+        return data;
+    }
+
+    clone(): MonitorAcknowledgementRequest {
+        const json = this.toJSON();
+        let result = new MonitorAcknowledgementRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMonitorAcknowledgementRequest {
+    /** Optional free-text reason, at most 500 characters. */
+    reason?: string | undefined;
 
     [key: string]: any;
 }
@@ -15954,6 +16260,8 @@ export enum MessageAuditAuditType {
     UpdateSimulationSettings = "updateSimulationSettings",
     ControlSimulation = "controlSimulation",
     UpdateSimulationConfig = "updateSimulationConfig",
+    AcknowledgeEndpoint = "acknowledgeEndpoint",
+    ClearEndpointAcknowledgement = "clearEndpointAcknowledgement",
 }
 
 export class MessageContent implements IMessageContent {
@@ -16085,6 +16393,8 @@ export enum AuditSearchFilterAuditType {
     UpdateSimulationSettings = "updateSimulationSettings",
     ControlSimulation = "controlSimulation",
     UpdateSimulationConfig = "updateSimulationConfig",
+    AcknowledgeEndpoint = "acknowledgeEndpoint",
+    ClearEndpointAcknowledgement = "clearEndpointAcknowledgement",
 }
 
 export enum StalePendingRowVerdict {
@@ -16158,6 +16468,8 @@ export enum AuditEntryAuditType {
     UpdateSimulationSettings = "updateSimulationSettings",
     ControlSimulation = "controlSimulation",
     UpdateSimulationConfig = "updateSimulationConfig",
+    AcknowledgeEndpoint = "acknowledgeEndpoint",
+    ClearEndpointAcknowledgement = "clearEndpointAcknowledgement",
 }
 
 export enum AgentSettleRequestOutcome {

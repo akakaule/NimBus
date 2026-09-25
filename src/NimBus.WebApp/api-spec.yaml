@@ -2465,6 +2465,73 @@ paths:
           description: Forbidden
       tags:
         - Heartbeat
+  /api/monitor/acknowledgements:
+    get:
+      summary: List the Monitor acknowledgements the caller can see
+      description: >-
+        Shared across every Monitor client. Acknowledgements that have expired,
+        or whose endpoint has recovered (no failed or dead-lettered messages)
+        since they were placed, are removed before the list is returned.
+        Filtered to endpoints the caller can read.
+      operationId: get-monitor-acknowledgements
+      tags:
+        - Monitor
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MonitorAcknowledgement'
+  '/api/monitor/acknowledgements/{endpointId}':
+    parameters:
+      - schema:
+          type: string
+        name: endpointId
+        in: path
+        required: true
+    put:
+      summary: Acknowledge an endpoint's current failures
+      description: >-
+        Silences the endpoint on every Monitor for 4 hours, or until it
+        recovers. Replaces any existing acknowledgement. Requires Contributor
+        on the endpoint.
+      operationId: put-monitor-acknowledgement
+      tags:
+        - Monitor
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MonitorAcknowledgementRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorAcknowledgement'
+        '400':
+          description: Bad Request
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
+    delete:
+      summary: Clear an endpoint's acknowledgement
+      description: Requires Contributor on the endpoint. Succeeds when nothing is acknowledged.
+      operationId: delete-monitor-acknowledgement
+      tags:
+        - Monitor
+      responses:
+        '204':
+          description: Cleared
+        '403':
+          description: Forbidden
+        '404':
+          description: Endpoint not found
   /api/agent/catalog:
     get:
       summary: Get agent catalog
@@ -3490,6 +3557,15 @@ components:
         eventTime:
           type: string
           format: date-time
+        oldestFailureAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            When the longest-standing open failure was recorded: the earliest
+            last-updated time of a message currently Failed or DeadLettered.
+            Null when the endpoint has no open failures or storage is
+            unavailable.
         failedCount:
           type: number
         deferredCount:
@@ -3500,6 +3576,40 @@ components:
           type: number
         deadletterCount:
           type: number
+    MonitorAcknowledgement:
+      title: MonitorAcknowledgement
+      type: object
+      description: An operator's shared acknowledgement of an endpoint's failures on the Monitor.
+      properties:
+        endpointId:
+          type: string
+        acknowledgementId:
+          type: string
+          description: Identifies this acknowledgement; changes whenever the endpoint is acknowledged again.
+        reason:
+          type: string
+          description: Operator-supplied reason; empty when none was given.
+        acknowledgedBy:
+          type: string
+          nullable: true
+        acknowledgedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        failedCountAtAcknowledgement:
+          type: integer
+          description: Failed plus dead-lettered messages when acknowledged.
+    MonitorAcknowledgementRequest:
+      title: MonitorAcknowledgementRequest
+      type: object
+      properties:
+        reason:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: Optional free-text reason, at most 500 characters.
     SessionStatus:
       title: SessionStatus
       type: object
@@ -3563,6 +3673,8 @@ components:
             - updateSimulationSettings
             - controlSimulation
             - updateSimulationConfig
+            - acknowledgeEndpoint
+            - clearEndpointAcknowledgement
         comment:
           type: string
           nullable: true
@@ -4614,6 +4726,8 @@ components:
             - updateSimulationSettings
             - controlSimulation
             - updateSimulationConfig
+            - acknowledgeEndpoint
+            - clearEndpointAcknowledgement
         createdAtFrom:
           type: string
           format: date-time
@@ -5223,6 +5337,8 @@ components:
             - updateSimulationSettings
             - controlSimulation
             - updateSimulationConfig
+            - acknowledgeEndpoint
+            - clearEndpointAcknowledgement
         comment:
           type: string
           nullable: true

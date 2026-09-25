@@ -275,6 +275,7 @@ public static class Mapper
         {
             EndpointId = state.EndpointId,
             EventTime = state.EventTime,
+            OldestFailureAt = state.OldestFailureAt,
             DeferredCount = state.DeferredCount,
             PendingCount = state.PendingCount + state.UnsupportedCount,
             UnsupportedCount = state.UnsupportedCount,

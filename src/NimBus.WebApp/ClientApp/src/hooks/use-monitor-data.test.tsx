@@ -1,4 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
+import moment from "moment";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   useMonitorData,
@@ -6,12 +7,46 @@ import {
   TELEMETRY_LEN,
 } from "./use-monitor-data";
 
-// Call counters shared with the api-client mock below.
+// State shared with the api-client mock below.
 const statusCountCalls = vi.fn();
+const putAckCalls = vi.fn();
+const deleteAckCalls = vi.fn();
 let failRequests = false;
+let failAckWrites = false;
 let failedCount = 0;
+let oldestFailureAt: moment.Moment | undefined;
+type ServerAck = {
+  endpointId: string;
+  acknowledgementId: string;
+  reason: string;
+  acknowledgedBy?: string;
+  acknowledgedAt: moment.Moment;
+  expiresAt: moment.Moment;
+  failedCountAtAcknowledgement: number;
+};
+let serverAcks: ServerAck[] = [];
+
+function serverAck(overrides: Partial<ServerAck> = {}): ServerAck {
+  const at = moment(Date.now());
+  return {
+    endpointId: "ep-1",
+    acknowledgementId: `ack-${Math.random()}`,
+    reason: "ERP outage",
+    acknowledgedBy: "alice@example.com",
+    acknowledgedAt: at,
+    expiresAt: at.clone().add(4, "hours"),
+    failedCountAtAcknowledgement: 5,
+    ...overrides,
+  };
+}
 
 vi.mock("api-client", () => {
+  class MonitorAcknowledgementRequest {
+    reason?: string;
+    constructor(data?: { reason?: string }) {
+      this.reason = data?.reason;
+    }
+  }
   class Client {
     getEndpointsAll() {
       return Promise.resolve(["ep-1"]);
@@ -27,12 +62,50 @@ vi.mock("api-client", () => {
           failedCount,
           pendingCount: 7,
           deferredCount: 3,
+          oldestFailureAt,
         })),
       );
     }
+    getMonitorAcknowledgements() {
+      return Promise.resolve([...serverAcks]);
+    }
+    putMonitorAcknowledgement(
+      endpointId: string,
+      body: MonitorAcknowledgementRequest,
+    ) {
+      putAckCalls(endpointId, body.reason);
+      if (failAckWrites) return Promise.reject(new Error("forbidden"));
+      const saved = serverAck({
+        endpointId,
+        reason: body.reason ?? "",
+        failedCountAtAcknowledgement: failedCount,
+      });
+      serverAcks = [
+        ...serverAcks.filter((a) => a.endpointId !== endpointId),
+        saved,
+      ];
+      return Promise.resolve(saved);
+    }
+    deleteMonitorAcknowledgement(endpointId: string) {
+      deleteAckCalls(endpointId);
+      if (failAckWrites) return Promise.reject(new Error("forbidden"));
+      serverAcks = serverAcks.filter((a) => a.endpointId !== endpointId);
+      return Promise.resolve();
+    }
   }
-  return { Client, CookieAuth: () => ({}) };
+  return { Client, CookieAuth: () => ({}), MonitorAcknowledgementRequest };
 });
+
+function resetMockState() {
+  statusCountCalls.mockClear();
+  putAckCalls.mockClear();
+  deleteAckCalls.mockClear();
+  failRequests = false;
+  failAckWrites = false;
+  failedCount = 0;
+  oldestFailureAt = undefined;
+  serverAcks = [];
+}
 
 const REFRESH_MS = 5_000;
 
@@ -55,9 +128,7 @@ async function flushAsync() {
 describe("useMonitorData visibility-aware polling", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    statusCountCalls.mockClear();
-    failRequests = false;
-    failedCount = 0;
+    resetMockState();
     setDocumentHidden(false);
     // Node 25's experimental localStorage can leave the global undefined in
     // jsdom runs; the hook guards its own access, so just clear when present.
@@ -156,8 +227,7 @@ describe("useMonitorData visibility-aware polling", () => {
 describe("useMonitorData fleet telemetry", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    failRequests = false;
-    failedCount = 0;
+    resetMockState();
     setDocumentHidden(false);
     window.localStorage?.clear?.();
   });
@@ -203,8 +273,7 @@ describe("useMonitorData fleet telemetry", () => {
 describe("useMonitorData fresh failures", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    failRequests = false;
-    failedCount = 0;
+    resetMockState();
     setDocumentHidden(false);
     window.localStorage?.clear?.();
   });
@@ -232,6 +301,156 @@ describe("useMonitorData fresh failures", () => {
     await flushAsync();
 
     expect(result.current.endpoints[0].isFreshFailure).toBe(true);
+    unmount();
+  });
+});
+
+describe("useMonitorData failing-since time", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetMockState();
+    setDocumentHidden(false);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("counts from the server's oldest open failure, even on first load", async () => {
+    failedCount = 5;
+    const since = Date.now() - 3 * 60 * 60 * 1000;
+    oldestFailureAt = moment(since);
+    const { result, unmount } = renderHook(() => useMonitorData());
+    await flushAsync();
+
+    expect(result.current.endpoints[0].firstFailureAt).toBe(since);
+    unmount();
+  });
+
+  it("falls back to when the page first saw the failure without a server time", async () => {
+    failedCount = 5;
+    const { result, unmount } = renderHook(() => useMonitorData());
+    await flushAsync();
+
+    expect(result.current.endpoints[0].firstFailureAt).toBe(Date.now());
+    unmount();
+  });
+});
+
+describe("useMonitorData shared acknowledgements", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetMockState();
+    setDocumentHidden(false);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function poll() {
+    await act(async () => {
+      vi.advanceTimersByTime(REFRESH_MS);
+    });
+    await flushAsync();
+  }
+
+  it("shows acks from the server without reporting pre-existing ones", async () => {
+    failedCount = 5;
+    serverAcks = [serverAck()];
+    const { result, unmount } = renderHook(() => useMonitorData());
+    await flushAsync();
+
+    expect(result.current.endpoints[0].ack).toMatchObject({
+      reason: "ERP outage",
+      acknowledgedBy: "alice@example.com",
+      failedAtAck: 5,
+    });
+    expect(result.current.ticker).toHaveLength(0);
+    unmount();
+  });
+
+  it("reports an ack placed on another device in the ticker", async () => {
+    failedCount = 5;
+    const { result, unmount } = renderHook(() => useMonitorData());
+    await flushAsync();
+
+    serverAcks = [serverAck()];
+    await poll();
+
+    expect(result.current.endpoints[0].ack?.reason).toBe("ERP outage");
+    expect(result.current.ticker[0]).toMatchObject({
+      endpoint: "ep-1",
+      kind: "ack",
+      detail: "ERP outage · by alice@example.com",
+    });
+    unmount();
+  });
+
+  it("reports the server clearing an ack on recovery", async () => {
+    failedCount = 5;
+    serverAcks = [serverAck()];
+    const { result, unmount } = renderHook(() => useMonitorData());
+    await flushAsync();
+
+    failedCount = 0;
+    serverAcks = [];
+    await poll();
+
+    expect(result.current.endpoints[0].ack).toBeUndefined();
+    expect(result.current.ticker.map((e) => [e.kind, e.detail])).toContainEqual(
+      ["unack", "auto-cleared · recovered"],
+    );
+    unmount();
+  });
+
+  it("saves an ack to the server so other screens see it", async () => {
+    failedCount = 5;
+    const { result, unmount } = renderHook(() => useMonitorData());
+    await flushAsync();
+
+    await act(async () => {
+      await result.current.ack("ep-1", "known issue");
+    });
+
+    expect(putAckCalls).toHaveBeenCalledWith("ep-1", "known issue");
+    expect(result.current.endpoints[0].ack?.reason).toBe("known issue");
+    expect(result.current.endpoints[0].ack?.id).toBeDefined();
+
+    // The next poll returns the same ack: no duplicate ticker entry.
+    await poll();
+    expect(result.current.ticker.filter((e) => e.kind === "ack")).toHaveLength(1);
+    unmount();
+  });
+
+  it("restores the previous state and reports the error when saving fails", async () => {
+    failedCount = 5;
+    const { result, unmount } = renderHook(() => useMonitorData());
+    await flushAsync();
+
+    failAckWrites = true;
+    await act(async () => {
+      await result.current.ack("ep-1", "known issue");
+    });
+
+    expect(result.current.endpoints[0].ack).toBeUndefined();
+    expect(result.current.actionError).toBe("ep-1: forbidden");
+    unmount();
+  });
+
+  it("clears an ack on the server", async () => {
+    failedCount = 5;
+    serverAcks = [serverAck()];
+    const { result, unmount } = renderHook(() => useMonitorData());
+    await flushAsync();
+
+    await act(async () => {
+      await result.current.unack("ep-1");
+    });
+    await poll();
+
+    expect(deleteAckCalls).toHaveBeenCalledWith("ep-1");
+    expect(result.current.endpoints[0].ack).toBeUndefined();
     unmount();
   });
 });

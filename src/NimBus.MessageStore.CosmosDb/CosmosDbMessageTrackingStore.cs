@@ -66,6 +66,7 @@ internal sealed partial class CosmosDbMessageTrackingStore : IMessageTrackingSto
     {
         public int EventCount { get; set; }
         [JsonProperty(PropertyName = "Status")] public string Status { get; set; }
+        public DateTime? OldestUpdatedAt { get; set; }
     }
 
     private sealed class SessionCountQueryResult

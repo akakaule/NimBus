@@ -959,6 +959,9 @@ public class ResolverServiceTests
         public Task<NimBus.MessageStore.States.AccessControlList?> GetEndpointAccessControl(string endpointId) => throw new NotSupportedException();
         public Task<System.Collections.Generic.IReadOnlyList<NimBus.MessageStore.States.AccessControlList>> GetEndpointAccessControls() => throw new NotSupportedException();
         public Task SetEndpointAccessControl(string endpointId, NimBus.MessageStore.States.AccessControlList accessControl) => throw new NotSupportedException();
+        public Task<System.Collections.Generic.IReadOnlyList<NimBus.MessageStore.States.EndpointAcknowledgement>> GetEndpointAcknowledgements() => throw new NotSupportedException();
+        public Task SetEndpointAcknowledgement(NimBus.MessageStore.States.EndpointAcknowledgement acknowledgement) => throw new NotSupportedException();
+        public Task<bool> RemoveEndpointAcknowledgement(string endpointId, string? expectedAcknowledgementId = null) => throw new NotSupportedException();
     }
 
     internal sealed record UploadCall(string EventId, string SessionId, string EndpointId, UnresolvedEvent Content);

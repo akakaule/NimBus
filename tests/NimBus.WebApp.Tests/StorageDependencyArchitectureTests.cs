@@ -25,6 +25,7 @@ public sealed class StorageDependencyArchitectureTests
         typeof(IMetricsStore),
         typeof(IServiceHealthStore),
         typeof(IHeartbeatHistoryStore),
+        typeof(IEndpointAcknowledgementStore),
     ];
 
     [TestMethod]
@@ -74,6 +75,11 @@ public sealed class StorageDependencyArchitectureTests
                 typeof(IEndpointMetadataStore),
             ],
             [typeof(AdminService)] = [typeof(IMessageTrackingStore)],
+            [typeof(MonitorAcknowledgementService)] =
+            [
+                typeof(IEndpointAcknowledgementStore),
+                typeof(IMessageTrackingStore),
+            ],
         };
 
         foreach (var (consumer, contracts) in expected)

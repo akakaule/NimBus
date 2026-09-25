@@ -13,4 +13,11 @@ public class EndpointStateCount
     public int DeadletterCount { get; set; }
     public int UnsupportedCount { get; set; }
     public DateTime EventTime { get; set; }
+
+    /// <summary>
+    /// UTC time the longest-standing open failure was recorded: the earliest
+    /// <see cref="UnresolvedEvent.UpdatedAt"/> of a non-deleted message whose status is
+    /// Failed or DeadLettered. Null when the endpoint has no open failures.
+    /// </summary>
+    public DateTime? OldestFailureAt { get; set; }
 }

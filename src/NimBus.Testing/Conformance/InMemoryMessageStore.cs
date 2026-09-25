@@ -34,6 +34,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
     private readonly ConcurrentDictionary<string, EndpointMetadata> _metadata = new();
     private readonly ConcurrentDictionary<string, EventSchema> _schemas = new();
     private readonly ConcurrentDictionary<string, AccessControlList> _accessControls = new();
+    private readonly ConcurrentDictionary<string, EndpointAcknowledgement> _acknowledgements = new(StringComparer.Ordinal);
     // Heartbeat state is read-modify-write across several records (rows, rollup,
     // claims), so it is guarded by one lock rather than by concurrent collections:
     // the claim methods are only atomic if the read and the write are one step.
@@ -241,11 +242,16 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
 
     public virtual Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId)
     {
-        var grouped = _events.Values.Where(e => e.EndpointId == endpointId).GroupBy(e => e.ResolutionStatus).ToDictionary(g => g.Key, g => g.Count());
+        var events = _events.Values.Where(e => e.EndpointId == endpointId).ToList();
+        var grouped = events.GroupBy(e => e.ResolutionStatus).ToDictionary(g => g.Key, g => g.Count());
+        var failures = events
+            .Where(e => e.ResolutionStatus is ResolutionStatus.Failed or ResolutionStatus.DeadLettered)
+            .Select(e => (DateTime?)DateTime.SpecifyKind(e.UpdatedAt, DateTimeKind.Utc));
         return Task.FromResult(new EndpointStateCount
         {
             EndpointId = endpointId,
             EventTime = DateTime.UtcNow,
+            OldestFailureAt = failures.Min(),
             PendingCount = grouped.GetValueOrDefault(ResolutionStatus.Pending),
             DeferredCount = grouped.GetValueOrDefault(ResolutionStatus.Deferred),
             FailedCount = grouped.GetValueOrDefault(ResolutionStatus.Failed),
@@ -597,6 +603,39 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
     // Copy on both write and read so callers can never mutate stored state in place.
     private static AccessControlList? Clone(AccessControlList? acl)
         => acl == null ? null : JsonConvert.DeserializeObject<AccessControlList>(JsonConvert.SerializeObject(acl));
+
+    public Task<IReadOnlyList<EndpointAcknowledgement>> GetEndpointAcknowledgements()
+        => Task.FromResult<IReadOnlyList<EndpointAcknowledgement>>(_acknowledgements.Values.Select(Clone).ToList());
+
+    public Task SetEndpointAcknowledgement(EndpointAcknowledgement acknowledgement)
+    {
+        var copy = Clone(acknowledgement);
+        _acknowledgements[copy.EndpointId] = copy;
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> RemoveEndpointAcknowledgement(string endpointId, string? expectedAcknowledgementId = null)
+    {
+        if (!_acknowledgements.TryGetValue(endpointId, out var stored)
+            || (expectedAcknowledgementId != null && stored.AcknowledgementId != expectedAcknowledgementId))
+        {
+            return Task.FromResult(false);
+        }
+
+        // Removes only the instance just checked, so a concurrent replace survives.
+        return Task.FromResult(_acknowledgements.TryRemove(new KeyValuePair<string, EndpointAcknowledgement>(endpointId, stored)));
+    }
+
+    private static EndpointAcknowledgement Clone(EndpointAcknowledgement source) => new()
+    {
+        EndpointId = source.EndpointId,
+        AcknowledgementId = source.AcknowledgementId,
+        Reason = source.Reason,
+        AcknowledgedBy = source.AcknowledgedBy,
+        AcknowledgedAtUtc = source.AcknowledgedAtUtc,
+        ExpiresAtUtc = source.ExpiresAtUtc,
+        FailedCountAtAcknowledgement = source.FailedCountAtAcknowledgement,
+    };
 
     public Task<EndpointMetadata?> GetEndpointMetadata(string endpointId)
         => Task.FromResult(_metadata.TryGetValue(endpointId, out var m) ? m : null);

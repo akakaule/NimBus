@@ -1,5 +1,6 @@
 #pragma warning disable CA1707, CA2007
 
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -35,6 +36,42 @@ public sealed class AdminCosmosContainerTests
     }
 
     [TestMethod]
+    public async Task List_marks_integration_intelligence_containers_in_platform()
+    {
+        var cosmos = new RecordingContainerAdmin(
+            "failureclassifications", "intelligencesettings", "IntelligenceSettings", "orphan-a");
+        var sut = CreateController(cosmos, authorized: true);
+
+        var response = await sut.GetAdminCosmosContainersAsync();
+
+        var result = Assert.IsInstanceOfType<OkObjectResult>(response.Result);
+        var containers = Assert.IsInstanceOfType<IEnumerable<CosmosContainerInfo>>(result.Value).ToArray();
+        CollectionAssert.AreEqual(
+            new[] { "IntelligenceSettings", "failureclassifications", "intelligencesettings", "orphan-a" },
+            containers.Select(container => container.Name).ToArray());
+        CollectionAssert.AreEqual(new[] { false, true, true, false },
+            containers.Select(container => container.IsInPlatform).ToArray());
+    }
+
+    [TestMethod]
+    public async Task List_marks_every_container_the_cosmos_template_declares_in_platform()
+    {
+        var declared = CosmosTemplateContainerIds();
+        Assert.IsNotEmpty(declared, "Could not parse any container from cosmosDB.bicep.");
+
+        var response = await CreateController(new RecordingContainerAdmin(declared), authorized: true)
+            .GetAdminCosmosContainersAsync();
+
+        var result = Assert.IsInstanceOfType<OkObjectResult>(response.Result);
+        var deletable = Assert.IsInstanceOfType<IEnumerable<CosmosContainerInfo>>(result.Value)
+            .Where(container => !container.IsInPlatform)
+            .Select(container => container.Name)
+            .ToArray();
+        Assert.IsEmpty(deletable,
+            $"cosmosDB.bicep deploys containers the admin page offers for deletion: {string.Join(", ", deletable)}.");
+    }
+
+    [TestMethod]
     public async Task Delete_requires_owner_and_audits_denial()
     {
         var cosmos = new RecordingContainerAdmin("orphan-a");
@@ -53,6 +90,8 @@ public sealed class AdminCosmosContainerTests
     [TestMethod]
     [DataRow("CurrentEndpoint")]
     [DataRow("messages")]
+    [DataRow("intelligencesettings")]
+    [DataRow("failureclassifications")]
     public async Task Delete_refuses_platform_and_internal_containers(string name)
     {
         var cosmos = new RecordingContainerAdmin(name);
@@ -107,6 +146,29 @@ public sealed class AdminCosmosContainerTests
             new TestHttpContextAccessor(context), null!, null!, new TestPlatform(),
             new ConfigurationBuilder().Build(), audit ?? new RecordingAuditLogService(),
             new FixedAuthorizationService(authorized), null!, containerAdmin: cosmos);
+    }
+
+    /// <summary>
+    /// Container ids <c>deploy/bicep/templates/cosmosDB.bicep</c> declares: dedicated container
+    /// resources (<c>id: 'x'</c> followed by its <c>partitionKey</c>) and the entries of the
+    /// <c>sharedContainers</c> array (<c>{ name: 'x', pk: '/y' }</c>).
+    /// </summary>
+    private static string[] CosmosTemplateContainerIds()
+    {
+        var relative = Path.Combine("deploy", "bicep", "templates", "cosmosDB.bicep");
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            var candidate = Path.Combine(directory.FullName, relative);
+            if (!File.Exists(candidate)) continue;
+
+            return Regex.Matches(File.ReadAllText(candidate),
+                    @"id:\s*'(?<id>[^']+)'\s*partitionKey:|\{\s*name:\s*'(?<id>[^']+)',\s*pk:")
+                .Select(match => match.Groups["id"].Value)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        throw new FileNotFoundException($"Could not locate {relative} above {AppContext.BaseDirectory}.");
     }
 
     private sealed class TestPlatform : NimBus.Core.Platform

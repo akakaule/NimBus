@@ -17,8 +17,9 @@ authorization, redaction, audit and Resolver command path.
 1. **Host in Azure, inside the WebApp.** Serve an opt-in `/mcp` Streamable HTTP endpoint from the
    WebApp site that `deploy/bicep/templates/webApp.bicep` provisions, using
    `ModelContextProtocol.AspNetCore`. A separate Azure host stays possible later.
-2. **Replace `NimBus.Mcp`.** The Spec 022 stdio server is retired once the Phase 1 read tools run in
-   Azure. Bus participation (define event type, subscribe, receive, publish, agent settle) is not
+2. **Replace `NimBus.Mcp`.** The Spec 022 stdio server is retired in Phase 1. It only ever worked
+   against local-dev authentication, and the hosted endpoint covers that under Aspire, so the Azure
+   pilot is a Phase 1 exit criterion rather than a condition for removal. Bus participation (define event type, subscribe, receive, publish, agent settle) is not
    carried into MCP. Participant agents use the `NimBus.Agents` REST SDK. See "Replacing NimBus.Mcp"
    in the design for the tool-by-tool mapping.
 3. **Entra in Azure, on its own bearer scheme.** Use a separately named JWT bearer scheme with
@@ -51,11 +52,12 @@ authorization, redaction, audit and Resolver command path.
 ## Retiring `NimBus.Mcp`
 
 `NimBus.Mcp` has `IsPackable=false`, so it ships no NuGet package or public API, and removing it is
-not a versioning break. It still needs a release-notes entry. At the end of Phase 1:
+not a versioning break. It still needs a release-notes entry. Done in Phase 1, PR 4:
 
-- remove `src/NimBus.Mcp`, `tests/NimBus.Mcp.Tests` and their `src/NimBus.sln` entries;
-- rewrite `docs/mcp-server.md` for the hosted server, including client configuration by URL;
-- update `site/features.html`, Spec 034 §5.8 and the MCP question in Spec 032 (and its plan).
+- removed `src/NimBus.Mcp`, `tests/NimBus.Mcp.Tests` and their `src/NimBus.sln` entries;
+- rewrote `docs/mcp-server.md` for the hosted server, including client configuration by URL and the
+  Entra app registration;
+- updated `site/features.html`, Spec 034 §5.8 and the MCP question in Spec 032 (and its plan).
 
 ## Out of scope
 

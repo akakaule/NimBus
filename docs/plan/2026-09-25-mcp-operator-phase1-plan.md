@@ -121,6 +121,18 @@ guide (App ID URI, `nimbus.observe` scope, `Nimbus.Observe` app role, groups cla
 docs replacing `docs/mcp-server.md`, and removal of `src/NimBus.Mcp`, `tests/NimBus.Mcp.Tests`
 and their solution entries. Release-note entry. Nonproduction Azure pilot before merge.
 
+As built: `deploy.webapp.bicep` carries operator-set `NimBus__Mcp__*` settings forward with the
+`RateLimiting__*` ones (non-secret, plain settings array), guarded by a template text test.
+`docs/mcp-server.md` is the operator guide (local use, Entra app registration, WebApp settings,
+verification, migration). `NimBus.Mcp` and its tests are removed; it only ever worked against
+local-dev authentication, which the hosted endpoint covers under Aspire, so removal does not wait
+for the pilot.
+
+Remaining for Phase 1 exit (needs Azure access, not done in this PR): create the MCP app
+registration, set the `NimBus__Mcp__*` settings on a nonproduction WebApp, and pilot with a real
+MCP client, including the Entra sign-in flow, which so far is covered only by tests with locally
+signed tokens.
+
 ## Verification per PR
 
 `dotnet build src/NimBus.sln -c Release` and `dotnet test src/NimBus.sln -c Release --no-build`;

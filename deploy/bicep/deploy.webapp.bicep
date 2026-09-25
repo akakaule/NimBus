@@ -263,16 +263,20 @@ var templateManagedKeys = map(webappsettings, managed => managed.name)
 // Azure does not define behaviour for. map()/filter() rather than a
 // for-expression: existingAppSettings comes from the runtime list() call, and a
 // for-expression's collection must be calculable at deployment start (BCP178).
-var preservedRateLimitAppSettings = map(
+// The operator MCP endpoint's settings (NimBus__Mcp__*: Enabled, the MCP resource's
+// Entra app registration, allowed origins) follow the same rule: this template
+// creates no app registration, so they are set out of band once it exists and
+// must survive a redeploy. None of them is a secret.
+var preservedOperatorAppSettings = map(
   filter(
     items(existingAppSettings),
-    setting => startsWith(setting.key, 'RateLimiting__') && !contains(templateManagedKeys, setting.key)),
+    setting => (startsWith(setting.key, 'RateLimiting__') || startsWith(setting.key, 'NimBus__Mcp__')) && !contains(templateManagedKeys, setting.key)),
   preserved => {
     name: preserved.key
     value: preserved.value
   })
 
-var webappsettingsFinal = concat(webappsettings, preservedRateLimitAppSettings)
+var webappsettingsFinal = concat(webappsettings, preservedOperatorAppSettings)
 
 module webAppModule 'templates/webApp.bicep' = {
   name: 'webAppDeploy${networkValidation}'

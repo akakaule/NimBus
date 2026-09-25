@@ -221,7 +221,8 @@ to move first, because the action only reads and writes the audit store.
 2. Whether the per-event audit carries the operator note in `Comment` as well as `Data`.
 3. `maxRows` default 500 / cap 2000, or paging for larger backlogs.
 4. Whether to expose the preview through the MCP server. `NimBus.Mcp` exposes agent tools only
-   today; this spec does not add admin actions to it.
+   today; this spec does not add admin actions to it. (Later: Spec 035 replaced `NimBus.Mcp` with
+   the operator endpoint `/mcp`, which excludes administrative actions such as this reconcile.)
 
 ## 10. Alternatives rejected
 

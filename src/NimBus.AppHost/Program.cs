@@ -104,6 +104,10 @@ var resolver = builder.AddAzureFunctionsProject<Projects.NimBus_Resolver>("resol
 var webapp = builder.AddProject<Projects.NimBus_WebApp>("webapp")
     .WithReference(servicebus)
     .WithExternalHttpEndpoints()
+    // Operator MCP endpoint (Spec 035) at <webapp>/mcp. The WebApp maps it only when its
+    // local-dev bypass is on (EnableLocalDevAuthentication in the developer's
+    // appsettings.Development.json), so no sign-in is needed; otherwise it stays off.
+    .WithEnvironment("NimBus__Mcp__EnableForLocalDevelopment", "true")
     .WaitForCompletion(provisioner);
 
 // Live Flow / Monitor realtime push (spec 020). Point the Resolver's

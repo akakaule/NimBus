@@ -252,9 +252,10 @@ shape) settle perfectly happily.
 | After `HandoffFailedRequest` → `ErrorResponse` | `Failed` | `null` | Failed column; operator can Resubmit / Skip |
 
 Handoff metadata persisted alongside the row: `HandoffReason`,
-`ExternalJobId`, `ExpectedBy`. Schema columns are added by
-`0009_Handoff.sql` (SQL Server provider); the Cosmos provider stores
-them on the document directly.
+`ExternalJobId`, `ExpectedBy`. The SQL Server provider adds the columns to
+`UnresolvedEvents` in `0009_Handoff.sql` and to the per-message history table
+`Messages` in `0020_MessageHandoff.sql`; the Cosmos provider stores them on the
+document directly.
 
 The `PendingSubStatus = "Handoff"` discriminator distinguishes a
 pending-handoff entry from a deferred entry parked by session blocking.

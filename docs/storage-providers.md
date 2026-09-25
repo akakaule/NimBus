@@ -105,7 +105,8 @@ these rules:
 
 Before v4.0.0, SQL Server and the in-memory store threw `EndpointNotFoundException` or
 `MessageNotFoundException` where Cosmos DB returned `null`, and SQL Server read NULL text
-columns back as `""`.
+columns back as `""`. SQL Server also dropped the handoff fields (`PendingSubStatus`,
+`HandoffReason`, `ExternalJobId`, `ExpectedBy`) from message history rows.
 
 ## Cosmos DB
 

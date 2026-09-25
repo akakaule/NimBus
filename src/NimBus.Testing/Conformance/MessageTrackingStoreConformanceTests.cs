@@ -2002,23 +2002,8 @@ public abstract class MessageTrackingStoreConformanceTests
         var resp = await store.SearchMessages(new MessageFilter { EventId = eventId }, null, 50);
         var fetched = resp.Messages.Single();
 
-        // Handoff metadata is carried on the UnresolvedEvents row, not the
-        // per-message history row — the SQL provider's Messages table has no
-        // columns for these four, so their round-trip is not part of the
-        // message-search contract. (Covered for events by the UnresolvedEvent
-        // drift guard above.)
-        var exempt = new HashSet<string>
-        {
-            nameof(MessageEntity.PendingSubStatus),
-            nameof(MessageEntity.HandoffReason),
-            nameof(MessageEntity.ExternalJobId),
-            nameof(MessageEntity.ExpectedBy),
-        };
-
         foreach (var prop in typeof(MessageEntity).GetProperties())
         {
-            if (exempt.Contains(prop.Name)) continue;
-
             if (prop.Name == nameof(MessageEntity.MessageContent))
             {
                 Assert.IsNull(fetched.MessageContent?.EventContent?.EventJson,
@@ -2296,6 +2281,9 @@ public abstract class MessageTrackingStoreConformanceTests
             OriginalSessionId = value,
             DeadLetterReason = value,
             DeadLetterErrorDescription = value,
+            PendingSubStatus = value,
+            HandoffReason = value,
+            ExternalJobId = value,
             EnqueuedTimeUtc = DateTime.UtcNow,
             MessageContent = new MessageContent(),
         };
@@ -2322,7 +2310,52 @@ public abstract class MessageTrackingStoreConformanceTests
                 Assert.AreEqual(expected, fetched.OriginalSessionId, $"OriginalSessionId ({label})");
                 Assert.AreEqual(expected, fetched.DeadLetterReason, $"DeadLetterReason ({label})");
                 Assert.AreEqual(expected, fetched.DeadLetterErrorDescription, $"DeadLetterErrorDescription ({label})");
+                Assert.AreEqual(expected, fetched.PendingSubStatus, $"PendingSubStatus ({label})");
+                Assert.AreEqual(expected, fetched.HandoffReason, $"HandoffReason ({label})");
+                Assert.AreEqual(expected, fetched.ExternalJobId, $"ExternalJobId ({label})");
+                Assert.IsNull(fetched.ExpectedBy, $"ExpectedBy ({label})");
             }
+        }
+    }
+
+    [TestMethod]
+    public async Task StoreMessage_roundtrips_handoff_fields()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-handoff-msg");
+        var eventId = Id("handoff-msg");
+        var expectedBy = new DateTime(2026, 6, 1, 9, 0, 0, DateTimeKind.Utc);
+        var messageId = Id("handoff-m1");
+        await store.StoreMessage(new MessageEntity
+        {
+            EventId = eventId,
+            MessageId = messageId,
+            EndpointId = endpointId,
+            SessionId = "s1",
+            EventTypeId = "OrderPlaced",
+            MessageType = MessageType.PendingHandoffResponse,
+            EnqueuedTimeUtc = DateTime.UtcNow,
+            PendingSubStatus = "Handoff",
+            HandoffReason = "external work",
+            ExternalJobId = "JOB-9",
+            ExpectedBy = expectedBy,
+            MessageContent = new MessageContent(),
+        });
+
+        var history = (await store.GetEventHistory(eventId)).ToList();
+        foreach (var fetched in new[]
+        {
+            await store.GetMessage(eventId, messageId),
+            history.Single(m => m.MessageId == messageId),
+            await store.GetDeadletteredMessage(eventId, endpointId),
+        })
+        {
+            Assert.IsNotNull(fetched);
+            Assert.AreEqual("Handoff", fetched.PendingSubStatus);
+            Assert.AreEqual("external work", fetched.HandoffReason);
+            Assert.AreEqual("JOB-9", fetched.ExternalJobId);
+            // DateTime equality compares ticks (Kind-insensitive); SQL DATETIME2 reads back Unspecified.
+            Assert.AreEqual(expectedBy, fetched.ExpectedBy);
         }
     }
 }

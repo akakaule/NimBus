@@ -73,8 +73,7 @@ public partial class EventImplementation
             var events = reponse.Events
                 .Select(Mapper.EventFromMessageStoreEvent)
                 .ToList();
-            await AttachResubmitCounts(endpointId, events);
-            await AttachReportFlags(endpointId, events);
+            await EventRowEnrichment.AttachAsync(messageStore, logger, endpointId, events);
 
             if (!canReadPii)
                 payloadRedaction.Redact(events);
@@ -92,65 +91,6 @@ public partial class EventImplementation
         catch (EndpointNotFoundException)
         {
             return new NotFoundObjectResult($"Endpoint container '{endpointId}' not found in database");
-        }
-    }
-    // Fills each event's ResubmitCount from the audit log in a single batched
-    // query, so the event list can show how many times an event was
-    // resubmitted without a per-row round-trip. Fail-soft: the count is a
-    // display nicety — an enrichment failure must not break search.
-    private async Task AttachResubmitCounts(string endpointId, List<Event> events)
-    {
-        var eventIds = events
-            .Select(e => e.EventId)
-            .Where(id => !string.IsNullOrEmpty(id))
-            .Distinct()
-            .ToList();
-        if (eventIds.Count == 0) return;
-
-        try
-        {
-            var counts = await messageStore.GetResubmitCounts(endpointId, eventIds);
-            foreach (var ev in events)
-            {
-                if (ev.EventId != null && counts.TryGetValue(ev.EventId, out var count))
-                    ev.ResubmitCount = count;
-            }
-        }
-        catch (Exception e)
-        {
-            logger.LogWarning("AttachResubmitCounts failed for endpoint {EndpointId}: {Exception}", endpointId, e.Message);
-        }
-    }
-
-    // Fills each event's "reported" marker (flag + who/when + ticket) from
-    // the report store in a single batched lookup. Fail-soft like
-    // AttachResubmitCounts.
-    private async Task AttachReportFlags(string endpointId, List<Event> events)
-    {
-        var eventIds = events
-            .Select(e => e.EventId)
-            .Where(id => !string.IsNullOrEmpty(id))
-            .Distinct()
-            .ToList();
-        if (eventIds.Count == 0) return;
-
-        try
-        {
-            var reports = await messageStore.GetEventReports(endpointId, eventIds);
-            foreach (var ev in events)
-            {
-                if (ev.EventId != null && reports.TryGetValue(ev.EventId, out var report))
-                {
-                    ev.IsReported = report.IsReported;
-                    ev.ReportedBy = report.ReportedBy;
-                    ev.ReportedAtUtc = report.ReportedAtUtc;
-                    ev.TicketId = report.TicketId;
-                }
-            }
-        }
-        catch (Exception e)
-        {
-            logger.LogWarning("AttachReportFlags failed for endpoint {EndpointId}: {Exception}", endpointId, e.Message);
         }
     }
 }

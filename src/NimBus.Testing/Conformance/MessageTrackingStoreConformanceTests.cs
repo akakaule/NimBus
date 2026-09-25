@@ -1663,6 +1663,201 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual(0, byMidFragment.Events.Count(), "A mid-string fragment must NOT match (no substring semantics).");
     }
 
+    private static UnresolvedEvent FailureEvent(
+        string endpointId,
+        string eventId,
+        string sessionId,
+        string? errorText = null,
+        string eventTypeId = "OrderPlaced",
+        string lastMessageId = "last-message")
+    {
+        var ev = SampleEvent(endpointId, eventId, sessionId);
+        ev.EventTypeId = eventTypeId;
+        ev.LastMessageId = lastMessageId;
+        ev.MessageContent = new MessageContent
+        {
+            ErrorContent = errorText == null ? null : new ErrorContent { ErrorText = errorText },
+        };
+        return ev;
+    }
+
+    [TestMethod]
+    public async Task GetFailedEventsAcrossEndpoints_returns_only_failures_on_the_given_endpoints()
+    {
+        var store = CreateStore();
+        var a = Id("fx-a");
+        var b = Id("fx-b");
+        var excluded = Id("fx-c");
+        await store.UploadFailedMessage(Id("fa1"), "s1", a, FailureEvent(a, Id("fa1"), "s1"));
+        await store.UploadDeadletteredMessage(Id("fa2"), "s2", a, FailureEvent(a, Id("fa2"), "s2"));
+        await store.UploadCompletedMessage(Id("fa3"), "s3", a, FailureEvent(a, Id("fa3"), "s3"));
+        await store.UploadPendingMessage(Id("fa4"), "s4", a, FailureEvent(a, Id("fa4"), "s4"));
+        await store.UploadUnsupportedMessage(Id("fb1"), "s1", b, FailureEvent(b, Id("fb1"), "s1"));
+        await store.UploadFailedMessage(Id("fc1"), "s1", excluded, FailureEvent(excluded, Id("fc1"), "s1"));
+
+        var resp = await store.GetFailedEventsAcrossEndpoints(new EventFilter(), new[] { a, b }, null, 50);
+
+        CollectionAssert.AreEquivalent(
+            new[] { Id("fa1"), Id("fa2"), Id("fb1") },
+            resp.Events.Select(e => e.EventId).ToList());
+        Assert.IsTrue(string.IsNullOrEmpty(resp.ContinuationToken), "A complete first page has no continuation token.");
+    }
+
+    [TestMethod]
+    public async Task GetFailedEventsAcrossEndpoints_intersects_the_status_filter_with_failure_statuses()
+    {
+        var store = CreateStore();
+        var a = Id("fs-a");
+        await store.UploadFailedMessage(Id("fs1"), "s1", a, FailureEvent(a, Id("fs1"), "s1"));
+        await store.UploadDeadletteredMessage(Id("fs2"), "s2", a, FailureEvent(a, Id("fs2"), "s2"));
+        await store.UploadCompletedMessage(Id("fs3"), "s3", a, FailureEvent(a, Id("fs3"), "s3"));
+
+        var deadLettered = await store.GetFailedEventsAcrossEndpoints(
+            new EventFilter { ResolutionStatus = new List<string> { "DeadLettered", "Completed" } }, new[] { a }, null, 50);
+        CollectionAssert.AreEquivalent(new[] { Id("fs2") }, deadLettered.Events.Select(e => e.EventId).ToList());
+
+        var completedOnly = await store.GetFailedEventsAcrossEndpoints(
+            new EventFilter { ResolutionStatus = new List<string> { "Completed" } }, new[] { a }, null, 50);
+        Assert.AreEqual(0, completedOnly.Events.Count(), "Non-failure statuses are never returned.");
+    }
+
+    [TestMethod]
+    public async Task GetFailedEventsAcrossEndpoints_with_no_endpoints_returns_nothing()
+    {
+        var store = CreateStore();
+        var a = Id("fe-a");
+        await store.UploadFailedMessage(Id("fe1"), "s1", a, FailureEvent(a, Id("fe1"), "s1"));
+
+        var resp = await store.GetFailedEventsAcrossEndpoints(new EventFilter(), Array.Empty<string>(), null, 50);
+
+        Assert.AreEqual(0, resp.Events.Count());
+    }
+
+    [TestMethod]
+    public async Task GetFailedEventsAcrossEndpoints_pages_every_row_exactly_once_newest_first()
+    {
+        var store = CreateStore();
+        var endpoints = new[] { Id("fp-a"), Id("fp-b"), Id("fp-c") };
+        var expected = new List<string>();
+        for (var i = 0; i < 7; i++)
+        {
+            var endpointId = endpoints[i % 3];
+            var eventId = Id($"fp{i}");
+            var ev = FailureEvent(endpointId, eventId, $"s{i}");
+            ev.UpdatedAt = DateTime.UtcNow;
+            await store.UploadFailedMessage(eventId, $"s{i}", endpointId, ev);
+            expected.Add(eventId);
+            await Task.Delay(5);
+        }
+
+        var seen = new List<UnresolvedEvent>();
+        string? token = null;
+        var pages = 0;
+        do
+        {
+            var page = await store.GetFailedEventsAcrossEndpoints(new EventFilter(), endpoints, token, 2);
+            var rows = page.Events.ToList();
+            Assert.IsTrue(rows.Count <= 2, "A page never exceeds the requested size.");
+            seen.AddRange(rows);
+            token = page.ContinuationToken;
+            pages++;
+            Assert.IsTrue(pages <= 10, "Paging must terminate.");
+        }
+        while (!string.IsNullOrEmpty(token));
+
+        CollectionAssert.AreEquivalent(expected, seen.Select(e => e.EventId).ToList(), "Every row exactly once across pages.");
+        for (var i = 1; i < seen.Count; i++)
+        {
+            Assert.IsTrue(seen[i - 1].UpdatedAt.Ticks >= seen[i].UpdatedAt.Ticks, "Rows are ordered newest first across pages.");
+        }
+    }
+
+    [TestMethod]
+    public async Task GetFailedEventsAcrossEndpoints_filters_error_text_and_last_message_id()
+    {
+        var store = CreateStore();
+        var a = Id("ft-a");
+        var b = Id("ft-b");
+        await store.UploadFailedMessage(Id("ft1"), "s1", a, FailureEvent(a, Id("ft1"), "s1", "HttpRequestException: 503 Service Unavailable", lastMessageId: "msg-alpha-1"));
+        await store.UploadDeadletteredMessage(Id("ft2"), "s2", b, FailureEvent(b, Id("ft2"), "s2", "TimeoutException: handler exceeded", lastMessageId: "msg-beta-2"));
+        await store.UploadFailedMessage(Id("ft3"), "s3", b, FailureEvent(b, Id("ft3"), "s3", null, lastMessageId: "msg-alpha-3"));
+
+        var byError = await store.GetFailedEventsAcrossEndpoints(new EventFilter { ErrorText = "service UNAVAILABLE" }, new[] { a, b }, null, 50);
+        CollectionAssert.AreEquivalent(new[] { Id("ft1") }, byError.Events.Select(e => e.EventId).ToList(), "Error text is a case-insensitive substring match.");
+
+        var byMessageId = await store.GetFailedEventsAcrossEndpoints(new EventFilter { LastMessageId = "MSG-ALPHA" }, new[] { a, b }, null, 50);
+        CollectionAssert.AreEquivalent(new[] { Id("ft1"), Id("ft3") }, byMessageId.Events.Select(e => e.EventId).ToList(), "Last message id is a case-insensitive prefix match.");
+
+        var byMidFragment = await store.GetFailedEventsAcrossEndpoints(new EventFilter { LastMessageId = "alpha" }, new[] { a, b }, null, 50);
+        Assert.AreEqual(0, byMidFragment.Events.Count(), "Last message id has no substring semantics.");
+
+        var errorKept = byError.Events.Single();
+        Assert.AreEqual("HttpRequestException: 503 Service Unavailable", errorKept.MessageContent?.ErrorContent?.ErrorText, "ErrorContent survives the search projection.");
+    }
+
+    [TestMethod]
+    public async Task GetEventsByFilter_honours_error_text_and_last_message_id()
+    {
+        var store = CreateStore();
+        var a = Id("fg-a");
+        await store.UploadFailedMessage(Id("fg1"), "s1", a, FailureEvent(a, Id("fg1"), "s1", "SqlException: deadlock victim", lastMessageId: "m-one"));
+        await store.UploadFailedMessage(Id("fg2"), "s2", a, FailureEvent(a, Id("fg2"), "s2", "NullReferenceException", lastMessageId: "m-two"));
+
+        var byError = await store.GetEventsByFilter(new EventFilter { EndPointId = a, ErrorText = "DEADLOCK" }, null!, 50);
+        CollectionAssert.AreEquivalent(new[] { Id("fg1") }, byError.Events.Select(e => e.EventId).ToList());
+
+        var byMessageId = await store.GetEventsByFilter(new EventFilter { EndPointId = a, LastMessageId = "m-tw" }, null!, 50);
+        CollectionAssert.AreEquivalent(new[] { Id("fg2") }, byMessageId.Events.Select(e => e.EventId).ToList());
+    }
+
+    [TestMethod]
+    public async Task GetFailedEventHistogram_counts_per_bucket_endpoint_and_status()
+    {
+        var store = CreateStore();
+        var a = Id("fh-a");
+        var b = Id("fh-b");
+        var excluded = Id("fh-c");
+        await store.UploadFailedMessage(Id("fh1"), "s1", a, FailureEvent(a, Id("fh1"), "s1"));
+        await store.UploadFailedMessage(Id("fh2"), "s2", a, FailureEvent(a, Id("fh2"), "s2"));
+        await store.UploadDeadletteredMessage(Id("fh3"), "s3", a, FailureEvent(a, Id("fh3"), "s3"));
+        await store.UploadCompletedMessage(Id("fh4"), "s4", a, FailureEvent(a, Id("fh4"), "s4"));
+        await store.UploadUnsupportedMessage(Id("fh5"), "s5", b, FailureEvent(b, Id("fh5"), "s5"));
+        await store.UploadFailedMessage(Id("fh6"), "s6", excluded, FailureEvent(excluded, Id("fh6"), "s6"));
+
+        // Events are stamped "now"; with the window starting 90 minutes ago and hourly buckets
+        // they all land in the second bucket, which starts at from + 1h.
+        var from = DateTime.UtcNow.AddMinutes(-90);
+        var to = DateTime.UtcNow.AddMinutes(30);
+        var histogram = await store.GetFailedEventHistogram(new EventFilter(), new[] { a, b }, from, to, TimeSpan.FromHours(1));
+
+        Assert.IsFalse(histogram.Truncated);
+        var expectedStart = from.AddHours(1).Ticks;
+        Assert.IsTrue(histogram.Rows.All(r => r.BucketStartUtc.Ticks == expectedStart), "Buckets are aligned to the window start.");
+        var cells = histogram.Rows.ToDictionary(r => (r.EndpointId, r.Status), r => r.Count);
+        Assert.AreEqual(3, cells.Count, "Only non-empty cells are returned.");
+        Assert.AreEqual(2, cells[(a, "Failed")]);
+        Assert.AreEqual(1, cells[(a, "DeadLettered")]);
+        Assert.AreEqual(1, cells[(b, "Unsupported")]);
+    }
+
+    [TestMethod]
+    public async Task GetFailedEventHistogram_honours_the_window_and_the_filter()
+    {
+        var store = CreateStore();
+        var a = Id("fw-a");
+        await store.UploadFailedMessage(Id("fw1"), "s1", a, FailureEvent(a, Id("fw1"), "s1", eventTypeId: "OrderPlaced"));
+        await store.UploadFailedMessage(Id("fw2"), "s2", a, FailureEvent(a, Id("fw2"), "s2", eventTypeId: "OrderCancelled"));
+
+        var future = await store.GetFailedEventHistogram(
+            new EventFilter(), new[] { a }, DateTime.UtcNow.AddMinutes(5), DateTime.UtcNow.AddMinutes(65), TimeSpan.FromMinutes(5));
+        Assert.AreEqual(0, future.Rows.Count, "Events before the window start are excluded.");
+
+        var from = DateTime.UtcNow.AddMinutes(-30);
+        var byType = await store.GetFailedEventHistogram(
+            new EventFilter { EventTypeId = new List<string> { "OrderCancelled" } }, new[] { a }, from, DateTime.UtcNow.AddMinutes(30), TimeSpan.FromHours(1));
+        Assert.AreEqual(1, byType.Rows.Sum(r => r.Count), "The histogram applies the search filter.");
+    }
+
     [TestMethod]
     public async Task SearchAudits_matches_auditor_by_case_insensitive_prefix()
     {

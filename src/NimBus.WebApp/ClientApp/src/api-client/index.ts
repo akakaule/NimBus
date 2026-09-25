@@ -4947,6 +4947,165 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Search unresolved failures across every endpoint the caller can read
+     * @param body (optional) 
+     * @return OK
+     */
+    postFailedSearch(body?: FailedSearchRequest | undefined): Promise<SearchResponse> {
+        let url_ = this.baseUrl + "/api/failed/search";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostFailedSearch(_response);
+        });
+    }
+
+    protected processPostFailedSearch(response: Response): Promise<SearchResponse> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = SearchResponse.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Bad Request", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<SearchResponse>(null as any);
+    }
+
+    /**
+     * Count unresolved failures per time bucket
+     * @param body (optional) 
+     * @return OK
+     */
+    postFailedHistogram(body?: FailedHistogramRequest | undefined): Promise<FailedHistogram> {
+        let url_ = this.baseUrl + "/api/failed/histogram";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostFailedHistogram(_response);
+        });
+    }
+
+    protected processPostFailedHistogram(response: Response): Promise<FailedHistogram> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = FailedHistogram.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Bad Request", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<FailedHistogram>(null as any);
+    }
+
+    /**
+     * Group unresolved failures by error category and pattern
+     * @param body (optional) 
+     * @return OK
+     */
+    postFailedErrorGroups(body?: FailedErrorGroupsRequest | undefined): Promise<FailedErrorGroups> {
+        let url_ = this.baseUrl + "/api/failed/error-groups";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostFailedErrorGroups(_response);
+        });
+    }
+
+    protected processPostFailedErrorGroups(response: Response): Promise<FailedErrorGroups> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = FailedErrorGroups.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Bad Request", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<FailedErrorGroups>(null as any);
+    }
+
+    /**
      * Search audit log entries across all events
      * @param body (optional) 
      * @return OK
@@ -10176,6 +10335,1008 @@ export class MetadataShort implements IMetadataShort {
 export interface IMetadataShort {
     endpointId?: string;
     subscriptionStatus?: string;
+
+    [key: string]: any;
+}
+
+export class FailedSearchFilter implements IFailedSearchFilter {
+    /** Endpoints to search; empty or omitted means every endpoint the caller can read. */
+    endpointIds?: string[] | undefined;
+    /** Failure statuses to include; empty or omitted means all three. */
+    statuses?: Statuses[] | undefined;
+    eventTypeId?: string[] | undefined;
+    eventId?: string | undefined;
+    lastMessageId?: string | undefined;
+    sessionId?: string | undefined;
+    /** Publishing endpoint. */
+    from?: string | undefined;
+    /** Receiving endpoint. */
+    to?: string | undefined;
+    /** Case-insensitive substring of the error text. */
+    errorText?: string | undefined;
+    updatedAtFrom?: moment.Moment | undefined;
+    updatedAtTo?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IFailedSearchFilter) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["endpointIds"])) {
+                this.endpointIds = [] as any;
+                for (let item of _data["endpointIds"])
+                    this.endpointIds!.push(item);
+            }
+            if (Array.isArray(_data["statuses"])) {
+                this.statuses = [] as any;
+                for (let item of _data["statuses"])
+                    this.statuses!.push(item);
+            }
+            if (Array.isArray(_data["eventTypeId"])) {
+                this.eventTypeId = [] as any;
+                for (let item of _data["eventTypeId"])
+                    this.eventTypeId!.push(item);
+            }
+            this.eventId = _data["eventId"];
+            this.lastMessageId = _data["lastMessageId"];
+            this.sessionId = _data["sessionId"];
+            this.from = _data["from"];
+            this.to = _data["to"];
+            this.errorText = _data["errorText"];
+            this.updatedAtFrom = _data["updatedAtFrom"] ? moment(_data["updatedAtFrom"].toString()) : undefined as any;
+            this.updatedAtTo = _data["updatedAtTo"] ? moment(_data["updatedAtTo"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): FailedSearchFilter {
+        data = typeof data === 'object' ? data : {};
+        let result = new FailedSearchFilter();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.endpointIds)) {
+            data["endpointIds"] = [];
+            for (let item of this.endpointIds)
+                data["endpointIds"].push(item);
+        }
+        if (Array.isArray(this.statuses)) {
+            data["statuses"] = [];
+            for (let item of this.statuses)
+                data["statuses"].push(item);
+        }
+        if (Array.isArray(this.eventTypeId)) {
+            data["eventTypeId"] = [];
+            for (let item of this.eventTypeId)
+                data["eventTypeId"].push(item);
+        }
+        data["eventId"] = this.eventId;
+        data["lastMessageId"] = this.lastMessageId;
+        data["sessionId"] = this.sessionId;
+        data["from"] = this.from;
+        data["to"] = this.to;
+        data["errorText"] = this.errorText;
+        data["updatedAtFrom"] = this.updatedAtFrom ? this.updatedAtFrom.toISOString() : undefined as any;
+        data["updatedAtTo"] = this.updatedAtTo ? this.updatedAtTo.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): FailedSearchFilter {
+        const json = this.toJSON();
+        let result = new FailedSearchFilter();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IFailedSearchFilter {
+    /** Endpoints to search; empty or omitted means every endpoint the caller can read. */
+    endpointIds?: string[] | undefined;
+    /** Failure statuses to include; empty or omitted means all three. */
+    statuses?: Statuses[] | undefined;
+    eventTypeId?: string[] | undefined;
+    eventId?: string | undefined;
+    lastMessageId?: string | undefined;
+    sessionId?: string | undefined;
+    /** Publishing endpoint. */
+    from?: string | undefined;
+    /** Receiving endpoint. */
+    to?: string | undefined;
+    /** Case-insensitive substring of the error text. */
+    errorText?: string | undefined;
+    updatedAtFrom?: moment.Moment | undefined;
+    updatedAtTo?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class FailedSearchRequest implements IFailedSearchRequest {
+    filter?: FailedSearchFilter;
+    continuationToken?: string | undefined;
+    /** Page size. Server clamps to [1, 500] and defaults to 100 when omitted or <= 0. */
+    maxSearchItemsCount?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IFailedSearchRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.filter = _data["filter"] ? FailedSearchFilter.fromJS(_data["filter"]) : undefined as any;
+            this.continuationToken = _data["continuationToken"];
+            this.maxSearchItemsCount = _data["maxSearchItemsCount"];
+        }
+    }
+
+    static fromJS(data: any): FailedSearchRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new FailedSearchRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["filter"] = this.filter ? this.filter.toJSON() : undefined as any;
+        data["continuationToken"] = this.continuationToken;
+        data["maxSearchItemsCount"] = this.maxSearchItemsCount;
+        return data;
+    }
+
+    clone(): FailedSearchRequest {
+        const json = this.toJSON();
+        let result = new FailedSearchRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IFailedSearchRequest {
+    filter?: FailedSearchFilter;
+    continuationToken?: string | undefined;
+    /** Page size. Server clamps to [1, 500] and defaults to 100 when omitted or <= 0. */
+    maxSearchItemsCount?: number;
+
+    [key: string]: any;
+}
+
+export class FailedHistogramRequest implements IFailedHistogramRequest {
+    filter?: FailedSearchFilter;
+    period?: Period;
+    /** Custom window start; used with `to` instead of `period`. */
+    from?: moment.Moment | undefined;
+    /** Custom window end; used with `from` instead of `period`. */
+    to?: moment.Moment | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IFailedHistogramRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.filter = _data["filter"] ? FailedSearchFilter.fromJS(_data["filter"]) : undefined as any;
+            this.period = _data["period"];
+            this.from = _data["from"] ? moment(_data["from"].toString()) : undefined as any;
+            this.to = _data["to"] ? moment(_data["to"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): FailedHistogramRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new FailedHistogramRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["filter"] = this.filter ? this.filter.toJSON() : undefined as any;
+        data["period"] = this.period;
+        data["from"] = this.from ? this.from.toISOString() : undefined as any;
+        data["to"] = this.to ? this.to.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): FailedHistogramRequest {
+        const json = this.toJSON();
+        let result = new FailedHistogramRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IFailedHistogramRequest {
+    filter?: FailedSearchFilter;
+    period?: Period;
+    /** Custom window start; used with `to` instead of `period`. */
+    from?: moment.Moment | undefined;
+    /** Custom window end; used with `from` instead of `period`. */
+    to?: moment.Moment | undefined;
+
+    [key: string]: any;
+}
+
+export class FailedHistogram implements IFailedHistogram {
+    /** Bucket size in minutes. */
+    bucketMinutes?: number;
+    /** Start of the first bucket (inclusive). */
+    from?: moment.Moment;
+    /** End of the window (exclusive). */
+    to?: moment.Moment;
+    /** Every bucket in the window, oldest first, empty ones included. */
+    buckets?: FailedHistogramBucket[];
+    totals?: FailedHistogramTotals;
+    /** True when the store stopped counting at its cap; counts are then a lower bound. */
+    truncated?: boolean;
+
+    [key: string]: any;
+
+    constructor(data?: IFailedHistogram) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.bucketMinutes = _data["bucketMinutes"];
+            this.from = _data["from"] ? moment(_data["from"].toString()) : undefined as any;
+            this.to = _data["to"] ? moment(_data["to"].toString()) : undefined as any;
+            if (Array.isArray(_data["buckets"])) {
+                this.buckets = [] as any;
+                for (let item of _data["buckets"])
+                    this.buckets!.push(FailedHistogramBucket.fromJS(item));
+            }
+            this.totals = _data["totals"] ? FailedHistogramTotals.fromJS(_data["totals"]) : undefined as any;
+            this.truncated = _data["truncated"];
+        }
+    }
+
+    static fromJS(data: any): FailedHistogram {
+        data = typeof data === 'object' ? data : {};
+        let result = new FailedHistogram();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["bucketMinutes"] = this.bucketMinutes;
+        data["from"] = this.from ? this.from.toISOString() : undefined as any;
+        data["to"] = this.to ? this.to.toISOString() : undefined as any;
+        if (Array.isArray(this.buckets)) {
+            data["buckets"] = [];
+            for (let item of this.buckets)
+                data["buckets"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["totals"] = this.totals ? this.totals.toJSON() : undefined as any;
+        data["truncated"] = this.truncated;
+        return data;
+    }
+
+    clone(): FailedHistogram {
+        const json = this.toJSON();
+        let result = new FailedHistogram();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IFailedHistogram {
+    /** Bucket size in minutes. */
+    bucketMinutes?: number;
+    /** Start of the first bucket (inclusive). */
+    from?: moment.Moment;
+    /** End of the window (exclusive). */
+    to?: moment.Moment;
+    /** Every bucket in the window, oldest first, empty ones included. */
+    buckets?: FailedHistogramBucket[];
+    totals?: FailedHistogramTotals;
+    /** True when the store stopped counting at its cap; counts are then a lower bound. */
+    truncated?: boolean;
+
+    [key: string]: any;
+}
+
+export class FailedHistogramBucket implements IFailedHistogramBucket {
+    start?: moment.Moment;
+    failed?: number;
+    deadLettered?: number;
+    unsupported?: number;
+    byEndpoint?: { [key: string]: number; };
+
+    [key: string]: any;
+
+    constructor(data?: IFailedHistogramBucket) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.start = _data["start"] ? moment(_data["start"].toString()) : undefined as any;
+            this.failed = _data["failed"];
+            this.deadLettered = _data["deadLettered"];
+            this.unsupported = _data["unsupported"];
+            if (_data["byEndpoint"]) {
+                this.byEndpoint = {} as any;
+                for (let key in _data["byEndpoint"]) {
+                    if (_data["byEndpoint"].hasOwnProperty(key))
+                        (this.byEndpoint as any)![key] = _data["byEndpoint"][key];
+                }
+            }
+        }
+    }
+
+    static fromJS(data: any): FailedHistogramBucket {
+        data = typeof data === 'object' ? data : {};
+        let result = new FailedHistogramBucket();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["start"] = this.start ? this.start.toISOString() : undefined as any;
+        data["failed"] = this.failed;
+        data["deadLettered"] = this.deadLettered;
+        data["unsupported"] = this.unsupported;
+        if (this.byEndpoint) {
+            data["byEndpoint"] = {};
+            for (let key in this.byEndpoint) {
+                if (this.byEndpoint.hasOwnProperty(key))
+                    (data["byEndpoint"] as any)[key] = (this.byEndpoint as any)[key];
+            }
+        }
+        return data;
+    }
+
+    clone(): FailedHistogramBucket {
+        const json = this.toJSON();
+        let result = new FailedHistogramBucket();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IFailedHistogramBucket {
+    start?: moment.Moment;
+    failed?: number;
+    deadLettered?: number;
+    unsupported?: number;
+    byEndpoint?: { [key: string]: number; };
+
+    [key: string]: any;
+}
+
+export class FailedHistogramTotals implements IFailedHistogramTotals {
+    failed?: number;
+    deadLettered?: number;
+    unsupported?: number;
+    byEndpoint?: FailedEndpointTotals[];
+
+    [key: string]: any;
+
+    constructor(data?: IFailedHistogramTotals) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.failed = _data["failed"];
+            this.deadLettered = _data["deadLettered"];
+            this.unsupported = _data["unsupported"];
+            if (Array.isArray(_data["byEndpoint"])) {
+                this.byEndpoint = [] as any;
+                for (let item of _data["byEndpoint"])
+                    this.byEndpoint!.push(FailedEndpointTotals.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): FailedHistogramTotals {
+        data = typeof data === 'object' ? data : {};
+        let result = new FailedHistogramTotals();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["failed"] = this.failed;
+        data["deadLettered"] = this.deadLettered;
+        data["unsupported"] = this.unsupported;
+        if (Array.isArray(this.byEndpoint)) {
+            data["byEndpoint"] = [];
+            for (let item of this.byEndpoint)
+                data["byEndpoint"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): FailedHistogramTotals {
+        const json = this.toJSON();
+        let result = new FailedHistogramTotals();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IFailedHistogramTotals {
+    failed?: number;
+    deadLettered?: number;
+    unsupported?: number;
+    byEndpoint?: FailedEndpointTotals[];
+
+    [key: string]: any;
+}
+
+export class FailedEndpointTotals implements IFailedEndpointTotals {
+    endpointId?: string;
+    failed?: number;
+    deadLettered?: number;
+    unsupported?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IFailedEndpointTotals) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.endpointId = _data["endpointId"];
+            this.failed = _data["failed"];
+            this.deadLettered = _data["deadLettered"];
+            this.unsupported = _data["unsupported"];
+        }
+    }
+
+    static fromJS(data: any): FailedEndpointTotals {
+        data = typeof data === 'object' ? data : {};
+        let result = new FailedEndpointTotals();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["endpointId"] = this.endpointId;
+        data["failed"] = this.failed;
+        data["deadLettered"] = this.deadLettered;
+        data["unsupported"] = this.unsupported;
+        return data;
+    }
+
+    clone(): FailedEndpointTotals {
+        const json = this.toJSON();
+        let result = new FailedEndpointTotals();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IFailedEndpointTotals {
+    endpointId?: string;
+    failed?: number;
+    deadLettered?: number;
+    unsupported?: number;
+
+    [key: string]: any;
+}
+
+export class FailedErrorGroupsRequest implements IFailedErrorGroupsRequest {
+    filter?: FailedSearchFilter;
+
+    [key: string]: any;
+
+    constructor(data?: IFailedErrorGroupsRequest) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.filter = _data["filter"] ? FailedSearchFilter.fromJS(_data["filter"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): FailedErrorGroupsRequest {
+        data = typeof data === 'object' ? data : {};
+        let result = new FailedErrorGroupsRequest();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["filter"] = this.filter ? this.filter.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): FailedErrorGroupsRequest {
+        const json = this.toJSON();
+        let result = new FailedErrorGroupsRequest();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IFailedErrorGroupsRequest {
+    filter?: FailedSearchFilter;
+
+    [key: string]: any;
+}
+
+export class FailedErrorGroups implements IFailedErrorGroups {
+    groups?: FailedErrorGroup[];
+    /** Failures grouped. */
+    total?: number;
+    /** True when more failures matched than the server groups; the groups cover the newest ones. */
+    truncated?: boolean;
+
+    [key: string]: any;
+
+    constructor(data?: IFailedErrorGroups) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["groups"])) {
+                this.groups = [] as any;
+                for (let item of _data["groups"])
+                    this.groups!.push(FailedErrorGroup.fromJS(item));
+            }
+            this.total = _data["total"];
+            this.truncated = _data["truncated"];
+        }
+    }
+
+    static fromJS(data: any): FailedErrorGroups {
+        data = typeof data === 'object' ? data : {};
+        let result = new FailedErrorGroups();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.groups)) {
+            data["groups"] = [];
+            for (let item of this.groups)
+                data["groups"].push(item ? item.toJSON() : undefined as any);
+        }
+        data["total"] = this.total;
+        data["truncated"] = this.truncated;
+        return data;
+    }
+
+    clone(): FailedErrorGroups {
+        const json = this.toJSON();
+        let result = new FailedErrorGroups();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IFailedErrorGroups {
+    groups?: FailedErrorGroup[];
+    /** Failures grouped. */
+    total?: number;
+    /** True when more failures matched than the server groups; the groups cover the newest ones. */
+    truncated?: boolean;
+
+    [key: string]: any;
+}
+
+export class FailedErrorGroup implements IFailedErrorGroup {
+    errorCategory?: string;
+    count?: number;
+    endpoints?: string[];
+    eventTypes?: string[];
+    latestOccurrence?: moment.Moment;
+    exampleErrorText?: string;
+    subGroups?: FailedErrorSubGroup[];
+
+    [key: string]: any;
+
+    constructor(data?: IFailedErrorGroup) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.errorCategory = _data["errorCategory"];
+            this.count = _data["count"];
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(item);
+            }
+            if (Array.isArray(_data["eventTypes"])) {
+                this.eventTypes = [] as any;
+                for (let item of _data["eventTypes"])
+                    this.eventTypes!.push(item);
+            }
+            this.latestOccurrence = _data["latestOccurrence"] ? moment(_data["latestOccurrence"].toString()) : undefined as any;
+            this.exampleErrorText = _data["exampleErrorText"];
+            if (Array.isArray(_data["subGroups"])) {
+                this.subGroups = [] as any;
+                for (let item of _data["subGroups"])
+                    this.subGroups!.push(FailedErrorSubGroup.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): FailedErrorGroup {
+        data = typeof data === 'object' ? data : {};
+        let result = new FailedErrorGroup();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["errorCategory"] = this.errorCategory;
+        data["count"] = this.count;
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item);
+        }
+        if (Array.isArray(this.eventTypes)) {
+            data["eventTypes"] = [];
+            for (let item of this.eventTypes)
+                data["eventTypes"].push(item);
+        }
+        data["latestOccurrence"] = this.latestOccurrence ? this.latestOccurrence.toISOString() : undefined as any;
+        data["exampleErrorText"] = this.exampleErrorText;
+        if (Array.isArray(this.subGroups)) {
+            data["subGroups"] = [];
+            for (let item of this.subGroups)
+                data["subGroups"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): FailedErrorGroup {
+        const json = this.toJSON();
+        let result = new FailedErrorGroup();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IFailedErrorGroup {
+    errorCategory?: string;
+    count?: number;
+    endpoints?: string[];
+    eventTypes?: string[];
+    latestOccurrence?: moment.Moment;
+    exampleErrorText?: string;
+    subGroups?: FailedErrorSubGroup[];
+
+    [key: string]: any;
+}
+
+export class FailedErrorSubGroup implements IFailedErrorSubGroup {
+    normalizedPattern?: string;
+    count?: number;
+    endpoints?: string[];
+    eventTypes?: string[];
+    latestOccurrence?: moment.Moment;
+    exampleErrorText?: string;
+    events?: FailedEventRef[];
+
+    [key: string]: any;
+
+    constructor(data?: IFailedErrorSubGroup) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.normalizedPattern = _data["normalizedPattern"];
+            this.count = _data["count"];
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(item);
+            }
+            if (Array.isArray(_data["eventTypes"])) {
+                this.eventTypes = [] as any;
+                for (let item of _data["eventTypes"])
+                    this.eventTypes!.push(item);
+            }
+            this.latestOccurrence = _data["latestOccurrence"] ? moment(_data["latestOccurrence"].toString()) : undefined as any;
+            this.exampleErrorText = _data["exampleErrorText"];
+            if (Array.isArray(_data["events"])) {
+                this.events = [] as any;
+                for (let item of _data["events"])
+                    this.events!.push(FailedEventRef.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): FailedErrorSubGroup {
+        data = typeof data === 'object' ? data : {};
+        let result = new FailedErrorSubGroup();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["normalizedPattern"] = this.normalizedPattern;
+        data["count"] = this.count;
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item);
+        }
+        if (Array.isArray(this.eventTypes)) {
+            data["eventTypes"] = [];
+            for (let item of this.eventTypes)
+                data["eventTypes"].push(item);
+        }
+        data["latestOccurrence"] = this.latestOccurrence ? this.latestOccurrence.toISOString() : undefined as any;
+        data["exampleErrorText"] = this.exampleErrorText;
+        if (Array.isArray(this.events)) {
+            data["events"] = [];
+            for (let item of this.events)
+                data["events"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): FailedErrorSubGroup {
+        const json = this.toJSON();
+        let result = new FailedErrorSubGroup();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IFailedErrorSubGroup {
+    normalizedPattern?: string;
+    count?: number;
+    endpoints?: string[];
+    eventTypes?: string[];
+    latestOccurrence?: moment.Moment;
+    exampleErrorText?: string;
+    events?: FailedEventRef[];
+
+    [key: string]: any;
+}
+
+export class FailedEventRef implements IFailedEventRef {
+    eventId?: string;
+    lastMessageId?: string | undefined;
+    endpointId?: string;
+    sessionId?: string | undefined;
+    eventTypeId?: string | undefined;
+    resolutionStatus?: string;
+    updatedAt?: moment.Moment;
+    errorText?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IFailedEventRef) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.eventId = _data["eventId"];
+            this.lastMessageId = _data["lastMessageId"];
+            this.endpointId = _data["endpointId"];
+            this.sessionId = _data["sessionId"];
+            this.eventTypeId = _data["eventTypeId"];
+            this.resolutionStatus = _data["resolutionStatus"];
+            this.updatedAt = _data["updatedAt"] ? moment(_data["updatedAt"].toString()) : undefined as any;
+            this.errorText = _data["errorText"];
+        }
+    }
+
+    static fromJS(data: any): FailedEventRef {
+        data = typeof data === 'object' ? data : {};
+        let result = new FailedEventRef();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["eventId"] = this.eventId;
+        data["lastMessageId"] = this.lastMessageId;
+        data["endpointId"] = this.endpointId;
+        data["sessionId"] = this.sessionId;
+        data["eventTypeId"] = this.eventTypeId;
+        data["resolutionStatus"] = this.resolutionStatus;
+        data["updatedAt"] = this.updatedAt ? this.updatedAt.toISOString() : undefined as any;
+        data["errorText"] = this.errorText;
+        return data;
+    }
+
+    clone(): FailedEventRef {
+        const json = this.toJSON();
+        let result = new FailedEventRef();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IFailedEventRef {
+    eventId?: string;
+    lastMessageId?: string | undefined;
+    endpointId?: string;
+    sessionId?: string | undefined;
+    eventTypeId?: string | undefined;
+    resolutionStatus?: string;
+    updatedAt?: moment.Moment;
+    errorText?: string | undefined;
 
     [key: string]: any;
 }
@@ -16332,6 +17493,12 @@ export enum ResolutionStatus {
     Unsupported = "Unsupported",
     Completed = "Completed",
     Skipped = "Skipped",
+}
+
+export enum Statuses {
+    Failed = "Failed",
+    DeadLettered = "DeadLettered",
+    Unsupported = "Unsupported",
 }
 
 export enum MessageSearchFilterMessageType {

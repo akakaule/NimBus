@@ -190,12 +190,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
 
     public virtual Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount)
     {
-        IEnumerable<UnresolvedEvent> q = _events.Values;
-        // ID-like fields use case-insensitive PREFIX matching, converging with
-        // the Cosmos (STARTSWITH) and SQL Server (LIKE 'value%') providers.
-        if (!string.IsNullOrEmpty(filter.EndPointId)) q = q.Where(e => HasPrefix(e.EndpointId, filter.EndPointId));
-        if (!string.IsNullOrEmpty(filter.EventId)) q = q.Where(e => HasPrefix(e.EventId, filter.EventId));
-        if (!string.IsNullOrEmpty(filter.SessionId)) q = q.Where(e => HasPrefix(e.SessionId, filter.SessionId));
+        var q = ApplyEventFilter(_events.Values, filter);
         if (filter.ResolutionStatus is { Count: > 0 })
         {
             var statuses = new HashSet<string>(filter.ResolutionStatus);
@@ -210,6 +205,77 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
             .Select(CloneWithoutEventJson)
             .ToList();
         return Task.FromResult(new SearchResponse { Events = results });
+    }
+
+    public virtual Task<SearchResponse> GetFailedEventsAcrossEndpoints(
+        EventFilter filter,
+        IReadOnlyCollection<string> endpointIds,
+        string? continuationToken,
+        int maxItemCount)
+    {
+        var pageSize = PaginationLimits.Resolve(maxItemCount);
+        var offset = int.TryParse(continuationToken, out var parsed) && parsed > 0 ? parsed : 0;
+        var page = FailedEventsQuery(filter, endpointIds)
+            .OrderByDescending(e => e.UpdatedAt)
+            .ThenByDescending(e => e.EndpointId, StringComparer.Ordinal)
+            .ThenByDescending(CompositeEventId, StringComparer.Ordinal)
+            .Skip(offset)
+            .Take(pageSize + 1)
+            .ToList();
+        var hasMore = page.Count > pageSize;
+        return Task.FromResult(new SearchResponse
+        {
+            Events = page.Take(pageSize).Select(CloneWithoutEventJson).ToList(),
+            ContinuationToken = hasMore ? (offset + pageSize).ToString(System.Globalization.CultureInfo.InvariantCulture) : null!,
+        });
+    }
+
+    public virtual Task<FailedEventHistogram> GetFailedEventHistogram(
+        EventFilter filter,
+        IReadOnlyCollection<string> endpointIds,
+        DateTime fromUtc,
+        DateTime toUtc,
+        TimeSpan bucketSize)
+    {
+        var observations = FailedEventsQuery(filter, endpointIds)
+            .Where(e => e.UpdatedAt >= fromUtc && e.UpdatedAt < toUtc)
+            .Select(e => (e.UpdatedAt, e.EndpointId, e.ResolutionStatus.ToString()))
+            .ToList();
+        return Task.FromResult(new FailedEventHistogram
+        {
+            Rows = FailedEventQuery.Bucket(observations, fromUtc, bucketSize),
+        });
+    }
+
+    private IEnumerable<UnresolvedEvent> FailedEventsQuery(EventFilter filter, IReadOnlyCollection<string> endpointIds)
+    {
+        var endpoints = new HashSet<string>(endpointIds, StringComparer.Ordinal);
+        var statuses = new HashSet<string>(FailedEventQuery.ResolveStatuses(filter.ResolutionStatus));
+        return ApplyEventFilter(_events.Values, filter)
+            .Where(e => endpoints.Contains(e.EndpointId) && statuses.Contains(e.ResolutionStatus.ToString()));
+    }
+
+    // Shared by every event search so the filters cannot drift apart. ID-like fields use
+    // case-insensitive PREFIX matching, converging with the Cosmos (STARTSWITH) and SQL Server
+    // (LIKE 'value%') providers; free-text fields use case-insensitive substring matching.
+    private static IEnumerable<UnresolvedEvent> ApplyEventFilter(IEnumerable<UnresolvedEvent> q, EventFilter filter)
+    {
+        if (!string.IsNullOrEmpty(filter.EndPointId)) q = q.Where(e => HasPrefix(e.EndpointId, filter.EndPointId));
+        if (!string.IsNullOrEmpty(filter.EventId)) q = q.Where(e => HasPrefix(e.EventId, filter.EventId));
+        if (!string.IsNullOrEmpty(filter.SessionId)) q = q.Where(e => HasPrefix(e.SessionId, filter.SessionId));
+        if (!string.IsNullOrEmpty(filter.LastMessageId)) q = q.Where(e => HasPrefix(e.LastMessageId, filter.LastMessageId));
+        if (!string.IsNullOrEmpty(filter.ErrorText))
+            q = q.Where(e => e.MessageContent?.ErrorContent?.ErrorText?.Contains(filter.ErrorText, StringComparison.OrdinalIgnoreCase) == true);
+        if (filter.EventTypeId is { Count: > 0 })
+        {
+            var types = new HashSet<string>(filter.EventTypeId);
+            q = q.Where(e => e.EventTypeId != null && types.Contains(e.EventTypeId));
+        }
+        if (filter.UpdatedAtFrom != null) q = q.Where(e => e.UpdatedAt >= filter.UpdatedAtFrom);
+        if (filter.UpdatedAtTo != null) q = q.Where(e => e.UpdatedAt <= filter.UpdatedAtTo);
+        if (!string.IsNullOrEmpty(filter.To)) q = q.Where(e => e.To?.Contains(filter.To, StringComparison.OrdinalIgnoreCase) == true);
+        if (!string.IsNullOrEmpty(filter.From)) q = q.Where(e => e.From?.Contains(filter.From, StringComparison.OrdinalIgnoreCase) == true);
+        return q;
     }
 
     /// <summary>Deep copy, so a stamped replacement cannot alias the caller's instance.</summary>

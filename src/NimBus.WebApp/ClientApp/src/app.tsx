@@ -25,6 +25,7 @@ const Metrics = lazy(() => import("pages/metrics"));
 const Flow = lazy(() => import("pages/flow"));
 const Heartbeat = lazy(() => import("pages/heartbeat"));
 const Insights = lazy(() => import("pages/insights"));
+const FailedMessages = lazy(() => import("pages/failed-messages"));
 const Monitor = lazy(() => import("pages/monitor"));
 const AuditsList = lazy(() => import("pages/audits-list"));
 const Simulate = lazy(() => import("pages/simulate"));
@@ -71,6 +72,12 @@ const navigation: Navigation = [
     path: "/Messages",
     header: true,
     render: () => <MessagesList />,
+  },
+  {
+    name: "Failed messages",
+    path: "/Failed",
+    header: true,
+    render: () => <FailedMessages />,
   },
   {
     name: "Metrics",

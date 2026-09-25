@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import * as api from "api-client";
 import { cn } from "lib/utils";
+import { failureBacklog } from "functions/failed-messages.functions";
 import { useEnv } from "hooks/app-status";
 import { useAccess } from "hooks/use-access";
 import SidebarUserFooter from "components/sidebar-user-footer";
@@ -14,6 +16,8 @@ interface NavItem {
   icon: React.ReactNode;
   /** Optional trailing badge (e.g. "new") — rendered in the muted pill slot. */
   badge?: string;
+  /** Optional attention count — rendered as a status-danger pill when above zero. */
+  count?: number;
 }
 
 interface NavGroup {
@@ -23,6 +27,23 @@ interface NavGroup {
 
 // Inline SVG glyphs sized 16px to match design's `.si` rule (w/h 14, opacity .95).
 const Icon = {
+  failed: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
+      <path
+        d="M8 2.2 14.2 13H1.8L8 2.2z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8 6.5v3"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+      <circle cx="8" cy="11.3" r="0.8" fill="currentColor" />
+    </svg>
+  ),
   endpoints: (
     <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
       <rect
@@ -219,6 +240,11 @@ const NAV: NavGroup[] = [
         matchPrefix: "/Message",
         icon: Icon.messages,
       },
+      {
+        name: "Failed",
+        path: "/Failed",
+        icon: Icon.failed,
+      },
       { name: "Metrics", path: "/Metrics", icon: Icon.metrics },
       {
         name: "Flow",
@@ -294,6 +320,35 @@ const useVisibleNav = (): NavGroup[] => {
 
 const SIMULATION_POLL_MS = 15_000;
 
+const FAILED_POLL_MS = 60_000;
+
+// Unresolved failures (Failed + DeadLettered + Unsupported) across all endpoints, for the
+// Failed item's attention badge. Fail-soft: no badge when the counts can't be read.
+const useFailedBacklog = (): number | undefined => {
+  const [count, setCount] = useState<number>();
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const counts = await new api.Client(
+          api.CookieAuth(),
+        ).getEndpointStatusCountAll();
+        if (cancelled || !Array.isArray(counts)) return;
+        setCount(failureBacklog(counts));
+      } catch {
+        // No badge rather than a broken sidebar.
+      }
+    };
+    void load();
+    const timer = window.setInterval(load, FAILED_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+  return count;
+};
+
 const simulationBadge = (state?: string): string => {
   switch ((state ?? "").toLowerCase()) {
     case "running":
@@ -330,7 +385,13 @@ const LogoMark = ({ size = 22 }: { size?: number }) => (
 
 const Sidebar = () => {
   const env = useEnv();
-  const nav = useVisibleNav();
+  const failedBacklog = useFailedBacklog();
+  const nav = useVisibleNav().map((group) => ({
+    ...group,
+    items: group.items.map((item) =>
+      item.path === "/Failed" ? { ...item, count: failedBacklog } : item,
+    ),
+  }));
 
   return (
     <aside
@@ -383,6 +444,14 @@ const Sidebar = () => {
               >
                 <span className="opacity-90 shrink-0">{item.icon}</span>
                 <span className="flex-1 truncate">{item.name}</span>
+                {(item.count ?? 0) > 0 && (
+                  <span
+                    className="ml-auto font-mono text-[10px] px-1.5 py-px rounded-full font-bold bg-status-danger text-white"
+                    aria-label={`${item.count} unresolved failures`}
+                  >
+                    {item.count!.toLocaleString()}
+                  </span>
+                )}
                 {item.badge && (
                   <span
                     className={cn(

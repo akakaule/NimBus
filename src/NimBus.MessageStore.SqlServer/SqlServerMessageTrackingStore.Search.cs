@@ -1,3 +1,4 @@
+using System.Data;
 using Dapper;
 using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
@@ -6,45 +7,31 @@ namespace NimBus.MessageStore.SqlServer;
 
 internal sealed partial class SqlServerMessageTrackingStore
 {
-    public async Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount)
-    {
-        var offset = DecodeOffset(continuationToken);
-        var pageSize = PaginationLimits.Resolve(maxSearchItemsCount);
-
-        var where = new List<string> { "Deleted = 0" };
-        var p = new DynamicParameters();
-
-        // Prefix matching on ID-like fields — see SearchMessages for the
-        // cross-provider semantics and collation note.
-        if (!string.IsNullOrEmpty(filter.EndPointId)) { where.Add(@"EndpointId LIKE @EndpointId ESCAPE '\'"); p.Add("EndpointId", LikePrefix(filter.EndPointId)); }
-        if (!string.IsNullOrEmpty(filter.EventId)) { where.Add(@"EventId LIKE @EventId ESCAPE '\'"); p.Add("EventId", LikePrefix(filter.EventId)); }
-        if (!string.IsNullOrEmpty(filter.SessionId)) { where.Add(@"SessionId LIKE @SessionId ESCAPE '\'"); p.Add("SessionId", LikePrefix(filter.SessionId)); }
-        if (!string.IsNullOrEmpty(filter.To)) { where.Add("ToAddress = @ToAddress"); p.Add("ToAddress", filter.To); }
-        if (!string.IsNullOrEmpty(filter.From)) { where.Add("FromAddress = @FromAddress"); p.Add("FromAddress", filter.From); }
-        if (filter.UpdatedAtFrom.HasValue) { where.Add("UpdatedAtUtc >= @UpdatedAtFrom"); p.Add("UpdatedAtFrom", filter.UpdatedAtFrom.Value); }
-        if (filter.UpdatedAtTo.HasValue) { where.Add("UpdatedAtUtc <= @UpdatedAtTo"); p.Add("UpdatedAtTo", filter.UpdatedAtTo.Value); }
-        if (filter.EnqueuedAtFrom.HasValue) { where.Add("EnqueuedTimeUtc >= @EnqueuedAtFrom"); p.Add("EnqueuedAtFrom", filter.EnqueuedAtFrom.Value); }
-        if (filter.EnqueuedAtTo.HasValue) { where.Add("EnqueuedTimeUtc <= @EnqueuedAtTo"); p.Add("EnqueuedAtTo", filter.EnqueuedAtTo.Value); }
-        if (filter.MessageType.HasValue) { where.Add("MessageType = @MessageType"); p.Add("MessageType", filter.MessageType.Value.ToString()); }
-        if (filter.EventTypeId is { Count: > 0 }) { where.Add("EventTypeId IN @EventTypeIds"); p.Add("EventTypeIds", filter.EventTypeId); }
-        if (filter.ResolutionStatus is { Count: > 0 }) { where.Add("Status IN @Statuses"); p.Add("Statuses", filter.ResolutionStatus); }
-        if (!string.IsNullOrEmpty(filter.Payload)) { where.Add(@"MessageContentJson LIKE @Payload ESCAPE '\'"); p.Add("Payload", "%" + LikePrefix(filter.Payload)); }
-
-        p.Add("Offset", offset);
-        p.Add("PageSize", pageSize);
-
-        // Search results never surface the full request payload (cross-provider
-        // contract — the detail view fetches it on demand). Strip the heavy
-        // NVARCHAR(MAX) EventJson server-side so it never crosses the wire.
-        var sql = $@"
-SELECT
+    // Search results never surface the full request payload (cross-provider
+    // contract — the detail view fetches it on demand). Strip the heavy
+    // NVARCHAR(MAX) EventJson server-side so it never crosses the wire.
+    private const string EventSearchColumns = @"
     EventId, SessionId, EndpointId, Status, UpdatedAtUtc, EnqueuedTimeUtc, CorrelationId, EndpointRole,
     MessageType, RetryCount, RetryLimit, LastMessageId, OriginatingMessageId, ParentMessageId,
     OriginatingFrom, Reason, DeadLetterReason, DeadLetterErrorDescription, EventTypeId,
     ToAddress, FromAddress, QueueTimeMs, ProcessingTimeMs,
     CloudEventId, CloudEventSource, CloudEventType, CloudEventSubject,
     PendingSubStatus, HandoffReason, ExternalJobId, ExpectedBy,
-    JSON_MODIFY(MessageContentJson, '$.EventContent.EventJson', NULL) AS MessageContentJson
+    JSON_MODIFY(MessageContentJson, '$.EventContent.EventJson', NULL) AS MessageContentJson";
+
+    public async Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount)
+    {
+        var offset = DecodeOffset(continuationToken);
+        var pageSize = PaginationLimits.Resolve(maxSearchItemsCount);
+
+        var (where, p) = BuildEventFilter(filter);
+        if (filter.ResolutionStatus is { Count: > 0 }) { where.Add("Status IN @Statuses"); p.Add("Statuses", filter.ResolutionStatus); }
+
+        p.Add("Offset", offset);
+        p.Add("PageSize", pageSize);
+
+        var sql = $@"
+SELECT {EventSearchColumns}
 FROM {T("UnresolvedEvents")}
 WHERE {string.Join(" AND ", where)}
 ORDER BY UpdatedAtUtc DESC, Id DESC
@@ -59,6 +46,139 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
             Events = events,
             ContinuationToken = events.Count == pageSize ? EncodeOffset(offset + pageSize) : null!,
         };
+    }
+
+    public async Task<SearchResponse> GetFailedEventsAcrossEndpoints(
+        EventFilter filter,
+        IReadOnlyCollection<string> endpointIds,
+        string? continuationToken,
+        int maxItemCount)
+    {
+        var statuses = FailedEventQuery.ResolveStatuses(filter.ResolutionStatus);
+        if (endpointIds.Count == 0 || statuses.Count == 0)
+            return new SearchResponse { Events = new List<UnresolvedEvent>(), ContinuationToken = null! };
+
+        var offset = DecodeOffset(continuationToken);
+        var pageSize = PaginationLimits.Resolve(maxItemCount);
+        var (where, p) = BuildFailedEventFilter(filter, endpointIds, statuses);
+
+        // One row past the page tells whether another page exists, so a full last page does
+        // not hand out a continuation token that returns nothing.
+        p.Add("Offset", offset);
+        p.Add("Fetch", pageSize + 1);
+
+        var sql = $@"
+SELECT {EventSearchColumns}
+FROM {T("UnresolvedEvents")}
+WHERE {string.Join(" AND ", where)}
+ORDER BY UpdatedAtUtc DESC, Id DESC
+OFFSET @Offset ROWS FETCH NEXT @Fetch ROWS ONLY";
+
+        await using var conn = await OpenAsync();
+        var rows = (await conn.QueryAsync(sql, p, commandTimeout: _context.CommandTimeout)).ToList();
+        var hasMore = rows.Count > pageSize;
+
+        return new SearchResponse
+        {
+            Events = rows.Take(pageSize).Select(MapUnresolvedEventRow).ToList(),
+            ContinuationToken = hasMore ? EncodeOffset(offset + pageSize) : null!,
+        };
+    }
+
+    public async Task<FailedEventHistogram> GetFailedEventHistogram(
+        EventFilter filter,
+        IReadOnlyCollection<string> endpointIds,
+        DateTime fromUtc,
+        DateTime toUtc,
+        TimeSpan bucketSize)
+    {
+        if (bucketSize <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(bucketSize), "Bucket size must be positive.");
+
+        var statuses = FailedEventQuery.ResolveStatuses(filter.ResolutionStatus);
+        if (endpointIds.Count == 0 || statuses.Count == 0 || toUtc <= fromUtc)
+            return new FailedEventHistogram();
+
+        var (where, p) = BuildFailedEventFilter(filter, endpointIds, statuses);
+        where.Add("UpdatedAtUtc >= @WindowFrom");
+        where.Add("UpdatedAtUtc < @WindowTo");
+        p.Add("WindowFrom", fromUtc, DbType.DateTime2);
+        p.Add("WindowTo", toUtc, DbType.DateTime2);
+        p.Add("BucketMs", (long)bucketSize.TotalMilliseconds, DbType.Int64);
+
+        // The bucket index is computed in SQL and turned back into a start time here, so the
+        // bucket boundaries are exactly fromUtc + k * bucketSize regardless of DATETIME2
+        // parameter rounding.
+        var sql = $@"
+SELECT DATEDIFF_BIG(millisecond, @WindowFrom, UpdatedAtUtc) / @BucketMs AS BucketIndex,
+       EndpointId, Status, COUNT(*) AS Cnt
+FROM {T("UnresolvedEvents")}
+WHERE {string.Join(" AND ", where)}
+GROUP BY DATEDIFF_BIG(millisecond, @WindowFrom, UpdatedAtUtc) / @BucketMs, EndpointId, Status";
+
+        await using var conn = await OpenAsync();
+        var rows = await conn.QueryAsync<(long BucketIndex, string EndpointId, string Status, int Cnt)>(
+            sql, p, commandTimeout: _context.CommandTimeout);
+
+        return new FailedEventHistogram
+        {
+            Rows = rows
+                .Select(r => new FailedEventHistogramRow
+                {
+                    BucketStartUtc = new DateTime(fromUtc.Ticks + r.BucketIndex * bucketSize.Ticks, DateTimeKind.Utc),
+                    EndpointId = r.EndpointId,
+                    Status = r.Status,
+                    Count = r.Cnt,
+                })
+                .ToList(),
+        };
+    }
+
+    private static (List<string> Where, DynamicParameters Parameters) BuildFailedEventFilter(
+        EventFilter filter,
+        IReadOnlyCollection<string> endpointIds,
+        List<string> statuses)
+    {
+        var (where, p) = BuildEventFilter(filter);
+        where.Add("EndpointId IN @EndpointIds");
+        p.Add("EndpointIds", endpointIds.ToList());
+        where.Add("Status IN @Statuses");
+        p.Add("Statuses", statuses);
+        return (where, p);
+    }
+
+    // Shared by every event search so the filters cannot drift apart. Prefix matching on
+    // ID-like fields — see SearchMessages for the cross-provider semantics and collation note.
+    private static (List<string> Where, DynamicParameters Parameters) BuildEventFilter(EventFilter filter)
+    {
+        var where = new List<string> { "Deleted = 0" };
+        var p = new DynamicParameters();
+
+        if (!string.IsNullOrEmpty(filter.EndPointId)) { where.Add(@"EndpointId LIKE @EndpointId ESCAPE '\'"); p.Add("EndpointId", LikePrefix(filter.EndPointId)); }
+        if (!string.IsNullOrEmpty(filter.EventId)) { where.Add(@"EventId LIKE @EventId ESCAPE '\'"); p.Add("EventId", LikePrefix(filter.EventId)); }
+        if (!string.IsNullOrEmpty(filter.SessionId)) { where.Add(@"SessionId LIKE @SessionId ESCAPE '\'"); p.Add("SessionId", LikePrefix(filter.SessionId)); }
+        if (!string.IsNullOrEmpty(filter.LastMessageId)) { where.Add(@"LastMessageId LIKE @LastMessageId ESCAPE '\'"); p.Add("LastMessageId", LikePrefix(filter.LastMessageId)); }
+        if (!string.IsNullOrEmpty(filter.To)) { where.Add("ToAddress = @ToAddress"); p.Add("ToAddress", filter.To); }
+        if (!string.IsNullOrEmpty(filter.From)) { where.Add("FromAddress = @FromAddress"); p.Add("FromAddress", filter.From); }
+        if (filter.UpdatedAtFrom.HasValue) { where.Add("UpdatedAtUtc >= @UpdatedAtFrom"); p.Add("UpdatedAtFrom", filter.UpdatedAtFrom.Value); }
+        if (filter.UpdatedAtTo.HasValue) { where.Add("UpdatedAtUtc <= @UpdatedAtTo"); p.Add("UpdatedAtTo", filter.UpdatedAtTo.Value); }
+        if (filter.EnqueuedAtFrom.HasValue) { where.Add("EnqueuedTimeUtc >= @EnqueuedAtFrom"); p.Add("EnqueuedAtFrom", filter.EnqueuedAtFrom.Value); }
+        if (filter.EnqueuedAtTo.HasValue) { where.Add("EnqueuedTimeUtc <= @EnqueuedAtTo"); p.Add("EnqueuedAtTo", filter.EnqueuedAtTo.Value); }
+        if (filter.MessageType.HasValue) { where.Add("MessageType = @MessageType"); p.Add("MessageType", filter.MessageType.Value.ToString()); }
+        if (filter.EventTypeId is { Count: > 0 }) { where.Add("EventTypeId IN @EventTypeIds"); p.Add("EventTypeIds", filter.EventTypeId); }
+        if (!string.IsNullOrEmpty(filter.Payload)) { where.Add(@"MessageContentJson LIKE @Payload ESCAPE '\'"); p.Add("Payload", "%" + LikePrefix(filter.Payload)); }
+
+        // OPENJSON ... WITH NVARCHAR(MAX) rather than JSON_VALUE: JSON_VALUE returns NULL in
+        // lax mode for values over 4000 characters, which long error texts exceed.
+        if (!string.IsNullOrEmpty(filter.ErrorText))
+        {
+            where.Add(@"EXISTS (SELECT 1 FROM OPENJSON(MessageContentJson, '$.ErrorContent')
+                WITH (ErrorText NVARCHAR(MAX) '$.ErrorText') AS ec
+                WHERE ec.ErrorText LIKE @ErrorText ESCAPE '\')");
+            p.Add("ErrorText", "%" + LikePrefix(filter.ErrorText));
+        }
+
+        return (where, p);
     }
 
     public async Task<IEnumerable<UnresolvedEvent>> GetPendingEventsOnSession(string endpointId)

@@ -15,6 +15,9 @@ full audit trail, a management WebApp (resubmit/skip), and declarative topology 
   complete. Report the checks run and any skipped integration tests explicitly.
 - For PRs changing the WebApp's design or layout, or adding a WebApp feature, capture a
   representative screenshot of the finished UI and include it in the PR description.
+- For a review by the other model (Claude reviewing Codex's work or vice versa) against the
+  originating spec or plan, use `/review-change` (Codex: `$review-change`). It runs only when
+  invoked; don't start it yourself after implementing.
 
 ## Build & test
 

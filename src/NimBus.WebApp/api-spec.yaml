@@ -377,6 +377,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Event'
+        '404':
+          description: Endpoint or event not found
       operationId: get-event-id
   '/api/event-types/endpoint/{endpointId}':
     parameters:

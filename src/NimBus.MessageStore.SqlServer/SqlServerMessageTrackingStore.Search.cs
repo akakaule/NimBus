@@ -174,6 +174,7 @@ SELECT
     OriginatingMessageId, ParentMessageId, FromAddress, ToAddress, OriginatingFrom, OriginalSessionId,
     MessageType, EndpointRole, EnqueuedTimeUtc, RetryCount, RetryLimit, DeferralSequence,
     QueueTimeMs, ProcessingTimeMs, CloudEventId, CloudEventSource, CloudEventType, CloudEventSubject,
+    PendingSubStatus, HandoffReason, ExternalJobId, ExpectedBy,
     DeadLetterReason, DeadLetterErrorDescription,
     JSON_MODIFY(MessageContentJson, '$.EventContent.EventJson', NULL) AS MessageContentJson
 FROM {T("Messages")}

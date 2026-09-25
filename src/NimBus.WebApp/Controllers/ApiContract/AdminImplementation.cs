@@ -10,12 +10,14 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
 using NimBus.Core;
+using NimBus.Extensions.IntegrationIntelligence.Storage;
 using NimBus.MessageStore;
 using NimBus.ServiceBus.AsyncApi;
 using NimBus.ServiceBus.Provisioning;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
 using NimBus.WebApp.Services.Heartbeat;
+using NimBus.WebApp.Services.IntegrationIntelligence;
 using AsyncApiFormat = NimBus.Core.Events.AsyncApiFormat;
 
 namespace NimBus.WebApp.Controllers.ApiContract;
@@ -314,8 +316,13 @@ public class AdminImplementation : IAdminApiController
         }
     }
 
+    // Integration Intelligence keeps its settings and classification history in this database
+    // too. Neither is a message-store or endpoint container, but deleting either destroys the
+    // extension's data, so both are protected whether or not the feature is enabled.
     private bool IsProtectedContainer(string containerName) =>
         CosmosContainerDefaults.ReservedContainerIds.Contains(containerName)
+        || containerName is CosmosIntelligenceSettingsStore.ContainerName
+            or CosmosClassificationStore.DefaultContainerName
         || _platform.Endpoints.Any(endpoint =>
             string.Equals(endpoint.Id, containerName, StringComparison.Ordinal));
 

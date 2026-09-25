@@ -72,8 +72,11 @@ public sealed class SqlIntelligenceSettingsStore(string connectionString) : IInt
 /// <summary>One conditional Cosmos item; container provisioning belongs to deployment, not runtime.</summary>
 public sealed class CosmosIntelligenceSettingsStore(CosmosClient client, string databaseName) : IIntelligenceSettingsStore
 {
+    /// <summary>Container holding the settings item; the deployment template provisions it.</summary>
+    public const string ContainerName = "intelligencesettings";
+
     private const string Id = "failure-classification";
-    private readonly Container _container = client.GetContainer(databaseName, "intelligencesettings");
+    private readonly Container _container = client.GetContainer(databaseName, ContainerName);
 
     public async Task<IntelligenceSettingsDocument?> ReadAsync(CancellationToken cancellationToken)
     {

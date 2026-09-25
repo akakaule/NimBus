@@ -7,9 +7,12 @@ namespace NimBus.Extensions.IntegrationIntelligence.Storage;
 /// <summary>Atomic per-failure state and results using Cosmos conditional writes.</summary>
 public sealed class CosmosClassificationStore : AtomicClassificationStore
 {
+    /// <summary>Container the store uses unless the host passes another name; the deployment template provisions it.</summary>
+    public const string DefaultContainerName = "failureclassifications";
+
     private readonly Container _container;
 
-    public CosmosClassificationStore(CosmosClient client, string databaseName, string containerName = "failureclassifications", TimeProvider? clock = null) : base(clock)
+    public CosmosClassificationStore(CosmosClient client, string databaseName, string containerName = DefaultContainerName, TimeProvider? clock = null) : base(clock)
         => _container = client.GetContainer(databaseName, containerName);
 
     protected override async Task<(ClassificationDocument Document, string? Version)> ReadAsync(string failureId, CancellationToken ct)

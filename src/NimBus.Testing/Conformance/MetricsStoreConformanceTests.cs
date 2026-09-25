@@ -93,7 +93,9 @@ public abstract class MetricsStoreConformanceTests
     public async Task GetTimeSeriesMetrics_buckets_message_type_counts()
     {
         var store = CreateStore();
-        var from = DateTime.UtcNow.AddMinutes(5);
+        // The query is not scoped by endpoint, so each run gets its own far-future hour:
+        // providers without a per-test reset (Cosmos) would otherwise count earlier runs.
+        var from = DateTime.UtcNow.AddHours(Random.Shared.Next(1_000, 1_000_000));
         var bucketTime = from.AddMinutes(1);
         var bucketKey = bucketTime.ToString("o")[..13];
         var receiver = Id("receiver");

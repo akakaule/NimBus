@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Authentication;
 using ModelContextProtocol.Protocol;
+using NimBus.WebApp.Mcp.Operations;
 using NimBus.WebApp.Mcp.Tools;
 using NimBus.WebApp.RateLimiting;
 
@@ -61,7 +62,11 @@ public static class McpOperatorServiceCollectionExtensions
                 Version = ServerVersion(),
             })
             .WithHttpTransport(http => http.Stateless = true)
-            .WithTools<OperatorDiscoveryTools>();
+            .WithTools<OperatorDiscoveryTools>()
+            .WithTools<OperatorMessageTools>();
+
+        services.AddScoped<OperatorEndpointCatalog>();
+        services.AddScoped<OperatorQueries>();
 
         return services;
     }

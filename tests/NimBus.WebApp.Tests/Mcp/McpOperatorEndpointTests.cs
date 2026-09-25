@@ -15,7 +15,11 @@ namespace NimBus.WebApp.Tests.Mcp;
 [TestClass]
 public class McpOperatorEndpointTests
 {
-    private static readonly string[] OperatorTools = ["nimbus_get_capabilities", "nimbus_list_endpoints"];
+    private static readonly string[] OperatorTools =
+    [
+        "nimbus_get_capabilities", "nimbus_list_endpoints", "nimbus_get_overview", "nimbus_get_endpoint",
+        "nimbus_find_messages", "nimbus_get_message", "nimbus_get_message_history", "nimbus_get_session",
+    ];
 
     [TestMethod]
     public async Task Disabled_does_not_map_the_endpoint()

@@ -81,10 +81,21 @@ not run against a real Entra tenant yet (PR 4).
 ## PR 2: endpoint and message read tools
 
 `nimbus_get_overview`, `nimbus_get_endpoint`, `nimbus_find_messages`, `nimbus_get_message`,
-`nimbus_get_message_history`, `nimbus_get_session`. Extract the reusable parts of the endpoint,
-event-query and Failed-page implementations into `Services/Operations/IOperatorQueries` so REST
-and MCP share authorization, redaction and paging; REST behavior stays unchanged under existing
-tests. Include active Monitor acknowledgements in overview and endpoint results.
+`nimbus_get_message_history`, `nimbus_get_session`. Include active Monitor acknowledgements in
+overview and endpoint results.
+
+Approach (changed from the first draft): rather than extracting logic out of the controllers,
+`Mcp/Operations/OperatorQueries` calls the existing REST implementations in-process
+(`IEndpointApiController`, `IEventApiController`, `IMonitorApiController`). Reader checks, PII
+redaction and audit rows therefore match the Web UI exactly, and REST is untouched. Tools depend
+on `OperatorQueries`, not the controllers, so logic can move behind it later without changing
+tool contracts. `OperatorEndpointCatalog` refuses unreadable endpoints before any store call and
+normalizes ids; 403 and 404 map to the same not-found error. Results never include payloads or
+stack traces; error and log text is truncated to 2000 characters; timestamps are marked UTC.
+`nimbus_find_messages` cursors wrap the store token and are bound to the query and caller.
+
+Deferred: a reported-marker filter (the REST `EventFilter` has none), audit records in history,
+and blocked-message detail in sessions.
 
 ## PR 3: search, metrics and classification reads
 

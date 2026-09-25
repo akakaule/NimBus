@@ -8,6 +8,7 @@ import DataTable, {
   ITableHeadCell,
   ITableRow,
 } from "components/data-table";
+import ColumnChooser from "components/data-table/column-chooser";
 import TruncatedGuid from "components/common/truncated-guid";
 import { Badge } from "components/ui/badge";
 import { Checkbox } from "components/ui/checkbox";
@@ -25,6 +26,7 @@ import {
   SEARCH_FIELDS,
   deferredCountsBySession,
   errorTextOf,
+  failureBacklog,
   formatBucket,
   periodOption,
   resolveWindow,
@@ -36,18 +38,54 @@ import { cn } from "lib/utils";
 
 const PAGE_SIZE = 100;
 
-const HEAD_CELLS: ITableHeadCell[] = [
-  { id: "eventId", label: "Event Id", numeric: false, width: "9%" },
-  { id: "status", label: "Status", numeric: false, width: "13%" },
-  { id: "endpoint", label: "Endpoint", numeric: false, width: "12%" },
-  { id: "sessionId", label: "Session Id", numeric: false, width: "9%" },
-  { id: "eventTypeId", label: "Event Type", numeric: false, width: "13%" },
-  { id: "error", label: "Last error", numeric: false, width: "20%" },
-  { id: "resubmitCount", label: "Resubmits", numeric: true, width: 100 },
-  { id: "reported", label: "Reported", numeric: false, width: 110 },
-  { id: "updated", label: "Updated", numeric: false, width: "11%" },
-  { id: "added", label: "Added", numeric: false, width: "11%" },
+// DataTable applies numeric widths only (a width of exactly 150 means "unset"). Every column
+// but "Event type / last error" is sized, so the error gets the remaining width.
+const COLUMNS: (ITableHeadCell & { locked?: boolean })[] = [
+  {
+    id: "eventId",
+    label: "Event Id",
+    numeric: false,
+    width: 104,
+    locked: true,
+  },
+  { id: "status", label: "Status", numeric: false, width: 170 },
+  { id: "endpoint", label: "Endpoint", numeric: false, width: 160 },
+  { id: "sessionId", label: "Session Id", numeric: false, width: 104 },
+  { id: "error", label: "Event type / last error", numeric: false },
+  { id: "resubmitCount", label: "Resubmits", numeric: true, width: 96 },
+  { id: "reported", label: "Reported", numeric: false, width: 104 },
+  { id: "updated", label: "Updated", numeric: false, width: 140 },
+  { id: "added", label: "Added", numeric: false, width: 140 },
 ];
+
+// Column choices are a personal display preference, persisted like the endpoint page's.
+const HIDDEN_COLUMNS_KEY = "failed-messages:hidden-columns";
+const DEFAULT_HIDDEN = ["added"];
+
+function loadHiddenColumns(): Set<string> {
+  try {
+    const raw = window.localStorage?.getItem(HIDDEN_COLUMNS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : DEFAULT_HIDDEN;
+    return new Set(
+      Array.isArray(parsed)
+        ? parsed.filter((x): x is string => typeof x === "string")
+        : DEFAULT_HIDDEN,
+    );
+  } catch {
+    return new Set(DEFAULT_HIDDEN);
+  }
+}
+
+function saveHiddenColumns(hidden: Set<string>): void {
+  try {
+    window.localStorage?.setItem(
+      HIDDEN_COLUMNS_KEY,
+      JSON.stringify([...hidden]),
+    );
+  } catch {
+    // Storage can be unavailable in hardened browsers or test runners.
+  }
+}
 
 const statusVariant = (status: string | undefined) =>
   status === api.ResolutionStatus.DeadLettered
@@ -84,6 +122,25 @@ export default function FailedMessages() {
   const [blocked, setBlocked] = React.useState<Record<string, number>>({});
   const [backlog, setBacklog] = React.useState<number>();
   const [hideReported, setHideReported] = React.useState(false);
+  const [hiddenColumns, setHiddenColumns] =
+    React.useState<Set<string>>(loadHiddenColumns);
+  const headCells = React.useMemo(
+    () => COLUMNS.filter((c) => c.locked || !hiddenColumns.has(c.id)),
+    [hiddenColumns],
+  );
+  const toggleColumn = (id: string) =>
+    setHiddenColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      saveHiddenColumns(next);
+      return next;
+    });
+  const resetColumns = () => {
+    const defaults = new Set(DEFAULT_HIDDEN);
+    saveHiddenColumns(defaults);
+    setHiddenColumns(defaults);
+  };
   const [searchError, setSearchError] = React.useState<string>();
   // Bumped by Search and by actions so data reloads even when the filter is unchanged.
   const [refresh, setRefresh] = React.useState(0);
@@ -121,18 +178,7 @@ export default function FailedMessages() {
   React.useEffect(() => {
     client
       .getEndpointStatusCountAll()
-      .then((counts) =>
-        setBacklog(
-          counts.reduce(
-            (sum, c) =>
-              sum +
-              (c.failedCount ?? 0) +
-              (c.deadletterCount ?? 0) +
-              (c.unsupportedCount ?? 0),
-            0,
-          ),
-        ),
-      )
+      .then((counts) => setBacklog(failureBacklog(counts)))
       .catch(() => setBacklog(undefined));
   }, [client, refresh]);
 
@@ -372,21 +418,17 @@ export default function FailedMessages() {
           },
         ],
         [
-          "eventTypeId",
-          { value: e.eventTypeId, searchValue: e.eventTypeId ?? "" },
-        ],
-        [
           "error",
           {
             value: (
-              <span
-                className="block truncate font-mono text-[12px] text-status-danger-ink"
-                title={error}
-              >
-                {error ?? "—"}
+              <span className="block min-w-0" title={error}>
+                <span className="block truncate">{e.eventTypeId}</span>
+                <span className="block truncate font-mono text-[11.5px] text-status-danger-ink">
+                  {error ?? "—"}
+                </span>
               </span>
             ),
-            searchValue: error ?? "",
+            searchValue: `${e.eventTypeId ?? ""} ${error ?? ""}`,
           },
         ],
         [
@@ -679,14 +721,22 @@ export default function FailedMessages() {
             </button>
           </div>
           {view === "list" && (
-            <label className="ml-auto inline-flex cursor-pointer select-none items-center gap-2 text-muted-foreground">
-              <Checkbox
-                checked={hideReported}
-                onChange={(e) => setHideReported(e.target.checked)}
-                aria-label="Hide reported failures"
+            <div className="ml-auto flex items-center gap-3">
+              <label className="inline-flex cursor-pointer select-none items-center gap-2 text-muted-foreground">
+                <Checkbox
+                  checked={hideReported}
+                  onChange={(e) => setHideReported(e.target.checked)}
+                  aria-label="Hide reported failures"
+                />
+                Hide reported
+              </label>
+              <ColumnChooser
+                columns={COLUMNS}
+                hidden={hiddenColumns}
+                onToggle={toggleColumn}
+                onReset={resetColumns}
               />
-              Hide reported
-            </label>
+            </div>
           )}
         </div>
 
@@ -719,7 +769,7 @@ export default function FailedMessages() {
           />
         ) : (
           <DataTable
-            headCells={HEAD_CELLS}
+            headCells={headCells}
             headActions={headActions}
             rows={rows}
             withCheckboxes={true}

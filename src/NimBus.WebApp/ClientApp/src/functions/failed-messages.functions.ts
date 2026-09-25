@@ -212,3 +212,14 @@ export function formatBucket(
   const end = m.clone().add(bucketMinutes, "minutes");
   return `${m.format("DD/MM HH:mm")}–${end.format("HH:mm")}`;
 }
+
+/**
+ * Unresolved failures in endpoint status counts. The API's failedCount already includes
+ * DeadLettered (Mapper.EndpointStatusCountFromEndpointStateCount), so only Unsupported is added.
+ */
+export function failureBacklog(counts: api.EndpointStatusCount[]): number {
+  return counts.reduce(
+    (sum, c) => sum + (c.failedCount ?? 0) + (c.unsupportedCount ?? 0),
+    0,
+  );
+}

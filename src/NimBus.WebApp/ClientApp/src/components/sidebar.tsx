@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import * as api from "api-client";
 import { cn } from "lib/utils";
+import { failureBacklog } from "functions/failed-messages.functions";
 import { useEnv } from "hooks/app-status";
 import { useAccess } from "hooks/use-access";
 import SidebarUserFooter from "components/sidebar-user-footer";
@@ -333,16 +334,7 @@ const useFailedBacklog = (): number | undefined => {
           api.CookieAuth(),
         ).getEndpointStatusCountAll();
         if (cancelled || !Array.isArray(counts)) return;
-        setCount(
-          counts.reduce(
-            (sum, c) =>
-              sum +
-              (c.failedCount ?? 0) +
-              (c.deadletterCount ?? 0) +
-              (c.unsupportedCount ?? 0),
-            0,
-          ),
-        );
+        setCount(failureBacklog(counts));
       } catch {
         // No badge rather than a broken sidebar.
       }

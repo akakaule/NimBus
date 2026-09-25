@@ -133,7 +133,9 @@ export default function FailedHistogram({
   }
 
   return (
-    <div>
+    // Recharts makes its surface focusable; clicking a bar would otherwise ring the whole
+    // chart. Keyboard focus keeps its outline.
+    <div className="[&_*:focus:not(:focus-visible)]:outline-none">
       <div
         className="mb-2 flex flex-wrap items-center gap-4"
         aria-label="Legend"

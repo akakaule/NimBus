@@ -38,7 +38,7 @@ function Chips({
   variant: "default" | "info";
 }) {
   const list = values ?? [];
-  const shown = list.slice(0, 3);
+  const shown = list.slice(0, 2);
   return (
     <div className="flex flex-wrap gap-1">
       {shown.map((v) => (
@@ -49,7 +49,7 @@ function Chips({
       {list.length > shown.length && (
         <span
           className="text-[11px] text-muted-foreground"
-          title={list.slice(3).join(", ")}
+          title={list.slice(2).join(", ")}
         >
           +{list.length - shown.length}
         </span>
@@ -76,7 +76,7 @@ function GroupActions({
     onAct(action, events);
   };
   return (
-    <div className="flex justify-end gap-1.5">
+    <div className="flex justify-end gap-1.5 whitespace-nowrap">
       <button
         type="button"
         onClick={act("Resubmit")}
@@ -95,6 +95,9 @@ function GroupActions({
   );
 }
 
+// Failures listed per expanded pattern before "Show more".
+const FAILURES_PER_PAGE = 20;
+
 const allEvents = (group: api.FailedErrorGroup): api.FailedEventRef[] =>
   (group.subGroups ?? []).flatMap((s) => s.events ?? []);
 
@@ -110,6 +113,9 @@ export default function FailedErrorGroupsView({
   const [openGroups, setOpenGroups] = React.useState<Set<string>>(new Set());
   const [openPatterns, setOpenPatterns] = React.useState<Set<string>>(
     new Set(),
+  );
+  const [shownCounts, setShownCounts] = React.useState<Record<string, number>>(
+    {},
   );
 
   const toggle = (
@@ -144,56 +150,87 @@ export default function FailedErrorGroupsView({
   }
 
   const cell = "px-3 py-2 align-top";
-  const eventRows = (events: api.FailedEventRef[], indent: string) =>
-    events.map((ev) => (
-      <tr
-        key={`${ev.endpointId}/${ev.eventId}`}
-        className="group border-b border-border bg-muted/30"
-      >
-        <td className={cn(cell, indent)}>
+  const eventRow = (ev: api.FailedEventRef, indent: string) => (
+    <tr
+      key={`${ev.endpointId}/${ev.eventId}`}
+      className="group border-b border-border bg-muted/30"
+    >
+      {/* Cells line up with the group columns: failure | – | endpoint | event type | updated | error */}
+      <td className={cn(cell, indent)}>
+        <span className="flex min-w-0 items-center gap-2">
           <Link
             to={`/Message/Index/${ev.endpointId}/${ev.eventId}/0`}
             className="font-mono text-[12px] text-primary-700 hover:underline"
           >
             {(ev.eventId ?? "").slice(0, 8)}…
           </Link>
-        </td>
-        <td className={cell}>
           <Badge variant={statusVariant(ev.resolutionStatus)} size="sm">
             {ev.resolutionStatus}
           </Badge>
-        </td>
-        <td className={cell}>
-          <Link
-            to={`/Endpoints/Details/${ev.endpointId}`}
-            className="text-[13px] font-semibold hover:underline"
-          >
-            {ev.endpointId}
-          </Link>
-          <div className="text-[11.5px] text-muted-foreground">
-            {ev.eventTypeId}
-          </div>
-        </td>
-        <td className={cell}>
-          <TruncatedGuid guid={ev.sessionId} />
-        </td>
-        <td className={cn(cell, "whitespace-nowrap font-mono text-[12px]")}>
-          {formatMoment(ev.updatedAt, true)}
-        </td>
-        <td
-          className={cn(
-            cell,
-            "max-w-md truncate font-mono text-[12px] text-status-danger-ink",
-          )}
-          title={ev.errorText ?? ""}
+        </span>
+      </td>
+      <td className={cell} />
+      <td className={cn(cell, "truncate")}>
+        <Link
+          to={`/Endpoints/Details/${ev.endpointId}`}
+          className="text-[13px] font-semibold hover:underline"
         >
-          {ev.errorText}
-        </td>
-        <td className={cell}>
-          <GroupActions events={[ev]} onAct={onAct} />
-        </td>
-      </tr>
-    ));
+          {ev.endpointId}
+        </Link>
+      </td>
+      <td className={cell}>
+        <div className="truncate text-[12px]">{ev.eventTypeId}</div>
+        <TruncatedGuid guid={ev.sessionId} />
+      </td>
+      <td className={cn(cell, "whitespace-nowrap font-mono text-[12px]")}>
+        {formatMoment(ev.updatedAt, true)}
+      </td>
+      <td
+        className={cn(
+          cell,
+          "truncate font-mono text-[12px] text-status-danger-ink",
+        )}
+        title={ev.errorText ?? ""}
+      >
+        {ev.errorText}
+      </td>
+      <td className={cell}>
+        <GroupActions events={[ev]} onAct={onAct} />
+      </td>
+    </tr>
+  );
+
+  // A pattern can hold hundreds of failures; show a page at a time.
+  const eventRows = (
+    events: api.FailedEventRef[],
+    indent: string,
+    key: string,
+  ) => {
+    const limit = shownCounts[key] ?? FAILURES_PER_PAGE;
+    const rest = events.length - limit;
+    return [
+      ...events.slice(0, limit).map((ev) => eventRow(ev, indent)),
+      rest > 0 && (
+        <tr key={`${key}/more`} className="border-b border-border bg-muted/30">
+          <td colSpan={7} className={cn(cell, indent)}>
+            <button
+              type="button"
+              className="text-[12.5px] font-semibold text-primary-700 hover:underline"
+              onClick={() =>
+                setShownCounts((prev) => ({
+                  ...prev,
+                  [key]: limit + FAILURES_PER_PAGE,
+                }))
+              }
+            >
+              Show {Math.min(rest, FAILURES_PER_PAGE)} more
+              {rest > FAILURES_PER_PAGE && ` (${rest} remaining)`}
+            </button>
+          </td>
+        </tr>
+      ),
+    ];
+  };
 
   return (
     <div className="overflow-x-auto">
@@ -203,7 +240,16 @@ export default function FailedErrorGroupsView({
           narrow the filters to group the rest.
         </p>
       )}
-      <table className="w-full border-collapse text-sm">
+      <table className="w-full table-fixed border-collapse text-sm">
+        <colgroup>
+          <col className="w-[24%]" />
+          <col className="w-[72px]" />
+          <col className="w-[14%]" />
+          <col className="w-[16%]" />
+          <col className="w-[128px]" />
+          <col />
+          <col className="w-[172px]" />
+        </colgroup>
         <thead>
           <tr className="border-b border-border bg-muted text-left font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
             <th className="px-3 py-2 font-medium">Error</th>
@@ -229,8 +275,8 @@ export default function FailedErrorGroupsView({
                   onClick={() => toggle(setOpenGroups, groupKey)}
                   aria-expanded={groupOpen}
                 >
-                  <td className={cn(cell, "max-w-xs")}>
-                    <span className="inline-flex items-start gap-1 font-mono text-[12px]">
+                  <td className={cell}>
+                    <span className="flex min-w-0 items-start gap-1 font-mono text-[12px]">
                       {chevron(groupOpen)}
                       <span className="truncate" title={groupKey}>
                         {groupKey}
@@ -264,7 +310,7 @@ export default function FailedErrorGroupsView({
                   <td
                     className={cn(
                       cell,
-                      "max-w-sm truncate text-[12px] text-muted-foreground",
+                      "truncate text-[12px] text-muted-foreground",
                     )}
                     title={group.exampleErrorText}
                   >
@@ -274,7 +320,9 @@ export default function FailedErrorGroupsView({
                     <GroupActions events={allEvents(group)} onAct={onAct} />
                   </td>
                 </tr>
-                {groupOpen && single && eventRows(subs[0].events ?? [], "pl-8")}
+                {groupOpen &&
+                  single &&
+                  eventRows(subs[0].events ?? [], "pl-8", groupKey)}
                 {groupOpen &&
                   !single &&
                   subs.map((sub) => {
@@ -287,8 +335,8 @@ export default function FailedErrorGroupsView({
                           onClick={() => toggle(setOpenPatterns, patternKey)}
                           aria-expanded={patternOpen}
                         >
-                          <td className={cn(cell, "max-w-xs pl-8")}>
-                            <span className="inline-flex items-start gap-1 font-mono text-[12px] text-muted-foreground">
+                          <td className={cn(cell, "pl-8")}>
+                            <span className="flex min-w-0 items-start gap-1 font-mono text-[12px] text-muted-foreground">
                               {chevron(patternOpen)}
                               <span
                                 className="truncate"
@@ -320,7 +368,7 @@ export default function FailedErrorGroupsView({
                           <td
                             className={cn(
                               cell,
-                              "max-w-sm truncate text-[12px] text-muted-foreground",
+                              "truncate text-[12px] text-muted-foreground",
                             )}
                             title={sub.exampleErrorText}
                           >
@@ -333,7 +381,8 @@ export default function FailedErrorGroupsView({
                             />
                           </td>
                         </tr>
-                        {patternOpen && eventRows(sub.events ?? [], "pl-14")}
+                        {patternOpen &&
+                          eventRows(sub.events ?? [], "pl-14", patternKey)}
                       </React.Fragment>
                     );
                   })}

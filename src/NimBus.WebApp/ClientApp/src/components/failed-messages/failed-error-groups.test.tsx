@@ -132,4 +132,39 @@ describe("FailedErrorGroupsView", () => {
 
     expect(onAct).not.toHaveBeenCalled();
   });
+
+  it("pages a large pattern twenty failures at a time", () => {
+    const many = Array.from({ length: 25 }, (_, i) =>
+      ref(`e${String(i).padStart(7, "0")}`),
+    );
+    render(
+      <ToastProvider>
+        <MemoryRouter>
+          <FailedErrorGroupsView
+            groups={
+              new api.FailedErrorGroups({
+                total: 25,
+                truncated: false,
+                groups: [
+                  new api.FailedErrorGroup({
+                    errorCategory: "TimeoutException",
+                    count: 25,
+                    subGroups: [sub("TimeoutException: slow", many)],
+                  }),
+                ],
+              })
+            }
+            isLoading={false}
+            onAct={vi.fn()}
+          />
+        </MemoryRouter>
+      </ToastProvider>,
+    );
+
+    fireEvent.click(screen.getByText("TimeoutException"));
+    expect(screen.getAllByText(/^e\d{7}…$/)).toHaveLength(20);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show 5 more" }));
+    expect(screen.getAllByText(/^e\d{7}…$/)).toHaveLength(25);
+  });
 });

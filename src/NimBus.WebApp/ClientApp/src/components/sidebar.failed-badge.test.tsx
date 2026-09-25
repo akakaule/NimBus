@@ -39,7 +39,7 @@ describe("Sidebar Failed badge", () => {
     vi.unstubAllGlobals();
   });
 
-  it("sums failed, dead-lettered and unsupported counts across endpoints", async () => {
+  it("sums failed (which already includes dead-lettered) and unsupported counts across endpoints", async () => {
     stubFetch([
       {
         endpointId: "Crm",
@@ -64,7 +64,7 @@ describe("Sidebar Failed badge", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByLabelText("27 unresolved failures")).toBeTruthy(),
+      expect(screen.getByLabelText("23 unresolved failures")).toBeTruthy(),
     );
     expect(
       screen.getByRole("link", { name: /Failed/ }).getAttribute("href"),

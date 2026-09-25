@@ -101,7 +101,9 @@ public partial class AdminService
             {
                 // Re-read and re-classify: the scan's verdict is a hint, the row as it stands now is
                 // what gets written, conditionally on its last message id.
-                var storedRow = await GetPendingRowOrNullAsync(endpointId, row.EventId, row.SessionId);
+                // Null means the row is no longer Pending: it moved on since the preview, so the
+                // reconcile skips it instead of reporting a failure.
+                var storedRow = await _messageStore.GetPendingEvent(endpointId, row.EventId, row.SessionId ?? string.Empty);
                 if (storedRow is null || storedRow.UpdatedAt > ageCutoff)
                 {
                     result.Skipped++;
@@ -241,24 +243,6 @@ public partial class AdminService
         while (continuationToken is not null);
 
         return (scanned, false);
-    }
-
-    /// <summary>
-    /// The row as it stands now, or null when it is no longer Pending. Providers disagree on how a
-    /// missing row reads — Cosmos returns null, SQL Server and the in-memory store throw
-    /// <see cref="EndpointNotFoundException"/> — and either answer means the same thing here: the row
-    /// moved on since the preview, so the reconcile skips it instead of reporting a failure.
-    /// </summary>
-    private async Task<UnresolvedEvent?> GetPendingRowOrNullAsync(string endpointId, string eventId, string? sessionId)
-    {
-        try
-        {
-            return await _messageStore.GetPendingEvent(endpointId, eventId, sessionId ?? string.Empty);
-        }
-        catch (EndpointNotFoundException)
-        {
-            return null;
-        }
     }
 
     private async Task<StalePendingClassification> ClassifyAsync(UnresolvedEvent row, string endpointId)

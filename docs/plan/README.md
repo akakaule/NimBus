@@ -9,8 +9,10 @@ This directory coordinates five independently executable refactoring plans. Each
 1. [Narrow WebApp storage dependencies](01-narrow-webapp-storage-dependencies.md) — complete
 2. [Decompose storage-provider implementations](02-decompose-storage-provider-implementations.md) — complete
 3. [Decompose WebApp event components](03-decompose-webapp-event-components.md)
-4. [Modularize CLI composition](04-modularize-cli-composition.md)
+4. [Modularize CLI composition](04-modularize-cli-composition.md) — Phases 1, 2 and 4 complete (v4.0.0 code-quality plan); Phases 3 and 5 open
 5. [Harden `StrictMessageHandler` lifecycle ordering](05-decompose-strict-message-handler.md) — complete
+
+Plan 4's Phases 1, 2 and 4 are carried out by the [v4.0.0 code-quality plan](2026-09-24-v4-code-quality.md).
 
 ## Recommended sequence
 

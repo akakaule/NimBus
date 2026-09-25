@@ -78,10 +78,10 @@ public interface ICosmosDatabaseAdapter
 public interface ICosmosContainerAdapter
 {
     FeedIterator<T> GetItemQueryIterator<T>(QueryDefinition queryDefinition);
-    FeedIterator<T> GetItemQueryIterator<T>(QueryDefinition queryDefinition, string continuationToken = null, QueryRequestOptions requestOptions = null);
+    FeedIterator<T> GetItemQueryIterator<T>(QueryDefinition queryDefinition, string? continuationToken = null, QueryRequestOptions? requestOptions = null);
     FeedIterator<T> GetItemQueryIterator<T>(string queryText);
-    FeedIterator<T> GetItemQueryIterator<T>(string queryText, string continuationToken = null, QueryRequestOptions requestOptions = null);
-    IOrderedQueryable<T> GetItemLinqQueryable<T>(bool allowSynchronousQueryExecution = false, string continuationToken = null, QueryRequestOptions requestOptions = null);
+    FeedIterator<T> GetItemQueryIterator<T>(string queryText, string? continuationToken = null, QueryRequestOptions? requestOptions = null);
+    IOrderedQueryable<T> GetItemLinqQueryable<T>(bool allowSynchronousQueryExecution = false, string? continuationToken = null, QueryRequestOptions? requestOptions = null);
     Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default);
 
     /// <summary>
@@ -97,7 +97,7 @@ public interface ICosmosContainerAdapter
         return CreateItemAsync(item, partitionKey);
     }
 
-    Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions requestOptions = null);
+    Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions? requestOptions = null);
     /// <summary>Replaces an existing item with request preconditions; never creates a missing item.</summary>
     Task<ItemResponse<T>> ReplaceItemAsync<T>(T item, string id, PartitionKey partitionKey, ItemRequestOptions requestOptions) =>
         throw new NotSupportedException("This adapter does not support conditional replacements.");
@@ -262,8 +262,8 @@ internal sealed class TransientTranslatingCosmosContainerAdapter : ICosmosContai
 
     public FeedIterator<T> GetItemQueryIterator<T>(
         QueryDefinition queryDefinition,
-        string continuationToken = null,
-        QueryRequestOptions requestOptions = null) =>
+        string? continuationToken = null,
+        QueryRequestOptions? requestOptions = null) =>
         WrapQueryIterator(() => _inner.GetItemQueryIterator<T>(
             queryDefinition,
             continuationToken,
@@ -274,8 +274,8 @@ internal sealed class TransientTranslatingCosmosContainerAdapter : ICosmosContai
 
     public FeedIterator<T> GetItemQueryIterator<T>(
         string queryText,
-        string continuationToken = null,
-        QueryRequestOptions requestOptions = null) =>
+        string? continuationToken = null,
+        QueryRequestOptions? requestOptions = null) =>
         WrapQueryIterator(() => _inner.GetItemQueryIterator<T>(
             queryText,
             continuationToken,
@@ -283,8 +283,8 @@ internal sealed class TransientTranslatingCosmosContainerAdapter : ICosmosContai
 
     public IOrderedQueryable<T> GetItemLinqQueryable<T>(
         bool allowSynchronousQueryExecution = false,
-        string continuationToken = null,
-        QueryRequestOptions requestOptions = null) =>
+        string? continuationToken = null,
+        QueryRequestOptions? requestOptions = null) =>
         CosmosExceptionTranslation.TranslateTransient(
             () => _inner.GetItemLinqQueryable<T>(
                 allowSynchronousQueryExecution,
@@ -311,7 +311,7 @@ internal sealed class TransientTranslatingCosmosContainerAdapter : ICosmosContai
     public Task<ItemResponse<T>> UpsertItemAsync<T>(
         T item,
         PartitionKey partitionKey = default,
-        ItemRequestOptions requestOptions = null) =>
+        ItemRequestOptions? requestOptions = null) =>
         CosmosExceptionTranslation.TranslateTransientAsync(
             () => _inner.UpsertItemAsync(item, partitionKey, requestOptions),
             _logger);
@@ -508,16 +508,16 @@ public sealed class CosmosContainerAdapter : ICosmosContainerAdapter
     public FeedIterator<T> GetItemQueryIterator<T>(QueryDefinition queryDefinition) =>
         CosmosExceptionTranslation.Wrap(_container.GetItemQueryIterator<T>(queryDefinition), _logger);
 
-    public FeedIterator<T> GetItemQueryIterator<T>(QueryDefinition queryDefinition, string continuationToken = null, QueryRequestOptions requestOptions = null) =>
+    public FeedIterator<T> GetItemQueryIterator<T>(QueryDefinition queryDefinition, string? continuationToken = null, QueryRequestOptions? requestOptions = null) =>
         CosmosExceptionTranslation.Wrap(_container.GetItemQueryIterator<T>(queryDefinition, continuationToken, requestOptions), _logger);
 
     public FeedIterator<T> GetItemQueryIterator<T>(string queryText) =>
         CosmosExceptionTranslation.Wrap(_container.GetItemQueryIterator<T>(queryText), _logger);
 
-    public FeedIterator<T> GetItemQueryIterator<T>(string queryText, string continuationToken = null, QueryRequestOptions requestOptions = null) =>
+    public FeedIterator<T> GetItemQueryIterator<T>(string queryText, string? continuationToken = null, QueryRequestOptions? requestOptions = null) =>
         CosmosExceptionTranslation.Wrap(_container.GetItemQueryIterator<T>(queryText, continuationToken, requestOptions), _logger);
 
-    public IOrderedQueryable<T> GetItemLinqQueryable<T>(bool allowSynchronousQueryExecution = false, string continuationToken = null, QueryRequestOptions requestOptions = null) =>
+    public IOrderedQueryable<T> GetItemLinqQueryable<T>(bool allowSynchronousQueryExecution = false, string? continuationToken = null, QueryRequestOptions? requestOptions = null) =>
         _container.GetItemLinqQueryable<T>(allowSynchronousQueryExecution, continuationToken, requestOptions);
 
     public Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default) =>
@@ -532,7 +532,7 @@ public sealed class CosmosContainerAdapter : ICosmosContainerAdapter
             () => _container.CreateItemAsync(item, partitionKey, cancellationToken: cancellationToken),
             _logger);
 
-    public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions requestOptions = null) =>
+    public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions? requestOptions = null) =>
         CosmosExceptionTranslation.TranslateTransientAsync(() => _container.UpsertItemAsync(item, partitionKey, requestOptions), _logger);
 
     public Task<ItemResponse<T>> ReplaceItemAsync<T>(T item, string id, PartitionKey partitionKey, ItemRequestOptions requestOptions) =>

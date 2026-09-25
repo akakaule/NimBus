@@ -1,9 +1,8 @@
 using System.Threading.Tasks;
 
-namespace NimBus.WebApp.Services
+namespace NimBus.WebApp.Services;
+
+public interface IRenderService
 {
-    public interface IRenderService
-    {
-        Task<string> RenderAsync(string url, object props);
-    }
+    Task<string> RenderAsync(string url, object props);
 }

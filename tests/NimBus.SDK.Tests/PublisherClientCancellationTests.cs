@@ -119,7 +119,7 @@ public class PublisherClientCancellationTests
 
         public Task Publish(IEvent @event, string sessionId, string correlationId) => throw new NotSupportedException();
 
-        public Task Publish(IEvent @event, string sessionId, string correlationId, string messageId)
+        public Task Publish(IEvent @event, string sessionId, string correlationId, string? messageId)
         {
             LastCall = $"{sessionId}|{correlationId}|{messageId}";
             return Task.CompletedTask;

@@ -11,568 +11,567 @@ using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace NimBus.SDK.Hosting
+namespace NimBus.SDK.Hosting;
+
+/// <summary>
+/// Background service that receives messages from a Service Bus topic/subscription
+/// using a <see cref="ServiceBusSessionProcessor"/> and delegates to <see cref="IServiceBusAdapter"/>.
+/// </summary>
+public class NimBusReceiverHostedService : BackgroundService
 {
-    /// <summary>
-    /// Background service that receives messages from a Service Bus topic/subscription
-    /// using a <see cref="ServiceBusSessionProcessor"/> and delegates to <see cref="IServiceBusAdapter"/>.
-    /// </summary>
-    public class NimBusReceiverHostedService : BackgroundService
+    private readonly ServiceBusClient _client;
+    private readonly IServiceBusAdapter _adapter;
+    private readonly NimBusReceiverOptions _options;
+    private readonly ILogger<NimBusReceiverHostedService> _logger;
+    private readonly IEndpointCircuitBreaker? _circuitBreaker;
+    private readonly object _errorGate = new object();
+    private ServiceBusSessionProcessor? _processor;
+    private readonly TaskCompletionSource<bool> _startupCompletion =
+        new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    private TaskCompletionSource<ProcessorRecoveryRequest> _processorRecoveryRequested =
+        new TaskCompletionSource<ProcessorRecoveryRequest>(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _recoverableErrorCount;
+    private DateTimeOffset _firstRecoverableErrorAt;
+
+    public NimBusReceiverHostedService(
+        ServiceBusClient client,
+        IServiceBusAdapter adapter,
+        NimBusReceiverOptions options,
+        ILogger<NimBusReceiverHostedService> logger,
+        IEndpointCircuitBreaker? circuitBreaker = null)
     {
-        private readonly ServiceBusClient _client;
-        private readonly IServiceBusAdapter _adapter;
-        private readonly NimBusReceiverOptions _options;
-        private readonly ILogger<NimBusReceiverHostedService> _logger;
-        private readonly IEndpointCircuitBreaker? _circuitBreaker;
-        private readonly object _errorGate = new object();
-        private ServiceBusSessionProcessor? _processor;
-        private readonly TaskCompletionSource<bool> _startupCompletion =
-            new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        private TaskCompletionSource<ProcessorRecoveryRequest> _processorRecoveryRequested =
-            new TaskCompletionSource<ProcessorRecoveryRequest>(TaskCreationOptions.RunContinuationsAsynchronously);
-        private int _recoverableErrorCount;
-        private DateTimeOffset _firstRecoverableErrorAt;
+        _client = client ?? throw new ArgumentNullException(nameof(client));
+        _adapter = adapter ?? throw new ArgumentNullException(nameof(adapter));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _circuitBreaker = circuitBreaker;
+        ValidateOptions(_options);
+    }
 
-        public NimBusReceiverHostedService(
-            ServiceBusClient client,
-            IServiceBusAdapter adapter,
-            NimBusReceiverOptions options,
-            ILogger<NimBusReceiverHostedService> logger,
-            IEndpointCircuitBreaker? circuitBreaker = null)
+    public override async Task StartAsync(CancellationToken cancellationToken)
+    {
+        await base.StartAsync(cancellationToken).ConfigureAwait(false);
+        await _startupCompletion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
+        RunProcessorLoopAsync(stoppingToken);
+
+    internal async Task RunProcessorLoopAsync(CancellationToken stoppingToken)
+    {
+        var restartCount = 0;
+
+        // One long-lived stopping sentinel for the whole loop. A
+        // per-iteration Task.Delay leaked one CancellationTokenRegistration
+        // per circuit transition / infrastructure restart for the host's
+        // lifetime — routine traffic once circuit-driven iterations exist.
+        var stopping = Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
+
+        while (!stoppingToken.IsCancellationRequested)
         {
-            _client = client ?? throw new ArgumentNullException(nameof(client));
-            _adapter = adapter ?? throw new ArgumentNullException(nameof(adapter));
-            _options = options ?? throw new ArgumentNullException(nameof(options));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _circuitBreaker = circuitBreaker;
-            ValidateOptions(_options);
-        }
-
-        public override async Task StartAsync(CancellationToken cancellationToken)
-        {
-            await base.StartAsync(cancellationToken).ConfigureAwait(false);
-            await _startupCompletion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
-            RunProcessorLoopAsync(stoppingToken);
-
-        internal async Task RunProcessorLoopAsync(CancellationToken stoppingToken)
-        {
-            var restartCount = 0;
-
-            // One long-lived stopping sentinel for the whole loop. A
-            // per-iteration Task.Delay leaked one CancellationTokenRegistration
-            // per circuit transition / infrastructure restart for the host's
-            // lifetime — routine traffic once circuit-driven iterations exist.
-            var stopping = Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
-
-            while (!stoppingToken.IsCancellationRequested)
+            // Arm the state-change wait BEFORE sampling State: the wait
+            // snapshots the current signal under the breaker's lock, so a
+            // transition firing between these two statements completes the
+            // armed task instead of being lost — unobserved, a missed
+            // Closed->Open ran the processor at full concurrency through
+            // the entire break, and a missed HalfOpen->Closed stranded the
+            // receiver at probe concurrency until the next open.
+            using var circuitWaitCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            var circuitStateChanged = _circuitBreaker?.WaitForStateChangeAsync(circuitWaitCancellation.Token);
+            var circuitState = _circuitBreaker?.State ?? CircuitState.Closed;
+            if (circuitState == CircuitState.Open)
             {
-                // Arm the state-change wait BEFORE sampling State: the wait
-                // snapshots the current signal under the breaker's lock, so a
-                // transition firing between these two statements completes the
-                // armed task instead of being lost — unobserved, a missed
-                // Closed->Open ran the processor at full concurrency through
-                // the entire break, and a missed HalfOpen->Closed stranded the
-                // receiver at probe concurrency until the next open.
-                using var circuitWaitCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-                var circuitStateChanged = _circuitBreaker?.WaitForStateChangeAsync(circuitWaitCancellation.Token);
-                var circuitState = _circuitBreaker?.State ?? CircuitState.Closed;
-                if (circuitState == CircuitState.Open)
+                _startupCompletion.TrySetResult(true);
+                try
                 {
-                    _startupCompletion.TrySetResult(true);
-                    try
+                    await circuitStateChanged!.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                continue;
+            }
+
+            ResetRecoverableErrors();
+            ResetRecoverySignal();
+
+            var maxConcurrentSessions = circuitState == CircuitState.HalfOpen
+                ? 1
+                : _options.MaxConcurrentSessions;
+            _processor = CreateProcessor(maxConcurrentSessions);
+            var infrastructureRestart = false;
+
+            try
+            {
+                _logger.LogInformation(
+                    "Starting NimBus receiver for {Topic}/{Subscription} (MaxConcurrentSessions={MaxSessions}, PrefetchCount={PrefetchCount})",
+                    _options.TopicName, _options.SubscriptionName, maxConcurrentSessions, _options.PrefetchCount);
+
+                await _processor.StartProcessingAsync(stoppingToken).ConfigureAwait(false);
+                _startupCompletion.TrySetResult(true);
+
+                var completed = circuitStateChanged is null
+                    ? await Task.WhenAny(_processorRecoveryRequested.Task, stopping).ConfigureAwait(false)
+                    : await Task.WhenAny(_processorRecoveryRequested.Task, circuitStateChanged, stopping).ConfigureAwait(false);
+
+                if (completed == stopping)
+                {
+                    break;
+                }
+
+                if (circuitStateChanged is not null && completed == circuitStateChanged)
+                {
+                    var change = await circuitStateChanged.ConfigureAwait(false);
+                    if (change.To == CircuitState.Open)
                     {
-                        await circuitStateChanged!.ConfigureAwait(false);
+                        _logger.LogWarning(
+                            "Pausing NimBus receiver for {Topic}/{Subscription}; endpoint circuit {Endpoint} opened. Reason: {Reason}",
+                            _options.TopicName,
+                            _options.SubscriptionName,
+                            change.Endpoint,
+                            change.Reason);
                     }
-                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    else
                     {
-                        break;
+                        _logger.LogInformation(
+                            "Reconfiguring NimBus receiver for {Topic}/{Subscription}; endpoint circuit {Endpoint} changed from {FromState} to {ToState}",
+                            _options.TopicName,
+                            _options.SubscriptionName,
+                            change.Endpoint,
+                            change.From,
+                            change.To);
                     }
 
                     continue;
                 }
 
-                ResetRecoverableErrors();
-                ResetRecoverySignal();
+                var recovery = await _processorRecoveryRequested.Task.ConfigureAwait(false);
+                infrastructureRestart = true;
+                restartCount++;
 
-                var maxConcurrentSessions = circuitState == CircuitState.HalfOpen
-                    ? 1
-                    : _options.MaxConcurrentSessions;
-                _processor = CreateProcessor(maxConcurrentSessions);
-                var infrastructureRestart = false;
-
-                try
-                {
-                    _logger.LogInformation(
-                        "Starting NimBus receiver for {Topic}/{Subscription} (MaxConcurrentSessions={MaxSessions}, PrefetchCount={PrefetchCount})",
-                        _options.TopicName, _options.SubscriptionName, maxConcurrentSessions, _options.PrefetchCount);
-
-                    await _processor.StartProcessingAsync(stoppingToken).ConfigureAwait(false);
-                    _startupCompletion.TrySetResult(true);
-
-                    var completed = circuitStateChanged is null
-                        ? await Task.WhenAny(_processorRecoveryRequested.Task, stopping).ConfigureAwait(false)
-                        : await Task.WhenAny(_processorRecoveryRequested.Task, circuitStateChanged, stopping).ConfigureAwait(false);
-
-                    if (completed == stopping)
-                    {
-                        break;
-                    }
-
-                    if (circuitStateChanged is not null && completed == circuitStateChanged)
-                    {
-                        var change = await circuitStateChanged.ConfigureAwait(false);
-                        if (change.To == CircuitState.Open)
-                        {
-                            _logger.LogWarning(
-                                "Pausing NimBus receiver for {Topic}/{Subscription}; endpoint circuit {Endpoint} opened. Reason: {Reason}",
-                                _options.TopicName,
-                                _options.SubscriptionName,
-                                change.Endpoint,
-                                change.Reason);
-                        }
-                        else
-                        {
-                            _logger.LogInformation(
-                                "Reconfiguring NimBus receiver for {Topic}/{Subscription}; endpoint circuit {Endpoint} changed from {FromState} to {ToState}",
-                                _options.TopicName,
-                                _options.SubscriptionName,
-                                change.Endpoint,
-                                change.From,
-                                change.To);
-                        }
-
-                        continue;
-                    }
-
-                    var recovery = await _processorRecoveryRequested.Task.ConfigureAwait(false);
-                    infrastructureRestart = true;
-                    restartCount++;
-
-                    _logger.LogWarning(
-                        recovery.Exception,
-                        "Restarting NimBus receiver for {Topic}/{Subscription} after {ErrorCount} consecutive recoverable processor errors. RestartCount={RestartCount}, LastErrorSource={ErrorSource}",
-                        _options.TopicName,
-                        _options.SubscriptionName,
-                        recovery.ErrorCount,
-                        restartCount,
-                        recovery.ErrorSource);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    _startupCompletion.TrySetCanceled(stoppingToken);
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    _startupCompletion.TrySetException(ex);
-                    throw;
-                }
-                finally
-                {
-                    await circuitWaitCancellation.CancelAsync().ConfigureAwait(false);
-                    await StopAndDisposeProcessorForLoopAsync(stoppingToken).ConfigureAwait(false);
-                }
-
-                if (infrastructureRestart
-                    && !stoppingToken.IsCancellationRequested
-                    && _options.ProcessorRestartDelay > TimeSpan.Zero)
-                {
-                    await Task.Delay(_options.ProcessorRestartDelay, stoppingToken).ConfigureAwait(false);
-                }
+                _logger.LogWarning(
+                    recovery.Exception,
+                    "Restarting NimBus receiver for {Topic}/{Subscription} after {ErrorCount} consecutive recoverable processor errors. RestartCount={RestartCount}, LastErrorSource={ErrorSource}",
+                    _options.TopicName,
+                    _options.SubscriptionName,
+                    recovery.ErrorCount,
+                    restartCount,
+                    recovery.ErrorSource);
             }
-        }
-
-        public override async Task StopAsync(CancellationToken cancellationToken)
-        {
-            _logger.LogInformation("Stopping NimBus receiver for {Topic}/{Subscription}",
-                _options.TopicName, _options.SubscriptionName);
-
-            await base.StopAsync(cancellationToken).ConfigureAwait(false);
-            await StopAndDisposeProcessorAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        private ServiceBusSessionProcessor CreateProcessor(int maxConcurrentSessions)
-        {
-            var processorOptions = new ServiceBusSessionProcessorOptions
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
-                MaxConcurrentSessions = maxConcurrentSessions,
-                MaxAutoLockRenewalDuration = _options.MaxAutoLockRenewalDuration,
-                SessionIdleTimeout = _options.SessionIdleTimeout,
-                PrefetchCount = _options.PrefetchCount,
-                AutoCompleteMessages = false,
-            };
-
-            var processor = _client.CreateSessionProcessor(
-                _options.TopicName,
-                _options.SubscriptionName,
-                processorOptions);
-
-            processor.ProcessMessageAsync += OnMessageAsync;
-            processor.ProcessErrorAsync += OnErrorAsync;
-
-            return processor;
-        }
-
-        internal async Task StopAndDisposeProcessorAsync(CancellationToken cancellationToken)
-        {
-            var processor = Interlocked.Exchange(ref _processor, null);
-            if (processor == null)
-            {
-                return;
+                _startupCompletion.TrySetCanceled(stoppingToken);
+                break;
             }
-
-            OperationCanceledException? cancellationException = null;
-            Task? stopTask = null;
-            try
+            catch (Exception ex)
             {
-                try
-                {
-                    stopTask = processor.StopProcessingAsync(cancellationToken);
-                    await stopTask.WaitAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
-                {
-                    cancellationException = ex;
-                    if (stopTask is not null)
-                    {
-                        _ = ObserveProcessorStopAsync(stopTask);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(
-                        ex,
-                        "Error while stopping NimBus receiver for {Topic}/{Subscription}",
-                        _options.TopicName,
-                        _options.SubscriptionName);
-                }
+                _startupCompletion.TrySetException(ex);
+                throw;
             }
             finally
             {
-                Task? disposeTask = null;
-                try
-                {
-                    disposeTask = DisposeProcessorAsync(processor).AsTask();
-                    await disposeTask.WaitAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
-                {
-                    cancellationException ??= ex;
-                    if (disposeTask is not null)
-                    {
-                        _ = ObserveProcessorDisposalAsync(disposeTask);
-                    }
-                }
-                catch (Exception ex) when (cancellationException is not null)
-                {
-                    // Preserve cooperative shutdown as the primary outcome even if
-                    // best-effort cleanup also fails. The cleanup failure remains
-                    // observable without replacing the cancellation exception.
-                    _logger.LogWarning(
-                        ex,
-                        "Error while disposing NimBus receiver for {Topic}/{Subscription} after cancelled shutdown",
-                        _options.TopicName,
-                        _options.SubscriptionName);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(
-                        ex,
-                        "Error while disposing NimBus receiver for {Topic}/{Subscription}",
-                        _options.TopicName,
-                        _options.SubscriptionName);
-                }
+                await circuitWaitCancellation.CancelAsync().ConfigureAwait(false);
+                await StopAndDisposeProcessorForLoopAsync(stoppingToken).ConfigureAwait(false);
             }
 
-            if (cancellationException is not null)
+            if (infrastructureRestart
+                && !stoppingToken.IsCancellationRequested
+                && _options.ProcessorRestartDelay > TimeSpan.Zero)
             {
-                ExceptionDispatchInfo.Capture(cancellationException).Throw();
+                await Task.Delay(_options.ProcessorRestartDelay, stoppingToken).ConfigureAwait(false);
             }
         }
+    }
 
-        private async Task StopAndDisposeProcessorForLoopAsync(CancellationToken stoppingToken)
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Stopping NimBus receiver for {Topic}/{Subscription}",
+            _options.TopicName, _options.SubscriptionName);
+
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
+        await StopAndDisposeProcessorAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private ServiceBusSessionProcessor CreateProcessor(int maxConcurrentSessions)
+    {
+        var processorOptions = new ServiceBusSessionProcessorOptions
         {
-            if (stoppingToken.IsCancellationRequested)
-            {
-                try
-                {
-                    await StopAndDisposeProcessorAsync(stoppingToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    // The loop has already observed host shutdown. Cleanup was
-                    // initiated and any incomplete task is observed in the background.
-                }
+            MaxConcurrentSessions = maxConcurrentSessions,
+            MaxAutoLockRenewalDuration = _options.MaxAutoLockRenewalDuration,
+            SessionIdleTimeout = _options.SessionIdleTimeout,
+            PrefetchCount = _options.PrefetchCount,
+            AutoCompleteMessages = false,
+        };
 
-                return;
-            }
+        var processor = _client.CreateSessionProcessor(
+            _options.TopicName,
+            _options.SubscriptionName,
+            processorOptions);
 
-            using var cleanupCancellation = new CancellationTokenSource(_options.ProcessorShutdownTimeout);
-            try
-            {
-                await StopAndDisposeProcessorAsync(cleanupCancellation.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cleanupCancellation.IsCancellationRequested)
-            {
-                _logger.LogWarning(
-                    "Timed out after {Timeout} while stopping or disposing NimBus receiver for {Topic}/{Subscription}; continuing processor recovery",
-                    _options.ProcessorShutdownTimeout,
-                    _options.TopicName,
-                    _options.SubscriptionName);
-            }
+        processor.ProcessMessageAsync += OnMessageAsync;
+        processor.ProcessErrorAsync += OnErrorAsync;
+
+        return processor;
+    }
+
+    internal async Task StopAndDisposeProcessorAsync(CancellationToken cancellationToken)
+    {
+        var processor = Interlocked.Exchange(ref _processor, null);
+        if (processor == null)
+        {
+            return;
         }
 
-        private async Task ObserveProcessorStopAsync(Task stopTask)
+        OperationCanceledException? cancellationException = null;
+        Task? stopTask = null;
+        try
         {
             try
             {
-                await stopTask.ConfigureAwait(false);
+                stopTask = processor.StopProcessingAsync(cancellationToken);
+                await stopTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+            {
+                cancellationException = ex;
+                if (stopTask is not null)
+                {
+                    _ = ObserveProcessorStopAsync(stopTask);
+                }
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(
                     ex,
-                    "NimBus receiver stop completed with an error after recovery stopped waiting for {Topic}/{Subscription}",
+                    "Error while stopping NimBus receiver for {Topic}/{Subscription}",
                     _options.TopicName,
                     _options.SubscriptionName);
             }
         }
-
-        private async Task ObserveProcessorDisposalAsync(Task disposeTask)
+        finally
         {
+            Task? disposeTask = null;
             try
             {
-                await disposeTask.ConfigureAwait(false);
+                disposeTask = DisposeProcessorAsync(processor).AsTask();
+                await disposeTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+            {
+                cancellationException ??= ex;
+                if (disposeTask is not null)
+                {
+                    _ = ObserveProcessorDisposalAsync(disposeTask);
+                }
+            }
+            catch (Exception ex) when (cancellationException is not null)
+            {
+                // Preserve cooperative shutdown as the primary outcome even if
+                // best-effort cleanup also fails. The cleanup failure remains
+                // observable without replacing the cancellation exception.
+                _logger.LogWarning(
+                    ex,
+                    "Error while disposing NimBus receiver for {Topic}/{Subscription} after cancelled shutdown",
+                    _options.TopicName,
+                    _options.SubscriptionName);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(
                     ex,
-                    "NimBus receiver disposal completed with an error after shutdown stopped waiting for {Topic}/{Subscription}",
+                    "Error while disposing NimBus receiver for {Topic}/{Subscription}",
                     _options.TopicName,
                     _options.SubscriptionName);
             }
         }
 
-        protected virtual ValueTask DisposeProcessorAsync(ServiceBusSessionProcessor processor) =>
-            processor.DisposeAsync();
-
-        private async Task OnMessageAsync(ProcessSessionMessageEventArgs args)
+        if (cancellationException is not null)
         {
-            await _adapter.Handle(args, args.CancellationToken).ConfigureAwait(false);
-            ResetRecoverableErrors();
+            ExceptionDispatchInfo.Capture(cancellationException).Throw();
+        }
+    }
+
+    private async Task StopAndDisposeProcessorForLoopAsync(CancellationToken stoppingToken)
+    {
+        if (stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await StopAndDisposeProcessorAsync(stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                // The loop has already observed host shutdown. Cleanup was
+                // initiated and any incomplete task is observed in the background.
+            }
+
+            return;
         }
 
-        private Task OnErrorAsync(ProcessErrorEventArgs args) =>
-            HandleProcessorErrorAsync(args);
-
-        internal async Task HandleProcessorErrorAsync(ProcessErrorEventArgs args)
+        using var cleanupCancellation = new CancellationTokenSource(_options.ProcessorShutdownTimeout);
+        try
         {
-            _logger.LogError(args.Exception,
-                "Error processing message. Source: {ErrorSource}, Namespace: {Namespace}, EntityPath: {EntityPath}",
-                args.ErrorSource, args.FullyQualifiedNamespace, args.EntityPath);
+            await StopAndDisposeProcessorAsync(cleanupCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cleanupCancellation.IsCancellationRequested)
+        {
+            _logger.LogWarning(
+                "Timed out after {Timeout} while stopping or disposing NimBus receiver for {Topic}/{Subscription}; continuing processor recovery",
+                _options.ProcessorShutdownTimeout,
+                _options.TopicName,
+                _options.SubscriptionName);
+        }
+    }
 
-            if (!IsRecoverableProcessorInfrastructureError(args))
-            {
-                return;
-            }
+    private async Task ObserveProcessorStopAsync(Task stopTask)
+    {
+        try
+        {
+            await stopTask.ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "NimBus receiver stop completed with an error after recovery stopped waiting for {Topic}/{Subscription}",
+                _options.TopicName,
+                _options.SubscriptionName);
+        }
+    }
 
-            var state = RecordRecoverableError(args);
+    private async Task ObserveProcessorDisposalAsync(Task disposeTask)
+    {
+        try
+        {
+            await disposeTask.ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "NimBus receiver disposal completed with an error after shutdown stopped waiting for {Topic}/{Subscription}",
+                _options.TopicName,
+                _options.SubscriptionName);
+        }
+    }
 
-            if (state.ShouldRestart)
-            {
-                _processorRecoveryRequested.TrySetResult(new ProcessorRecoveryRequest(
-                    args.Exception,
-                    args.ErrorSource,
-                    state.ErrorCount));
-            }
+    protected virtual ValueTask DisposeProcessorAsync(ServiceBusSessionProcessor processor) =>
+        processor.DisposeAsync();
 
-            if (state.Delay > TimeSpan.Zero)
-            {
-                try
-                {
-                    await Task.Delay(state.Delay, args.CancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    // The processor is stopping or restarting.
-                }
-            }
+    private async Task OnMessageAsync(ProcessSessionMessageEventArgs args)
+    {
+        await _adapter.Handle(args, args.CancellationToken).ConfigureAwait(false);
+        ResetRecoverableErrors();
+    }
+
+    private Task OnErrorAsync(ProcessErrorEventArgs args) =>
+        HandleProcessorErrorAsync(args);
+
+    internal async Task HandleProcessorErrorAsync(ProcessErrorEventArgs args)
+    {
+        _logger.LogError(args.Exception,
+            "Error processing message. Source: {ErrorSource}, Namespace: {Namespace}, EntityPath: {EntityPath}",
+            args.ErrorSource, args.FullyQualifiedNamespace, args.EntityPath);
+
+        if (!IsRecoverableProcessorInfrastructureError(args))
+        {
+            return;
         }
 
-        private RecoverableErrorState RecordRecoverableError(ProcessErrorEventArgs args)
+        var state = RecordRecoverableError(args);
+
+        if (state.ShouldRestart)
         {
-            lock (_errorGate)
-            {
-                var now = DateTimeOffset.UtcNow;
-                if (_recoverableErrorCount == 0 || now - _firstRecoverableErrorAt > _options.RecoverableErrorWindow)
-                {
-                    _firstRecoverableErrorAt = now;
-                    _recoverableErrorCount = 0;
-                }
-
-                _recoverableErrorCount++;
-
-                return new RecoverableErrorState(
-                    _recoverableErrorCount,
-                    CalculateRecoverableErrorDelay(_recoverableErrorCount),
-                    _recoverableErrorCount >= _options.RecoverableErrorRestartThreshold);
-            }
+            _processorRecoveryRequested.TrySetResult(new ProcessorRecoveryRequest(
+                args.Exception,
+                args.ErrorSource,
+                state.ErrorCount));
         }
 
-        private TimeSpan CalculateRecoverableErrorDelay(int errorCount)
+        if (state.Delay > TimeSpan.Zero)
         {
-            if (_options.RecoverableErrorDelay <= TimeSpan.Zero)
+            try
             {
-                return TimeSpan.Zero;
+                await Task.Delay(state.Delay, args.CancellationToken).ConfigureAwait(false);
             }
-
-            var multiplier = Math.Pow(2, Math.Min(errorCount - 1, 5));
-            var delayTicks = _options.RecoverableErrorDelay.Ticks * multiplier;
-            if (delayTicks >= _options.MaxRecoverableErrorDelay.Ticks)
+            catch (OperationCanceledException)
             {
-                return _options.MaxRecoverableErrorDelay;
+                // The processor is stopping or restarting.
             }
-
-            return TimeSpan.FromTicks((long)delayTicks);
         }
+    }
 
-        private void ResetRecoverableErrors()
+    private RecoverableErrorState RecordRecoverableError(ProcessErrorEventArgs args)
+    {
+        lock (_errorGate)
         {
-            lock (_errorGate)
+            var now = DateTimeOffset.UtcNow;
+            if (_recoverableErrorCount == 0 || now - _firstRecoverableErrorAt > _options.RecoverableErrorWindow)
             {
+                _firstRecoverableErrorAt = now;
                 _recoverableErrorCount = 0;
-                _firstRecoverableErrorAt = default;
             }
+
+            _recoverableErrorCount++;
+
+            return new RecoverableErrorState(
+                _recoverableErrorCount,
+                CalculateRecoverableErrorDelay(_recoverableErrorCount),
+                _recoverableErrorCount >= _options.RecoverableErrorRestartThreshold);
+        }
+    }
+
+    private TimeSpan CalculateRecoverableErrorDelay(int errorCount)
+    {
+        if (_options.RecoverableErrorDelay <= TimeSpan.Zero)
+        {
+            return TimeSpan.Zero;
         }
 
-        private void ResetRecoverySignal()
+        var multiplier = Math.Pow(2, Math.Min(errorCount - 1, 5));
+        var delayTicks = _options.RecoverableErrorDelay.Ticks * multiplier;
+        if (delayTicks >= _options.MaxRecoverableErrorDelay.Ticks)
         {
-            _processorRecoveryRequested = new TaskCompletionSource<ProcessorRecoveryRequest>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
+            return _options.MaxRecoverableErrorDelay;
         }
 
-        private static bool IsRecoverableProcessorInfrastructureError(ProcessErrorEventArgs args)
+        return TimeSpan.FromTicks((long)delayTicks);
+    }
+
+    private void ResetRecoverableErrors()
+    {
+        lock (_errorGate)
         {
-            if (args.ErrorSource == ServiceBusErrorSource.ProcessMessageCallback)
-            {
-                return false;
-            }
-
-            if (args.Exception is ObjectDisposedException)
-            {
-                return true;
-            }
-
-            if (args.Exception is ServiceBusException serviceBusException)
-            {
-                return serviceBusException.Reason == ServiceBusFailureReason.ServiceCommunicationProblem
-                    || serviceBusException.Reason == ServiceBusFailureReason.ServiceTimeout
-                    || serviceBusException.Reason == ServiceBusFailureReason.ServiceBusy
-                    || serviceBusException.Reason == ServiceBusFailureReason.GeneralError;
-            }
-
-            return ContainsException<SocketException>(args.Exception)
-                || ContainsException<WebSocketException>(args.Exception)
-                || ContainsException<IOException>(args.Exception);
+            _recoverableErrorCount = 0;
+            _firstRecoverableErrorAt = default;
         }
+    }
 
-        private static bool ContainsException<TException>(Exception exception)
-            where TException : Exception
+    private void ResetRecoverySignal()
+    {
+        _processorRecoveryRequested = new TaskCompletionSource<ProcessorRecoveryRequest>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private static bool IsRecoverableProcessorInfrastructureError(ProcessErrorEventArgs args)
+    {
+        if (args.ErrorSource == ServiceBusErrorSource.ProcessMessageCallback)
         {
-            for (var current = exception; current != null; current = current.InnerException)
-            {
-                if (current is TException)
-                {
-                    return true;
-                }
-            }
-
             return false;
         }
 
-        private static void ValidateOptions(NimBusReceiverOptions options)
+        if (args.Exception is ObjectDisposedException)
         {
-            if (options.MaxConcurrentSessions <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(options.MaxConcurrentSessions), "MaxConcurrentSessions must be greater than zero.");
-            }
+            return true;
+        }
 
-            if (options.MaxAutoLockRenewalDuration < TimeSpan.Zero)
-            {
-                throw new ArgumentOutOfRangeException(nameof(options.MaxAutoLockRenewalDuration), "MaxAutoLockRenewalDuration cannot be negative.");
-            }
+        if (args.Exception is ServiceBusException serviceBusException)
+        {
+            return serviceBusException.Reason == ServiceBusFailureReason.ServiceCommunicationProblem
+                || serviceBusException.Reason == ServiceBusFailureReason.ServiceTimeout
+                || serviceBusException.Reason == ServiceBusFailureReason.ServiceBusy
+                || serviceBusException.Reason == ServiceBusFailureReason.GeneralError;
+        }
 
-            if (options.SessionIdleTimeout <= TimeSpan.Zero)
-            {
-                throw new ArgumentOutOfRangeException(nameof(options.SessionIdleTimeout), "SessionIdleTimeout must be greater than zero.");
-            }
+        return ContainsException<SocketException>(args.Exception)
+            || ContainsException<WebSocketException>(args.Exception)
+            || ContainsException<IOException>(args.Exception);
+    }
 
-            if (options.PrefetchCount < 0)
+    private static bool ContainsException<TException>(Exception exception)
+        where TException : Exception
+    {
+        for (var current = exception; current != null; current = current.InnerException)
+        {
+            if (current is TException)
             {
-                throw new ArgumentOutOfRangeException(nameof(options.PrefetchCount), "PrefetchCount cannot be negative.");
-            }
-
-            if (options.RecoverableErrorRestartThreshold <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(options.RecoverableErrorRestartThreshold), "RecoverableErrorRestartThreshold must be greater than zero.");
-            }
-
-            if (options.RecoverableErrorWindow <= TimeSpan.Zero)
-            {
-                throw new ArgumentOutOfRangeException(nameof(options.RecoverableErrorWindow), "RecoverableErrorWindow must be greater than zero.");
-            }
-
-            if (options.MaxRecoverableErrorDelay < TimeSpan.Zero)
-            {
-                throw new ArgumentOutOfRangeException(nameof(options.MaxRecoverableErrorDelay), "MaxRecoverableErrorDelay cannot be negative.");
-            }
-
-            if (options.RecoverableErrorDelay < TimeSpan.Zero)
-            {
-                throw new ArgumentOutOfRangeException(nameof(options.RecoverableErrorDelay), "RecoverableErrorDelay cannot be negative.");
-            }
-
-            if (options.ProcessorRestartDelay < TimeSpan.Zero)
-            {
-                throw new ArgumentOutOfRangeException(nameof(options.ProcessorRestartDelay), "ProcessorRestartDelay cannot be negative.");
-            }
-
-            if (options.ProcessorShutdownTimeout <= TimeSpan.Zero)
-            {
-                throw new ArgumentOutOfRangeException(nameof(options.ProcessorShutdownTimeout), "ProcessorShutdownTimeout must be greater than zero.");
+                return true;
             }
         }
 
-        private readonly struct RecoverableErrorState
-        {
-            public RecoverableErrorState(int errorCount, TimeSpan delay, bool shouldRestart)
-            {
-                ErrorCount = errorCount;
-                Delay = delay;
-                ShouldRestart = shouldRestart;
-            }
+        return false;
+    }
 
-            public int ErrorCount { get; }
-            public TimeSpan Delay { get; }
-            public bool ShouldRestart { get; }
+    private static void ValidateOptions(NimBusReceiverOptions options)
+    {
+        if (options.MaxConcurrentSessions <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options.MaxConcurrentSessions), "MaxConcurrentSessions must be greater than zero.");
         }
 
-        private readonly struct ProcessorRecoveryRequest
+        if (options.MaxAutoLockRenewalDuration < TimeSpan.Zero)
         {
-            public ProcessorRecoveryRequest(Exception exception, ServiceBusErrorSource errorSource, int errorCount)
-            {
-                Exception = exception;
-                ErrorSource = errorSource;
-                ErrorCount = errorCount;
-            }
-
-            public Exception Exception { get; }
-            public ServiceBusErrorSource ErrorSource { get; }
-            public int ErrorCount { get; }
+            throw new ArgumentOutOfRangeException(nameof(options.MaxAutoLockRenewalDuration), "MaxAutoLockRenewalDuration cannot be negative.");
         }
+
+        if (options.SessionIdleTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options.SessionIdleTimeout), "SessionIdleTimeout must be greater than zero.");
+        }
+
+        if (options.PrefetchCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options.PrefetchCount), "PrefetchCount cannot be negative.");
+        }
+
+        if (options.RecoverableErrorRestartThreshold <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options.RecoverableErrorRestartThreshold), "RecoverableErrorRestartThreshold must be greater than zero.");
+        }
+
+        if (options.RecoverableErrorWindow <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options.RecoverableErrorWindow), "RecoverableErrorWindow must be greater than zero.");
+        }
+
+        if (options.MaxRecoverableErrorDelay < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options.MaxRecoverableErrorDelay), "MaxRecoverableErrorDelay cannot be negative.");
+        }
+
+        if (options.RecoverableErrorDelay < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options.RecoverableErrorDelay), "RecoverableErrorDelay cannot be negative.");
+        }
+
+        if (options.ProcessorRestartDelay < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options.ProcessorRestartDelay), "ProcessorRestartDelay cannot be negative.");
+        }
+
+        if (options.ProcessorShutdownTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options.ProcessorShutdownTimeout), "ProcessorShutdownTimeout must be greater than zero.");
+        }
+    }
+
+    private readonly struct RecoverableErrorState
+    {
+        public RecoverableErrorState(int errorCount, TimeSpan delay, bool shouldRestart)
+        {
+            ErrorCount = errorCount;
+            Delay = delay;
+            ShouldRestart = shouldRestart;
+        }
+
+        public int ErrorCount { get; }
+        public TimeSpan Delay { get; }
+        public bool ShouldRestart { get; }
+    }
+
+    private readonly struct ProcessorRecoveryRequest
+    {
+        public ProcessorRecoveryRequest(Exception exception, ServiceBusErrorSource errorSource, int errorCount)
+        {
+            Exception = exception;
+            ErrorSource = errorSource;
+            ErrorCount = errorCount;
+        }
+
+        public Exception Exception { get; }
+        public ServiceBusErrorSource ErrorSource { get; }
+        public int ErrorCount { get; }
     }
 }

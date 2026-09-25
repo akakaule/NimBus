@@ -29,7 +29,7 @@ public enum TopicSendState
 /// </summary>
 public interface IServiceBusManagement
 {
-    Task CreateCustomRule(string topicName, string subscriptionName, string ruleName, string filter, string action);
+    Task CreateCustomRule(string topicName, string subscriptionName, string ruleName, string filter, string? action);
     Task CreateSubscription(string topicName, string subscriptionName);
     Task DeleteRule(string topicName, string subscriptionName, string ruleName);
     Task DeleteSubscription(string topicName, string subscriptionName);
@@ -53,7 +53,7 @@ public interface IServiceBusManagement
         string topicName,
         string subscriptionName,
         EntityStatus status,
-        string forwardTo,
+        string? forwardTo,
         bool changeForwardTo);
 
     /// <summary>
@@ -89,7 +89,7 @@ public class ServiceBusManagement : IServiceBusManagement
     private readonly ServiceBusAdministrationClient client;
     private readonly ILogger _logger;
 
-    public ServiceBusManagement(ServiceBusAdministrationClient client, ILogger<ServiceBusManagement> logger = null)
+    public ServiceBusManagement(ServiceBusAdministrationClient client, ILogger<ServiceBusManagement>? logger = null)
     {
         this.client = client;
         _logger = logger;
@@ -152,7 +152,7 @@ public class ServiceBusManagement : IServiceBusManagement
         }
     }
 
-    public async Task CreateCustomRule(string topicName, string subscriptionName, string ruleName, string filter, string action)
+    public async Task CreateCustomRule(string topicName, string subscriptionName, string ruleName, string filter, string? action)
     {
         // Names are validated here; `filter` and `action` are SQL templates whose
         // interpolated values must already have been validated upstream. We don't
@@ -349,7 +349,7 @@ public class ServiceBusManagement : IServiceBusManagement
         string topicName,
         string subscriptionName,
         EntityStatus status,
-        string forwardTo,
+        string? forwardTo,
         bool changeForwardTo)
     {
         ServiceBusFilterValidator.ValidateEntityPath(topicName, nameof(topicName));

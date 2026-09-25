@@ -3,30 +3,29 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using NimBus.WebApp.Services;
 
-namespace NimBus.WebApp.Actions
+namespace NimBus.WebApp.Actions;
+
+public class SsrResult : IActionResult
 {
-    public class SsrResult : IActionResult
+    private readonly string _url;
+    private readonly object _props;
+
+    public SsrResult(string url, object? props = null)
     {
-        private readonly string _url;
-        private readonly object _props;
+        _url = url;
+        _props = props;
+    }
 
-        public SsrResult(string url, object props = null)
+    public async Task ExecuteResultAsync(ActionContext context)
+    {
+        var renderService = context.HttpContext.RequestServices
+            .GetRequiredService<IRenderService>();
+        var renderResult = await renderService.RenderAsync(_url, _props);
+        var contentResult = new ContentResult
         {
-            _url = url;
-            _props = props;
-        }
-
-        public async Task ExecuteResultAsync(ActionContext context)
-        {
-            var renderService = context.HttpContext.RequestServices
-                .GetRequiredService<IRenderService>();
-            var renderResult = await renderService.RenderAsync(_url, _props);
-            var contentResult = new ContentResult
-            {
-                Content = renderResult,
-                ContentType = "text/html"
-            };
-            await contentResult.ExecuteResultAsync(context);
-        }
+            Content = renderResult,
+            ContentType = "text/html"
+        };
+        await contentResult.ExecuteResultAsync(context);
     }
 }

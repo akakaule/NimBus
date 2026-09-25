@@ -139,11 +139,11 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         return Task.FromResult(_events.TryUpdate(key, replacement, existing));
     }
 
-    public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.Pending);
+    public Task<UnresolvedEvent?> GetPendingEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.Pending);
 
-    public Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default)
+    public Task<UnresolvedEvent?> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(externalJobId)) return Task.FromResult<UnresolvedEvent>(null);
+        if (string.IsNullOrEmpty(externalJobId)) return Task.FromResult<UnresolvedEvent?>(null);
         var match = _events.Values.FirstOrDefault(e =>
             e.EndpointId == endpointId
             && e.ResolutionStatus == ResolutionStatus.Pending
@@ -164,24 +164,19 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
             .FirstOrDefault();
         return Task.FromResult<UnresolvedEvent?>(match);
     }
-    public Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.Failed);
-    public Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.Deferred);
-    public Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.DeadLettered);
-    public Task<UnresolvedEvent> GetUnsupportedEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.Unsupported);
+    public Task<UnresolvedEvent?> GetFailedEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.Failed);
+    public Task<UnresolvedEvent?> GetDeferredEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.Deferred);
+    public Task<UnresolvedEvent?> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.DeadLettered);
+    public Task<UnresolvedEvent?> GetUnsupportedEvent(string endpointId, string eventId, string sessionId) => GetByStatus(endpointId, eventId, sessionId, ResolutionStatus.Unsupported);
 
-    private Task<UnresolvedEvent> GetByStatus(string endpointId, string eventId, string sessionId, ResolutionStatus status)
-    {
-        var match = _events.Values.FirstOrDefault(e => e.EndpointId == endpointId && e.EventId == eventId && (e.SessionId ?? string.Empty) == (sessionId ?? string.Empty) && e.ResolutionStatus == status);
-        return match == null ? throw new EndpointNotFoundException(endpointId) : Task.FromResult(match);
-    }
+    private Task<UnresolvedEvent?> GetByStatus(string endpointId, string eventId, string sessionId, ResolutionStatus status)
+        => Task.FromResult(_events.Values.FirstOrDefault(e => e.EndpointId == endpointId && e.EventId == eventId && (e.SessionId ?? string.Empty) == (sessionId ?? string.Empty) && e.ResolutionStatus == status));
 
-    public virtual Task<UnresolvedEvent> GetEvent(string endpointId, string eventId)
-    {
-        var match = _events.Values.Where(e => e.EndpointId == endpointId && e.EventId == eventId).OrderByDescending(e => e.UpdatedAt).FirstOrDefault();
-        return match == null ? throw new EndpointNotFoundException(endpointId) : Task.FromResult(match);
-    }
+    public virtual Task<UnresolvedEvent?> GetEvent(string endpointId, string eventId)
+        => Task.FromResult(_events.Values.Where(e => e.EndpointId == endpointId && e.EventId == eventId).OrderByDescending(e => e.UpdatedAt).FirstOrDefault());
 
-    public Task<UnresolvedEvent> GetEventById(string endpointId, string id) => GetEvent(endpointId, id);
+    public Task<UnresolvedEvent?> GetEventById(string endpointId, string id)
+        => Task.FromResult(_events.Values.FirstOrDefault(e => e.EndpointId == endpointId && CompositeEventId(e) == id));
 
     public Task<List<UnresolvedEvent>> GetEventsByIds(string endpointId, IEnumerable<string> eventIds)
     {
@@ -357,15 +352,13 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         return Task.CompletedTask;
     }
 
-    public Task<MessageEntity> GetMessage(string eventId, string messageId)
-        => _messages.TryGetValue((eventId, messageId), out var m)
-            ? Task.FromResult(m)
-            : throw new MessageNotFoundException(eventId, messageId);
+    public Task<MessageEntity?> GetMessage(string eventId, string messageId)
+        => Task.FromResult(_messages.TryGetValue((eventId, messageId), out var m) ? m : null);
 
     public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId)
         => Task.FromResult<IEnumerable<MessageEntity>>(_messages.Values.Where(m => m.EventId == eventId).ToList());
 
-    public Task<MessageEntity> GetLatestEventRequestMessage(string eventId)
+    public Task<MessageEntity?> GetLatestEventRequestMessage(string eventId)
         => Task.FromResult(
             _messages.Values
                 .Where(m => m.EventId == eventId
@@ -374,14 +367,18 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
                 .OrderByDescending(m => m.EnqueuedTimeUtc)
                 .FirstOrDefault());
 
-    public Task<MessageEntity> GetFailedMessage(string eventId, string endpointId)
-    {
-        var match = _messages.Values.FirstOrDefault(m => m.EventId == eventId && m.EndpointId == endpointId);
-        return match == null ? throw new MessageNotFoundException(eventId) : Task.FromResult(match);
-    }
+    public Task<MessageEntity?> GetFailedMessage(string eventId, string endpointId)
+        => Task.FromResult(MessagesOnEndpointNewestFirst(eventId, endpointId).FirstOrDefault(m => m.MessageContent?.ErrorContent != null));
 
-    public Task<MessageEntity> GetDeadletteredMessage(string eventId, string endpointId)
-        => GetFailedMessage(eventId, endpointId);
+    public Task<MessageEntity?> GetDeadletteredMessage(string eventId, string endpointId)
+        => Task.FromResult(MessagesOnEndpointNewestFirst(eventId, endpointId).FirstOrDefault());
+
+    // Endpoint ids compare case-insensitively, like the Cosmos LOWER() query and SQL Server's
+    // default collation.
+    private IEnumerable<MessageEntity> MessagesOnEndpointNewestFirst(string eventId, string endpointId)
+        => _messages.Values
+            .Where(m => m.EventId == eventId && string.Equals(m.EndpointId, endpointId, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(m => m.EnqueuedTimeUtc);
 
     public Task RemoveStoredMessage(string eventId, string messageId)
     {
@@ -601,8 +598,8 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
     private static AccessControlList? Clone(AccessControlList? acl)
         => acl == null ? null : JsonConvert.DeserializeObject<AccessControlList>(JsonConvert.SerializeObject(acl));
 
-    public Task<EndpointMetadata> GetEndpointMetadata(string endpointId)
-        => _metadata.TryGetValue(endpointId, out var m) ? Task.FromResult(m) : throw new EndpointNotFoundException(endpointId);
+    public Task<EndpointMetadata?> GetEndpointMetadata(string endpointId)
+        => Task.FromResult(_metadata.TryGetValue(endpointId, out var m) ? m : null);
 
     public Task<List<EndpointMetadata>> GetMetadatas() => Task.FromResult(_metadata.Values.ToList());
 

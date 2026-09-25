@@ -73,59 +73,11 @@ public class InMemoryMessageContext : IMessageContext
         return Task.CompletedTask;
     }
 
-    public Task DeadLetter(string reason, Exception exception = null, CancellationToken cancellationToken = default)
+    public Task DeadLetter(string reason, Exception? exception = null, CancellationToken cancellationToken = default)
     {
         IsDeadLettered = true;
         DeadLetterReasonRecorded = reason;
         DeadLetterErrorDescriptionRecorded = exception?.Message;
-        return Task.CompletedTask;
-    }
-
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead.")]
-    public Task Defer(CancellationToken cancellationToken = default)
-    {
-        _sessionState.DeferredMessages.Add(_message);
-        _sessionState.DeferredCount++;
-        return Task.CompletedTask;
-    }
-
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead.")]
-    public Task DeferOnly(CancellationToken cancellationToken = default)
-    {
-        _sessionState.DeferredMessages.Add(_message);
-        return Task.CompletedTask;
-    }
-
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
-    public Task<IMessageContext> ReceiveNextDeferred(CancellationToken cancellationToken = default)
-    {
-        if (_sessionState.DeferredMessages.Count == 0)
-            return Task.FromResult<IMessageContext>(null);
-
-        var next = _sessionState.DeferredMessages[0];
-        _sessionState.DeferredMessages.RemoveAt(0);
-        _sessionState.DeferredCount = Math.Max(0, _sessionState.DeferredCount - 1);
-        return Task.FromResult<IMessageContext>(new InMemoryMessageContext(next, _sessionState));
-    }
-
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
-    public Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken cancellationToken = default)
-    {
-        return ReceiveNextDeferred(cancellationToken);
-    }
-
-    [Obsolete("Dead code — the Azure Service Bus defer API's write path is unused on master (spec 027 §3, docs/spec/027-service-bus-emulator/spec.md). Use the Deferred-subscription mechanism (DeferMessageToSubscription) instead. Retained only for legacy-drain/unblock compatibility.")]
-    public Task RestoreNextDeferred(IMessageContext deferredMessage, CancellationToken cancellationToken = default)
-    {
-        if (deferredMessage is InMemoryMessageContext deferredContext
-            && !_sessionState.DeferredMessages.Contains(deferredContext._message))
-        {
-            // Front of the list: ReceiveNextDeferred always takes the first entry, so
-            // restoring anywhere else would break session ordering.
-            _sessionState.DeferredMessages.Insert(0, deferredContext._message);
-            _sessionState.DeferredCount++;
-        }
-
         return Task.CompletedTask;
     }
 

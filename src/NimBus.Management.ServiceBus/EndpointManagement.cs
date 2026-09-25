@@ -9,7 +9,7 @@ public class EndpointManagement
     private readonly IServiceBusManagement _serviceBusManagement;
     private readonly ILogger _logger;
 
-    public EndpointManagement(IServiceBusManagement serviceBusManagement, ILogger<EndpointManagement> logger = null)
+    public EndpointManagement(IServiceBusManagement serviceBusManagement, ILogger<EndpointManagement>? logger = null)
     {
         _serviceBusManagement = serviceBusManagement;
         _logger = logger;

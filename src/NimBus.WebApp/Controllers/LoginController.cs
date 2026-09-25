@@ -5,16 +5,15 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace NimBus.WebApp.Controllers
+namespace NimBus.WebApp.Controllers;
+
+[Route("login")]
+public class LoginController : Controller
 {
-    [Route("login")]
-    public class LoginController : Controller
+    [Authorize]
+    [Route("/login")]
+    public IActionResult Index()
     {
-        [Authorize]
-        [Route("/login")]
-        public IActionResult Index()
-        {
-            return base.Redirect("/");
-        }
+        return base.Redirect("/");
     }
 }

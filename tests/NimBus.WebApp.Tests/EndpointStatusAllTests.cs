@@ -85,10 +85,10 @@ public sealed class EndpointStatusAllTests
             store,
             store,
             store,
-            serviceBusManagement: null,
+            serviceBusManagement: null!,
             new AllowAllAuthorizationService(),
             NullLogger<EndpointImplementation>.Instance,
-            auditLogService: null,
+            auditLogService: null!,
             new StoreResultCache(new MemoryCache(new MemoryCacheOptions())),
             PayloadRedactionTests.NewRedaction());
     }

@@ -55,7 +55,7 @@ public interface IHandoffClient
     /// <param name="cancellationToken">Cooperative cancellation.</param>
     Task CompleteAsync(
         HandoffSettlement coords,
-        object result = null,
+        object? result = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -69,6 +69,6 @@ public interface IHandoffClient
     Task FailAsync(
         HandoffSettlement coords,
         string errorText,
-        string errorType = null,
+        string? errorType = null,
         CancellationToken cancellationToken = default);
 }

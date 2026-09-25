@@ -15,17 +15,16 @@ using Newtonsoft.Json;
 using NimBus.WebApp.Actions;
 using NimBus.WebApp.ManagementApi;
 
-namespace NimBus.WebApp.Controllers
-{
-    public class EndpointsController : Controller
-    {
-        private readonly IPlatform platform;
-        private readonly IConfiguration configuration;
-        public EndpointsController(IPlatform platform, IConfiguration configuration)
-        {
-            this.platform = platform;
-            this.configuration = configuration;
-        }
+namespace NimBus.WebApp.Controllers;
 
+public class EndpointsController : Controller
+{
+    private readonly IPlatform platform;
+    private readonly IConfiguration configuration;
+    public EndpointsController(IPlatform platform, IConfiguration configuration)
+    {
+        this.platform = platform;
+        this.configuration = configuration;
     }
+
 }

@@ -11,7 +11,11 @@ namespace NimBus.MessageStore.Abstractions;
 /// </summary>
 public interface IEndpointMetadataStore
 {
-    Task<EndpointMetadata> GetEndpointMetadata(string endpointId);
+    /// <summary>
+    /// Returns the endpoint's metadata, or null when none has been stored. Optional string
+    /// fields round-trip exactly (null stays null), like every single-row store lookup.
+    /// </summary>
+    Task<EndpointMetadata?> GetEndpointMetadata(string endpointId);
     Task<List<EndpointMetadata>> GetMetadatas();
     Task<List<EndpointMetadata>?> GetMetadatas(IEnumerable<string> endpointIds);
     Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata);

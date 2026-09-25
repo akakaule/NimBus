@@ -15,7 +15,7 @@ public class StaleWriteGuardTests
         ResolutionStatus status,
         MessageType messageType,
         string lastMessageId = "m-1",
-        string parentMessageId = null) => new()
+        string? parentMessageId = null) => new()
         {
             ResolutionStatus = status,
             MessageType = messageType,

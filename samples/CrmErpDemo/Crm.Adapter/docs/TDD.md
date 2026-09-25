@@ -295,7 +295,7 @@ For a demo this is acceptable; for production, document explicit retry budgets p
 |---|---|---|---|
 | **Throw** | `ErpCustomerCreatedHandler`, `ErpContactCreatedHandler`, `ErpContactUpdatedHandler` (de facto) | `EnsureSuccessStatusCode()` on every `crm-api` call throws `HttpRequestException` on any non-2xx response (4xx and 5xx). The exception bubbles to NimBus, the message abandons, and Service Bus retries until delivery-count is reached. | Simple, but conflates transient (5xx, timeouts) with permanent (4xx, malformed payload) failures. |
 
-> **Recommended hardening (see §8):** branch on `response.StatusCode` — treat 4xx as permanent (classify via `IPermanentFailureClassifier`), retry on 5xx and timeouts only. Today, a permanent 404 from `crm-api` will burn the full retry budget before reaching the Resolver.
+> **Recommended hardening (see §8):** branch on `response.StatusCode` — treat 4xx as permanent (classify via an `IFailureDispositionClassifier`), retry on 5xx and timeouts only. Today, a permanent 404 from `crm-api` will burn the full retry budget before reaching the Resolver.
 
 ### 4.5 Mapping layer  <!-- [AUTO] -->
 
@@ -572,7 +572,7 @@ Documented as a branch of §5 (`ErpCustomerCreatedHandler` when `Origin = Custom
 
 Design-level risks that affect how the adapter behaves under load, drift, or operational stress.
 
-- **No retry policy → 4xx burns the full delivery budget.** The handlers throw `HttpRequestException` on any non-2xx from `crm-api` (`EnsureSuccessStatusCode()`). Without a `RetryPolicies(...)` block or an `IPermanentFailureClassifier`, a permanent 4xx (e.g. 404 Not Found, 422 Validation Failed) is retried up to Service Bus `MaxDeliveryCount` before reaching the Resolver — operator pages on dead-letter. See §4.3 / §4.4.
+- **No retry policy → 4xx burns the full delivery budget.** The handlers throw `HttpRequestException` on any non-2xx from `crm-api` (`EnsureSuccessStatusCode()`). Without a `RetryPolicies(...)` block or an `IFailureDispositionClassifier`, a permanent 4xx (e.g. 404 Not Found, 422 Validation Failed) is retried up to Service Bus `MaxDeliveryCount` before reaching the Resolver — operator pages on dead-letter. See §4.3 / §4.4.
 - **ERP outbox poll interval.** ERP owns the outbox showcase and hosts its dispatcher in `Erp.Api`.
 - **Auth model is demo-only.** No bearer/MI auth on calls to `crm-api`; no Managed Identity to Service Bus or SQL. Acceptable for the local Aspire demo, blocker for any non-demo deployment.
 
@@ -682,5 +682,5 @@ Design-level risks that affect how the adapter behaves under load, drift, or ope
 |---|---|---|---|
 | B-1 | §1.5, §5.3, §7 | Criticality + operational owner; adapter-level NFR targets (availability, throughput, latency, downtime impact). The demo answers are "n/a"; if the adapter is ever lifted out of the demo, fill these in. | NimBus tech lead |
 | B-2 | §3.3 | Expected daily volume of CRM account / contact mutations and confirmation that direct publish latency is acceptable. | NimBus tech lead |
-| B-3 | §8 (finding 1) | Decision: add per-event retry policy + `IPermanentFailureClassifier` to differentiate 4xx from 5xx? | NimBus tech lead |
+| B-3 | §8 (finding 1) | Decision: add per-event retry policy + an `IFailureDispositionClassifier` to differentiate 4xx from 5xx? | NimBus tech lead |
 | B-5 | §9.3 | Dashboard URLs once the adapter leaves the local Aspire context. | Operations |

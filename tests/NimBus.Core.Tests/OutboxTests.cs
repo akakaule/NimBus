@@ -18,7 +18,7 @@ public class OutboxSenderTests
     [TestMethod]
     public void Constructor_NullOutbox_Throws()
     {
-        Assert.ThrowsExactly<ArgumentNullException>(() => new OutboxSender(null));
+        Assert.ThrowsExactly<ArgumentNullException>(() => new OutboxSender(null!));
     }
 
     [TestMethod]
@@ -203,13 +203,13 @@ public class OutboxDispatcherTests
     [TestMethod]
     public void Constructor_NullOutbox_Throws()
     {
-        Assert.ThrowsExactly<ArgumentNullException>(() => new OutboxDispatcher(null, new RecordingSender()));
+        Assert.ThrowsExactly<ArgumentNullException>(() => new OutboxDispatcher(null!, new RecordingSender()));
     }
 
     [TestMethod]
     public void Constructor_NullSender_Throws()
     {
-        Assert.ThrowsExactly<ArgumentNullException>(() => new OutboxDispatcher(new InMemoryOutbox(), null));
+        Assert.ThrowsExactly<ArgumentNullException>(() => new OutboxDispatcher(new InMemoryOutbox(), null!));
     }
 
     [TestMethod]

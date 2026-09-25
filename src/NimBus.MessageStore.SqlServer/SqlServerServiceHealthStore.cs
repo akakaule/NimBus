@@ -33,7 +33,7 @@ internal sealed class SqlServerServiceHealthStore : IServiceHealthStore
         {
             ServiceId = row.ServiceId,
             Status = Enum.TryParse((string?)row.Status, out HeartbeatStatus status) ? status : HeartbeatStatus.Unknown,
-            Version = row.Version ?? string.Empty,
+            Version = row.Version,
             LastProbeMessageId = row.LastProbeMessageId,
             LastProbeSentUtc = row.LastProbeSentUtc,
             LastSeenUtc = row.LastSeenUtc,

@@ -139,7 +139,6 @@ public sealed class SimulatedEndpointHost : ISimulatedEndpointHost
             retryPolicies,
             pipeline: null,
             lifecycleNotifier: null,
-            permanentFailureClassifier: null,
             failureDispositionClassifier: new SimulatedFailureClassifier(),
             inboxDuplicateDetector: null);
 

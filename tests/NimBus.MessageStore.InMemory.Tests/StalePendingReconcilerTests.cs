@@ -342,7 +342,7 @@ public class StalePendingReconcilerTests
         // Older history rows may pre-date the EndpointId stamp; they must keep acting as blockers.
         var response = Response("ok-1", ResponseAt);
         var later = Request("rs-1", ResponseAt.AddSeconds(20), MessageType.ResubmissionRequest, from: "Manager");
-        later.EndpointId = null;
+        later.EndpointId = null!;
         var staleCopy = Request("copy-1", StaleCopyAt);
         var row = RowWrittenBy(staleCopy);
 
@@ -470,7 +470,7 @@ public class StalePendingReconcilerTests
     public void Projection_FallsBackToTheTargetEndpoint_WhenTheStoredResponseHasNoEndpointId()
     {
         var response = Response("ok-1", ResponseAt);
-        response.EndpointId = null;
+        response.EndpointId = null!;
 
         var projection = StalePendingReconciler.BuildCompletedProjection(
             response, new[] { response }, Endpoint, DateTime.UtcNow);

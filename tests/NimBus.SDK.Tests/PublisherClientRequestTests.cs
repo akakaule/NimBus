@@ -74,7 +74,7 @@ public class PublisherClientRequestTests
 
         public override Task<ServiceBusSessionReceiver> AcceptSessionAsync(
             string topicName, string subscriptionName, string sessionId,
-            ServiceBusSessionReceiverOptions options = default, CancellationToken cancellationToken = default)
+            ServiceBusSessionReceiverOptions options = default!, CancellationToken cancellationToken = default)
         {
             AcceptedTopic = topicName;
             AcceptedSubscription = subscriptionName;
@@ -227,7 +227,7 @@ public class PublisherClientRequestTests
 
         public override Task<ServiceBusSessionReceiver> AcceptSessionAsync(
             string topicName, string subscriptionName, string sessionId,
-            ServiceBusSessionReceiverOptions options = default, CancellationToken cancellationToken = default)
+            ServiceBusSessionReceiverOptions options = default!, CancellationToken cancellationToken = default)
             => Task.FromResult<ServiceBusSessionReceiver>(new ReplyingSessionReceiver(ReplyBody));
     }
 

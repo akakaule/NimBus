@@ -95,11 +95,11 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<bool> UploadCompletedMessage(string eventId, string sessionId, string endpointId, UnresolvedEvent content) => _messageTracking.UploadCompletedMessage(eventId, sessionId, endpointId, content);
     public Task<bool> TryCompletePendingMessage(string eventId, string sessionId, string endpointId, string? expectedLastMessageId, UnresolvedEvent content) => _messageTracking.TryCompletePendingMessage(eventId, sessionId, endpointId, expectedLastMessageId, content);
     public Task<bool> TrySkipDeferredMessage(string eventId, string sessionId, string endpointId, string? expectedLastMessageId, DateTime expectedUpdatedAt) => _messageTracking.TrySkipDeferredMessage(eventId, sessionId, endpointId, expectedLastMessageId, expectedUpdatedAt);
-    public Task<MessageEntity> GetMessage(string eventId, string messageId) => _messageTracking.GetMessage(eventId, messageId);
+    public Task<MessageEntity?> GetMessage(string eventId, string messageId) => _messageTracking.GetMessage(eventId, messageId);
     public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId) => _messageTracking.GetEventHistory(eventId);
-    public Task<MessageEntity> GetLatestEventRequestMessage(string eventId) => _messageTracking.GetLatestEventRequestMessage(eventId);
-    public Task<MessageEntity> GetFailedMessage(string eventId, string endpointId) => _messageTracking.GetFailedMessage(eventId, endpointId);
-    public Task<MessageEntity> GetDeadletteredMessage(string eventId, string endpointId) => _messageTracking.GetDeadletteredMessage(eventId, endpointId);
+    public Task<MessageEntity?> GetLatestEventRequestMessage(string eventId) => _messageTracking.GetLatestEventRequestMessage(eventId);
+    public Task<MessageEntity?> GetFailedMessage(string eventId, string endpointId) => _messageTracking.GetFailedMessage(eventId, endpointId);
+    public Task<MessageEntity?> GetDeadletteredMessage(string eventId, string endpointId) => _messageTracking.GetDeadletteredMessage(eventId, endpointId);
     public Task RemoveStoredMessage(string eventId, string messageId) => _messageTracking.RemoveStoredMessage(eventId, messageId);
     public Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount) => _messageTracking.SearchMessages(filter, continuationToken, maxItemCount);
     public Task StoreMessage(MessageEntity message) => _messageTracking.StoreMessage(message);
@@ -109,15 +109,15 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<IReadOnlyDictionary<string, int>> GetResubmitCounts(string endpointId, IReadOnlyCollection<string> eventIds) => _messageTracking.GetResubmitCounts(endpointId, eventIds);
     public Task SetEventReport(string endpointId, string eventId, bool isReported, string? reportedBy, string? ticketId) => _messageTracking.SetEventReport(endpointId, eventId, isReported, reportedBy, ticketId);
     public Task<IReadOnlyDictionary<string, EventReport>> GetEventReports(string endpointId, IReadOnlyCollection<string> eventIds) => _messageTracking.GetEventReports(endpointId, eventIds);
-    public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetPendingEvent(endpointId, eventId, sessionId);
-    public Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetFailedEvent(endpointId, eventId, sessionId);
-    public Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetDeferredEvent(endpointId, eventId, sessionId);
-    public Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetDeadletteredEvent(endpointId, eventId, sessionId);
-    public Task<UnresolvedEvent> GetUnsupportedEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetUnsupportedEvent(endpointId, eventId, sessionId);
-    public Task<UnresolvedEvent> GetEvent(string endpointId, string eventId) => _messageTracking.GetEvent(endpointId, eventId);
-    public Task<UnresolvedEvent> GetEventById(string endpointId, string id) => _messageTracking.GetEventById(endpointId, id);
+    public Task<UnresolvedEvent?> GetPendingEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetPendingEvent(endpointId, eventId, sessionId);
+    public Task<UnresolvedEvent?> GetFailedEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetFailedEvent(endpointId, eventId, sessionId);
+    public Task<UnresolvedEvent?> GetDeferredEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetDeferredEvent(endpointId, eventId, sessionId);
+    public Task<UnresolvedEvent?> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetDeadletteredEvent(endpointId, eventId, sessionId);
+    public Task<UnresolvedEvent?> GetUnsupportedEvent(string endpointId, string eventId, string sessionId) => _messageTracking.GetUnsupportedEvent(endpointId, eventId, sessionId);
+    public Task<UnresolvedEvent?> GetEvent(string endpointId, string eventId) => _messageTracking.GetEvent(endpointId, eventId);
+    public Task<UnresolvedEvent?> GetEventById(string endpointId, string id) => _messageTracking.GetEventById(endpointId, id);
     public Task<List<UnresolvedEvent>> GetEventsByIds(string endpointId, IEnumerable<string> eventIds) => _messageTracking.GetEventsByIds(endpointId, eventIds);
-    public Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default) => _messageTracking.GetPendingHandoffByExternalJobId(endpointId, externalJobId, cancellationToken);
+    public Task<UnresolvedEvent?> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, CancellationToken cancellationToken = default) => _messageTracking.GetPendingHandoffByExternalJobId(endpointId, externalJobId, cancellationToken);
     public Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds) => _messageTracking.GetNextPendingHandoffEvent(endpointId, eventTypeIds);
     public Task<IEnumerable<UnresolvedEvent>> GetCompletedEventsOnEndpoint(string endpointId) => _messageTracking.GetCompletedEventsOnEndpoint(endpointId);
     public Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount) => _messageTracking.GetEventsByFilter(filter, continuationToken, maxSearchItemsCount);
@@ -155,7 +155,7 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<bool> DeleteSubscription(string subscriptionId)
         => _subscriptions.DeleteSubscription(subscriptionId);
     // ───────── IEndpointMetadataStore — implementation in SqlServerEndpointMetadataStore ─────────
-    public Task<EndpointMetadata> GetEndpointMetadata(string endpointId) => _endpointMetadata.GetEndpointMetadata(endpointId);
+    public Task<EndpointMetadata?> GetEndpointMetadata(string endpointId) => _endpointMetadata.GetEndpointMetadata(endpointId);
     public Task<List<EndpointMetadata>> GetMetadatas() => _endpointMetadata.GetMetadatas();
     public Task<List<EndpointMetadata>?> GetMetadatas(IEnumerable<string> endpointIds) => _endpointMetadata.GetMetadatas(endpointIds);
     public Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata) => _endpointMetadata.SetEndpointMetadata(endpointMetadata);

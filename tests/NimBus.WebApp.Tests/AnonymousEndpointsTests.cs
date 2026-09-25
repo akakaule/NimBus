@@ -130,7 +130,7 @@ public class AnonymousEndpointsTests
 
     private sealed class StubStorageHookApi : IStorageHookApiController
     {
-        public Task<IActionResult> StoragehookReceiveCosmosAsync(string endpointId)
+        public Task<IActionResult> StoragehookReceiveAsync(string endpointId)
             => Task.FromResult<IActionResult>(new OkResult());
 
         public Task<IActionResult> PostStoragehookHeartbeatAsync(string endpointId)

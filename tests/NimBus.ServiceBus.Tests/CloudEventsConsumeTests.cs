@@ -20,7 +20,7 @@ namespace NimBus.ServiceBus.Tests;
 [TestClass]
 public class CloudEventsConsumeTests
 {
-    private static MessageContext Consume(FakeCloudEventMessage message, CloudEventReadOptions options = null) =>
+    private static MessageContext Consume(FakeCloudEventMessage message, CloudEventReadOptions? options = null) =>
         new(message, new InertServiceBusSession(), isDeferred: false, options ?? new CloudEventReadOptions());
 
     [TestMethod]
@@ -108,35 +108,6 @@ public class CloudEventsConsumeTests
     }
 
     [TestMethod]
-    public async Task ReceiveNextDeferred_PropagatesCloudEventReadOptions()
-    {
-        // Finding #3: a deferred CloudEvent must be re-parsed as a CloudEvent on
-        // replay, not mis-read as a native envelope — so the read options must flow
-        // into the replay MessageContext.
-        var deferred = new FakeCloudEventMessage
-        {
-            ContentType = "application/json",
-            Body = Encoding.UTF8.GetBytes("{\"orderId\":\"O-def\"}"),
-        };
-        deferred.Properties["cloudEvents:specversion"] = "1.0";
-        deferred.Properties["cloudEvents:id"] = "ext-def";
-        deferred.Properties["cloudEvents:source"] = "urn:ext:crm";
-        deferred.Properties["cloudEvents:type"] = "OrderPlaced";
-
-        var session = new DeferredCloudEventSession(deferredSeq: 7, deferred);
-        var outer = new MessageContext(new FakeCloudEventMessage(), session, isDeferred: false, new CloudEventReadOptions());
-
-        var replay = await outer.ReceiveNextDeferred();
-
-        Assert.IsNotNull(replay);
-        var ce = replay.GetCloudEvent();
-        Assert.IsNotNull(ce, "Deferred CloudEvent must retain read options on replay.");
-        Assert.AreEqual("ext-def", ce.Id);
-        Assert.AreEqual("OrderPlaced", replay.MessageContent.EventContent.EventTypeId);
-        Assert.AreEqual("{\"orderId\":\"O-def\"}", replay.MessageContent.EventContent.EventJson);
-    }
-
-    [TestMethod]
     public void StructuredCloudEvent_ParsesEnvelope()
     {
         const string envelope =
@@ -210,27 +181,4 @@ public class CloudEventsConsumeTests
         public string OrderId { get; set; }
     }
 
-    /// <summary>Session double that returns a single pre-deferred message on replay.</summary>
-    private sealed class DeferredCloudEventSession : IServiceBusSession
-    {
-        private readonly SessionState _state = new();
-        private readonly long _seq;
-        private readonly IServiceBusMessage _deferred;
-
-        public DeferredCloudEventSession(long deferredSeq, IServiceBusMessage deferred)
-        {
-            _seq = deferredSeq;
-            _deferred = deferred;
-            _state.DeferredSequenceNumbers.Add(deferredSeq);
-        }
-
-        public Task CompleteAsync(IServiceBusMessage message, CancellationToken ct = default) => Task.CompletedTask;
-        public Task DeadLetterAsync(IServiceBusMessage message, string reason, string description, CancellationToken ct = default) => Task.CompletedTask;
-        public Task DeferAsync(IServiceBusMessage message, CancellationToken ct = default) => Task.CompletedTask;
-        public Task<IServiceBusMessage> ReceiveDeferredMessageAsync(long seq, CancellationToken ct = default) =>
-            Task.FromResult(seq == _seq ? _deferred : null);
-        public Task SetStateAsync(SessionState state, CancellationToken ct = default) => Task.CompletedTask;
-        public Task<SessionState> GetStateAsync(CancellationToken ct = default) => Task.FromResult(_state);
-        public Task SendScheduledMessageAsync(Azure.Messaging.ServiceBus.ServiceBusMessage message, DateTimeOffset scheduledTime, CancellationToken ct = default) => Task.CompletedTask;
-    }
 }

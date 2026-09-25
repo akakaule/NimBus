@@ -45,8 +45,6 @@ internal sealed class InertServiceBusSession : IServiceBusSession
 {
     public Task CompleteAsync(IServiceBusMessage message, CancellationToken ct = default) => Task.CompletedTask;
     public Task DeadLetterAsync(IServiceBusMessage message, string reason, string description, CancellationToken ct = default) => Task.CompletedTask;
-    public Task DeferAsync(IServiceBusMessage message, CancellationToken ct = default) => Task.CompletedTask;
-    public Task<IServiceBusMessage> ReceiveDeferredMessageAsync(long seq, CancellationToken ct = default) => Task.FromResult<IServiceBusMessage>(null);
     public Task SetStateAsync(SessionState state, CancellationToken ct = default) => Task.CompletedTask;
     public Task<SessionState> GetStateAsync(CancellationToken ct = default) => Task.FromResult(new SessionState());
     public Task SendScheduledMessageAsync(Azure.Messaging.ServiceBus.ServiceBusMessage message, DateTimeOffset scheduledTime, CancellationToken ct = default) => Task.CompletedTask;

@@ -41,7 +41,7 @@ public sealed class HandoffClient : IHandoffClient
     public HandoffClient(
         ISender sender,
         HandoffClientOptions options,
-        ILogger<HandoffClient> logger = null)
+        ILogger<HandoffClient>? logger = null)
     {
         if (options is null) throw new ArgumentNullException(nameof(options));
         if (string.IsNullOrEmpty(options.Endpoint))
@@ -52,7 +52,7 @@ public sealed class HandoffClient : IHandoffClient
         _logger = logger;
     }
 
-    public async Task CompleteAsync(HandoffSettlement coords, object result = null, CancellationToken cancellationToken = default)
+    public async Task CompleteAsync(HandoffSettlement coords, object? result = null, CancellationToken cancellationToken = default)
     {
         ValidateCoords(coords);
         var detailsJson = SerializeResult(result);
@@ -63,7 +63,7 @@ public sealed class HandoffClient : IHandoffClient
             _endpoint, coords.EventId, coords.SessionId);
     }
 
-    public async Task FailAsync(HandoffSettlement coords, string errorText, string errorType = null, CancellationToken cancellationToken = default)
+    public async Task FailAsync(HandoffSettlement coords, string errorText, string? errorType = null, CancellationToken cancellationToken = default)
     {
         ValidateCoords(coords);
         var message = HandoffControlMessageFactory.CreateFailed(ToFactoryCoords(coords), errorText, errorType);

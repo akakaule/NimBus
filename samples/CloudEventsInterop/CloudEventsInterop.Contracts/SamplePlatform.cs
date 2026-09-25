@@ -1,18 +1,17 @@
 using CloudEventsInterop.Contracts.Endpoints;
 using NimBus.Core;
 
-namespace CloudEventsInterop.Contracts
+namespace CloudEventsInterop.Contracts;
+
+/// <summary>
+/// Declarative topology for the CloudEvents interoperability sample. Provisioned by
+/// <c>CloudEventsInterop.Provisioner</c> via <c>ServiceBusTopologyProvisioner</c>.
+/// </summary>
+public class SamplePlatform : Platform
 {
-    /// <summary>
-    /// Declarative topology for the CloudEvents interoperability sample. Provisioned by
-    /// <c>CloudEventsInterop.Provisioner</c> via <c>ServiceBusTopologyProvisioner</c>.
-    /// </summary>
-    public class SamplePlatform : Platform
+    public SamplePlatform()
     {
-        public SamplePlatform()
-        {
-            AddEndpoint(new SalesEndpoint());
-            AddEndpoint(new InvoicingEndpoint());
-        }
+        AddEndpoint(new SalesEndpoint());
+        AddEndpoint(new InvoicingEndpoint());
     }
 }

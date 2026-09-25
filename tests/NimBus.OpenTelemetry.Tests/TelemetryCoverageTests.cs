@@ -594,11 +594,7 @@ internal sealed class TestMessageContext : IMessageContext
 
     public Task Complete(CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task Abandon(TransientException exception) => Task.CompletedTask;
-    public Task DeadLetter(string reason, Exception exception = null!, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    public Task Defer(CancellationToken cancellationToken = default) => Task.CompletedTask;
-    public Task DeferOnly(CancellationToken cancellationToken = default) => Task.CompletedTask;
-    public Task<IMessageContext> ReceiveNextDeferred(CancellationToken cancellationToken = default) => Task.FromResult<IMessageContext>(null!);
-    public Task<IMessageContext> ReceiveNextDeferredWithPop(CancellationToken cancellationToken = default) => Task.FromResult<IMessageContext>(null!);
+    public Task DeadLetter(string reason, Exception? exception = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task BlockSession(CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task UnblockSession(CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task<bool> IsSessionBlocked(CancellationToken cancellationToken = default) => Task.FromResult(false);

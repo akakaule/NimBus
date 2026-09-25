@@ -7,9 +7,9 @@ namespace NimBus.MessageStore.States;
 public class EndpointMetadata
 {
     [JsonProperty(PropertyName = "id")] public string EndpointId { get; set; }
-    public string EndpointOwner { get; set; }
-    public string EndpointOwnerTeam { get; set; }
-    public string EndpointOwnerEmail { get; set; }
+    public string? EndpointOwner { get; set; }
+    public string? EndpointOwnerTeam { get; set; }
+    public string? EndpointOwnerEmail { get; set; }
 
     /// <summary>Heartbeat opt-in; null when the endpoint has never been configured either way.</summary>
     public bool? IsHeartbeatEnabled { get; set; }

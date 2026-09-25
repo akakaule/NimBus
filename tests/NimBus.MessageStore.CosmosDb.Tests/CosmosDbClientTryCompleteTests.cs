@@ -115,7 +115,7 @@ public sealed class CosmosDbClientTryCompleteTests
     {
         var adapter = new RecordingCosmosClientAdapter();
         var container = adapter.Container(EndpointId);
-        container.EnqueueRead(RowId, "Pending", Row(MessageType.EventRequest, null), "etag-1");
+        container.EnqueueRead(RowId, "Pending", Row(MessageType.EventRequest, null!), "etag-1");
         container.EnqueueRead(RowId, "Pending", Row(MessageType.EventRequest, "req-late"), "etag-2");
         var client = new CosmosDbClient(adapter);
 

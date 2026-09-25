@@ -178,7 +178,7 @@ public sealed class EndpointSendStatusTests
         public Task<TopicSendState> GetTopicSendState(string topicName) => Task.FromResult(TopicState(topicName));
 
         // Unused by the send kill switch.
-        public Task CreateCustomRule(string t, string s, string r, string f, string a) => throw new NotSupportedException();
+        public Task CreateCustomRule(string t, string s, string r, string f, string? a) => throw new NotSupportedException();
         public Task CreateSubscription(string t, string s) => throw new NotSupportedException();
         public Task DeleteRule(string t, string s, string r) => throw new NotSupportedException();
         public Task DeleteSubscription(string t, string s) => throw new NotSupportedException();
@@ -188,7 +188,7 @@ public sealed class EndpointSendStatusTests
         public Task<bool> IsSubscriptionActive(string t, string s) => throw new NotSupportedException();
         public Task<SubscriptionState> GetSubscriptionState(string t, string s) => throw new NotSupportedException();
         public Task UpdateForwardTo(string t, string s, string f) => throw new NotSupportedException();
-        public Task UpdateSubscription(string t, string s, Azure.Messaging.ServiceBus.Administration.EntityStatus status, string f, bool c) => throw new NotSupportedException();
+        public Task UpdateSubscription(string t, string s, Azure.Messaging.ServiceBus.Administration.EntityStatus status, string? f, bool c) => throw new NotSupportedException();
         public Task<Azure.Messaging.ServiceBus.Administration.SubscriptionProperties> GetSubscription(string t, string s) => throw new NotSupportedException();
         public IAsyncEnumerable<Azure.Messaging.ServiceBus.Administration.TopicProperties> ListTopicsAsync() => throw new NotSupportedException();
         public IAsyncEnumerable<Azure.Messaging.ServiceBus.Administration.SubscriptionProperties> ListSubscriptionsAsync(string t) => throw new NotSupportedException();

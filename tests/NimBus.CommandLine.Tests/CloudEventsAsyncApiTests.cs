@@ -77,7 +77,7 @@ public sealed class CloudEventsAsyncApiTests
 
     private sealed class CeFakeEndpoint : IEndpoint, ICloudEventsAware
     {
-        public CeFakeEndpoint(string id, Type[] produces = null, Type[] consumes = null, string contentMode = "binary", string source = null)
+        public CeFakeEndpoint(string id, Type[]? produces = null, Type[]? consumes = null, string contentMode = "binary", string? source = null)
         {
             Id = id;
             Name = id;

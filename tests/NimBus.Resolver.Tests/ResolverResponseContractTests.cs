@@ -2,7 +2,7 @@
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using NimBus.Broker.Services;
+using NimBus.Resolver.Services;
 using NimBus.Core.Events;
 using NimBus.Core.Messages;
 using NimBus.MessageStore;
@@ -201,7 +201,7 @@ public class ResolverResponseContractTests
                 retryPolicyProvider: null!,
                 pipeline: null!,
                 lifecycleNotifier: null!,
-                permanentFailureClassifier: new DefaultPermanentFailureClassifier());
+                failureDispositionClassifier: new DefaultPermanentFailureClassifier());
 
             _resolver = new ResolverService(Store);
         }
@@ -343,13 +343,6 @@ public class ResolverResponseContractTests
             if (_counts is null) _deadLettered++; else _counts._deadLettered++;
             return Task.CompletedTask;
         }
-
-        [Obsolete("Dead code on master; required by the interface.")]
-        public Task DeferAsync(IServiceBusMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        [Obsolete("Dead code on master; required by the interface.")]
-        public Task<IServiceBusMessage> ReceiveDeferredMessageAsync(long nextSequenceNumber, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IServiceBusMessage>(null!);
 
         public Task SetStateAsync(SessionState sessionState, CancellationToken cancellationToken = default)
         {

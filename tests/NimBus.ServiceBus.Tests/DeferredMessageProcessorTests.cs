@@ -602,7 +602,7 @@ public class DeferredMessageProcessorTests
     private static ServiceBusReceivedMessage CreateReceivedMessage(
         string correlationId,
         int deferralSequence,
-        Dictionary<string, object> extraProps = null)
+        Dictionary<string, object>? extraProps = null)
     {
         var properties = new Dictionary<string, object>
         {

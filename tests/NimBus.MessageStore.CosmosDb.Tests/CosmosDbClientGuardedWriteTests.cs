@@ -169,7 +169,7 @@ public sealed class CosmosDbClientGuardedWriteTests
         Assert.AreEqual(0, container.UpsertedItems.Count);
     }
 
-    private static UnresolvedEvent Row(MessageType messageType, string lastMessageId, string parentMessageId = null) => new()
+    private static UnresolvedEvent Row(MessageType messageType, string lastMessageId, string? parentMessageId = null) => new()
     {
         EventId = EventId,
         SessionId = SessionId,

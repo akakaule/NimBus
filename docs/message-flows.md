@@ -197,24 +197,9 @@ sequenceDiagram
 
 ### 7. Continuation (Legacy Deferral)
 
-For messages deferred using the older session-state approach (sequence numbers stored in `DeferredSequenceNumbers`):
-
-```mermaid
-sequenceDiagram
-    participant Ep as Endpoint Topic
-    participant Sub as SubscriberClient
-
-    Note over Ep: Resubmit succeeds
-    Sub->>Sub: UnblockSession
-    Sub->>Sub: ReceiveNextDeferred → found in session state
-    Sub->>Ep: ContinuationRequest (To=Continuation)
-    Note over Ep: Continuation sub forwards to self<br/>SET To=endpointId, From=Continuation
-    Ep->>Sub: main sub HandleContinuationRequest
-    Sub->>Sub: Authorize (From=Continuation)
-    Sub->>Sub: ReceiveNextDeferredWithPop
-    Sub->>Sub: HandleEventRequest(deferred msg)
-    Sub->>Sub: ContinueWithAnyDeferredMessages (recursive)
-```
+Removed in v4.0.0. Older versions drained messages parked with the Service Bus defer API
+through a `ContinuationRequest` chain; v4 logs and completes any `ContinuationRequest` it
+still receives. See [Deferred messages](deferred-messages.md#legacy-service-bus-deferral-removed-in-v400).
 
 ### 8. Heartbeat
 

@@ -25,7 +25,7 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
         _getSettingsContainer = getSettingsContainer;
         _logger = logger;
     }
-    public async Task<EndpointMetadata> GetEndpointMetadata(string endpointId)
+    public async Task<EndpointMetadata?> GetEndpointMetadata(string endpointId)
     {
         var container = await _getMetadataContainer();
         try

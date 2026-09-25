@@ -1286,7 +1286,7 @@ export class Client extends ApiClientBase {
     /**
      * @return OK
      */
-    storagehookReceiveCosmos(endpointId: string): Promise<void> {
+    storagehookReceive(endpointId: string): Promise<void> {
         let url_ = this.baseUrl + "/api/storagehook/cosmos/{endpointId}";
         if (endpointId === undefined || endpointId === null)
             throw new globalThis.Error("The parameter 'endpointId' must be defined.");
@@ -1302,11 +1302,11 @@ export class Client extends ApiClientBase {
         return this.transformOptions(options_).then(transformedOptions_ => {
             return this.http.fetch(url_, transformedOptions_);
         }).then((_response: Response) => {
-            return this.processStoragehookReceiveCosmos(_response);
+            return this.processStoragehookReceive(_response);
         });
     }
 
-    protected processStoragehookReceiveCosmos(response: Response): Promise<void> {
+    protected processStoragehookReceive(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {

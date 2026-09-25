@@ -12,76 +12,75 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace NimBus.SDK
+namespace NimBus.SDK;
+
+public class SubscriberClient : ISubscriberClient
 {
-    public class SubscriberClient : ISubscriberClient
+    private readonly IServiceBusAdapter _serviceBusAdapter;
+    private readonly EventHandlerProvider _eventHandlerProvider;
+
+    /// <summary>
+    /// Creates a new SubscriberClient with the specified adapter and handler provider.
+    /// Used internally by DI registration via <see cref="Extensions.ServiceCollectionExtensions.AddNimBusSubscriber(Microsoft.Extensions.DependencyInjection.IServiceCollection, string, System.Action{Extensions.NimBusSubscriberBuilder})"/>.
+    /// For manual creation, use <see cref="CreateAsync"/> instead.
+    /// </summary>
+    internal SubscriberClient(IServiceBusAdapter serviceBusAdapter, EventHandlerProvider eventHandlerProvider)
     {
-        private readonly IServiceBusAdapter _serviceBusAdapter;
-        private readonly EventHandlerProvider _eventHandlerProvider;
+        _serviceBusAdapter = serviceBusAdapter ?? throw new ArgumentNullException(nameof(serviceBusAdapter));
+        _eventHandlerProvider = eventHandlerProvider ?? throw new ArgumentNullException(nameof(eventHandlerProvider));
+    }
 
-        /// <summary>
-        /// Creates a new SubscriberClient with the specified adapter and handler provider.
-        /// Used internally by DI registration via <see cref="Extensions.ServiceCollectionExtensions.AddNimBusSubscriber(Microsoft.Extensions.DependencyInjection.IServiceCollection, string, System.Action{Extensions.NimBusSubscriberBuilder})"/>.
-        /// For manual creation, use <see cref="CreateAsync"/> instead.
-        /// </summary>
-        internal SubscriberClient(IServiceBusAdapter serviceBusAdapter, EventHandlerProvider eventHandlerProvider)
-        {
-            _serviceBusAdapter = serviceBusAdapter ?? throw new ArgumentNullException(nameof(serviceBusAdapter));
-            _eventHandlerProvider = eventHandlerProvider ?? throw new ArgumentNullException(nameof(eventHandlerProvider));
-        }
+    /// <summary>
+    /// Creates a new SubscriberClient asynchronously.
+    /// </summary>
+    /// <param name="client">The ServiceBusClient to use for sending responses.</param>
+    /// <param name="endpoint">The endpoint (topic name) to send responses to.</param>
+    /// <param name="entityPath">Optional entity path (queue name or topic/subscription). Required in the
+    /// isolated worker model for scheduling retries.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A new SubscriberClient instance.</returns>
+    public static Task<SubscriberClient> CreateAsync(
+        ServiceBusClient client,
+        string endpoint,
+        string? entityPath = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (client == null) throw new ArgumentNullException(nameof(client));
+        if (string.IsNullOrEmpty(endpoint)) throw new ArgumentException("Endpoint cannot be null or empty.", nameof(endpoint));
 
-        /// <summary>
-        /// Creates a new SubscriberClient asynchronously.
-        /// </summary>
-        /// <param name="client">The ServiceBusClient to use for sending responses.</param>
-        /// <param name="endpoint">The endpoint (topic name) to send responses to.</param>
-        /// <param name="entityPath">Optional entity path (queue name or topic/subscription) for receiving deferred messages.
-        /// Required if using ReceiveDeferredMessageAsync in isolated worker model.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
-        /// <returns>A new SubscriberClient instance.</returns>
-        public static Task<SubscriberClient> CreateAsync(
-            ServiceBusClient client,
-            string endpoint,
-            string entityPath = null,
-            CancellationToken cancellationToken = default)
-        {
-            if (client == null) throw new ArgumentNullException(nameof(client));
-            if (string.IsNullOrEmpty(endpoint)) throw new ArgumentException("Endpoint cannot be null or empty.", nameof(endpoint));
+        // Wrap with the publisher instrumentation decorator so responses
+        // sent by ResponseService (ResolutionResponse, ErrorResponse, etc.)
+        // emit NimBus.Publish spans and the publisher metric surface.
+        // Without this wrapper the response leg of every consumer would
+        // be invisible to OTel even when the consumer span is open.
+        var serviceBusSender = client.CreateSender(endpoint);
+        ISender sender = NimBusOpenTelemetryDecorators.InstrumentSender(
+            new Sender(serviceBusSender), MessagingSystem.ServiceBus);
+        var responseService = new ResponseService(sender);
+        var eventHandlerProvider = new EventHandlerProvider();
 
-            // Wrap with the publisher instrumentation decorator so responses
-            // sent by ResponseService (ResolutionResponse, ErrorResponse, etc.)
-            // emit NimBus.Publish spans and the publisher metric surface.
-            // Without this wrapper the response leg of every consumer would
-            // be invisible to OTel even when the consumer span is open.
-            var serviceBusSender = client.CreateSender(endpoint);
-            ISender sender = NimBusOpenTelemetryDecorators.InstrumentSender(
-                new Sender(serviceBusSender), MessagingSystem.ServiceBus);
-            var responseService = new ResponseService(sender);
-            var eventHandlerProvider = new EventHandlerProvider();
+        IMessageHandler strictMessageHandler = new StrictMessageHandler(eventHandlerProvider, responseService, NullLogger.Instance);
 
-            IMessageHandler strictMessageHandler = new StrictMessageHandler(eventHandlerProvider, responseService, NullLogger.Instance);
+        var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, entityPath);
 
-            var serviceBusAdapter = new ServiceBusAdapter(strictMessageHandler, client, entityPath);
+        return Task.FromResult(new SubscriberClient(serviceBusAdapter, eventHandlerProvider));
+    }
 
-            return Task.FromResult(new SubscriberClient(serviceBusAdapter, eventHandlerProvider));
-        }
+    public Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default) =>
+        _serviceBusAdapter.Handle(message, sessionActions, cancellationToken);
 
-        public Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default) =>
-            _serviceBusAdapter.Handle(message, sessionActions, cancellationToken);
+    public Task Handle(ServiceBusReceivedMessage message, ServiceBusMessageActions messageActions, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default) =>
+        _serviceBusAdapter.Handle(message, messageActions, sessionActions, cancellationToken);
 
-        public Task Handle(ServiceBusReceivedMessage message, ServiceBusMessageActions messageActions, ServiceBusSessionMessageActions sessionActions, CancellationToken cancellationToken = default) =>
-            _serviceBusAdapter.Handle(message, messageActions, sessionActions, cancellationToken);
+    public Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionReceiver sessionReceiver, CancellationToken cancellationToken = default) =>
+        _serviceBusAdapter.Handle(message, sessionReceiver, cancellationToken);
 
-        public Task Handle(ServiceBusReceivedMessage message, ServiceBusSessionReceiver sessionReceiver, CancellationToken cancellationToken = default) =>
-            _serviceBusAdapter.Handle(message, sessionReceiver, cancellationToken);
+    public Task Handle(ProcessSessionMessageEventArgs args, CancellationToken cancellationToken = default) =>
+        _serviceBusAdapter.Handle(args, cancellationToken);
 
-        public Task Handle(ProcessSessionMessageEventArgs args, CancellationToken cancellationToken = default) =>
-            _serviceBusAdapter.Handle(args, cancellationToken);
-
-        public void RegisterHandler<T_Event>(Func<IEventHandler<T_Event>> eventHandlerFactory)
-            where T_Event : IEvent
-        {
-            _eventHandlerProvider.RegisterHandler(eventHandlerFactory);
-        }
+    public void RegisterHandler<T_Event>(Func<IEventHandler<T_Event>> eventHandlerFactory)
+        where T_Event : IEvent
+    {
+        _eventHandlerProvider.RegisterHandler(eventHandlerFactory);
     }
 }

@@ -1,6 +1,6 @@
 #pragma warning disable CA1707, CA1515, CA2007
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using NimBus.Broker.Services;
+using NimBus.Resolver.Services;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using NimBus.MessageStore;
@@ -844,16 +844,16 @@ public class ResolverServiceTests
         }
 
         public Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount) => throw new NotSupportedException();
-        public Task<UnresolvedEvent> GetPendingEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
-        public Task<UnresolvedEvent> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, System.Threading.CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<UnresolvedEvent?> GetPendingEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
+        public Task<UnresolvedEvent?> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, System.Threading.CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds) => throw new NotSupportedException();
-        public Task<UnresolvedEvent> GetFailedEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
-        public Task<UnresolvedEvent> GetDeferredEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
-        public Task<UnresolvedEvent> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
-        public Task<UnresolvedEvent> GetUnsupportedEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
+        public Task<UnresolvedEvent?> GetFailedEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
+        public Task<UnresolvedEvent?> GetDeferredEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
+        public Task<UnresolvedEvent?> GetDeadletteredEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
+        public Task<UnresolvedEvent?> GetUnsupportedEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
         public Task<IEnumerable<UnresolvedEvent>> GetCompletedEventsOnEndpoint(string endpointId) => throw new NotSupportedException();
-        public Task<UnresolvedEvent> GetEvent(string endpointId, string eventId) => throw new NotSupportedException();
-        public Task<UnresolvedEvent> GetEventById(string endpointId, string eventId) => throw new NotSupportedException();
+        public Task<UnresolvedEvent?> GetEvent(string endpointId, string eventId) => throw new NotSupportedException();
+        public Task<UnresolvedEvent?> GetEventById(string endpointId, string eventId) => throw new NotSupportedException();
         public Task<List<UnresolvedEvent>> GetEventsByIds(string endpointId, IEnumerable<string> eventIds) => throw new NotSupportedException();
         public Task<bool> RemoveMessage(string eventId, string sessionId, string endpointId) => throw new NotSupportedException();
         public Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId) => throw new NotSupportedException();
@@ -873,7 +873,7 @@ public class ResolverServiceTests
         public Task<bool> UnsubscribeByMail(string endpointId, string mail) => throw new NotSupportedException();
         public Task<bool> PurgeMessages(string endpointId, string sessionId) => throw new NotSupportedException();
         public Task<bool> PurgeMessages(string endpointId) => throw new NotSupportedException();
-        public Task<EndpointMetadata> GetEndpointMetadata(string endpointId) => throw new NotSupportedException();
+        public Task<EndpointMetadata?> GetEndpointMetadata(string endpointId) => throw new NotSupportedException();
         public Task<List<EndpointMetadata>> GetMetadatas() => throw new NotSupportedException();
         public Task<List<EndpointMetadata>?> GetMetadatas(IEnumerable<string> endpointIds) => throw new NotSupportedException();
         public Task<bool> SetEndpointMetadata(EndpointMetadata endpointMetadata) => throw new NotSupportedException();
@@ -904,18 +904,18 @@ public class ResolverServiceTests
         public Task<bool> TryClaimServiceProbe(string serviceId, DateTime dueBefore, string probeMessageId) => Task.FromResult(true);
         public Task<List<string>> SweepTimedOutServiceProbes(DateTime cutoffUtc) => Task.FromResult(new List<string>());
         public Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount) => throw new NotSupportedException();
-        public Task<MessageEntity> GetMessage(string eventId, string messageId) => throw new NotSupportedException();
+        public Task<MessageEntity?> GetMessage(string eventId, string messageId) => throw new NotSupportedException();
         public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId) =>
             Task.FromResult<IEnumerable<MessageEntity>>(StoredMessages.Where(m => m.EventId == eventId).ToList());
-        public Task<MessageEntity> GetLatestEventRequestMessage(string eventId) =>
+        public Task<MessageEntity?> GetLatestEventRequestMessage(string eventId) =>
             Task.FromResult(StoredMessages
                 .Where(m => m.EventId == eventId
                          && (m.MessageType == MessageType.EventRequest || m.MessageType == MessageType.ResubmissionRequest)
                          && !string.IsNullOrEmpty(m.MessageContent?.EventContent?.EventJson))
                 .OrderByDescending(m => m.EnqueuedTimeUtc)
                 .FirstOrDefault());
-        public Task<MessageEntity> GetFailedMessage(string eventId, string endpointId) => throw new NotSupportedException();
-        public Task<MessageEntity> GetDeadletteredMessage(string eventId, string endpointId) => throw new NotSupportedException();
+        public Task<MessageEntity?> GetFailedMessage(string eventId, string endpointId) => throw new NotSupportedException();
+        public Task<MessageEntity?> GetDeadletteredMessage(string eventId, string endpointId) => throw new NotSupportedException();
         public Task RemoveStoredMessage(string eventId, string messageId) => throw new NotSupportedException();
         public Task<IEnumerable<MessageAuditEntity>> GetMessageAudits(string eventId) => throw new NotSupportedException();
         public Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId) => throw new NotSupportedException();

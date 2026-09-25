@@ -3,15 +3,14 @@ using NimBus.Endpoints.Billing;
 using NimBus.Endpoints.Storefront;
 using NimBus.Endpoints.Warehouse;
 
-namespace NimBus
+namespace NimBus;
+
+public class PlatformConfiguration : Platform
 {
-    public class PlatformConfiguration : Platform
+    public PlatformConfiguration()
     {
-        public PlatformConfiguration()
-        {
-            AddEndpoint(new StorefrontEndpoint());
-            AddEndpoint(new BillingEndpoint());
-            AddEndpoint(new WarehouseEndpoint());
-        }
+        AddEndpoint(new StorefrontEndpoint());
+        AddEndpoint(new BillingEndpoint());
+        AddEndpoint(new WarehouseEndpoint());
     }
 }

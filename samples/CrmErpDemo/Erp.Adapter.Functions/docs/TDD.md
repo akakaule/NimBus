@@ -307,7 +307,7 @@ For a demo this is acceptable; for production, document explicit retry budgets p
 |---|---|---|---|
 | **Throw** | All six `Crm*Handler` classes via `ErpApiClient.EnsureSuccessOrThrowAsync` | Any non-2xx response from `erp-api` throws (the typed client centralises this via the `EnsureSuccessOrThrowAsync` extension). The exception bubbles to NimBus, the message abandons, and Service Bus redelivers until delivery-count is reached. | Simple, but conflates transient (5xx, timeouts) with permanent (4xx, malformed payload) failures. |
 
-> **Recommended hardening (see §8):** branch on `response.StatusCode` — treat 4xx as permanent (classify via `IPermanentFailureClassifier`), retry on 5xx and timeouts only. Today, a permanent 404 from `erp-api` will burn the full retry budget before reaching the Resolver.
+> **Recommended hardening (see §8):** branch on `response.StatusCode` — treat 4xx as permanent (classify via an `IFailureDispositionClassifier`), retry on 5xx and timeouts only. Today, a permanent 404 from `erp-api` will burn the full retry budget before reaching the Resolver.
 
 ### 4.5 Mapping layer  <!-- [AUTO] -->
 
@@ -582,7 +582,7 @@ sequenceDiagram
 
 Design-level risks that affect how the adapter behaves under load, drift, or operational stress.
 
-- **No retry policy → 4xx burns the full delivery budget.** Handlers throw on any non-2xx from `erp-api` (`EnsureSuccessOrThrowAsync`). Without a `RetryPolicies(...)` block or an `IPermanentFailureClassifier`, a permanent 4xx (e.g. 404 Not Found, 422 Validation Failed) is retried up to Service Bus `MaxDeliveryCount` before reaching the Resolver — operator pages on dead-letter. See §4.3 / §4.4.
+- **No retry policy → 4xx burns the full delivery budget.** Handlers throw on any non-2xx from `erp-api` (`EnsureSuccessOrThrowAsync`). Without a `RetryPolicies(...)` block or an `IFailureDispositionClassifier`, a permanent 4xx (e.g. 404 Not Found, 422 Validation Failed) is retried up to Service Bus `MaxDeliveryCount` before reaching the Resolver — operator pages on dead-letter. See §4.3 / §4.4.
 - **Demo-mode HTTP probes on every message.** `IServiceModeClient.IsServiceModeEnabledAsync` is called by `ServiceModeMiddleware` and `ErrorModeGuard` on every inbound message, and `IHandoffModeClient.GetAsync` is called by `CrmAccountCreatedHandler`. Each adds an HTTP roundtrip to `erp-api`. Acceptable for the demo (Aspire-local, sub-millisecond), would warrant caching or a flag service for any non-demo deployment.
 - **Auth model is demo-only.** No bearer/MI auth on calls to `erp-api`; no Managed Identity to Service Bus. Acceptable for the local Aspire demo, blocker for any non-demo deployment.
 - **Handoff registration is not transactional with `MarkPendingHandoff`.** If `HandoffJobRegistration.RegisterAsync` succeeds but the handler then crashes before NimBus completes the message, the job will be re-registered on redelivery, producing two `HandoffJob` rows for the same `EventId`. `Erp.Api`'s job table needs idempotency on `EventId` (or `ExternalJobId`) for safety. Out of scope here, flagged for the `Erp.Api` TDD (once that exists).
@@ -697,6 +697,6 @@ Design-level risks that affect how the adapter behaves under load, drift, or ope
 |---|---|---|---|
 | B-1 | §1.5, §5.3, §7 | Criticality + operational owner; adapter-level NFR targets (availability, throughput, latency, downtime impact). The demo answers are "n/a"; if the adapter is ever lifted out of the demo, fill these in. | NimBus tech lead |
 | B-2 | §3.3 | Expected daily volume of inbound CRM mutations and confirmation that the per-message demo-mode HTTP probes are acceptable. | NimBus tech lead |
-| B-3 | §8 (finding 1) | Decision: add per-event retry policy + `IPermanentFailureClassifier` to differentiate 4xx from 5xx? | NimBus tech lead |
+| B-3 | §8 (finding 1) | Decision: add per-event retry policy + an `IFailureDispositionClassifier` to differentiate 4xx from 5xx? | NimBus tech lead |
 | B-4 | §8 (finding 4) | Idempotency strategy for `Erp.Api`'s `HandoffJob` table on duplicate registration. | NimBus tech lead |
 | B-5 | §9.3 | Dashboard URLs once the adapter leaves the local Aspire context. | Operations |

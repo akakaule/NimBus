@@ -75,8 +75,8 @@ public sealed class SqlServerOutboxBatchIntegrationTests
         EnqueueDelayMinutes = 0,
         ScheduledEnqueueTimeUtc = null,
         CreatedAtUtc = DateTime.UtcNow,
-        TraceParent = null,
-        TraceState = null,
+        TraceParent = null!,
+        TraceState = null!,
     };
 
     [TestMethod]

@@ -222,7 +222,7 @@ public sealed class CosmosDbClientUnitTests
         private readonly FakeContainerAdapter _container;
         private readonly Dictionary<string, int> _createContainerCalls = new(StringComparer.Ordinal);
 
-        public FakeCosmosClientAdapter(FakeContainerAdapter container = null) => _container = container ?? new FakeContainerAdapter();
+        public FakeCosmosClientAdapter(FakeContainerAdapter? container = null) => _container = container ?? new FakeContainerAdapter();
 
         public int CreateFailuresRemaining { get; set; }
 
@@ -290,7 +290,7 @@ public sealed class CosmosDbClientUnitTests
         public IOrderedQueryable<T> GetItemLinqQueryable<T>(bool allowSynchronousQueryExecution = false, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
             => throw new NotSupportedException();
 
-        public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions requestOptions = null)
+        public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions? requestOptions = null)
             => Task.FromException<ItemResponse<T>>(UpsertException ?? new NotSupportedException());
 
         public Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default)

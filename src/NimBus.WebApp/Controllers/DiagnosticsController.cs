@@ -9,13 +9,12 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace NimBus.WebApp.Controllers
+namespace NimBus.WebApp.Controllers;
+
+public class DiagnosticsController : Controller
 {
-    public class DiagnosticsController : Controller
+    public IActionResult Index()
     {
-        public IActionResult Index()
-        {
-            return View("EventGridViewer");
-        }
+        return View("EventGridViewer");
     }
 }

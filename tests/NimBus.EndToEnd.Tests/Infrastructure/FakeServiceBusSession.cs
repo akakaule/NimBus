@@ -36,17 +36,6 @@ internal sealed class FakeServiceBusSession : IServiceBusSession
         return Task.CompletedTask;
     }
 
-    public Task DeferAsync(IServiceBusMessage message, CancellationToken cancellationToken = default)
-    {
-        DeferredCount++;
-        return Task.CompletedTask;
-    }
-
-    public Task<IServiceBusMessage> ReceiveDeferredMessageAsync(long nextSequenceNumber, CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult<IServiceBusMessage>(null!);
-    }
-
     public Task SetStateAsync(SessionState sessionState, CancellationToken cancellationToken = default)
     {
         _sessionState = sessionState;

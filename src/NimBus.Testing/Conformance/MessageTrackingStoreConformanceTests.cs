@@ -390,7 +390,7 @@ public abstract class MessageTrackingStoreConformanceTests
         string sessionId,
         MessageType messageType,
         string lastMessageId,
-        string parentMessageId = null)
+        string? parentMessageId = null)
     {
         var content = SampleEvent(endpointId, eventId, sessionId);
         content.MessageType = messageType;
@@ -683,7 +683,7 @@ public abstract class MessageTrackingStoreConformanceTests
     {
         var store = CreateStore();
         var endpointId = Id("ep-all");
-        var statuses = new (string EventId, Func<string, string, string, UnresolvedEvent, Task<bool>> Up, Func<string, string, string, Task<UnresolvedEvent>> Get, ResolutionStatus Expected)[]
+        var statuses = new (string EventId, Func<string, string, string, UnresolvedEvent, Task<bool>> Up, Func<string, string, string, Task<UnresolvedEvent?>> Get, ResolutionStatus Expected)[]
         {
             (Id("p1"), store.UploadPendingMessage, store.GetPendingEvent, ResolutionStatus.Pending),
             (Id("d1"), store.UploadDeferredMessage, store.GetDeferredEvent, ResolutionStatus.Deferred),
@@ -696,6 +696,7 @@ public abstract class MessageTrackingStoreConformanceTests
         {
             await up(eventId, "s1", endpointId, SampleEvent(endpointId, eventId, "s1"));
             var fetched = await get(endpointId, eventId, "s1");
+            Assert.IsNotNull(fetched);
             Assert.AreEqual(expected, fetched.ResolutionStatus, $"Round-trip failed for {expected}");
         }
     }
@@ -1825,4 +1826,252 @@ public abstract class MessageTrackingStoreConformanceTests
         CloudEventType = "com.nimbus.event-search.v1",
         CloudEventSubject = "events/42",
     };
+
+    // ───────── Not-found and absent-field contract ─────────
+    // Single-row lookups return null for a missing row on every provider; they never throw.
+    // Optional string fields round-trip exactly: a null stays null and "" stays "".
+
+    [TestMethod]
+    public async Task Single_row_event_getters_return_null_for_missing_rows()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-miss");
+        var present = Id("present");
+        // Seed the endpoint so per-endpoint providers have its storage; only the row is missing.
+        await store.UploadPendingMessage(present, "s1", endpointId, SampleEvent(endpointId, present, "s1"));
+        var missing = Id("missing");
+
+        Assert.IsNull(await store.GetPendingEvent(endpointId, missing, "s1"));
+        Assert.IsNull(await store.GetFailedEvent(endpointId, missing, "s1"));
+        Assert.IsNull(await store.GetDeferredEvent(endpointId, missing, "s1"));
+        Assert.IsNull(await store.GetDeadletteredEvent(endpointId, missing, "s1"));
+        Assert.IsNull(await store.GetUnsupportedEvent(endpointId, missing, "s1"));
+        Assert.IsNull(await store.GetEvent(endpointId, missing));
+        Assert.IsNull(await store.GetEventById(endpointId, StoredId(missing, "s1")));
+        Assert.IsNull(await store.GetPendingHandoffByExternalJobId(endpointId, Id("no-such-job")));
+    }
+
+    [TestMethod]
+    public async Task Status_getters_return_null_when_the_row_has_another_status_or_session()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-other-status");
+        var eventId = Id("pending-only");
+        await store.UploadPendingMessage(eventId, "s1", endpointId, SampleEvent(endpointId, eventId, "s1"));
+
+        Assert.IsNull(await store.GetFailedEvent(endpointId, eventId, "s1"));
+        Assert.IsNull(await store.GetDeferredEvent(endpointId, eventId, "s1"));
+        Assert.IsNull(await store.GetDeadletteredEvent(endpointId, eventId, "s1"));
+        Assert.IsNull(await store.GetUnsupportedEvent(endpointId, eventId, "s1"));
+        Assert.IsNull(await store.GetPendingEvent(endpointId, eventId, "other-session"));
+        Assert.IsNotNull(await store.GetPendingEvent(endpointId, eventId, "s1"));
+    }
+
+    [TestMethod]
+    public async Task Single_row_message_getters_return_null_for_missing_messages()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-miss-msg");
+        var missing = Id("missing-evt");
+
+        Assert.IsNull(await store.GetMessage(missing, Id("missing-msg")));
+        Assert.IsNull(await store.GetFailedMessage(missing, endpointId));
+        Assert.IsNull(await store.GetDeadletteredMessage(missing, endpointId));
+        Assert.IsNull(await store.GetLatestEventRequestMessage(missing));
+    }
+
+    [TestMethod]
+    public async Task Removed_and_archived_rows_are_not_found()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-soft-delete");
+        var removed = Id("removed");
+        var archived = Id("archived");
+        await store.UploadPendingMessage(removed, "s1", endpointId, SampleEvent(endpointId, removed, "s1"));
+        await store.UploadFailedMessage(archived, "s1", endpointId, SampleEvent(endpointId, archived, "s1"));
+
+        await store.RemoveMessage(removed, "s1", endpointId);
+        await store.ArchiveFailedEvent(archived, "s1", endpointId);
+
+        Assert.IsNull(await store.GetPendingEvent(endpointId, removed, "s1"));
+        Assert.IsNull(await store.GetEvent(endpointId, removed), "GetEvent must not return a removed row");
+        Assert.IsNull(await store.GetEventById(endpointId, StoredId(removed, "s1")));
+        Assert.IsNull(await store.GetFailedEvent(endpointId, archived, "s1"));
+        Assert.IsNull(await store.GetEvent(endpointId, archived), "GetEvent must not return an archived row");
+        Assert.IsNull(await store.GetEventById(endpointId, StoredId(archived, "s1")));
+    }
+
+    [TestMethod]
+    public async Task GetEvent_returns_the_most_recently_updated_session_row()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-latest");
+        var eventId = Id("multi-session");
+        var older = SampleEvent(endpointId, eventId, "s-old");
+        older.UpdatedAt = DateTime.UtcNow.AddMinutes(-10);
+        var newer = SampleEvent(endpointId, eventId, "s-new");
+        newer.UpdatedAt = DateTime.UtcNow;
+        await store.UploadFailedMessage(eventId, "s-old", endpointId, older);
+        await store.UploadPendingMessage(eventId, "s-new", endpointId, newer);
+
+        var fetched = await store.GetEvent(endpointId, eventId);
+
+        Assert.IsNotNull(fetched);
+        Assert.AreEqual("s-new", fetched.SessionId);
+    }
+
+    [TestMethod]
+    public async Task GetEventById_looks_up_by_stored_id()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-by-id");
+        var eventId = Id("by-id");
+        await store.UploadFailedMessage(eventId, "s1", endpointId, SampleEvent(endpointId, eventId, "s1"));
+        await store.UploadPendingMessage(eventId, "s2", endpointId, SampleEvent(endpointId, eventId, "s2"));
+
+        var first = await store.GetEventById(endpointId, StoredId(eventId, "s1"));
+        var second = await store.GetEventById(endpointId, StoredId(eventId, "s2"));
+
+        Assert.IsNotNull(first);
+        Assert.IsNotNull(second);
+        Assert.AreEqual("s1", first.SessionId);
+        Assert.AreEqual(ResolutionStatus.Failed, first.ResolutionStatus);
+        Assert.AreEqual("s2", second.SessionId);
+        Assert.AreEqual(ResolutionStatus.Pending, second.ResolutionStatus);
+    }
+
+    [TestMethod]
+    public async Task GetFailedMessage_returns_the_latest_message_carrying_error_content()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-failed-msg");
+        var eventId = Id("failed-msg");
+        var start = DateTime.UtcNow.AddMinutes(-5);
+        MessageEntity Message(string messageId, int minute, MessageType type, bool withError) => new()
+        {
+            EventId = eventId,
+            MessageId = Id(messageId),
+            EndpointId = endpointId,
+            SessionId = "s1",
+            EventTypeId = "OrderPlaced",
+            MessageType = type,
+            EnqueuedTimeUtc = start.AddMinutes(minute),
+            MessageContent = withError
+                ? new MessageContent { ErrorContent = new ErrorContent { ErrorText = messageId, ErrorType = "System.InvalidOperationException" } }
+                : new MessageContent(),
+        };
+        await store.StoreMessage(Message("request", 0, MessageType.EventRequest, withError: false));
+        await store.StoreMessage(Message("error-1", 1, MessageType.ErrorResponse, withError: true));
+        await store.StoreMessage(Message("error-2", 2, MessageType.ErrorResponse, withError: true));
+        await store.StoreMessage(Message("resubmit", 3, MessageType.ResubmissionRequest, withError: false));
+
+        var failed = await store.GetFailedMessage(eventId, endpointId);
+        var latest = await store.GetDeadletteredMessage(eventId, endpointId);
+
+        Assert.AreEqual(Id("error-2"), failed?.MessageId, "GetFailedMessage returns the newest message that carries ErrorContent");
+        Assert.AreEqual(Id("resubmit"), latest?.MessageId, "GetDeadletteredMessage returns the newest message for the event on the endpoint");
+    }
+
+    [TestMethod]
+    public async Task Optional_event_fields_round_trip_null_and_empty()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-absent");
+        var nullId = Id("nulls");
+        var emptyId = Id("empties");
+        var withNulls = SampleEvent(endpointId, nullId, "s1");
+        var withEmpties = SampleEvent(endpointId, emptyId, "s1");
+        foreach (var (e, value) in new[] { (withNulls, (string?)null), (withEmpties, string.Empty) })
+        {
+            e.CorrelationId = value;
+            e.LastMessageId = value;
+            e.OriginatingMessageId = value;
+            e.ParentMessageId = value;
+            e.OriginatingFrom = value;
+            e.Reason = value;
+            e.DeadLetterReason = value;
+            e.DeadLetterErrorDescription = value;
+            e.EventTypeId = value;
+            e.To = value;
+            e.From = value;
+        }
+        await store.UploadFailedMessage(nullId, "s1", endpointId, withNulls);
+        await store.UploadFailedMessage(emptyId, "s1", endpointId, withEmpties);
+
+        foreach (var (eventId, expected) in new[] { (nullId, (string?)null), (emptyId, string.Empty) })
+        {
+            var label = expected is null ? "null" : "empty";
+            foreach (var fetched in new[]
+            {
+                await store.GetFailedEvent(endpointId, eventId, "s1"),
+                await store.GetEvent(endpointId, eventId),
+            })
+            {
+                Assert.IsNotNull(fetched);
+                Assert.AreEqual(expected, fetched.CorrelationId, $"CorrelationId ({label})");
+                Assert.AreEqual(expected, fetched.LastMessageId, $"LastMessageId ({label})");
+                Assert.AreEqual(expected, fetched.OriginatingMessageId, $"OriginatingMessageId ({label})");
+                Assert.AreEqual(expected, fetched.ParentMessageId, $"ParentMessageId ({label})");
+                Assert.AreEqual(expected, fetched.OriginatingFrom, $"OriginatingFrom ({label})");
+                Assert.AreEqual(expected, fetched.Reason, $"Reason ({label})");
+                Assert.AreEqual(expected, fetched.DeadLetterReason, $"DeadLetterReason ({label})");
+                Assert.AreEqual(expected, fetched.DeadLetterErrorDescription, $"DeadLetterErrorDescription ({label})");
+                Assert.AreEqual(expected, fetched.EventTypeId, $"EventTypeId ({label})");
+                Assert.AreEqual(expected, fetched.To, $"To ({label})");
+                Assert.AreEqual(expected, fetched.From, $"From ({label})");
+            }
+        }
+    }
+
+    [TestMethod]
+    public async Task Optional_message_fields_round_trip_null_and_empty()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-absent-msg");
+        var eventId = Id("absent-msg");
+        MessageEntity Message(string messageId, string? value) => new()
+        {
+            EventId = eventId,
+            MessageId = messageId,
+            EndpointId = endpointId,
+            SessionId = value,
+            CorrelationId = value,
+            EventTypeId = value,
+            OriginatingMessageId = value,
+            ParentMessageId = value,
+            From = value,
+            To = value,
+            OriginatingFrom = value,
+            OriginalSessionId = value,
+            DeadLetterReason = value,
+            DeadLetterErrorDescription = value,
+            EnqueuedTimeUtc = DateTime.UtcNow,
+            MessageContent = new MessageContent(),
+        };
+        var nullId = Id("nulls");
+        var emptyId = Id("empties");
+        await store.StoreMessage(Message(nullId, null));
+        await store.StoreMessage(Message(emptyId, string.Empty));
+
+        var history = (await store.GetEventHistory(eventId)).ToList();
+        foreach (var (messageId, expected) in new[] { (nullId, (string?)null), (emptyId, string.Empty) })
+        {
+            var label = expected is null ? "null" : "empty";
+            foreach (var fetched in new[] { await store.GetMessage(eventId, messageId), history.Single(m => m.MessageId == messageId) })
+            {
+                Assert.IsNotNull(fetched);
+                Assert.AreEqual(expected, fetched.SessionId, $"SessionId ({label})");
+                Assert.AreEqual(expected, fetched.CorrelationId, $"CorrelationId ({label})");
+                Assert.AreEqual(expected, fetched.EventTypeId, $"EventTypeId ({label})");
+                Assert.AreEqual(expected, fetched.OriginatingMessageId, $"OriginatingMessageId ({label})");
+                Assert.AreEqual(expected, fetched.ParentMessageId, $"ParentMessageId ({label})");
+                Assert.AreEqual(expected, fetched.From, $"From ({label})");
+                Assert.AreEqual(expected, fetched.To, $"To ({label})");
+                Assert.AreEqual(expected, fetched.OriginatingFrom, $"OriginatingFrom ({label})");
+                Assert.AreEqual(expected, fetched.OriginalSessionId, $"OriginalSessionId ({label})");
+                Assert.AreEqual(expected, fetched.DeadLetterReason, $"DeadLetterReason ({label})");
+                Assert.AreEqual(expected, fetched.DeadLetterErrorDescription, $"DeadLetterErrorDescription ({label})");
+            }
+        }
+    }
 }

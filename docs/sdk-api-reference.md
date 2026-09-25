@@ -641,14 +641,10 @@ These are set automatically by `PublisherClient.Request()` and mapped to the cor
 
 Classify exceptions as permanent (unrecoverable) to dead-letter immediately without consuming retry budget.
 
-### IPermanentFailureClassifier
-
-```csharp
-public interface IPermanentFailureClassifier
-{
-    bool IsPermanentFailure(Exception exception);
-}
-```
+`DefaultPermanentFailureClassifier` is an `IFailureDispositionClassifier` that maps
+permanent exceptions to `FailureDisposition.DeadLetter` and everything else to
+`FailureDisposition.Retry`. (The `IPermanentFailureClassifier` interface was removed in
+v4.0.0.)
 
 ### Default permanent types
 
@@ -659,8 +655,9 @@ public interface IPermanentFailureClassifier
 ### Registration
 
 ```csharp
-// Option 1: Use defaults (register in DI)
-services.AddSingleton<IPermanentFailureClassifier, DefaultPermanentFailureClassifier>();
+// Option 1: Use defaults
+services.AddNimBusSubscriber("BillingEndpoint", sub =>
+    sub.WithFailureDispositions(new DefaultPermanentFailureClassifier()));
 
 // Option 2: Configure via subscriber builder
 services.AddNimBusSubscriber("BillingEndpoint", sub =>

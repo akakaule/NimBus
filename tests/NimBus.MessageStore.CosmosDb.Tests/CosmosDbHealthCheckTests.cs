@@ -73,7 +73,7 @@ public sealed class CosmosDbHealthCheckTests
         var check = new CosmosDbHealthCheck(client, time);
 
         var first = await check.CheckHealthAsync(new HealthCheckContext());
-        client.Failure = null;
+        client.Failure = null!;
         time.Advance(TimeSpan.FromSeconds(31));
         var second = await check.CheckHealthAsync(new HealthCheckContext());
 

@@ -627,7 +627,11 @@ paths:
         required: true
     post:
       summary: ''
-      operationId: storagehook-receive-cosmos
+      description: >-
+        Storage-hook webhook for endpoint state changes. The path keeps its historical
+        "cosmos" segment because Event Grid subscriptions and the Resolver notifier post
+        to it; it serves every storage provider.
+      operationId: storagehook-receive
       responses:
         '200':
           description: OK

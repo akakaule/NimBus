@@ -4,20 +4,19 @@ using System.Text;
 using System.ComponentModel.DataAnnotations;
 using NimBus.Core.Events;
 
-namespace NimBus.Validation
+namespace NimBus.Validation;
+
+sealed class EventValidation
 {
-    sealed class EventValidation
+    internal static void Validate(Event eventObject)
     {
-        internal static void Validate(Event eventObject)
+        try
         {
-            try
-            {
-                Validator.ValidateObject(eventObject, new ValidationContext(eventObject), true);
-            }
-            catch (System.ComponentModel.DataAnnotations.ValidationException e)
-            {
-                throw new InvalidEventException(eventObject.GetType().Name, e);
-            }
+            Validator.ValidateObject(eventObject, new ValidationContext(eventObject), true);
+        }
+        catch (System.ComponentModel.DataAnnotations.ValidationException e)
+        {
+            throw new InvalidEventException(eventObject.GetType().Name, e);
         }
     }
 }

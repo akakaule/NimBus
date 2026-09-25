@@ -24,14 +24,14 @@ public class MessageContextTests
     public void Constructor_NullMessage_ThrowsArgumentNull()
     {
         Assert.ThrowsExactly<ArgumentNullException>(() =>
-            new MessageContext(null, new FakeServiceBusSession()));
+            new MessageContext(null!, new FakeServiceBusSession()));
     }
 
     [TestMethod]
     public void Constructor_NullSession_ThrowsArgumentNull()
     {
         Assert.ThrowsExactly<ArgumentNullException>(() =>
-            new MessageContext(new FakeServiceBusMessage(), null));
+            new MessageContext(new FakeServiceBusMessage(), null!));
     }
 
     [TestMethod]
@@ -240,7 +240,7 @@ public class MessageContextTests
     [TestMethod]
     public void MessageId_Null_ThrowsInvalidMessage()
     {
-        var msg = new FakeServiceBusMessage { MessageId = null };
+        var msg = new FakeServiceBusMessage { MessageId = null! };
         SetDefaultProperties(msg);
         var ctx = new MessageContext(msg, new FakeServiceBusSession());
 
@@ -260,7 +260,7 @@ public class MessageContextTests
     [TestMethod]
     public void SessionId_Null_ThrowsInvalidMessage()
     {
-        var msg = new FakeServiceBusMessage { SessionId = null };
+        var msg = new FakeServiceBusMessage { SessionId = null! };
         SetDefaultProperties(msg);
         var ctx = new MessageContext(msg, new FakeServiceBusSession());
 
@@ -405,6 +405,20 @@ public class MessageContextTests
     }
 
     [TestMethod]
+    public async Task IsSessionBlocked_IgnoresLegacyDeferredSequences()
+    {
+        // v4 no longer drains messages parked with the Service Bus defer API, so a leftover
+        // legacy sequence must not block the session forever.
+        var session = new FakeServiceBusSession();
+#pragma warning disable CS0618 // Pins the behavior of the obsolete legacy state.
+        session.State.DeferredSequenceNumbers.Add(100);
+#pragma warning restore CS0618
+        var ctx = CreateMessageContext(session: session);
+
+        Assert.IsFalse(await ctx.IsSessionBlocked());
+    }
+
+    [TestMethod]
     public async Task IsSessionBlocked_WhenClear_ReturnsFalse()
     {
         var ctx = CreateMessageContext();
@@ -520,7 +534,9 @@ public class MessageContextTests
     public async Task HasDeferredMessages_WhenLegacySequences_ReturnsTrue()
     {
         var session = new FakeServiceBusSession();
+#pragma warning disable CS0618 // Legacy state still counts, so it is not silently dropped.
         session.State.DeferredSequenceNumbers.Add(100);
+#pragma warning restore CS0618
         var ctx = CreateMessageContext(session: session);
 
         Assert.IsTrue(await ctx.HasDeferredMessages());
@@ -626,147 +642,11 @@ public class MessageContextTests
     }
 
     [TestMethod]
-    public async Task Defer_WhenNotDeferred_DelegatesAndUpdatesState()
-    {
-        var session = new FakeServiceBusSession();
-        var msg = CreateDefaultMessage();
-        msg.SequenceNumber = 42;
-        var ctx = new MessageContext(msg, session, isDeferred: false);
-
-        await ctx.Defer();
-
-        Assert.AreEqual(1, session.DeferCalls);
-        Assert.IsTrue(session.State.DeferredSequenceNumbers.Contains(42));
-    }
-
-    [TestMethod]
-    public async Task Defer_WhenAlreadyDeferred_ThrowsNotSupported()
-    {
-        var ctx = CreateMessageContext(isDeferred: true);
-
-        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => ctx.Defer());
-    }
-
-    [TestMethod]
-    public async Task DeferOnly_WhenNotDeferred_DelegatesWithoutUpdatingState()
-    {
-        var session = new FakeServiceBusSession();
-        var ctx = CreateMessageContext(session: session, isDeferred: false);
-
-        await ctx.DeferOnly();
-
-        Assert.AreEqual(1, session.DeferCalls);
-        Assert.AreEqual(0, session.State.DeferredSequenceNumbers.Count, "Should not update session state");
-    }
-
-    [TestMethod]
-    public async Task DeferOnly_WhenAlreadyDeferred_ThrowsNotSupported()
-    {
-        var ctx = CreateMessageContext(isDeferred: true);
-
-        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => ctx.DeferOnly());
-    }
-
-    [TestMethod]
     public async Task Abandon_ReturnsImmediately()
     {
         var ctx = CreateMessageContext();
         // Should not throw, just return
         await ctx.Abandon(new TransientException("test"));
-    }
-
-    // ── ReceiveNextDeferred ─────────────────────────────────────────────
-
-    [TestMethod]
-    public async Task ReceiveNextDeferred_HasSequence_ReturnsMessage()
-    {
-        var deferredMsg = new FakeServiceBusMessage { MessageId = "deferred-1", SessionId = "s1" };
-        SetDefaultProperties(deferredMsg);
-        var session = new FakeServiceBusSession();
-        session.State.DeferredSequenceNumbers.Add(100);
-        session.DeferredMessages[100] = deferredMsg;
-        var ctx = CreateMessageContext(session: session);
-
-        var result = await ctx.ReceiveNextDeferred();
-
-        Assert.IsNotNull(result);
-        Assert.IsTrue(result.IsDeferred);
-    }
-
-    [TestMethod]
-    public async Task ReceiveNextDeferred_NullMessage_RemovesSequenceAndReturnsNull()
-    {
-        var session = new FakeServiceBusSession();
-        session.State.DeferredSequenceNumbers.Add(100);
-        // No message mapped for sequence 100 => returns null
-        var ctx = CreateMessageContext(session: session);
-
-        var result = await ctx.ReceiveNextDeferred();
-
-        Assert.IsNull(result);
-        Assert.AreEqual(0, session.State.DeferredSequenceNumbers.Count, "Should have removed the null reference");
-    }
-
-    [TestMethod]
-    public async Task ReceiveNextDeferred_NoSequences_ReturnsNull()
-    {
-        var ctx = CreateMessageContext();
-        var result = await ctx.ReceiveNextDeferred();
-        Assert.IsNull(result);
-    }
-
-    [TestMethod]
-    public async Task ReceiveNextDeferredWithPop_HasSequence_ReturnsMessageAndRemoves()
-    {
-        var deferredMsg = new FakeServiceBusMessage { MessageId = "deferred-1", SessionId = "s1" };
-        SetDefaultProperties(deferredMsg);
-        var session = new FakeServiceBusSession();
-        session.State.DeferredSequenceNumbers.Add(100);
-        session.DeferredMessages[100] = deferredMsg;
-        var ctx = CreateMessageContext(session: session);
-
-        var result = await ctx.ReceiveNextDeferredWithPop();
-
-        Assert.IsNotNull(result);
-        Assert.IsTrue(result.IsDeferred);
-        Assert.AreEqual(0, session.State.DeferredSequenceNumbers.Count, "Should have removed the sequence");
-    }
-
-    [TestMethod]
-    public async Task RestoreNextDeferred_ReinsertsPoppedSequenceAtFront()
-    {
-        var deferredMsg = new FakeServiceBusMessage { MessageId = "deferred-1", SessionId = "s1", SequenceNumber = 100 };
-        SetDefaultProperties(deferredMsg);
-        var session = new FakeServiceBusSession();
-        session.State.DeferredSequenceNumbers.Add(100);
-        session.State.DeferredSequenceNumbers.Add(200);
-        session.DeferredMessages[100] = deferredMsg;
-        var ctx = CreateMessageContext(session: session);
-        var popped = await ctx.ReceiveNextDeferredWithPop();
-        CollectionAssert.AreEqual(new List<long> { 200 }, session.State.DeferredSequenceNumbers);
-
-        await ctx.RestoreNextDeferred(popped);
-
-        CollectionAssert.AreEqual(
-            new List<long> { 100, 200 },
-            session.State.DeferredSequenceNumbers,
-            "Popped sequence must return to the FRONT so ordering is preserved");
-    }
-
-    [TestMethod]
-    public async Task RestoreNextDeferred_SequenceAlreadyPresent_DoesNotDuplicate()
-    {
-        var deferredMsg = new FakeServiceBusMessage { MessageId = "deferred-1", SessionId = "s1", SequenceNumber = 100 };
-        SetDefaultProperties(deferredMsg);
-        var session = new FakeServiceBusSession();
-        session.State.DeferredSequenceNumbers.Add(100);
-        session.DeferredMessages[100] = deferredMsg;
-        var ctx = CreateMessageContext(session: session);
-        var deferredCtx = await ctx.ReceiveNextDeferred();
-
-        await ctx.RestoreNextDeferred(deferredCtx);
-
-        CollectionAssert.AreEqual(new List<long> { 100 }, session.State.DeferredSequenceNumbers);
     }
 
     // ── EnqueuedTimeUtc ─────────────────────────────────────────────────
@@ -933,11 +813,11 @@ public class MessageContextTests
     }
 
     private static TestableMessageContext CreateMessageContext(
-        FakeServiceBusSession session = null,
+        FakeServiceBusSession? session = null,
         string from = "StorefrontEndpoint",
         string eventId = "evt-1",
         MessageType messageType = MessageType.EventRequest,
-        MessageContent content = null,
+        MessageContent? content = null,
         bool isDeferred = false)
     {
         session ??= new FakeServiceBusSession();
@@ -950,7 +830,7 @@ public class MessageContextTests
         string from = "StorefrontEndpoint",
         string eventId = "evt-1",
         MessageType messageType = MessageType.EventRequest,
-        MessageContent content = null)
+        MessageContent? content = null)
     {
         content ??= new MessageContent
         {
@@ -1091,19 +971,6 @@ public class MessageContextTests
             LastDeadLetterReason = reason;
             LastDeadLetterDescription = description;
             return Task.CompletedTask;
-        }
-
-        public Task DeferAsync(IServiceBusMessage message, CancellationToken ct = default)
-        {
-            if (DeferException != null) throw DeferException;
-            DeferCalls++;
-            return Task.CompletedTask;
-        }
-
-        public Task<IServiceBusMessage> ReceiveDeferredMessageAsync(long seq, CancellationToken ct = default)
-        {
-            DeferredMessages.TryGetValue(seq, out var msg);
-            return Task.FromResult(msg);
         }
 
         public Task SetStateAsync(SessionState state, CancellationToken ct = default)

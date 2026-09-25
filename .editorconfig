@@ -1,0 +1,5 @@
+root = true
+
+[*.cs]
+# File-scoped namespaces are the house style (AGENTS.md conventions).
+csharp_style_namespace_declarations = file_scoped:warning

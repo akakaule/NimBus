@@ -83,9 +83,6 @@ public static class ServiceCollectionExtensions
             var logger = sp.GetService<ILogger<StrictMessageHandler>>()
                 ?? (Microsoft.Extensions.Logging.ILogger)NullLogger.Instance;
 
-#pragma warning disable CS0618
-            var permanentFailureClassifier = sp.GetService<IPermanentFailureClassifier>();
-            var failureDispositionClassifier = sp.GetService<IFailureDispositionClassifier>();
             return new StrictMessageHandler(
                 contextHandler,
                 responseService,
@@ -93,10 +90,8 @@ public static class ServiceCollectionExtensions
                 retryPolicyProvider,
                 sp.GetService<MessagePipeline>(),
                 sp.GetService<MessageLifecycleNotifier>(),
-                permanentFailureClassifier,
-                failureDispositionClassifier,
+                sp.GetService<IFailureDispositionClassifier>(),
                 InboxRegistration.CreateDuplicateDetector(sp, builder.InboxConfiguration, endpoint));
-#pragma warning restore CS0618
         });
 
         return services;

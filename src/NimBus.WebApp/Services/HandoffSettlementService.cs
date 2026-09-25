@@ -47,13 +47,13 @@ public sealed class HandoffSettlementService : IHandoffSettlementService
         Func<MessageEntity, string, Task> settle,
         CancellationToken cancellationToken = default)
     {
-        UnresolvedEvent pendingEvent;
+        UnresolvedEvent? pendingEvent;
         try
         {
             pendingEvent = await _store.GetEvent(endpointId, eventId);
         }
         // Only genuinely-not-found signals map to 404: the endpoint container is
-        // absent, or Cosmos reports the item missing. Transient/unexpected store
+        // absent, or the lookup returns null for a missing row. Transient/unexpected store
         // faults (throttling 429, connectivity) must NOT masquerade as "handoff
         // gone" — let them propagate to a 500 so the caller can retry.
         catch (EndpointNotFoundException e)

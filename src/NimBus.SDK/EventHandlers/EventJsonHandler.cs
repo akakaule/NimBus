@@ -6,60 +6,59 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace NimBus.SDK.EventHandlers
+namespace NimBus.SDK.EventHandlers;
+
+
+public class EventJsonHandler<T_Event> : IEventJsonHandler
+    where T_Event : IEvent
 {
-
-    public class EventJsonHandler<T_Event> : IEventJsonHandler
-        where T_Event : IEvent
+    public EventJsonHandler(IEventHandler<T_Event> eventHandler)
     {
-        public EventJsonHandler(IEventHandler<T_Event> eventHandler)
+        _eventHandler = eventHandler;
+    }
+
+    private readonly IEventHandler<T_Event> _eventHandler;
+
+    public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
+    {
+        if (context == null) throw new ArgumentNullException(nameof(context));
+
+        T_Event @event;
+        try
         {
-            _eventHandler = eventHandler;
+            var eventJson = context.MessageContent?.EventContent?.EventJson
+                ?? throw new JsonSerializationException(
+                    $"Event payload for '{context.EventTypeId}' is missing.");
+            @event = JsonConvert.DeserializeObject<T_Event>(
+                    eventJson,
+                    Constants.CreateSafeJsonSettings())
+                ?? throw new JsonSerializationException(
+                    $"Event payload for '{context.EventTypeId}' deserialized to null.");
+        }
+        catch (JsonException exception)
+        {
+            // Invalid wire payloads cannot become valid through retry. Normalize
+            // every Newtonsoft parse/serialization failure to the lifecycle's
+            // provider-independent permanent-failure signal.
+            throw new PermanentFailureException(exception);
         }
 
-        private readonly IEventHandler<T_Event> _eventHandler;
-
-        public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
+        var eventHandlercontext = new EventHandlerContext(context)
         {
-            if (context == null) throw new ArgumentNullException(nameof(context));
-
-            T_Event @event;
-            try
-            {
-                var eventJson = context.MessageContent?.EventContent?.EventJson
-                    ?? throw new JsonSerializationException(
-                        $"Event payload for '{context.EventTypeId}' is missing.");
-                @event = JsonConvert.DeserializeObject<T_Event>(
-                        eventJson,
-                        Constants.CreateSafeJsonSettings())
-                    ?? throw new JsonSerializationException(
-                        $"Event payload for '{context.EventTypeId}' deserialized to null.");
-            }
-            catch (JsonException exception)
-            {
-                // Invalid wire payloads cannot become valid through retry. Normalize
-                // every Newtonsoft parse/serialization failure to the lifecycle's
-                // provider-independent permanent-failure signal.
-                throw new PermanentFailureException(exception);
-            }
-
-            var eventHandlercontext = new EventHandlerContext(context)
-            {
-                CorrelationId = context.CorrelationId,
-                EventId = context.EventId,
-                EventType = context.EventTypeId,
-                MessageId = context.MessageId,
-                SessionId = context.SessionId,
-                ParentMessageId = context.ParentMessageId,
-                // "self" is an internal wire sentinel ("this message IS the
-                // origin"). Resolve it here so handler authors can persist
-                // OriginatingMessageId as handoff settlement coordinates and
-                // keep true lineage across retry/resubmission replays.
-                OriginatingMessageId = string.Equals(context.OriginatingMessageId, Constants.Self, StringComparison.OrdinalIgnoreCase)
-                    ? context.MessageId
-                    : context.OriginatingMessageId,
-            };
-            return _eventHandler.Handle(@event, eventHandlercontext, cancellationToken);
-        }
+            CorrelationId = context.CorrelationId,
+            EventId = context.EventId,
+            EventType = context.EventTypeId,
+            MessageId = context.MessageId,
+            SessionId = context.SessionId,
+            ParentMessageId = context.ParentMessageId,
+            // "self" is an internal wire sentinel ("this message IS the
+            // origin"). Resolve it here so handler authors can persist
+            // OriginatingMessageId as handoff settlement coordinates and
+            // keep true lineage across retry/resubmission replays.
+            OriginatingMessageId = string.Equals(context.OriginatingMessageId, Constants.Self, StringComparison.OrdinalIgnoreCase)
+                ? context.MessageId
+                : context.OriginatingMessageId,
+        };
+        return _eventHandler.Handle(@event, eventHandlercontext, cancellationToken);
     }
 }

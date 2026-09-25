@@ -283,7 +283,7 @@ public static class AsyncApiExporter
     private static Map SendOperation(IEndpoint producer, string eventId, string eventName) =>
         SendOperation(producer.Id, producer.Name, eventId, eventName);
 
-    private static Map SendOperation(string producerId, string producerName, string eventId, string eventName = null) =>
+    private static Map SendOperation(string producerId, string producerName, string eventId, string? eventName = null) =>
         new()
         {
             ["action"] = "send",
@@ -295,7 +295,7 @@ public static class AsyncApiExporter
     private static Map ReceiveOperation(IEndpoint consumer, string eventId, string eventName, List<Map> forwards) =>
         ReceiveOperation(consumer.Id, consumer.Name, eventId, forwards, eventName);
 
-    private static Map ReceiveOperation(string consumerId, string consumerName, string eventId, List<Map> forwards, string eventName = null) =>
+    private static Map ReceiveOperation(string consumerId, string consumerName, string eventId, List<Map> forwards, string? eventName = null) =>
         new()
         {
             ["action"] = "receive",

@@ -739,7 +739,8 @@ public class EndpointImplementation : IEndpointApiController
             case "enable":
                 {
                     await endpointManagement.EnableEndpoint(endpointId);
-                    var metadata = await _metadataStore.GetEndpointMetadata(endpointId);
+                    var metadata = await _metadataStore.GetEndpointMetadata(endpointId)
+                        ?? new EndpointMetadata { EndpointId = endpointId };
                     metadata.SubscriptionStatus = true;
                     await _metadataStore.SetEndpointMetadata(metadata);
                     await _auditLogService.LogAuditAsync(MessageAuditType.EnableEndpoint, _context,
@@ -751,7 +752,8 @@ public class EndpointImplementation : IEndpointApiController
             case "disable":
                 {
                     await endpointManagement.DisableEndpoint(endpointId);
-                    var metadata = await _metadataStore.GetEndpointMetadata(endpointId);
+                    var metadata = await _metadataStore.GetEndpointMetadata(endpointId)
+                        ?? new EndpointMetadata { EndpointId = endpointId };
                     metadata.SubscriptionStatus = false;
                     await _metadataStore.SetEndpointMetadata(metadata);
                     await _auditLogService.LogAuditAsync(MessageAuditType.DisableEndpoint, _context,

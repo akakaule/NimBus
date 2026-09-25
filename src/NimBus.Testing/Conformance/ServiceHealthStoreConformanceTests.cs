@@ -150,4 +150,15 @@ public abstract class ServiceHealthStoreConformanceTests
         Assert.IsNotNull(row, $"Service health should carry a row for '{serviceId}'.");
         return row!;
     }
+
+    [TestMethod]
+    public async Task Unknown_service_version_round_trips_null()
+    {
+        var store = CreateStore();
+        var serviceId = Id("svc-no-version");
+
+        await store.TryClaimServiceProbe(serviceId, DateTime.UtcNow.AddMinutes(5), "probe-1");
+
+        Assert.IsNull((await Row(store, serviceId)).Version, "a claimed probe has no answering version yet");
+    }
 }

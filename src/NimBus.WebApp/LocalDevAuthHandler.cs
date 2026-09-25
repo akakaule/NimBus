@@ -7,64 +7,63 @@ using System.Security.Claims;
 using System.Text.Encodings.Web;
 using System.Threading.Tasks;
 
-namespace NimBus.WebApp
+namespace NimBus.WebApp;
+
+/// <summary>
+/// Authentication handler for local development that bypasses Azure AD authentication.
+/// This should only be used in Development environment with EnableLocalDevAuthentication=true.
+/// </summary>
+public class LocalDevAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
-    /// <summary>
-    /// Authentication handler for local development that bypasses Azure AD authentication.
-    /// This should only be used in Development environment with EnableLocalDevAuthentication=true.
-    /// </summary>
-    public class LocalDevAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
+    private readonly IConfiguration _configuration;
+    private readonly IWebHostEnvironment _environment;
+    private readonly ILogger<LocalDevAuthHandler> _authLogger;
+
+    public LocalDevAuthHandler(
+        IOptionsMonitor<AuthenticationSchemeOptions> options,
+        ILoggerFactory logger,
+        UrlEncoder encoder,
+        IConfiguration configuration,
+        IWebHostEnvironment environment)
+        : base(options, logger, encoder)
     {
-        private readonly IConfiguration _configuration;
-        private readonly IWebHostEnvironment _environment;
-        private readonly ILogger<LocalDevAuthHandler> _authLogger;
+        _configuration = configuration;
+        _environment = environment;
+        _authLogger = logger.CreateLogger<LocalDevAuthHandler>();
+    }
 
-        public LocalDevAuthHandler(
-            IOptionsMonitor<AuthenticationSchemeOptions> options,
-            ILoggerFactory logger,
-            UrlEncoder encoder,
-            IConfiguration configuration,
-            IWebHostEnvironment environment)
-            : base(options, logger, encoder)
+    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        // Defense-in-depth: ensure this handler cannot grant access outside Development
+        if (!_environment.IsDevelopment())
         {
-            _configuration = configuration;
-            _environment = environment;
-            _authLogger = logger.CreateLogger<LocalDevAuthHandler>();
+            _authLogger.LogError("CRITICAL: LocalDevAuthHandler was invoked outside of Development environment. This is a security misconfiguration. Denying request.");
+            return Task.FromResult(AuthenticateResult.Fail("Local development authentication is not available outside Development environment."));
         }
 
-        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+        // Safety check: only allow bypass if explicitly enabled in configuration
+        var enableLocalDevAuth = _configuration.GetValue<bool>("EnableLocalDevAuthentication", false);
+
+        if (!enableLocalDevAuth)
         {
-            // Defense-in-depth: ensure this handler cannot grant access outside Development
-            if (!_environment.IsDevelopment())
-            {
-                _authLogger.LogError("CRITICAL: LocalDevAuthHandler was invoked outside of Development environment. This is a security misconfiguration. Denying request.");
-                return Task.FromResult(AuthenticateResult.Fail("Local development authentication is not available outside Development environment."));
-            }
-
-            // Safety check: only allow bypass if explicitly enabled in configuration
-            var enableLocalDevAuth = _configuration.GetValue<bool>("EnableLocalDevAuthentication", false);
-
-            if (!enableLocalDevAuth)
-            {
-                _authLogger.LogWarning("Local development authentication bypass attempted but EnableLocalDevAuthentication is not enabled. Denying request.");
-                return Task.FromResult(AuthenticateResult.Fail("Local development authentication is not enabled. Set EnableLocalDevAuthentication=true in configuration to enable."));
-            }
-
-            _authLogger.LogWarning("SECURITY WARNING: Local development authentication bypass is ENABLED. This should NEVER be used in production!");
-
-            var claims = new[]
-            {
-                new Claim(ClaimTypes.NameIdentifier, "local-dev-user"),
-                new Claim(ClaimTypes.Name, "Local Developer"),
-                new Claim(ClaimTypes.Email, "dev@localhost"),
-                new Claim("groups", "EIP_Management") // Grant admin access for local development
-            };
-
-            var identity = new ClaimsIdentity(claims, Scheme.Name);
-            var principal = new ClaimsPrincipal(identity);
-            var ticket = new AuthenticationTicket(principal, Scheme.Name);
-
-            return Task.FromResult(AuthenticateResult.Success(ticket));
+            _authLogger.LogWarning("Local development authentication bypass attempted but EnableLocalDevAuthentication is not enabled. Denying request.");
+            return Task.FromResult(AuthenticateResult.Fail("Local development authentication is not enabled. Set EnableLocalDevAuthentication=true in configuration to enable."));
         }
+
+        _authLogger.LogWarning("SECURITY WARNING: Local development authentication bypass is ENABLED. This should NEVER be used in production!");
+
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, "local-dev-user"),
+            new Claim(ClaimTypes.Name, "Local Developer"),
+            new Claim(ClaimTypes.Email, "dev@localhost"),
+            new Claim("groups", "EIP_Management") // Grant admin access for local development
+        };
+
+        var identity = new ClaimsIdentity(claims, Scheme.Name);
+        var principal = new ClaimsPrincipal(identity);
+        var ticket = new AuthenticationTicket(principal, Scheme.Name);
+
+        return Task.FromResult(AuthenticateResult.Success(ticket));
     }
 }

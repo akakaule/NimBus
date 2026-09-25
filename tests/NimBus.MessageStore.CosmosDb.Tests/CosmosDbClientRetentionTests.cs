@@ -29,7 +29,7 @@ public sealed class CosmosDbClientRetentionTests
     public async Task Unresolved_write_defaults_to_ttl_disabled(string name, Func<CosmosDbClient, Task> write)
     {
         var adapter = new RecordingCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null, new CosmosDbMessageStoreOptions());
+        var client = new CosmosDbClient(adapter, null!, new CosmosDbMessageStoreOptions());
 
         await write(client);
 
@@ -44,7 +44,7 @@ public sealed class CosmosDbClientRetentionTests
     public async Task Unresolved_write_stamps_configured_retention(string name, Func<CosmosDbClient, Task> write)
     {
         var adapter = new RecordingCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null,
+        var client = new CosmosDbClient(adapter, null!,
             new CosmosDbMessageStoreOptions { UnresolvedRetentionDays = 365 });
 
         await write(client);
@@ -57,7 +57,7 @@ public sealed class CosmosDbClientRetentionTests
     public async Task Retention_of_one_day_is_eighty_six_thousand_four_hundred_seconds()
     {
         var adapter = new RecordingCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null,
+        var client = new CosmosDbClient(adapter, null!,
             new CosmosDbMessageStoreOptions { UnresolvedRetentionDays = 1 });
 
         await client.UploadPendingMessage("event-1", "session-1", "endpoint-1", NewEvent());
@@ -71,7 +71,7 @@ public sealed class CosmosDbClientRetentionTests
     public async Task Retention_slides_forward_on_every_rewrite()
     {
         var adapter = new RecordingCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null,
+        var client = new CosmosDbClient(adapter, null!,
             new CosmosDbMessageStoreOptions { UnresolvedRetentionDays = 180 });
 
         await client.UploadPendingMessage("event-1", "session-1", "endpoint-1", NewEvent());
@@ -97,7 +97,7 @@ public sealed class CosmosDbClientRetentionTests
         // 180 days deliberately, not 30: 30 x 86400 == 2_592_000 is the terminal/archive
         // constant, so a wrongly-coupled path would pass unnoticed at 30.
         var adapter = new RecordingCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null,
+        var client = new CosmosDbClient(adapter, null!,
             new CosmosDbMessageStoreOptions { UnresolvedRetentionDays = 180 });
 
         await client.UploadCompletedMessage("event-1", "session-1", "endpoint-1", NewEvent());
@@ -122,7 +122,7 @@ public sealed class CosmosDbClientRetentionTests
     public async Task Configuring_retention_issues_no_extra_reads_or_writes()
     {
         var adapter = new RecordingCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null,
+        var client = new CosmosDbClient(adapter, null!,
             new CosmosDbMessageStoreOptions { UnresolvedRetentionDays = 180 });
 
         await client.UploadPendingMessage("event-1", "session-1", "endpoint-1", NewEvent());
@@ -139,7 +139,7 @@ public sealed class CosmosDbClientRetentionTests
     public async Task Endpoint_containers_are_created_with_container_level_ttl()
     {
         var adapter = new RecordingCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null, new CosmosDbMessageStoreOptions());
+        var client = new CosmosDbClient(adapter, null!, new CosmosDbMessageStoreOptions());
 
         await client.UploadPendingMessage("event-1", "session-1", "endpoint-1", NewEvent());
 
@@ -154,7 +154,7 @@ public sealed class CosmosDbClientRetentionTests
     public async Task Heartbeat_history_uses_endpoint_partitions_and_item_level_retention()
     {
         var adapter = new RecordingCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null, new CosmosDbMessageStoreOptions());
+        var client = new CosmosDbClient(adapter, null!, new CosmosDbMessageStoreOptions());
         var now = DateTime.UtcNow;
 
         await client.UpsertHeartbeatUptimeDays([new HeartbeatUptimeDay
@@ -191,7 +191,7 @@ public sealed class CosmosDbClientRetentionTests
     public async Task Shared_container_documents_keep_their_own_ttl_or_none()
     {
         var adapter = new RecordingCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null,
+        var client = new CosmosDbClient(adapter, null!,
             new CosmosDbMessageStoreOptions { UnresolvedRetentionDays = 180 });
 
         await client.StoreMessage(new MessageEntity { MessageId = "message-1", EventId = "event-1", EndpointId = "endpoint-1" });
@@ -215,7 +215,7 @@ public sealed class CosmosDbClientRetentionTests
     public async Task Shared_containers_are_created_without_container_properties()
     {
         var adapter = new RecordingCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null, new CosmosDbMessageStoreOptions());
+        var client = new CosmosDbClient(adapter, null!, new CosmosDbMessageStoreOptions());
 
         await client.GetSubscriptionsOnEndpoint("endpoint-1");
         await client.SetEndpointMetadata(new EndpointMetadata { EndpointId = "endpoint-1" });
@@ -263,7 +263,7 @@ public sealed class CosmosDbClientRetentionTests
     public async Task Endpoint_ids_that_collide_with_a_store_container_are_rejected(string reserved)
     {
         var adapter = new RecordingCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null, new CosmosDbMessageStoreOptions());
+        var client = new CosmosDbClient(adapter, null!, new CosmosDbMessageStoreOptions());
 
         var ex = await Assert.ThrowsExactlyAsync<ArgumentException>(
             () => client.DownloadEndpointStateCount(reserved));
@@ -279,7 +279,7 @@ public sealed class CosmosDbClientRetentionTests
     public async Task Differently_cased_ids_are_their_own_endpoint_containers(string endpointId)
     {
         var adapter = new RecordingCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null, new CosmosDbMessageStoreOptions());
+        var client = new CosmosDbClient(adapter, null!, new CosmosDbMessageStoreOptions());
 
         await client.UploadPendingMessage("event-1", "session-1", endpointId, NewEvent());
 
@@ -292,7 +292,7 @@ public sealed class CosmosDbClientRetentionTests
         // Regression for the guard: "Metadata" and "subscriptions" are reserved ids, so the
         // store's own calls must go through the dedicated accessors, not GetEndpointContainer.
         var adapter = new RecordingCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null, new CosmosDbMessageStoreOptions());
+        var client = new CosmosDbClient(adapter, null!, new CosmosDbMessageStoreOptions());
 
         await client.SetEndpointMetadata(new EndpointMetadata { EndpointId = "endpoint-1" });
         await client.GetSubscriptionsOnEndpoint("endpoint-1");
@@ -307,7 +307,7 @@ public sealed class CosmosDbClientRetentionTests
     public async Task Adapter_without_the_container_properties_overload_fails_closed()
     {
         var adapter = new LegacyCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null, new CosmosDbMessageStoreOptions());
+        var client = new CosmosDbClient(adapter, null!, new CosmosDbMessageStoreOptions());
 
         var ex = await Assert.ThrowsExactlyAsync<NotSupportedException>(
             () => client.UploadPendingMessage("event-1", "session-1", "endpoint-1", NewEvent()));
@@ -321,7 +321,7 @@ public sealed class CosmosDbClientRetentionTests
     public async Task Adapter_without_the_container_properties_overload_still_serves_shared_containers()
     {
         var adapter = new LegacyCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null, new CosmosDbMessageStoreOptions());
+        var client = new CosmosDbClient(adapter, null!, new CosmosDbMessageStoreOptions());
 
         await client.SetEndpointMetadata(new EndpointMetadata { EndpointId = "endpoint-1" });
 
@@ -334,7 +334,7 @@ public sealed class CosmosDbClientRetentionTests
     public async Task Resubmit_write_honours_a_configured_retention()
     {
         var adapter = new RecordingCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null,
+        var client = new CosmosDbClient(adapter, null!,
             new CosmosDbMessageStoreOptions { UnresolvedRetentionDays = 180 });
 
         await client.UploadFailedMessage("event-1", "session-1", "endpoint-1", NewEvent());
@@ -351,7 +351,7 @@ public sealed class CosmosDbClientRetentionTests
     {
         var ex = Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new CosmosDbClient(
             new RecordingCosmosClientAdapter(),
-            null,
+            null!,
             new CosmosDbMessageStoreOptions { UnresolvedRetentionDays = days }));
 
         StringAssert.Contains(ex.Message, days.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -361,7 +361,7 @@ public sealed class CosmosDbClientRetentionTests
     public void Constructor_rejects_null_options()
     {
         Assert.ThrowsExactly<ArgumentNullException>(() => new CosmosDbClient(
-            new RecordingCosmosClientAdapter(), null, null!));
+            new RecordingCosmosClientAdapter(), null!, null!));
     }
 
     public static IEnumerable<object[]> UnresolvedWrites => new[]
@@ -379,7 +379,7 @@ public sealed class CosmosDbClientRetentionTests
     private static async Task AssertOrderIndependent(Func<CosmosDbClient, Task> exercise)
     {
         var adapter = new RecordingCosmosClientAdapter();
-        var client = new CosmosDbClient(adapter, null, new CosmosDbMessageStoreOptions());
+        var client = new CosmosDbClient(adapter, null!, new CosmosDbMessageStoreOptions());
 
         await exercise(client);
 

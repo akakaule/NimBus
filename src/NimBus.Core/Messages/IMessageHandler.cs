@@ -1,10 +1,9 @@
 ﻿using System.Threading;
 using System.Threading.Tasks;
 
-namespace NimBus.Core.Messages
+namespace NimBus.Core.Messages;
+
+public interface IMessageHandler
 {
-    public interface IMessageHandler
-    {
-        Task Handle(IMessageContext messageContext, CancellationToken cancellationToken = default);
-    }
+    Task Handle(IMessageContext messageContext, CancellationToken cancellationToken = default);
 }

@@ -62,7 +62,7 @@ internal sealed class EndToEndFixture
             retryPolicyProvider);
     }
 
-    public EndToEndFixture(IPermanentFailureClassifier classifier, IRetryPolicyProvider? retryPolicyProvider = null)
+    public EndToEndFixture(IFailureDispositionClassifier classifier, IRetryPolicyProvider? retryPolicyProvider = null)
     {
         _publishBus = new InMemoryBus();
         _responseBus = new InMemoryBus();
@@ -79,7 +79,7 @@ internal sealed class EndToEndFixture
             retryPolicyProvider,
             pipeline: null,
             lifecycleNotifier: null,
-            permanentFailureClassifier: classifier);
+            failureDispositionClassifier: classifier);
     }
 
     /// <summary>
@@ -126,7 +126,6 @@ internal sealed class EndToEndFixture
             retryPolicyProvider: null,
             pipeline: null,
             lifecycleNotifier: notifier,
-            permanentFailureClassifier: null,
             failureDispositionClassifier: null);
     }
 

@@ -94,7 +94,7 @@ public sealed class CosmosDbClientPurgeTests
         public IOrderedQueryable<T> GetItemLinqQueryable<T>(bool allowSynchronousQueryExecution = false, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
             => throw new NotSupportedException();
 
-        public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions requestOptions = null)
+        public Task<ItemResponse<T>> UpsertItemAsync<T>(T item, PartitionKey partitionKey = default, ItemRequestOptions? requestOptions = null)
             => throw new NotSupportedException();
 
         public Task<ItemResponse<T>> CreateItemAsync<T>(T item, PartitionKey partitionKey = default)

@@ -20,13 +20,13 @@ internal sealed class SqlServerEndpointMetadataStore : IEndpointMetadataStore
     private string T(string table) => _context.Table(table);
     // ───────── Endpoint metadata ─────────
 
-    public async Task<EndpointMetadata> GetEndpointMetadata(string endpointId)
+    public async Task<EndpointMetadata?> GetEndpointMetadata(string endpointId)
     {
         await using var conn = await OpenAsync();
         var row = await conn.QueryFirstOrDefaultAsync(
             $"SELECT * FROM {T("EndpointMetadata")} WHERE EndpointId = @E",
             new { E = endpointId }, commandTimeout: _context.CommandTimeout);
-        if (row == null) throw new EndpointNotFoundException(endpointId);
+        if (row == null) return null;
         var metadata = MapMetadataRow(row);
         metadata.Heartbeats = await GetHeartbeats(conn, endpointId);
         return metadata;
@@ -92,9 +92,9 @@ VALUES (@EndpointId, @EndpointOwner, @EndpointOwnerTeam, @EndpointOwnerEmail,
     private static EndpointMetadata MapMetadataRow(dynamic row) => new()
     {
         EndpointId = row.EndpointId,
-        EndpointOwner = row.EndpointOwner ?? string.Empty,
-        EndpointOwnerTeam = row.EndpointOwnerTeam ?? string.Empty,
-        EndpointOwnerEmail = row.EndpointOwnerEmail ?? string.Empty,
+        EndpointOwner = row.EndpointOwner,
+        EndpointOwnerTeam = row.EndpointOwnerTeam,
+        EndpointOwnerEmail = row.EndpointOwnerEmail,
         IsHeartbeatEnabled = row.IsHeartbeatEnabled,
         EndpointHeartbeatStatus = Enum.TryParse((string?)row.EndpointHeartbeatStatus, out HeartbeatStatus rollup)
             ? rollup
@@ -417,11 +417,11 @@ ORDER BY m.EndpointId";
 
     private static Heartbeat MapHeartbeatRow(dynamic row) => new()
     {
-        MessageId = row.MessageId ?? string.Empty,
+        MessageId = row.MessageId,
         StartTime = row.StartTimeUtc,
         ReceivedTime = row.ReceivedTimeUtc,
         EndTime = row.EndTimeUtc,
-        SdkVersion = row.SdkVersion ?? string.Empty,
+        SdkVersion = row.SdkVersion,
         IntervalSeconds = row.IntervalSeconds,
         EndpointHeartbeatStatus = Enum.TryParse((string?)row.EndpointHeartbeatStatus, out HeartbeatStatus status)
             ? status

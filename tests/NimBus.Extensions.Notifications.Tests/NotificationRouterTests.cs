@@ -18,8 +18,8 @@ public class NotificationRouterTests
 
     private static NotificationRouter NewRouter(
         IEnumerable<ChannelRegistration> registrations,
-        NotificationRouterOptions options = null,
-        TimeProvider timeProvider = null) =>
+        NotificationRouterOptions? options = null,
+        TimeProvider? timeProvider = null) =>
         new(registrations, options ?? new NotificationRouterOptions(),
             NullLogger<NotificationRouter>.Instance, timeProvider ?? TimeProvider.System);
 

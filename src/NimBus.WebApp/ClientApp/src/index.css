@@ -126,8 +126,8 @@
     animation: nb-flow 4s linear infinite;
   }
 
-  /* Monitor wall — pulsing red dot used in the hero pill, failing-band
-     header, and stale-data banner. Tuned slow enough that it reads as a
+  /* Monitor wall — pulsing dot used in the environment pill and the
+     stale-data banner. Tuned slow enough that it reads as a
      heartbeat from across a room rather than a flicker. */
   .nb-monitor-pulser {
     animation: nb-monitor-pulse 1.6s ease-in-out infinite;
@@ -140,18 +140,12 @@
     animation: nb-monitor-pulseg 2.4s ease-in-out infinite;
   }
 
-  /* Fresh-failure card pulse — the card border glows red for the first 60 s
-     after a new failure appears, asking the room to look up. Triggered from
-     React by toggling the class on/off based on `firstFailureAt`. */
+  /* Fresh-failure card pulse — a solid ring flashes around the card for the
+     first 60 s after a new failure appears, asking the room to look up.
+     Flat on purpose: no blur or glow. Triggered from React by toggling the
+     class on/off based on `firstFailureAt`. */
   .nb-monitor-pulse-card {
-    animation: nb-monitor-pulse-card 1.6s ease-in-out infinite;
-  }
-
-  /* Deep-backlog card pulse — the amber sibling of the fresh-failure glow.
-     A queue past the "high backlog" threshold breathes so it reads as an
-     active problem, not a static big number. */
-  .nb-monitor-pulse-backlog {
-    animation: nb-monitor-pulse-backlog 2.2s ease-in-out infinite;
+    animation: nb-monitor-pulse-card 1.2s steps(2, jump-none) infinite;
   }
 
   /* Slow-scrolling marquee for the ticker. The track is duplicated in JSX
@@ -196,28 +190,10 @@
 @keyframes nb-monitor-pulse-card {
   0%,
   100% {
-    box-shadow:
-      0 0 0 1px rgba(194, 65, 46, 0.4),
-      0 0 24px rgba(194, 65, 46, 0.1);
+    box-shadow: 0 0 0 0 transparent;
   }
   50% {
-    box-shadow:
-      0 0 0 2px rgba(194, 65, 46, 0.75),
-      0 0 32px rgba(194, 65, 46, 0.28);
-  }
-}
-
-@keyframes nb-monitor-pulse-backlog {
-  0%,
-  100% {
-    box-shadow:
-      0 0 0 1px rgba(201, 138, 27, 0.4),
-      0 0 24px rgba(201, 138, 27, 0.1);
-  }
-  50% {
-    box-shadow:
-      0 0 0 2px rgba(201, 138, 27, 0.8),
-      0 0 32px rgba(201, 138, 27, 0.3);
+    box-shadow: 0 0 0 3px #c2412e;
   }
 }
 

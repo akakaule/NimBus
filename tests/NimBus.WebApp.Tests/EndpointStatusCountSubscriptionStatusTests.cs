@@ -111,7 +111,7 @@ public sealed class EndpointStatusCountSubscriptionStatusTests
             store,
             store,
             store,
-            serviceBusManagement: null,
+            serviceBusManagement: null!,
             new AllowAllAuthorizationService(),
             NullLogger<EndpointImplementation>.Instance,
             new NoOpAuditLogService(),

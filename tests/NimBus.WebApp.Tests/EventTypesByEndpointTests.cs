@@ -112,8 +112,8 @@ public sealed class EventTypesByEndpointTests
 
     private static EventTypeImplementation CreateSut(
         FakeEndpoint endpoint,
-        IReadOnlyList<string> producers = null,
-        IReadOnlyList<string> consumers = null)
+        IReadOnlyList<string>? producers = null,
+        IReadOnlyList<string>? consumers = null)
     {
         return new EventTypeImplementation(
             new FakePlatform(endpoint, producers ?? Array.Empty<string>(), consumers ?? Array.Empty<string>()),

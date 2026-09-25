@@ -1,8 +1,7 @@
-﻿namespace NimBus.Core.Messages
+﻿namespace NimBus.Core.Messages;
+
+public class EventContent
 {
-    public class EventContent
-    {
-        public string EventTypeId { get; set; }
-        public string EventJson { get; set; }
-    }
+    public string EventTypeId { get; set; }
+    public string? EventJson { get; set; }
 }

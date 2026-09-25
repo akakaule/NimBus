@@ -33,7 +33,7 @@ public class ManagerClient : IManagerClient
     private readonly ServiceBusClient _serviceBusClient;
     private readonly ILogger _logger;
 
-    public ManagerClient(ServiceBusClient serviceBusClient, ILogger<ManagerClient> logger = null)
+    public ManagerClient(ServiceBusClient serviceBusClient, ILogger<ManagerClient>? logger = null)
     {
         _serviceBusClient = serviceBusClient;
         _logger = logger;

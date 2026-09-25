@@ -1,9 +1,8 @@
-﻿namespace NimBus.WebApp.Models
-{
-    public class EditMessageViewModel
-    {
-        public string OriginalMessage { get; set; }
+﻿namespace NimBus.WebApp.Models;
 
-        public string ModifiedMessage { get; set; }
-    }
+public class EditMessageViewModel
+{
+    public string OriginalMessage { get; set; }
+
+    public string ModifiedMessage { get; set; }
 }

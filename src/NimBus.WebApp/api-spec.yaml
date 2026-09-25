@@ -2328,6 +2328,85 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/MessageSearchRequest'
+  /api/failed/search:
+    post:
+      summary: Search unresolved failures across every endpoint the caller can read
+      description: >-
+        Returns events currently in Failed, DeadLettered or Unsupported on the
+        endpoints the caller holds Reader on (optionally narrowed by
+        filter.endpointIds), newest first. Naming an endpoint the caller cannot
+        read is refused with 403.
+      operationId: post-failed-search
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          description: Bad Request
+        '403':
+          description: Forbidden
+      tags:
+        - Failed
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FailedSearchRequest'
+  /api/failed/histogram:
+    post:
+      summary: Count unresolved failures per time bucket
+      description: >-
+        Buckets the failures matched by the filter by the time they last
+        entered their status (UpdatedAt). The server picks the bucket size from
+        the period, or from the custom from/to range when both are given.
+      operationId: post-failed-histogram
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FailedHistogram'
+        '400':
+          description: Bad Request
+        '403':
+          description: Forbidden
+      tags:
+        - Failed
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FailedHistogramRequest'
+  /api/failed/error-groups:
+    post:
+      summary: Group unresolved failures by error category and pattern
+      description: >-
+        Groups every failure matched by the filter (up to a server cap) by
+        error category and normalized error pattern, the same grouping as the
+        Insights page, with the individual failures of each pattern.
+      operationId: post-failed-error-groups
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FailedErrorGroups'
+        '400':
+          description: Bad Request
+        '403':
+          description: Forbidden
+      tags:
+        - Failed
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FailedErrorGroupsRequest'
   /api/audits/search:
     post:
       summary: Search audit log entries across all events
@@ -3936,6 +4015,253 @@ components:
           type: string
         subscriptionStatus:
           type: string
+    FailedSearchFilter:
+      title: FailedSearchFilter
+      type: object
+      properties:
+        endpointIds:
+          type: array
+          nullable: true
+          description: Endpoints to search; empty or omitted means every endpoint the caller can read.
+          items:
+            type: string
+        statuses:
+          type: array
+          nullable: true
+          description: Failure statuses to include; empty or omitted means all three.
+          items:
+            type: string
+            enum:
+              - Failed
+              - DeadLettered
+              - Unsupported
+        eventTypeId:
+          type: array
+          nullable: true
+          items:
+            type: string
+        eventId:
+          type: string
+          nullable: true
+        lastMessageId:
+          type: string
+          nullable: true
+        sessionId:
+          type: string
+          nullable: true
+        from:
+          type: string
+          nullable: true
+          description: Publishing endpoint.
+        to:
+          type: string
+          nullable: true
+          description: Receiving endpoint.
+        errorText:
+          type: string
+          nullable: true
+          description: Case-insensitive substring of the error text.
+        updatedAtFrom:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAtTo:
+          type: string
+          format: date-time
+          nullable: true
+    FailedSearchRequest:
+      title: FailedSearchRequest
+      type: object
+      properties:
+        filter:
+          $ref: '#/components/schemas/FailedSearchFilter'
+        continuationToken:
+          type: string
+          nullable: true
+        maxSearchItemsCount:
+          type: integer
+          description: Page size. Server clamps to [1, 500] and defaults to 100 when omitted or <= 0.
+    FailedHistogramRequest:
+      title: FailedHistogramRequest
+      type: object
+      properties:
+        filter:
+          $ref: '#/components/schemas/FailedSearchFilter'
+        period:
+          $ref: '#/components/schemas/Period'
+        from:
+          type: string
+          format: date-time
+          nullable: true
+          description: Custom window start; used with `to` instead of `period`.
+        to:
+          type: string
+          format: date-time
+          nullable: true
+          description: Custom window end; used with `from` instead of `period`.
+    FailedHistogram:
+      title: FailedHistogram
+      type: object
+      properties:
+        bucketMinutes:
+          type: integer
+          description: Bucket size in minutes.
+        from:
+          type: string
+          format: date-time
+          description: Start of the first bucket (inclusive).
+        to:
+          type: string
+          format: date-time
+          description: End of the window (exclusive).
+        buckets:
+          type: array
+          description: Every bucket in the window, oldest first, empty ones included.
+          items:
+            $ref: '#/components/schemas/FailedHistogramBucket'
+        totals:
+          $ref: '#/components/schemas/FailedHistogramTotals'
+        truncated:
+          type: boolean
+          description: True when the store stopped counting at its cap; counts are then a lower bound.
+    FailedHistogramBucket:
+      title: FailedHistogramBucket
+      type: object
+      properties:
+        start:
+          type: string
+          format: date-time
+        failed:
+          type: integer
+        deadLettered:
+          type: integer
+        unsupported:
+          type: integer
+        byEndpoint:
+          type: object
+          additionalProperties:
+            type: integer
+    FailedHistogramTotals:
+      title: FailedHistogramTotals
+      type: object
+      properties:
+        failed:
+          type: integer
+        deadLettered:
+          type: integer
+        unsupported:
+          type: integer
+        byEndpoint:
+          type: array
+          items:
+            $ref: '#/components/schemas/FailedEndpointTotals'
+    FailedEndpointTotals:
+      title: FailedEndpointTotals
+      type: object
+      properties:
+        endpointId:
+          type: string
+        failed:
+          type: integer
+        deadLettered:
+          type: integer
+        unsupported:
+          type: integer
+    FailedErrorGroupsRequest:
+      title: FailedErrorGroupsRequest
+      type: object
+      properties:
+        filter:
+          $ref: '#/components/schemas/FailedSearchFilter'
+    FailedErrorGroups:
+      title: FailedErrorGroups
+      type: object
+      properties:
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/FailedErrorGroup'
+        total:
+          type: integer
+          description: Failures grouped.
+        truncated:
+          type: boolean
+          description: True when more failures matched than the server groups; the groups cover the newest ones.
+    FailedErrorGroup:
+      title: FailedErrorGroup
+      type: object
+      properties:
+        errorCategory:
+          type: string
+        count:
+          type: integer
+        endpoints:
+          type: array
+          items:
+            type: string
+        eventTypes:
+          type: array
+          items:
+            type: string
+        latestOccurrence:
+          type: string
+          format: date-time
+        exampleErrorText:
+          type: string
+        subGroups:
+          type: array
+          items:
+            $ref: '#/components/schemas/FailedErrorSubGroup'
+    FailedErrorSubGroup:
+      title: FailedErrorSubGroup
+      type: object
+      properties:
+        normalizedPattern:
+          type: string
+        count:
+          type: integer
+        endpoints:
+          type: array
+          items:
+            type: string
+        eventTypes:
+          type: array
+          items:
+            type: string
+        latestOccurrence:
+          type: string
+          format: date-time
+        exampleErrorText:
+          type: string
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/FailedEventRef'
+    FailedEventRef:
+      title: FailedEventRef
+      type: object
+      properties:
+        eventId:
+          type: string
+        lastMessageId:
+          type: string
+          nullable: true
+        endpointId:
+          type: string
+        sessionId:
+          type: string
+          nullable: true
+        eventTypeId:
+          type: string
+          nullable: true
+        resolutionStatus:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+        errorText:
+          type: string
+          nullable: true
     MessageSearchRequest:
       title: MessageSearchRequest
       type: object
@@ -5350,6 +5676,7 @@ components:
           type: string
 tags:
   - name: AccessControl
+  - name: Failed
   - name: Event
   - name: EventType
   - name: Application

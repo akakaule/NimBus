@@ -27,8 +27,203 @@ internal sealed partial class CosmosDbMessageTrackingStore
             .GetItemLinqQueryable<EventDbo>(true,
                 String.IsNullOrEmpty(continuationToken) ? null : continuationToken,
                 requestOptions);
-        var query = queryable.Where(x => true);
+        var query = ApplyEventFilter(queryable.Where(x => true), filter);
 
+        if (filter.ResolutionStatus != null && filter.ResolutionStatus.Any())
+            query = query
+                .Where(x => filter.ResolutionStatus.Contains(x.Status));
+
+        var result = ProjectForSearch(query.OrderByDescending(e => e.Event.UpdatedAt))
+            .ToFeedIterator();
+        result = CosmosExceptionTranslation.Wrap(result, _logger);
+        var events = new List<UnresolvedEvent>();
+        var token = "";
+        var effectiveLimit = PaginationLimits.Resolve(maxSearchItemsCount);
+        while (result.HasMoreResults && events.Count <= effectiveLimit)
+        {
+            var eventDbo = await result.ReadNextAsync();
+            token = eventDbo.ContinuationToken;
+            foreach (var queryResult in eventDbo)
+            {
+                events.Add(ToSearchResult(queryResult));
+            }
+
+            if (eventDbo.Count > 0)
+            {
+                return new SearchResponse { Events = events, ContinuationToken = token };
+            }
+        }
+
+        return new SearchResponse { Events = events, ContinuationToken = token };
+    }
+
+    // Endpoint containers queried concurrently by the cross-endpoint failure queries.
+    private const int FailedSearchParallelism = 8;
+
+    // Rows the histogram reads across all containers before it reports Truncated.
+    internal const int FailedHistogramRowCap = 50_000;
+
+    public async Task<SearchResponse> GetFailedEventsAcrossEndpoints(
+        EventFilter filter,
+        IReadOnlyCollection<string> endpointIds,
+        string? continuationToken,
+        int maxItemCount)
+    {
+        var statuses = FailedEventQuery.ResolveStatuses(filter.ResolutionStatus);
+        if (endpointIds.Count == 0 || statuses.Count == 0)
+            return new SearchResponse { Events = new List<UnresolvedEvent>(), ContinuationToken = null! };
+
+        var pageSize = PaginationLimits.Resolve(maxItemCount);
+        var cursor = FailedEventPageCursor.Decode(continuationToken);
+
+        var buffers = await ForEachEndpointAsync(endpointIds, (endpointId, container) =>
+            ReadFailedEventStreamAsync(endpointId, container, filter, statuses, cursor.PositionOf(endpointId), pageSize),
+            endpointId => new SourceBuffer<EventDbo>(endpointId, Array.Empty<BufferedRow<EventDbo>>(), true, null));
+
+        var (page, consumed, hasMore) = FailedEventPageCursor.Merge(buffers, pageSize);
+        string? nextToken = null;
+        if (hasMore)
+        {
+            var next = new FailedEventPageCursor();
+            foreach (var buffer in buffers)
+                next.Sources[buffer.EndpointId] = buffer.PositionAfter(consumed[buffer.EndpointId]);
+            nextToken = next.Encode();
+        }
+
+        return new SearchResponse
+        {
+            Events = page.Select(ToSearchResult).ToList(),
+            ContinuationToken = nextToken!,
+        };
+    }
+
+    // Reads at least `need` rows of one endpoint's failure stream from its saved position (or
+    // every remaining row when fewer exist), remembering which Cosmos page each row came from.
+    private async Task<SourceBuffer<EventDbo>> ReadFailedEventStreamAsync(
+        string endpointId,
+        ICosmosContainerAdapter container,
+        EventFilter filter,
+        List<string> statuses,
+        FailedEventPageCursor.SourcePosition position,
+        int need)
+    {
+        if (position.Done)
+            return new SourceBuffer<EventDbo>(endpointId, Array.Empty<BufferedRow<EventDbo>>(), true, null);
+
+        var requestOptions = new QueryRequestOptions { MaxItemCount = need + 1 };
+        var queryable = container.GetItemLinqQueryable<EventDbo>(false, position.Token, requestOptions);
+        var iterator = CosmosExceptionTranslation.Wrap(
+            ProjectForSearch(FailedEventsQuery(queryable, filter, statuses).OrderByDescending(x => x.Event.UpdatedAt))
+                .ToFeedIterator(),
+            _logger);
+
+        var rows = new List<BufferedRow<EventDbo>>();
+        var pageToken = position.Token;
+        var skip = position.Skip;
+        while (iterator.HasMoreResults && rows.Count < need)
+        {
+            var response = await iterator.ReadNextAsync();
+            var index = 0;
+            foreach (var dbo in response)
+            {
+                if (index >= skip)
+                    rows.Add(new BufferedRow<EventDbo>(dbo.Event.UpdatedAt, dbo.Id, pageToken, index, dbo));
+                index++;
+            }
+
+            skip = 0;
+            pageToken = response.ContinuationToken;
+        }
+
+        var exhausted = !iterator.HasMoreResults || string.IsNullOrEmpty(pageToken);
+        return new SourceBuffer<EventDbo>(endpointId, rows, exhausted, pageToken);
+    }
+
+    public async Task<FailedEventHistogram> GetFailedEventHistogram(
+        EventFilter filter,
+        IReadOnlyCollection<string> endpointIds,
+        DateTime fromUtc,
+        DateTime toUtc,
+        TimeSpan bucketSize)
+    {
+        if (bucketSize <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(bucketSize), "Bucket size must be positive.");
+
+        var statuses = FailedEventQuery.ResolveStatuses(filter.ResolutionStatus);
+        if (endpointIds.Count == 0 || statuses.Count == 0 || toUtc <= fromUtc)
+            return new FailedEventHistogram();
+
+        // Failure backlogs are small, so the histogram reads two fields per matching row and
+        // buckets in memory. That honours every search filter without a second hand-written
+        // query dialect; the cap bounds the read when a backlog is not small after all.
+        var perEndpoint = await ForEachEndpointAsync(endpointIds, async (endpointId, container) =>
+        {
+            var query = FailedEventsQuery(container.GetItemLinqQueryable<EventDbo>(), filter, statuses)
+                .Where(x => x.Event.UpdatedAt >= fromUtc && x.Event.UpdatedAt < toUtc)
+                .Select(x => new HistogramPoint { UpdatedAt = x.Event.UpdatedAt, Status = x.Status })
+                .Take(FailedHistogramRowCap + 1);
+
+            var iterator = CosmosExceptionTranslation.Wrap(query.ToFeedIterator(), _logger);
+            var points = new List<(DateTime, string, string)>();
+            while (iterator.HasMoreResults)
+            {
+                foreach (var point in await iterator.ReadNextAsync())
+                    points.Add((point.UpdatedAt, endpointId, point.Status));
+            }
+
+            return points;
+        },
+        _ => new List<(DateTime, string, string)>());
+
+        var observations = perEndpoint.SelectMany(p => p).ToList();
+        var truncated = observations.Count > FailedHistogramRowCap;
+        return new FailedEventHistogram
+        {
+            Rows = FailedEventQuery.Bucket(observations.Take(FailedHistogramRowCap), fromUtc, bucketSize),
+            Truncated = truncated,
+        };
+    }
+
+    private static IQueryable<EventDbo> FailedEventsQuery(IQueryable<EventDbo> source, EventFilter filter, List<string> statuses) =>
+        ApplyEventFilter(source, filter)
+            .Where(x => statuses.Contains(x.Status))
+            .Where(x => !x.Deleted.HasValue || !x.Deleted.Value);
+
+    // Runs one query per endpoint container, a few at a time. An endpoint whose container is
+    // gone contributes nothing rather than failing the whole search.
+    private async Task<List<T>> ForEachEndpointAsync<T>(
+        IReadOnlyCollection<string> endpointIds,
+        Func<string, ICosmosContainerAdapter, Task<T>> query,
+        Func<string, T> whenMissing)
+    {
+        using var gate = new SemaphoreSlim(FailedSearchParallelism);
+        var tasks = endpointIds
+            .Where(id => !string.IsNullOrEmpty(id))
+            .Distinct(StringComparer.Ordinal)
+            .Select(async endpointId =>
+            {
+                await gate.WaitAsync().ConfigureAwait(false);
+                try
+                {
+                    var container = await _getEndpointContainer(endpointId).ConfigureAwait(false);
+                    return await query(endpointId, container).ConfigureAwait(false);
+                }
+                catch (EndpointNotFoundException)
+                {
+                    return whenMissing(endpointId);
+                }
+                finally
+                {
+                    gate.Release();
+                }
+            });
+        return (await Task.WhenAll(tasks).ConfigureAwait(false)).ToList();
+    }
+
+    // Shared by every event search so the filters cannot drift apart. The caller applies the
+    // status predicate, which differs per search.
+    private static IQueryable<EventDbo> ApplyEventFilter(IQueryable<EventDbo> query, EventFilter filter)
+    {
         // Datetimes
         if (filter.UpdatedAtFrom != null)
             query = query
@@ -68,6 +263,10 @@ internal sealed partial class CosmosDbMessageTrackingStore
             query = query
                 .Where(x => x.SessionId.StartsWith(filter.SessionId, StringComparison.OrdinalIgnoreCase));
 
+        if (filter.LastMessageId != null)
+            query = query
+                .Where(x => x.Event.LastMessageId.StartsWith(filter.LastMessageId, StringComparison.OrdinalIgnoreCase));
+
         if (filter.To != null)
             query = query
                 .Where(x => x.Event.To.Contains(filter.To));
@@ -75,10 +274,6 @@ internal sealed partial class CosmosDbMessageTrackingStore
         if (filter.From != null)
             query = query
                 .Where(x => x.Event.From.Contains(filter.From));
-
-        if (filter.ResolutionStatus != null && filter.ResolutionStatus.Any())
-            query = query
-                .Where(x => filter.ResolutionStatus.Contains(x.Status));
 
         // MessageType is persisted as a string (StringEnumConverter) and no enum
         // name is a substring of another, so Contains(ToString()) is equality here —
@@ -92,98 +287,94 @@ internal sealed partial class CosmosDbMessageTrackingStore
             query = query
                 .Where(x => x.Event.MessageContent.EventContent.EventJson.Contains(filter.Payload));
 
-        // Server-side projection: every UnresolvedEvent property EXCEPT the heavy
-        // EventJson payload (search results never surface it; the detail view
-        // fetches it on demand via GetLatestEventRequestMessage). ErrorContent is
-        // projected whole (the error-grouped search view reads ErrorText).
-        // Drift guard: MessageTrackingStoreConformanceTests reflects over
-        // UnresolvedEvent's properties and fails when a new property is missing
-        // from search results — extend this member-init when adding properties.
-        var result = query
-            .OrderByDescending(e => e.Event.UpdatedAt)
-            .Select(x => new EventDbo
-            {
-                Id = x.Id,
-                Status = x.Status,
-                EventType = x.EventType,
-                SessionId = x.SessionId,
-                Deleted = x.Deleted,
-                Event = new UnresolvedEvent
-                {
-                    UpdatedAt = x.Event.UpdatedAt,
-                    EnqueuedTimeUtc = x.Event.EnqueuedTimeUtc,
-                    EventId = x.Event.EventId,
-                    SessionId = x.Event.SessionId,
-                    CorrelationId = x.Event.CorrelationId,
-                    ResolutionStatus = x.Event.ResolutionStatus,
-                    EndpointRole = x.Event.EndpointRole,
-                    EndpointId = x.Event.EndpointId,
-                    RetryCount = x.Event.RetryCount,
-                    RetryLimit = x.Event.RetryLimit,
-                    MessageType = x.Event.MessageType,
-                    DeadLetterReason = x.Event.DeadLetterReason,
-                    DeadLetterErrorDescription = x.Event.DeadLetterErrorDescription,
-                    LastMessageId = x.Event.LastMessageId,
-                    OriginatingMessageId = x.Event.OriginatingMessageId,
-                    ParentMessageId = x.Event.ParentMessageId,
-                    Reason = x.Event.Reason,
-                    OriginatingFrom = x.Event.OriginatingFrom,
-                    EventTypeId = x.Event.EventTypeId,
-                    To = x.Event.To,
-                    From = x.Event.From,
-                    MessageContent = new MessageContent
-                    {
-                        // EventJson deliberately omitted — the sole purpose of
-                        // this projection.
-                        EventContent = new EventContent
-                        {
-                            EventTypeId = x.Event.MessageContent.EventContent.EventTypeId,
-                        },
-                        ErrorContent = x.Event.MessageContent.ErrorContent,
-                    },
-                    QueueTimeMs = x.Event.QueueTimeMs,
-                    ProcessingTimeMs = x.Event.ProcessingTimeMs,
-                    PendingSubStatus = x.Event.PendingSubStatus,
-                    HandoffReason = x.Event.HandoffReason,
-                    ExternalJobId = x.Event.ExternalJobId,
-                    ExpectedBy = x.Event.ExpectedBy,
-                    CloudEventId = x.Event.CloudEventId,
-                    CloudEventSource = x.Event.CloudEventSource,
-                    CloudEventType = x.Event.CloudEventType,
-                    CloudEventSubject = x.Event.CloudEventSubject,
-                },
-            })
-            .ToFeedIterator();
-        result = CosmosExceptionTranslation.Wrap(result, _logger);
-        var events = new List<UnresolvedEvent>();
-        var token = "";
-        var effectiveLimit = PaginationLimits.Resolve(maxSearchItemsCount);
-        while (result.HasMoreResults && events.Count <= effectiveLimit)
-        {
-            var eventDbo = await result.ReadNextAsync();
-            token = eventDbo.ContinuationToken;
-            foreach (var queryResult in eventDbo)
-            {
-                var ev = HydrateResolutionStatus(queryResult);
-                // Search results never surface the full request payload — the detail
-                // view fetches it on demand via GetLatestEventRequestMessage — so drop
-                // the heavy EventJson blob, which otherwise dominates the response on a
-                // 100-row page. ErrorContent and all metadata are kept (the error-grouped
-                // search view reads ErrorText).
-                if (ev?.MessageContent?.EventContent != null)
-                {
-                    ev.MessageContent.EventContent.EventJson = null;
-                }
-                events.Add(ev);
-            }
+        // Case-insensitive CONTAINS(x, y, true); unindexed, so callers narrow by status first.
+        if (filter.ErrorText != null)
+            query = query
+                .Where(x => x.Event.MessageContent.ErrorContent.ErrorText.Contains(filter.ErrorText, StringComparison.OrdinalIgnoreCase));
 
-            if (eventDbo.Count > 0)
+        return query;
+    }
+
+    // Server-side projection: every UnresolvedEvent property EXCEPT the heavy
+    // EventJson payload (search results never surface it; the detail view
+    // fetches it on demand via GetLatestEventRequestMessage). ErrorContent is
+    // projected whole (the error-grouped search view reads ErrorText).
+    // Drift guard: MessageTrackingStoreConformanceTests reflects over
+    // UnresolvedEvent's properties and fails when a new property is missing
+    // from search results — extend this member-init when adding properties.
+    private static IQueryable<EventDbo> ProjectForSearch(IQueryable<EventDbo> query) =>
+        query.Select(x => new EventDbo
+        {
+            Id = x.Id,
+            Status = x.Status,
+            EventType = x.EventType,
+            SessionId = x.SessionId,
+            Deleted = x.Deleted,
+            Event = new UnresolvedEvent
             {
-                return new SearchResponse { Events = events, ContinuationToken = token };
-            }
+                UpdatedAt = x.Event.UpdatedAt,
+                EnqueuedTimeUtc = x.Event.EnqueuedTimeUtc,
+                EventId = x.Event.EventId,
+                SessionId = x.Event.SessionId,
+                CorrelationId = x.Event.CorrelationId,
+                ResolutionStatus = x.Event.ResolutionStatus,
+                EndpointRole = x.Event.EndpointRole,
+                EndpointId = x.Event.EndpointId,
+                RetryCount = x.Event.RetryCount,
+                RetryLimit = x.Event.RetryLimit,
+                MessageType = x.Event.MessageType,
+                DeadLetterReason = x.Event.DeadLetterReason,
+                DeadLetterErrorDescription = x.Event.DeadLetterErrorDescription,
+                LastMessageId = x.Event.LastMessageId,
+                OriginatingMessageId = x.Event.OriginatingMessageId,
+                ParentMessageId = x.Event.ParentMessageId,
+                Reason = x.Event.Reason,
+                OriginatingFrom = x.Event.OriginatingFrom,
+                EventTypeId = x.Event.EventTypeId,
+                To = x.Event.To,
+                From = x.Event.From,
+                MessageContent = new MessageContent
+                {
+                    // EventJson deliberately omitted — the sole purpose of
+                    // this projection.
+                    EventContent = new EventContent
+                    {
+                        EventTypeId = x.Event.MessageContent.EventContent.EventTypeId,
+                    },
+                    ErrorContent = x.Event.MessageContent.ErrorContent,
+                },
+                QueueTimeMs = x.Event.QueueTimeMs,
+                ProcessingTimeMs = x.Event.ProcessingTimeMs,
+                PendingSubStatus = x.Event.PendingSubStatus,
+                HandoffReason = x.Event.HandoffReason,
+                ExternalJobId = x.Event.ExternalJobId,
+                ExpectedBy = x.Event.ExpectedBy,
+                CloudEventId = x.Event.CloudEventId,
+                CloudEventSource = x.Event.CloudEventSource,
+                CloudEventType = x.Event.CloudEventType,
+                CloudEventSubject = x.Event.CloudEventSubject,
+            },
+        });
+
+    // Search results never surface the full request payload — the detail view fetches it on
+    // demand via GetLatestEventRequestMessage — so drop the heavy EventJson blob, which
+    // otherwise dominates the response on a 100-row page. ErrorContent and all metadata are
+    // kept (the error-grouped search view reads ErrorText).
+    private static UnresolvedEvent ToSearchResult(EventDbo dbo)
+    {
+        var ev = HydrateResolutionStatus(dbo);
+        if (ev?.MessageContent?.EventContent != null)
+        {
+            ev.MessageContent.EventContent.EventJson = null;
         }
 
-        return new SearchResponse { Events = events, ContinuationToken = token };
+        return ev;
+    }
+
+    private sealed class HistogramPoint
+    {
+        public DateTime UpdatedAt { get; set; }
+        public string Status { get; set; } = string.Empty;
     }
 
     public async Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId,

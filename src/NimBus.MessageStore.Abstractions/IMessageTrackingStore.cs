@@ -171,6 +171,36 @@ public interface IMessageTrackingStore
     /// </summary>
     Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount);
 
+    /// <summary>
+    /// Searches the unresolved failures (<c>Failed</c>, <c>DeadLettered</c>, <c>Unsupported</c>)
+    /// of every endpoint in <paramref name="endpointIds"/> (exact ids, already authorized by the
+    /// caller). <paramref name="filter"/> narrows the result with the same semantics as
+    /// <see cref="GetEventsByFilter"/>; its <c>ResolutionStatus</c> is intersected with the three
+    /// failure statuses (empty means all three). Results are ordered by <c>UpdatedAt</c>
+    /// descending, omit <c>EventJson</c> and keep <c>ErrorContent</c>. The continuation token is
+    /// opaque and provider-specific; null or empty when there are no more rows. An empty
+    /// <paramref name="endpointIds"/> returns no rows.
+    /// </summary>
+    Task<SearchResponse> GetFailedEventsAcrossEndpoints(
+        EventFilter filter,
+        IReadOnlyCollection<string> endpointIds,
+        string? continuationToken,
+        int maxItemCount);
+
+    /// <summary>
+    /// Counts the unresolved failures matched by
+    /// <see cref="GetFailedEventsAcrossEndpoints"/> whose <c>UpdatedAt</c> falls in
+    /// [<paramref name="fromUtc"/>, <paramref name="toUtc"/>), grouped into buckets of
+    /// <paramref name="bucketSize"/> aligned to <paramref name="fromUtc"/>, per endpoint and
+    /// status. Rows are sparse (empty buckets are absent).
+    /// </summary>
+    Task<FailedEventHistogram> GetFailedEventHistogram(
+        EventFilter filter,
+        IReadOnlyCollection<string> endpointIds,
+        DateTime fromUtc,
+        DateTime toUtc,
+        TimeSpan bucketSize);
+
     // State counts
     Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId);
     Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId);

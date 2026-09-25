@@ -254,7 +254,7 @@ shape) settle perfectly happily.
 Handoff metadata persisted alongside the row: `HandoffReason`,
 `ExternalJobId`, `ExpectedBy`. The SQL Server provider adds the columns to
 `UnresolvedEvents` in `0009_Handoff.sql` and to the per-message history table
-`Messages` in `0020_MessageHandoff.sql`; the Cosmos provider stores them on the
+`Messages` in `0021_MessageHandoff.sql`; the Cosmos provider stores them on the
 document directly.
 
 The `PendingSubStatus = "Handoff"` discriminator distinguishes a

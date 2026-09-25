@@ -10,6 +10,11 @@ import {
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import * as api from "api-client";
+// Static import: vi.mock is hoisted above it, so the mocks still apply, and the
+// component graph loads while the file is collected. A per-test dynamic import
+// billed that load (over a second, more under a loaded run) to the first test's
+// 5s timeout.
+import EventsPanel from "./events-panel";
 
 // Shared mock handles. `getByFilterMock` resolves the events immediately;
 // `postSessionsBatchMock` returns a promise we resolve by hand so the test can
@@ -40,6 +45,8 @@ vi.mock("api-client", async () => {
     postEndpointSessionsBatch = postSessionsBatchMock;
     // EventTypeFiltering fetches the endpoint's event-type catalog on mount.
     getEventtypesByEndpointId = vi.fn().mockResolvedValue({});
+    // useTicketLinkTemplate reads the app status on mount.
+    getApiAppStats = vi.fn().mockResolvedValue({});
   }
   return { ...actual, Client: FakeClient, CookieAuth: () => ({}) };
 });
@@ -65,7 +72,6 @@ describe("EventsPanel paints before the session-status batch resolves", () => {
       continuationToken: undefined,
     });
 
-    const { default: EventsPanel } = await import("./events-panel");
     render(
       <MemoryRouter>
         <EventsPanel endpointId="ep-1" />
@@ -110,7 +116,6 @@ describe("EventsPanel id cells filter on click", () => {
       continuationToken: undefined,
     });
 
-    const { default: EventsPanel } = await import("./events-panel");
     render(
       <MemoryRouter>
         <EventsPanel endpointId="ep-1" />
@@ -154,7 +159,6 @@ describe("EventsPanel duplicate status display", () => {
       continuationToken: undefined,
     });
 
-    const { default: EventsPanel } = await import("./events-panel");
     render(
       <MemoryRouter>
         <EventsPanel endpointId="ep-1" />
@@ -197,7 +201,6 @@ describe("EventsPanel row actions and report flag", () => {
       continuationToken: undefined,
     });
 
-    const { default: EventsPanel } = await import("./events-panel");
     render(
       <MemoryRouter>
         <EventsPanel endpointId="ep-1" />
@@ -238,7 +241,6 @@ describe("EventsPanel payload URL filters", () => {
         status,
         response: "private diagnostics",
       });
-      const { default: EventsPanel } = await import("./events-panel");
       render(
         <MemoryRouter
           initialEntries={["/?payload=95f596ac-42ac-f111-aaab-6045bda15b3a"]}
@@ -269,7 +271,6 @@ describe("EventsPanel payload URL filters", () => {
         events: [],
         continuationToken: undefined,
       });
-      const { default: EventsPanel } = await import("./events-panel");
       render(
         <MemoryRouter initialEntries={[`/?payload=${encoded}`]}>
           <EventsPanel endpointId="ep-1" />
